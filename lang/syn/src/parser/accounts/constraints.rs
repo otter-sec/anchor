@@ -283,14 +283,12 @@ pub fn parse_token(stream: ParseStream) -> ParseResult<ConstraintToken> {
                         _ => return Err(ParseError::new(ident.span(), "Invalid attribute")),
                     }
                 }
-                "immutable_owner" => {
-                    ConstraintToken::ExtensionImmutableOwner(Context::new(
-                        ident.span(),
-                        ConstraintExtensionImmutableOwner {
-                            immutable_owner: true,
-                        },
-                    ))
-                }
+                "immutable_owner" => ConstraintToken::ExtensionImmutableOwner(Context::new(
+                    ident.span(),
+                    ConstraintExtensionImmutableOwner {
+                        immutable_owner: true,
+                    },
+                )),
                 _ => return Err(ParseError::new(ident.span(), "Invalid attribute")),
             }
         }
@@ -938,7 +936,12 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             }
         }
 
-        let token_account = match (&token_mint, &token_authority, &token_token_program, &extension_immutable_owner) {
+        let token_account = match (
+            &token_mint,
+            &token_authority,
+            &token_token_program,
+            &extension_immutable_owner,
+        ) {
             (None, None, None, None) => None,
             _ => Some(ConstraintTokenAccountGroup {
                 mint: token_mint.as_ref().map(|a| a.clone().into_inner().mint),
@@ -948,7 +951,9 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
                 token_program: token_token_program
                     .as_ref()
                     .map(|a| a.clone().into_inner().token_program),
-                immutable_owner: extension_immutable_owner.as_ref().map(|io| io.clone().into_inner().immutable_owner),
+                immutable_owner: extension_immutable_owner
+                    .as_ref()
+                    .map(|io| io.clone().into_inner().immutable_owner),
             }),
         };
 

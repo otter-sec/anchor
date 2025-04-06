@@ -707,7 +707,7 @@ fn generate_constraint_init_group(
                             };
                         }
 
-                                                
+
                         // Initialize the token account.
                         let cpi_program_id = #token_program.key();
                         let accounts = ::anchor_spl::token_interface::InitializeAccount3 {
@@ -1760,7 +1760,10 @@ impl<'a> OptionalCheckScope<'a> {
     }
 }
 
-fn generate_get_token_account_space(mint: &Expr, additional_extensions: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+fn generate_get_token_account_space(
+    mint: &Expr,
+    additional_extensions: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
     quote! {
         {
             let mint_info = #mint.to_account_info();
