@@ -71,6 +71,16 @@ pub struct CreateMintAccount<'info> {
         associated_token::authority = receiver,
     )]
     pub mint_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(
+        init,
+        payer = payer,
+        token::token_program = token_program,
+        token::mint = mint,
+        token::authority = receiver,
+        extensions::immutable_owner,
+    )]
+    pub mint_immutable_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
+
     /// CHECK: This account's data is a buffer of TLV data
     #[account(
         init,
@@ -192,6 +202,12 @@ pub struct CheckMintExtensionConstraints<'info> {
         extensions::pausable::authority = authority,
     )]
     pub mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(
+        token::mint = mint,
+        token::authority = authority,
+        extensions::immutable_owner,
+    )]
+    pub mint_immutable_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
 }
 
 #[derive(Accounts)]

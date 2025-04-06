@@ -623,6 +623,7 @@ fn generate_constraint_init_group(
             owner,
             mint,
             token_program,
+            immutable_owner,
         } => {
             let token_program = match token_program {
                 Some(t) => t.to_token_stream(),
@@ -636,17 +637,34 @@ fn generate_constraint_init_group(
             let token_program_optional_check = check_scope.generate_check(&token_program);
             let rent_optional_check = check_scope.generate_check(rent);
 
+            let immutable_owner_check = match immutable_owner {
+                Some(io) => check_scope.generate_check(io),
+                None => quote! {},
+            };
+
             let optional_checks = quote! {
                 #system_program_optional_check
                 #token_program_optional_check
                 #rent_optional_check
                 #owner_optional_check
                 #mint_optional_check
+                #immutable_owner_check
             };
 
             let payer_optional_check = check_scope.generate_check(payer);
 
-            let token_account_space = generate_get_token_account_space(mint);
+            let mut extensions = vec![];
+            if immutable_owner.is_some() {
+                extensions.push(quote! {::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::ImmutableOwner});
+            }
+
+            let extensions = if extensions.is_empty() {
+                quote! {Option::<&::anchor_spl::token_interface::ExtensionsVec>::None}
+            } else {
+                quote! {Option::<&::anchor_spl::token_interface::ExtensionsVec>::Some(&vec![#(#extensions),*])}
+            };
+
+            let token_account_space = generate_get_token_account_space(mint, &extensions);
 
             let create_account_or_fund_allocate_assign =
                 generate_create_account_or_fund_allocate_assign(
@@ -672,6 +690,24 @@ fn generate_constraint_init_group(
                         // Create the account with the system program.
                         #create_account_or_fund_allocate_assign
 
+                        // Initialize extensions.
+                        if let Some(extensions) = #extensions {
+                            for e in extensions {
+                                match e {
+                                    ::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::ImmutableOwner => {
+                                        ::anchor_spl::token_interface::immutable_owner_initialize(anchor_lang::context::CpiContext::new(#token_program.to_account_info(), ::anchor_spl::token_interface::ImmutableOwnerInitialize {
+                                            token_program_id: #token_program.to_account_info(),
+                                            token_account: #field.to_account_info(),
+                                        }))?;
+                                    },
+                                    // All extensions specified by the user should be implemented.
+                                    // If this line runs, it means there is a bug in the codegen.
+                                    _ => unimplemented!("{e:?}"),
+                                }
+                            };
+                        }
+
+                                                
                         // Initialize the token account.
                         let cpi_program_id = #token_program.key();
                         let accounts = ::anchor_spl::token_interface::InitializeAccount3 {
@@ -1390,11 +1426,25 @@ fn generate_constraint_token_account(
         }
         None => quote! {},
     };
+    let immutable_owner_check = match &c.immutable_owner {
+        Some(immutable_owner) => {
+            let immutable_owner_optional_check =
+                optional_check_scope.generate_check(immutable_owner);
+            quote! {
+                #immutable_owner_optional_check
+                if ::anchor_spl::token_interface::get_token_account_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::immutable_owner::ImmutableOwner>(#account_ref).is_err() {
+                    return Err(anchor_lang::error::ErrorCode::ConstraintTokenAccountImmutableOwnerExtension.into());
+                }
+            }
+        }
+        None => quote! {},
+    };
     quote! {
         {
             #authority_check
             #mint_check
             #token_program_check
+            #immutable_owner_check
         }
     }
 }
@@ -1710,7 +1760,7 @@ impl<'a> OptionalCheckScope<'a> {
     }
 }
 
-fn generate_get_token_account_space(mint: &Expr) -> proc_macro2::TokenStream {
+fn generate_get_token_account_space(mint: &Expr, additional_extensions: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     quote! {
         {
             let mint_info = #mint.to_account_info();
@@ -1720,8 +1770,11 @@ fn generate_get_token_account_space(mint: &Expr) -> proc_macro2::TokenStream {
                 let mint_data = mint_info.try_borrow_data()?;
                 let mint_state = StateWithExtensions::<Mint>::unpack(&mint_data)?;
                 let mint_extensions = mint_state.get_extension_types()?;
-                let required_extensions = ExtensionType::get_required_init_account_extensions(&mint_extensions);
-                ExtensionType::try_calculate_account_len::<Account>(&required_extensions)?
+                let mut required_extensions = ExtensionType::get_required_init_account_extensions(&mint_extensions);
+                if let Some(additional_extensions) = #additional_extensions {
+                    required_extensions.extend_from_slice(additional_extensions);
+                }
+                ExtensionType::try_calculate_account_len::<Account>(&mint_extensions)?
             } else {
                 ::anchor_spl::token::TokenAccount::LEN
             }
