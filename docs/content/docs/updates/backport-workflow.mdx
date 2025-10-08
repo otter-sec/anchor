@@ -1,0 +1,203 @@
+---
+title: Backport Workflow
+description: Anchor - Lightweight Backport Workflow Guide
+---
+
+A backport is the process of taking a change made on `main` (or a newer branch)
+and applying it to older, still-supported release branches. This allows
+maintaining multiple release versions in parallel for users who cannot
+immediately upgrade to the latest release.
+
+---
+
+## When to Backport
+
+Backport the following types of changes:
+
+- **Security fixes** affecting multiple supported versions
+- **Bug fixes** that resolve user-facing issues
+- **Critical documentation** or configuration updates
+- **Low-risk performance improvements** (occasionally)
+
+**Not backported:** experimental features, breaking changes, or large refactors.
+
+All changes should first be merged to `main` before being backported.
+
+---
+
+## Workflow
+
+### 1. Identify and Label
+
+All pull requests to `main` should be labeled during review to indicate whether
+they are backportable.
+
+**Labeling Convention:**
+
+- Format: `backport-X.Y` where `X.Y` is the target release version
+- Examples: `backport-0.30`, `backport-0.29`, `backport-0.28`
+- Apply multiple labels if backporting to several versions
+
+During PR review or immediately after merge, maintainers decide if the change
+should be applied to older release branches and add the appropriate labels.
+
+### 2. Create Backport PR
+
+#### Automated Backport (Recommended)
+
+A GitHub Action or bot automatically cherry-picks commits when it detects a
+`backport-X.Y` label on merged PRs. If conflicts occur, it notifies maintainers
+to handle manually.
+
+#### Manual Cherry-Pick
+
+```bash
+# Fetch latest changes
+git fetch origin
+
+# Create backport branch from target release
+git checkout -b backport-1234-to-v0.30.x origin/v0.30.x
+
+# Cherry-pick the commit(s)
+git cherry-pick <commit-sha>
+
+# If multiple related commits
+git cherry-pick <commit-sha-1> <commit-sha-2>
+
+# If conflicts occur, resolve them
+git status  # Check conflicted files
+# Edit files to resolve conflicts
+git add <resolved-files>
+git cherry-pick --continue
+
+# Push the backport branch
+git push origin backport-1234-to-v0.30.x
+```
+
+**Branch naming:** `backport-<issue-number>-to-<target-version>`
+
+**PR title:** `[Backport v0.30.x] Original PR Title`
+
+### 3. Review & Merge
+
+The backport PR should be reviewed with particular focus on:
+
+- **Correctness**: Verify the fix works with the older codebase
+- **No feature creep**: Ensure only the necessary fix is included
+- **Dependencies**: Avoid unintended dependency bumps or incompatibilities
+- **Tests**: All CI checks must pass on the target branch
+- **Breaking changes**: Ensure no breaking changes are introduced
+
+Once approved, merge into the release branch using the same merge strategy as
+the original PR.
+
+### 4. Release Management
+
+Backports accumulate on release branches and are included in patch releases
+(e.g., `v0.30.3`). Critical security fixes may trigger immediate releases.
+
+Update the CHANGELOG and communicate which versions received which fixes.
+
+---
+
+## Examples
+
+### Example 1: Automated Security Fix Backport
+
+A security vulnerability is discovered in account validation:
+
+1. **Fix developed**: PR #1234 opened on `main`
+2. **Merged**: PR merged with commit `abc123`
+3. **Labeled**: Maintainer adds `backport-0.30` and `backport-0.29`
+4. **Bot action**: Automated backport PRs created for both versions
+5. **Review**: Maintainers review for correctness on older branches
+6. **Merge**: Both backport PRs merged
+7. **Release**: Included in next `v0.30.3` and `v0.29.5` patch releases
+
+### Example 2: Manual Backport with Conflicts
+
+Bug fix in IDL generation needs backporting to v0.30.x:
+
+```bash
+# Original PR #5678 merged to main with commit def456
+git fetch origin
+git checkout -b backport-5678-to-v0.30.x origin/v0.30.x
+git cherry-pick def456
+
+# Conflicts occur due to code differences
+# CONFLICT (content): Merge conflict in idl/src/build.rs
+
+# Resolve conflicts
+vim idl/src/build.rs  # Edit to resolve
+git add idl/src/build.rs
+git cherry-pick --continue
+
+# Test the changes
+cargo test --package anchor-idl
+
+# Push and create PR
+git push origin backport-5678-to-v0.30.x
+# Open PR: "[Backport v0.30.x] Fix IDL generation for nested types"
+```
+
+### Example 3: Multiple Related Commits
+
+Feature flag fix requires backporting multiple commits:
+
+```bash
+# Original PR #9012 has 3 related commits
+git checkout -b backport-9012-to-v0.30.x origin/v0.30.x
+
+# Cherry-pick all related commits together
+git cherry-pick abc123 def456 ghi789
+
+# Verify all changes are included
+git log -3
+
+# Push and create PR
+git push origin backport-9012-to-v0.30.x
+```
+
+---
+
+## Best Practices
+
+### For Contributors
+
+- Test backported changes on the actual target release branch
+- Keep changes minimal; avoid refactoring unrelated code
+- Document any modifications needed for compatibility in PR description
+- Update tests if they differ between versions
+
+### For Maintainers
+
+- Label PRs during review, not after release
+- Track backports to ensure nothing is missed
+- Plan patch releases shortly after critical backports
+- Communicate backported fixes in release notes
+
+---
+
+## Notes
+
+- **Keep backports small and isolated**: One issue per backport
+- **Prefer multiple small backports**: Better than one large cumulative backport
+- **Test thoroughly**: Always verify on the target version
+- **Document changes**: Update CHANGELOG for the target version
+- **Communicate clearly**: Users should understand which versions have which fixes
+
+---
+
+## Benefits
+
+This lightweight workflow provides:
+
+- **Stability**: Long-term supported branches remain stable and secure
+- **Minimal overhead**: Simple process with clear guidelines
+- **Traceability**: Labels and PR history provide clear visibility
+- **Flexibility**: Supports both automated and manual approaches
+
+---
+
+For questions, ask in Anchor Discord;
+#contributors channel or tag maintainers in the PR.
