@@ -5560,12 +5560,11 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
                     .map_err(|e| anyhow::format_err!("{}", e.to_string()))
             };
 
-            let result = if has_tsx {
+            if has_tsx {
                 run_ts_command("tsx")?
             } else {
                 run_ts_command("ts-node")?
-            };
-            result
+            }
         } else {
             let deploy_js = deploy_ts.with_extension("js");
             let module_path = migrations_dir.join(&deploy_js);
