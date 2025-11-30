@@ -6345,18 +6345,6 @@ fn get_node_dns_option() -> &'static str {
     }
 }
 
-fn get_node_strip_types_option() -> &'static str {
-    let Ok(version) = get_node_version() else {
-        return "";
-    };
-    let req = VersionReq::parse(">=20.0.0").unwrap();
-    if req.matches(&version) {
-        "--no-experimental-strip-types"
-    } else {
-        ""
-    }
-}
-
 fn build_ts_command(
     pkg_manager: &PackageManager,
     bin: &str,
