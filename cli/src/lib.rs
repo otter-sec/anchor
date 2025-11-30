@@ -5557,7 +5557,7 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
                     .stdout(Stdio::inherit())
                     .stderr(Stdio::inherit())
                     .output()
-                    .map_err(|e| anyhow::format_err!("{}", e.to_string()))
+                    .map_err(|e| anyhow::format_err!("{}", e))
             };
 
             if has_tsx {
