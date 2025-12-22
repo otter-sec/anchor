@@ -538,7 +538,10 @@ mod legacy {
                     generics: args.into_iter().map(Into::into).collect(),
                 },
                 IdlType::Option(ty) => t::IdlType::Option(ty.into()),
-                IdlType::Vec(ty) => t::IdlType::Vec(ty.into()),
+                IdlType::Vec(ty) => {
+                    let inner_ty: t::IdlType = (*ty).into();
+                    t::IdlType::Vec(t::IdlVec::Simple(Box::new(inner_ty)))
+                }
                 IdlType::Array(ty, len) => t::IdlType::Array(ty.into(), t::IdlArrayLen::Value(len)),
                 IdlType::GenericLenArray(ty, generic) => {
                     t::IdlType::Array(ty.into(), t::IdlArrayLen::Generic(generic))

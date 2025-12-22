@@ -85,7 +85,10 @@ pub fn convert_idl_type_to_str(ty: &IdlType, is_const: bool) -> Result<String, s
         IdlType::String => if is_const { "&str" } else { "String" }.into(),
         IdlType::Pubkey => "Pubkey".into(),
         IdlType::Option(ty) => format!("Option<{}>", convert_idl_type_to_str(ty, is_const)?),
-        IdlType::Vec(ty) => format!("Vec<{}>", convert_idl_type_to_str(ty, is_const)?),
+        IdlType::Vec(vec) => format!(
+            "Vec<{}>",
+            convert_idl_type_to_str(vec.inner_type(), is_const)?
+        ),
         IdlType::Array(ty, len) => format!(
             "[{}; {}]",
             convert_idl_type_to_str(ty, is_const)?,
@@ -430,7 +433,7 @@ pub fn can_derive_debug_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
 pub fn can_derive_default_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
     match ty {
         IdlType::Option(inner) => can_derive_default_ty(inner, ty_defs),
-        IdlType::Vec(inner) => can_derive_default_ty(inner, ty_defs),
+        IdlType::Vec(vec) => can_derive_default_ty(vec.inner_type(), ty_defs),
         IdlType::Array(inner, len) => {
             if !can_derive_default_ty(inner, ty_defs) {
                 return false;

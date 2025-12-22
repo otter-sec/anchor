@@ -198,7 +198,11 @@ class InstructionFormatter {
       return `COption<${this.formatIdlType(idlType.coption)}>`;
     }
     if ("vec" in idlType) {
-      return `Vec<${this.formatIdlType(idlType.vec)}>`;
+      const vecValue = idlType.vec;
+      const innerType = typeof vecValue === "string" || !("type" in vecValue)
+        ? (typeof vecValue === "string" ? vecValue : vecValue as any)
+        : vecValue.type;
+      return `Vec<${this.formatIdlType(innerType)}>`;
     }
     if ("array" in idlType) {
       return `Array<${idlType.array[0]}; ${idlType.array[1]}>`;
@@ -235,12 +239,16 @@ class InstructionFormatter {
       return data.toString();
     }
     if ("vec" in idlField.type) {
+      const vecValue = (<IdlTypeVec>idlField.type).vec;
+      const innerType = typeof vecValue === "string" || !("type" in vecValue)
+        ? (typeof vecValue === "string" ? vecValue : vecValue as any)
+        : vecValue.type;
       return (
         "[" +
         (<Array<IdlField>>data)
           .map((d) =>
             this.formatIdlData(
-              { name: "", type: (<IdlTypeVec>idlField.type).vec },
+              { name: "", type: innerType },
               d,
               types
             )
