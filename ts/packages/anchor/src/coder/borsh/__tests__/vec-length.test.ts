@@ -92,7 +92,9 @@ describe("Vec with custom length discriminators", () => {
     const encoded = await coder.encode("TestAccount", account);
     const decoded = coder.decode("TestAccount", encoded);
 
-    expect(decoded.prices.map((x: BN) => x.toNumber())).toEqual([100, 200, 300]);
+    expect(decoded.prices.map((x: BN) => x.toNumber())).toEqual([
+      100, 200, 300,
+    ]);
   });
 
   it("should encode/decode Vec with u32 length (default)", async () => {
@@ -197,10 +199,9 @@ describe("Vec with custom length discriminators", () => {
     const encoded = await coder.encode("TestAccount", account);
     const decoded = coder.decode("TestAccount", encoded);
 
-    expect(decoded.feeds.map((f: any) => ({ price: f.price.toNumber() }))).toEqual([
-      { price: 100 },
-      { price: 200 },
-    ]);
+    expect(
+      decoded.feeds.map((f: any) => ({ price: f.price.toNumber() }))
+    ).toEqual([{ price: 100 }, { price: 200 }]);
   });
 
   it("should verify u8 length prefix is used", () => {
@@ -245,4 +246,3 @@ describe("Vec with custom length discriminators", () => {
     expect(encoded.length).toBe(4 + 24); // 4 bytes length + 24 bytes data
   });
 });
-

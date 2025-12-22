@@ -752,9 +752,12 @@ export class IdlCoder {
 
       if ("vec" in type) {
         const vecValue = type.vec;
-        const innerType = typeof vecValue === "string" || !("type" in vecValue) 
-          ? (typeof vecValue === "string" ? vecValue : vecValue as any)
-          : vecValue.type;
+        const innerType =
+          typeof vecValue === "string" || !("type" in vecValue)
+            ? typeof vecValue === "string"
+              ? vecValue
+              : (vecValue as any)
+            : vecValue.type;
         const args = IdlCoder.resolveGenericArgs({
           type: innerType,
           typeDef,
