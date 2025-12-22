@@ -264,18 +264,13 @@ pub enum IdlArrayLen {
     Value(usize),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum IdlVecLength {
     U8,
     U16,
+    #[default]
     U32,
-}
-
-impl Default for IdlVecLength {
-    fn default() -> Self {
-        IdlVecLength::U32
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
