@@ -25,5 +25,5 @@ docker-target
 test-keypair.json
 tsconfig.tsbuildinfo
 .vscode
-.yarn/
-.yarnrc.yml
+ts/.yarn/
+ts/.yarnrc.yml

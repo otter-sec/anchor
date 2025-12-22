@@ -458,7 +458,7 @@ pub fn gen_idl_type(
             };
             let (inner, defined) = gen_idl_type(arg, generic_params)?;
             Ok((
-                quote! { #idl::IdlType::Vec(#idl::IdlVec::Simple(Box::new(#inner))) },
+                quote! { #idl::IdlType::Vec(Box::new(#inner)) },
                 defined,
             ))
         }

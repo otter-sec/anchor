@@ -13,7 +13,7 @@ use {
     },
     anchor_lang_idl::{
         convert::{convert_idl, convert_idl_to_legacy},
-        types::{Idl, IdlArrayLen, IdlDefinedFields, IdlType, IdlTypeDefTy, IdlVecLength},
+        types::{Idl, IdlArrayLen, IdlDefinedFields, IdlSerialization, IdlType, IdlTypeDefTy},
     },
     anyhow::{anyhow, bail, Context, Result},
     cargo_metadata::{DependencyKind, MetadataCommand},
@@ -51,7 +51,6 @@ use {
         sync::{LazyLock, OnceLock},
     },
 };
-
 mod abs_path;
 mod account;
 mod checks;
@@ -3708,14 +3707,16 @@ fn deserialize_idl_defined_type_to_json(
     defined_type_name: &str,
     data: &mut &[u8],
 ) -> Result<JsonValue, anyhow::Error> {
-    let defined_type = &idl
+    let type_def = idl
         .accounts
         .iter()
         .find(|acc| acc.name == defined_type_name)
         .and_then(|acc| idl.types.iter().find(|ty| ty.name == acc.name))
         .or_else(|| idl.types.iter().find(|ty| ty.name == defined_type_name))
-        .ok_or_else(|| anyhow!("Type `{}` not found in IDL.", defined_type_name))?
-        .ty;
+        .ok_or_else(|| anyhow!("Type `{}` not found in IDL.", defined_type_name))?;
+
+    let serialization = &type_def.serialization;
+    let defined_type = &type_def.ty;
 
     let mut deserialized_fields = Map::new();
 
@@ -3727,14 +3728,24 @@ fn deserialize_idl_defined_type_to_json(
                         for field in fields {
                             deserialized_fields.insert(
                                 field.name.clone(),
-                                deserialize_idl_type_to_json(&field.ty, data, idl)?,
+                                deserialize_idl_type_to_json(
+                                    &field.ty,
+                                    data,
+                                    idl,
+                                    Some(serialization),
+                                )?,
                             );
                         }
                     }
                     IdlDefinedFields::Tuple(fields) => {
                         let mut values = Vec::new();
                         for field in fields {
-                            values.push(deserialize_idl_type_to_json(field, data, idl)?);
+                            values.push(deserialize_idl_type_to_json(
+                                field,
+                                data,
+                                idl,
+                                Some(serialization),
+                            )?);
                         }
                         deserialized_fields
                             .insert(defined_type_name.to_owned(), JsonValue::Array(values));
@@ -3758,7 +3769,12 @@ fn deserialize_idl_defined_type_to_json(
                         for field in fields {
                             values.insert(
                                 field.name.clone(),
-                                deserialize_idl_type_to_json(&field.ty, data, idl)?,
+                                deserialize_idl_type_to_json(
+                                    &field.ty,
+                                    data,
+                                    idl,
+                                    Some(serialization),
+                                )?,
                             );
                         }
                         value = JsonValue::Object(values);
@@ -3766,7 +3782,12 @@ fn deserialize_idl_defined_type_to_json(
                     IdlDefinedFields::Tuple(fields) => {
                         let mut values = Vec::new();
                         for field in fields {
-                            values.push(deserialize_idl_type_to_json(field, data, idl)?);
+                            values.push(deserialize_idl_type_to_json(
+                                field,
+                                data,
+                                idl,
+                                Some(serialization),
+                            )?);
                         }
                         value = JsonValue::Array(values);
                     }
@@ -3776,7 +3797,7 @@ fn deserialize_idl_defined_type_to_json(
             deserialized_fields.insert(variant.name.clone(), value);
         }
         IdlTypeDefTy::Type { alias } => {
-            return deserialize_idl_type_to_json(alias, data, idl);
+            return deserialize_idl_type_to_json(alias, data, idl, Some(serialization));
         }
     }
 
@@ -3788,6 +3809,7 @@ fn deserialize_idl_type_to_json(
     idl_type: &IdlType,
     data: &mut &[u8],
     parent_idl: &Idl,
+    serialization: Option<&IdlSerialization>,
 ) -> Result<JsonValue, anyhow::Error> {
     if data.is_empty() {
         return Err(anyhow::anyhow!("Unable to parse from empty bytes"));
@@ -3844,7 +3866,12 @@ fn deserialize_idl_type_to_json(
                 let mut array_data: Vec<JsonValue> = Vec::with_capacity(*size);
 
                 for _ in 0..*size {
-                    array_data.push(deserialize_idl_type_to_json(ty, data, parent_idl)?);
+                    array_data.push(deserialize_idl_type_to_json(
+                        ty,
+                        data,
+                        parent_idl,
+                        serialization,
+                    )?);
                 }
 
                 JsonValue::Array(array_data)
@@ -3858,25 +3885,36 @@ fn deserialize_idl_type_to_json(
             if is_present == 0 {
                 JsonValue::String("None".to_string())
             } else {
-                deserialize_idl_type_to_json(ty, data, parent_idl)?
+                deserialize_idl_type_to_json(ty, data, parent_idl, serialization)?
             }
         }
-        IdlType::Vec(vec) => {
-            let size: usize = match vec.length() {
-                IdlVecLength::U8 => <u8 as AnchorDeserialize>::deserialize(data)?.into(),
-                IdlVecLength::U16 => <u16 as AnchorDeserialize>::deserialize(data)?.into(),
-                IdlVecLength::U32 => <u32 as AnchorDeserialize>::deserialize(data)?
+        IdlType::Vec(ty) => {
+            // Use serialization format from parent type definition, or default to Borsh (u32)
+            let serialization = serialization.unwrap_or(&IdlSerialization::Borsh);
+            let vec_length_bytes = serialization.vec_length_bytes();
+
+            let size: usize = match vec_length_bytes {
+                1 => <u8 as AnchorDeserialize>::deserialize(data)?.into(),
+                2 => <u16 as AnchorDeserialize>::deserialize(data)?.into(),
+                4 => <u32 as AnchorDeserialize>::deserialize(data)?
                     .try_into()
                     .unwrap(),
+                _ => {
+                    return Err(anyhow!(
+                        "Unsupported Vec length prefix size: {} bytes",
+                        vec_length_bytes
+                    ))
+                }
             };
 
             let mut vec_data: Vec<JsonValue> = Vec::with_capacity(size);
 
             for _ in 0..size {
                 vec_data.push(deserialize_idl_type_to_json(
-                    vec.inner_type(),
+                    ty,
                     data,
                     parent_idl,
+                    Some(serialization),
                 )?);
             }
 
@@ -3887,6 +3925,8 @@ fn deserialize_idl_type_to_json(
             generics: _generics,
         } => {
             // TODO: Generics
+            // For defined types, we'll look up their serialization format in deserialize_idl_defined_type_to_json
+            // Pass None for serialization since it will be looked up from the type definition
             deserialize_idl_defined_type_to_json(parent_idl, name, data)?
         }
         IdlType::Generic(generic) => json!(generic),

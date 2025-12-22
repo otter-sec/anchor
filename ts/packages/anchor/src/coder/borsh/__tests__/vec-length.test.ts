@@ -17,16 +17,14 @@ describe("Vec with custom length discriminators", () => {
       types: [
         {
           name: "TestAccount",
+          serialization: "borshu8",
           type: {
             kind: "struct",
             fields: [
               {
                 name: "items",
                 type: {
-                  vec: {
-                    type: "u64",
-                    length: "u8",
-                  },
+                  vec: "u64",
                 },
               },
             ],
@@ -64,16 +62,14 @@ describe("Vec with custom length discriminators", () => {
       types: [
         {
           name: "TestAccount",
+          serialization: "borshu16",
           type: {
             kind: "struct",
             fields: [
               {
                 name: "prices",
                 type: {
-                  vec: {
-                    type: "u64",
-                    length: "u16",
-                  },
+                  vec: "u64",
                 },
               },
             ],
@@ -167,6 +163,7 @@ describe("Vec with custom length discriminators", () => {
         },
         {
           name: "TestAccount",
+          serialization: "borshu16",
           type: {
             kind: "struct",
             fields: [
@@ -174,12 +171,9 @@ describe("Vec with custom length discriminators", () => {
                 name: "feeds",
                 type: {
                   vec: {
-                    type: {
-                      defined: {
-                        name: "PriceFeed",
-                      },
+                    defined: {
+                      name: "PriceFeed",
                     },
-                    length: "u16",
                   },
                 },
               },

@@ -130,6 +130,8 @@ export type IdlTypeDef = {
 
 export type IdlSerialization =
   | "borsh"
+  | "borshu8"
+  | "borshu16"
   | "bytemuck"
   | "bytemuckunsafe"
   | { custom: string };
@@ -245,11 +247,8 @@ export type IdlTypeCOption = {
   coption: IdlType;
 };
 
-// Vec type: "vec" field can be:
-// 1. Simple string: "vec": "u64" (backward compatible, defaults to u32 length)
-// 2. Object: "vec": { "type": "u64", "length": "u8" }
 export type IdlTypeVec = {
-  vec: IdlType | { type: IdlType; length?: "u8" | "u16" | "u32" };
+  vec: IdlType;
 };
 
 export type IdlTypeArray = {

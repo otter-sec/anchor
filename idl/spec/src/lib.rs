@@ -192,6 +192,8 @@ pub struct IdlTypeDef {
 pub enum IdlSerialization {
     #[default]
     Borsh,
+    BorshU8,
+    BorshU16,
     Bytemuck,
     BytemuckUnsafe,
     Custom(String),
@@ -264,41 +266,15 @@ pub enum IdlArrayLen {
     Value(usize),
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum IdlVecLength {
-    U8,
-    U16,
-    #[default]
-    U32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(untagged)]
-pub enum IdlVec {
-    /// Simple format: "vec": "u64" (backward compatible, defaults to u32 length)
-    Simple(Box<IdlType>),
-    /// Object format: "vec": { "type": "u64", "length": "u8" }
-    WithLength {
-        #[serde(rename = "type")]
-        ty: Box<IdlType>,
-        #[serde(default, skip_serializing_if = "is_default")]
-        length: IdlVecLength,
-    },
-}
-
-impl IdlVec {
-    pub fn inner_type(&self) -> &IdlType {
+impl IdlSerialization {
+    /// Returns the number of bytes used for Vec length prefix in this serialization format.
+    pub fn vec_length_bytes(&self) -> usize {
         match self {
-            IdlVec::Simple(ty) => ty,
-            IdlVec::WithLength { ty, .. } => ty,
-        }
-    }
-
-    pub fn length(&self) -> IdlVecLength {
-        match self {
-            IdlVec::Simple(_) => IdlVecLength::U32,
-            IdlVec::WithLength { length, .. } => length.clone(),
+            IdlSerialization::Borsh => 4,
+            IdlSerialization::BorshU8 => 1,
+            IdlSerialization::BorshU16 => 2,
+            IdlSerialization::Bytemuck | IdlSerialization::BytemuckUnsafe => 8,
+            IdlSerialization::Custom(_) => 4,
         }
     }
 }
@@ -338,7 +314,7 @@ pub enum IdlType {
     String,
     Pubkey,
     Option(Box<IdlType>),
-    Vec(IdlVec),
+    Vec(Box<IdlType>),
     Array(Box<IdlType>, IdlArrayLen),
     Defined {
         name: String,
@@ -395,7 +371,7 @@ impl FromStr for IdlType {
                             .strip_suffix('>')
                             .ok_or_else(|| anyhow!("Invalid Vec syntax: missing '>'"))?,
                     )?;
-                    return Ok(IdlType::Vec(IdlVec::Simple(Box::new(inner_ty))));
+                    return Ok(IdlType::Vec(Box::new(inner_ty)));
                 }
 
                 if s.starts_with('[') {
@@ -510,7 +486,7 @@ mod tests {
     fn vector() {
         assert_eq!(
             IdlType::from_str("Vec<bool>").unwrap(),
-            IdlType::Vec(IdlVec::Simple(Box::new(IdlType::Bool)))
+            IdlType::Vec(Box::new(IdlType::Bool))
         )
     }
 
@@ -668,85 +644,15 @@ mod tests {
     }
 
     #[test]
-    fn vec_with_length_serialization() {
-        // Test serialization of Vec with custom length
-        let vec_type = IdlType::Vec(IdlVec::WithLength {
-            ty: Box::new(IdlType::U64),
-            length: IdlVecLength::U8,
-        });
-
-        let json = serde_json::to_string(&vec_type).unwrap();
-        let deserialized: IdlType = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(vec_type, deserialized);
-    }
-
-    #[test]
-    fn vec_simple_format_backward_compatible() {
-        let vec_type = IdlType::Vec(IdlVec::Simple(Box::new(IdlType::U64)));
-
-        assert_eq!(vec_type, IdlType::from_str("Vec<u64>").unwrap());
-        assert_eq!(serde_json::to_string(&vec_type).unwrap(), r#"{"vec":"u64"}"#);
-
-        if let IdlType::Vec(vec) = vec_type {
-            assert_eq!(vec.length(), IdlVecLength::U32);
-        } else {
-            panic!("Expected Vec type");
-        }
-    }
-
-    #[test]
-    fn vec_with_length_deserialization() {
-        let json = r#"{"vec":{"type":"u64","length":"u8"}}"#;
-        let vec_type: IdlType = serde_json::from_str(json).unwrap();
-
-        if let IdlType::Vec(vec) = vec_type {
-            assert_eq!(vec.inner_type(), &IdlType::U64);
-            assert_eq!(vec.length(), IdlVecLength::U8);
-        } else {
-            panic!("Expected Vec type");
-        }
-    }
-
-    #[test]
-    fn vec_simple_format_deserialization() {
-        let json = r#"{"vec":"u64"}"#;
-        let vec_type: IdlType = serde_json::from_str(json).unwrap();
-
-        if let IdlType::Vec(vec) = vec_type {
-            assert_eq!(vec.inner_type(), &IdlType::U64);
-            assert_eq!(vec.length(), IdlVecLength::U32);
-        } else {
-            panic!("Expected Vec type");
-        }
-    }
-
-    #[test]
-    fn vec_with_u16_length() {
-        let vec_type = IdlType::Vec(IdlVec::WithLength {
-            ty: Box::new(IdlType::U64),
-            length: IdlVecLength::U16,
-        });
-
-        let json = serde_json::to_string(&vec_type).unwrap();
-        let deserialized: IdlType = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(vec_type, deserialized);
-    }
-
-    #[test]
-    fn vec_nested_types() {
-        let vec_type = IdlType::Vec(IdlVec::WithLength {
-            ty: Box::new(IdlType::Defined {
-                name: "PriceFeed".into(),
-                generics: vec![],
-            }),
-            length: IdlVecLength::U16,
-        });
-
-        let json = serde_json::to_string(&vec_type).unwrap();
-        let deserialized: IdlType = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(vec_type, deserialized);
+    fn vec_serialization_format() {
+        // Test that IdlSerialization provides correct Vec length bytes
+        assert_eq!(IdlSerialization::Borsh.vec_length_bytes(), 4);
+        assert_eq!(IdlSerialization::BorshU8.vec_length_bytes(), 1);
+        assert_eq!(IdlSerialization::BorshU16.vec_length_bytes(), 2);
+        assert_eq!(IdlSerialization::Bytemuck.vec_length_bytes(), 8);
+        assert_eq!(
+            IdlSerialization::Custom("test".into()).vec_length_bytes(),
+            4
+        );
     }
 }

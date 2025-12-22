@@ -8,6 +8,7 @@ import {
   Idl,
   handleDefinedFields,
   IdlArrayLen,
+  IdlSerialization,
 } from "../../idl.js";
 import { IdlError } from "../../error.js";
 
@@ -66,15 +67,22 @@ export class IdlCoder {
   public static fieldLayout(
     field: PartialField,
     types: IdlTypeDef[] = [],
-    genericArgs?: IdlGenericArg[] | null
+    genericArgs?: IdlGenericArg[] | null,
+    serialization?: IdlSerialization
   ): Layout {
-    return IdlCoder.fieldLayoutWithContext(field, types, genericArgs);
+    return IdlCoder.fieldLayoutWithContext(
+      field,
+      types,
+      genericArgs,
+      serialization
+    );
   }
 
   private static fieldLayoutWithContext(
     field: PartialField,
     types: IdlTypeDef[] = [],
     genericArgs?: IdlGenericArg[] | null,
+    serialization?: IdlSerialization,
     definedTypeStack: string[] = [],
     allowRecursive = false
   ): Layout {
@@ -141,6 +149,7 @@ export class IdlCoder {
               { type: field.type.option },
               types,
               genericArgs,
+              serialization,
               definedTypeStack,
               true
             ),
@@ -148,27 +157,25 @@ export class IdlCoder {
           );
         }
         if ("vec" in field.type) {
-          const vecValue = field.type.vec;
-          const hasCustomLength =
-            typeof vecValue !== "string" && "type" in vecValue;
-          const innerType = hasCustomLength ? vecValue.type : vecValue;
-          const layout = IdlCoder.fieldLayoutWithContext(
-            { type: innerType },
-            types,
-            genericArgs,
-            definedTypeStack,
-            true
+          const lengthType =
+            serialization === "borshu8"
+              ? "u8"
+              : serialization === "borshu16"
+                ? "u16"
+                : "u32";
+
+          return borsh.vecWithLength(
+            IdlCoder.fieldLayoutWithContext(
+              { type: field.type.vec },
+              types,
+              genericArgs,
+              serialization,
+              definedTypeStack,
+              true
+            ),
+            lengthType,
+            fieldName
           );
-
-          if (hasCustomLength) {
-            return borsh.vecWithLength(
-              layout,
-              vecValue.length ?? "u32",
-              fieldName
-            );
-          }
-
-          return borsh.vec(layout, fieldName);
         }
         if ("array" in field.type) {
           let [type, len] = field.type.array;
@@ -179,6 +186,7 @@ export class IdlCoder {
               { type },
               types,
               genericArgs,
+              serialization,
               definedTypeStack,
               allowRecursive
             ),
@@ -234,6 +242,7 @@ export class IdlCoder {
             { ...field, type: genericArg.type },
             types,
             undefined,
+            serialization,
             definedTypeStack,
             allowRecursive
           );
@@ -301,6 +310,7 @@ export class IdlCoder {
                 f,
                 types,
                 genArgs,
+                typeDef.serialization,
                 typeStack
               );
             }),
@@ -317,6 +327,7 @@ export class IdlCoder {
                 { name: i.toString(), type: f },
                 types,
                 genArgs,
+                typeDef.serialization,
                 typeStack
               );
             })
@@ -343,6 +354,7 @@ export class IdlCoder {
                   f,
                   types,
                   genArgs,
+                  typeDef.serialization,
                   typeStack
                 );
               }),
@@ -359,6 +371,7 @@ export class IdlCoder {
                   { name: i.toString(), type: f },
                   types,
                   genArgs,
+                  typeDef.serialization,
                   typeStack
                 );
               })
@@ -381,6 +394,7 @@ export class IdlCoder {
           { type: typeDef.type.alias, name },
           types,
           genericArgs,
+          typeDef.serialization,
           typeStack
         );
       }
