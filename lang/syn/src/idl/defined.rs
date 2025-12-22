@@ -457,10 +457,7 @@ pub fn gen_idl_type(
                 _ => (),
             };
             let (inner, defined) = gen_idl_type(arg, generic_params)?;
-            Ok((
-                quote! { #idl::IdlType::Vec(Box::new(#inner)) },
-                defined,
-            ))
+            Ok((quote! { #idl::IdlType::Vec(Box::new(#inner)) }, defined))
         }
         syn::Type::Path(path) if the_only_segment_is(path, "Box") => {
             let segment = get_first_segment(path);
