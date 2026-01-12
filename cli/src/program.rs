@@ -39,9 +39,11 @@ use {
     solana_transaction::Transaction,
     std::{
         collections::{BTreeMap, HashSet},
+        ffi::OsString,
         fs::{self, File},
-        io::Write,
+        io::{ErrorKind, Write},
         path::{Path, PathBuf},
+        process::{Command as ProcessCommand, Stdio},
         sync::Arc,
         thread,
         time::Duration,
@@ -421,6 +423,7 @@ pub fn process_deploy(
     use_rpc: bool,
     verifiable: bool,
     no_idl: bool,
+    security_metadata: bool,
     make_final: bool,
     solana_args: Vec<String>,
 ) -> Result<()> {
@@ -437,6 +440,7 @@ pub fn process_deploy(
             max_len,
             use_rpc,
             no_idl,
+            security_metadata,
             make_final,
             solana_args,
         );
@@ -487,6 +491,7 @@ pub fn process_deploy(
             use_rpc,
             verifiable,
             no_idl,
+            security_metadata,
             make_final,
             solana_args,
         );
@@ -504,6 +509,7 @@ pub fn process_deploy(
         max_len,
         use_rpc,
         no_idl,
+        security_metadata,
         make_final,
         solana_args,
     )
@@ -518,6 +524,7 @@ fn deploy_workspace(
     use_rpc: bool,
     verifiable: bool,
     no_idl: bool,
+    security_metadata: bool,
     make_final: bool,
     solana_args: Vec<String>,
 ) -> Result<()> {
@@ -562,6 +569,7 @@ fn deploy_workspace(
             None, // max_len
             use_rpc,
             no_idl,
+            security_metadata,
             make_final,
             solana_args.clone(),
         )?;
@@ -584,6 +592,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             max_len,
             use_rpc,
             no_idl,
+            security_metadata,
             make_final,
             solana_args,
         } => process_deploy(
@@ -598,6 +607,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             use_rpc,
             false, // verifiable
             no_idl,
+            security_metadata,
             make_final,
             solana_args,
         ),
@@ -713,6 +723,95 @@ fn get_payer_keypair(
     }
 }
 
+fn security_metadata_cli_command() -> OsString {
+    std::env::var_os("ANCHOR_PROGRAM_METADATA_CLI")
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| OsString::from("program-metadata"))
+}
+
+fn security_metadata_path(config: Option<&WithPath<Config>>) -> Result<PathBuf> {
+    let path = match config {
+        Some(cfg) => cfg
+            .path()
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("security.json"),
+        None => std::env::current_dir()?.join("security.json"),
+    };
+
+    let metadata = fs::metadata(&path).map_err(|err| match err.kind() {
+        ErrorKind::NotFound => anyhow!(
+            "`--security-metadata` was requested but `{}` was not found",
+            path.display()
+        ),
+        _ => anyhow!("Failed to inspect `{}`: {}", path.display(), err),
+    })?;
+
+    if !metadata.is_file() {
+        bail!(
+            "`--security-metadata` expected `{}` to be a file",
+            path.display()
+        );
+    }
+
+    path.canonicalize().map_err(|err| {
+        anyhow!(
+            "Failed to canonicalize security metadata path `{}`: {}",
+            path.display(),
+            err
+        )
+    })
+}
+
+fn upload_security_metadata(
+    cfg_override: &ConfigOverride,
+    config: Option<&WithPath<Config>>,
+    program_id: Pubkey,
+    upgrade_authority_path: &str,
+    payer_path: &str,
+) -> Result<()> {
+    let security_path = security_metadata_path(config)?;
+    let (cluster_url, _) = crate::get_cluster_and_wallet(cfg_override)?;
+    let cli = security_metadata_cli_command();
+    let cli_display = cli.to_string_lossy().into_owned();
+    let program_id = program_id.to_string();
+
+    let status = ProcessCommand::new(&cli)
+        .arg("write")
+        .arg("security")
+        .arg(&program_id)
+        .arg(&security_path)
+        .arg("--keypair")
+        .arg(upgrade_authority_path)
+        .arg("--payer")
+        .arg(payer_path)
+        .arg("--rpc")
+        .arg(&cluster_url)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .map_err(|err| match err.kind() {
+            ErrorKind::NotFound => anyhow!(
+                "Security metadata upload requires the `program-metadata` CLI. Install \
+                 `@solana-program/program-metadata` or point `ANCHOR_PROGRAM_METADATA_CLI` to a \
+                 pinned binary. Tried `{cli_display}`."
+            ),
+            _ => anyhow!("Failed to spawn `{cli_display}`: {}", err),
+        })?;
+
+    if !status.success() {
+        bail!(
+            "Security metadata upload failed for `{}` with status {}",
+            security_path.display(),
+            status
+        );
+    }
+
+    println!("✓ Security metadata uploaded");
+
+    Ok(())
+}
+
 /// Deploy a single program (either from explicit filepath or workspace) - private implementation
 #[allow(clippy::too_many_arguments)]
 pub fn program_deploy(
@@ -726,11 +825,16 @@ pub fn program_deploy(
     max_len: Option<usize>,
     use_rpc: bool,
     no_idl: bool,
+    security_metadata: bool,
     make_final: bool,
     solana_args: Vec<String>,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
     let payer = get_payer_keypair(cfg_override, &config)?;
+    let (_cluster_url, wallet_path) = crate::get_cluster_and_wallet(cfg_override)?;
+    let upgrade_authority_path = upgrade_authority
+        .clone()
+        .unwrap_or_else(|| wallet_path.clone());
 
     // Determine the program filepath
     let program_filepath = if let Some(filepath) = program_filepath {
@@ -1088,6 +1192,16 @@ pub fn program_deploy(
                 idl_filepath.display()
             );
         }
+    }
+
+    if security_metadata {
+        upload_security_metadata(
+            cfg_override,
+            config.as_ref(),
+            program_id,
+            &upgrade_authority_path,
+            &wallet_path,
+        )?;
     }
 
     // Make program immutable if --final flag is set
@@ -2836,5 +2950,30 @@ resolver = "2"
             .to_string();
 
         assert!(err.contains("current package believes it's in a workspace when it's not"));
+    }
+
+    #[test]
+    fn security_metadata_path_uses_workspace_root() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("security.json"), "{\"name\":\"demo\"}").unwrap();
+        let cfg = WithPath::new(Config::default(), dir.path().join("Anchor.toml"));
+
+        let path = security_metadata_path(Some(&cfg)).unwrap();
+
+        assert_eq!(
+            path,
+            dir.path().join("security.json").canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn security_metadata_path_requires_existing_file() {
+        let dir = tempdir().unwrap();
+        let cfg = WithPath::new(Config::default(), dir.path().join("Anchor.toml"));
+
+        let err = security_metadata_path(Some(&cfg)).unwrap_err().to_string();
+
+        assert!(err.contains("--security-metadata"));
+        assert!(err.contains("security.json"));
     }
 }
