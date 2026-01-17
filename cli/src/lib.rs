@@ -3890,19 +3890,19 @@ fn deserialize_idl_type_to_json(
         }
         IdlType::Vec(ty) => {
             // Use serialization format from parent type definition, or default to Borsh (u32)
-            let serialization = serialization.unwrap_or(&IdlSerialization::Borsh);
-            let vec_length_bytes = serialization.vec_length_bytes();
+            let serialization = serialization.unwrap_or_default();
+            let vec_length_bytes = serialization.length_prefix_bytes();
 
             let size: usize = match vec_length_bytes {
-                1 => <u8 as AnchorDeserialize>::deserialize(data)?.into(),
-                2 => <u16 as AnchorDeserialize>::deserialize(data)?.into(),
-                4 => <u32 as AnchorDeserialize>::deserialize(data)?
+                Some(1) => <u8 as AnchorDeserialize>::deserialize(data)?.into(),
+                Some(2) => <u16 as AnchorDeserialize>::deserialize(data)?.into(),
+                Some(4) => <u32 as AnchorDeserialize>::deserialize(data)?
                     .try_into()
                     .unwrap(),
                 _ => {
                     return Err(anyhow!(
                         "Unsupported Vec length prefix size: {} bytes",
-                        vec_length_bytes
+                        vec_length_bytes.unwrap_or(0)
                     ))
                 }
             };

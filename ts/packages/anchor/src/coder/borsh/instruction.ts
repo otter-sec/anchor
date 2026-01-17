@@ -198,8 +198,7 @@ class InstructionFormatter {
       return `COption<${this.formatIdlType(idlType.coption)}>`;
     }
     if ("vec" in idlType) {
-      const innerType = idlType.vec;
-      return `Vec<${this.formatIdlType(innerType)}>`;
+      return `Vec<${this.formatIdlType(idlType.vec)}>`;
     }
     if ("array" in idlType) {
       return `Array<${idlType.array[0]}; ${idlType.array[1]}>`;

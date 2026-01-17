@@ -157,6 +157,10 @@ export class IdlCoder {
           );
         }
         if ("vec" in field.type) {
+          // Vec length prefix is determined by the serialization format:
+          // - "borsh" (default): 4 bytes (u32)
+          // - "borshu8": 1 byte (u8)
+          // - "borshu16": 2 bytes (u16)
           const lengthType =
             serialization === "borshu8"
               ? "u8"
@@ -241,8 +245,8 @@ export class IdlCoder {
           return IdlCoder.fieldLayoutWithContext(
             { ...field, type: genericArg.type },
             types,
-            undefined,
-            serialization,
+            null,
+            serialization
             definedTypeStack,
             allowRecursive
           );
@@ -393,8 +397,8 @@ export class IdlCoder {
         return IdlCoder.fieldLayoutWithContext(
           { type: typeDef.type.alias, name },
           types,
-          genericArgs,
-          typeDef.serialization,
+          null,
+          typeDef.serialization
           typeStack
         );
       }
@@ -751,15 +755,8 @@ export class IdlCoder {
       }
 
       if ("vec" in type) {
-        const vecValue = type.vec;
-        const innerType =
-          typeof vecValue === "string" || !("type" in vecValue)
-            ? typeof vecValue === "string"
-              ? vecValue
-              : (vecValue as any)
-            : vecValue.type;
         const args = IdlCoder.resolveGenericArgs({
-          type: innerType,
+          type: type.vec,
           typeDef,
           genericArgs,
           isDefined,
