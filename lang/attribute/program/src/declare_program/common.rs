@@ -438,7 +438,7 @@ pub fn can_derive_debug_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
 pub fn can_derive_default_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
     match ty {
         IdlType::Option(inner) => can_derive_default_ty(inner, ty_defs),
-        IdlType::Vec(ty) => can_derive_default_ty(ty, ty_defs),
+        IdlType::Vec(inner) => can_derive_default_ty(inner, ty_defs),
         IdlType::Array(inner, len) => {
             if !can_derive_default_ty(inner, ty_defs) {
                 return false;
