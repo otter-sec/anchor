@@ -2,7 +2,7 @@ import { Buffer } from "buffer";
 import BN from "bn.js";
 import { Idl } from "../../../idl.js";
 import { BorshAccountsCoder } from "../accounts.js";
-import * as borsh from "@coral-xyz/borsh";
+import * as borsh from "@anchor-lang/borsh";
 
 describe("Vec with custom length discriminators", () => {
   it("should encode/decode Vec with u8 length", async () => {
