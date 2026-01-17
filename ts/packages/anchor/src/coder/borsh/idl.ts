@@ -165,8 +165,8 @@ export class IdlCoder {
             serialization === "borshu8"
               ? "u8"
               : serialization === "borshu16"
-                ? "u16"
-                : "u32";
+              ? "u16"
+              : "u32";
 
           return borsh.vecWithLength(
             IdlCoder.fieldLayoutWithContext(
