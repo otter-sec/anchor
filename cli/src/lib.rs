@@ -16,6 +16,7 @@ use {
         types::{Idl, IdlArrayLen, IdlDefinedFields, IdlType, IdlTypeDefTy},
     },
     anyhow::{anyhow, bail, Context, Result},
+    base64::{engine::general_purpose::STANDARD, Engine},
     cargo_metadata::{DependencyKind, MetadataCommand},
     checks::{check_anchor_version, check_deps, check_idl_build_feature, check_overflow},
     clap::{CommandFactory, Parser},
@@ -4555,6 +4556,7 @@ fn run_test_suite(
                 let flags = Some(surfpool_flags(
                     cfg,
                     surfpool_config,
+                    test_validator,
                     full_simnet_mode,
                     skip_deploy,
                     Some(test_suite_path.as_ref()),
@@ -4562,6 +4564,8 @@ fn run_test_suite(
                 validator_handle = Some(start_surfpool_validator(
                     flags,
                     surfpool_config,
+                    test_validator,
+                    cfg,
                     full_simnet_mode,
                 )?);
             }
@@ -4744,6 +4748,102 @@ fn validator_deploy_flags(
                 }
             }
         }
+
+        // Generate funded accounts JSON files and emit --account flags so
+        // `solana-test-validator` loads them at genesis.
+        if let Some(validator) = &test.validator {
+            if let Some(fund_accounts) = &validator.fund_accounts {
+                // Create .anchor/generated_accounts directory in workspace root
+                let workspace_root = cfg.path().parent().expect("Invalid Anchor.toml path");
+                let accounts_dir = workspace_root.join(".anchor").join("generated_accounts");
+                fs::create_dir_all(&accounts_dir).with_context(|| {
+                    format!(
+                        "Failed to create accounts directory: {}",
+                        accounts_dir.display()
+                    )
+                })?;
+
+                for funded_account in fund_accounts {
+                    // Check if address is "new" to generate a random keypair
+                    let (pubkey, address_str) = if funded_account.address.to_lowercase()
+                        == "new"
+                    {
+                        // Generate a random keypair
+                        let keypair = Keypair::new();
+                        let pubkey = keypair.pubkey();
+                        let address_str = pubkey.to_string();
+
+                        // Save the keypair to a file so tests can use it (use
+                        // .keypair.json suffix to avoid overwriting account JSON)
+                        let keypair_filename = format!("{}.keypair.json", pubkey);
+                        let keypair_path = accounts_dir.join(&keypair_filename);
+                        keypair.write_to_file(&keypair_path).map_err(|e| {
+                            anyhow!(
+                                "Failed to write keypair to {}: {}",
+                                keypair_path.display(),
+                                e
+                            )
+                        })?;
+
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let mut perms = fs::metadata(&keypair_path)?.permissions();
+                            perms.set_mode(0o600);
+                            fs::set_permissions(&keypair_path, perms)?;
+                        }
+
+                        (pubkey, address_str)
+                    } else {
+                        // Use the provided address
+                        let pubkey = Pubkey::try_from(funded_account.address.as_str())
+                            .map_err(|_| {
+                                anyhow!(
+                                    "Invalid pubkey address: {}",
+                                    funded_account.address
+                                )
+                            })?;
+                        (pubkey, funded_account.address.clone())
+                    };
+
+                    // Default to 1 SOL if not specified
+                    let lamports = funded_account.lamports.unwrap_or(1_000_000_000);
+
+                    // Create account JSON in the format expected by
+                    // solana-test-validator
+                    let account_json = json!({
+                        "pubkey": address_str,
+                        "account": {
+                            "lamports": lamports,
+                            "owner": "11111111111111111111111111111111",
+                            "executable": false,
+                            "rentEpoch": 0,
+                            "data": [STANDARD.encode([] as [u8; 0]), "base64"]
+                        }
+                    });
+
+                    // Write to file
+                    let filename = format!("{}.json", pubkey);
+                    let file_path = accounts_dir.join(&filename);
+                    let mut file = File::create(&file_path).with_context(|| {
+                        format!("Failed to create account file: {}", file_path.display())
+                    })?;
+                    serde_json::to_writer_pretty(&mut file, &account_json).with_context(
+                        || {
+                            format!(
+                                "Failed to write account JSON to: {}",
+                                file_path.display()
+                            )
+                        },
+                    )?;
+
+                    // Add to flags
+                    flags.push("--account".to_string());
+                    flags.push(address_str.clone());
+                    flags.push(file_path.display().to_string());
+                }
+            }
+        }
     }
 
     Ok(flags)
@@ -4763,6 +4863,12 @@ fn validator_config_flags(test_validator: &Option<TestValidator>) -> Result<Vec<
                 // these validator flags.
                 continue;
             };
+            if key == "fund_accounts" {
+                // Handled in `validator_deploy_flags` by writing per-account
+                // JSON files and emitting `--account` flags; skip here so the
+                // raw struct isn't passed to `solana-test-validator`.
+                continue;
+            }
             if key == "extra_args" {
                 for arg in value.as_array().unwrap() {
                     flags.push(arg.as_str().unwrap().to_string());
@@ -4864,6 +4970,7 @@ fn validator_config_flags(test_validator: &Option<TestValidator>) -> Result<Vec<
 fn surfpool_flags(
     cfg: &WithPath<Config>,
     surfpool_config: &Option<SurfpoolConfig>,
+    test_validator: &Option<TestValidator>,
     full_simnet_mode: bool,
     skip_deploy: bool,
     test_suite_path: Option<&Path>,
@@ -4884,6 +4991,53 @@ fn surfpool_flags(
                 .join(&idl.metadata.name)
                 .with_extension("json");
             write_idl(idl, OutFile::File(idl_out))?;
+        }
+    }
+
+    // Add funded accounts from test_validator config as airdrop addresses for Surfpool
+    // Note: Surfpool's --airdrop gives default amounts. Custom amounts are adjusted via RPC after startup.
+    if let Some(test) = test_validator.as_ref() {
+        if let Some(validator) = &test.validator {
+            if let Some(fund_accounts) = &validator.fund_accounts {
+                // Create .anchor/generated_accounts directory in workspace root (for keypair storage)
+                let workspace_root = cfg.path().parent().expect("Invalid Anchor.toml path");
+                let accounts_dir = workspace_root.join(".anchor").join("generated_accounts");
+                fs::create_dir_all(&accounts_dir)
+                    .with_context(|| format!("Failed to create accounts directory: {}", accounts_dir.display()))?;
+
+                for funded_account in fund_accounts {
+                    // Check if address is "new" to generate a random keypair
+                    let address_str = if funded_account.address.to_lowercase() == "new" {
+                        // Generate a random keypair
+                        let keypair = Keypair::new();
+                        let pubkey = keypair.pubkey();
+                        let address_str = pubkey.to_string();
+                        
+                        // Save the keypair to a file so tests can use it (use .keypair.json suffix to avoid overwriting account JSON)
+                        let keypair_filename = format!("{}.keypair.json", pubkey);
+                        let keypair_path = accounts_dir.join(&keypair_filename);
+                        keypair
+                            .write_to_file(&keypair_path)
+                            .map_err(|e| anyhow!("Failed to write keypair to {}: {}", keypair_path.display(), e))?;
+                        
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let mut perms = fs::metadata(&keypair_path)?.permissions();
+                            perms.set_mode(0o600);
+                            fs::set_permissions(&keypair_path, perms)?;
+                        }
+                        
+                        address_str
+                    } else {
+                        // Use the provided address
+                        funded_account.address.clone()
+                    };
+
+                    flags.push("--airdrop".to_string());
+                    flags.push(address_str);
+                }
+            }
         }
     }
 
@@ -5167,6 +5321,8 @@ fn stream_solana_logs(config: &WithPath<Config>, rpc_url: &str) -> Result<Vec<Lo
 fn start_surfpool_validator(
     flags: Option<Vec<String>>,
     surfpool_config: &Option<SurfpoolConfig>,
+    test_validator: &Option<TestValidator>,
+    cfg: &WithPath<Config>,
     full_simnet_mode: bool,
 ) -> Result<Child> {
     let (host, port) = match surfpool_config {
@@ -5235,6 +5391,79 @@ fn start_surfpool_validator(
         );
         validator_handle.kill()?;
         std::process::exit(1);
+    }
+
+    // After validator is ready, fund accounts with custom amounts if configured
+    // Surfpool's --airdrop gives default amounts, so we adjust via RPC
+    if let Some(test) = test_validator.as_ref() {
+        if let Some(validator) = &test.validator {
+            if let Some(fund_accounts) = &validator.fund_accounts {
+                // Create .anchor/generated_accounts directory in workspace root (for keypair storage)
+                let workspace_root = cfg.path().parent().expect("Invalid Anchor.toml path");
+                let accounts_dir = workspace_root.join(".anchor").join("generated_accounts");
+                let _ = fs::create_dir_all(&accounts_dir); // Best effort
+
+                for funded_account in fund_accounts {
+                    // Resolve address (handle "new" case - find generated keypair files)
+                    let pubkey = if funded_account.address.to_lowercase() == "new" {
+                        // For "new" addresses, find the most recently created .keypair.json file
+                        let mut keypair_files: Vec<_> = match fs::read_dir(&accounts_dir) {
+                            Ok(dir) => dir
+                                .filter_map(|entry| {
+                                    let entry = entry.ok()?;
+                                    let path = entry.path();
+                                    let file_name = path.file_name()?.to_string_lossy();
+                                    if file_name.ends_with(".keypair.json") {
+                                        entry.metadata().ok().and_then(|m| {
+                                            m.modified().ok().map(|modified| (modified, path))
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect(),
+                            Err(_) => Vec::new(),
+                        };
+                        keypair_files.sort_by(|a, b| b.0.cmp(&a.0)); // Sort by modified time, newest first
+                        
+                        // Try to parse the newest file as a pubkey
+                        match keypair_files.first() {
+                            Some((_, path)) => {
+                                match path.file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .and_then(|s| s.strip_suffix(".keypair"))
+                                    .and_then(|s| s.parse::<Pubkey>().ok())
+                                {
+                                    Some(p) => p,
+                                    None => continue, // Skip if we can't parse it
+                                }
+                            }
+                            None => continue, // Skip if we can't find any keypair files
+                        }
+                    } else {
+                        match Pubkey::try_from(funded_account.address.as_str()) {
+                            Ok(p) => p,
+                            Err(_) => continue, // Skip invalid addresses
+                        }
+                    };
+
+                    let target_lamports = funded_account.lamports.unwrap_or(1_000_000_000);
+                    
+                    // Get current balance - if account doesn't exist, get_balance will return 0
+                    let current_balance = client.get_balance(&pubkey).unwrap_or(0);
+                    
+                    if current_balance < target_lamports {
+                        // Airdrop the full target amount (request_airdrop will create account if it doesn't exist)
+                        if let Ok(sig) = client.request_airdrop(&pubkey, target_lamports) {
+                            // Wait for confirmation (non-blocking, best effort)
+                            let _ = client.confirm_transaction(&sig);
+                        }
+                    }
+                    // Note: If current_balance > target_lamports, we can't reduce it via airdrop
+                    // Users would need to use Legacy validator for exact amounts
+                }
+            }
+        }
     }
 
     loop {
@@ -6128,6 +6357,7 @@ fn localnet(
                 let flags = Some(surfpool_flags(
                     cfg,
                     &cfg.surfpool_config,
+                    &cfg.test_validator,
                     full_simnet_mode,
                     skip_deploy,
                     None,
@@ -6135,6 +6365,8 @@ fn localnet(
                 Some(start_surfpool_validator(
                     flags,
                     &cfg.surfpool_config,
+                    &cfg.test_validator,
+                    cfg,
                     full_simnet_mode,
                 )?)
             }

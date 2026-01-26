@@ -1,0 +1,28 @@
+[programs.localnet]
+account_generation_test = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+[test]
+startup_wait = 10000
+
+[test.validator]
+# Test funded accounts - these should be automatically generated and funded
+[[test.validator.fund_accounts]]
+address = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+lamports = 2000000000  # 2 SOL
+
+[[test.validator.fund_accounts]]
+address = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+# lamports defaults to 1 SOL if not specified
+
+[[test.validator.fund_accounts]]
+address = "new"  # Generate a random keypair
+lamports = 5000000000  # 5 SOL
+
+[features]
