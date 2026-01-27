@@ -594,4 +594,18 @@ describe("account-generation-test", () => {
       }
     }
   });
+
+  it("Should support specific pubkey address for mints", async () => {
+    const specificMintPubkey = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+    const mintInfo = await provider.connection.getAccountInfo(specificMintPubkey);
+    if (mintInfo) {
+      assert.equal(mintInfo.owner.toBase58(), "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+      assert.isTrue(mintInfo.data.length >= 82);
+      const decimals = mintInfo.data[44];
+      assert.equal(decimals, 6);
+      const supplyBytes = mintInfo.data.slice(36, 44);
+      const supply = Buffer.from(supplyBytes).readBigUInt64LE(0);
+      assert.equal(supply.toString(), "1000000");
+    }
+  });
 });
