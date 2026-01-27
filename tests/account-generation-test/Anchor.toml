@@ -25,4 +25,36 @@ address = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
 address = "new"  # Generate a random keypair
 lamports = 5000000000  # 5 SOL
 
+[[test.validator.mints]]
+address = "new"
+decimals = 9
+supply = 1000000000
+
+[[test.validator.mints]]
+address = "new"
+decimals = 6
+supply = 500000000
+mint_authority = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+freeze_authority = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+
+[[test.validator.mints]]
+address = "new"
+decimals = 8
+
+[[test.validator.token_accounts]]
+mint = "new"
+owner = "new"
+amount = 500000000
+
+[[test.validator.token_accounts]]
+mint = "new"
+owner = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+amount = 1000000000
+
+[[test.validator.token_accounts]]
+mint = "new"
+owner = "new"
+address = "new"
+amount = 250000000
+
 [features]

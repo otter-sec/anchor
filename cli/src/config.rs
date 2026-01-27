@@ -1363,6 +1363,36 @@ pub struct FundedAccount {
     pub lamports: Option<u64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenMint {
+    // Base58 pubkey string of the mint account, or "new" to generate a random keypair
+    pub address: String,
+    // Number of base 10 digits to the right of the decimal place (required)
+    pub decimals: u8,
+    // Initial supply of tokens (default: 0)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supply: Option<u64>,
+    // Optional mint authority (default: None = fixed supply)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mint_authority: Option<String>,
+    // Optional freeze authority (default: None = no freeze authority)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub freeze_authority: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenAccount {
+    // Reference to mint (pubkey string or "new" to use the most recently created mint)
+    pub mint: String,
+    // Owner of the token account ("new" to generate random keypair, or specific pubkey)
+    pub owner: String,
+    // Amount of tokens to fund the account with
+    pub amount: u64,
+    // Optional: specific token account address (default: generate new)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct _Validator {
     // Load an account from the provided JSON file
@@ -1374,6 +1404,12 @@ pub struct _Validator {
     // Generate and fund accounts with lamports
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fund_accounts: Option<Vec<FundedAccount>>,
+    // Create SPL token mints
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mints: Option<Vec<TokenMint>>,
+    // Create and fund SPL token accounts
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_accounts: Option<Vec<TokenAccount>>,
     // IP address to bind the validator ports. [default: 127.0.0.1]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bind_address: Option<String>,
@@ -1435,6 +1471,10 @@ pub struct Validator {
     pub account_dir: Option<Vec<AccountDirEntry>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fund_accounts: Option<Vec<FundedAccount>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mints: Option<Vec<TokenMint>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_accounts: Option<Vec<TokenAccount>>,
     pub bind_address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clone: Option<Vec<CloneEntry>>,
@@ -1474,6 +1514,8 @@ impl From<_Validator> for Validator {
             account: _validator.account,
             account_dir: _validator.account_dir,
             fund_accounts: _validator.fund_accounts,
+            mints: _validator.mints,
+            token_accounts: _validator.token_accounts,
             bind_address: _validator
                 .bind_address
                 .unwrap_or_else(|| DEFAULT_BIND_ADDRESS.to_string()),
@@ -1505,6 +1547,8 @@ impl From<Validator> for _Validator {
             account: validator.account,
             account_dir: validator.account_dir,
             fund_accounts: validator.fund_accounts,
+            mints: validator.mints,
+            token_accounts: validator.token_accounts,
             bind_address: Some(validator.bind_address),
             clone: validator.clone,
             dynamic_port_range: validator.dynamic_port_range,
@@ -1574,24 +1618,62 @@ impl Merge for _Validator {
                     }
                 },
             },
-            fund_accounts: match self.fund_accounts.take() {
-                None => other.fund_accounts,
-                Some(mut entries) => match other.fund_accounts {
-                    None => Some(entries),
-                    Some(other_entries) => {
-                        for other_entry in other_entries {
-                            match entries
-                                .iter()
-                                .position(|my_entry| *my_entry.address == other_entry.address)
-                            {
-                                None => entries.push(other_entry),
-                                Some(i) => entries[i] = other_entry,
-                            };
+                fund_accounts: match self.fund_accounts.take() {
+                    None => other.fund_accounts,
+                    Some(mut entries) => match other.fund_accounts {
+                        None => Some(entries),
+                        Some(other_entries) => {
+                            for other_entry in other_entries {
+                                match entries
+                                    .iter()
+                                    .position(|my_entry| *my_entry.address == other_entry.address)
+                                {
+                                    None => entries.push(other_entry),
+                                    Some(i) => entries[i] = other_entry,
+                                };
+                            }
+                            Some(entries)
                         }
-                        Some(entries)
-                    }
+                    },
                 },
-            },
+                mints: match self.mints.take() {
+                    None => other.mints,
+                    Some(mut entries) => match other.mints {
+                        None => Some(entries),
+                        Some(other_entries) => {
+                            for other_entry in other_entries {
+                                match entries
+                                    .iter()
+                                    .position(|my_entry| *my_entry.address == other_entry.address)
+                                {
+                                    None => entries.push(other_entry),
+                                    Some(i) => entries[i] = other_entry,
+                                };
+                            }
+                            Some(entries)
+                        }
+                    },
+                },
+                token_accounts: match self.token_accounts.take() {
+                    None => other.token_accounts,
+                    Some(mut entries) => match other.token_accounts {
+                        None => Some(entries),
+                        Some(other_entries) => {
+                            // For token accounts, we merge by mint+owner combination
+                            for other_entry in other_entries {
+                                match entries.iter().position(|my_entry| {
+                                    *my_entry.mint == other_entry.mint
+                                        && *my_entry.owner == other_entry.owner
+                                        && my_entry.address == other_entry.address
+                                }) {
+                                    None => entries.push(other_entry),
+                                    Some(i) => entries[i] = other_entry,
+                                };
+                            }
+                            Some(entries)
+                        }
+                    },
+                },
             bind_address: other.bind_address.or_else(|| self.bind_address.take()),
             clone: match self.clone.take() {
                 None => other.clone,
