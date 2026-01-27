@@ -4757,8 +4757,12 @@ fn validator_deploy_flags(
                 // Create .anchor/generated_accounts directory in workspace root
                 let workspace_root = cfg.path().parent().expect("Invalid Anchor.toml path");
                 let accounts_dir = workspace_root.join(".anchor").join("generated_accounts");
-                fs::create_dir_all(&accounts_dir)
-                    .with_context(|| format!("Failed to create accounts directory: {}", accounts_dir.display()))?;
+                fs::create_dir_all(&accounts_dir).with_context(|| {
+                    format!(
+                        "Failed to create accounts directory: {}",
+                        accounts_dir.display()
+                    )
+                })?;
 
                 for token_mint in mints {
                     // Check if address is "new" to generate a random keypair
@@ -4767,14 +4771,18 @@ fn validator_deploy_flags(
                         let keypair = Keypair::new();
                         let pubkey = keypair.pubkey();
                         let address_str = pubkey.to_string();
-                        
+
                         // Save the keypair to a file so tests can use it
                         let keypair_filename = format!("{}.mint.json", pubkey);
                         let keypair_path = accounts_dir.join(&keypair_filename);
-                        keypair
-                            .write_to_file(&keypair_path)
-                            .map_err(|e| anyhow!("Failed to write mint keypair to {}: {}", keypair_path.display(), e))?;
-                        
+                        keypair.write_to_file(&keypair_path).map_err(|e| {
+                            anyhow!(
+                                "Failed to write mint keypair to {}: {}",
+                                keypair_path.display(),
+                                e
+                            )
+                        })?;
+
                         #[cfg(unix)]
                         {
                             use std::os::unix::fs::PermissionsExt;
@@ -4782,27 +4790,33 @@ fn validator_deploy_flags(
                             perms.set_mode(0o600);
                             fs::set_permissions(&keypair_path, perms)?;
                         }
-                        
+
                         (pubkey, address_str)
                     } else {
                         // Use the provided address
-                        let pubkey = Pubkey::try_from(token_mint.address.as_str())
-                            .map_err(|_| anyhow!("Invalid mint pubkey address: {}", token_mint.address))?;
+                        let pubkey =
+                            Pubkey::try_from(token_mint.address.as_str()).map_err(|_| {
+                                anyhow!("Invalid mint pubkey address: {}", token_mint.address)
+                            })?;
                         (pubkey, token_mint.address.clone())
                     };
 
                     // Resolve mint authority
-                    let mint_authority = token_mint.mint_authority.as_ref()
+                    let mint_authority = token_mint
+                        .mint_authority
+                        .as_ref()
                         .and_then(|s| Pubkey::try_from(s.as_str()).ok());
-                    
+
                     // Resolve freeze authority
-                    let freeze_authority = token_mint.freeze_authority.as_ref()
+                    let freeze_authority = token_mint
+                        .freeze_authority
+                        .as_ref()
                         .and_then(|s| Pubkey::try_from(s.as_str()).ok());
 
                     // Serialize mint account data (82 bytes total)
                     // Layout: mint_authority (36) + supply (8) + decimals (1) + is_initialized (1) + freeze_authority (36)
                     let mut mint_data = Vec::with_capacity(82);
-                    
+
                     // Serialize mint_authority as COption<Pubkey>
                     // COption format: 4 bytes (Some/None tag) + 32 bytes (Pubkey if Some)
                     if let Some(auth) = mint_authority {
@@ -4812,17 +4826,17 @@ fn validator_deploy_flags(
                         mint_data.extend_from_slice(&0u32.to_le_bytes()); // None tag
                         mint_data.extend_from_slice(&[0u8; 32]); // Padding
                     }
-                    
+
                     // Serialize supply (u64)
                     let supply = token_mint.supply.unwrap_or(0);
                     mint_data.extend_from_slice(&supply.to_le_bytes());
-                    
+
                     // Serialize decimals (u8)
                     mint_data.extend_from_slice(&[token_mint.decimals]);
-                    
+
                     // Serialize is_initialized (bool)
                     mint_data.push(1u8); // true
-                    
+
                     // Serialize freeze_authority as COption<Pubkey>
                     if let Some(auth) = freeze_authority {
                         mint_data.extend_from_slice(&1u32.to_le_bytes()); // Some tag
@@ -4852,10 +4866,18 @@ fn validator_deploy_flags(
                     // Write to file
                     let filename = format!("{}.json", pubkey);
                     let file_path = accounts_dir.join(&filename);
-                    let mut file = File::create(&file_path)
-                        .with_context(|| format!("Failed to create mint account file: {}", file_path.display()))?;
-                    serde_json::to_writer_pretty(&mut file, &account_json)
-                        .with_context(|| format!("Failed to write mint account JSON to: {}", file_path.display()))?;
+                    let mut file = File::create(&file_path).with_context(|| {
+                        format!(
+                            "Failed to create mint account file: {}",
+                            file_path.display()
+                        )
+                    })?;
+                    serde_json::to_writer_pretty(&mut file, &account_json).with_context(|| {
+                        format!(
+                            "Failed to write mint account JSON to: {}",
+                            file_path.display()
+                        )
+                    })?;
 
                     // Add to flags
                     flags.push("--account".to_string());
@@ -4869,8 +4891,12 @@ fn validator_deploy_flags(
                 // Create .anchor/generated_accounts directory in workspace root
                 let workspace_root = cfg.path().parent().expect("Invalid Anchor.toml path");
                 let accounts_dir = workspace_root.join(".anchor").join("generated_accounts");
-                fs::create_dir_all(&accounts_dir)
-                    .with_context(|| format!("Failed to create accounts directory: {}", accounts_dir.display()))?;
+                fs::create_dir_all(&accounts_dir).with_context(|| {
+                    format!(
+                        "Failed to create accounts directory: {}",
+                        accounts_dir.display()
+                    )
+                })?;
 
                 // Track created mints to resolve "new" mint references
                 let mut created_mints: Vec<Pubkey> = Vec::new();
@@ -4898,7 +4924,8 @@ fn validator_deploy_flags(
                             mint_files.sort_by(|a, b| b.0.cmp(&a.0));
                             match mint_files.first() {
                                 Some((_, path)) => {
-                                    match path.file_stem()
+                                    match path
+                                        .file_stem()
                                         .and_then(|s| s.to_str())
                                         .and_then(|s| s.strip_suffix(".mint"))
                                         .and_then(|s| s.parse::<Pubkey>().ok())
@@ -4934,7 +4961,10 @@ fn validator_deploy_flags(
                         match Pubkey::try_from(token_account.mint.as_str()) {
                             Ok(p) => p,
                             Err(_) => {
-                                eprintln!("Warning: Invalid mint address: {}. Skipping.", token_account.mint);
+                                eprintln!(
+                                    "Warning: Invalid mint address: {}. Skipping.",
+                                    token_account.mint
+                                );
                                 continue;
                             }
                         }
@@ -4945,14 +4975,20 @@ fn validator_deploy_flags(
                         // Generate a random keypair for owner
                         let owner_keypair = Keypair::new();
                         let owner_pubkey = owner_keypair.pubkey();
-                        
+
                         // Save the owner keypair
                         let owner_keypair_filename = format!("{}.owner.json", owner_pubkey);
                         let owner_keypair_path = accounts_dir.join(&owner_keypair_filename);
                         owner_keypair
                             .write_to_file(&owner_keypair_path)
-                            .map_err(|e| anyhow!("Failed to write owner keypair to {}: {}", owner_keypair_path.display(), e))?;
-                        
+                            .map_err(|e| {
+                                anyhow!(
+                                    "Failed to write owner keypair to {}: {}",
+                                    owner_keypair_path.display(),
+                                    e
+                                )
+                            })?;
+
                         #[cfg(unix)]
                         {
                             use std::os::unix::fs::PermissionsExt;
@@ -4960,93 +4996,115 @@ fn validator_deploy_flags(
                             perms.set_mode(0o600);
                             fs::set_permissions(&owner_keypair_path, perms)?;
                         }
-                        
+
                         owner_pubkey
                     } else {
-                        Pubkey::try_from(token_account.owner.as_str())
-                            .map_err(|_| anyhow!("Invalid owner pubkey address: {}", token_account.owner))?
+                        Pubkey::try_from(token_account.owner.as_str()).map_err(|_| {
+                            anyhow!("Invalid owner pubkey address: {}", token_account.owner)
+                        })?
                     };
 
                     // Resolve token account address
-                    let (token_account_pubkey, token_account_address_str) = if let Some(ref addr) = token_account.address {
-                        if addr.to_lowercase() == "new" {
-                            // Generate a random keypair for token account
+                    let (token_account_pubkey, token_account_address_str) =
+                        if let Some(ref addr) = token_account.address {
+                            if addr.to_lowercase() == "new" {
+                                // Generate a random keypair for token account
+                                let token_account_keypair = Keypair::new();
+                                let token_account_pubkey = token_account_keypair.pubkey();
+                                let token_account_address_str = token_account_pubkey.to_string();
+
+                                // Save the token account keypair
+                                let token_account_keypair_filename =
+                                    format!("{}.token_account.json", token_account_pubkey);
+                                let token_account_keypair_path =
+                                    accounts_dir.join(&token_account_keypair_filename);
+                                token_account_keypair
+                                    .write_to_file(&token_account_keypair_path)
+                                    .map_err(|e| {
+                                        anyhow!(
+                                            "Failed to write token account keypair to {}: {}",
+                                            token_account_keypair_path.display(),
+                                            e
+                                        )
+                                    })?;
+
+                                #[cfg(unix)]
+                                {
+                                    use std::os::unix::fs::PermissionsExt;
+                                    let mut perms =
+                                        fs::metadata(&token_account_keypair_path)?.permissions();
+                                    perms.set_mode(0o600);
+                                    fs::set_permissions(&token_account_keypair_path, perms)?;
+                                }
+
+                                (token_account_pubkey, token_account_address_str)
+                            } else {
+                                let token_account_pubkey = Pubkey::try_from(addr.as_str())
+                                    .map_err(|_| {
+                                        anyhow!("Invalid token account pubkey address: {}", addr)
+                                    })?;
+                                (token_account_pubkey, addr.clone())
+                            }
+                        } else {
+                            // Default: generate new token account
                             let token_account_keypair = Keypair::new();
                             let token_account_pubkey = token_account_keypair.pubkey();
                             let token_account_address_str = token_account_pubkey.to_string();
-                            
+
                             // Save the token account keypair
-                            let token_account_keypair_filename = format!("{}.token_account.json", token_account_pubkey);
-                            let token_account_keypair_path = accounts_dir.join(&token_account_keypair_filename);
+                            let token_account_keypair_filename =
+                                format!("{}.token_account.json", token_account_pubkey);
+                            let token_account_keypair_path =
+                                accounts_dir.join(&token_account_keypair_filename);
                             token_account_keypair
                                 .write_to_file(&token_account_keypair_path)
-                                .map_err(|e| anyhow!("Failed to write token account keypair to {}: {}", token_account_keypair_path.display(), e))?;
-                            
+                                .map_err(|e| {
+                                    anyhow!(
+                                        "Failed to write token account keypair to {}: {}",
+                                        token_account_keypair_path.display(),
+                                        e
+                                    )
+                                })?;
+
                             #[cfg(unix)]
                             {
                                 use std::os::unix::fs::PermissionsExt;
-                                let mut perms = fs::metadata(&token_account_keypair_path)?.permissions();
+                                let mut perms =
+                                    fs::metadata(&token_account_keypair_path)?.permissions();
                                 perms.set_mode(0o600);
                                 fs::set_permissions(&token_account_keypair_path, perms)?;
                             }
-                            
+
                             (token_account_pubkey, token_account_address_str)
-                        } else {
-                            let token_account_pubkey = Pubkey::try_from(addr.as_str())
-                                .map_err(|_| anyhow!("Invalid token account pubkey address: {}", addr))?;
-                            (token_account_pubkey, addr.clone())
-                        }
-                    } else {
-                        // Default: generate new token account
-                        let token_account_keypair = Keypair::new();
-                        let token_account_pubkey = token_account_keypair.pubkey();
-                        let token_account_address_str = token_account_pubkey.to_string();
-                        
-                        // Save the token account keypair
-                        let token_account_keypair_filename = format!("{}.token_account.json", token_account_pubkey);
-                        let token_account_keypair_path = accounts_dir.join(&token_account_keypair_filename);
-                        token_account_keypair
-                            .write_to_file(&token_account_keypair_path)
-                            .map_err(|e| anyhow!("Failed to write token account keypair to {}: {}", token_account_keypair_path.display(), e))?;
-                        
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let mut perms = fs::metadata(&token_account_keypair_path)?.permissions();
-                            perms.set_mode(0o600);
-                            fs::set_permissions(&token_account_keypair_path, perms)?;
-                        }
-                        
-                        (token_account_pubkey, token_account_address_str)
-                    };
+                        };
 
                     // Serialize token account data (165 bytes total)
                     // Layout: mint (32) + owner (32) + amount (8) + delegate COption (36) + state (1) + isNative COption (12) + delegatedAmount (8) + closeAuthority COption (36)
                     let mut token_account_data = Vec::with_capacity(165);
-                    
+
                     // Serialize mint (Pubkey - 32 bytes)
                     token_account_data.extend_from_slice(mint_pubkey.as_ref());
-                    
+
                     // Serialize owner (Pubkey - 32 bytes)
                     token_account_data.extend_from_slice(owner_pubkey.as_ref());
-                    
+
                     // Serialize amount (u64 - 8 bytes)
                     token_account_data.extend_from_slice(&token_account.amount.to_le_bytes());
-                    
+
                     // Serialize delegate as COption<Pubkey> (36 bytes: 4 tag + 32 pubkey)
                     token_account_data.extend_from_slice(&0u32.to_le_bytes()); // None tag
                     token_account_data.extend_from_slice(&[0u8; 32]); // Padding
-                    
+
                     // Serialize state (u8 - 1 byte): 0 = uninitialized, 1 = initialized, 2 = frozen
                     token_account_data.push(1u8); // initialized
-                    
+
                     // Serialize isNative as COption<u64> (12 bytes: 4 tag + 8 u64)
                     token_account_data.extend_from_slice(&0u32.to_le_bytes()); // None tag
                     token_account_data.extend_from_slice(&[0u8; 8]); // Padding
-                    
+
                     // Serialize delegatedAmount (u64 - 8 bytes)
                     token_account_data.extend_from_slice(&0u64.to_le_bytes());
-                    
+
                     // Serialize closeAuthority as COption<Pubkey> (36 bytes: 4 tag + 32 pubkey)
                     token_account_data.extend_from_slice(&0u32.to_le_bytes()); // None tag
                     token_account_data.extend_from_slice(&[0u8; 32]); // Padding
@@ -5069,10 +5127,18 @@ fn validator_deploy_flags(
                     // Write to file
                     let filename = format!("{}.json", token_account_pubkey);
                     let file_path = accounts_dir.join(&filename);
-                    let mut file = File::create(&file_path)
-                        .with_context(|| format!("Failed to create token account file: {}", file_path.display()))?;
-                    serde_json::to_writer_pretty(&mut file, &account_json)
-                        .with_context(|| format!("Failed to write token account JSON to: {}", file_path.display()))?;
+                    let mut file = File::create(&file_path).with_context(|| {
+                        format!(
+                            "Failed to create token account file: {}",
+                            file_path.display()
+                        )
+                    })?;
+                    serde_json::to_writer_pretty(&mut file, &account_json).with_context(|| {
+                        format!(
+                            "Failed to write token account JSON to: {}",
+                            file_path.display()
+                        )
+                    })?;
 
                     // Add to flags
                     flags.push("--account".to_string());
@@ -5126,12 +5192,9 @@ fn validator_deploy_flags(
                         (pubkey, address_str)
                     } else {
                         // Use the provided address
-                        let pubkey = Pubkey::try_from(funded_account.address.as_str())
-                            .map_err(|_| {
-                                anyhow!(
-                                    "Invalid pubkey address: {}",
-                                    funded_account.address
-                                )
+                        let pubkey =
+                            Pubkey::try_from(funded_account.address.as_str()).map_err(|_| {
+                                anyhow!("Invalid pubkey address: {}", funded_account.address)
                             })?;
                         (pubkey, funded_account.address.clone())
                     };
@@ -5158,14 +5221,9 @@ fn validator_deploy_flags(
                     let mut file = File::create(&file_path).with_context(|| {
                         format!("Failed to create account file: {}", file_path.display())
                     })?;
-                    serde_json::to_writer_pretty(&mut file, &account_json).with_context(
-                        || {
-                            format!(
-                                "Failed to write account JSON to: {}",
-                                file_path.display()
-                            )
-                        },
-                    )?;
+                    serde_json::to_writer_pretty(&mut file, &account_json).with_context(|| {
+                        format!("Failed to write account JSON to: {}", file_path.display())
+                    })?;
 
                     // Add to flags
                     flags.push("--account".to_string());
@@ -5331,8 +5389,12 @@ fn surfpool_flags(
                 // Create .anchor/generated_accounts directory in workspace root
                 let workspace_root = cfg.path().parent().expect("Invalid Anchor.toml path");
                 let accounts_dir = workspace_root.join(".anchor").join("generated_accounts");
-                fs::create_dir_all(&accounts_dir)
-                    .with_context(|| format!("Failed to create accounts directory: {}", accounts_dir.display()))?;
+                fs::create_dir_all(&accounts_dir).with_context(|| {
+                    format!(
+                        "Failed to create accounts directory: {}",
+                        accounts_dir.display()
+                    )
+                })?;
 
                 for token_mint in mints {
                     // Check if address is "new" to generate a random keypair
@@ -5341,14 +5403,18 @@ fn surfpool_flags(
                         let keypair = Keypair::new();
                         let pubkey = keypair.pubkey();
                         let address_str = pubkey.to_string();
-                        
+
                         // Save the keypair to a file so tests can use it
                         let keypair_filename = format!("{}.mint.json", pubkey);
                         let keypair_path = accounts_dir.join(&keypair_filename);
-                        keypair
-                            .write_to_file(&keypair_path)
-                            .map_err(|e| anyhow!("Failed to write mint keypair to {}: {}", keypair_path.display(), e))?;
-                        
+                        keypair.write_to_file(&keypair_path).map_err(|e| {
+                            anyhow!(
+                                "Failed to write mint keypair to {}: {}",
+                                keypair_path.display(),
+                                e
+                            )
+                        })?;
+
                         #[cfg(unix)]
                         {
                             use std::os::unix::fs::PermissionsExt;
@@ -5356,26 +5422,32 @@ fn surfpool_flags(
                             perms.set_mode(0o600);
                             fs::set_permissions(&keypair_path, perms)?;
                         }
-                        
+
                         (pubkey, address_str)
                     } else {
                         // Use the provided address
-                        let pubkey = Pubkey::try_from(token_mint.address.as_str())
-                            .map_err(|_| anyhow!("Invalid mint pubkey address: {}", token_mint.address))?;
+                        let pubkey =
+                            Pubkey::try_from(token_mint.address.as_str()).map_err(|_| {
+                                anyhow!("Invalid mint pubkey address: {}", token_mint.address)
+                            })?;
                         (pubkey, token_mint.address.clone())
                     };
 
                     // Resolve mint authority
-                    let mint_authority = token_mint.mint_authority.as_ref()
+                    let mint_authority = token_mint
+                        .mint_authority
+                        .as_ref()
                         .and_then(|s| Pubkey::try_from(s.as_str()).ok());
-                    
+
                     // Resolve freeze authority
-                    let freeze_authority = token_mint.freeze_authority.as_ref()
+                    let freeze_authority = token_mint
+                        .freeze_authority
+                        .as_ref()
                         .and_then(|s| Pubkey::try_from(s.as_str()).ok());
 
                     // Serialize mint account data (82 bytes total)
                     let mut mint_data = Vec::with_capacity(82);
-                    
+
                     // Serialize mint_authority as COption<Pubkey>
                     if let Some(auth) = mint_authority {
                         mint_data.extend_from_slice(&1u32.to_le_bytes()); // Some tag
@@ -5384,17 +5456,17 @@ fn surfpool_flags(
                         mint_data.extend_from_slice(&0u32.to_le_bytes()); // None tag
                         mint_data.extend_from_slice(&[0u8; 32]); // Padding
                     }
-                    
+
                     // Serialize supply (u64)
                     let supply = token_mint.supply.unwrap_or(0);
                     mint_data.extend_from_slice(&supply.to_le_bytes());
-                    
+
                     // Serialize decimals (u8)
                     mint_data.extend_from_slice(&[token_mint.decimals]);
-                    
+
                     // Serialize is_initialized (bool)
                     mint_data.push(1u8); // true
-                    
+
                     // Serialize freeze_authority as COption<Pubkey>
                     if let Some(auth) = freeze_authority {
                         mint_data.extend_from_slice(&1u32.to_le_bytes()); // Some tag
@@ -5422,10 +5494,18 @@ fn surfpool_flags(
                     // Write to file
                     let filename = format!("{}.json", pubkey);
                     let file_path = accounts_dir.join(&filename);
-                    let mut file = File::create(&file_path)
-                        .with_context(|| format!("Failed to create mint account file: {}", file_path.display()))?;
-                    serde_json::to_writer_pretty(&mut file, &account_json)
-                        .with_context(|| format!("Failed to write mint account JSON to: {}", file_path.display()))?;
+                    let mut file = File::create(&file_path).with_context(|| {
+                        format!(
+                            "Failed to create mint account file: {}",
+                            file_path.display()
+                        )
+                    })?;
+                    serde_json::to_writer_pretty(&mut file, &account_json).with_context(|| {
+                        format!(
+                            "Failed to write mint account JSON to: {}",
+                            file_path.display()
+                        )
+                    })?;
 
                     // For Surfpool, mints are created via account JSON files
                     // Note: Surfpool's --snapshot may not support account JSON format properly
@@ -5445,8 +5525,12 @@ fn surfpool_flags(
                 // Create .anchor/generated_accounts directory in workspace root (for keypair storage)
                 let workspace_root = cfg.path().parent().expect("Invalid Anchor.toml path");
                 let accounts_dir = workspace_root.join(".anchor").join("generated_accounts");
-                fs::create_dir_all(&accounts_dir)
-                    .with_context(|| format!("Failed to create accounts directory: {}", accounts_dir.display()))?;
+                fs::create_dir_all(&accounts_dir).with_context(|| {
+                    format!(
+                        "Failed to create accounts directory: {}",
+                        accounts_dir.display()
+                    )
+                })?;
 
                 for funded_account in fund_accounts {
                     // Check if address is "new" to generate a random keypair
@@ -5455,14 +5539,18 @@ fn surfpool_flags(
                         let keypair = Keypair::new();
                         let pubkey = keypair.pubkey();
                         let address_str = pubkey.to_string();
-                        
+
                         // Save the keypair to a file so tests can use it (use .keypair.json suffix to avoid overwriting account JSON)
                         let keypair_filename = format!("{}.keypair.json", pubkey);
                         let keypair_path = accounts_dir.join(&keypair_filename);
-                        keypair
-                            .write_to_file(&keypair_path)
-                            .map_err(|e| anyhow!("Failed to write keypair to {}: {}", keypair_path.display(), e))?;
-                        
+                        keypair.write_to_file(&keypair_path).map_err(|e| {
+                            anyhow!(
+                                "Failed to write keypair to {}: {}",
+                                keypair_path.display(),
+                                e
+                            )
+                        })?;
+
                         #[cfg(unix)]
                         {
                             use std::os::unix::fs::PermissionsExt;
@@ -5470,7 +5558,7 @@ fn surfpool_flags(
                             perms.set_mode(0o600);
                             fs::set_permissions(&keypair_path, perms)?;
                         }
-                        
+
                         address_str
                     } else {
                         // Use the provided address
@@ -5868,11 +5956,12 @@ fn start_surfpool_validator(
                             Err(_) => Vec::new(),
                         };
                         keypair_files.sort_by(|a, b| b.0.cmp(&a.0)); // Sort by modified time, newest first
-                        
+
                         // Try to parse the newest file as a pubkey
                         match keypair_files.first() {
                             Some((_, path)) => {
-                                match path.file_stem()
+                                match path
+                                    .file_stem()
                                     .and_then(|s| s.to_str())
                                     .and_then(|s| s.strip_suffix(".keypair"))
                                     .and_then(|s| s.parse::<Pubkey>().ok())
@@ -5891,10 +5980,10 @@ fn start_surfpool_validator(
                     };
 
                     let target_lamports = funded_account.lamports.unwrap_or(1_000_000_000);
-                    
+
                     // Get current balance - if account doesn't exist, get_balance will return 0
                     let current_balance = client.get_balance(&pubkey).unwrap_or(0);
-                    
+
                     if current_balance < target_lamports {
                         // Airdrop the full target amount (request_airdrop will create account if it doesn't exist)
                         if let Ok(sig) = client.request_airdrop(&pubkey, target_lamports) {
@@ -5915,8 +6004,12 @@ fn start_surfpool_validator(
                 // Create .anchor/generated_accounts directory in workspace root
                 let workspace_root = cfg.path().parent().expect("Invalid Anchor.toml path");
                 let accounts_dir = workspace_root.join(".anchor").join("generated_accounts");
-                fs::create_dir_all(&accounts_dir)
-                    .with_context(|| format!("Failed to create accounts directory: {}", accounts_dir.display()))?;
+                fs::create_dir_all(&accounts_dir).with_context(|| {
+                    format!(
+                        "Failed to create accounts directory: {}",
+                        accounts_dir.display()
+                    )
+                })?;
 
                 // Track created mints to resolve "new" mint references
                 let mut created_mints: Vec<Pubkey> = Vec::new();
@@ -5944,7 +6037,8 @@ fn start_surfpool_validator(
                             mint_files.sort_by(|a, b| b.0.cmp(&a.0));
                             match mint_files.first() {
                                 Some((_, path)) => {
-                                    match path.file_stem()
+                                    match path
+                                        .file_stem()
                                         .and_then(|s| s.to_str())
                                         .and_then(|s| s.strip_suffix(".mint"))
                                         .and_then(|s| s.parse::<Pubkey>().ok())
@@ -5979,7 +6073,10 @@ fn start_surfpool_validator(
                         match Pubkey::try_from(token_account.mint.as_str()) {
                             Ok(p) => p,
                             Err(_) => {
-                                eprintln!("Warning: Invalid mint address: {}. Skipping.", token_account.mint);
+                                eprintln!(
+                                    "Warning: Invalid mint address: {}. Skipping.",
+                                    token_account.mint
+                                );
                                 continue;
                             }
                         }
@@ -5990,14 +6087,20 @@ fn start_surfpool_validator(
                         // Generate a random keypair for owner
                         let owner_keypair = Keypair::new();
                         let owner_pubkey = owner_keypair.pubkey();
-                        
+
                         // Save the owner keypair
                         let owner_keypair_filename = format!("{}.owner.json", owner_pubkey);
                         let owner_keypair_path = accounts_dir.join(&owner_keypair_filename);
                         owner_keypair
                             .write_to_file(&owner_keypair_path)
-                            .map_err(|e| anyhow!("Failed to write owner keypair to {}: {}", owner_keypair_path.display(), e))?;
-                        
+                            .map_err(|e| {
+                                anyhow!(
+                                    "Failed to write owner keypair to {}: {}",
+                                    owner_keypair_path.display(),
+                                    e
+                                )
+                            })?;
+
                         #[cfg(unix)]
                         {
                             use std::os::unix::fs::PermissionsExt;
@@ -6005,88 +6108,110 @@ fn start_surfpool_validator(
                             perms.set_mode(0o600);
                             fs::set_permissions(&owner_keypair_path, perms)?;
                         }
-                        
+
                         owner_pubkey
                     } else {
-                        Pubkey::try_from(token_account.owner.as_str())
-                            .map_err(|_| anyhow!("Invalid owner pubkey address: {}", token_account.owner))?
+                        Pubkey::try_from(token_account.owner.as_str()).map_err(|_| {
+                            anyhow!("Invalid owner pubkey address: {}", token_account.owner)
+                        })?
                     };
 
                     // Resolve token account address
-                    let (token_account_pubkey, token_account_address_str) = if let Some(ref addr) = token_account.address {
-                        if addr.to_lowercase() == "new" {
+                    let (token_account_pubkey, token_account_address_str) =
+                        if let Some(ref addr) = token_account.address {
+                            if addr.to_lowercase() == "new" {
+                                let token_account_keypair = Keypair::new();
+                                let token_account_pubkey = token_account_keypair.pubkey();
+                                let token_account_address_str = token_account_pubkey.to_string();
+
+                                let token_account_keypair_filename =
+                                    format!("{}.token_account.json", token_account_pubkey);
+                                let token_account_keypair_path =
+                                    accounts_dir.join(&token_account_keypair_filename);
+                                token_account_keypair
+                                    .write_to_file(&token_account_keypair_path)
+                                    .map_err(|e| {
+                                        anyhow!(
+                                            "Failed to write token account keypair to {}: {}",
+                                            token_account_keypair_path.display(),
+                                            e
+                                        )
+                                    })?;
+
+                                #[cfg(unix)]
+                                {
+                                    use std::os::unix::fs::PermissionsExt;
+                                    let mut perms =
+                                        fs::metadata(&token_account_keypair_path)?.permissions();
+                                    perms.set_mode(0o600);
+                                    fs::set_permissions(&token_account_keypair_path, perms)?;
+                                }
+
+                                (token_account_pubkey, token_account_address_str)
+                            } else {
+                                let token_account_pubkey = Pubkey::try_from(addr.as_str())
+                                    .map_err(|_| {
+                                        anyhow!("Invalid token account pubkey address: {}", addr)
+                                    })?;
+                                (token_account_pubkey, addr.clone())
+                            }
+                        } else {
                             let token_account_keypair = Keypair::new();
                             let token_account_pubkey = token_account_keypair.pubkey();
                             let token_account_address_str = token_account_pubkey.to_string();
-                            
-                            let token_account_keypair_filename = format!("{}.token_account.json", token_account_pubkey);
-                            let token_account_keypair_path = accounts_dir.join(&token_account_keypair_filename);
+
+                            let token_account_keypair_filename =
+                                format!("{}.token_account.json", token_account_pubkey);
+                            let token_account_keypair_path =
+                                accounts_dir.join(&token_account_keypair_filename);
                             token_account_keypair
                                 .write_to_file(&token_account_keypair_path)
-                                .map_err(|e| anyhow!("Failed to write token account keypair to {}: {}", token_account_keypair_path.display(), e))?;
-                            
+                                .map_err(|e| {
+                                    anyhow!(
+                                        "Failed to write token account keypair to {}: {}",
+                                        token_account_keypair_path.display(),
+                                        e
+                                    )
+                                })?;
+
                             #[cfg(unix)]
                             {
                                 use std::os::unix::fs::PermissionsExt;
-                                let mut perms = fs::metadata(&token_account_keypair_path)?.permissions();
+                                let mut perms =
+                                    fs::metadata(&token_account_keypair_path)?.permissions();
                                 perms.set_mode(0o600);
                                 fs::set_permissions(&token_account_keypair_path, perms)?;
                             }
-                            
+
                             (token_account_pubkey, token_account_address_str)
-                        } else {
-                            let token_account_pubkey = Pubkey::try_from(addr.as_str())
-                                .map_err(|_| anyhow!("Invalid token account pubkey address: {}", addr))?;
-                            (token_account_pubkey, addr.clone())
-                        }
-                    } else {
-                        let token_account_keypair = Keypair::new();
-                        let token_account_pubkey = token_account_keypair.pubkey();
-                        let token_account_address_str = token_account_pubkey.to_string();
-                        
-                        let token_account_keypair_filename = format!("{}.token_account.json", token_account_pubkey);
-                        let token_account_keypair_path = accounts_dir.join(&token_account_keypair_filename);
-                        token_account_keypair
-                            .write_to_file(&token_account_keypair_path)
-                            .map_err(|e| anyhow!("Failed to write token account keypair to {}: {}", token_account_keypair_path.display(), e))?;
-                        
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let mut perms = fs::metadata(&token_account_keypair_path)?.permissions();
-                            perms.set_mode(0o600);
-                            fs::set_permissions(&token_account_keypair_path, perms)?;
-                        }
-                        
-                        (token_account_pubkey, token_account_address_str)
-                    };
+                        };
 
                     // Serialize token account data (165 bytes total)
                     let mut token_account_data = Vec::with_capacity(165);
-                    
+
                     // Serialize mint (Pubkey - 32 bytes)
                     token_account_data.extend_from_slice(mint_pubkey.as_ref());
-                    
+
                     // Serialize owner (Pubkey - 32 bytes)
                     token_account_data.extend_from_slice(owner_pubkey.as_ref());
-                    
+
                     // Serialize amount (u64 - 8 bytes)
                     token_account_data.extend_from_slice(&token_account.amount.to_le_bytes());
-                    
+
                     // Serialize delegate as COption<Pubkey> (36 bytes: 4 tag + 32 pubkey)
                     token_account_data.extend_from_slice(&0u32.to_le_bytes()); // None tag
                     token_account_data.extend_from_slice(&[0u8; 32]); // Padding
-                    
+
                     // Serialize state (u8 - 1 byte): 0 = uninitialized, 1 = initialized, 2 = frozen
                     token_account_data.push(1u8); // initialized
-                    
+
                     // Serialize isNative as COption<u64> (12 bytes: 4 tag + 8 u64)
                     token_account_data.extend_from_slice(&0u32.to_le_bytes()); // None tag
                     token_account_data.extend_from_slice(&[0u8; 8]); // Padding
-                    
+
                     // Serialize delegatedAmount (u64 - 8 bytes)
                     token_account_data.extend_from_slice(&0u64.to_le_bytes());
-                    
+
                     // Serialize closeAuthority as COption<Pubkey> (36 bytes: 4 tag + 32 pubkey)
                     token_account_data.extend_from_slice(&0u32.to_le_bytes()); // None tag
                     token_account_data.extend_from_slice(&[0u8; 32]); // Padding
@@ -6109,10 +6234,18 @@ fn start_surfpool_validator(
                     // Write to file
                     let filename = format!("{}.json", token_account_pubkey);
                     let file_path = accounts_dir.join(&filename);
-                    let mut file = File::create(&file_path)
-                        .with_context(|| format!("Failed to create token account file: {}", file_path.display()))?;
-                    serde_json::to_writer_pretty(&mut file, &account_json)
-                        .with_context(|| format!("Failed to write token account JSON to: {}", file_path.display()))?;
+                    let mut file = File::create(&file_path).with_context(|| {
+                        format!(
+                            "Failed to create token account file: {}",
+                            file_path.display()
+                        )
+                    })?;
+                    serde_json::to_writer_pretty(&mut file, &account_json).with_context(|| {
+                        format!(
+                            "Failed to write token account JSON to: {}",
+                            file_path.display()
+                        )
+                    })?;
 
                     // For Surfpool, token accounts are created via account JSON files
                     // Note: Surfpool's --snapshot may not support account JSON format properly

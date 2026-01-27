@@ -1618,62 +1618,62 @@ impl Merge for _Validator {
                     }
                 },
             },
-                fund_accounts: match self.fund_accounts.take() {
-                    None => other.fund_accounts,
-                    Some(mut entries) => match other.fund_accounts {
-                        None => Some(entries),
-                        Some(other_entries) => {
-                            for other_entry in other_entries {
-                                match entries
-                                    .iter()
-                                    .position(|my_entry| *my_entry.address == other_entry.address)
-                                {
-                                    None => entries.push(other_entry),
-                                    Some(i) => entries[i] = other_entry,
-                                };
-                            }
-                            Some(entries)
+            fund_accounts: match self.fund_accounts.take() {
+                None => other.fund_accounts,
+                Some(mut entries) => match other.fund_accounts {
+                    None => Some(entries),
+                    Some(other_entries) => {
+                        for other_entry in other_entries {
+                            match entries
+                                .iter()
+                                .position(|my_entry| *my_entry.address == other_entry.address)
+                            {
+                                None => entries.push(other_entry),
+                                Some(i) => entries[i] = other_entry,
+                            };
                         }
-                    },
+                        Some(entries)
+                    }
                 },
-                mints: match self.mints.take() {
-                    None => other.mints,
-                    Some(mut entries) => match other.mints {
-                        None => Some(entries),
-                        Some(other_entries) => {
-                            for other_entry in other_entries {
-                                match entries
-                                    .iter()
-                                    .position(|my_entry| *my_entry.address == other_entry.address)
-                                {
-                                    None => entries.push(other_entry),
-                                    Some(i) => entries[i] = other_entry,
-                                };
-                            }
-                            Some(entries)
+            },
+            mints: match self.mints.take() {
+                None => other.mints,
+                Some(mut entries) => match other.mints {
+                    None => Some(entries),
+                    Some(other_entries) => {
+                        for other_entry in other_entries {
+                            match entries
+                                .iter()
+                                .position(|my_entry| *my_entry.address == other_entry.address)
+                            {
+                                None => entries.push(other_entry),
+                                Some(i) => entries[i] = other_entry,
+                            };
                         }
-                    },
+                        Some(entries)
+                    }
                 },
-                token_accounts: match self.token_accounts.take() {
-                    None => other.token_accounts,
-                    Some(mut entries) => match other.token_accounts {
-                        None => Some(entries),
-                        Some(other_entries) => {
-                            // For token accounts, we merge by mint+owner combination
-                            for other_entry in other_entries {
-                                match entries.iter().position(|my_entry| {
-                                    *my_entry.mint == other_entry.mint
-                                        && *my_entry.owner == other_entry.owner
-                                        && my_entry.address == other_entry.address
-                                }) {
-                                    None => entries.push(other_entry),
-                                    Some(i) => entries[i] = other_entry,
-                                };
-                            }
-                            Some(entries)
+            },
+            token_accounts: match self.token_accounts.take() {
+                None => other.token_accounts,
+                Some(mut entries) => match other.token_accounts {
+                    None => Some(entries),
+                    Some(other_entries) => {
+                        // For token accounts, we merge by mint+owner combination
+                        for other_entry in other_entries {
+                            match entries.iter().position(|my_entry| {
+                                *my_entry.mint == other_entry.mint
+                                    && *my_entry.owner == other_entry.owner
+                                    && my_entry.address == other_entry.address
+                            }) {
+                                None => entries.push(other_entry),
+                                Some(i) => entries[i] = other_entry,
+                            };
                         }
-                    },
+                        Some(entries)
+                    }
                 },
+            },
             bind_address: other.bind_address.or_else(|| self.bind_address.take()),
             clone: match self.clone.take() {
                 None => other.clone,
