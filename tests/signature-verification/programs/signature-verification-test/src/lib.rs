@@ -78,7 +78,6 @@ pub mod signature_verification_test {
     ) -> Result<()> {
         // Convert messages to slice of slices
         let msg_slices: Vec<&[u8]> = messages.iter().map(|m| m.as_slice()).collect();
-        
         verify_secp256k1_instruction_at_index_multiple(
             &ctx.accounts.ix_sysvar,
             0,
