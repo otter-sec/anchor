@@ -3,11 +3,12 @@ use crate::prelude::*;
 use crate::solana_program::instruction::Instruction;
 use solana_instructions_sysvar::load_instruction_at_checked;
 use solana_sdk_ids::secp256k1_program;
+use solana_secp256k1_program::{
+    SecpSignatureOffsets, HASHED_PUBKEY_SERIALIZED_SIZE, SIGNATURE_OFFSETS_SERIALIZED_SIZE,
+    SIGNATURE_SERIALIZED_SIZE,
+};
 
 const SECP256K1_HEADER_SIZE: usize = 1; // num_signatures: u8
-const SECP256K1_SIGNATURE_OFFSET_SIZE: usize = 11; // 7 fields per signature (mixed u16/u8)
-const SECP256K1_ETH_ADDRESS_SIZE: usize = 20;
-const SECP256K1_SIGNATURE_SIZE: usize = 64;
 
 /// Verifies a Secp256k1 instruction created under the assumption that the
 /// signature, address, and message bytes all live inside the same instruction
@@ -24,23 +25,9 @@ pub fn verify_secp256k1_ix(
     verify_secp256k1_ix_with_instruction_index(ix, None, eth_address, msg, sig, recovery_id)
 }
 
-/// Structure representing a single signature's offset information
-#[derive(Debug, Clone)]
-struct Secp256k1SignatureOffsets {
-    sig_offset: u16,
-    sig_ix_idx: u8,
-    eth_offset: u16,
-    eth_ix_idx: u8,
-    msg_offset: u16,
-    msg_len: u16,
-    msg_ix_idx: u8,
-}
-
 /// Parses all signature offsets from a Secp256k1 instruction.
 /// Returns the number of signatures and a vector of offset structures.
-fn parse_secp256k1_signature_offsets(
-    ix: &Instruction,
-) -> Result<(u8, Vec<Secp256k1SignatureOffsets>)> {
+fn parse_secp256k1_signature_offsets(ix: &Instruction) -> Result<(u8, Vec<SecpSignatureOffsets>)> {
     require!(
         ix.data.len() >= SECP256K1_HEADER_SIZE,
         ErrorCode::SignatureVerificationFailed
@@ -51,7 +38,7 @@ fn parse_secp256k1_signature_offsets(
 
     // Calculate minimum required size: header + (offsets per signature)
     let min_size = SECP256K1_HEADER_SIZE
-        .checked_add(num_signatures as usize * SECP256K1_SIGNATURE_OFFSET_SIZE)
+        .checked_add(num_signatures as usize * SIGNATURE_OFFSETS_SERIALIZED_SIZE)
         .ok_or(ErrorCode::SignatureVerificationFailed)?;
     require!(
         ix.data.len() >= min_size,
@@ -63,29 +50,24 @@ fn parse_secp256k1_signature_offsets(
 
     for _ in 0..num_signatures {
         require!(
-            offset + SECP256K1_SIGNATURE_OFFSET_SIZE <= ix.data.len(),
+            offset + SIGNATURE_OFFSETS_SERIALIZED_SIZE <= ix.data.len(),
             ErrorCode::SignatureVerificationFailed
         );
 
-        let sig_offset = u16::from_le_bytes([ix.data[offset], ix.data[offset + 1]]);
-        let sig_ix_idx = ix.data[offset + 2];
-        let eth_offset = u16::from_le_bytes([ix.data[offset + 3], ix.data[offset + 4]]);
-        let eth_ix_idx = ix.data[offset + 5];
-        let msg_offset = u16::from_le_bytes([ix.data[offset + 6], ix.data[offset + 7]]);
-        let msg_len = u16::from_le_bytes([ix.data[offset + 8], ix.data[offset + 9]]);
-        let msg_ix_idx = ix.data[offset + 10];
+        // Manually parse the SDK struct from bytes
+        let data_slice = &ix.data[offset..offset + SIGNATURE_OFFSETS_SERIALIZED_SIZE];
+        let sig_offsets = SecpSignatureOffsets {
+            signature_offset: u16::from_le_bytes([data_slice[0], data_slice[1]]),
+            signature_instruction_index: data_slice[2],
+            eth_address_offset: u16::from_le_bytes([data_slice[3], data_slice[4]]),
+            eth_address_instruction_index: data_slice[5],
+            message_data_offset: u16::from_le_bytes([data_slice[6], data_slice[7]]),
+            message_data_size: u16::from_le_bytes([data_slice[8], data_slice[9]]),
+            message_instruction_index: data_slice[10],
+        };
+        offsets.push(sig_offsets);
 
-        offsets.push(Secp256k1SignatureOffsets {
-            sig_offset,
-            sig_ix_idx,
-            eth_offset,
-            eth_ix_idx,
-            msg_offset,
-            msg_len,
-            msg_ix_idx,
-        });
-
-        offset += SECP256K1_SIGNATURE_OFFSET_SIZE;
+        offset += SIGNATURE_OFFSETS_SERIALIZED_SIZE;
     }
 
     Ok((num_signatures, offsets))
@@ -93,9 +75,6 @@ fn parse_secp256k1_signature_offsets(
 
 /// Verifies a Secp256k1 signature instruction by parsing the actual instruction data
 /// to extract signature, Ethereum address, and message from their actual locations.
-///
-/// The `instruction_index` parameter is deprecated and ignored. The function now
-/// parses the instruction data header to determine where each piece of data is located.
 ///
 /// If `ix_sysvar` is provided, the function can load data from external instructions
 /// referenced by the signature instruction. If `None`, it only works when all data
@@ -124,7 +103,7 @@ pub fn verify_secp256k1_ix_with_instruction_index(
 
     let sig_info = &offsets[0];
     require_eq!(
-        sig_info.msg_len as usize,
+        sig_info.message_data_size as usize,
         msg.len(),
         ErrorCode::SignatureVerificationFailed
     );
@@ -189,7 +168,7 @@ pub fn verify_secp256k1_ix_multiple(
     for (i, sig_info) in offsets.iter().enumerate() {
         require!(recovery_ids[i] <= 1, ErrorCode::InvalidRecoveryId);
         require_eq!(
-            sig_info.msg_len as usize,
+            sig_info.message_data_size as usize,
             msgs[i].len(),
             ErrorCode::SignatureVerificationFailed
         );
@@ -213,7 +192,7 @@ pub fn verify_secp256k1_ix_multiple(
 fn verify_secp256k1_signature_at_index(
     ix: &Instruction,
     ix_sysvar: Option<&AccountInfo>,
-    sig_info: &Secp256k1SignatureOffsets,
+    sig_info: &SecpSignatureOffsets,
     eth_address: &[u8; 20],
     msg: &[u8],
     sig: &[u8; 64],
@@ -224,20 +203,20 @@ fn verify_secp256k1_signature_at_index(
 
     // Calculate minimum header size: header + (offset structures for all signatures)
     let min_header_size = SECP256K1_HEADER_SIZE
-        .checked_add(num_signatures as usize * SECP256K1_SIGNATURE_OFFSET_SIZE)
+        .checked_add(num_signatures as usize * SIGNATURE_OFFSETS_SERIALIZED_SIZE)
         .ok_or(ErrorCode::SignatureVerificationFailed)?;
 
     // Validate offsets are reasonable (must be >= min_header_size to avoid reading header)
     require!(
-        sig_info.sig_offset as usize >= min_header_size,
+        sig_info.signature_offset as usize >= min_header_size,
         ErrorCode::SignatureVerificationFailed
     );
     require!(
-        sig_info.eth_offset as usize >= min_header_size,
+        sig_info.eth_address_offset as usize >= min_header_size,
         ErrorCode::SignatureVerificationFailed
     );
     require!(
-        sig_info.msg_offset as usize >= min_header_size,
+        sig_info.message_data_offset as usize >= min_header_size,
         ErrorCode::SignatureVerificationFailed
     );
 
@@ -267,9 +246,9 @@ fn verify_secp256k1_signature_at_index(
 
     // Load Ethereum address from its actual location
     let actual_eth_address = load_data(
-        sig_info.eth_offset,
-        sig_info.eth_ix_idx,
-        SECP256K1_ETH_ADDRESS_SIZE,
+        sig_info.eth_address_offset,
+        sig_info.eth_address_instruction_index,
+        HASHED_PUBKEY_SERIALIZED_SIZE,
     )?;
     if actual_eth_address.as_slice() != eth_address {
         return Err(ErrorCode::SignatureVerificationFailed.into());
@@ -277,21 +256,21 @@ fn verify_secp256k1_signature_at_index(
 
     // Load signature from its actual location
     let actual_sig = load_data(
-        sig_info.sig_offset,
-        sig_info.sig_ix_idx,
-        SECP256K1_SIGNATURE_SIZE,
+        sig_info.signature_offset,
+        sig_info.signature_instruction_index,
+        SIGNATURE_SERIALIZED_SIZE,
     )?;
     if actual_sig.as_slice() != sig {
         return Err(ErrorCode::SignatureVerificationFailed.into());
     }
 
     // Load recovery id (it's right after the signature)
-    // Check for overflow: sig_offset + 64 must not overflow u16
+    // Check for overflow: signature_offset + 64 must not overflow u16
     let recovery_id_offset = sig_info
-        .sig_offset
-        .checked_add(SECP256K1_SIGNATURE_SIZE as u16)
+        .signature_offset
+        .checked_add(SIGNATURE_SERIALIZED_SIZE as u16)
         .ok_or(ErrorCode::SignatureVerificationFailed)?;
-    let actual_recovery_id = if sig_info.sig_ix_idx == u8::MAX {
+    let actual_recovery_id = if sig_info.signature_instruction_index == u8::MAX {
         let offset_usize = recovery_id_offset as usize;
         require!(
             offset_usize < ix.data.len(),
@@ -300,8 +279,9 @@ fn verify_secp256k1_signature_at_index(
         ix.data[offset_usize]
     } else {
         let sysvar = ix_sysvar.ok_or(ErrorCode::SignatureVerificationFailed)?;
-        let ref_ix = load_instruction_at_checked(sig_info.sig_ix_idx as usize, sysvar)
-            .map_err(|_| ErrorCode::SignatureVerificationFailed)?;
+        let ref_ix =
+            load_instruction_at_checked(sig_info.signature_instruction_index as usize, sysvar)
+                .map_err(|_| ErrorCode::SignatureVerificationFailed)?;
         let offset_usize = recovery_id_offset as usize;
         require!(
             offset_usize < ref_ix.data.len(),
@@ -314,7 +294,11 @@ fn verify_secp256k1_signature_at_index(
     }
 
     // Load message from its actual location
-    let actual_msg = load_data(sig_info.msg_offset, sig_info.msg_ix_idx, msg.len())?;
+    let actual_msg = load_data(
+        sig_info.message_data_offset,
+        sig_info.message_instruction_index,
+        msg.len(),
+    )?;
     if actual_msg.as_slice() != msg {
         return Err(ErrorCode::SignatureVerificationFailed.into());
     }

@@ -81,6 +81,8 @@ solana-program-option.workspace = true
 solana-program-pack.workspace = true
 solana-pubkey = { workspace = true, features = ["borsh", "bytemuck", "serde"] }
 solana-sdk-ids.workspace = true
+solana-ed25519-program.workspace = true
+solana-secp256k1-program.workspace = true
 solana-stake-interface = { workspace = true, features = ["sysvar", "bincode"] }
 solana-system-interface.workspace = true
 solana-sysvar = { workspace = true, features = ["bincode"] }
