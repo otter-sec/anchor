@@ -342,6 +342,7 @@ dependencies = [
  "borsh 1.6.1",
  "bytemuck",
  "const-crypto",
+ "serde",
  "solana-account-info",
  "solana-clock",
  "solana-cpi",

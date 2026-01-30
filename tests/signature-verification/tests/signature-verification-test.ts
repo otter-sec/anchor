@@ -34,17 +34,30 @@ describe("signature-verification-test", () => {
     );
     const signature = await sign(message, signer.secretKey.slice(0, 32));
 
-    // Create transaction with just the Ed25519Program instruction
+    // Create Ed25519 instruction using SDK
     const ed25519Instruction = Ed25519Program.createInstructionWithPublicKey({
       publicKey: signer.publicKey.toBytes(),
       message: message,
       signature: signature,
     });
 
-    const transaction = new Transaction().add(ed25519Instruction);
+    // Create Anchor program verification instruction
+    const verifyIx = await program.methods
+      .verifyEd25519Signature(
+        message,
+        Array.from(signature) as [number, ...number[]]
+      )
+      .accounts({
+        signer: signer.publicKey,
+        ixSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+      })
+      .instruction();
+
+    // Transaction: ed25519 instruction first, then Anchor verification
+    const tx = new Transaction().add(ed25519Instruction).add(verifyIx);
 
     try {
-      await provider.sendAndConfirm(transaction, []);
+      await provider.sendAndConfirm(tx, []);
       console.log("Ed25519 signature verified successfully!");
     } catch (error) {
       assert.fail("Valid Ed25519 signature should be verified");
@@ -59,20 +72,47 @@ describe("signature-verification-test", () => {
     // Create a fake signature (all zeros)
     const fakeSignature = new Uint8Array(64).fill(0);
 
-    // Create transaction with just the Ed25519Program instruction
+    // Create Ed25519 instruction with invalid signature
     const ed25519Instruction = Ed25519Program.createInstructionWithPublicKey({
       publicKey: signer.publicKey.toBytes(),
       message: message,
       signature: fakeSignature,
     });
 
-    const transaction = new Transaction().add(ed25519Instruction);
+    // Create Anchor program verification instruction
+    const verifyIx = await program.methods
+      .verifyEd25519Signature(
+        message,
+        Array.from(fakeSignature) as [number, ...number[]]
+      )
+      .accounts({
+        signer: signer.publicKey,
+        ixSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+      })
+      .instruction();
 
-    // This should fail
+    const transaction = new Transaction().add(ed25519Instruction).add(verifyIx);
+
+    // This should fail - expect signature verification error, not surfpool error
     try {
       await provider.sendAndConfirm(transaction, []);
       assert.fail("Invalid Signature of Ed25519 should not be verified");
-    } catch (error) {
+    } catch (error: any) {
+      // Check that we got a signature verification error, not a surfpool error
+      const errorStr = error.toString();
+      if (
+        errorStr.includes("surfpool") ||
+        errorStr.includes(
+          "This program may not be used for executing instructions"
+        )
+      ) {
+        // This is a surfpool/validator issue, not the expected signature error
+        // Re-throw to fail the test with a clearer message
+        throw new Error(
+          `Got surfpool/validator error instead of signature verification error: ${errorStr}`
+        );
+      }
+      // Expected: signature verification should fail
       console.log("Invalid Signature of Ed25519 is not verified");
     }
   });
@@ -398,11 +438,26 @@ describe("signature-verification-test", () => {
 
     const tx = new Transaction().add(secpIx).add(verifyIx);
 
-    // This should fail
+    // This should fail - expect signature verification error, not surfpool error
     try {
       await provider.sendAndConfirm(tx, []);
       assert.fail("Expected transaction to fail with invalid signature");
-    } catch (error) {
+    } catch (error: any) {
+      // Check that we got a signature verification error, not a surfpool error
+      const errorStr = error.toString();
+      if (
+        errorStr.includes("surfpool") ||
+        errorStr.includes(
+          "This program may not be used for executing instructions"
+        )
+      ) {
+        // This is a surfpool/validator issue, not the expected signature error
+        // Re-throw to fail the test with a clearer message
+        throw new Error(
+          `Got surfpool/validator error instead of signature verification error: ${errorStr}`
+        );
+      }
+      // Expected: signature verification should fail
       console.log(
         "Ethereum Secp256k1 verification correctly failed with invalid signature"
       );

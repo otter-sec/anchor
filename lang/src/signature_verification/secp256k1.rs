@@ -1,14 +1,28 @@
 use crate::error::ErrorCode;
 use crate::prelude::*;
 use crate::solana_program::instruction::Instruction;
+use bincode::deserialize;
+use serde::Deserialize;
 use solana_instructions_sysvar::load_instruction_at_checked;
 use solana_sdk_ids::secp256k1_program;
-use solana_secp256k1_program::{
-    SecpSignatureOffsets, HASHED_PUBKEY_SERIALIZED_SIZE, SIGNATURE_OFFSETS_SERIALIZED_SIZE,
-    SIGNATURE_SERIALIZED_SIZE,
-};
 
 const SECP256K1_HEADER_SIZE: usize = 1; // num_signatures: u8
+const HASHED_PUBKEY_SERIALIZED_SIZE: usize = 20;
+const SIGNATURE_OFFSETS_SERIALIZED_SIZE: usize = 11; // 2 + 1 + 2 + 1 + 2 + 2 + 1 bytes
+const SIGNATURE_SERIALIZED_SIZE: usize = 64;
+
+/// Secp256k1 signature offsets structure matching Solana's format.
+/// Layout matches the SDK struct but we use bincode deserialization since it's repr(Rust).
+#[derive(Clone, Deserialize)]
+struct SecpSignatureOffsets {
+    signature_offset: u16,
+    signature_instruction_index: u8,
+    eth_address_offset: u16,
+    eth_address_instruction_index: u8,
+    message_data_offset: u16,
+    message_data_size: u16,
+    message_instruction_index: u8,
+}
 
 /// Verifies a Secp256k1 instruction created under the assumption that the
 /// signature, address, and message bytes all live inside the same instruction
@@ -54,17 +68,10 @@ fn parse_secp256k1_signature_offsets(ix: &Instruction) -> Result<(u8, Vec<SecpSi
             ErrorCode::SignatureVerificationFailed
         );
 
-        // Manually parse the SDK struct from bytes
+        // Use bincode to deserialize the struct since it's repr(Rust) and layout is not stable
         let data_slice = &ix.data[offset..offset + SIGNATURE_OFFSETS_SERIALIZED_SIZE];
-        let sig_offsets = SecpSignatureOffsets {
-            signature_offset: u16::from_le_bytes([data_slice[0], data_slice[1]]),
-            signature_instruction_index: data_slice[2],
-            eth_address_offset: u16::from_le_bytes([data_slice[3], data_slice[4]]),
-            eth_address_instruction_index: data_slice[5],
-            message_data_offset: u16::from_le_bytes([data_slice[6], data_slice[7]]),
-            message_data_size: u16::from_le_bytes([data_slice[8], data_slice[9]]),
-            message_instruction_index: data_slice[10],
-        };
+        let sig_offsets: SecpSignatureOffsets =
+            deserialize(data_slice).map_err(|_| ErrorCode::SignatureVerificationFailed)?;
         offsets.push(sig_offsets);
 
         offset += SIGNATURE_OFFSETS_SERIALIZED_SIZE;

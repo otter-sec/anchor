@@ -63,6 +63,7 @@ bincode = "1"
 borsh = "1.5.7"
 bytemuck = { version = "1", features = ["derive"] }
 const-crypto = "0.3.0"
+serde = { version = "1", features = ["derive"] }
 
 solana-account-info.workspace = true
 solana-clock.workspace = true
@@ -82,7 +83,8 @@ solana-program-pack.workspace = true
 solana-pubkey = { workspace = true, features = ["borsh", "bytemuck", "serde"] }
 solana-sdk-ids.workspace = true
 solana-ed25519-program.workspace = true
-solana-secp256k1-program.workspace = true
+# FIXME: solana-secp256k1-program is blocking for stable as feature `edition2024` is required
+# solana-secp256k1-program.workspace = true
 solana-stake-interface = { workspace = true, features = ["sysvar", "bincode"] }
 solana-system-interface.workspace = true
 solana-sysvar = { workspace = true, features = ["bincode"] }

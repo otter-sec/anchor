@@ -3,13 +3,11 @@ use crate::prelude::*;
 use crate::solana_program::instruction::Instruction;
 use bytemuck::pod_read_unaligned;
 use solana_ed25519_program::{
-    Ed25519SignatureOffsets, SIGNATURE_OFFSETS_SERIALIZED_SIZE, SIGNATURE_SERIALIZED_SIZE,
+    Ed25519SignatureOffsets, PUBKEY_SERIALIZED_SIZE, SIGNATURE_OFFSETS_SERIALIZED_SIZE,
+    SIGNATURE_OFFSETS_START, SIGNATURE_SERIALIZED_SIZE,
 };
 use solana_instructions_sysvar::load_instruction_at_checked;
 use solana_sdk_ids::ed25519_program;
-
-const ED25519_HEADER_SIZE: usize = 2; // num_signatures: u8, padding: u8
-const ED25519_PUBKEY_SIZE: usize = 32;
 
 /// Verifies an Ed25519 signature instruction assuming the signature, public key,
 /// and message bytes are embedded directly inside the instruction data (Solana's
@@ -28,7 +26,7 @@ pub fn verify_ed25519_ix(
 /// Returns the number of signatures and a vector of offset structures.
 fn parse_ed25519_signature_offsets(ix: &Instruction) -> Result<(u8, Vec<Ed25519SignatureOffsets>)> {
     require!(
-        ix.data.len() >= ED25519_HEADER_SIZE,
+        ix.data.len() >= SIGNATURE_OFFSETS_START,
         ErrorCode::SignatureVerificationFailed
     );
 
@@ -36,7 +34,7 @@ fn parse_ed25519_signature_offsets(ix: &Instruction) -> Result<(u8, Vec<Ed25519S
     require!(num_signatures > 0, ErrorCode::SignatureVerificationFailed);
 
     // Calculate minimum required size: header + (offsets per signature)
-    let min_size = ED25519_HEADER_SIZE
+    let min_size = SIGNATURE_OFFSETS_START
         .checked_add(num_signatures as usize * SIGNATURE_OFFSETS_SERIALIZED_SIZE)
         .ok_or(ErrorCode::SignatureVerificationFailed)?;
     require!(
@@ -45,7 +43,7 @@ fn parse_ed25519_signature_offsets(ix: &Instruction) -> Result<(u8, Vec<Ed25519S
     );
 
     let mut offsets = Vec::with_capacity(num_signatures as usize);
-    let mut offset = ED25519_HEADER_SIZE;
+    let mut offset = SIGNATURE_OFFSETS_START;
 
     for _ in 0..num_signatures {
         require!(
@@ -165,7 +163,7 @@ fn verify_ed25519_signature_at_index(
     num_signatures: u8,
 ) -> Result<()> {
     // Calculate minimum header size: header + (offset structures for all signatures)
-    let min_header_size = ED25519_HEADER_SIZE
+    let min_header_size = SIGNATURE_OFFSETS_START
         .checked_add(num_signatures as usize * SIGNATURE_OFFSETS_SERIALIZED_SIZE)
         .ok_or(ErrorCode::SignatureVerificationFailed)?;
 
@@ -221,7 +219,7 @@ fn verify_ed25519_signature_at_index(
     let actual_pubkey = load_data(
         sig_info.public_key_offset,
         sig_info.public_key_instruction_index,
-        ED25519_PUBKEY_SIZE,
+        PUBKEY_SERIALIZED_SIZE,
     )?;
     if actual_pubkey.as_slice() != pubkey {
         return Err(ErrorCode::SignatureVerificationFailed.into());
