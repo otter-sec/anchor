@@ -203,19 +203,43 @@ where
         _ => quote! { vec![] },
     };
 
-    let serialization = get_attr_str("derive", attrs)
-        .and_then(|derive| {
-            if derive.contains("bytemuck") {
-                if derive.to_lowercase().contains("unsafe") {
-                    Some(quote! { #idl::IdlSerialization::BytemuckUnsafe })
-                } else {
-                    Some(quote! { #idl::IdlSerialization::Bytemuck })
+    // Track both safe and unsafe bytemuck derives from the same derive list.
+    let mut saw_bytemuck_pod = false;
+    let mut saw_bytemuck_unsafe = false;
+    for attr in attrs {
+        if !attr.path().is_ident("derive") {
+            continue;
+        }
+
+        let _ = attr.parse_nested_meta(|meta| {
+            let has_bytemuck_segment = meta.path.segments.iter().any(|s| s.ident == "bytemuck");
+
+            if has_bytemuck_segment {
+                let has_unsafe_segment = meta
+                    .path
+                    .segments
+                    .iter()
+                    .any(|s| s.ident.to_string().to_ascii_lowercase().contains("unsafe"));
+
+                let is_pod = meta.path.segments.last().is_some_and(|s| s.ident == "Pod");
+
+                if has_unsafe_segment {
+                    saw_bytemuck_unsafe = true;
+                } else if is_pod {
+                    saw_bytemuck_pod = true;
                 }
-            } else {
-                None
             }
-        })
-        .unwrap_or_else(|| quote! { #idl::IdlSerialization::default() });
+            Ok(())
+        });
+    }
+
+    let serialization = if saw_bytemuck_unsafe {
+        quote! { #idl::IdlSerialization::BytemuckUnsafe }
+    } else if saw_bytemuck_pod {
+        quote! { #idl::IdlSerialization::Bytemuck }
+    } else {
+        quote! { #idl::IdlSerialization::default() }
+    };
 
     let repr = get_attr_str("repr", attrs)
         .map(|repr| {
