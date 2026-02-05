@@ -13,6 +13,7 @@ const SIGNATURE_SERIALIZED_SIZE: usize = 64;
 
 /// Secp256k1 signature offsets structure matching Solana's format.
 /// Layout matches the SDK struct but we use bincode deserialization since it's repr(Rust).
+/// NOTE: Using manual deserialization since solana-secp256k1-program is not buildable with build-sbf
 #[derive(Clone, Deserialize)]
 struct SecpSignatureOffsets {
     signature_offset: u16,
