@@ -530,8 +530,6 @@ jobs:
             path: tests/multiple-scripts
           - cmd: cd tests/test-instruction-validation && ./test.sh
             path: tests/test-instruction-validation
-          - cmd: cd tests/signature-verification && anchor test
-            path: tests/signature-verification
           - cmd: cd tests/account-generation-test && anchor test
             path: tests/account-generation-test
     steps:

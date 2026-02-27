@@ -72,7 +72,8 @@
     "multiple-suites-run-single",
     "bpf-upgradeable-state",
     "multiple-scripts",
-    "duplicate-mutable-accounts"
+    "duplicate-mutable-accounts",
+    "account-generation-test"
   ],
   "dependencies": {
     "@project-serum/common": "^0.0.1-beta.3",
