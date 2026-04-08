@@ -695,8 +695,7 @@ fn generate_constraint_init_group(
                             for e in extensions {
                                 match e {
                                     ::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::ImmutableOwner => {
-                                        ::anchor_spl::token_interface::immutable_owner_initialize(anchor_lang::context::CpiContext::new(#token_program.to_account_info(), ::anchor_spl::token_interface::ImmutableOwnerInitialize {
-                                            token_program_id: #token_program.to_account_info(),
+                                        ::anchor_spl::token_interface::immutable_owner_initialize(anchor_lang::context::CpiContext::new(#token_program.key(), ::anchor_spl::token_interface::ImmutableOwnerInitialize {                                            token_program_id: #token_program.to_account_info(),
                                             token_account: #field.to_account_info(),
                                         }))?;
                                     },
