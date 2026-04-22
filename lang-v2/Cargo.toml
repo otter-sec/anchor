@@ -135,3 +135,7 @@ required-features = ["testing"]
 [[test]]
 name = "miri_wrapper_accounts"
 required-features = ["testing"]
+
+[[test]]
+name = "remaining_accounts_mut_check"
+required-features = ["testing"]

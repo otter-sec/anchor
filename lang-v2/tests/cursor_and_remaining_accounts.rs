@@ -38,6 +38,11 @@ impl Bumps for DummyHeader {
     type Bumps = ();
 }
 
+/// No declared mut fields — these tests don't exercise the
+/// trailing-dup-vs-declared-mut check (that's covered by
+/// `remaining_accounts_mut_check.rs`).
+const EMPTY_MUT_MASK: &[u64; 4] = &[0, 0, 0, 0];
+
 fn unique_addr(i: u8) -> [u8; 32] {
     let mut a = [0u8; 32];
     a[0] = i + 1; // avoid [0;32] which collides with the System program id.
@@ -202,9 +207,10 @@ fn remaining_accounts_walks_trailing_region() {
         (),
         &mut cursor,
         /*remaining_num*/ 3,
+        EMPTY_MUT_MASK,
     );
 
-    let remaining = ctx.remaining_accounts();
+    let remaining = ctx.remaining_accounts().expect("walk");
     assert_eq!(remaining.len(), 3);
     assert_eq!(remaining[0].address().to_bytes(), unique_addr(2));
     assert_eq!(remaining[1].address().to_bytes(), unique_addr(3));
@@ -252,11 +258,11 @@ fn remaining_accounts_returns_empty_when_nothing_trails() {
 
     let program_id = Address::new_from_array([0x42; 32]);
     let mut ctx: Context<'_, DummyHeader> =
-        Context::new(&program_id, DummyHeader, (), &mut cursor, 0);
+        Context::new(&program_id, DummyHeader, (), &mut cursor, 0, EMPTY_MUT_MASK);
 
-    assert!(ctx.remaining_accounts().is_empty());
+    assert!(ctx.remaining_accounts().expect("walk").is_empty());
     // Second call on empty — still empty, no cache bookkeeping bug.
-    assert!(ctx.remaining_accounts().is_empty());
+    assert!(ctx.remaining_accounts().expect("walk").is_empty());
 }
 
 #[test]
@@ -278,10 +284,14 @@ fn remaining_accounts_caches_and_does_not_re_walk_cursor() {
         (),
         &mut cursor,
         /*remaining_num*/ 2,
+        EMPTY_MUT_MASK,
     );
 
-    let first = ctx.remaining_accounts();
-    let second = ctx.remaining_accounts();
+    // `remaining_accounts()` returns `Result<&Vec<_>, _>`; the borrow
+    // would conflict with a second call, so clone-out the first vec
+    // before re-borrowing `ctx`.
+    let first = ctx.remaining_accounts().cloned().expect("first walk");
+    let second = ctx.remaining_accounts().cloned().expect("second walk");
 
     // Structural equality via address, since AccountView is Copy and the
     // cache returns a clone each call.
