@@ -203,6 +203,36 @@ fn trailing_account_aliasing_nested_mut_is_rejected() {
 }
 
 #[test]
+fn remaining_accounts_error_is_cached_on_failure() {
+    // Before the fix, Err left `remaining_cache` unset, so a repeat
+    // call would re-enter the walk loop and call `cursor.next()` again
+    // — past the remaining region on an unsafe cursor. After the fix,
+    // the error is cached and replayed; the cursor advances exactly
+    // once per instruction regardless of how many times the handler
+    // calls `remaining_accounts()`.
+    let records = [fresh(1), AccountRecord::Dup { index: 0 }];
+    let mut buf = SbfInputBuffer::build(&records);
+    let mut lookup: [MaybeUninit<AccountView>; MAX_ACCOUNTS] =
+        [const { MaybeUninit::uninit() }; MAX_ACCOUNTS];
+    let program_id = Address::new_from_array(PROGRAM_ID);
+    let mut cursor =
+        unsafe { AccountCursor::new(buf.as_mut_ptr(), lookup.as_mut_ptr() as *mut AccountView) };
+    let (_views, _dups) = unsafe { cursor.walk_n(1) };
+    let mut ctx: Context<NoAccounts> =
+        Context::new(&program_id, NoAccounts, (), &mut cursor, 1, MUT_MASK_SLOT0);
+
+    for _ in 0..5 {
+        match ctx.remaining_accounts() {
+            Err(ProgramError::Custom(code)) => assert_eq!(code, DUP_MUT_ERROR),
+            other => panic!(
+                "expected cached Err(ConstraintDuplicateMutableAccount), got {:?}",
+                other.map(|v| v.len())
+            ),
+        }
+    }
+}
+
+#[test]
 fn remaining_accounts_result_is_cached_on_success() {
     // Regression on the cache path: two successful calls must return
     // equal-length vecs without re-walking the cursor (second walk
