@@ -287,11 +287,8 @@ fn remaining_accounts_caches_and_does_not_re_walk_cursor() {
         EMPTY_MUT_MASK,
     );
 
-    // `remaining_accounts()` returns `Result<&Vec<_>, _>`; the borrow
-    // would conflict with a second call, so clone-out the first vec
-    // before re-borrowing `ctx`.
-    let first = ctx.remaining_accounts().cloned().expect("first walk");
-    let second = ctx.remaining_accounts().cloned().expect("second walk");
+    let first = ctx.remaining_accounts().expect("first walk");
+    let second = ctx.remaining_accounts().expect("second walk");
 
     // Structural equality via address, since AccountView is Copy and the
     // cache returns a clone each call.

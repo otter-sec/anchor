@@ -20,15 +20,12 @@ pub struct Context<'a, T: Bumps> {
     /// pass them in as arguments.
     pub bumps: T::Bumps,
 
-    /// Cursor into the serialized input buffer, positioned at the
+    /// Holds either a cursor into the serialized input buffer, pointing to the
     /// *start* of the remaining-accounts region (after `try_accounts`
     /// has consumed exactly `T::HEADER_SIZE` declared accounts). Used
     /// by [`Self::remaining_accounts`] for on-demand walking.
-    cursor: &'a mut AccountCursor,
-
-    /// Number of accounts after the declared region. Decremented to
-    /// zero once the remaining region is walked.
-    remaining_num: u8,
+    /// After `remaining_accounts` is called this holds a cache of the result.
+    remaining_accounts: RemainingAccounts<'a>,
 
     /// Mutable-account mask covering the declared region (from
     /// `T::MUT_MASK`). Used by [`Self::remaining_accounts`] to
@@ -38,15 +35,24 @@ pub struct Context<'a, T: Bumps> {
     /// `HEADER_SIZE`-only check in `run_handler` can't see dups that
     /// only surface during the trailing walk).
     mut_mask: &'static [u64; 4],
+}
 
-    /// Cached outcome of the remaining-accounts walk. `None` until the
-    /// first call to [`Self::remaining_accounts`]; then stores whichever
-    /// `Result` that walk produced. Subsequent calls replay the cache
-    /// (clone of the vec on success, clone of the error on failure) so
-    /// the cursor is advanced exactly once per instruction — retrying
-    /// after an error must not call `cursor.next()` again, which would
-    /// walk past the remaining region.
-    remaining_cache: Option<Result<alloc::vec::Vec<AccountView>, ProgramError>>,
+enum RemainingAccounts<'a> {
+    Unparsed {
+        /// Points to the `remaining-accounts` region
+        cursor: &'a mut AccountCursor,
+        /// Number of accounts remaining after the initially declared region
+        remaining: u8,
+    },
+    /// Cached result of walking `remaining-accounts`; will return an error if
+    /// duplicate mutable constraints are violated.
+    Cached(Result<alloc::vec::Vec<AccountView>, ProgramError>),
+}
+
+impl<'a> RemainingAccounts<'a> {
+    fn is_unparsed(&self) -> bool {
+        matches!(self, RemainingAccounts::Unparsed { .. })
+    }
 }
 
 impl<'a, T: Bumps> Context<'a, T> {
@@ -63,10 +69,11 @@ impl<'a, T: Bumps> Context<'a, T> {
             program_id,
             accounts,
             bumps,
-            cursor,
-            remaining_num,
+            remaining_accounts: RemainingAccounts::Unparsed {
+                cursor,
+                remaining: remaining_num,
+            },
             mut_mask,
-            remaining_cache: None,
         }
     }
 
@@ -91,24 +98,33 @@ impl<'a, T: Bumps> Context<'a, T> {
     /// mut slot's bit, which by construction means the runtime resolved
     /// the trailing slot as a dup of that declared mut account.
     pub fn remaining_accounts(&mut self) -> Result<alloc::vec::Vec<AccountView>, ProgramError> {
-        if self.remaining_cache.is_none() {
-            self.remaining_cache = Some(self.walk_remaining());
+        if self.remaining_accounts.is_unparsed() {
+            self.remaining_accounts = RemainingAccounts::Cached(self.walk_remaining());
         }
-        match self.remaining_cache.as_ref().unwrap() {
-            Ok(v) => Ok(v.clone()),
-            Err(e) => Err(e.clone()),
+
+        match &self.remaining_accounts {
+            RemainingAccounts::Cached(Ok(accs)) => Ok(accs.clone()),
+            RemainingAccounts::Cached(Err(err)) => Err(err.clone()),
+            RemainingAccounts::Unparsed { .. } => unreachable!(),
         }
     }
 
     fn walk_remaining(&mut self) -> Result<alloc::vec::Vec<AccountView>, ProgramError> {
-        let mut v = alloc::vec::Vec::with_capacity(self.remaining_num as usize);
-        for _ in 0..self.remaining_num {
+        let RemainingAccounts::Unparsed {
+            ref mut cursor,
+            remaining,
+        } = self.remaining_accounts
+        else {
+            unreachable!()
+        };
+        let mut v = alloc::vec::Vec::with_capacity(remaining as usize);
+        for _ in 0..remaining {
             // SAFETY: cursor is positioned at the start of the remaining
             // region and `remaining_num` is the exact number of accounts
             // to walk. Walking stops on the first mut-alias error so we
             // never advance past the remaining region.
-            v.push(unsafe { self.cursor.next() });
-            if let Some(dups) = self.cursor.duplicates() {
+            v.push(unsafe { cursor.next() });
+            if let Some(dups) = cursor.duplicates() {
                 if dups.intersects(self.mut_mask) {
                     return Err(crate::ErrorCode::ConstraintDuplicateMutableAccount.into());
                 }

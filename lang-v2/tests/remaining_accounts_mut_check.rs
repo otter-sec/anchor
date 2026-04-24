@@ -105,10 +105,7 @@ fn run_with(
         remaining_num,
         mut_mask,
     );
-    // Helper returns owned `Result<Vec, _>`; the API now hands back a
-    // borrow into the cache, which we clone out so the helper can drop
-    // its `Context` and return.
-    ctx.remaining_accounts().cloned()
+    ctx.remaining_accounts()
 }
 
 // ---------------------------------------------------------------------------
@@ -248,10 +245,8 @@ fn remaining_accounts_result_is_cached_on_success() {
     let mut ctx: Context<NoAccounts> =
         Context::new(&program_id, NoAccounts, (), &mut cursor, 2, MUT_MASK_SLOT0);
 
-    // `remaining_accounts()` returns `Result<&Vec<_>, _>`; clone-out so
-    // the second call can re-borrow `ctx` mutably.
-    let first = ctx.remaining_accounts().cloned().expect("first call");
-    let second = ctx.remaining_accounts().cloned().expect("second call");
+    let first = ctx.remaining_accounts().expect("first call");
+    let second = ctx.remaining_accounts().expect("second call");
     assert_eq!(first.len(), 2);
     assert_eq!(second.len(), 2);
 }
