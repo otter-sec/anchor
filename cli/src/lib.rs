@@ -16,6 +16,7 @@ use {
         types::{Idl, IdlArrayLen, IdlDefinedFields, IdlType, IdlTypeDefTy},
     },
     anyhow::{anyhow, bail, Context, Result},
+    cargo_metadata::{DependencyKind, MetadataCommand},
     checks::{check_anchor_version, check_deps, check_idl_build_feature, check_overflow},
     clap::{CommandFactory, Parser},
     dirs::home_dir,
@@ -2129,7 +2130,7 @@ fn build_all(
             None => Err(anyhow!("Invalid Anchor.toml at {}", cfg_path.display())),
             Some(_parent) => {
                 let mut idl_paths = Vec::new();
-                for p in cfg.get_rust_program_list()? {
+                for p in get_metadata_ordered_rust_program_list(cfg)? {
                     idl_paths.extend(build_rust_cwd(
                         cfg,
                         p.join("Cargo.toml"),
@@ -2151,6 +2152,128 @@ fn build_all(
     })();
     std::env::set_current_dir(cur_dir)?;
     r
+}
+
+fn get_metadata_ordered_rust_program_list(cfg: &WithPath<Config>) -> Result<Vec<PathBuf>> {
+    let programs = cfg.get_rust_program_list()?;
+    let ordered = order_rust_programs_by_metadata(cfg, &programs);
+    Ok(ordered.unwrap_or(programs))
+}
+
+fn order_rust_programs_by_metadata(
+    cfg: &WithPath<Config>,
+    programs: &[PathBuf],
+) -> Result<Vec<PathBuf>> {
+    let workspace_dir = cfg
+        .path()
+        .parent()
+        .ok_or_else(|| anyhow!("Invalid Anchor.toml at {}", cfg.path().display()))?;
+    let metadata = MetadataCommand::new()
+        .current_dir(workspace_dir)
+        .exec()
+        .context("Failed to run `cargo metadata`")?;
+
+    let mut package_dirs = HashMap::new();
+    for (idx, package) in metadata.packages.iter().enumerate() {
+        if package.source.is_some() {
+            continue;
+        }
+        let manifest_path = package.manifest_path.clone().into_std_path_buf();
+        if let Some(package_dir) = manifest_path.parent() {
+            if let Ok(package_dir) = package_dir.canonicalize() {
+                package_dirs.insert(package_dir, idx);
+            }
+        }
+    }
+
+    let program_indices = programs
+        .iter()
+        .filter_map(|program| package_dirs.get(program).copied())
+        .collect::<HashSet<_>>();
+    if program_indices.len() != programs.len() {
+        bail!("Failed to match all Anchor programs in `cargo metadata`");
+    }
+
+    let mut local_deps = vec![Vec::new(); metadata.packages.len()];
+    for (idx, package) in metadata.packages.iter().enumerate() {
+        for dep in &package.dependencies {
+            if dep.kind == DependencyKind::Development {
+                continue;
+            }
+            let Some(dep_path) = dep.path.as_ref() else {
+                continue;
+            };
+            if let Ok(dep_path) = dep_path.clone().into_std_path_buf().canonicalize() {
+                if let Some(dep_idx) = package_dirs.get(&dep_path) {
+                    local_deps[idx].push(*dep_idx);
+                }
+            }
+        }
+    }
+
+    let mut program_closures = HashMap::new();
+    for idx in &program_indices {
+        program_closures.insert(*idx, local_dependency_closure(*idx, &local_deps));
+    }
+
+    let mut reverse_dependents = HashMap::new();
+    for idx in &program_indices {
+        reverse_dependents.insert(*idx, 0usize);
+    }
+    for (program_idx, deps) in &program_closures {
+        for dep_idx in deps {
+            if program_indices.contains(dep_idx) && dep_idx != program_idx {
+                *reverse_dependents.entry(*dep_idx).or_default() += 1;
+            }
+        }
+    }
+
+    let original_order = programs
+        .iter()
+        .enumerate()
+        .map(|(idx, program)| (program, idx))
+        .collect::<HashMap<_, _>>();
+    let mut ordered = programs.to_vec();
+    ordered.sort_by(|a, b| {
+        let a_idx = package_dirs[a];
+        let b_idx = package_dirs[b];
+        let a_deps = &program_closures[&a_idx];
+        let b_deps = &program_closures[&b_idx];
+        let a_program_deps = a_deps
+            .iter()
+            .filter(|idx| program_indices.contains(idx))
+            .count();
+        let b_program_deps = b_deps
+            .iter()
+            .filter(|idx| program_indices.contains(idx))
+            .count();
+        let a_reverse = reverse_dependents[&a_idx];
+        let b_reverse = reverse_dependents[&b_idx];
+        let a_isolated = a_program_deps == 0 && a_reverse == 0;
+        let b_isolated = b_program_deps == 0 && b_reverse == 0;
+
+        b_isolated
+            .cmp(&a_isolated)
+            .then_with(|| b_program_deps.cmp(&a_program_deps))
+            .then_with(|| b_deps.len().cmp(&a_deps.len()))
+            .then_with(|| a_reverse.cmp(&b_reverse))
+            .then_with(|| original_order[a].cmp(&original_order[b]))
+    });
+
+    Ok(ordered)
+}
+
+fn local_dependency_closure(start: usize, deps: &[Vec<usize>]) -> HashSet<usize> {
+    let mut seen = HashSet::new();
+    let mut stack = deps[start].clone();
+
+    while let Some(idx) = stack.pop() {
+        if seen.insert(idx) {
+            stack.extend(deps[idx].iter().copied());
+        }
+    }
+
+    seen
 }
 
 // Runs the build command outside of a workspace.
