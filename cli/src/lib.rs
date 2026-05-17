@@ -89,6 +89,71 @@ pub static AVM_HOME: LazyLock<PathBuf> = LazyLock::new(|| {
     }
 });
 
+pub fn support_version_report() -> String {
+    let mut lines = vec![format!("anchor-cli {VERSION}")];
+
+    lines.push(command_version_line("solana-cli", "solana"));
+    lines.push(command_version_line("cargo", "cargo"));
+    lines.push(format!("OS: {}", os_version()));
+
+    lines.join("\n") + "\n"
+}
+
+fn command_version_line(label: &str, command: &str) -> String {
+    match command_output(command, &["--version"]) {
+        Some(version) if version.starts_with(label) => version,
+        Some(version) => format!("{label} {version}"),
+        None => format!("{label} unavailable"),
+    }
+}
+
+fn command_output(command: &str, args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new(command)
+        .args(args)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8(output.stdout)
+        .ok()
+        .and_then(|output| output.lines().next().map(str::trim).map(str::to_owned))
+        .filter(|line| !line.is_empty())
+}
+
+fn os_version() -> String {
+    if let Some(version) = macos_version() {
+        return version;
+    }
+    if let Some(version) = command_output("lsb_release", &["-ds"]) {
+        return version.trim_matches('"').to_owned();
+    }
+    if let Some(version) = linux_os_release() {
+        return version;
+    }
+    if let Some(version) = command_output("cmd", &["/C", "ver"]) {
+        return version;
+    }
+
+    std::env::consts::OS.to_owned()
+}
+
+fn macos_version() -> Option<String> {
+    let name = command_output("sw_vers", &["-productName"])?;
+    let version = command_output("sw_vers", &["-productVersion"])?;
+    let build = command_output("sw_vers", &["-buildVersion"])?;
+    Some(format!("{name} {version} {build}"))
+}
+
+fn linux_os_release() -> Option<String> {
+    fs::read_to_string("/etc/os-release")
+        .ok()?
+        .lines()
+        .find_map(|line| line.strip_prefix("PRETTY_NAME="))
+        .map(|value| value.trim_matches('"').to_owned())
+}
+
 #[derive(Debug, Parser, AbsolutePath)]
 #[clap(version = VERSION)]
 pub struct Opts {
