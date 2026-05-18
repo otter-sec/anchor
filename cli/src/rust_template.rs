@@ -102,8 +102,57 @@ pub mod {} {{
     pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {{
         ctx.accounts.counter.count = 0;
         ctx.accounts.counter.authority = *ctx.accounts.payer.address();
-        msg!("Counter initialized");
+
+        let cpi_accounts = system_program::Transfer {{
+            from: ctx.accounts.payer.cpi_handle_mut(),
+            to: ctx.accounts.counter.cpi_handle_mut(),
+        }};
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::transfer(cpi_ctx, HELLO_WORLD_LAMPORTS)?;
+
+        msg!("Hello, world! Counter initialized");
         Ok(())
+    }}
+
+    pub fn increment(ctx: &mut Context<Increment>) -> Result<()> {{
+        require_keys_eq!(
+            ctx.accounts.counter.authority,
+            *ctx.accounts.authority.address(),
+            ErrorCode::Unauthorized,
+        );
+        require!(
+            ctx.accounts.counter.count < MAX_COUNT,
+            ErrorCode::CounterOverflow,
+        );
+
+        ctx.accounts.counter.count += 1;
+        msg!("Hello, world! Counter is now {{}}", ctx.accounts.counter.count);
+        Ok(())
+    }}
+}}
+
+pub mod constants {{
+    use super::*;
+
+    #[constant]
+    pub const COUNTER_SEED: &[u8] = b"counter";
+
+    #[constant]
+    pub const HELLO_WORLD_LAMPORTS: u64 = 1;
+
+    #[constant]
+    pub const MAX_COUNT: u64 = 10;
+}}
+
+pub mod error {{
+    use super::*;
+
+    #[error_code]
+    pub enum ErrorCode {{
+        #[msg("Only the counter authority can update this counter")]
+        Unauthorized,
+        #[msg("Counter has reached the maximum value")]
+        CounterOverflow,
     }}
 }}
 
@@ -117,15 +166,24 @@ pub mod state {{
     }}
 }}
 
+use constants::*;
+use error::ErrorCode;
 use state::Counter;
 
 #[derive(Accounts)]
 pub struct Initialize {{
     #[account(mut)]
     pub payer: Signer,
-    #[account(init, payer = payer)]
+    #[account(init, payer = payer, seeds = [COUNTER_SEED], bump)]
     pub counter: Account<Counter>,
     pub system_program: Program<System>,
+}}
+
+#[derive(Accounts)]
+pub struct Increment {{
+    #[account(mut, seeds = [COUNTER_SEED], bump)]
+    pub counter: Account<Counter>,
+    pub authority: Signer,
 }}
 "#,
             get_or_create_program_id(name, target_path),
