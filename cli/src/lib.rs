@@ -4497,6 +4497,12 @@ fn validator_config_flags(test_validator: &Option<TestValidator>) -> Result<Vec<
                 // these validator flags.
                 continue;
             };
+            if key == "extra_args" {
+                for arg in value.as_array().unwrap() {
+                    flags.push(arg.as_str().unwrap().to_string());
+                }
+                continue;
+            }
             if key == "account" {
                 for entry in value.as_array().unwrap() {
                     // Push the account flag for each array entry
@@ -6833,5 +6839,32 @@ mod tests {
             .any(|args| args[0] == "--warp-slot" && args[1] == "42"));
         assert!(!flags.iter().any(|arg| arg == "--bpf-program"));
         assert!(!flags.iter().any(|arg| arg == "--upgradeable-program"));
+    }
+
+    #[test]
+    fn validator_flags_emits_extra_args() {
+        let workspace = tempdir().unwrap();
+        let cfg = WithPath::new(Config::default(), workspace.path().join("Anchor.toml"));
+        let expected = vec![
+            "--rpc-pubsub-enable-block-subscription".to_string(),
+            "--geyser-plugin-config".to_string(),
+            "geyser.json".to_string(),
+        ];
+        let test_validator = Some(TestValidator {
+            validator: Some(crate::config::Validator {
+                bind_address: "127.0.0.1".to_string(),
+                ledger: ".anchor/test-ledger".to_string(),
+                rpc_port: 18999,
+                extra_args: Some(expected.clone()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        let flags = validator_flags(&cfg, &test_validator, true).unwrap();
+
+        assert!(flags
+            .windows(expected.len())
+            .any(|args| args == expected.as_slice()));
     }
 }

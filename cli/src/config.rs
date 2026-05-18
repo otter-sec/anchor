@@ -1392,6 +1392,9 @@ pub struct _Validator {
     // Deactivate one or more features.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deactivate_feature: Option<Vec<String>>,
+    // Extra arguments to pass through to solana-test-validator.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_args: Option<Vec<String>>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -1429,6 +1432,8 @@ pub struct Validator {
     pub warp_slot: Option<Slot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deactivate_feature: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_args: Option<Vec<String>>,
 }
 
 impl From<_Validator> for Validator {
@@ -1456,6 +1461,7 @@ impl From<_Validator> for Validator {
             ticks_per_slot: _validator.ticks_per_slot,
             warp_slot: _validator.warp_slot,
             deactivate_feature: _validator.deactivate_feature,
+            extra_args: _validator.extra_args,
         }
     }
 }
@@ -1481,6 +1487,7 @@ impl From<Validator> for _Validator {
             ticks_per_slot: validator.ticks_per_slot,
             warp_slot: validator.warp_slot,
             deactivate_feature: validator.deactivate_feature,
+            extra_args: validator.extra_args,
         }
     }
 }
@@ -1576,6 +1583,15 @@ impl Merge for _Validator {
             deactivate_feature: other
                 .deactivate_feature
                 .or_else(|| self.deactivate_feature.take()),
+            extra_args: match self.extra_args.take() {
+                None => other.extra_args,
+                Some(mut args) => {
+                    if let Some(other_args) = other.extra_args {
+                        args.extend(other_args);
+                    }
+                    Some(args)
+                }
+            },
         };
     }
 }
@@ -1920,6 +1936,45 @@ rust = true
         assert_eq!(config.skip_local_validator, Some(true));
         let serialized = config.to_string();
         assert!(serialized.contains("skip_local_validator = true"));
+    }
+
+    #[test]
+    fn test_validator_extra_args_round_trips() {
+        let toml = BASE_CONFIG.to_owned()
+            + r#"
+[test.validator]
+extra_args = [
+    "--rpc-pubsub-enable-block-subscription",
+    "--geyser-plugin-config",
+    "geyser.json",
+]
+"#;
+        let config = Config::from_str(&toml).unwrap();
+        let extra_args = config
+            .test_validator
+            .as_ref()
+            .and_then(|test| test.validator.as_ref())
+            .and_then(|validator| validator.extra_args.as_ref())
+            .unwrap();
+
+        assert_eq!(
+            extra_args,
+            &vec![
+                "--rpc-pubsub-enable-block-subscription".to_string(),
+                "--geyser-plugin-config".to_string(),
+                "geyser.json".to_string(),
+            ]
+        );
+
+        let serialized = config.to_string();
+        let reparsed = Config::from_str(&serialized).unwrap();
+        let reparsed_extra_args = reparsed
+            .test_validator
+            .as_ref()
+            .and_then(|test| test.validator.as_ref())
+            .and_then(|validator| validator.extra_args.as_ref())
+            .unwrap();
+        assert_eq!(reparsed_extra_args, extra_args);
     }
 
     #[test]
