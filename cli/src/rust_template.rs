@@ -490,13 +490,13 @@ describe("{}", () => {{
 
     const initializeTx = await program.methods
       .initialize()
-      .accounts({{ counter }})
+      .accountsPartial({{ counter }})
       .rpc();
     console.log("Initialize transaction signature", initializeTx);
 
     const incrementTx = await program.methods
       .increment()
-      .accounts({{ counter }})
+      .accountsPartial({{ counter }})
       .rpc();
     console.log("Increment transaction signature", incrementTx);
   }});
@@ -524,13 +524,13 @@ describe("{}", () => {{
 
     const initializeTx = await program.methods
       .initialize()
-      .accounts({{ counter }})
+      .accountsPartial({{ counter }})
       .rpc();
     console.log("Initialize transaction signature", initializeTx);
 
     const incrementTx = await program.methods
       .increment()
-      .accounts({{ counter }})
+      .accountsPartial({{ counter }})
       .rpc();
     console.log("Increment transaction signature", incrementTx);
   }});
@@ -679,13 +679,13 @@ describe("{}", () => {{
 
     const initializeTx = await program.methods
       .initialize()
-      .accounts({{ counter }})
+      .accountsPartial({{ counter }})
       .rpc();
     console.log("Initialize transaction signature", initializeTx);
 
     const incrementTx = await program.methods
       .increment()
-      .accounts({{ counter }})
+      .accountsPartial({{ counter }})
       .rpc();
     console.log("Increment transaction signature", incrementTx);
   }});
@@ -719,13 +719,13 @@ describe("{}", () => {{
 
     const initializeTx = await program.methods
       .initialize()
-      .accounts({{ counter }})
+      .accountsPartial({{ counter }})
       .rpc();
     console.log("Initialize transaction signature", initializeTx);
 
     const incrementTx = await program.methods
       .increment()
-      .accounts({{ counter }})
+      .accountsPartial({{ counter }})
       .rpc();
     console.log("Increment transaction signature", incrementTx);
   }});
