@@ -2216,49 +2216,52 @@ fn order_rust_programs_by_metadata(
         program_closures.insert(*idx, local_dependency_closure(*idx, &local_deps));
     }
 
-    let mut reverse_dependents = HashMap::new();
-    for idx in &program_indices {
-        reverse_dependents.insert(*idx, 0usize);
-    }
-    for (program_idx, deps) in &program_closures {
-        for dep_idx in deps {
-            if program_indices.contains(dep_idx) && dep_idx != program_idx {
-                *reverse_dependents.entry(*dep_idx).or_default() += 1;
-            }
-        }
-    }
-
-    let original_order = programs
+    let original_order_by_package = programs
         .iter()
         .enumerate()
-        .map(|(idx, program)| (program, idx))
+        .map(|(idx, program)| (package_dirs[program], idx))
         .collect::<HashMap<_, _>>();
-    let mut ordered = programs.to_vec();
-    ordered.sort_by(|a, b| {
-        let a_idx = package_dirs[a];
-        let b_idx = package_dirs[b];
-        let a_deps = &program_closures[&a_idx];
-        let b_deps = &program_closures[&b_idx];
-        let a_program_deps = a_deps
-            .iter()
-            .filter(|idx| program_indices.contains(idx))
-            .count();
-        let b_program_deps = b_deps
-            .iter()
-            .filter(|idx| program_indices.contains(idx))
-            .count();
-        let a_reverse = reverse_dependents[&a_idx];
-        let b_reverse = reverse_dependents[&b_idx];
-        let a_isolated = a_program_deps == 0 && a_reverse == 0;
-        let b_isolated = b_program_deps == 0 && b_reverse == 0;
+    let program_by_index = programs
+        .iter()
+        .map(|program| (package_dirs[program], program.clone()))
+        .collect::<HashMap<_, _>>();
+    let ordered = order_program_indices_by_dependencies(
+        &program_indices,
+        &program_closures,
+        &original_order_by_package,
+    )?
+    .into_iter()
+    .map(|idx| program_by_index[&idx].clone())
+    .collect();
 
-        b_isolated
-            .cmp(&a_isolated)
-            .then_with(|| b_program_deps.cmp(&a_program_deps))
-            .then_with(|| b_deps.len().cmp(&a_deps.len()))
-            .then_with(|| a_reverse.cmp(&b_reverse))
-            .then_with(|| original_order[a].cmp(&original_order[b]))
-    });
+    Ok(ordered)
+}
+
+fn order_program_indices_by_dependencies(
+    program_indices: &HashSet<usize>,
+    program_closures: &HashMap<usize, HashSet<usize>>,
+    original_order: &HashMap<usize, usize>,
+) -> Result<Vec<usize>> {
+    let mut remaining = program_indices.clone();
+    let mut ordered = Vec::with_capacity(program_indices.len());
+
+    while !remaining.is_empty() {
+        let Some(next) = remaining
+            .iter()
+            .filter(|idx| {
+                program_closures[idx]
+                    .iter()
+                    .all(|dep_idx| !remaining.contains(dep_idx))
+            })
+            .min_by_key(|idx| original_order[idx])
+            .copied()
+        else {
+            bail!("Cycle detected in Anchor program dependencies");
+        };
+
+        remaining.remove(&next);
+        ordered.push(next);
+    }
 
     Ok(ordered)
 }
@@ -6242,6 +6245,7 @@ mod tests {
             IdlGenericArg, IdlInstructionAccount, IdlInstructionAccountItem, IdlPda, IdlSeed,
             IdlSeedAccount, IdlTypeDef, IdlTypeDefGeneric,
         },
+        std::collections::{HashMap, HashSet},
         tempfile::tempdir,
     };
 
@@ -6409,6 +6413,66 @@ mod tests {
             true,
         )
         .unwrap();
+    }
+
+    fn index_set(indices: &[usize]) -> HashSet<usize> {
+        indices.iter().copied().collect()
+    }
+
+    #[test]
+    fn program_order_places_dependencies_before_dependents() {
+        let program_indices = index_set(&[0, 1]);
+        let program_closures = HashMap::from([(0, index_set(&[1])), (1, index_set(&[]))]);
+        let original_order = HashMap::from([(0, 0), (1, 1)]);
+
+        let ordered = order_program_indices_by_dependencies(
+            &program_indices,
+            &program_closures,
+            &original_order,
+        )
+        .unwrap();
+
+        assert_eq!(ordered, vec![1, 0]);
+    }
+
+    #[test]
+    fn program_order_handles_transitive_dependencies() {
+        let program_indices = index_set(&[0, 1, 2]);
+        let program_closures = HashMap::from([
+            (0, index_set(&[1, 2])),
+            (1, index_set(&[2])),
+            (2, index_set(&[])),
+        ]);
+        let original_order = HashMap::from([(0, 0), (1, 1), (2, 2)]);
+
+        let ordered = order_program_indices_by_dependencies(
+            &program_indices,
+            &program_closures,
+            &original_order,
+        )
+        .unwrap();
+
+        assert_eq!(ordered, vec![2, 1, 0]);
+    }
+
+    #[test]
+    fn program_order_preserves_original_order_for_unrelated_programs() {
+        let program_indices = index_set(&[0, 1, 2]);
+        let program_closures = HashMap::from([
+            (0, index_set(&[3])),
+            (1, index_set(&[])),
+            (2, index_set(&[])),
+        ]);
+        let original_order = HashMap::from([(0, 0), (1, 1), (2, 2)]);
+
+        let ordered = order_program_indices_by_dependencies(
+            &program_indices,
+            &program_closures,
+            &original_order,
+        )
+        .unwrap();
+
+        assert_eq!(ordered, vec![0, 1, 2]);
     }
 
     #[test]
