@@ -1185,7 +1185,7 @@ use {{
         accounts::Account, bytemuck, programs::System,
         solana_program::instruction::Instruction, Id, InstructionData, Space, ToAccountMetas,
     }},
-    anchor_v2_testing::{{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction}},
+    anchor_v2_testing::{{Keypair, Message, Signer, VersionedMessage, VersionedTransaction}},
 }};
 
 #[test]
