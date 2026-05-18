@@ -123,15 +123,22 @@ fn command_output(command: &str, args: &[&str]) -> Option<String> {
 }
 
 fn os_version() -> String {
+    #[cfg(target_os = "macos")]
     if let Some(version) = macos_version() {
         return version;
     }
-    if let Some(version) = command_output("lsb_release", &["-ds"]) {
-        return version.trim_matches('"').to_owned();
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(version) = command_output("lsb_release", &["-ds"]) {
+            return version.trim_matches('"').to_owned();
+        }
+        if let Some(version) = linux_os_release() {
+            return version;
+        }
     }
-    if let Some(version) = linux_os_release() {
-        return version;
-    }
+
+    #[cfg(target_os = "windows")]
     if let Some(version) = command_output("cmd", &["/C", "ver"]) {
         return version;
     }
@@ -139,6 +146,7 @@ fn os_version() -> String {
     std::env::consts::OS.to_owned()
 }
 
+#[cfg(target_os = "macos")]
 fn macos_version() -> Option<String> {
     let name = command_output("sw_vers", &["-productName"])?;
     let version = command_output("sw_vers", &["-productVersion"])?;
@@ -146,6 +154,7 @@ fn macos_version() -> Option<String> {
     Some(format!("{name} {version} {build}"))
 }
 
+#[cfg(target_os = "linux")]
 fn linux_os_release() -> Option<String> {
     fs::read_to_string("/etc/os-release")
         .ok()?
