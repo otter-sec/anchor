@@ -5554,8 +5554,6 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
                 std::process::Command::new(&command)
                     .args(&args)
                     .env("ANCHOR_WALLET", cfg.provider.wallet.to_string())
-                    .stdout(Stdio::inherit())
-                    .stderr(Stdio::inherit())
                     .output()
                     .map_err(|e| anyhow::format_err!("{}", e))
             };
