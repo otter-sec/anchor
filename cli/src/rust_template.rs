@@ -1124,15 +1124,48 @@ fn test_initialize() {{
         &[Check::success()],
     );
 
+    let payer_account = result
+        .resulting_accounts
+        .iter()
+        .find(|(pk, _)| *pk == payer)
+        .map(|(_, a)| a.clone())
+        .expect("payer account");
+    let counter_account = result
+        .resulting_accounts
+        .iter()
+        .find(|(pk, _)| *pk == counter)
+        .map(|(_, a)| a.clone())
+        .expect("counter account");
+    assert_eq!(counter_account.data.len(), counter_space);
+    let counter_state: &{0}::state::Counter = bytemuck::from_bytes(&counter_account.data[8..]);
+    assert_eq!(counter_state.count, 0);
+    assert_eq!(counter_state.authority, payer);
+
+    let instruction = Instruction::new_with_bytes(
+        program_id,
+        &{0}::instruction::Increment {{}}.data(),
+        {0}::accounts::Increment {{
+            counter,
+            authority: payer,
+        }}
+        .to_account_metas(None),
+    );
+    let accounts = vec![(counter, counter_account), (payer, payer_account)];
+
+    let result = mollusk.process_and_validate_instruction(
+        &instruction,
+        &accounts,
+        &[Check::success()],
+    );
+
     let counter_account = result
         .resulting_accounts
         .iter()
         .find(|(pk, _)| *pk == counter)
         .map(|(_, a)| a)
         .expect("counter account");
-    assert_eq!(counter_account.data.len(), counter_space);
     let counter_state: &{0}::state::Counter = bytemuck::from_bytes(&counter_account.data[8..]);
-    assert_eq!(counter_state.count, 0);
+    assert_eq!(counter_state.count, 1);
     assert_eq!(counter_state.authority, payer);
 }}
 "#,
