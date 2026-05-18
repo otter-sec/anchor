@@ -142,10 +142,10 @@ The `sol_transfer` instruction included in the example code shows a typical
 approach for constructing CPIs using the Anchor framework.
 
 This approach involves creating a
-[`CpiContext`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/context.rs#L173),
+[`CpiContext`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/context.rs#L173),
 which includes the `program_id` and accounts required for the instruction being
 called. The `CpiContext` is then passed to an Anchor helper function
-([`transfer`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/system_program.rs#L298))
+([`transfer`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/system_program.rs#L298))
 to invoke a specific instruction.
 
 ```rust
@@ -472,7 +472,7 @@ The `sol_transfer` instruction included in the example code shows a typical
 approach for constructing CPIs using the Anchor framework.
 
 This approach involves creating a
-[`CpiContext`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/context.rs#L173),
+[`CpiContext`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/context.rs#L173),
 which includes the `program_id` and accounts required for the instruction being
 called, followed by a helper function (`transfer`) to invoke a specific
 instruction.
