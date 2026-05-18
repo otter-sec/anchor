@@ -1506,12 +1506,15 @@ fn init(
 
     let mut cfg = Config::default();
 
-    // Resolve once — errors early if an explicit choice is missing, or
-    // waterfalls pnpm → yarn → npm when nothing was requested. The resolved
-    // PM is persisted to Anchor.toml so subsequent `anchor test`/`deploy`
-    // runs use the same one without re-running detection.
-    let package_manager = resolve_package_manager(package_manager)?;
-    let test_script = test_template.get_test_script(javascript, &package_manager);
+    // Resolve once for Node-backed test templates. Rust-only templates do not
+    // emit package files, so they should not require a package manager just to
+    // initialize a workspace.
+    let package_manager = if test_template.uses_node() {
+        Some(resolve_package_manager(package_manager)?)
+    } else {
+        None
+    };
+    let test_script = test_template.get_test_script(javascript, package_manager.as_ref());
     cfg.scripts.insert("test".to_owned(), test_script);
 
     // In-process test templates (litesvm + mollusk) drive the Solana VM
@@ -1523,8 +1526,8 @@ fn init(
         cfg.skip_local_validator = Some(true);
     }
 
-    let package_manager_cmd = package_manager.to_string();
-    cfg.toolchain.package_manager = Some(package_manager);
+    let package_manager_cmd = package_manager.as_ref().map(ToString::to_string);
+    cfg.toolchain.package_manager = package_manager.clone();
 
     // Initialize .gitignore file
     fs::write(".gitignore", rust_template::git_ignore())?;
@@ -1559,41 +1562,45 @@ fn init(
     let toml = cfg.to_string();
     fs::write("Anchor.toml", toml)?;
 
-    // Build the migrations directory.
-    let migrations_path = Path::new("migrations");
-    fs::create_dir_all(migrations_path)?;
+    if test_template.uses_node() {
+        // Build the migrations directory.
+        let migrations_path = Path::new("migrations");
+        fs::create_dir_all(migrations_path)?;
 
-    let license = get_npm_init_license()?;
+        let license = get_npm_init_license()?;
 
-    let jest = TestTemplate::Jest == test_template;
-    if javascript {
-        // Build javascript config
-        let mut package_json = File::create("package.json")?;
-        package_json.write_all(rust_template::package_json(jest, license).as_bytes())?;
+        let jest = TestTemplate::Jest == test_template;
+        if javascript {
+            // Build javascript config
+            let mut package_json = File::create("package.json")?;
+            package_json.write_all(rust_template::package_json(jest, license).as_bytes())?;
 
-        let mut deploy = File::create(migrations_path.join("deploy.js"))?;
-        deploy.write_all(rust_template::deploy_script().as_bytes())?;
-    } else {
-        // Build typescript config
-        let mut ts_config = File::create("tsconfig.json")?;
-        ts_config.write_all(rust_template::ts_config(jest).as_bytes())?;
+            let mut deploy = File::create(migrations_path.join("deploy.js"))?;
+            deploy.write_all(rust_template::deploy_script().as_bytes())?;
+        } else {
+            // Build typescript config
+            let mut ts_config = File::create("tsconfig.json")?;
+            ts_config.write_all(rust_template::ts_config(jest).as_bytes())?;
 
-        let mut ts_package_json = File::create("package.json")?;
-        ts_package_json.write_all(rust_template::ts_package_json(jest, license).as_bytes())?;
+            let mut ts_package_json = File::create("package.json")?;
+            ts_package_json.write_all(rust_template::ts_package_json(jest, license).as_bytes())?;
 
-        let mut deploy = File::create(migrations_path.join("deploy.ts"))?;
-        deploy.write_all(rust_template::ts_deploy_script().as_bytes())?;
+            let mut deploy = File::create(migrations_path.join("deploy.ts"))?;
+            deploy.write_all(rust_template::ts_deploy_script().as_bytes())?;
+        }
     }
 
     test_template.create_test_files(&project_name, javascript, &program_id.to_string())?;
 
     if !no_install {
-        let output = install_node_modules(&package_manager_cmd)?;
-        if !output.status.success() {
-            eprintln!(
-                "`{package_manager_cmd} install` failed (exit code {:?})",
-                output.status.code()
-            );
+        if let Some(package_manager_cmd) = &package_manager_cmd {
+            let output = install_node_modules(package_manager_cmd)?;
+            if !output.status.success() {
+                eprintln!(
+                    "`{package_manager_cmd} install` failed (exit code {:?})",
+                    output.status.code()
+                );
+            }
         }
     }
 
