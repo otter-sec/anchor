@@ -2,19 +2,21 @@
 //!
 //! Project-pinned Solana versions win. If the project does not pin Solana,
 //! AVM resolves the Anchor version and maps it to Anchor's recommended Solana
-//! CLI version using `../anchor-solana-map.toml`.
+//! CLI version using `../anchor-solana-map.toml`. `solana-program` dependency
+//! requirements are matched against Anza's hosted installer versions so AVM
+//! does not try to install unavailable lower-bound releases.
 use {
     crate::{
         current_version, read_installed_versions,
         resolve::{
             resolve_anchor_version_with, resolve_solana_version, Resolution, ResolutionSource,
-            SolanaResolutionSource,
+            SolanaResolution, SolanaResolutionSource,
         },
         DOWNLOAD_CLIENT,
     },
     anyhow::{anyhow, bail, Context, Result},
     reqwest::StatusCode,
-    semver::Version,
+    semver::{Version, VersionReq},
     serde::Deserialize,
     std::{
         fmt::Display,
@@ -28,6 +30,7 @@ use {
 };
 
 const ANCHOR_SOLANA_MAP_TOML: &str = include_str!("../anchor-solana-map.toml");
+const SOLANA_CLI_VERSIONS_TOML: &str = include_str!("../solana-cli-versions.toml");
 const AGAVE_INSTALL_MIN_VERSION_STR: &str = "1.18.19";
 const INSTALLER_DOWNLOAD_MAX_ATTEMPTS: usize = 4;
 const INSTALLER_DOWNLOAD_INITIAL_BACKOFF_MS: u64 = 500;
@@ -47,6 +50,11 @@ struct AnchorSolanaMap {
 struct MapEntry {
     anchor: String,
     solana: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SolanaCliVersions {
+    versions: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -81,6 +89,29 @@ static MAP: LazyLock<ParsedMap> = LazyLock::new(|| {
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 
     ParsedMap { entries }
+});
+
+static INSTALLABLE_SOLANA_CLI_VERSIONS: LazyLock<Vec<Version>> = LazyLock::new(|| {
+    let raw: SolanaCliVersions =
+        toml::from_str(SOLANA_CLI_VERSIONS_TOML).expect("Built-in Solana CLI versions must parse");
+
+    let versions = raw
+        .versions
+        .into_iter()
+        .map(|v| {
+            Version::parse(&v)
+                .unwrap_or_else(|err| panic!("Invalid Solana CLI version `{v}`: {err}"))
+        })
+        .collect::<Vec<_>>();
+
+    let was_sorted = versions.windows(2).all(|w| w[0] < w[1]);
+    assert!(
+        was_sorted,
+        "solana-cli-versions.toml entries must be sorted by semver"
+    );
+    let _ = was_sorted;
+
+    versions
 });
 
 /// Where a resolved Solana CLI version came from.
@@ -160,11 +191,8 @@ pub fn resolve_solana_cli_for_anchor_resolution(
     start: &Path,
     anchor_res: &Resolution,
 ) -> Result<Option<SolanaCliResolution>> {
-    if let Some(res) = resolve_solana_version(start)? {
-        return Ok(Some(SolanaCliResolution {
-            version: res.version,
-            source: SolanaCliResolutionSource::Project(res.source),
-        }));
+    if let Some(res) = resolve_project_solana_cli(start)? {
+        return Ok(Some(res));
     }
 
     resolve_solana_from_anchor_resolution(anchor_res).map(Some)
@@ -175,11 +203,8 @@ fn resolve_solana_cli_with(
     installed_anchor_versions: &[Version],
     global_anchor_default: Option<Version>,
 ) -> Result<Option<SolanaCliResolution>> {
-    if let Some(res) = resolve_solana_version(start)? {
-        return Ok(Some(SolanaCliResolution {
-            version: res.version,
-            source: SolanaCliResolutionSource::Project(res.source),
-        }));
+    if let Some(res) = resolve_project_solana_cli(start)? {
+        return Ok(Some(res));
     }
 
     let Some(anchor_res) =
@@ -189,6 +214,43 @@ fn resolve_solana_cli_with(
     };
 
     resolve_solana_from_anchor_resolution(&anchor_res).map(Some)
+}
+
+fn resolve_project_solana_cli(start: &Path) -> Result<Option<SolanaCliResolution>> {
+    let Some(res) = resolve_solana_version(start)? else {
+        return Ok(None);
+    };
+    let version = project_solana_cli_version(&res)?;
+    Ok(Some(SolanaCliResolution {
+        version,
+        source: SolanaCliResolutionSource::Project(res.source),
+    }))
+}
+
+fn project_solana_cli_version(res: &SolanaResolution) -> Result<Version> {
+    match (&res.source, res.version_req.as_deref()) {
+        (SolanaResolutionSource::CargoToml(_), Some(req)) => {
+            resolve_installable_solana_cli_req(req)
+        }
+        _ => Ok(res.version.clone()),
+    }
+}
+
+fn resolve_installable_solana_cli_req(req_str: &str) -> Result<Version> {
+    let req = VersionReq::parse(req_str)
+        .with_context(|| format!("Parsing solana-program version requirement `{req_str}`"))?;
+    INSTALLABLE_SOLANA_CLI_VERSIONS
+        .iter()
+        .filter(|version| req.matches(version))
+        .max()
+        .cloned()
+        .ok_or_else(|| {
+            anyhow!(
+                "No installable Solana CLI version hosted by Anza satisfies solana-program \
+                 requirement `{req_str}`. Pin `[toolchain] solana_version` in `Anchor.toml` to \
+                 choose manually."
+            )
+        })
 }
 
 fn resolve_solana_from_anchor_resolution(anchor_res: &Resolution) -> Result<SolanaCliResolution> {
@@ -496,6 +558,20 @@ pub fn validate_embedded_map() -> Result<()> {
         Version::parse(&e.solana)
             .with_context(|| format!("Invalid Solana version `{}` in map", e.solana))?;
     }
+
+    let raw: SolanaCliVersions =
+        toml::from_str(SOLANA_CLI_VERSIONS_TOML).context("Parsing embedded Solana CLI versions")?;
+    if raw.versions.is_empty() {
+        bail!("solana-cli-versions.toml must have at least one entry");
+    }
+    let versions = raw
+        .versions
+        .iter()
+        .map(|v| Version::parse(v).with_context(|| format!("Invalid Solana CLI version `{v}`")))
+        .collect::<Result<Vec<_>>>()?;
+    if !versions.windows(2).all(|w| w[0] < w[1]) {
+        bail!("solana-cli-versions.toml entries must be sorted by semver");
+    }
     Ok(())
 }
 
@@ -561,6 +637,86 @@ mod tests {
             res.source,
             SolanaCliResolutionSource::Project(SolanaResolutionSource::AnchorToml(_))
         ));
+    }
+
+    #[test]
+    fn solana_program_req_uses_newest_hosted_semver_compatible_cli() {
+        let dir = TempDir::new().unwrap();
+        write(&dir.path().join("Anchor.toml"), "");
+        write(
+            &dir.path().join("programs/foo/Cargo.toml"),
+            "[package]\nname = \"foo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[lib]\npath = \
+             \"src/lib.rs\"\n[dependencies]\nsolana-program = \"2.2.1\"\n",
+        );
+        write(&dir.path().join("programs/foo/src/lib.rs"), "");
+
+        let res = resolve_solana_cli_with(dir.path(), &[], None)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(res.version, v("2.3.13"));
+        assert!(matches!(
+            res.source,
+            SolanaCliResolutionSource::Project(SolanaResolutionSource::CargoToml(_))
+        ));
+    }
+
+    #[test]
+    fn old_solana_program_req_uses_hosted_compatible_cli() {
+        let dir = TempDir::new().unwrap();
+        write(&dir.path().join("Anchor.toml"), "");
+        write(
+            &dir.path().join("programs/foo/Cargo.toml"),
+            "[package]\nname = \"foo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[lib]\npath = \
+             \"src/lib.rs\"\n[dependencies]\nsolana-program = \"1.17.1\"\n",
+        );
+        write(&dir.path().join("programs/foo/src/lib.rs"), "");
+
+        let res = resolve_solana_cli_with(dir.path(), &[], None)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(res.version, v("1.18.26"));
+        assert!(matches!(
+            res.source,
+            SolanaCliResolutionSource::Project(SolanaResolutionSource::CargoToml(_))
+        ));
+    }
+
+    #[test]
+    fn exact_solana_program_req_stays_exact_when_hosted() {
+        let dir = TempDir::new().unwrap();
+        write(&dir.path().join("Anchor.toml"), "");
+        write(
+            &dir.path().join("programs/foo/Cargo.toml"),
+            "[package]\nname = \"foo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[lib]\npath = \
+             \"src/lib.rs\"\n[dependencies]\nsolana-program = \"=2.2.1\"\n",
+        );
+        write(&dir.path().join("programs/foo/src/lib.rs"), "");
+
+        let res = resolve_solana_cli_with(dir.path(), &[], None)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(res.version, v("2.2.1"));
+    }
+
+    #[test]
+    fn exact_solana_program_req_errors_when_not_hosted() {
+        let dir = TempDir::new().unwrap();
+        write(&dir.path().join("Anchor.toml"), "");
+        write(
+            &dir.path().join("programs/foo/Cargo.toml"),
+            "[package]\nname = \"foo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[lib]\npath = \
+             \"src/lib.rs\"\n[dependencies]\nsolana-program = \"=1.17.18\"\n",
+        );
+        write(&dir.path().join("programs/foo/src/lib.rs"), "");
+
+        let err = resolve_solana_cli_with(dir.path(), &[], None).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("No installable Solana CLI version hosted by Anza"));
     }
 
     #[test]

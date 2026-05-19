@@ -317,6 +317,9 @@ impl SolanaResolutionSource {
 pub struct SolanaResolution {
     pub version: Version,
     pub source: SolanaResolutionSource,
+    /// Original `solana-program` requirement, preserved for callers that can
+    /// resolve against a concrete candidate set instead of using the floor.
+    pub version_req: Option<String>,
 }
 
 /// Resolve the Solana version a project targets, used as input to
@@ -347,6 +350,7 @@ fn resolve_solana_from_anchor_toml(start: &Path) -> Result<Option<SolanaResoluti
     Ok(Some(SolanaResolution {
         version,
         source: SolanaResolutionSource::AnchorToml(path),
+        version_req: None,
     }))
 }
 
@@ -358,10 +362,11 @@ fn resolve_solana_from_cargo_toml(start: &Path) -> Result<Option<SolanaResolutio
         let Some(dep) = manifest.dependencies.get("solana-program") else {
             continue;
         };
-        if let Some(version) = solana_program_version(dep, &manifest_path)? {
+        if let Some((version, version_req)) = solana_program_version(dep, &manifest_path)? {
             return Ok(Some(SolanaResolution {
                 version,
                 source: SolanaResolutionSource::CargoToml(manifest_path),
+                version_req: Some(version_req),
             }));
         }
     }
@@ -371,17 +376,22 @@ fn resolve_solana_from_cargo_toml(start: &Path) -> Result<Option<SolanaResolutio
 /// Extract a concrete Solana version from a `solana-program` dependency entry.
 /// Unlike Anchor's anchor-lang resolution we cannot consult installed versions
 /// (Solana is not installed via AVM), so version requirements are reduced to
-/// the lowest compatible concrete version via [`min_version_from_req`].
-fn solana_program_version(dep: &Dependency, manifest_path: &Path) -> Result<Option<Version>> {
+/// the lowest compatible concrete version via [`min_version_from_req`]. The
+/// original requirement is returned too, so CLI resolution can choose a hosted
+/// semver-compatible installer instead of the raw floor.
+fn solana_program_version(
+    dep: &Dependency,
+    manifest_path: &Path,
+) -> Result<Option<(Version, String)>> {
     match dep {
-        Dependency::Simple(req) => Ok(Some(min_version_from_req(req)?)),
+        Dependency::Simple(req) => Ok(Some((min_version_from_req(req)?, req.clone()))),
         Dependency::Detailed(detail) => {
             if detail.git.is_some() || detail.path.is_some() {
                 // Non-registry deps cannot be mapped to a Solana release.
                 return Ok(None);
             }
             match &detail.version {
-                Some(req) => Ok(Some(min_version_from_req(req)?)),
+                Some(req) => Ok(Some((min_version_from_req(req)?, req.clone()))),
                 None => Ok(None),
             }
         }
@@ -389,7 +399,7 @@ fn solana_program_version(dep: &Dependency, manifest_path: &Path) -> Result<Opti
     }
 }
 
-fn resolve_workspace_solana_program(member_manifest: &Path) -> Result<Option<Version>> {
+fn resolve_workspace_solana_program(member_manifest: &Path) -> Result<Option<(Version, String)>> {
     let mut cur = member_manifest.parent().and_then(Path::parent);
     while let Some(dir) = cur {
         let candidate = dir.join("Cargo.toml");
@@ -715,6 +725,7 @@ mod tests {
         );
         let res = resolve_solana_version(dir.path()).unwrap().unwrap();
         assert_eq!(res.version, v("3.0.5"));
+        assert_eq!(res.version_req.as_deref(), None);
         assert!(matches!(res.source, SolanaResolutionSource::AnchorToml(_)));
     }
 
@@ -730,6 +741,7 @@ mod tests {
         write(&dir.path().join("programs/foo/src/lib.rs"), "");
         let res = resolve_solana_version(dir.path()).unwrap().unwrap();
         assert_eq!(res.version, v("3.0.0"));
+        assert_eq!(res.version_req.as_deref(), Some("3.0.0"));
         assert!(matches!(res.source, SolanaResolutionSource::CargoToml(_)));
     }
 
@@ -745,6 +757,7 @@ mod tests {
         write(&dir.path().join("programs/foo/src/lib.rs"), "");
         let res = resolve_solana_version(dir.path()).unwrap().unwrap();
         assert_eq!(res.version, v("3.0.0"));
+        assert_eq!(res.version_req.as_deref(), Some("^3.0"));
     }
 
     #[test]
@@ -764,6 +777,7 @@ mod tests {
         write(&dir.path().join("programs/foo/src/lib.rs"), "");
         let res = resolve_solana_version(dir.path()).unwrap().unwrap();
         assert_eq!(res.version, v("3.0.0"));
+        assert_eq!(res.version_req.as_deref(), Some("3.0.0"));
     }
 
     #[test]

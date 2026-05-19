@@ -447,6 +447,7 @@ mod tests {
         SolanaResolution {
             version: v(s),
             source: SolanaResolutionSource::AnchorToml(PathBuf::from("Anchor.toml")),
+            version_req: None,
         }
     }
 
