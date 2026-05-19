@@ -528,7 +528,7 @@ mod tests {
         assert_eq!(lookup_solana_for_anchor_version(&v("0.28.9")), None);
         assert_eq!(
             lookup_solana_for_anchor_version(&v("0.29.0")).unwrap(),
-            v("1.17.0")
+            v("1.17.25")
         );
         assert_eq!(
             lookup_solana_for_anchor_version(&v("0.30.2")).unwrap(),

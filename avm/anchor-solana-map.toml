@@ -8,7 +8,9 @@
 # - docs/content/docs/references/anchor-toml.mdx for the current release
 [[entries]]
 anchor = "0.29.0"
-solana = "1.17.0"
+# Anchor 0.29.0 recommended Solana 1.17.0, but Anza's release bucket no
+# longer hosts v1.17.0/install. Keep this on the earliest hosted 1.17.x.
+solana = "1.17.25"
 
 [[entries]]
 anchor = "0.30.0"
