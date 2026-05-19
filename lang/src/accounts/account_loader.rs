@@ -156,6 +156,17 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
         Ok(AccountLoader::new_unchecked(acc_info))
     }
 
+    fn check_size(&self, data: &[u8]) -> Result<()> {
+        let required = T::DISCRIMINATOR
+            .len()
+            .checked_add(mem::size_of::<T>())
+            .ok_or(ErrorCode::AccountDidNotDeserialize)?;
+        if data.len() < required {
+            return Err(ErrorCode::AccountDidNotDeserialize.into());
+        }
+        Ok(())
+    }
+
     /// Returns a Ref to the account data structure for reading.
     pub fn load(&self) -> Result<Ref<'_, T>> {
         let data = self.acc_info.try_borrow_data()?;
@@ -168,6 +179,8 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
         if given_disc != disc {
             return Err(ErrorCode::AccountDiscriminatorMismatch.into());
         }
+
+        self.check_size(&data)?;
 
         Ok(Ref::map(data, |data| {
             bytemuck::from_bytes(&data[disc.len()..mem::size_of::<T>() + disc.len()])
@@ -193,6 +206,8 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
             return Err(ErrorCode::AccountDiscriminatorMismatch.into());
         }
 
+        self.check_size(&data)?;
+
         Ok(RefMut::map(data, |data| {
             bytemuck::from_bytes_mut(
                 &mut data.deref_mut()[disc.len()..mem::size_of::<T>() + disc.len()],
@@ -213,6 +228,8 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
 
         // The discriminator should be zero, since we're initializing.
         let disc = T::DISCRIMINATOR;
+        self.check_size(&data)?;
+
         let given_disc = &data[..disc.len()];
         let has_disc = given_disc.iter().any(|b| *b != 0);
         if has_disc {

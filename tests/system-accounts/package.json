@@ -2,13 +2,13 @@
   "name": "system-accounts",
   "version": "0.1.0",
   "license": "(MIT OR Apache-2.0)",
-  "homepage": "https://github.com/solana-foundation/anchor#readme",
+  "homepage": "https://github.com/otter-sec/anchor#readme",
   "bugs": {
-    "url": "https://github.com/solana-foundation/anchor/issues"
+    "url": "https://github.com/otter-sec/anchor/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/solana-foundation/anchor.git"
+    "url": "https://github.com/otter-sec/anchor.git"
   },
   "engines": {
     "node": ">=17"

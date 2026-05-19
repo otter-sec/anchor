@@ -83,7 +83,7 @@ description: Anchor - Release Notes $version
 ---
 
 See the full 
-[CHANGELOG](https://github.com/solana-foundation/anchor/blob/v${version}/CHANGELOG.md#${VERSION_CHANGELOG}---$(date '+%Y-%m-%d')).
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/v${version}/CHANGELOG.md#${VERSION_CHANGELOG}---$(date '+%Y-%m-%d')).
 EOF
 
         # Insert the version into release notes meta, and sort the versions so the order is correct

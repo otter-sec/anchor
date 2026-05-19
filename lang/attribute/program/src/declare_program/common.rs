@@ -177,7 +177,7 @@ pub fn convert_idl_type_def_to_ts(
 
         // `ser_attr` must be expanded first, as it may produce `repr(packed)`
         // This affects builtin derives so must be visible to them
-        // https://github.com/solana-foundation/anchor/issues/4072
+        // https://github.com/otter-sec/anchor/issues/4072
         quote! {
             #ser_attr
             #debug_attr
@@ -482,10 +482,10 @@ fn handle_defined_fields<R>(
 /// Combine regular instruction accounts with non-instruction composite accounts.
 pub fn get_all_instruction_accounts(idl: &Idl) -> Vec<IdlInstructionAccounts> {
     // It's possible to declare an accounts struct and not use it as an instruction, see
-    // https://github.com/solana-foundation/anchor/issues/3274
+    // https://github.com/otter-sec/anchor/issues/3274
     //
     // NOTE: Returned accounts will not be unique if non-instruction composite accounts have been
-    // used multiple times https://github.com/solana-foundation/anchor/issues/3349
+    // used multiple times https://github.com/otter-sec/anchor/issues/3349
     fn get_non_instruction_composite_accounts<'a>(
         accs: &'a [IdlInstructionAccountItem],
         idl: &'a Idl,

@@ -7,13 +7,13 @@
   "browser": "./dist/browser/index.js",
   "license": "(MIT OR Apache-2.0)",
   "types": "dist/cjs/index.d.ts",
-  "homepage": "https://github.com/solana-foundation/anchor#readme",
+  "homepage": "https://github.com/otter-sec/anchor#readme",
   "bugs": {
-    "url": "https://github.com/solana-foundation/anchor/issues"
+    "url": "https://github.com/otter-sec/anchor/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/solana-foundation/anchor.git"
+    "url": "https://github.com/otter-sec/anchor.git"
   },
   "publishConfig": {
     "access": "public"

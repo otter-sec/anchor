@@ -45,7 +45,7 @@
 //!
 //! More examples can be found in [here].
 //!
-//! [here]: https://github.com/solana-foundation/anchor/tree/v1.0.2/client/example/src
+//! [here]: https://github.com/otter-sec/anchor/tree/v1.0.2/client/example/src
 //!
 //! # Features
 //!

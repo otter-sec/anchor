@@ -8,7 +8,7 @@ breaking changes designed to clean up long-standing technical debt, modernize
 the toolchain, and establish a stable foundation going forward. We cover the most
 important changes below, but be sure to check out the full list of changes in
 the
-[CHANGELOG](https://github.com/solana-foundation/anchor/blob/v1.0.0/CHANGELOG.md#100---2026-04-02).
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.0.0/CHANGELOG.md#100---2026-04-02).
 
 ---
 
@@ -26,7 +26,7 @@ the
    Otherwise, bootstrap using `cargo install`:
 
    ```sh
-   cargo install avm --git https://github.com/solana-foundation/anchor --locked
+   cargo install avm --git https://github.com/otter-sec/anchor --locked
    ```
 
 2. Update `anchor-cli`:
@@ -40,7 +40,7 @@ the
 Install `anchor-cli` directly:
 
 ```sh
-cargo install --git https://github.com/solana-foundation/anchor --tag v1.0.0 anchor-cli --locked
+cargo install --git https://github.com/otter-sec/anchor --tag v1.0.0 anchor-cli --locked
 ```
 
 ### Common steps
@@ -136,7 +136,7 @@ pub struct MyIx<'info> {
 
 The on-chain IDL management instructions that Anchor has used since the
 beginning have been removed and replaced with the new
-[Program Metadata Program (PMP)](https://github.com/solana-foundation/anchor/pull/3798).
+[Program Metadata Program (PMP)](https://github.com/otter-sec/anchor/pull/3798).
 IDL uploads through `anchor deploy` and `anchor idl` commands work as before;
 only the underlying mechanism has changed.
 
@@ -196,7 +196,7 @@ avm self-update
 To bootstrap to a version that supports this command, install via `cargo`:
 
 ```sh
-cargo install avm --git https://github.com/solana-foundation/anchor --tag v1.0.0 --locked
+cargo install avm --git https://github.com/otter-sec/anchor --tag v1.0.0 --locked
 ```
 
 Additionally, `avm` will passively warn you when it detects that a newer
@@ -468,4 +468,4 @@ explicit dependencies.
 ---
 
 See the full list of notable changes in the
-[CHANGELOG](https://github.com/solana-foundation/anchor/blob/v1.0.0/CHANGELOG.md).
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.0.0/CHANGELOG.md).

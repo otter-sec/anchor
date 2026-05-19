@@ -967,7 +967,7 @@ fn override_toolchain(cfg_override: &ConfigOverride) -> Result<RestoreToolchainC
                 // binaries in various commands.
                 fn override_solana_version(version: String) -> Result<bool> {
                     // There is a deprecation warning message starting with `1.18.19` which causes
-                    // parsing problems https://github.com/solana-foundation/anchor/issues/3147
+                    // parsing problems https://github.com/otter-sec/anchor/issues/3147
                     let (cmd_name, domain) =
                         if Version::parse(&version)? < Version::parse("1.18.19")? {
                             ("solana-install", "solana.com")

@@ -26,4 +26,4 @@ binary with the same version. If you need a native installation flow, use the
 
 - [Installation](https://www.anchor-lang.com/docs/installation)
 - [CLI reference](https://www.anchor-lang.com/docs/references/cli)
-- [Repository](https://github.com/solana-foundation/anchor)
+- [Repository](https://github.com/otter-sec/anchor)
