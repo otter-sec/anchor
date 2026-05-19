@@ -16,17 +16,10 @@ impl<T> BpfWriter<T> {
     pub fn new(inner: T) -> Self {
         Self { inner, pos: 0 }
     }
-}
 
-impl BpfWriter<&mut [u8]> {
     #[inline]
-    pub fn shrunk_to(&self) -> Option<usize> {
-        let pos = self.pos as usize;
-        if pos < self.inner.len() {
-            Some(pos)
-        } else {
-            None
-        }
+    pub fn position(&self) -> usize {
+        self.pos as usize
     }
 }
 

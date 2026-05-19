@@ -36,7 +36,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Support module constants in `max_len` attribute ([#3879](https://github.com/solana-foundation/anchor/pull/3879)).
 - spl: Deprecate broken `cpi_guard_enable/disable` functions ([#4465](https://github.com/solana-foundation/anchor/pull/4465)).
 - cli: Bump `cargo_toml` to allow parsing `resolver = "3"` ([#4515](https://github.com/solana-foundation/anchor/pull/4515)).
-- lang: Resize accounts on serialize shrink so trailing stale bytes don't persist between writes ([#3695](https://github.com/solana-foundation/anchor/issues/3695)).
+- lang: serializing with zeros when account shrinks ([#3695](https://github.com/solana-foundation/anchor/issues/3695)).
 
 ### Breaking
 
