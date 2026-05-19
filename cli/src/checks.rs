@@ -65,7 +65,14 @@ pub fn check_anchor_version(cfg: &WithPath<Config>) -> Result<()> {
         .filter(|ver| !ver.matches(&cli_version));
 
     if let Some(ver) = mismatched_ts_version {
-        let update_cmd = match cfg.toolchain.package_manager.clone().unwrap_or_default() {
+        // Cosmetic hint only. Prefer what Anchor.toml says the project uses;
+        // otherwise default the suggestion to `npm` since it ships with Node.
+        let update_cmd = match cfg
+            .toolchain
+            .package_manager
+            .clone()
+            .unwrap_or(PackageManager::NPM)
+        {
             PackageManager::NPM => "npm update",
             PackageManager::Yarn => "yarn upgrade",
             PackageManager::PNPM => "pnpm update",

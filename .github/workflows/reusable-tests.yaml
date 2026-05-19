@@ -391,9 +391,15 @@ jobs:
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
         run: cargo add anchor-client --manifest-path tests/Cargo.toml --path "$GITHUB_WORKSPACE/client"
 
-      - name: Run generated project tests
+      - name: Run generated JS project tests
+        if: ${{ matrix.template == 'mocha' || matrix.template == 'jest' }}
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
         run: yarn link @anchor-lang/core && yarn && anchor test && yarn lint:fix
+
+      - name: Run generated Rust project tests
+        if: ${{ matrix.template == 'rust' || matrix.template == 'mollusk' || matrix.template == 'litesvm' }}
+        working-directory: /tmp/hello-anchor-${{ matrix.template }}
+        run: anchor test
 
       - uses: ./.github/actions/git-diff/
 

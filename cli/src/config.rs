@@ -347,6 +347,10 @@ pub struct Config {
     pub test_validator: Option<TestValidator>,
     pub test_config: Option<TestConfig>,
     pub surfpool_config: Option<SurfpoolConfig>,
+    /// If `Some(true)`, `anchor test` won't auto-start a validator for this
+    /// workspace. Emitted by `anchor init` for in-process test templates
+    /// (litesvm / mollusk) where the test harness never opens an RPC.
+    pub skip_local_validator: Option<bool>,
 }
 
 #[derive(ValueEnum, Parser, Clone, Copy, PartialEq, Eq, Debug, AbsolutePath)]
@@ -364,15 +368,16 @@ pub struct ToolchainConfig {
 }
 
 /// Package manager to use for the project.
-#[derive(
-    Clone, Debug, Default, Eq, PartialEq, Parser, ValueEnum, Serialize, Deserialize, AbsolutePath,
-)]
+///
+/// No `Default` impl; this enum represents an explicit user choice. Call sites
+/// that need a concrete package manager should go through `resolve_package_manager`
+/// so fallback behavior and missing-binary diagnostics stay centralized.
+#[derive(Clone, Debug, Eq, PartialEq, Parser, ValueEnum, Serialize, Deserialize, AbsolutePath)]
 #[serde(rename_all = "lowercase")]
 pub enum PackageManager {
     /// Use npm as the package manager.
     NPM,
     /// Use yarn as the package manager.
-    #[default]
     Yarn,
     /// Use pnpm as the package manager.
     PNPM,
@@ -617,6 +622,8 @@ struct _Config {
     hooks: Option<HooksConfig>,
     test: Option<_TestValidator>,
     surfpool: Option<_SurfpoolConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skip_local_validator: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -718,6 +725,7 @@ impl fmt::Display for Config {
             workspace: (!self.workspace.members.is_empty() || !self.workspace.exclude.is_empty())
                 .then(|| self.workspace.clone()),
             surfpool: self.surfpool_config.clone().map(Into::into),
+            skip_local_validator: self.skip_local_validator,
         };
 
         let cfg = toml::to_string(&cfg).expect("Must be well formed");
@@ -746,6 +754,7 @@ impl FromStr for Config {
             programs: cfg.programs.map_or(Ok(BTreeMap::new()), deser_programs)?,
             workspace: cfg.workspace.unwrap_or_default(),
             surfpool_config: cfg.surfpool.map(Into::into),
+            skip_local_validator: cfg.skip_local_validator,
         })
     }
 }

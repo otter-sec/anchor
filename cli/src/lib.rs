@@ -100,9 +100,11 @@ pub enum Command {
         /// Don't install JavaScript dependencies
         #[clap(long)]
         no_install: bool,
-        /// Package Manager to use (defaults to yarn if not specified)
-        #[clap(value_enum, long, default_value = "yarn")]
-        package_manager: PackageManager,
+        /// Package Manager to use. If omitted, detection cascades
+        /// `pnpm` -> `yarn` -> `npm` and picks the first one on PATH. When
+        /// set explicitly, the chosen binary must be installed.
+        #[clap(value_enum, long)]
+        package_manager: Option<PackageManager>,
         /// Don't initialize git
         #[clap(long)]
         no_git: bool,
@@ -1347,13 +1349,62 @@ fn process_command(opts: Opts) -> Result<()> {
     }
 }
 
-fn is_package_manager_available(pm: &PackageManager) -> bool {
-    std::process::Command::new(pm.to_string())
-        .arg("--version")
+const PACKAGE_MANAGER_WATERFALL: &[PackageManager] = &[
+    PackageManager::PNPM,
+    PackageManager::Yarn,
+    PackageManager::NPM,
+];
+
+fn package_manager_available(pm: &PackageManager) -> bool {
+    let cmd = pm.to_string();
+    let mut command = if cfg!(target_os = "windows") {
+        let mut c = std::process::Command::new("cmd");
+        c.arg(format!("/C {cmd} --version"));
+        c
+    } else {
+        let mut c = std::process::Command::new(&cmd);
+        c.arg("--version");
+        c
+    };
+    command
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .is_ok()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn resolve_package_manager(explicit: Option<PackageManager>) -> Result<PackageManager> {
+    if let Some(pm) = explicit {
+        if !package_manager_available(&pm) {
+            return Err(anyhow!(
+                "`{pm}` was requested but is not on PATH. Install it or pick a different package \
+                 manager with `--package-manager`."
+            ));
+        }
+        return Ok(pm);
+    }
+
+    let mut skipped = Vec::new();
+    for candidate in PACKAGE_MANAGER_WATERFALL {
+        if package_manager_available(candidate) {
+            if !skipped.is_empty() {
+                let missing = skipped
+                    .iter()
+                    .map(|pm: &PackageManager| pm.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                eprintln!("warning: {missing} not found on PATH, using `{candidate}` instead");
+            }
+            return Ok(candidate.clone());
+        }
+        skipped.push(candidate.clone());
+    }
+
+    Err(anyhow!(
+        "No supported package manager found on PATH (tried pnpm, yarn, npm). Install one of them, \
+         or re-run with `--no-install`."
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1362,7 +1413,7 @@ fn init(
     name: String,
     javascript: bool,
     no_install: bool,
-    package_manager: PackageManager,
+    package_manager: Option<PackageManager>,
     no_git: bool,
     template: ProgramTemplate,
     test_template: TestTemplate,
@@ -1393,13 +1444,6 @@ fn init(
         ));
     }
 
-    if test_template.uses_node() && !is_package_manager_available(&package_manager) {
-        return Err(anyhow!(
-            "Package manager {package_manager} not found. Install it or pass --package-manager \
-             <pm>."
-        ));
-    }
-
     if force {
         fs::create_dir_all(&project_name)?;
     } else {
@@ -1411,12 +1455,21 @@ fn init(
     let mut cfg = Config::default();
 
     let uses_node = test_template.uses_node();
-    let test_script = test_template.get_test_script(javascript, &package_manager);
+    let package_manager = if uses_node {
+        Some(resolve_package_manager(package_manager)?)
+    } else {
+        None
+    };
+    let test_script = test_template.get_test_script(javascript, package_manager.as_ref());
     cfg.scripts.insert("test".to_owned(), test_script);
 
-    let package_manager_cmd = package_manager.to_string();
+    if matches!(test_template, TestTemplate::Litesvm | TestTemplate::Mollusk) {
+        cfg.skip_local_validator = Some(true);
+    }
+
+    let package_manager_cmd = package_manager.as_ref().map(ToString::to_string);
     if uses_node {
-        cfg.toolchain.package_manager = Some(package_manager);
+        cfg.toolchain.package_manager = package_manager.clone();
     }
 
     // Initialize .gitignore file
@@ -1427,11 +1480,12 @@ fn init(
 
     // Remove the default program if `--force` is passed
     if force {
-        fs::remove_dir_all(
-            std::env::current_dir()?
-                .join("programs")
-                .join(&project_name),
-        )?;
+        let default_program_dir = std::env::current_dir()?
+            .join("programs")
+            .join(&project_name);
+        if default_program_dir.exists() {
+            fs::remove_dir_all(default_program_dir)?;
+        }
     }
 
     // Build the program.
@@ -1482,6 +1536,8 @@ fn init(
     test_template.create_test_files(&project_name, javascript, &program_id.to_string())?;
 
     if !no_install && uses_node {
+        let package_manager_cmd =
+            package_manager_cmd.expect("Node templates resolve a package manager");
         let package_manager_result = install_node_modules(&package_manager_cmd)?;
         if !package_manager_result.status.success() {
             if package_manager_cmd == "npm" {
@@ -3299,14 +3355,15 @@ fn test(
         let root = cfg.path().parent().unwrap().to_owned();
         cfg.add_test_config(root, test_paths)?;
 
-        // Run the deploy against the cluster in two cases:
-        //
-        // 1. The cluster is not localnet.
-        // 2. The cluster is localnet, but we're not booting a local validator.
-        //
-        // In either case, skip the deploy if the user specifies.
+        let skip_local_validator =
+            skip_local_validator || cfg.skip_local_validator.unwrap_or(false);
+
+        // Deploy to the cluster unless told to skip. Skip the preemptive
+        // `deploy()` on localnet: the validator is started later in
+        // `run_test_suite`, and it loads programs itself through the selected
+        // validator flags.
         let is_localnet = cfg.provider.cluster == Cluster::Localnet;
-        if (!is_localnet || skip_local_validator) && !skip_deploy {
+        if !skip_deploy && !is_localnet {
             deploy(cfg_override, None, None, false, true, vec![])?;
         }
 
@@ -4375,10 +4432,8 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
                 rust_template::deploy_ts_script_host(&url, &module_path.display().to_string());
             fs::write(deploy_ts, deploy_script_host_str)?;
 
-            let pkg_manager_cmd = match &cfg.toolchain.package_manager {
-                Some(pkg_manager) => pkg_manager.to_string(),
-                None => PackageManager::default().to_string(),
-            };
+            let pkg_manager_cmd =
+                resolve_package_manager(cfg.toolchain.package_manager.clone())?.to_string();
 
             std::process::Command::new(pkg_manager_cmd)
                 .args([
@@ -5369,7 +5424,7 @@ mod tests {
             "await".to_string(),
             true,
             true,
-            PackageManager::default(),
+            None,
             false,
             ProgramTemplate::default(),
             TestTemplate::default(),
@@ -5391,7 +5446,7 @@ mod tests {
             "fn".to_string(),
             true,
             true,
-            PackageManager::default(),
+            None,
             false,
             ProgramTemplate::default(),
             TestTemplate::default(),
@@ -5413,7 +5468,7 @@ mod tests {
             "1project".to_string(),
             true,
             true,
-            PackageManager::default(),
+            None,
             false,
             ProgramTemplate::default(),
             TestTemplate::default(),

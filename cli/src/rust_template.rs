@@ -906,12 +906,13 @@ impl TestTemplate {
         matches!(self, Self::Mocha | Self::Jest)
     }
 
-    pub fn get_test_script(&self, js: bool, pkg_manager: &PackageManager) -> String {
+    pub fn get_test_script(&self, js: bool, pkg_manager: Option<&PackageManager>) -> String {
         let pkg_manager_exec_cmd = match pkg_manager {
-            PackageManager::Yarn => "yarn run",
-            PackageManager::NPM => "npx",
-            PackageManager::PNPM => "pnpm exec",
-            PackageManager::Bun => "bunx",
+            Some(PackageManager::Yarn) => "yarn run",
+            Some(PackageManager::NPM) => "npx",
+            Some(PackageManager::PNPM) => "pnpm exec",
+            Some(PackageManager::Bun) => "bunx",
+            None => "",
         };
 
         match &self {
