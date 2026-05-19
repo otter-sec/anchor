@@ -3494,9 +3494,8 @@ fn test(
         // Set validator type based on CLI choice
         cfg.validator = Some(validator_type);
 
-        let skip_local_validator =
-            skip_local_validator || cfg.skip_local_validator.unwrap_or(false);
-
+        let cli_skip_local_validator = skip_local_validator;
+        let config_skip_local_validator = cfg.skip_local_validator.unwrap_or(false);
         let workspace_root = cfg.path().parent().unwrap().to_owned();
 
         #[cfg(windows)]
@@ -3577,16 +3576,18 @@ fn test(
 
         cfg.add_test_config(workspace_root, test_paths)?;
 
-        let cli_skip_local_validator = skip_local_validator;
-        let skip_local_validator =
-            cli_skip_local_validator || cfg.skip_local_validator.unwrap_or(false);
-
         // Deploy to the cluster unless told to skip. For localnet, preserve
         // explicit `--skip-local-validator` deploys because the validator is
         // already running, but don't let generated in-process templates force
         // an RPC deploy through their persisted config.
         let is_localnet = cfg.provider.cluster == Cluster::Localnet;
-        if should_predeploy_before_test(skip_deploy, is_localnet, cli_skip_local_validator) {
+        let validator_plan = test_validator_plan(
+            skip_deploy,
+            is_localnet,
+            cli_skip_local_validator,
+            config_skip_local_validator,
+        );
+        if validator_plan.predeploy {
             deploy(cfg_override, None, None, false, true, vec![])?;
         }
 
@@ -3624,12 +3625,13 @@ fn test(
                 cfg,
                 cfg.path(),
                 is_localnet,
-                skip_local_validator,
+                validator_plan.skip_local_validator,
                 skip_deploy,
                 detach,
                 validator_type,
                 &cfg.test_validator,
                 &cfg.scripts,
+                validator_plan.stream_program_logs,
                 &extra_args,
                 &cfg.surfpool_config,
             )?;
@@ -3653,12 +3655,13 @@ fn test(
                     cfg,
                     test_suite.0,
                     is_localnet,
-                    skip_local_validator,
+                    validator_plan.skip_local_validator,
                     skip_deploy,
                     detach,
                     validator_type,
                     &test_suite.1.test,
                     &test_suite.1.scripts,
+                    validator_plan.stream_program_logs,
                     &extra_args,
                     &cfg.surfpool_config,
                 )?;
@@ -3681,6 +3684,38 @@ fn should_predeploy_before_test(
     cli_skip_local_validator: bool,
 ) -> bool {
     !skip_deploy && (!is_localnet || cli_skip_local_validator)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct TestValidatorPlan {
+    skip_local_validator: bool,
+    predeploy: bool,
+    stream_program_logs: bool,
+}
+
+fn test_validator_plan(
+    skip_deploy: bool,
+    is_localnet: bool,
+    cli_skip_local_validator: bool,
+    config_skip_local_validator: bool,
+) -> TestValidatorPlan {
+    TestValidatorPlan {
+        skip_local_validator: cli_skip_local_validator || config_skip_local_validator,
+        predeploy: should_predeploy_before_test(skip_deploy, is_localnet, cli_skip_local_validator),
+        stream_program_logs: should_stream_test_logs(
+            is_localnet,
+            cli_skip_local_validator,
+            config_skip_local_validator,
+        ),
+    }
+}
+
+fn should_stream_test_logs(
+    is_localnet: bool,
+    cli_skip_local_validator: bool,
+    config_skip_local_validator: bool,
+) -> bool {
+    !is_localnet || !config_skip_local_validator || cli_skip_local_validator
 }
 
 /// Run the test suite with profile tracing enabled and then launch the SBF instruction stepper.
@@ -4050,6 +4085,7 @@ fn run_test_suite(
     validator_type: ValidatorType,
     test_validator: &Option<TestValidator>,
     scripts: &ScriptsConfig,
+    stream_program_logs: bool,
     extra_args: &[String],
     surfpool_config: &Option<SurfpoolConfig>,
 ) -> Result<()> {
@@ -4100,13 +4136,17 @@ fn run_test_suite(
     );
 
     // Setup log reader - kept alive until end of scope
-    let log_streams = match stream_logs(cfg, &url) {
-        Ok(streams) => Some(streams),
-        Err(e) => {
-            eprintln!("Warning: Failed to setup program log streaming: {:#}", e);
-            eprintln!("Program logs will still be visible in the test output.");
-            None
+    let log_streams = if stream_program_logs {
+        match stream_logs(cfg, &url) {
+            Ok(streams) => Some(streams),
+            Err(e) => {
+                eprintln!("Warning: Failed to setup program log streaming: {:#}", e);
+                eprintln!("Program logs will still be visible in the test output.");
+                None
+            }
         }
+    } else {
+        None
     };
 
     // Run the tests.
@@ -6230,6 +6270,30 @@ mod tests {
         assert!(should_predeploy_before_test(false, true, true));
         assert!(!should_predeploy_before_test(false, true, false));
         assert!(!should_predeploy_before_test(true, true, true));
+    }
+
+    #[test]
+    fn test_validator_plan_handles_in_process_template_skip() {
+        assert_eq!(
+            test_validator_plan(false, true, false, true),
+            TestValidatorPlan {
+                skip_local_validator: true,
+                predeploy: false,
+                stream_program_logs: false,
+            }
+        );
+    }
+
+    #[test]
+    fn test_validator_plan_preserves_explicit_external_validator() {
+        assert_eq!(
+            test_validator_plan(false, true, true, false),
+            TestValidatorPlan {
+                skip_local_validator: true,
+                predeploy: true,
+                stream_program_logs: true,
+            }
+        );
     }
 
     #[test]
