@@ -1,3 +1,5 @@
+#![cfg(not(windows))]
+
 //! Golden fixture for `anchor debugger`'s DWARF-backed symbol resolver.
 //!
 //! Builds a tiny SBF program with full debug info, then asserts that

@@ -56,11 +56,15 @@ mod account;
 mod checks;
 pub mod codama;
 pub mod config;
+#[cfg(not(windows))]
 pub mod coverage;
+#[cfg(not(windows))]
 pub mod debugger;
+#[cfg(not(windows))]
 mod flamegraph;
 mod keygen;
 mod metadata;
+#[cfg(not(windows))]
 mod profile;
 mod program;
 pub mod rust_template;
@@ -275,6 +279,7 @@ pub enum Command {
         force: bool,
     },
     /// Run tests under an instruction-level debugger.
+    #[cfg(not(windows))]
     Debugger {
         /// Filter captured traces to tests whose name contains this substring.
         test_name: Option<String>,
@@ -295,6 +300,7 @@ pub enum Command {
         cargo_args: Vec<String>,
     },
     /// Generate source-level coverage from SBF register traces.
+    #[cfg(not(windows))]
     Coverage {
         /// Skip the build+test phase and generate coverage from existing traces.
         #[clap(long)]
@@ -1358,6 +1364,7 @@ fn process_command(opts: Opts) -> Result<()> {
             env,
             cargo_args,
         ),
+        #[cfg(not(windows))]
         Command::Debugger {
             test_name,
             skip_run,
@@ -1374,6 +1381,7 @@ fn process_command(opts: Opts) -> Result<()> {
             gdb,
             cargo_args,
         ),
+        #[cfg(not(windows))]
         Command::Coverage {
             skip_run,
             skip_build,
@@ -3490,7 +3498,19 @@ fn test(
             skip_local_validator || cfg.skip_local_validator.unwrap_or(false);
 
         let workspace_root = cfg.path().parent().unwrap().to_owned();
+
+        #[cfg(windows)]
+        if profile {
+            return Err(anyhow!(
+                "`anchor test --profile` is not supported on Windows"
+            ));
+        }
+        #[cfg(windows)]
+        let _ = gdb;
+
+        #[cfg(not(windows))]
         let profile_dir = workspace_root.join(crate::profile::DEFAULT_PROFILE_DIR);
+        #[cfg(not(windows))]
         let _gdb_guard: Option<crate::debugger::gdb::GdbDriver> = if profile {
             let _ = fs::remove_dir_all(&profile_dir);
             std::env::set_var("ANCHOR_PROFILE_DIR", &profile_dir);
@@ -3646,6 +3666,7 @@ fn test(
         }
         cfg.run_hooks(HookType::PostTest)?;
 
+        #[cfg(not(windows))]
         if profile {
             render_profile(cfg, &profile_dir)?;
         }
@@ -3663,6 +3684,7 @@ fn should_predeploy_before_test(
 }
 
 /// Run the test suite with profile tracing enabled and then launch the SBF instruction stepper.
+#[cfg(not(windows))]
 #[allow(clippy::too_many_arguments)]
 fn debugger(
     cfg_override: &ConfigOverride,
@@ -3701,6 +3723,7 @@ fn debugger(
     }
 }
 
+#[cfg(not(windows))]
 #[allow(clippy::too_many_arguments)]
 fn debugger_anchor_workspace(
     cfg_override: &ConfigOverride,
@@ -3760,6 +3783,7 @@ fn debugger_anchor_workspace(
     })?
 }
 
+#[cfg(not(windows))]
 #[allow(clippy::too_many_arguments)]
 fn debugger_loose(
     _cfg_override: &ConfigOverride,
@@ -3858,6 +3882,7 @@ fn debugger_loose(
     )
 }
 
+#[cfg(not(windows))]
 fn run_coverage(
     _cfg_override: &ConfigOverride,
     skip_run: bool,
@@ -3931,6 +3956,7 @@ fn run_coverage(
     coverage::generate_lcov(&trace_path, &programs, Some(&ws.root), &output_path)
 }
 
+#[cfg(not(windows))]
 fn display_path_relative_to_cwd(p: &Path) -> String {
     std::env::current_dir()
         .ok()
@@ -3940,6 +3966,7 @@ fn display_path_relative_to_cwd(p: &Path) -> String {
         .unwrap_or_else(|| p.display().to_string())
 }
 
+#[cfg(not(windows))]
 fn resolve_anchor_workspace_programs(
     cfg: &WithPath<Config>,
 ) -> (BTreeMap<String, PathBuf>, BTreeMap<String, &'static str>) {
@@ -3965,6 +3992,7 @@ fn resolve_anchor_workspace_programs(
     (pubkey_to_so, sources)
 }
 
+#[cfg(not(windows))]
 fn render_profile(cfg: &WithPath<Config>, profile_dir: &Path) -> Result<()> {
     let workspace_root = cfg.path().parent().unwrap().to_owned();
     let (pubkey_to_so, _sources) = resolve_anchor_workspace_programs(cfg);
@@ -6070,6 +6098,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn test_debugger_and_coverage_commands_parse() {
         let opts =
             Opts::try_parse_from(["anchor", "debugger", "initialize", "--skip-run"]).unwrap();
