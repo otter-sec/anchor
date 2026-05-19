@@ -283,12 +283,12 @@ pub fn gen_lazy(strct: &syn::ItemStruct) -> syn::Result<TokenStream> {
                     // Make sure all fields are initialized
                     let acc = self.load()?;
                     let mut data = self.__info.try_borrow_mut_data()?;
-                    let dst: &mut [u8] = &mut data;
-                    let mut writer = anchor_lang::__private::BpfWriter::new(dst);
-                    acc.try_serialize(&mut writer)?;
-
-                    let new_len = writer.position();
-                    drop(writer);
+                    let new_len = {
+                        let dst: &mut [u8] = &mut data;
+                        let mut writer = anchor_lang::__private::BpfWriter::new(dst);
+                        acc.try_serialize(&mut writer)?;
+                        writer.position()
+                    };
 
                     // Zero any trailing bytes the new serialization didn't cover.
                     if new_len < data.len() {
