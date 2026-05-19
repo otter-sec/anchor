@@ -250,8 +250,7 @@ impl<T: AccountDeserialize> Key for Program<'_, T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::system_program::System;
+    use {super::*, crate::system_program::System};
 
     fn account_info<'a>(
         key: &'a Pubkey,
@@ -275,10 +274,9 @@ mod tests {
             .err()
             .expect("non-system key must be rejected");
         match err {
-            Error::AnchorError(e) => assert_eq!(
-                e.error_code_number,
-                ErrorCode::InvalidProgramId as u32,
-            ),
+            Error::AnchorError(e) => {
+                assert_eq!(e.error_code_number, ErrorCode::InvalidProgramId as u32,)
+            }
             other => panic!("unexpected error variant: {other:?}"),
         }
     }
