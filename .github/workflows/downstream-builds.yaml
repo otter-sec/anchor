@@ -1,0 +1,114 @@
+name: Downstream Builds
+
+on:
+  push:
+    branches:
+      - anchor-next
+    paths-ignore:
+      - "docs/**"
+
+env:
+  SOLANA_VERSION: "3.1.10"
+
+jobs:
+  setup-anchor-cli:
+    name: Setup Anchor CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Anchor
+        uses: actions/checkout@v3
+
+      - uses: ./.github/actions/setup/
+
+      - uses: actions/cache@v4
+        name: Cache Cargo home
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-home-${{ runner.os }}-downstream-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-home-${{ runner.os }}-downstream-
+
+      - uses: actions/cache@v4
+        name: Cache Anchor target
+        with:
+          path: ./target/
+          key: cargo-target-${{ runner.os }}-downstream-anchor-${{ hashFiles('**/Cargo.lock') }}-${{ github.ref_name }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-downstream-anchor-${{ hashFiles('**/Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-downstream-anchor-
+
+      - name: Install Anchor CLI
+        run: cargo install --path cli --locked --debug --force --target-dir ./target
+
+      - run: chmod +x ~/.cargo/bin/anchor
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anchor-binary-downstream
+          path: ~/.cargo/bin/anchor
+          retention-days: 1
+
+  anchor-build:
+    needs: setup-anchor-cli
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: helium-program-library
+            repository: helium/helium-program-library
+            build_command: TESTING=true anchor build
+
+    steps:
+      - name: Checkout Anchor
+        uses: actions/checkout@v3
+
+      - uses: ./.github/actions/setup/
+      - uses: ./.github/actions/setup-solana/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: anchor-binary-downstream
+          path: ~/.cargo/bin/
+      - run: chmod +x ~/.cargo/bin/anchor
+
+      - name: Checkout ${{ matrix.repository }}
+        uses: actions/checkout@v3
+        with:
+          repository: ${{ matrix.repository }}
+          path: downstream/${{ matrix.name }}
+
+      - uses: actions/cache@v4
+        name: Cache ${{ matrix.name }} Cargo home
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-home-${{ runner.os }}-downstream-${{ matrix.name }}-${{ hashFiles(format('downstream/{0}/Cargo.lock', matrix.name)) }}
+          restore-keys: |
+            cargo-home-${{ runner.os }}-downstream-${{ matrix.name }}-
+
+      - uses: actions/cache@v4
+        name: Cache ${{ matrix.name }} target
+        with:
+          path: downstream/${{ matrix.name }}/target/
+          key: cargo-target-${{ runner.os }}-downstream-${{ matrix.name }}-${{ hashFiles(format('downstream/{0}/Cargo.lock', matrix.name)) }}-${{ github.run_id }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-downstream-${{ matrix.name }}-${{ hashFiles(format('downstream/{0}/Cargo.lock', matrix.name)) }}-
+            cargo-target-${{ runner.os }}-downstream-${{ matrix.name }}-
+
+      - name: Build ${{ matrix.repository }}
+        working-directory: downstream/${{ matrix.name }}
+        run: ${{ matrix.build_command }}
