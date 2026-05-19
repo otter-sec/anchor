@@ -363,6 +363,29 @@ If you'd prefer to run the program against your local validator use
 When running tests we stream program logs to
 `.anchor/program-logs/<address>.<program-name>.log`
 
+Use `--profile` with Rust/LiteSVM-style tests that enable the generated
+`profile` feature to collect SBF register traces and render flamegraph SVGs
+under `target/anchor-v2-profile/`.
+
+## Debugger
+
+```shell
+anchor debugger [test-name] [--skip-run] [--skip-build] [--gdb]
+```
+
+Runs tests with profiling enabled and opens an instruction-level TUI over the
+captured SBF traces. `--skip-run` reuses existing traces, and `--gdb` uses the
+sbpf gdb-stub trace path.
+
+## Coverage
+
+```shell
+anchor coverage [--skip-run] [--skip-build] [--output target/coverage/sbf.lcov]
+```
+
+Generates LCOV source coverage from SBF register traces. By default traces are
+collected under `target/coverage/traces`.
+
 ## Upgrade
 
 ```shell
