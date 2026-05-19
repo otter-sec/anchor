@@ -133,10 +133,7 @@ impl SolanaInstaller {
     }
 
     pub fn domain(self) -> &'static str {
-        match self {
-            Self::SolanaInstall => "solana.com",
-            Self::AgaveInstall => "anza.xyz",
-        }
+        "anza.xyz"
     }
 
     pub fn install_url(self, version: &Version) -> String {
@@ -708,7 +705,7 @@ mod tests {
     fn installer_urls_match_upstream_domains() {
         assert_eq!(
             SolanaInstaller::SolanaInstall.install_url(&v("1.18.17")),
-            "https://release.solana.com/v1.18.17/install"
+            "https://release.anza.xyz/v1.18.17/install"
         );
         assert_eq!(
             SolanaInstaller::AgaveInstall.install_url(&v("3.1.10")),

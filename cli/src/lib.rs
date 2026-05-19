@@ -968,7 +968,7 @@ fn override_toolchain(cfg_override: &ConfigOverride) -> Result<RestoreToolchainC
                     // parsing problems https://github.com/solana-foundation/anchor/issues/3147
                     let (cmd_name, domain) =
                         if Version::parse(&version)? < Version::parse("1.18.19")? {
-                            ("solana-install", "solana.com")
+                            ("solana-install", "anza.xyz")
                         } else {
                             ("agave-install", "anza.xyz")
                         };
