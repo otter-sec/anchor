@@ -12,7 +12,8 @@ use {
         },
         DOWNLOAD_CLIENT,
     },
-    anyhow::{bail, Context, Result},
+    anyhow::{anyhow, bail, Context, Result},
+    reqwest::StatusCode,
     semver::Version,
     serde::Deserialize,
     std::{
@@ -21,11 +22,16 @@ use {
         path::Path,
         process::{Command, Output, Stdio},
         sync::LazyLock,
+        thread,
+        time::Duration,
     },
 };
 
 const ANCHOR_SOLANA_MAP_TOML: &str = include_str!("../anchor-solana-map.toml");
 const AGAVE_INSTALL_MIN_VERSION_STR: &str = "1.18.19";
+const INSTALLER_DOWNLOAD_MAX_ATTEMPTS: usize = 4;
+const INSTALLER_DOWNLOAD_INITIAL_BACKOFF_MS: u64 = 500;
+const INSTALLER_DOWNLOAD_MAX_BACKOFF_MS: u64 = 4_000;
 
 static AGAVE_INSTALL_MIN_VERSION: LazyLock<Version> = LazyLock::new(|| {
     Version::parse(AGAVE_INSTALL_MIN_VERSION_STR)
@@ -392,16 +398,77 @@ fn format_command_output(output: &[u8]) -> String {
 }
 
 fn download_installer_script(url: &str) -> Result<String> {
+    for attempt in 1..=INSTALLER_DOWNLOAD_MAX_ATTEMPTS {
+        match try_download_installer_script(url) {
+            Ok(script) => return Ok(script),
+            Err(err) if err.retryable && attempt < INSTALLER_DOWNLOAD_MAX_ATTEMPTS => {
+                let delay = installer_download_backoff(attempt);
+                eprintln!(
+                    "Failed to download Solana installer script from {url} (attempt \
+                     {attempt}/{INSTALLER_DOWNLOAD_MAX_ATTEMPTS}): {}. Retrying in {}ms...",
+                    err.error,
+                    delay.as_millis()
+                );
+                thread::sleep(delay);
+            }
+            Err(err) => {
+                if attempt > 1 {
+                    return Err(err.error).with_context(|| {
+                        format!(
+                            "Downloading Solana installer script from {url} failed after \
+                             {attempt} attempts"
+                        )
+                    });
+                }
+                return Err(err.error);
+            }
+        }
+    }
+
+    Err(anyhow!(
+        "Downloading Solana installer script from {url} exhausted retry attempts"
+    ))
+}
+
+struct InstallerDownloadError {
+    error: anyhow::Error,
+    retryable: bool,
+}
+
+fn try_download_installer_script(url: &str) -> std::result::Result<String, InstallerDownloadError> {
     let response = DOWNLOAD_CLIENT
         .get(url)
         .send()
-        .with_context(|| format!("Sending GET {url}"))?;
+        .map_err(|err| InstallerDownloadError {
+            error: anyhow!("Sending GET {url}: {err}"),
+            retryable: true,
+        })?;
     if !response.status().is_success() {
-        bail!("Failed to download `{url}` (status {})", response.status());
+        let status = response.status();
+        return Err(InstallerDownloadError {
+            error: anyhow!("Failed to download `{url}` (status {status})"),
+            retryable: should_retry_installer_download_status(status),
+        });
     }
-    response
-        .text()
-        .with_context(|| format!("Reading installer script from {url}"))
+    response.text().map_err(|err| InstallerDownloadError {
+        error: anyhow!("Reading installer script from {url}: {err}"),
+        retryable: true,
+    })
+}
+
+fn should_retry_installer_download_status(status: StatusCode) -> bool {
+    status == StatusCode::REQUEST_TIMEOUT
+        || status == StatusCode::TOO_MANY_REQUESTS
+        || status.is_server_error()
+}
+
+fn installer_download_backoff(failed_attempt: usize) -> Duration {
+    let shift = failed_attempt.saturating_sub(1).min(10);
+    let multiplier = 1u64 << shift;
+    let millis = INSTALLER_DOWNLOAD_INITIAL_BACKOFF_MS
+        .saturating_mul(multiplier)
+        .min(INSTALLER_DOWNLOAD_MAX_BACKOFF_MS);
+    Duration::from_millis(millis)
 }
 
 fn parse_versions(text: &str) -> Vec<Version> {
@@ -676,5 +743,36 @@ mod tests {
         assert!(msg.contains("status exit status: 1"));
         assert!(msg.contains("stdout:\n(empty)"));
         assert!(msg.contains("stderr:\nerror: invalid active_release path"));
+    }
+
+    #[test]
+    fn installer_download_status_retry_policy_is_transient_only() {
+        assert!(should_retry_installer_download_status(
+            StatusCode::REQUEST_TIMEOUT
+        ));
+        assert!(should_retry_installer_download_status(
+            StatusCode::TOO_MANY_REQUESTS
+        ));
+        assert!(should_retry_installer_download_status(
+            StatusCode::BAD_GATEWAY
+        ));
+        assert!(!should_retry_installer_download_status(
+            StatusCode::NOT_FOUND
+        ));
+        assert!(!should_retry_installer_download_status(
+            StatusCode::BAD_REQUEST
+        ));
+    }
+
+    #[test]
+    fn installer_download_backoff_grows_and_caps() {
+        assert_eq!(installer_download_backoff(1), Duration::from_millis(500));
+        assert_eq!(installer_download_backoff(2), Duration::from_millis(1_000));
+        assert_eq!(installer_download_backoff(3), Duration::from_millis(2_000));
+        assert_eq!(installer_download_backoff(4), Duration::from_millis(4_000));
+        assert_eq!(
+            installer_download_backoff(99),
+            Duration::from_millis(INSTALLER_DOWNLOAD_MAX_BACKOFF_MS)
+        );
     }
 }
