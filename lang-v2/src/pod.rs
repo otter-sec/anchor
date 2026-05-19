@@ -524,6 +524,70 @@ impl fmt::Debug for PodBool {
     }
 }
 
+#[repr(C)]
+struct PodVecLayoutProbe<T: bytemuck::Pod> {
+    len: PodU16,
+    data: [T; 1],
+}
+
+/// Asserts that `T` keeps `PodVec<T, MAX>` free of padding bytes.
+///
+/// `PodVec` stores a two-byte length prefix before its element array. Element
+/// types whose alignment forces `repr(C)` to insert bytes after that prefix
+/// cannot safely make `PodVec<T, MAX>` implement [`bytemuck::Pod`].
+const fn assert_pod_vec_element<T: bytemuck::Pod>() {
+    assert!(
+        core::mem::size_of::<PodVecLayoutProbe<T>>()
+            == core::mem::size_of::<PodU16>() + core::mem::size_of::<T>(),
+        "PodVec<T, MAX>: T must not require padding after the length prefix"
+    );
+}
+
+/// Marker for element types that make `PodVec<T, MAX>` safe to treat as `Pod`.
+///
+/// # Safety
+///
+/// Implementors must guarantee that a `#[repr(C)]` struct containing
+/// `PodU16` followed by `[Self; 1]` has no padding bytes. The
+/// [`assert_pod_vec_element`] helper checks that invariant for concrete types.
+unsafe trait PodVecElement: bytemuck::Pod {}
+
+macro_rules! impl_pod_vec_element {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            const _: () = assert_pod_vec_element::<$ty>();
+            unsafe impl PodVecElement for $ty {}
+        )*
+    };
+}
+
+impl_pod_vec_element!(
+    (),
+    u8,
+    i8,
+    u16,
+    i16,
+    PodBool,
+    PodU128,
+    PodU64,
+    PodU32,
+    PodU16,
+    PodI128,
+    PodI64,
+    PodI32,
+    PodI16,
+    solana_address::Address,
+);
+
+// Safety: arrays inherit the element alignment and store elements contiguously,
+// so an array of valid PodVec elements is also a valid PodVec element.
+unsafe impl<T, const N: usize> PodVecElement for [T; N]
+where
+    T: PodVecElement,
+    [T; N]: bytemuck::Pod,
+{
+}
+
 // ---------------------------------------------------------------------------
 // PodVec — fixed-capacity, variable-length array with u16 length header
 // ---------------------------------------------------------------------------
@@ -535,8 +599,9 @@ impl fmt::Debug for PodBool {
 /// of how many elements are populated. Use `.as_slice()` to access
 /// only the populated elements.
 ///
-/// This type is `Pod` when `T: Pod`, so it can be used directly inside
-/// `#[account]` structs for zero-copy account access.
+/// This type is `Pod` for the built-in element types that do not force padding
+/// after the length prefix, so it can be used directly inside `#[account]`
+/// structs for zero-copy account access.
 ///
 /// # Validation contract
 ///
@@ -567,10 +632,13 @@ pub struct PodVec<T: bytemuck::Pod, const MAX: usize> {
     data: [T; MAX],
 }
 
-// Safety: #[repr(C)], all fields are Pod (PodU16 is alignment 1, T: Pod).
-// The const assert below catches any padding at compile time.
+// Safety: all fields are zeroable, so the all-zero bit pattern is valid.
 unsafe impl<T: bytemuck::Pod, const MAX: usize> bytemuck::Zeroable for PodVec<T, MAX> {}
-unsafe impl<T: bytemuck::Pod, const MAX: usize> bytemuck::Pod for PodVec<T, MAX> {}
+
+// Safety: `PodVecElement` guarantees that `repr(C)` does not insert padding
+// after the `PodU16` length prefix. All fields are Pod, and there is no tail
+// padding when the prefix-to-element transition is padding-free.
+unsafe impl<T: PodVecElement, const MAX: usize> bytemuck::Pod for PodVec<T, MAX> {}
 
 /// Error returned when pushing to a full `PodVec`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -583,14 +651,6 @@ impl core::fmt::Display for CapacityError {
 }
 
 impl<T: bytemuck::Pod, const MAX: usize> PodVec<T, MAX> {
-    // Compile-time check: no padding between len and data.
-    // If T has alignment > 1, repr(C) would insert padding after the 2-byte
-    // PodU16, violating Pod. This catches it at monomorphization time.
-    const _NO_PADDING: () = assert!(
-        core::mem::size_of::<Self>() == 2 + core::mem::size_of::<T>() * MAX,
-        "PodVec<T, MAX>: T must have alignment 1 (no padding allowed)"
-    );
-
     // Compile-time check: MAX must fit in the u16 length prefix. Without
     // this guard, `try_push` / `pop` / `truncate` / `set_from_slice` /
     // `try_extend_from_slice` silently truncate `usize → u16` and corrupt
