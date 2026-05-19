@@ -22,6 +22,8 @@ fn counter_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"counter"], &program_id()).0
 }
 
+const DUPLICATE_MUT_ERROR: u32 = 2005;
+
 fn setup() -> (LiteSVM, Keypair) {
     let test_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let deploy_dir = test_dir.join("target/deploy");
@@ -72,6 +74,19 @@ fn counter_value(svm: &LiteSVM, counter: Pubkey) -> u64 {
     u64::from_le_bytes(account.data[8..16].try_into().unwrap())
 }
 
+#[track_caller]
+fn assert_custom_error(result: &TransactionResult, expected: u32) {
+    let failure = match result {
+        Ok(_) => panic!("expected transaction to fail with Custom({expected}), got success"),
+        Err(f) => f,
+    };
+    let rendered = format!("{:?}", failure.err);
+    assert!(
+        rendered.contains(&format!("Custom({expected})")),
+        "expected Custom({expected}), got: {rendered}",
+    );
+}
+
 #[test]
 fn too_few_declared_accounts_fails_before_handler() {
     let (mut svm, payer) = setup();
@@ -88,6 +103,126 @@ fn too_few_declared_accounts_fails_before_handler() {
         err.contains("NotEnoughAccountKeys") || err.contains("Custom("),
         "too few accounts should be rejected, got: {err}"
     );
+}
+
+#[test]
+fn remaining_duplicate_of_declared_mut_is_rejected() {
+    let (mut svm, payer) = setup();
+    let counter = initialize(&mut svm, &payer);
+    let data = dispatch_remaining::instruction::MutateThenReadRemaining { value: 123 }.data();
+
+    let result = call_raw(
+        &mut svm,
+        &payer,
+        data,
+        vec![
+            AccountMeta::new(counter, false),
+            AccountMeta::new(counter, false),
+        ],
+    );
+    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
+}
+
+#[test]
+fn remaining_duplicate_of_declared_readonly_is_allowed() {
+    let (mut svm, payer) = setup();
+    let counter = initialize(&mut svm, &payer);
+    let data = dispatch_remaining::instruction::ReadRemainingOnce { expected_count: 1 }.data();
+
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data,
+        vec![
+            AccountMeta::new_readonly(counter, false),
+            AccountMeta::new_readonly(counter, false),
+        ],
+        &payer,
+        &[],
+    )
+    .expect("readonly declared account may be duplicated through remaining accounts");
+}
+
+#[test]
+fn remaining_duplicate_of_trailing_account_is_allowed() {
+    let (mut svm, payer) = setup();
+    let counter = initialize(&mut svm, &payer);
+    let marker = Pubkey::new_unique();
+
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![3],
+        vec![
+            AccountMeta::new_readonly(counter, false),
+            AccountMeta::new_readonly(marker, false),
+            AccountMeta::new_readonly(marker, false),
+        ],
+        &payer,
+        &[],
+    )
+    .expect("remaining accounts may duplicate each other when no declared mut slot aliases");
+}
+
+#[test]
+fn remaining_duplicate_of_optional_some_mut_is_rejected() {
+    let (mut svm, payer) = setup();
+    let counter = initialize(&mut svm, &payer);
+    let data =
+        dispatch_remaining::instruction::OptionalMutThenReadRemaining { expected_count: 1 }.data();
+
+    let result = call_raw(
+        &mut svm,
+        &payer,
+        data,
+        vec![
+            AccountMeta::new(counter, false),
+            AccountMeta::new(counter, false),
+        ],
+    );
+    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
+}
+
+#[test]
+fn remaining_duplicate_of_optional_none_sentinel_is_allowed() {
+    let (mut svm, payer) = setup();
+    let data =
+        dispatch_remaining::instruction::OptionalMutThenReadRemaining { expected_count: 1 }.data();
+
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data,
+        vec![
+            AccountMeta::new(program_id(), false),
+            AccountMeta::new(program_id(), false),
+        ],
+        &payer,
+        &[],
+    )
+    .expect("None sentinel should not count as an active optional mut account");
+}
+
+#[test]
+fn optional_some_mut_with_distinct_remaining_is_allowed() {
+    let (mut svm, payer) = setup();
+    let counter = initialize(&mut svm, &payer);
+    let marker = Pubkey::new_unique();
+    let data =
+        dispatch_remaining::instruction::OptionalMutThenReadRemaining { expected_count: 1 }.data();
+
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data,
+        vec![
+            AccountMeta::new(counter, false),
+            AccountMeta::new_readonly(marker, false),
+        ],
+        &payer,
+        &[],
+    )
+    .expect("optional Some mut account should allow a distinct remaining account");
 }
 
 #[test]
