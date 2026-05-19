@@ -3418,10 +3418,7 @@ fn run_test_suite(
                 )?);
             }
             ValidatorType::Legacy => {
-                let flags = match skip_deploy {
-                    true => None,
-                    false => Some(validator_flags(cfg, test_validator)?),
-                };
+                let flags = Some(validator_flags(cfg, test_validator, skip_deploy)?);
                 validator_handle = Some(start_solana_test_validator(
                     cfg,
                     test_validator,
@@ -3511,10 +3508,23 @@ fn run_test_suite(
     Ok(())
 }
 
-// Returns the solana-test-validator flags. This will embed the workspace
-// programs in the genesis block so we don't have to deploy every time. It also
-// allows control of other solana-test-validator features.
+// Returns the solana-test-validator flags. When `skip_deploy` is false, this
+// embeds the workspace programs in the genesis block so we don't have to deploy
+// every time. It also allows control of other solana-test-validator features.
 fn validator_flags(
+    cfg: &WithPath<Config>,
+    test_validator: &Option<TestValidator>,
+    skip_deploy: bool,
+) -> Result<Vec<String>> {
+    let mut flags = match skip_deploy {
+        true => Vec::new(),
+        false => validator_deploy_flags(cfg, test_validator)?,
+    };
+    flags.extend(validator_config_flags(test_validator)?);
+    Ok(flags)
+}
+
+fn validator_deploy_flags(
     cfg: &WithPath<Config>,
     test_validator: &Option<TestValidator>,
 ) -> Result<Vec<String>> {
@@ -3582,99 +3592,107 @@ fn validator_flags(
                 }
             }
         }
-        if let Some(validator) = &test.validator {
-            let entries = serde_json::to_value(validator)?;
-            for (key, value) in entries.as_object().unwrap() {
-                if key == "ledger" {
-                    // Ledger flag is a special case as it is passed separately to the rest of
-                    // these validator flags.
-                    continue;
-                };
-                if key == "account" {
-                    for entry in value.as_array().unwrap() {
-                        // Push the account flag for each array entry
-                        flags.push("--account".to_string());
-                        flags.push(entry["address"].as_str().unwrap().to_string());
-                        flags.push(entry["filename"].as_str().unwrap().to_string());
-                    }
-                } else if key == "account_dir" {
-                    for entry in value.as_array().unwrap() {
-                        flags.push("--account-dir".to_string());
-                        flags.push(entry["directory"].as_str().unwrap().to_string());
-                    }
-                } else if key == "clone" {
-                    // Client for fetching accounts data
-                    let client = if let Some(url) = entries["url"].as_str() {
-                        create_client(url)
-                    } else {
-                        return Err(anyhow!(
-                            "Validator url for Solana's JSON RPC should be provided in order to \
-                             clone accounts from it"
-                        ));
-                    };
+    }
 
-                    let pubkeys = value
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|entry| {
-                            let address = entry["address"].as_str().unwrap();
-                            Pubkey::try_from(address)
-                                .map_err(|_| anyhow!("Invalid pubkey {}", address))
-                        })
-                        .collect::<Result<HashSet<Pubkey>>>()?
-                        .into_iter()
-                        .collect::<Vec<_>>();
-                    let accounts = client.get_multiple_accounts(&pubkeys)?;
+    Ok(flags)
+}
 
-                    for (pubkey, account) in pubkeys.into_iter().zip(accounts) {
-                        match account {
-                            Some(account) => {
-                                // Use a different flag for program accounts to fix the problem
-                                // described in https://github.com/anza-xyz/agave/issues/522
-                                if account.owner == bpf_loader_upgradeable::id()
-                                    // Only programs are supported with `--clone-upgradeable-program`
-                                    && matches!(
-                                        account.deserialize_data::<UpgradeableLoaderState>()?,
-                                        UpgradeableLoaderState::Program { .. }
-                                    )
-                                {
-                                    flags.push("--clone-upgradeable-program".to_string());
-                                    flags.push(pubkey.to_string());
-                                } else {
-                                    flags.push("--clone".to_string());
-                                    flags.push(pubkey.to_string());
-                                }
-                            }
-                            _ => return Err(anyhow!("Account {} not found", pubkey)),
-                        }
-                    }
-                } else if key == "deactivate_feature" {
-                    // Verify that the feature flags are valid pubkeys
-                    let pubkeys_result: Result<Vec<Pubkey>, _> = value
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|entry| {
-                            let feature_flag = entry.as_str().unwrap();
-                            Pubkey::try_from(feature_flag).map_err(|_| {
-                                anyhow!("Invalid pubkey (feature flag) {}", feature_flag)
-                            })
-                        })
-                        .collect();
-                    let features = pubkeys_result?;
-                    for feature in features {
-                        flags.push("--deactivate-feature".to_string());
-                        flags.push(feature.to_string());
-                    }
+fn validator_config_flags(test_validator: &Option<TestValidator>) -> Result<Vec<String>> {
+    let mut flags = Vec::new();
+
+    if let Some(validator) = test_validator
+        .as_ref()
+        .and_then(|test| test.validator.as_ref())
+    {
+        let entries = serde_json::to_value(validator)?;
+        for (key, value) in entries.as_object().unwrap() {
+            if key == "ledger" {
+                // Ledger flag is a special case as it is passed separately to the rest of
+                // these validator flags.
+                continue;
+            };
+            if key == "account" {
+                for entry in value.as_array().unwrap() {
+                    // Push the account flag for each array entry
+                    flags.push("--account".to_string());
+                    flags.push(entry["address"].as_str().unwrap().to_string());
+                    flags.push(entry["filename"].as_str().unwrap().to_string());
+                }
+            } else if key == "account_dir" {
+                for entry in value.as_array().unwrap() {
+                    flags.push("--account-dir".to_string());
+                    flags.push(entry["directory"].as_str().unwrap().to_string());
+                }
+            } else if key == "clone" {
+                // Client for fetching accounts data
+                let client = if let Some(url) = entries["url"].as_str() {
+                    create_client(url)
                 } else {
-                    // Remaining validator flags are non-array types
-                    flags.push(format!("--{}", key.replace('_', "-")));
-                    if let serde_json::Value::String(v) = value {
-                        flags.push(v.to_string());
-                    } else {
-                        flags.push(value.to_string());
+                    return Err(anyhow!(
+                        "Validator url for Solana's JSON RPC should be provided in order to \
+                         clone accounts from it"
+                    ));
+                };
+
+                let pubkeys = value
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|entry| {
+                        let address = entry["address"].as_str().unwrap();
+                        Pubkey::try_from(address).map_err(|_| anyhow!("Invalid pubkey {}", address))
+                    })
+                    .collect::<Result<HashSet<Pubkey>>>()?
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                let accounts = client.get_multiple_accounts(&pubkeys)?;
+
+                for (pubkey, account) in pubkeys.into_iter().zip(accounts) {
+                    match account {
+                        Some(account) => {
+                            // Use a different flag for program accounts to fix the problem
+                            // described in https://github.com/anza-xyz/agave/issues/522
+                            if account.owner == bpf_loader_upgradeable::id()
+                                // Only programs are supported with `--clone-upgradeable-program`
+                                && matches!(
+                                    account.deserialize_data::<UpgradeableLoaderState>()?,
+                                    UpgradeableLoaderState::Program { .. }
+                                )
+                            {
+                                flags.push("--clone-upgradeable-program".to_string());
+                                flags.push(pubkey.to_string());
+                            } else {
+                                flags.push("--clone".to_string());
+                                flags.push(pubkey.to_string());
+                            }
+                        }
+                        _ => return Err(anyhow!("Account {} not found", pubkey)),
                     }
+                }
+            } else if key == "deactivate_feature" {
+                // Verify that the feature flags are valid pubkeys
+                let pubkeys_result: Result<Vec<Pubkey>, _> = value
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|entry| {
+                        let feature_flag = entry.as_str().unwrap();
+                        Pubkey::try_from(feature_flag)
+                            .map_err(|_| anyhow!("Invalid pubkey (feature flag) {}", feature_flag))
+                    })
+                    .collect();
+                let features = pubkeys_result?;
+                for feature in features {
+                    flags.push("--deactivate-feature".to_string());
+                    flags.push(feature.to_string());
+                }
+            } else {
+                // Remaining validator flags are non-array types
+                flags.push(format!("--{}", key.replace('_', "-")));
+                if let serde_json::Value::String(v) = value {
+                    flags.push(v.to_string());
+                } else {
+                    flags.push(value.to_string());
                 }
             }
         }
@@ -4895,10 +4913,7 @@ fn localnet(
                 )?)
             }
             ValidatorType::Legacy => {
-                let flags = match skip_deploy {
-                    true => None,
-                    false => Some(validator_flags(cfg, &cfg.test_validator)?),
-                };
+                let flags = Some(validator_flags(cfg, &cfg.test_validator, skip_deploy)?);
                 Some(start_solana_test_validator(
                     cfg,
                     &cfg.test_validator,
@@ -5517,5 +5532,31 @@ mod tests {
         assert!(ts.contains(r#""generic": "itemType""#));
         assert!(ts.contains(r#""name": "seedPrefix""#));
         assert!(ts.contains(r#""value": "SEED_PREFIX""#));
+    }
+
+    #[test]
+    fn skip_deploy_preserves_legacy_validator_config_flags() {
+        let cfg = WithPath::new(Config::default(), PathBuf::from("Anchor.toml"));
+        let test_validator = Some(TestValidator {
+            validator: Some(crate::config::Validator {
+                bind_address: "127.0.0.1".to_string(),
+                ledger: ".anchor/test-ledger".to_string(),
+                rpc_port: 18999,
+                warp_slot: Some(42),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        let flags = validator_flags(&cfg, &test_validator, true).unwrap();
+
+        assert!(flags
+            .windows(2)
+            .any(|args| args[0] == "--rpc-port" && args[1] == "18999"));
+        assert!(flags
+            .windows(2)
+            .any(|args| args[0] == "--warp-slot" && args[1] == "42"));
+        assert!(!flags.iter().any(|arg| arg == "--bpf-program"));
+        assert!(!flags.iter().any(|arg| arg == "--upgradeable-program"));
     }
 }
