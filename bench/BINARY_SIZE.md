@@ -94,7 +94,7 @@ Solana version: 2.3.0
 
 ### Notable changes
 
-- Upgrade to Solana `2.3.0` ([#3967](https://github.com/otter-sec/anchor/pull/3967)).
+- Upgrade to Solana `2.3.0`. This upgrade increased the binary size by 8.15% (84912 bytes) ([#3967](https://github.com/otter-sec/anchor/pull/3967)).
 
 ---
 

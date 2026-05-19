@@ -27,7 +27,7 @@ export const baseOptions: HomeLayoutProps = {
     {
       icon: <GithubIcon />,
       text: "Github",
-      url: "https://github.com/solana-foundation/anchor",
+      url: "https://github.com/otter-sec/anchor",
       active: "none",
     },
     {
