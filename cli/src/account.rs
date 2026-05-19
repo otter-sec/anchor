@@ -1,8 +1,5 @@
 use {
-    crate::{
-        config::{Config, ConfigOverride},
-        AbsolutePath,
-    },
+    crate::{config::ConfigOverride, get_cluster_and_wallet, AbsolutePath},
     anyhow::{anyhow, Result},
     clap::Parser,
     solana_commitment_config::CommitmentConfig,
@@ -27,18 +24,10 @@ pub struct ShowAccountCommand {
 }
 
 pub fn show_account(cfg_override: &ConfigOverride, cmd: ShowAccountCommand) -> Result<()> {
-    let config = Config::discover(cfg_override)?;
-    let url = match config {
-        Some(ref cfg) => cfg.provider.cluster.url().to_string(),
-        None => {
-            // If not in workspace, use cluster override or default to localhost
-            if let Some(ref cluster) = cfg_override.cluster {
-                cluster.url().to_string()
-            } else {
-                "https://api.mainnet-beta.solana.com".to_string()
-            }
-        }
-    };
+    // Resolve cluster the same way sibling commands (`balance`, `airdrop`,
+    // `epoch`) do: workspace Anchor.toml > Solana CLI config > mainnet-beta,
+    // with `--provider.cluster` as the final override.
+    let (url, _wallet) = get_cluster_and_wallet(cfg_override)?;
 
     let rpc_client = RpcClient::new_with_commitment(url, CommitmentConfig::confirmed());
 
