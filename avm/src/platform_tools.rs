@@ -291,11 +291,6 @@ pub fn install_platform_tools(version: &str, force: bool) -> Result<()> {
         );
         return Ok(());
     }
-    if target.exists() {
-        fs::remove_dir_all(&target)
-            .with_context(|| format!("Removing existing {}", target.display()))?;
-    }
-
     let parent = target.parent().expect("platform-tools path has parent");
     fs::create_dir_all(parent).with_context(|| format!("Creating {}", parent.display()))?;
 
@@ -333,9 +328,7 @@ pub fn install_platform_tools(version: &str, force: bool) -> Result<()> {
 
     match result {
         Ok(()) => {
-            fs::rename(&staging, &target).with_context(|| {
-                format!("Renaming {} → {}", staging.display(), target.display())
-            })?;
+            replace_install_dir(&staging, &target)?;
             println!("Installed platform-tools {version} to {}", target.display());
             Ok(())
         }
@@ -344,6 +337,16 @@ pub fn install_platform_tools(version: &str, force: bool) -> Result<()> {
             Err(e)
         }
     }
+}
+
+fn replace_install_dir(staging: &Path, target: &Path) -> Result<()> {
+    if target.exists() {
+        fs::remove_dir_all(target)
+            .with_context(|| format!("Removing existing {}", target.display()))?;
+    }
+    fs::rename(staging, target)
+        .with_context(|| format!("Renaming {} → {}", staging.display(), target.display()))?;
+    Ok(())
 }
 
 /// Remove an installed platform-tools version.
@@ -578,5 +581,26 @@ mod tests {
 
         std::fs::write(dir.path().join("rust/marker"), b"").unwrap();
         assert!(looks_installed(dir.path()));
+    }
+
+    #[test]
+    fn replace_install_dir_swaps_existing_target_after_staging_is_ready() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let target = dir.path().join("v1.54");
+        let staging = dir.path().join("v1.54.partial");
+
+        std::fs::create_dir_all(target.join("rust")).unwrap();
+        std::fs::write(target.join("rust/old"), b"old").unwrap();
+        std::fs::create_dir_all(staging.join("rust")).unwrap();
+        std::fs::write(staging.join("rust/new"), b"new").unwrap();
+
+        replace_install_dir(&staging, &target).unwrap();
+
+        assert!(!staging.exists());
+        assert!(!target.join("rust/old").exists());
+        assert_eq!(
+            std::fs::read_to_string(target.join("rust/new")).unwrap(),
+            "new"
+        );
     }
 }
