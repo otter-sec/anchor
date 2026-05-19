@@ -259,15 +259,19 @@ fn resolve_workspace_anchor_lang(
 
 /// Resolve a version-requirement string against a set of installed versions.
 ///
-/// An exact semver (`1.2.3`, `1.0.0-rc.3`) short-circuits and is returned as-is,
-/// even if not installed — the caller decides whether to install it. A range
-/// (`^0.30`, `>=0.29, <0.31`) requires at least one matching installed version.
+/// An exact semver (`1.2.3`, `1.0.0-rc.3`) or exact comparator (`=1.2.3`)
+/// short-circuits and is returned as-is, even if not installed — the caller
+/// decides whether to install it. A range (`^0.30`, `>=0.29, <0.31`) requires
+/// at least one matching installed version.
 fn resolve_version_req(req_str: &str, installed: &[Version]) -> Result<Version> {
     if let Ok(v) = Version::parse(req_str) {
         return Ok(v);
     }
     let req = VersionReq::parse(req_str)
         .with_context(|| format!("Parsing version requirement `{req_str}`"))?;
+    if let Some(v) = exact_version_from_req(&req) {
+        return Ok(v);
+    }
     installed
         .iter()
         .filter(|v| req.matches(v))
@@ -279,6 +283,14 @@ fn resolve_version_req(req_str: &str, installed: &[Version]) -> Result<Version> 
                  matching version."
             )
         })
+}
+
+fn exact_version_from_req(req: &VersionReq) -> Option<Version> {
+    req.comparators
+        .iter()
+        .find(|cmp| cmp.op == Op::Exact && cmp.minor.is_some() && cmp.patch.is_some())
+        .map(comparator_base_version)
+        .filter(|version| req.matches(version))
 }
 
 // ── Solana version resolution ────────────────────────────────────────────────
@@ -602,6 +614,25 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(res.version, v("0.29.3"));
+    }
+
+    #[test]
+    fn cargo_toml_exact_comparator_anchor_lang_dep_does_not_require_installed() {
+        let dir = TempDir::new().unwrap();
+        write(&dir.path().join("Anchor.toml"), "");
+        write(
+            &dir.path().join("programs/foo/Cargo.toml"),
+            "[package]\nname = \"foo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[lib]\npath = \
+             \"src/lib.rs\"\n[dependencies]\nanchor-lang = \"=0.32.1\"\n",
+        );
+        write(&dir.path().join("programs/foo/src/lib.rs"), "");
+
+        let res = resolve_anchor_version_with(dir.path(), &[], None)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(res.version, v("0.32.1"));
+        assert!(matches!(res.source, ResolutionSource::CargoToml(_)));
     }
 
     #[test]
