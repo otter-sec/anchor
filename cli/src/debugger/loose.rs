@@ -121,9 +121,11 @@ impl LooseWorkspace {
 
         // Fast path: the conventional name.
         let convention = "profile";
-        if manifest.features.get(convention).map_or(false, |v| {
-            v.iter().any(|s| s == "anchor-v2-testing/profile")
-        }) {
+        if manifest
+            .features
+            .get(convention)
+            .is_some_and(|v| v.iter().any(|s| s == "anchor-v2-testing/profile"))
+        {
             return Ok(convention.to_owned());
         }
 

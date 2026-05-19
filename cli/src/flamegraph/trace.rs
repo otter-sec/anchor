@@ -61,6 +61,10 @@ pub struct FlamegraphReport {
     pub stacks: BTreeMap<Vec<String>, u64>,
 }
 
+type FunctionSymbolMap = BTreeMap<u64, String>;
+type SyscallSymbolMap = BTreeMap<u32, String>;
+type SymbolCache = BTreeMap<String, (FunctionSymbolMap, SyscallSymbolMap)>;
+
 /// Size in bytes of one register trace entry: 12 x u64 = 96 bytes.
 pub const REGS_ENTRY_SIZE: usize = 12 * std::mem::size_of::<u64>();
 
@@ -116,6 +120,7 @@ impl ContextObject for NoopContext {
 /// syscall does not change the persistent call stack (the caller resumes at
 /// the next instruction), but we still want to attribute its single traced
 /// CU to a `[syscall] {name}` leaf frame for display.
+#[allow(clippy::too_many_arguments)]
 pub fn stream_trace(
     regs_data: &[u8],
     insns_data: &[u8],
@@ -248,10 +253,10 @@ fn process_trace(
 pub fn read_regs(data: &[u8], i: usize) -> [u64; 12] {
     let offset = i * REGS_ENTRY_SIZE;
     let mut regs = [0u64; 12];
-    for r in 0..12 {
+    for (r, reg) in regs.iter_mut().enumerate() {
         let start = offset + r * 8;
         let bytes: [u8; 8] = data[start..start + 8].try_into().unwrap();
-        regs[r] = u64::from_le_bytes(bytes);
+        *reg = u64::from_le_bytes(bytes);
     }
     regs
 }
@@ -368,10 +373,7 @@ pub fn build_tx_reports(
     }
 
     // Cache symbol maps per program — loading an ELF is expensive.
-    let mut symbol_cache: std::collections::BTreeMap<
-        String,
-        (BTreeMap<u64, String>, BTreeMap<u32, String>),
-    > = std::collections::BTreeMap::new();
+    let mut symbol_cache: SymbolCache = BTreeMap::new();
     for (pid, elf) in programs {
         if let Ok(maps) = load_function_map(elf, manifest_dir) {
             symbol_cache.insert(pid.clone(), maps);
@@ -699,10 +701,8 @@ fn find_workspace_root(manifest_dir: &Path) -> Option<std::path::PathBuf> {
                 }
             }
         }
-        match current.parent() {
-            Some(parent) => current = parent.to_path_buf(),
-            None => return None,
-        }
+        let parent = current.parent()?;
+        current = parent.to_path_buf();
     }
 }
 

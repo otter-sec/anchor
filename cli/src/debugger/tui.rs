@@ -227,7 +227,7 @@ impl App {
                     // visually sits "above" them. Dim by default so the
                     // selected tx still pops.
                     ListItem::new(Line::from(vec![Span::styled(
-                        format!("{name}"),
+                        name.to_string(),
                         Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                     )]))
                     // Disable selection-highlight on header rows so j/k
@@ -653,7 +653,7 @@ impl App {
         let mut lines = Vec::with_capacity(12);
         for r in 0..11 {
             let val = step.regs[r];
-            let changed = prev.map_or(false, |p| p.regs[r] != val);
+            let changed = prev.is_some_and(|p| p.regs[r] != val);
             let style = if changed {
                 Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD)
             } else {
@@ -789,7 +789,7 @@ impl App {
             .file
             .extension()
             .and_then(|s| s.to_str())
-            .map_or(false, |e| e.eq_ignore_ascii_case("rs"));
+            .is_some_and(|e| e.eq_ignore_ascii_case("rs"));
         let text: Vec<Line> = lines
             .into_iter()
             .map(|(n, content, is_current)| {
