@@ -71,23 +71,43 @@ jobs:
             build_command: TESTING=true anchor build
 
     steps:
-      - name: Checkout Anchor
+      - name: Checkout ${{ matrix.repository }}
         uses: actions/checkout@v3
+        with:
+          repository: ${{ matrix.repository }}
+          submodules: recursive
 
-      - uses: ./.github/actions/setup/
-      - uses: ./.github/actions/setup-solana/
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential libudev-dev
+
+      - uses: actions/cache@v4
+        name: Cache Solana Tool Suite
+        id: cache-solana
+        with:
+          path: |
+            ~/.cache/solana/
+            ~/.local/share/solana/
+          key: solana-${{ runner.os }}-v0000-${{ env.SOLANA_VERSION }}
+
+      - uses: nick-fields/retry@v2
+        if: steps.cache-solana.outputs.cache-hit != 'true'
+        with:
+          retry_wait_seconds: 300
+          timeout_minutes: 2
+          max_attempts: 10
+          retry_on: error
+          shell: bash
+          command: sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
+
+      - run: echo "/home/runner/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+      - run: solana-keygen new --no-bip39-passphrase
+      - run: solana config set --url localhost
 
       - uses: actions/download-artifact@v4
         with:
           name: anchor-binary-downstream
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/anchor
-
-      - name: Checkout ${{ matrix.repository }}
-        uses: actions/checkout@v3
-        with:
-          repository: ${{ matrix.repository }}
-          path: downstream/${{ matrix.name }}
 
       - uses: actions/cache@v4
         name: Cache ${{ matrix.name }} Cargo home
@@ -96,19 +116,18 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-          key: cargo-home-${{ runner.os }}-downstream-${{ matrix.name }}-${{ hashFiles(format('downstream/{0}/Cargo.lock', matrix.name)) }}
+          key: cargo-home-${{ runner.os }}-downstream-${{ matrix.name }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             cargo-home-${{ runner.os }}-downstream-${{ matrix.name }}-
 
       - uses: actions/cache@v4
         name: Cache ${{ matrix.name }} target
         with:
-          path: downstream/${{ matrix.name }}/target/
-          key: cargo-target-${{ runner.os }}-downstream-${{ matrix.name }}-${{ hashFiles(format('downstream/{0}/Cargo.lock', matrix.name)) }}-${{ github.run_id }}
+          path: target/
+          key: cargo-target-${{ runner.os }}-downstream-${{ matrix.name }}-${{ hashFiles('Cargo.lock') }}-${{ github.run_id }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-downstream-${{ matrix.name }}-${{ hashFiles(format('downstream/{0}/Cargo.lock', matrix.name)) }}-
+            cargo-target-${{ runner.os }}-downstream-${{ matrix.name }}-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-downstream-${{ matrix.name }}-
 
       - name: Build ${{ matrix.repository }}
-        working-directory: downstream/${{ matrix.name }}
         run: ${{ matrix.build_command }}
