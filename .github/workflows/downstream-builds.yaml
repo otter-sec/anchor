@@ -69,12 +69,15 @@ jobs:
           path: ${{ matrix.directory }}
           submodules: recursive
 
-      - name: Checkout AVM from otter-sec/anchor#4534
+      - name: Checkout latest AVM from otter-sec/anchor#4534
         uses: actions/checkout@v3
         with:
           repository: otter-sec/anchor
           ref: refs/pull/4534/head
           path: avm-source
+
+      - name: Show AVM checkout
+        run: git -C avm-source rev-parse HEAD
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential libudev-dev
@@ -106,7 +109,7 @@ jobs:
         name: Cache AVM target
         with:
           path: avm-target/
-          key: cargo-target-${{ runner.os }}-downstream-avm-4534-${{ hashFiles('avm-source/Cargo.lock') }}
+          key: cargo-target-${{ runner.os }}-downstream-avm-4534-${{ hashFiles('avm-source/Cargo.lock', 'avm-source/avm/src/**') }}
           restore-keys: |
             cargo-target-${{ runner.os }}-downstream-avm-4534-
 
