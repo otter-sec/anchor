@@ -55,8 +55,43 @@ jobs:
           path: ~/.cargo/bin/anchor
           retention-days: 1
 
+  downstream-matrix:
+    name: Build downstream matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.repos.outputs.matrix }}
+    steps:
+      - name: Checkout anchor-community
+        uses: actions/checkout@v3
+        with:
+          repository: otter-sec/anchor-community
+          path: anchor-community
+
+      - name: Build matrix from repos.json
+        id: repos
+        run: |
+          matrix="$(jq -c '{include: [.[] | {
+            name,
+            source,
+            repository: (.source | sub("^https://github.com/"; "") | sub("\\.git$"; "")),
+            commit,
+            directory,
+            build_command
+          }]}' anchor-community/repos.json)"
+
+          {
+            echo "matrix<<EOF"
+            echo "$matrix"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
   anchor-build:
-    needs: setup-anchor-cli
+    needs:
+      - setup-anchor-cli
+      - downstream-matrix
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -64,17 +99,15 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: helium-program-library
-            repository: helium/helium-program-library
-            build_command: TESTING=true anchor build
+      matrix: ${{ fromJson(needs.downstream-matrix.outputs.matrix) }}
 
     steps:
-      - name: Checkout ${{ matrix.repository }}
+      - name: Checkout ${{ matrix.source }}
         uses: actions/checkout@v3
         with:
           repository: ${{ matrix.repository }}
+          ref: ${{ matrix.commit }}
+          path: ${{ matrix.directory }}
           submodules: recursive
 
       - name: Install dependencies
@@ -116,18 +149,19 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-          key: cargo-home-${{ runner.os }}-downstream-${{ matrix.name }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-home-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.directory)) }}
           restore-keys: |
-            cargo-home-${{ runner.os }}-downstream-${{ matrix.name }}-
+            cargo-home-${{ runner.os }}-downstream-${{ matrix.directory }}-
 
       - uses: actions/cache@v4
         name: Cache ${{ matrix.name }} target
         with:
-          path: target/
-          key: cargo-target-${{ runner.os }}-downstream-${{ matrix.name }}-${{ hashFiles('Cargo.lock') }}-${{ github.run_id }}
+          path: ${{ matrix.directory }}/target/
+          key: cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.directory)) }}-${{ github.run_id }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-downstream-${{ matrix.name }}-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-downstream-${{ matrix.name }}-
+            cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.directory)) }}-
+            cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-
 
       - name: Build ${{ matrix.repository }}
+        working-directory: ${{ matrix.directory }}
         run: ${{ matrix.build_command }}
