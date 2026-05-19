@@ -1,0 +1,110 @@
+name: Nightly Attested Binaries
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-attested-binaries
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+
+          - target: x86_64-apple-darwin
+            os: macos-latest
+
+          - target: aarch64-apple-darwin
+            os: macos-latest
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: master
+
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev
+
+      # FIXME: The global system LLVM on GitHub is very outdated, and LTO causes link errors.
+      - name: Build nightly binaries (macOS)
+        if: runner.os == 'macOS'
+        env:
+          CARGO_PROFILE_RELEASE_LTO: "off"
+          RUSTFLAGS: -C embed-bitcode=no
+        run: cargo build --package anchor-cli --package avm --release --locked --target ${{ matrix.target }}
+
+      - name: Build nightly binaries
+        if: runner.os != 'macOS'
+        run: cargo build --package anchor-cli --package avm --release --locked --target ${{ matrix.target }}
+
+      - name: Prepare artifacts
+        id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          short_sha=$(git rev-parse --short HEAD)
+          version="nightly-$(date -u +%Y%m%d)-${short_sha}"
+          dist="dist/${{ matrix.target }}"
+
+          mkdir -p "$dist"
+          cp "target/${{ matrix.target }}/release/anchor" "$dist/anchor-${version}-${{ matrix.target }}"
+          cp "target/${{ matrix.target }}/release/avm" "$dist/avm-${version}-${{ matrix.target }}"
+
+          echo "dist=$dist" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: ${{ steps.prepare.outputs.dist }}/*
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: anchor-nightly-${{ steps.prepare.outputs.version }}-${{ matrix.target }}
+          path: ${{ steps.prepare.outputs.dist }}
+          retention-days: 14
+
+  upload-to-cloud-bucket:
+    name: Upload to cloud bucket
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: anchor-nightly-*
+          path: dist-nightly
+
+      - name: "TODO: Upload binaries to cloud bucket"
+        shell: bash
+        run: |
+          echo "TODO: configure cloud bucket credentials, destination, and upload command."
+          echo "The attested nightly binaries are available under dist-nightly/."
+          exit 1
