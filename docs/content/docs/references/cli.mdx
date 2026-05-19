@@ -249,6 +249,17 @@ The modular template organizes code into separate files for instructions, state,
 constants, and errors, making it easier to navigate and maintain as your program
 grows.
 
+**Anchor Version:**
+
+```shell
+anchor init --anchor-version v1  # Default: Anchor v1 Rust templates
+anchor init --anchor-version v2  # Anchor v2 Rust templates
+```
+
+The selected Anchor version controls the generated Rust program and Rust test
+template dependencies. V2 templates use the `anchor-next` git dependencies until
+the v2 crates are published.
+
 ## Keys
 
 Program keypair commands.
