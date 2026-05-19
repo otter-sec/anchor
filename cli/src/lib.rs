@@ -3355,15 +3355,16 @@ fn test(
         let root = cfg.path().parent().unwrap().to_owned();
         cfg.add_test_config(root, test_paths)?;
 
+        let cli_skip_local_validator = skip_local_validator;
         let skip_local_validator =
-            skip_local_validator || cfg.skip_local_validator.unwrap_or(false);
+            cli_skip_local_validator || cfg.skip_local_validator.unwrap_or(false);
 
-        // Deploy to the cluster unless told to skip. Skip the preemptive
-        // `deploy()` on localnet: the validator is started later in
-        // `run_test_suite`, and it loads programs itself through the selected
-        // validator flags.
+        // Deploy to the cluster unless told to skip. For localnet, preserve
+        // explicit `--skip-local-validator` deploys because the validator is
+        // already running, but don't let generated in-process templates force
+        // an RPC deploy through their persisted config.
         let is_localnet = cfg.provider.cluster == Cluster::Localnet;
-        if !skip_deploy && !is_localnet {
+        if should_predeploy_before_test(skip_deploy, is_localnet, cli_skip_local_validator) {
             deploy(cfg_override, None, None, false, true, vec![])?;
         }
 
@@ -3444,6 +3445,14 @@ fn test(
         cfg.run_hooks(HookType::PostTest)?;
         Ok(())
     })?
+}
+
+fn should_predeploy_before_test(
+    skip_deploy: bool,
+    is_localnet: bool,
+    cli_skip_local_validator: bool,
+) -> bool {
+    !skip_deploy && (!is_localnet || cli_skip_local_validator)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5476,6 +5485,28 @@ mod tests {
             true,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_predeploy_preserves_explicit_external_validator() {
+        assert!(should_predeploy_before_test(false, false, false));
+        assert!(should_predeploy_before_test(false, true, true));
+        assert!(!should_predeploy_before_test(false, true, false));
+        assert!(!should_predeploy_before_test(true, true, true));
+    }
+
+    #[test]
+    fn test_jest_package_json_pins_uuid_for_commonjs() {
+        for package_json in [
+            rust_template::package_json(true, "ISC".to_owned()),
+            rust_template::ts_package_json(true, "ISC".to_owned()),
+        ] {
+            let package: JsonValue = serde_json::from_str(&package_json).unwrap();
+
+            assert_eq!(package["overrides"]["uuid"], "^9.0.1");
+            assert_eq!(package["resolutions"]["uuid"], "^9.0.1");
+            assert_eq!(package["pnpm"]["overrides"]["uuid"], "^9.0.1");
+        }
     }
 
     #[test]

@@ -629,6 +629,17 @@ pub fn package_json(jest: bool, license: String) -> String {
   "devDependencies": {{
     "jest": "^29.0.3",
     "prettier": "^2.6.2"
+  }},
+  "overrides": {{
+    "uuid": "^9.0.1"
+  }},
+  "resolutions": {{
+    "uuid": "^9.0.1"
+  }},
+  "pnpm": {{
+    "overrides": {{
+      "uuid": "^9.0.1"
+    }}
   }}
 }}
     "#
@@ -674,6 +685,17 @@ pub fn ts_package_json(jest: bool, license: String) -> String {
     "prettier": "^2.6.2",
     "ts-jest": "^29.0.2",
     "typescript": "^5.7.3"
+  }},
+  "overrides": {{
+    "uuid": "^9.0.1"
+  }},
+  "resolutions": {{
+    "uuid": "^9.0.1"
+  }},
+  "pnpm": {{
+    "overrides": {{
+      "uuid": "^9.0.1"
+    }}
   }}
 }}
 "#
