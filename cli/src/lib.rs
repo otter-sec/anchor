@@ -75,6 +75,8 @@ pub const DOCKER_BUILDER_VERSION: &str = VERSION;
 /// Default RPC port
 pub const DEFAULT_RPC_PORT: u16 = 8899;
 const DEFAULT_FAUCET_PORT: u16 = 9900;
+const DEPRECATE_RENT_EXEMPTION_THRESHOLD_FEATURE: &str =
+    "rent6iVy6PDoViPBeJ6k5EJQrkj62h7DPyLbWGHwjrC";
 
 /// WebSocket port offset for solana-test-validator (RPC port + 1)
 pub const WEBSOCKET_PORT_OFFSET: u16 = 1;
@@ -4481,7 +4483,7 @@ fn surfpool_flags(
     }
 
     flags.push("--feature".to_string());
-    flags.push("deprecate_rent_exemption_threshold".to_string());
+    flags.push(DEPRECATE_RENT_EXEMPTION_THRESHOLD_FEATURE.to_string());
 
     match skip_deploy {
         true => flags.push("--no-deploy".to_string()),
@@ -6294,6 +6296,13 @@ mod tests {
                 stream_program_logs: true,
             }
         );
+    }
+
+    #[test]
+    fn surfpool_feature_flag_uses_pubkey() {
+        assert!(DEPRECATE_RENT_EXEMPTION_THRESHOLD_FEATURE
+            .parse::<Pubkey>()
+            .is_ok());
     }
 
     #[test]
