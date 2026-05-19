@@ -26,7 +26,7 @@ pub mod dispatch_remaining {
 
     #[discrim = 2]
     pub fn read_remaining_once(ctx: &mut Context<ReadRemaining>, expected_count: u8) -> Result<()> {
-        let remaining = ctx.remaining_accounts();
+        let remaining = ctx.remaining_accounts()?;
         if remaining.len() != expected_count as usize {
             return Err(ProgramError::InvalidArgument.into());
         }
@@ -39,8 +39,8 @@ pub mod dispatch_remaining {
 
     #[discrim = 3]
     pub fn read_remaining_twice(ctx: &mut Context<ReadRemaining>) -> Result<()> {
-        let first = ctx.remaining_accounts();
-        let second = ctx.remaining_accounts();
+        let first = ctx.remaining_accounts()?;
+        let second = ctx.remaining_accounts()?;
         if first.len() != 2 || second.len() != 2 {
             return Err(ProgramError::InvalidArgument.into());
         }
@@ -56,7 +56,7 @@ pub mod dispatch_remaining {
         value: u64,
     ) -> Result<()> {
         ctx.accounts.counter.value = value;
-        let remaining = ctx.remaining_accounts();
+        let remaining = ctx.remaining_accounts()?;
         if remaining.len() != 1 {
             return Err(ProgramError::InvalidArgument.into());
         }
@@ -67,6 +67,21 @@ pub mod dispatch_remaining {
     pub fn arg_echo(_ctx: &mut Context<ReadRemaining>, value: u64, tag: [u8; 4]) -> Result<()> {
         if value != 0x0102_0304_0506_0708 || tag != *b"echo" {
             return Err(ProgramError::InvalidInstructionData.into());
+        }
+        Ok(())
+    }
+
+    #[discrim = 6]
+    pub fn optional_mut_then_read_remaining(
+        ctx: &mut Context<OptionalMutThenReadRemaining>,
+        expected_count: u8,
+    ) -> Result<()> {
+        if let Some(counter) = ctx.accounts.counter.as_mut() {
+            counter.value = counter.value.saturating_add(1);
+        }
+        let remaining = ctx.remaining_accounts()?;
+        if remaining.len() != expected_count as usize {
+            return Err(ProgramError::InvalidArgument.into());
         }
         Ok(())
     }
@@ -102,4 +117,10 @@ pub struct ReadRemaining {
 pub struct MutateThenReadRemaining {
     #[account(mut)]
     pub counter: Account<Counter>,
+}
+
+#[derive(Accounts)]
+pub struct OptionalMutThenReadRemaining {
+    #[account(mut)]
+    pub counter: Option<Account<Counter>>,
 }
