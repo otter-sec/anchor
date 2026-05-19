@@ -70,6 +70,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DOCKER_BUILDER_VERSION: &str = VERSION;
 /// Default RPC port
 pub const DEFAULT_RPC_PORT: u16 = 8899;
+const DEFAULT_FAUCET_PORT: u16 = 9900;
 
 /// WebSocket port offset for solana-test-validator (RPC port + 1)
 pub const WEBSOCKET_PORT_OFFSET: u16 = 1;
@@ -4067,7 +4068,7 @@ fn run_test_suite(
                 .map_err(std::env::VarError::NotUnicode)?,
             None => "".to_owned(),
         },
-        get_node_dns_option()?,
+        get_node_dns_option(),
     );
 
     // Setup log reader - kept alive until end of scope
@@ -4411,6 +4412,9 @@ fn surfpool_flags(
         flags.push("--no-studio".to_string());
     }
 
+    flags.push("--feature".to_string());
+    flags.push("deprecate_rent_exemption_threshold".to_string());
+
     match skip_deploy {
         true => flags.push("--no-deploy".to_string()),
         false => {
@@ -4619,18 +4623,36 @@ fn start_surfpool_validator(
     surfpool_config: &Option<SurfpoolConfig>,
     full_simnet_mode: bool,
 ) -> Result<Child> {
+    let (host, port) = match surfpool_config {
+        Some(SurfpoolConfig { host, rpc_port, .. }) => (host.clone(), *rpc_port),
+        _ => (SURFPOOL_HOST.to_string(), DEFAULT_RPC_PORT),
+    };
     let rpc_url = surfpool_rpc_url(surfpool_config);
 
-    let (test_validator_stdout, test_validator_stderr) = match full_simnet_mode {
-        true => (Stdio::inherit(), Stdio::inherit()),
-        false => (Stdio::null(), Stdio::null()),
+    if std::net::TcpStream::connect_timeout(
+        &format!("{host}:{port}")
+            .parse()
+            .map_err(|err| anyhow!("invalid surfpool host:port `{host}:{port}`: {err}"))?,
+        std::time::Duration::from_millis(200),
+    )
+    .is_ok()
+    {
+        return Err(anyhow!(
+            "port {port} on {host} is already in use - another validator is running there. Kill \
+             it or set `[surfpool] rpc_port = N` in Anchor.toml to pick a free port."
+        ));
+    }
+
+    let test_validator_stdout = match full_simnet_mode {
+        true => Stdio::inherit(),
+        false => Stdio::null(),
     };
 
     let mut validator_handle = std::process::Command::new("surfpool")
         .arg("start")
         .args(flags.unwrap_or_default())
         .stdout(test_validator_stdout)
-        .stderr(test_validator_stderr)
+        .stderr(Stdio::inherit())
         .spawn()
         .map_err(|e| anyhow!("Failed to spawn `surfpool`: {e}"))?;
 
@@ -4644,6 +4666,13 @@ fn start_surfpool_validator(
         .unwrap_or(STARTUP_WAIT);
 
     while count < ms_wait {
+        if let Ok(Some(status)) = validator_handle.try_wait() {
+            return Err(anyhow!(
+                "`surfpool` exited during startup with {status} - see the stderr output above. \
+                 Common causes: port {port} in use, missing deploy artifacts in `target/deploy/`, \
+                 invalid Anchor.toml config."
+            ));
+        }
         let r = client.get_latest_blockhash();
         if r.is_ok() {
             break;
@@ -4729,7 +4758,7 @@ fn start_solana_test_validator(
         .test_validator
         .as_ref()
         .and_then(|test| test.validator.as_ref().and_then(|v| v.faucet_port))
-        .unwrap_or(solana_faucet::faucet::FAUCET_PORT);
+        .unwrap_or(DEFAULT_FAUCET_PORT);
     if !portpicker::is_free(faucet_port) {
         return Err(anyhow!(
             "Your configured faucet port: {faucet_port} is already in use"
@@ -5637,17 +5666,67 @@ fn is_hidden(entry: &walkdir::DirEntry) -> bool {
         .unwrap_or(false)
 }
 
+fn logs_websocket_url(cfg_override: &ConfigOverride, cluster_url: &str) -> String {
+    let ws_scheme_url = cluster_url
+        .replace("https://", "wss://")
+        .replace("http://", "ws://");
+
+    let is_local = cluster_url.contains("localhost") || cluster_url.contains("127.0.0.1");
+    if !is_local {
+        return ws_scheme_url;
+    }
+
+    let default_ws_port = extract_url_port(cluster_url)
+        .map(|port| port.saturating_add(1))
+        .unwrap_or(DEFAULT_RPC_PORT + 1);
+    let ws_port = Config::discover(cfg_override)
+        .ok()
+        .flatten()
+        .and_then(|cfg| {
+            cfg.surfpool_config
+                .as_ref()
+                .and_then(|surfpool| surfpool.ws_port)
+        })
+        .unwrap_or(default_ws_port);
+
+    replace_url_port(&ws_scheme_url, ws_port)
+}
+
+fn extract_url_port(url: &str) -> Option<u16> {
+    let (_, after_scheme) = url.split_once("://")?;
+    let host_port_end = after_scheme.find('/').unwrap_or(after_scheme.len());
+    let (_, port_str) = after_scheme[..host_port_end].rsplit_once(':')?;
+    port_str.parse().ok()
+}
+
+fn replace_url_port(url: &str, new_port: u16) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+    let (host_port_part, tail) = match rest.find('/') {
+        Some(index) => (&rest[..index], &rest[index..]),
+        None => (rest, ""),
+    };
+    let host = host_port_part
+        .rsplit_once(':')
+        .map(|(host, _)| host)
+        .unwrap_or(host_port_part);
+    format!("{scheme}://{host}:{new_port}{tail}")
+}
+
 fn get_node_version() -> Result<Version> {
     let node_version = std::process::Command::new("node")
         .arg("--version")
         .stderr(Stdio::inherit())
         .output()
         .map_err(|e| anyhow::format_err!("node failed: {}", e))?;
-    let output = std::str::from_utf8(&node_version.stdout)?
-        .strip_prefix('v')
-        .unwrap()
-        .trim();
-    Version::parse(output).map_err(Into::into)
+    parse_node_version(std::str::from_utf8(&node_version.stdout)?)
+}
+
+fn parse_node_version(output: &str) -> Result<Version> {
+    let trimmed = output.trim();
+    let without_v = trimmed.strip_prefix('v').unwrap_or(trimmed);
+    Version::parse(without_v).map_err(Into::into)
 }
 
 fn add_recommended_deployment_solana_args(
@@ -5690,14 +5769,16 @@ fn add_recommended_deployment_solana_args(
     Ok(augmented_args)
 }
 
-fn get_node_dns_option() -> Result<&'static str> {
-    let version = get_node_version()?;
-    let req = VersionReq::parse(">=16.4.0").unwrap();
-    let option = match req.matches(&version) {
-        true => "--dns-result-order=ipv4first",
-        false => "",
+fn get_node_dns_option() -> &'static str {
+    let Ok(version) = get_node_version() else {
+        return "";
     };
-    Ok(option)
+    let req = VersionReq::parse(">=16.4.0").unwrap();
+    if req.matches(&version) {
+        "--dns-result-order=ipv4first"
+    } else {
+        ""
+    }
 }
 
 // Remove the current workspace directory if it prefixes a string.
@@ -5905,19 +5986,7 @@ fn logs_subscribe(
     address: Option<Vec<Pubkey>>,
 ) -> Result<()> {
     let (cluster_url, _wallet_path) = get_cluster_and_wallet(cfg_override)?;
-
-    // Convert HTTP(S) URL to WebSocket URL
-    let ws_url = if cluster_url.contains("localhost") || cluster_url.contains("127.0.0.1") {
-        // Parse the URL to extract and increment the port
-        cluster_url
-            .replace("https://", "wss://")
-            .replace("http://", "ws://")
-            .replace(":8899", ":8900") // Default test validator ports
-    } else {
-        cluster_url
-            .replace("https://", "wss://")
-            .replace("http://", "ws://")
-    };
+    let ws_url = logs_websocket_url(cfg_override, &cluster_url);
 
     println!("Connecting to {}", ws_url);
 
@@ -6137,8 +6206,8 @@ mod tests {
     #[test]
     fn test_jest_package_json_pins_uuid_for_commonjs() {
         for package_json in [
-            rust_template::package_json(true, "ISC".to_owned()),
-            rust_template::ts_package_json(true, "ISC".to_owned()),
+            rust_template::package_json(true, "ISC".to_owned(), AnchorVersion::V1),
+            rust_template::ts_package_json(true, "ISC".to_owned(), AnchorVersion::V1),
         ] {
             let package: JsonValue = serde_json::from_str(&package_json).unwrap();
 
@@ -6146,6 +6215,62 @@ mod tests {
             assert_eq!(package["resolutions"]["uuid"], "^9.0.1");
             assert_eq!(package["pnpm"]["overrides"]["uuid"], "^9.0.1");
         }
+    }
+
+    #[test]
+    fn parse_node_version_with_v_prefix() {
+        let version = parse_node_version("v20.10.0\n").unwrap();
+        assert_eq!(version.major, 20);
+        assert_eq!(version.minor, 10);
+        assert_eq!(version.patch, 0);
+    }
+
+    #[test]
+    fn parse_node_version_without_v_prefix() {
+        let version = parse_node_version("20.10.0").unwrap();
+        assert_eq!(version.major, 20);
+    }
+
+    #[test]
+    fn parse_node_version_ignores_surrounding_whitespace() {
+        let version = parse_node_version("  v18.17.1  \n").unwrap();
+        assert_eq!(version.major, 18);
+        assert_eq!(version.minor, 17);
+    }
+
+    #[test]
+    fn parse_node_version_errors_on_garbage() {
+        assert!(parse_node_version("not a version").is_err());
+        assert!(parse_node_version("").is_err());
+    }
+
+    #[test]
+    fn extract_url_port_common_shapes() {
+        assert_eq!(extract_url_port("http://127.0.0.1:8899"), Some(8899));
+        assert_eq!(extract_url_port("http://127.0.0.1:8899/"), Some(8899));
+        assert_eq!(extract_url_port("ws://localhost:8900/path?q=1"), Some(8900));
+        assert_eq!(
+            extract_url_port("https://api.mainnet-beta.solana.com"),
+            None
+        );
+        assert_eq!(extract_url_port("http://127.0.0.1"), None);
+        assert_eq!(extract_url_port("not a url"), None);
+    }
+
+    #[test]
+    fn replace_url_port_preserves_structure() {
+        assert_eq!(
+            replace_url_port("http://127.0.0.1:8899", 9001),
+            "http://127.0.0.1:9001"
+        );
+        assert_eq!(
+            replace_url_port("ws://127.0.0.1:8899/path?q=1", 9050),
+            "ws://127.0.0.1:9050/path?q=1"
+        );
+        assert_eq!(
+            replace_url_port("http://127.0.0.1", 8900),
+            "http://127.0.0.1:8900"
+        );
     }
 
     #[test]

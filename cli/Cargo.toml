@@ -55,7 +55,6 @@ solana-client.workspace = true
 solana-clock.workspace = true
 solana-commitment-config.workspace = true
 solana-compute-budget-interface.workspace = true
-solana-faucet = { workspace = true, features = ["agave-unstable-api"] }
 solana-instruction.workspace = true
 solana-keypair.workspace = true
 solana-loader-v3-interface.workspace = true
