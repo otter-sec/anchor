@@ -16,73 +16,6 @@ env:
   SOLANA_VERSION: "3.1.10"
 
 jobs:
-  setup-anchor-cli:
-    name: Setup Anchor CLI
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout Anchor
-        uses: actions/checkout@v3
-
-      - name: Checkout AVM from otter-sec/anchor#4534
-        uses: actions/checkout@v3
-        with:
-          repository: otter-sec/anchor
-          ref: refs/pull/4534/head
-          path: avm-source
-
-      - uses: ./.github/actions/setup/
-
-      - uses: actions/cache@v4
-        name: Cache Cargo home
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: cargo-home-${{ runner.os }}-downstream-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-home-${{ runner.os }}-downstream-
-
-      - uses: actions/cache@v4
-        name: Cache Anchor target
-        with:
-          path: ./target/
-          key: cargo-target-${{ runner.os }}-downstream-anchor-${{ hashFiles('**/Cargo.lock') }}-${{ github.ref_name }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-downstream-anchor-${{ hashFiles('**/Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-downstream-anchor-
-
-      - name: Install AVM
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target
-        run: cargo install --path avm-source/avm --locked --force
-
-      - name: Install Anchor CLI with AVM
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target
-        run: |
-          anchor_version="$(cat VERSION)"
-          avm install --path "$GITHUB_WORKSPACE" --force
-
-          mkdir -p "$RUNNER_TEMP/anchor-bin"
-
-          # Upload the concrete CLI binary, not AVM's `anchor` proxy. The
-          # downstream builds should exercise this branch's CLI while leaving
-          # each downstream repo's crates.io `anchor-lang` dependency untouched.
-          cp "$HOME/.avm/bin/anchor-$anchor_version" "$RUNNER_TEMP/anchor-bin/anchor"
-          chmod +x "$RUNNER_TEMP/anchor-bin/anchor"
-          "$RUNNER_TEMP/anchor-bin/anchor" --version
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: anchor-binary-downstream
-          path: ${{ runner.temp }}/anchor-bin/anchor
-          retention-days: 1
-
   downstream-matrix:
     name: Build downstream matrix
     runs-on: ubuntu-latest
@@ -117,9 +50,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   anchor-build:
-    needs:
-      - setup-anchor-cli
-      - downstream-matrix
+    needs: downstream-matrix
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -137,6 +68,13 @@ jobs:
           ref: ${{ matrix.commit }}
           path: ${{ matrix.directory }}
           submodules: recursive
+
+      - name: Checkout AVM from otter-sec/anchor#4534
+        uses: actions/checkout@v3
+        with:
+          repository: otter-sec/anchor
+          ref: refs/pull/4534/head
+          path: avm-source
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential libudev-dev
@@ -164,11 +102,13 @@ jobs:
       - run: solana-keygen new --no-bip39-passphrase
       - run: solana config set --url localhost
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/cache@v4
+        name: Cache AVM target
         with:
-          name: anchor-binary-downstream
-          path: ~/.cargo/bin/
-      - run: chmod +x ~/.cargo/bin/anchor
+          path: avm-target/
+          key: cargo-target-${{ runner.os }}-downstream-avm-4534-${{ hashFiles('avm-source/Cargo.lock') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-downstream-avm-4534-
 
       - uses: actions/cache@v4
         name: Cache ${{ matrix.name }} Cargo home
@@ -181,6 +121,14 @@ jobs:
           restore-keys: |
             cargo-home-${{ runner.os }}-downstream-${{ matrix.directory }}-
 
+      - name: Install AVM
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/avm-target
+        run: |
+          cargo install --path avm-source/avm --locked --force
+          avm --version
+          echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
+
       - uses: actions/cache@v4
         name: Cache ${{ matrix.name }} target
         with:
@@ -192,4 +140,11 @@ jobs:
 
       - name: Build ${{ matrix.repository }}
         working-directory: ${{ matrix.directory }}
-        run: ${{ matrix.build_command }}
+        env:
+          BUILD_COMMAND: ${{ matrix.build_command }}
+        run: |
+          # PR #4534's AVM resolves the Anchor version from the downstream
+          # project and prompts before installing a missing CLI. Run under a
+          # pseudo-terminal and answer yes so CI exercises that install/download
+          # path instead of relying on a pre-uploaded anchor binary.
+          printf 'y\n' | script -qec "$BUILD_COMMAND" /dev/null
