@@ -1,0 +1,628 @@
+//! Solana CLI resolution and installation for AVM.
+//!
+//! Project-pinned Solana versions win. If the project does not pin Solana,
+//! AVM resolves the Anchor version and maps it to Anchor's recommended Solana
+//! CLI version using `../anchor-solana-map.toml`.
+use {
+    crate::{
+        current_version, read_installed_versions,
+        resolve::{
+            resolve_anchor_version_with, resolve_solana_version, Resolution, ResolutionSource,
+            SolanaResolutionSource,
+        },
+        DOWNLOAD_CLIENT,
+    },
+    anyhow::{bail, Context, Result},
+    semver::Version,
+    serde::Deserialize,
+    std::{
+        io::ErrorKind,
+        path::Path,
+        process::{Command, Stdio},
+        sync::LazyLock,
+    },
+};
+
+const ANCHOR_SOLANA_MAP_TOML: &str = include_str!("../anchor-solana-map.toml");
+const AGAVE_INSTALL_MIN_VERSION_STR: &str = "1.18.19";
+
+static AGAVE_INSTALL_MIN_VERSION: LazyLock<Version> = LazyLock::new(|| {
+    Version::parse(AGAVE_INSTALL_MIN_VERSION_STR)
+        .expect("AGAVE_INSTALL_MIN_VERSION_STR must be valid semver")
+});
+
+#[derive(Debug, Deserialize)]
+struct AnchorSolanaMap {
+    entries: Vec<MapEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MapEntry {
+    anchor: String,
+    solana: String,
+}
+
+#[derive(Debug)]
+struct ParsedMap {
+    entries: Vec<(Version, Version)>,
+}
+
+static MAP: LazyLock<ParsedMap> = LazyLock::new(|| {
+    let raw: AnchorSolanaMap =
+        toml::from_str(ANCHOR_SOLANA_MAP_TOML).expect("Built-in anchor-solana map must parse");
+
+    let mut entries: Vec<(Version, Version)> = raw
+        .entries
+        .into_iter()
+        .map(|e| {
+            let anchor = Version::parse(&e.anchor).unwrap_or_else(|err| {
+                panic!("Invalid Anchor version `{}` in map: {err}", e.anchor)
+            });
+            let solana = Version::parse(&e.solana).unwrap_or_else(|err| {
+                panic!("Invalid Solana version `{}` in map: {err}", e.solana)
+            });
+            (anchor, solana)
+        })
+        .collect();
+
+    let was_sorted = entries.windows(2).all(|w| w[0].0 <= w[1].0);
+    assert!(
+        was_sorted,
+        "anchor-solana-map.toml entries must be sorted by Anchor version"
+    );
+    let _ = was_sorted;
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    ParsedMap { entries }
+});
+
+/// Where a resolved Solana CLI version came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SolanaCliResolutionSource {
+    /// A project-pinned Solana version, either from `Anchor.toml` or
+    /// `solana-program` in `Cargo.toml`.
+    Project(SolanaResolutionSource),
+    /// Derived from a resolved Anchor version through the static map.
+    AnchorMap {
+        anchor: Version,
+        anchor_source: ResolutionSource,
+    },
+}
+
+impl SolanaCliResolutionSource {
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Project(source) => source.describe(),
+            Self::AnchorMap {
+                anchor,
+                anchor_source,
+            } => format!(
+                "recommended Solana for anchor {anchor} ({})",
+                anchor_source.describe()
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SolanaCliResolution {
+    pub version: Version,
+    pub source: SolanaCliResolutionSource,
+}
+
+/// Which upstream installer manages the requested Solana CLI version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SolanaInstaller {
+    SolanaInstall,
+    AgaveInstall,
+}
+
+impl SolanaInstaller {
+    pub fn command(self) -> &'static str {
+        match self {
+            Self::SolanaInstall => "solana-install",
+            Self::AgaveInstall => "agave-install",
+        }
+    }
+
+    pub fn domain(self) -> &'static str {
+        match self {
+            Self::SolanaInstall => "solana.com",
+            Self::AgaveInstall => "anza.xyz",
+        }
+    }
+
+    pub fn install_url(self, version: &Version) -> String {
+        format!("https://release.{}/v{version}/install", self.domain())
+    }
+}
+
+/// Resolve the Solana CLI version AVM should install for `start`.
+///
+/// Precedence:
+/// 1. Project Solana pin (`[toolchain] solana_version`, then `solana-program`).
+/// 2. Resolved Anchor version mapped through `anchor-solana-map.toml`.
+pub fn resolve_solana_cli(start: &Path) -> Result<Option<SolanaCliResolution>> {
+    let installed = read_installed_versions().unwrap_or_default();
+    resolve_solana_cli_with(start, &installed, current_version().ok())
+}
+
+/// Resolve the Solana CLI version for an already-resolved Anchor CLI.
+///
+/// This is used by the AVM `anchor` proxy so it installs Solana for the exact
+/// Anchor version it is about to spawn, while still letting project Solana pins
+/// take precedence.
+pub fn resolve_solana_cli_for_anchor_resolution(
+    start: &Path,
+    anchor_res: &Resolution,
+) -> Result<Option<SolanaCliResolution>> {
+    if let Some(res) = resolve_solana_version(start)? {
+        return Ok(Some(SolanaCliResolution {
+            version: res.version,
+            source: SolanaCliResolutionSource::Project(res.source),
+        }));
+    }
+
+    resolve_solana_from_anchor_resolution(anchor_res).map(Some)
+}
+
+fn resolve_solana_cli_with(
+    start: &Path,
+    installed_anchor_versions: &[Version],
+    global_anchor_default: Option<Version>,
+) -> Result<Option<SolanaCliResolution>> {
+    if let Some(res) = resolve_solana_version(start)? {
+        return Ok(Some(SolanaCliResolution {
+            version: res.version,
+            source: SolanaCliResolutionSource::Project(res.source),
+        }));
+    }
+
+    let Some(anchor_res) =
+        resolve_anchor_version_with(start, installed_anchor_versions, global_anchor_default)?
+    else {
+        return Ok(None);
+    };
+
+    resolve_solana_from_anchor_resolution(&anchor_res).map(Some)
+}
+
+fn resolve_solana_from_anchor_resolution(anchor_res: &Resolution) -> Result<SolanaCliResolution> {
+    let Some(solana) = lookup_solana_for_anchor_version(&anchor_res.version) else {
+        let earliest = earliest_mapped_anchor_version();
+        bail!(
+            "No Solana CLI mapping exists for Anchor {}. The earliest mapped Anchor release is \
+             {earliest}. Pin `[toolchain] solana_version` in `Anchor.toml` to choose manually.",
+            anchor_res.version
+        );
+    };
+
+    Ok(SolanaCliResolution {
+        version: solana,
+        source: SolanaCliResolutionSource::AnchorMap {
+            anchor: anchor_res.version.clone(),
+            anchor_source: anchor_res.source.clone(),
+        },
+    })
+}
+
+/// Map an Anchor version to Anchor's recommended Solana CLI version.
+///
+/// Pre-release Anchor versions use their release triplet for lookup, e.g.
+/// `1.0.0-rc.1` maps as `1.0.0`.
+pub fn lookup_solana_for_anchor_version(anchor: &Version) -> Option<Version> {
+    let anchor = Version::new(anchor.major, anchor.minor, anchor.patch);
+    MAP.entries
+        .iter()
+        .rposition(|(floor, _)| floor <= &anchor)
+        .map(|idx| MAP.entries[idx].1.clone())
+}
+
+fn earliest_mapped_anchor_version() -> &'static Version {
+    &MAP.entries
+        .first()
+        .expect("anchor-solana map must have at least one entry")
+        .0
+}
+
+/// Return the upstream installer that owns `version`.
+pub fn installer_for_version(version: &Version) -> SolanaInstaller {
+    if version < &*AGAVE_INSTALL_MIN_VERSION {
+        SolanaInstaller::SolanaInstall
+    } else {
+        SolanaInstaller::AgaveInstall
+    }
+}
+
+/// Install and activate a Solana CLI version using `solana-install` or
+/// `agave-install`, matching Anchor CLI's installer split at `1.18.19`.
+pub fn install_solana_cli(version: &Version, force: bool) -> Result<()> {
+    install_solana_cli_with_options(version, force, true, true)
+}
+
+/// Ensure a Solana CLI version is active, without printing on no-op.
+///
+/// The AVM `anchor` proxy uses this for transparent setup before spawning the
+/// resolved `anchor-cli` binary.
+pub fn ensure_solana_cli(version: &Version) -> Result<()> {
+    install_solana_cli_with_options(version, false, false, false)
+}
+
+fn install_solana_cli_with_options(
+    version: &Version,
+    force: bool,
+    report_already_active: bool,
+    report_success: bool,
+) -> Result<()> {
+    let installer = installer_for_version(version);
+    if !force && read_command_version("solana")?.as_ref() == Some(version) {
+        if report_already_active {
+            println!("solana {version} is already active");
+        }
+        return Ok(());
+    }
+
+    ensure_installer_command(version, installer)?;
+
+    let installed = read_installed_solana_versions(installer)?;
+    let quiet = installed.iter().any(|installed| installed == version);
+    let mut cmd = Command::new(installer.command());
+    cmd.arg("init").arg(version.to_string());
+    if quiet {
+        cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    } else {
+        cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    }
+
+    let status = cmd
+        .status()
+        .with_context(|| format!("Running `{}`", installer.command()))?;
+    if !status.success() {
+        bail!(
+            "Failed to activate Solana {version} with `{}`",
+            installer.command()
+        );
+    }
+
+    if report_success {
+        println!("Now using Solana {version} via `{}`.", installer.command());
+    }
+    Ok(())
+}
+
+fn ensure_installer_command(version: &Version, installer: SolanaInstaller) -> Result<()> {
+    if installer_command_available(installer)? {
+        return Ok(());
+    }
+
+    let command = installer.command();
+    let url = installer.install_url(version);
+    eprintln!("Command not installed: `{command}`. Installing from {url}");
+
+    let script = download_installer_script(&url)?;
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(script)
+        .status()
+        .with_context(|| format!("Running installer from {url}"))?;
+    if !status.success() {
+        bail!("Failed to install `{command}` from {url}");
+    }
+    Ok(())
+}
+
+fn installer_command_available(installer: SolanaInstaller) -> Result<bool> {
+    if read_command_version(installer.command())?.is_some() {
+        return Ok(true);
+    }
+
+    match Command::new(installer.command()).arg("list").output() {
+        Ok(output) => Ok(output.status.success()),
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(err).with_context(|| format!("Running `{}`", installer.command())),
+    }
+}
+
+fn read_installed_solana_versions(installer: SolanaInstaller) -> Result<Vec<Version>> {
+    let output = Command::new(installer.command())
+        .arg("list")
+        .output()
+        .with_context(|| format!("Running `{} list`", installer.command()))?;
+    if !output.status.success() {
+        bail!(
+            "Failed to list installed Solana versions with `{}`",
+            installer.command()
+        );
+    }
+
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    Ok(parse_versions(&text))
+}
+
+fn read_command_version(command: &str) -> Result<Option<Version>> {
+    let output = match Command::new(command).arg("--version").output() {
+        Ok(output) => output,
+        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err).with_context(|| format!("Running `{command} --version`")),
+    };
+    if !output.status.success() {
+        return Ok(None);
+    }
+
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    Ok(parse_version(&text))
+}
+
+fn download_installer_script(url: &str) -> Result<String> {
+    let response = DOWNLOAD_CLIENT
+        .get(url)
+        .send()
+        .with_context(|| format!("Sending GET {url}"))?;
+    if !response.status().is_success() {
+        bail!("Failed to download `{url}` (status {})", response.status());
+    }
+    response
+        .text()
+        .with_context(|| format!("Reading installer script from {url}"))
+}
+
+fn parse_versions(text: &str) -> Vec<Version> {
+    text.lines().filter_map(parse_version).collect()
+}
+
+fn parse_version(text: &str) -> Option<Version> {
+    text.split_whitespace().find_map(parse_version_token)
+}
+
+fn parse_version_token(token: &str) -> Option<Version> {
+    let token =
+        token.trim_matches(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+')));
+    let token = token.strip_prefix('v').unwrap_or(token);
+    Version::parse(token).ok()
+}
+
+/// Force the map to parse at startup, surfacing embedded-data bugs clearly.
+pub fn validate_embedded_map() -> Result<()> {
+    let raw: AnchorSolanaMap =
+        toml::from_str(ANCHOR_SOLANA_MAP_TOML).context("Parsing embedded anchor-solana map")?;
+    if raw.entries.is_empty() {
+        bail!("anchor-solana-map.toml must have at least one entry");
+    }
+    for e in &raw.entries {
+        Version::parse(&e.anchor)
+            .with_context(|| format!("Invalid Anchor version `{}` in map", e.anchor))?;
+        Version::parse(&e.solana)
+            .with_context(|| format!("Invalid Solana version `{}` in map", e.solana))?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        std::{fs, path::PathBuf},
+        tempfile::TempDir,
+    };
+
+    fn v(s: &str) -> Version {
+        Version::parse(s).unwrap()
+    }
+
+    fn write(p: &Path, contents: &str) {
+        if let Some(parent) = p.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(p, contents).unwrap();
+    }
+
+    #[test]
+    fn embedded_map_parses() {
+        validate_embedded_map().unwrap();
+    }
+
+    #[test]
+    fn lookup_solana_for_anchor_version_uses_floor() {
+        assert_eq!(lookup_solana_for_anchor_version(&v("0.28.9")), None);
+        assert_eq!(
+            lookup_solana_for_anchor_version(&v("0.29.0")).unwrap(),
+            v("1.17.0")
+        );
+        assert_eq!(
+            lookup_solana_for_anchor_version(&v("0.30.2")).unwrap(),
+            v("1.18.17")
+        );
+        assert_eq!(
+            lookup_solana_for_anchor_version(&v("1.0.0-rc.1")).unwrap(),
+            v("3.1.10")
+        );
+        assert_eq!(
+            lookup_solana_for_anchor_version(&v("1.0.2")).unwrap(),
+            v("3.1.10")
+        );
+    }
+
+    #[test]
+    fn explicit_project_solana_wins_over_anchor_mapping() {
+        let dir = TempDir::new().unwrap();
+        write(
+            &dir.path().join("Anchor.toml"),
+            "[toolchain]\nanchor_version = \"0.31.0\"\nsolana_version = \"2.3.0\"\n",
+        );
+
+        let res = resolve_solana_cli_with(dir.path(), &[], None)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(res.version, v("2.3.0"));
+        assert!(matches!(
+            res.source,
+            SolanaCliResolutionSource::Project(SolanaResolutionSource::AnchorToml(_))
+        ));
+    }
+
+    #[test]
+    fn anchor_proxy_resolution_uses_already_resolved_anchor_version() {
+        let dir = TempDir::new().unwrap();
+        let anchor_res = Resolution {
+            version: v("0.31.1"),
+            source: ResolutionSource::AnchorToml(PathBuf::from("Anchor.toml")),
+        };
+
+        let res = resolve_solana_cli_for_anchor_resolution(dir.path(), &anchor_res)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(res.version, v("2.1.0"));
+        assert!(matches!(
+            res.source,
+            SolanaCliResolutionSource::AnchorMap {
+                anchor,
+                anchor_source: ResolutionSource::AnchorToml(_)
+            } if anchor == v("0.31.1")
+        ));
+    }
+
+    #[test]
+    fn anchor_proxy_resolution_still_prefers_project_solana_pin() {
+        let dir = TempDir::new().unwrap();
+        write(
+            &dir.path().join("Anchor.toml"),
+            "[toolchain]\nsolana_version = \"2.3.0\"\n",
+        );
+        let anchor_res = Resolution {
+            version: v("0.31.1"),
+            source: ResolutionSource::GlobalDefault,
+        };
+
+        let res = resolve_solana_cli_for_anchor_resolution(dir.path(), &anchor_res)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(res.version, v("2.3.0"));
+        assert!(matches!(
+            res.source,
+            SolanaCliResolutionSource::Project(SolanaResolutionSource::AnchorToml(_))
+        ));
+    }
+
+    #[test]
+    fn derives_solana_from_anchor_toml_version() {
+        let dir = TempDir::new().unwrap();
+        write(
+            &dir.path().join("Anchor.toml"),
+            "[toolchain]\nanchor_version = \"0.32.1\"\n",
+        );
+
+        let res = resolve_solana_cli_with(dir.path(), &[], None)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(res.version, v("2.3.0"));
+        assert!(matches!(
+            res.source,
+            SolanaCliResolutionSource::AnchorMap {
+                anchor,
+                anchor_source: ResolutionSource::AnchorToml(_)
+            } if anchor == v("0.32.1")
+        ));
+    }
+
+    #[test]
+    fn derives_solana_from_anchor_lang_dependency() {
+        let dir = TempDir::new().unwrap();
+        write(&dir.path().join("Anchor.toml"), "");
+        write(
+            &dir.path().join("programs/foo/Cargo.toml"),
+            "[package]\nname = \"foo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[lib]\npath = \
+             \"src/lib.rs\"\n[dependencies]\nanchor-lang = \"0.31.0\"\n",
+        );
+        write(&dir.path().join("programs/foo/src/lib.rs"), "");
+
+        let res = resolve_solana_cli_with(dir.path(), &[], None)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(res.version, v("2.1.0"));
+        assert!(matches!(
+            res.source,
+            SolanaCliResolutionSource::AnchorMap {
+                anchor,
+                anchor_source: ResolutionSource::CargoToml(_)
+            } if anchor == v("0.31.0")
+        ));
+    }
+
+    #[test]
+    fn derives_solana_from_global_anchor_default() {
+        let dir = TempDir::new().unwrap();
+
+        let res = resolve_solana_cli_with(dir.path(), &[], Some(v("1.0.2")))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(res.version, v("3.1.10"));
+        assert!(matches!(
+            res.source,
+            SolanaCliResolutionSource::AnchorMap {
+                anchor,
+                anchor_source: ResolutionSource::GlobalDefault
+            } if anchor == v("1.0.2")
+        ));
+    }
+
+    #[test]
+    fn anchor_version_below_map_errors() {
+        let dir = TempDir::new().unwrap();
+        write(
+            &dir.path().join("Anchor.toml"),
+            "[toolchain]\nanchor_version = \"0.28.0\"\n",
+        );
+
+        let err = resolve_solana_cli_with(dir.path(), &[], None).unwrap_err();
+        assert!(err.to_string().contains("No Solana CLI mapping exists"));
+    }
+
+    #[test]
+    fn installer_for_version_switches_at_agave_cutover() {
+        assert_eq!(
+            installer_for_version(&v("1.18.18")),
+            SolanaInstaller::SolanaInstall
+        );
+        assert_eq!(
+            installer_for_version(&v("1.18.19")),
+            SolanaInstaller::AgaveInstall
+        );
+        assert_eq!(
+            installer_for_version(&v("3.1.10")),
+            SolanaInstaller::AgaveInstall
+        );
+    }
+
+    #[test]
+    fn installer_urls_match_upstream_domains() {
+        assert_eq!(
+            SolanaInstaller::SolanaInstall.install_url(&v("1.18.17")),
+            "https://release.solana.com/v1.18.17/install"
+        );
+        assert_eq!(
+            SolanaInstaller::AgaveInstall.install_url(&v("3.1.10")),
+            "https://release.anza.xyz/v3.1.10/install"
+        );
+    }
+
+    #[test]
+    fn parse_versions_extracts_cli_and_installer_output() {
+        assert_eq!(
+            parse_version("solana-cli 3.1.10 (src:7bc9c805; feat:1620780344, client:Agave)")
+                .unwrap(),
+            v("3.1.10")
+        );
+        assert_eq!(
+            parse_versions("1.18.17 (current)\nv2.1.0\n3.1.10"),
+            vec![v("1.18.17"), v("2.1.0"), v("3.1.10")]
+        );
+    }
+}

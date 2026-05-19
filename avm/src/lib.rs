@@ -1,5 +1,6 @@
 pub mod platform_tools;
 pub mod resolve;
+pub mod solana;
 
 use {
     anyhow::{anyhow, bail, Context, Error, Result},
@@ -21,6 +22,10 @@ pub use {
     resolve::{
         resolve_anchor_version, resolve_solana_version, Resolution, ResolutionSource,
         SolanaResolution, SolanaResolutionSource,
+    },
+    solana::{
+        ensure_solana_cli, resolve_solana_cli, resolve_solana_cli_for_anchor_resolution,
+        SolanaCliResolution, SolanaCliResolutionSource,
     },
 };
 
