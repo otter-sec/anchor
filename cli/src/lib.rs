@@ -54,6 +54,7 @@ use {
 mod abs_path;
 mod account;
 mod checks;
+pub mod codama;
 pub mod config;
 pub mod coverage;
 pub mod debugger;
@@ -470,6 +471,11 @@ pub enum Command {
     Program {
         #[clap(subcommand)]
         subcmd: ProgramCommand,
+    },
+    /// Codama IDL integration commands
+    Codama {
+        #[clap(subcommand)]
+        subcmd: codama::CodamaCommand,
     },
 }
 
@@ -1433,6 +1439,7 @@ fn process_command(opts: Opts) -> Result<()> {
         Command::ShowAccount { cmd } => account::show_account(&opts.cfg_override, cmd),
         Command::Keygen { subcmd } => keygen::keygen(&opts.cfg_override, subcmd),
         Command::Program { subcmd } => program::program(&opts.cfg_override, subcmd),
+        Command::Codama { subcmd } => codama::entry(subcmd),
     }
 }
 
@@ -2039,8 +2046,8 @@ pub fn build(
             &cfg,
             cfg.path(),
             no_idl,
-            idl_out,
-            idl_ts_out,
+            idl_out.clone(),
+            idl_ts_out.clone(),
             &build_config,
             stdout,
             stderr,
@@ -2054,8 +2061,8 @@ pub fn build(
             &cfg,
             cfg.path(),
             no_idl,
-            idl_out,
-            idl_ts_out,
+            idl_out.clone(),
+            idl_ts_out.clone(),
             &build_config,
             stdout,
             stderr,
@@ -2069,8 +2076,8 @@ pub fn build(
             &cfg,
             cargo.path().to_path_buf(),
             no_idl,
-            idl_out,
-            idl_ts_out,
+            idl_out.clone(),
+            idl_ts_out.clone(),
             &build_config,
             stdout,
             stderr,
@@ -2082,9 +2089,34 @@ pub fn build(
     }
     cfg.run_hooks(HookType::PostBuild)?;
 
+    if cfg.clients.auto && !no_idl {
+        if let Some(idl_dir) = idl_out.as_ref() {
+            let idl_paths = collect_idl_files(idl_dir)?;
+            codama::auto_generate_for_workspace(&cfg.clients, cfg_parent, &idl_paths)?;
+        }
+    }
+
     set_workspace_dir_or_exit();
 
     Ok(())
+}
+
+fn collect_idl_files(idl_dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut idls = Vec::new();
+    if !idl_dir.exists() {
+        return Ok(idls);
+    }
+    for entry in
+        fs::read_dir(idl_dir).with_context(|| format!("Failed to read `{}`", idl_dir.display()))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
+            idls.push(path);
+        }
+    }
+    idls.sort();
+    Ok(idls)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5994,6 +6026,35 @@ mod tests {
         };
         assert!(skip_run);
         assert_eq!(output, "lcov.info");
+    }
+
+    #[test]
+    fn test_codama_command_parses() {
+        let opts = Opts::try_parse_from([
+            "anchor",
+            "codama",
+            "generate",
+            "-l",
+            "rust,go",
+            "-p",
+            "clients",
+            "target/idl/demo.json",
+        ])
+        .unwrap();
+        let Command::Codama { subcmd } = opts.command else {
+            panic!("expected codama command");
+        };
+        let codama::CodamaCommand::Generate {
+            language,
+            path,
+            idl,
+        } = subcmd
+        else {
+            panic!("expected codama generate command");
+        };
+        assert_eq!(language, vec![codama::Language::Rust, codama::Language::Go]);
+        assert_eq!(path, "clients");
+        assert_eq!(idl, "target/idl/demo.json");
     }
 
     #[test]

@@ -87,6 +87,27 @@ exclude = [
 ]
 ```
 
+## clients
+
+Configures Codama client generation. When `auto = true`, `anchor build`
+converts emitted Anchor IDLs into Codama IDLs and invokes the selected language
+renderers after the build completes.
+
+Each language can be enabled with a boolean or a table. If `path` is omitted,
+the default output path is `clients/<language>`. Supported language keys are
+`js`, `js-umi`, `rust`, and `go`.
+
+Example:
+
+```toml
+[clients]
+auto = true
+rust = true
+js = { enable = true }
+go = { enable = true, path = "go-client" }
+js-umi = false
+```
+
 ## programs
 
 Example:

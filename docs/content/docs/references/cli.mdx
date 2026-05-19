@@ -218,6 +218,21 @@ anchor idl set-authority -n <new-authority> -p <program-id>
 Sets a new authority on the IDL account. Both the `new-authority` and
 `program-id` must be encoded in base 58.
 
+## Codama
+
+```shell
+anchor codama convert <target/idl/program.json> --out <codama-idl.json>
+anchor codama generate -l rust,js -p clients <target/idl/program.json>
+```
+
+`anchor codama convert` converts an Anchor IDL into a Codama IDL. `anchor
+codama generate` converts the IDL and invokes the Codama renderer packages for
+the requested languages. The supported language values are `js`, `js-umi`,
+`rust`, and `go`.
+
+Codama client generation can also run automatically after `anchor build` when
+`[clients] auto = true` is set in `Anchor.toml`.
+
 ## Init
 
 ```shell
