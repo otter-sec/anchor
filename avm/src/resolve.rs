@@ -15,7 +15,7 @@ use {
     crate::{current_version, read_installed_versions},
     anyhow::{anyhow, bail, Context, Result},
     cargo_toml::{Dependency, Manifest},
-    semver::{Version, VersionReq},
+    semver::{Comparator, Op, Version, VersionReq},
     serde::Deserialize,
     std::{
         fs,
@@ -405,14 +405,61 @@ fn min_version_from_req(req_str: &str) -> Result<Version> {
     }
     let req = VersionReq::parse(req_str)
         .with_context(|| format!("Parsing version requirement `{req_str}`"))?;
-    let cmp = req.comparators.first().ok_or_else(|| {
-        anyhow!("Empty version requirement `{req_str}` cannot be reduced to a version")
-    })?;
-    Ok(Version::new(
-        cmp.major,
-        cmp.minor.unwrap_or(0),
-        cmp.patch.unwrap_or(0),
-    ))
+
+    let mut candidate = Version::new(0, 0, 0);
+    for cmp in &req.comparators {
+        if let Some(lower) = comparator_lower_bound(cmp, req_str)? {
+            candidate = candidate.max(lower);
+        }
+    }
+
+    if req.matches(&candidate) {
+        Ok(candidate)
+    } else {
+        Err(anyhow!(
+            "Version requirement `{req_str}` cannot be reduced to a concrete minimum version"
+        ))
+    }
+}
+
+fn comparator_lower_bound(cmp: &Comparator, req_str: &str) -> Result<Option<Version>> {
+    match cmp.op {
+        Op::Exact | Op::GreaterEq | Op::Tilde | Op::Caret | Op::Wildcard => {
+            Ok(Some(comparator_base_version(cmp)))
+        }
+        Op::Greater => {
+            let version = match (cmp.minor, cmp.patch) {
+                (Some(minor), Some(patch)) if !cmp.pre.is_empty() => {
+                    Version::new(cmp.major, minor, patch)
+                }
+                (Some(minor), Some(patch)) => {
+                    Version::new(cmp.major, minor, checked_inc(patch, req_str)?)
+                }
+                (Some(minor), None) => Version::new(cmp.major, checked_inc(minor, req_str)?, 0),
+                (None, None) => Version::new(checked_inc(cmp.major, req_str)?, 0, 0),
+                (None, Some(_)) => unreachable!("semver parser does not allow patch without minor"),
+            };
+            Ok(Some(version))
+        }
+        Op::Less | Op::LessEq => Ok(None),
+        _ => Err(anyhow!(
+            "Version requirement `{req_str}` uses an unsupported comparator"
+        )),
+    }
+}
+
+fn comparator_base_version(cmp: &Comparator) -> Version {
+    let mut version = Version::new(cmp.major, cmp.minor.unwrap_or(0), cmp.patch.unwrap_or(0));
+    if !cmp.pre.is_empty() {
+        version.pre = cmp.pre.clone();
+    }
+    version
+}
+
+fn checked_inc(value: u64, req_str: &str) -> Result<u64> {
+    value
+        .checked_add(1)
+        .ok_or_else(|| anyhow!("Version requirement `{req_str}` overflows a version component"))
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -748,5 +795,39 @@ mod tests {
     #[test]
     fn min_version_equals() {
         assert_eq!(min_version_from_req("=3.0.5").unwrap(), v("3.0.5"));
+    }
+
+    #[test]
+    fn min_version_upper_bound_only_starts_at_zero() {
+        assert_eq!(min_version_from_req("<3.0").unwrap(), v("0.0.0"));
+        assert_eq!(min_version_from_req("<=3.0.5").unwrap(), v("0.0.0"));
+    }
+
+    #[test]
+    fn min_version_greater_bumps_to_next_allowed_stable() {
+        assert_eq!(min_version_from_req(">3.0.5").unwrap(), v("3.0.6"));
+        assert_eq!(min_version_from_req(">3.0").unwrap(), v("3.1.0"));
+        assert_eq!(min_version_from_req(">3").unwrap(), v("4.0.0"));
+    }
+
+    #[test]
+    fn min_version_uses_tightest_lower_bound() {
+        assert_eq!(
+            min_version_from_req(">=2.0, >2.1.3, <3.0").unwrap(),
+            v("2.1.4")
+        );
+    }
+
+    #[test]
+    fn min_version_wildcard() {
+        assert_eq!(min_version_from_req("*").unwrap(), v("0.0.0"));
+        assert_eq!(min_version_from_req("3.*").unwrap(), v("3.0.0"));
+        assert_eq!(min_version_from_req("3.1.*").unwrap(), v("3.1.0"));
+    }
+
+    #[test]
+    fn min_version_rejects_ranges_with_no_stable_candidate() {
+        assert!(min_version_from_req(">3.0.0, <3.0.1").is_err());
+        assert!(min_version_from_req("<0.0.0").is_err());
     }
 }
