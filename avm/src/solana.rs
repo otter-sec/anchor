@@ -16,9 +16,10 @@ use {
     semver::Version,
     serde::Deserialize,
     std::{
+        fmt::Display,
         io::ErrorKind,
         path::Path,
-        process::{Command, Stdio},
+        process::{Command, Output, Stdio},
         sync::LazyLock,
     },
 };
@@ -330,8 +331,9 @@ fn read_installed_solana_versions(installer: SolanaInstaller) -> Result<Vec<Vers
         .with_context(|| format!("Running `{} list`", installer.command()))?;
     if !output.status.success() {
         bail!(
-            "Failed to list installed Solana versions with `{}`",
-            installer.command()
+            "Failed to list installed Solana versions with `{}`:\n{}",
+            installer.command(),
+            command_failure_message(installer.command(), &["list"], &output)
         );
     }
 
@@ -353,6 +355,40 @@ fn read_command_version(command: &str) -> Result<Option<Version>> {
     let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&output.stderr));
     Ok(parse_version(&text))
+}
+
+fn command_failure_message(command: &str, args: &[&str], output: &Output) -> String {
+    command_failure_message_parts(command, args, output.status, &output.stdout, &output.stderr)
+}
+
+fn command_failure_message_parts(
+    command: &str,
+    args: &[&str],
+    status: impl Display,
+    stdout: &[u8],
+    stderr: &[u8],
+) -> String {
+    let mut command_line = command.to_string();
+    for arg in args {
+        command_line.push(' ');
+        command_line.push_str(arg);
+    }
+
+    format!(
+        "Command `{command_line}` failed with status {status}\nstdout:\n{}\nstderr:\n{}",
+        format_command_output(stdout),
+        format_command_output(stderr),
+    )
+}
+
+fn format_command_output(output: &[u8]) -> String {
+    let text = String::from_utf8_lossy(output);
+    let text = text.trim();
+    if text.is_empty() {
+        "(empty)".to_string()
+    } else {
+        text.to_string()
+    }
 }
 
 fn download_installer_script(url: &str) -> Result<String> {
@@ -624,5 +660,21 @@ mod tests {
             parse_versions("1.18.17 (current)\nv2.1.0\n3.1.10"),
             vec![v("1.18.17"), v("2.1.0"), v("3.1.10")]
         );
+    }
+
+    #[test]
+    fn command_failure_message_includes_status_stdout_and_stderr() {
+        let msg = command_failure_message_parts(
+            "agave-install",
+            &["list"],
+            "exit status: 1",
+            b"",
+            b"error: invalid active_release path\n",
+        );
+
+        assert!(msg.contains("Command `agave-install list` failed"));
+        assert!(msg.contains("status exit status: 1"));
+        assert!(msg.contains("stdout:\n(empty)"));
+        assert!(msg.contains("stderr:\nerror: invalid active_release path"));
     }
 }
