@@ -100,13 +100,98 @@ pub mod {} {{
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {{
-        msg!("Greetings from: {{:?}}", ctx.program_id);
+        ctx.accounts.counter.count = 0;
+        ctx.accounts.counter.authority = ctx.accounts.payer.key();
+
+        let cpi_accounts = anchor_lang::system_program::Transfer {{
+            from: ctx.accounts.payer.to_account_info(),
+            to: ctx.accounts.counter.to_account_info(),
+        }};
+        let cpi_ctx = CpiContext::new(anchor_lang::system_program::ID, cpi_accounts);
+        anchor_lang::system_program::transfer(cpi_ctx, HELLO_WORLD_LAMPORTS)?;
+
+        msg!("Hello, world! Counter initialized");
+        Ok(())
+    }}
+
+    pub fn increment(ctx: Context<Increment>) -> Result<()> {{
+        require_keys_eq!(
+            ctx.accounts.counter.authority,
+            ctx.accounts.authority.key(),
+            ErrorCode::Unauthorized,
+        );
+        require!(
+            ctx.accounts.counter.count < MAX_COUNT,
+            ErrorCode::CounterOverflow,
+        );
+
+        ctx.accounts.counter.count += 1;
+        msg!("Hello, world! Counter is now {{}}", ctx.accounts.counter.count);
         Ok(())
     }}
 }}
 
 #[derive(Accounts)]
-pub struct Initialize {{}}
+pub struct Initialize<'info> {{
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + Counter::INIT_SPACE,
+        seeds = [COUNTER_SEED],
+        bump
+    )]
+    pub counter: Account<'info, Counter>,
+    pub system_program: Program<'info, System>,
+}}
+
+#[derive(Accounts)]
+pub struct Increment<'info> {{
+    #[account(mut, seeds = [COUNTER_SEED], bump)]
+    pub counter: Account<'info, Counter>,
+    pub authority: Signer<'info>,
+}}
+
+pub mod constants {{
+    use super::*;
+
+    #[constant]
+    pub const COUNTER_SEED: &[u8] = b"counter";
+
+    #[constant]
+    pub const HELLO_WORLD_LAMPORTS: u64 = 1;
+
+    #[constant]
+    pub const MAX_COUNT: u64 = 10;
+}}
+
+pub mod error {{
+    use super::*;
+
+    #[error_code]
+    pub enum ErrorCode {{
+        #[msg("Only the counter authority can update this counter")]
+        Unauthorized,
+        #[msg("Counter has reached the maximum value")]
+        CounterOverflow,
+    }}
+}}
+
+pub mod state {{
+    use super::*;
+
+    #[account]
+    #[derive(InitSpace)]
+    pub struct Counter {{
+        pub count: u64,
+        pub authority: Pubkey,
+    }}
+}}
+
+use constants::*;
+use error::ErrorCode;
+use state::Counter;
 "#,
             get_or_create_program_id(name, target_path),
             name.to_snake_case(),
@@ -139,7 +224,11 @@ pub mod {} {{
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {{
-        initialize::handler(ctx)
+        crate::instructions::initialize::handle_initialize(ctx)
+    }}
+
+    pub fn increment(ctx: Context<Increment>) -> Result<()> {{
+        crate::instructions::increment::handle_increment(ctx)
     }}
 }}
 "#,
@@ -152,7 +241,13 @@ pub mod {} {{
             r#"use anchor_lang::prelude::*;
 
 #[constant]
-pub const SEED: &str = "anchor";
+pub const COUNTER_SEED: &[u8] = b"counter";
+
+#[constant]
+pub const HELLO_WORLD_LAMPORTS: u64 = 1;
+
+#[constant]
+pub const MAX_COUNT: u64 = 10;
 "#
             .into(),
         ),
@@ -162,8 +257,10 @@ pub const SEED: &str = "anchor";
 
 #[error_code]
 pub enum ErrorCode {
-    #[msg("Custom error message")]
-    CustomError,
+    #[msg("Only the counter authority can update this counter")]
+    Unauthorized,
+    #[msg("Counter has reached the maximum value")]
+    CounterOverflow,
 }
 "#
             .into(),
@@ -171,8 +268,10 @@ pub enum ErrorCode {
         (
             src_path.join("instructions.rs"),
             r#"pub mod initialize;
+pub mod increment;
 
 pub use initialize::*;
+pub use increment::*;
 "#
             .into(),
         ),
@@ -180,17 +279,84 @@ pub use initialize::*;
             src_path.join("instructions").join("initialize.rs"),
             r#"use anchor_lang::prelude::*;
 
-#[derive(Accounts)]
-pub struct Initialize {}
+use crate::{constants::*, state::Counter};
 
-pub fn handler(ctx: Context<Initialize>) -> Result<()> {
-    msg!("Greetings from: {:?}", ctx.program_id);
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + Counter::INIT_SPACE,
+        seeds = [COUNTER_SEED],
+        bump
+    )]
+    pub counter: Account<'info, Counter>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn handle_initialize(ctx: Context<Initialize>) -> Result<()> {
+    ctx.accounts.counter.count = 0;
+    ctx.accounts.counter.authority = ctx.accounts.payer.key();
+
+    let cpi_accounts = anchor_lang::system_program::Transfer {
+        from: ctx.accounts.payer.to_account_info(),
+        to: ctx.accounts.counter.to_account_info(),
+    };
+    let cpi_ctx = CpiContext::new(anchor_lang::system_program::ID, cpi_accounts);
+    anchor_lang::system_program::transfer(cpi_ctx, HELLO_WORLD_LAMPORTS)?;
+
+    msg!("Hello, world! Counter initialized");
     Ok(())
 }
 "#
             .into(),
         ),
-        (src_path.join("state.rs"), r#""#.into()),
+        (
+            src_path.join("instructions").join("increment.rs"),
+            r#"use anchor_lang::prelude::*;
+
+use crate::{constants::*, error::ErrorCode, state::Counter};
+
+#[derive(Accounts)]
+pub struct Increment<'info> {
+    #[account(mut, seeds = [COUNTER_SEED], bump)]
+    pub counter: Account<'info, Counter>,
+    pub authority: Signer<'info>,
+}
+
+pub fn handle_increment(ctx: Context<Increment>) -> Result<()> {
+    require_keys_eq!(
+        ctx.accounts.counter.authority,
+        ctx.accounts.authority.key(),
+        ErrorCode::Unauthorized,
+    );
+    require!(
+        ctx.accounts.counter.count < MAX_COUNT,
+        ErrorCode::CounterOverflow,
+    );
+
+    ctx.accounts.counter.count += 1;
+    msg!("Hello, world! Counter is now {}", ctx.accounts.counter.count);
+    Ok(())
+}
+"#
+            .into(),
+        ),
+        (
+            src_path.join("state.rs"),
+            r#"use anchor_lang::prelude::*;
+
+#[account]
+#[derive(InitSpace)]
+pub struct Counter {
+    pub count: u64,
+    pub authority: Pubkey,
+}
+"#
+            .into(),
+        ),
     ]
 }
 
@@ -228,6 +394,9 @@ fn cargo_toml(name: &str, test_template: Option<&TestTemplate>) -> String {
             r#"
 [dev-dependencies]
 mollusk-svm = "~0.10"
+solana-account = "3"
+solana-pubkey = "3"
+solana-sdk-ids = "3"
 "#
         }
         Some(TestTemplate::Litesvm) => {
@@ -385,11 +554,24 @@ describe("{}", () => {{
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  it("Is initialized!", async () => {{
-    // Add your test here.
+  it("Initializes and increments a counter", async () => {{
     const program = anchor.workspace.{};
-    const tx = await program.methods.initialize().rpc();
-    console.log("Your transaction signature", tx);
+    const [counter] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("counter")],
+      program.programId
+    );
+
+    const initializeTx = await program.methods
+      .initialize()
+      .accountsPartial({{ counter }})
+      .rpc();
+    console.log("Initialize transaction signature", initializeTx);
+
+    const incrementTx = await program.methods
+      .increment()
+      .accountsPartial({{ counter }})
+      .rpc();
+    console.log("Increment transaction signature", incrementTx);
   }});
 }});
 "#,
@@ -406,11 +588,24 @@ describe("{}", () => {{
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  it("Is initialized!", async () => {{
-    // Add your test here.
+  it("Initializes and increments a counter", async () => {{
     const program = anchor.workspace.{};
-    const tx = await program.methods.initialize().rpc();
-    console.log("Your transaction signature", tx);
+    const [counter] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("counter")],
+      program.programId
+    );
+
+    const initializeTx = await program.methods
+      .initialize()
+      .accountsPartial({{ counter }})
+      .rpc();
+    console.log("Initialize transaction signature", initializeTx);
+
+    const incrementTx = await program.methods
+      .increment()
+      .accountsPartial({{ counter }})
+      .rpc();
+    console.log("Increment transaction signature", incrementTx);
   }});
 }});
 "#,
@@ -522,10 +717,23 @@ describe("{}", () => {{
 
   const program = anchor.workspace.{} as Program<{}>;
 
-  it("Is initialized!", async () => {{
-    // Add your test here.
-    const tx = await program.methods.initialize().rpc();
-    console.log("Your transaction signature", tx);
+  it("Initializes and increments a counter", async () => {{
+    const [counter] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("counter")],
+      program.programId
+    );
+
+    const initializeTx = await program.methods
+      .initialize()
+      .accountsPartial({{ counter }})
+      .rpc();
+    console.log("Initialize transaction signature", initializeTx);
+
+    const incrementTx = await program.methods
+      .increment()
+      .accountsPartial({{ counter }})
+      .rpc();
+    console.log("Increment transaction signature", incrementTx);
   }});
 }});
 "#,
@@ -549,10 +757,23 @@ describe("{}", () => {{
 
   const program = anchor.workspace.{} as Program<{}>;
 
-  it("Is initialized!", async () => {{
-    // Add your test here.
-    const tx = await program.methods.initialize().rpc();
-    console.log("Your transaction signature", tx);
+  it("Initializes and increments a counter", async () => {{
+    const [counter] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("counter")],
+      program.programId
+    );
+
+    const initializeTx = await program.methods
+      .initialize()
+      .accountsPartial({{ counter }})
+      .rpc();
+    console.log("Initialize transaction signature", initializeTx);
+
+    const incrementTx = await program.methods
+      .increment()
+      .accountsPartial({{ counter }})
+      .rpc();
+    console.log("Increment transaction signature", incrementTx);
   }});
 }});
 "#,
@@ -681,6 +902,10 @@ pub enum TestTemplate {
 }
 
 impl TestTemplate {
+    pub fn uses_node(&self) -> bool {
+        matches!(self, Self::Mocha | Self::Jest)
+    }
+
     pub fn get_test_script(&self, js: bool, pkg_manager: &PackageManager) -> String {
         let pkg_manager_exec_cmd = match pkg_manager {
             PackageManager::Yarn => "yarn run",
@@ -811,6 +1036,8 @@ anchor-client = "{VERSION}"
 {name} = {{ version = "0.1.0", path = "../programs/{name}" }}
 solana-keypair = "3.0.0"
 solana-pubkey = "3.0.0"
+solana-sdk-ids = "3"
+solana-signer = "3"
 "#
     )
 }
@@ -833,8 +1060,9 @@ mod test_initialize;
     CommitmentConfig,
     Client, Cluster,
 }};
-use solana_keypair::{{read_keypair_file}};
+use solana_keypair::read_keypair_file;
 use solana_pubkey::Pubkey;
+use solana_signer::Signer;
 
 #[test]
 fn test_initialize() {{
@@ -845,15 +1073,36 @@ fn test_initialize() {{
     let client = Client::new_with_options(Cluster::Localnet, &payer, CommitmentConfig::confirmed());
     let program_id = Pubkey::try_from(program_id).unwrap();
     let program = client.program(program_id).unwrap();
+    let counter = Pubkey::find_program_address(
+        &[{1}::constants::COUNTER_SEED],
+        &program_id,
+    )
+    .0;
 
-    let tx = program
+    let initialize_tx = program
         .request()
-        .accounts({1}::accounts::Initialize {{}})
+        .accounts({1}::accounts::Initialize {{
+            payer: payer.pubkey(),
+            counter,
+            system_program: solana_sdk_ids::system_program::id(),
+        }})
         .args({1}::instruction::Initialize {{}})
         .send()
         .expect("");
 
-    println!("Your transaction signature {{}}", tx);
+    println!("Initialize transaction signature {{}}", initialize_tx);
+
+    let increment_tx = program
+        .request()
+        .accounts({1}::accounts::Increment {{
+            counter,
+            authority: payer.pubkey(),
+        }})
+        .args({1}::instruction::Increment {{}})
+        .send()
+        .expect("");
+
+    println!("Increment transaction signature {{}}", increment_tx);
 }}
 "#,
                 program_id,
@@ -871,23 +1120,100 @@ fn create_program_template_mollusk_test(name: &str, tests_path: &Path) -> Files 
             r#"#![cfg(feature = "test-sbf")]
 
 use {{
-    anchor_lang::{{solana_program::instruction::Instruction, InstructionData, ToAccountMetas}},
-    mollusk_svm::{{result::Check, Mollusk}},
+    anchor_lang::{{
+        solana_program::instruction::Instruction, AccountDeserialize, InstructionData,
+        Space, ToAccountMetas,
+    }},
+    mollusk_svm::{{program::keyed_account_for_system_program, result::Check, Mollusk}},
+    solana_account::Account as SolanaAccount,
+    solana_pubkey::Pubkey,
 }};
 
 #[test]
 fn test_initialize() {{
     let program_id = {0}::id();
-
     let mollusk = Mollusk::new(&program_id, "{0}");
+    let payer = Pubkey::new_unique();
+    let counter = Pubkey::find_program_address(
+        &[{0}::constants::COUNTER_SEED],
+        &program_id,
+    )
+    .0;
 
     let instruction = Instruction::new_with_bytes(
         program_id,
         &{0}::instruction::Initialize {{}}.data(),
-        {0}::accounts::Initialize {{}}.to_account_metas(None),
+        {0}::accounts::Initialize {{
+            payer,
+            counter,
+            system_program: solana_sdk_ids::system_program::id(),
+        }}
+        .to_account_metas(None),
     );
 
-    mollusk.process_and_validate_instruction(&instruction, &[], &[Check::success()]);
+    let accounts = vec![
+        (
+            payer,
+            SolanaAccount::new(1_000_000_000, 0, &solana_sdk_ids::system_program::id()),
+        ),
+        (counter, SolanaAccount::default()),
+        keyed_account_for_system_program(),
+    ];
+
+    let result = mollusk.process_and_validate_instruction(
+        &instruction,
+        &accounts,
+        &[Check::success()],
+    );
+
+    let payer_account = result
+        .resulting_accounts
+        .iter()
+        .find(|(pk, _)| *pk == payer)
+        .map(|(_, a)| a.clone())
+        .expect("payer account");
+    let counter_account = result
+        .resulting_accounts
+        .iter()
+        .find(|(pk, _)| *pk == counter)
+        .map(|(_, a)| a.clone())
+        .expect("counter account");
+    assert_eq!(
+        counter_account.data.len(),
+        8 + {0}::state::Counter::INIT_SPACE
+    );
+    let mut data: &[u8] = &counter_account.data;
+    let counter_state = {0}::state::Counter::try_deserialize(&mut data).unwrap();
+    assert_eq!(counter_state.count, 0);
+    assert_eq!(counter_state.authority, payer);
+
+    let instruction = Instruction::new_with_bytes(
+        program_id,
+        &{0}::instruction::Increment {{}}.data(),
+        {0}::accounts::Increment {{
+            counter,
+            authority: payer,
+        }}
+        .to_account_metas(None),
+    );
+    let accounts = vec![(counter, counter_account), (payer, payer_account)];
+
+    let result = mollusk.process_and_validate_instruction(
+        &instruction,
+        &accounts,
+        &[Check::success()],
+    );
+
+    let counter_account = result
+        .resulting_accounts
+        .iter()
+        .find(|(pk, _)| *pk == counter)
+        .map(|(_, a)| a)
+        .expect("counter account");
+    let mut data: &[u8] = &counter_account.data;
+    let counter_state = {0}::state::Counter::try_deserialize(&mut data).unwrap();
+    assert_eq!(counter_state.count, 1);
+    assert_eq!(counter_state.authority, payer);
 }}
 "#,
             name.to_snake_case(),
@@ -902,7 +1228,11 @@ fn create_program_template_litesvm_test(name: &str, tests_path: &Path) -> Files 
         format!(
             r#"
 use {{
-    anchor_lang::{{solana_program::instruction::Instruction, InstructionData, ToAccountMetas}},
+    anchor_lang::{{
+        prelude::Pubkey,
+        solana_program::{{instruction::Instruction, system_program}},
+        AccountDeserialize, InstructionData, ToAccountMetas,
+    }},
     litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_message::{{Message, VersionedMessage}},
@@ -914,6 +1244,11 @@ use {{
 fn test_initialize() {{
     let program_id = {0}::id();
     let payer = Keypair::new();
+    let counter = Pubkey::find_program_address(
+        &[{0}::constants::COUNTER_SEED],
+        &program_id,
+    )
+    .0;
     let mut svm = LiteSVM::new();
     let bytes = include_bytes!(concat!(
         env!("CARGO_TARGET_TMPDIR"),
@@ -925,15 +1260,49 @@ fn test_initialize() {{
     let instruction = Instruction::new_with_bytes(
         program_id,
         &{0}::instruction::Initialize {{}}.data(),
-        {0}::accounts::Initialize {{}}.to_account_metas(None),
+        {0}::accounts::Initialize {{
+            payer: payer.pubkey(),
+            counter,
+            system_program: system_program::ID,
+        }}
+        .to_account_metas(None),
     );
 
     let blockhash = svm.latest_blockhash();
     let msg = Message::new_with_blockhash(&[instruction], Some(&payer.pubkey()), &blockhash);
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[payer]).unwrap();
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[&payer]).unwrap();
 
     let res = svm.send_transaction(tx);
     assert!(res.is_ok());
+
+    let counter_account = svm.get_account(&counter).unwrap();
+    let mut data: &[u8] = &counter_account.data;
+    let counter_state = {0}::state::Counter::try_deserialize(&mut data).unwrap();
+    assert_eq!(counter_state.count, 0);
+    assert_eq!(counter_state.authority, payer.pubkey());
+
+    let instruction = Instruction::new_with_bytes(
+        program_id,
+        &{0}::instruction::Increment {{}}.data(),
+        {0}::accounts::Increment {{
+            counter,
+            authority: payer.pubkey(),
+        }}
+        .to_account_metas(None),
+    );
+
+    let blockhash = svm.latest_blockhash();
+    let msg = Message::new_with_blockhash(&[instruction], Some(&payer.pubkey()), &blockhash);
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[&payer]).unwrap();
+
+    let res = svm.send_transaction(tx);
+    assert!(res.is_ok());
+
+    let counter_account = svm.get_account(&counter).unwrap();
+    let mut data: &[u8] = &counter_account.data;
+    let counter_state = {0}::state::Counter::try_deserialize(&mut data).unwrap();
+    assert_eq!(counter_state.count, 1);
+    assert_eq!(counter_state.authority, payer.pubkey());
 }}
 "#,
             name.to_snake_case(),
