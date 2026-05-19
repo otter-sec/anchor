@@ -65,7 +65,7 @@ pub struct TestRelation<'info> {
     nested: Nested<'info>,
 }
 
-// Test https://github.com/solana-foundation/anchor/issues/4143
+// Test https://github.com/otter-sec/anchor/issues/4143
 pub const ADDRESS_WITH_NUMBER_V2: Pubkey = pubkey!("D8cy77BBepLMngZx6ZukaTff5hCt1HrWyKk3Hnd9oitf");
 
 #[derive(Accounts)]

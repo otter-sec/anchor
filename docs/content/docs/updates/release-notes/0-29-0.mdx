@@ -4,7 +4,7 @@ description: Anchor - Release Notes 0.29.0
 ---
 
 Anchor keeps a
-[CHANGELOG](https://github.com/solana-foundation/anchor/blob/master/CHANGELOG.md) but
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/master/CHANGELOG.md) but
 it's not easy to make sense what has changed, what effect does the change have
 and how to migrate. This is where release notes come in, an easy to digest and
 actionable view for each release.
@@ -16,7 +16,7 @@ actionable view for each release.
 1. Update `avm`:
 
    ```sh
-   cargo install --git https://github.com/solana-foundation/anchor --tag v0.29.0 avm --locked
+   cargo install --git https://github.com/otter-sec/anchor --tag v0.29.0 avm --locked
    ```
 
 2. Update `anchor-cli`:
@@ -60,7 +60,7 @@ solana_version = "1.17.0" # Solana version to use
 
 - Fields are optional.
 - `anchor_version` requires
-  [`avm`](https://github.com/solana-foundation/anchor/tree/master/avm) to be installed.
+  [`avm`](https://github.com/otter-sec/anchor/tree/master/avm) to be installed.
 - Before this release, `anchor_version` and `solana_version` keys in
   `Anchor.toml` were being used for Docker verifiable builds only. Now, all
   commands work via the `[toolchain]` section.
@@ -70,7 +70,7 @@ solana_version = "1.17.0" # Solana version to use
 It is possible to install CLI from commit by running:
 
 ```sh
-cargo install --git https://github.com/solana-foundation/anchor --rev 6cf200493a307c01487c7b492b4893e0d6f6cb23 anchor-cli --locked
+cargo install --git https://github.com/otter-sec/anchor --rev 6cf200493a307c01487c7b492b4893e0d6f6cb23 anchor-cli --locked
 ```
 
 but this overrides the `anchor` binary and does not work well with `avm`.
@@ -250,7 +250,7 @@ idl-build = [
   Rust compile times.
 - Even though most of it works great, some parts are still rough around the
   edges and you may encounter parts that are not fully ironed out. Please
-  [create an issue](https://github.com/solana-foundation/anchor/issues) if you run into
+  [create an issue](https://github.com/otter-sec/anchor/issues) if you run into
   a problem.
 
 ## Type aliases
@@ -311,7 +311,7 @@ Generates the following IDL:
 **Note:** This example only works with the default IDL generation
 method(parsing) for now because type aliases for default Rust types don't work
 properly with
-`idl-build`([#2640](https://github.com/solana-foundation/anchor/issues/2640)).
+`idl-build`([#2640](https://github.com/otter-sec/anchor/issues/2640)).
 
 ## Export `mpl-token-metadata`
 
@@ -370,13 +370,13 @@ docker pull backpackapp/build:v0.29.0
 ## Enhanced performance
 
 `0.29.0` performance is noticeably improved in all areas, the biggest one being
-[binary size](https://github.com/solana-foundation/anchor/blob/master/bench/BINARY_SIZE.md#0290)
+[binary size](https://github.com/otter-sec/anchor/blob/master/bench/BINARY_SIZE.md#0290)
 which is reduced ~36% compared to `0.28.0`!
 
 Similar benchmarks can be found for
-[compute units](https://github.com/solana-foundation/anchor/blob/master/bench/COMPUTE_UNITS.md#0290)
+[compute units](https://github.com/otter-sec/anchor/blob/master/bench/COMPUTE_UNITS.md#0290)
 and
-[stack memory](https://github.com/solana-foundation/anchor/blob/master/bench/STACK_MEMORY.md#0290).
+[stack memory](https://github.com/otter-sec/anchor/blob/master/bench/STACK_MEMORY.md#0290).
 
 **Note:** The benchmark results will vary between programs but the overall
 direction should be the same.
@@ -384,4 +384,4 @@ direction should be the same.
 ---
 
 See the full list of changes in the
-[CHANGELOG](https://github.com/solana-foundation/anchor/blob/master/CHANGELOG.md#0290---2023-10-16).
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/master/CHANGELOG.md#0290---2023-10-16).

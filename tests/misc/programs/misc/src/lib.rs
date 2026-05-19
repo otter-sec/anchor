@@ -392,7 +392,7 @@ pub mod misc {
         Ok(())
     }
 
-    /// Compilation test for https://github.com/solana-foundation/anchor/issues/3074
+    /// Compilation test for https://github.com/otter-sec/anchor/issues/3074
     pub fn test_boxed_owner_constraint(_ctx: Context<TestBoxedOwnerConstraint>) -> Result<()> {
         Ok(())
     }
