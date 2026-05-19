@@ -21,7 +21,7 @@ use {
     dirs::home_dir,
     heck::{ToKebabCase, ToLowerCamelCase, ToPascalCase, ToSnakeCase},
     regex::{Regex, RegexBuilder},
-    rust_template::{ProgramTemplate, TestTemplate},
+    rust_template::{AnchorVersion, ProgramTemplate, TestTemplate},
     semver::{Version, VersionReq},
     serde::Deserialize,
     serde_json::{json, Map, Value as JsonValue},
@@ -111,6 +111,9 @@ pub enum Command {
         /// Rust program template to use
         #[clap(value_enum, short, long, default_value = "multiple")]
         template: ProgramTemplate,
+        /// Anchor template version to generate
+        #[clap(value_enum, long, default_value = "v1")]
+        anchor_version: AnchorVersion,
         /// Test template to use
         #[clap(value_enum, long, default_value = "litesvm")]
         test_template: TestTemplate,
@@ -1153,6 +1156,7 @@ fn process_command(opts: Opts) -> Result<()> {
             package_manager,
             no_git,
             template,
+            anchor_version,
             test_template,
             force,
             install_agent_skills,
@@ -1164,6 +1168,7 @@ fn process_command(opts: Opts) -> Result<()> {
             package_manager,
             no_git,
             template,
+            anchor_version,
             test_template,
             force,
             install_agent_skills,
@@ -1416,6 +1421,7 @@ fn init(
     package_manager: Option<PackageManager>,
     no_git: bool,
     template: ProgramTemplate,
+    anchor_version: AnchorVersion,
     test_template: TestTemplate,
     force: bool,
     install_agent_skills: bool,
@@ -1489,7 +1495,12 @@ fn init(
     }
 
     // Build the program.
-    rust_template::create_program(&project_name, template, Some(&test_template))?;
+    rust_template::create_program(
+        &project_name,
+        template,
+        Some(&test_template),
+        anchor_version,
+    )?;
 
     let program_id = rust_template::get_or_create_program_id(&rust_name, target_dir()?);
     let mut localnet = BTreeMap::new();
@@ -1516,7 +1527,8 @@ fn init(
         if javascript {
             // Build javascript config
             let mut package_json = File::create("package.json")?;
-            package_json.write_all(rust_template::package_json(jest, license).as_bytes())?;
+            package_json
+                .write_all(rust_template::package_json(jest, license, anchor_version).as_bytes())?;
 
             let mut deploy = File::create(migrations_path.join("deploy.js"))?;
             deploy.write_all(rust_template::deploy_script().as_bytes())?;
@@ -1526,14 +1538,21 @@ fn init(
             ts_config.write_all(rust_template::ts_config(jest).as_bytes())?;
 
             let mut ts_package_json = File::create("package.json")?;
-            ts_package_json.write_all(rust_template::ts_package_json(jest, license).as_bytes())?;
+            ts_package_json.write_all(
+                rust_template::ts_package_json(jest, license, anchor_version).as_bytes(),
+            )?;
 
             let mut deploy = File::create(migrations_path.join("deploy.ts"))?;
             deploy.write_all(rust_template::ts_deploy_script().as_bytes())?;
         }
     }
 
-    test_template.create_test_files(&project_name, javascript, &program_id.to_string())?;
+    test_template.create_test_files(
+        &project_name,
+        javascript,
+        &program_id.to_string(),
+        anchor_version,
+    )?;
 
     if !no_install && uses_node {
         let package_manager_cmd =
@@ -1666,7 +1685,7 @@ fn new(
                     fs::remove_dir_all(std::env::current_dir()?.join("programs").join(&name))?;
                 }
 
-                rust_template::create_program(&name, template, None)?;
+                rust_template::create_program(&name, template, None, AnchorVersion::default())?;
 
                 programs.insert(
                     name.clone(),
@@ -5422,6 +5441,18 @@ mod tests {
     };
 
     #[test]
+    fn test_init_accepts_anchor_version() {
+        let opts =
+            Opts::try_parse_from(["anchor", "init", "example", "--anchor-version", "v2"]).unwrap();
+
+        let Command::Init { anchor_version, .. } = opts.command else {
+            panic!("expected init command");
+        };
+
+        assert_eq!(anchor_version, AnchorVersion::V2);
+    }
+
+    #[test]
     #[should_panic(expected = "Anchor workspace name must be a valid Rust identifier.")]
     fn test_init_reserved_word() {
         init(
@@ -5436,6 +5467,7 @@ mod tests {
             None,
             false,
             ProgramTemplate::default(),
+            AnchorVersion::default(),
             TestTemplate::default(),
             false,
             true,
@@ -5458,6 +5490,7 @@ mod tests {
             None,
             false,
             ProgramTemplate::default(),
+            AnchorVersion::default(),
             TestTemplate::default(),
             false,
             true,
@@ -5480,6 +5513,7 @@ mod tests {
             None,
             false,
             ProgramTemplate::default(),
+            AnchorVersion::default(),
             TestTemplate::default(),
             false,
             true,

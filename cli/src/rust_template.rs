@@ -19,6 +19,17 @@ use {
 };
 
 const ANCHOR_MSRV: &str = "1.89.0";
+const ANCHOR_V2_TEMPLATE_VERSION: &str = "2.0.0";
+
+/// Anchor template version to generate.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Parser, ValueEnum, AbsolutePath)]
+pub enum AnchorVersion {
+    /// Generate Anchor v1 templates.
+    #[default]
+    V1,
+    /// Generate Anchor v2 templates.
+    V2,
+}
 
 /// Program initialization template
 #[derive(Clone, Debug, Default, Eq, PartialEq, Parser, ValueEnum, AbsolutePath)]
@@ -35,6 +46,7 @@ pub fn create_program(
     name: &str,
     template: ProgramTemplate,
     test_template: Option<&TestTemplate>,
+    anchor_version: AnchorVersion,
 ) -> Result<()> {
     let program_path = Path::new("programs").join(name);
     let lib_rs_path = program_path.join("src").join("lib.rs");
@@ -43,7 +55,7 @@ pub fn create_program(
         ("rust-toolchain.toml".into(), rust_toolchain_toml()),
         (
             program_path.join("Cargo.toml"),
-            cargo_toml(name, test_template),
+            cargo_toml(name, test_template, anchor_version),
         ),
         // One of the create_program_template_* functions will write the full
         // lib.rs, but we need an empty stub for now so cargo won't throw an
@@ -65,10 +77,10 @@ pub fn create_program(
                 "Note: Using single-file template. For better code organization and \
                  maintainability, consider using --template multiple (default)."
             );
-            create_program_template_single(name, &program_path, target_path)
+            create_program_template_single(name, &program_path, target_path, anchor_version)
         }
         ProgramTemplate::Multiple => {
-            create_program_template_multiple(name, &program_path, target_path)
+            create_program_template_multiple(name, &program_path, target_path, anchor_version)
         }
     };
 
@@ -87,7 +99,19 @@ profile = "minimal"
 }
 
 /// Create a program with a single `lib.rs` file.
-fn create_program_template_single(name: &str, program_path: &Path, target_path: &Path) -> Files {
+fn create_program_template_single(
+    name: &str,
+    program_path: &Path,
+    target_path: &Path,
+    anchor_version: AnchorVersion,
+) -> Files {
+    match anchor_version {
+        AnchorVersion::V1 => create_program_template_single_v1(name, program_path, target_path),
+        AnchorVersion::V2 => create_program_template_single_v2(name, program_path, target_path),
+    }
+}
+
+fn create_program_template_single_v1(name: &str, program_path: &Path, target_path: &Path) -> Files {
     vec![(
         program_path.join("src").join("lib.rs"),
         format!(
@@ -199,8 +223,71 @@ use state::Counter;
     )]
 }
 
+fn create_program_template_single_v2(name: &str, program_path: &Path, target_path: &Path) -> Files {
+    vec![(
+        program_path.join("src").join("lib.rs"),
+        format!(
+            r#"use anchor_lang_v2::prelude::*;
+
+declare_id!("{}");
+
+#[program]
+pub mod {} {{
+    use super::*;
+
+    pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {{
+        ctx.accounts.counter.count = 0;
+        ctx.accounts.counter.authority = *ctx.accounts.payer.address();
+        msg!("Counter initialized");
+        Ok(())
+    }}
+}}
+
+pub mod state {{
+    use super::*;
+
+    #[account]
+    pub struct Counter {{
+        pub count: u64,
+        pub authority: Address,
+    }}
+}}
+
+use state::Counter;
+
+#[derive(Accounts)]
+pub struct Initialize {{
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer)]
+    pub counter: Account<Counter>,
+    pub system_program: Program<System>,
+}}
+"#,
+            get_or_create_program_id(name, target_path),
+            name.to_snake_case(),
+        ),
+    )]
+}
+
 /// Create a program with multiple files for instructions, state...
-fn create_program_template_multiple(name: &str, program_path: &Path, target_path: &Path) -> Files {
+fn create_program_template_multiple(
+    name: &str,
+    program_path: &Path,
+    target_path: &Path,
+    anchor_version: AnchorVersion,
+) -> Files {
+    match anchor_version {
+        AnchorVersion::V1 => create_program_template_multiple_v1(name, program_path, target_path),
+        AnchorVersion::V2 => create_program_template_multiple_v2(name, program_path, target_path),
+    }
+}
+
+fn create_program_template_multiple_v1(
+    name: &str,
+    program_path: &Path,
+    target_path: &Path,
+) -> Files {
     let src_path = program_path.join("src");
     vec![
         (
@@ -360,6 +447,108 @@ pub struct Counter {
     ]
 }
 
+fn create_program_template_multiple_v2(
+    name: &str,
+    program_path: &Path,
+    target_path: &Path,
+) -> Files {
+    let src_path = program_path.join("src");
+    vec![
+        (
+            src_path.join("lib.rs"),
+            format!(
+                r#"pub mod constants;
+pub mod error;
+pub mod instructions;
+pub mod state;
+
+use anchor_lang_v2::prelude::*;
+
+pub use instructions::*;
+
+declare_id!("{}");
+
+#[program]
+pub mod {} {{
+    use super::*;
+
+    pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {{
+        initialize::handler(ctx)
+    }}
+}}
+"#,
+                get_or_create_program_id(name, target_path),
+                name.to_snake_case(),
+            ),
+        ),
+        (
+            src_path.join("constants.rs"),
+            r#"use anchor_lang_v2::prelude::*;
+
+#[constant]
+pub const SEED: &str = "anchor";
+"#
+            .into(),
+        ),
+        (
+            src_path.join("error.rs"),
+            r#"use anchor_lang_v2::prelude::*;
+
+#[error_code]
+pub enum ErrorCode {
+    #[msg("Custom error message")]
+    CustomError,
+}
+"#
+            .into(),
+        ),
+        (
+            src_path.join("instructions.rs"),
+            r#"pub mod initialize;
+
+pub use initialize::*;
+"#
+            .into(),
+        ),
+        (
+            src_path.join("instructions").join("initialize.rs"),
+            r#"use anchor_lang_v2::prelude::*;
+
+use crate::state::Counter;
+
+#[derive(Accounts)]
+pub struct Initialize {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer)]
+    pub counter: Account<Counter>,
+    pub system_program: Program<System>,
+}
+
+pub fn handler(ctx: &mut Context<Initialize>) -> Result<()> {
+    ctx.accounts.counter.count = 0;
+    ctx.accounts.counter.authority = *ctx.accounts.payer.address();
+    msg!("Counter initialized");
+    Ok(())
+}
+"#
+            .into(),
+        ),
+        (
+            src_path.join("state.rs"),
+            r#"use anchor_lang_v2::prelude::*;
+
+#[account]
+pub struct Counter {
+    pub count: u64,
+    pub authority: Address,
+}
+"#
+            .into(),
+        ),
+    ]
+}
+
 fn workspace_manifest() -> String {
     format!(
         r#"[workspace]
@@ -384,8 +573,19 @@ codegen-units = 1
     )
 }
 
-fn cargo_toml(name: &str, test_template: Option<&TestTemplate>) -> String {
-    let test_sbf_feature = match test_template {
+fn cargo_toml(
+    name: &str,
+    test_template: Option<&TestTemplate>,
+    anchor_version: AnchorVersion,
+) -> String {
+    match anchor_version {
+        AnchorVersion::V1 => cargo_toml_v1(name, test_template),
+        AnchorVersion::V2 => cargo_toml_v2(name, test_template),
+    }
+}
+
+fn cargo_toml_v1(name: &str, test_template: Option<&TestTemplate>) -> String {
+    let template_features = match test_template {
         Some(TestTemplate::Mollusk) => r#"test-sbf = []"#,
         _ => "",
     };
@@ -445,8 +645,76 @@ unexpected_cfgs = {{ level = "warn", check-cfg = ['cfg(target_os, values("solana
 "#,
         name,
         name.to_snake_case(),
-        test_sbf_feature,
+        template_features,
         VERSION,
+        dev_dependencies,
+    )
+}
+
+fn cargo_toml_v2(name: &str, test_template: Option<&TestTemplate>) -> String {
+    // Template-specific features carried into the emitted `[features]` block:
+    //   - Mollusk: `test-sbf` for host-mode integration tests.
+    //   - LiteSVM: `profile` forwards to `anchor-v2-testing/profile`, the
+    //     register-tracing hook that `anchor test --profile` activates.
+    let template_features = match test_template {
+        Some(TestTemplate::Mollusk) => r#"test-sbf = []"#,
+        Some(TestTemplate::Litesvm) => r#"profile = ["anchor-v2-testing/profile"]"#,
+        _ => "",
+    };
+    let dev_dependencies = match test_template {
+        Some(TestTemplate::Mollusk) => {
+            r#"
+[dev-dependencies]
+mollusk-svm = "~0.10"
+solana-account = "3"
+solana-pubkey = "4"
+solana-sdk-ids = "3"
+bytemuck = "1"
+"#
+        }
+        Some(TestTemplate::Litesvm) => {
+            r#"
+[dev-dependencies]
+anchor-v2-testing = { git = "https://github.com/solana-foundation/anchor.git", branch = "anchor-next" }
+"#
+        }
+        _ => "",
+    };
+
+    format!(
+        r#"[package]
+name = "{0}"
+version = "0.1.0"
+description = "Created with Anchor"
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "{1}"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-log-ix-name = []
+idl-build = []
+{2}
+
+[dependencies]
+# Once anchor-lang-v2 is published to crates.io, swap to: anchor-lang-v2 = "{3}"
+anchor-lang-v2 = {{ git = "https://github.com/solana-foundation/anchor.git", branch = "anchor-next" }}
+solana-program-log = {{ version = "1.1", features = ["macro"] }}
+wincode = {{ version = "0.5", features = ["derive"] }}
+{4}
+
+[lints.rust]
+unexpected_cfgs = {{ level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }}
+"#,
+        name,
+        name.to_snake_case(),
+        template_features,
+        ANCHOR_V2_TEMPLATE_VERSION,
         dev_dependencies,
     )
 }
@@ -546,7 +814,14 @@ module.exports = async function (provider: anchor.AnchorProvider) {
 "#
 }
 
-pub fn mocha(name: &str) -> String {
+pub fn mocha(name: &str, anchor_version: AnchorVersion) -> String {
+    match anchor_version {
+        AnchorVersion::V1 => mocha_v1(name),
+        AnchorVersion::V2 => mocha_v2(name),
+    }
+}
+
+fn mocha_v1(name: &str) -> String {
     format!(
         r#"const anchor = require("@anchor-lang/core");
 
@@ -580,7 +855,40 @@ describe("{}", () => {{
     )
 }
 
-pub fn js_jest(name: &str) -> String {
+fn mocha_v2(name: &str) -> String {
+    format!(
+        r#"const anchor = require("@anchor-lang/core");
+
+describe("{}", () => {{
+  // Configure the client to use the local cluster.
+  anchor.setProvider(anchor.AnchorProvider.env());
+
+  it("Is initialized!", async () => {{
+    // Add your test here.
+    const program = anchor.workspace.{};
+    const counter = anchor.web3.Keypair.generate();
+    const tx = await program.methods
+      .initialize()
+      .accounts({{ counter: counter.publicKey }})
+      .signers([counter])
+      .rpc();
+    console.log("Your transaction signature", tx);
+  }});
+}});
+"#,
+        name,
+        name.to_lower_camel_case(),
+    )
+}
+
+pub fn js_jest(name: &str, anchor_version: AnchorVersion) -> String {
+    match anchor_version {
+        AnchorVersion::V1 => js_jest_v1(name),
+        AnchorVersion::V2 => js_jest_v2(name),
+    }
+}
+
+fn js_jest_v1(name: &str) -> String {
     format!(
         r#"const anchor = require("@anchor-lang/core");
 
@@ -614,7 +922,40 @@ describe("{}", () => {{
     )
 }
 
-pub fn package_json(jest: bool, license: String) -> String {
+fn js_jest_v2(name: &str) -> String {
+    format!(
+        r#"const anchor = require("@anchor-lang/core");
+
+describe("{}", () => {{
+  // Configure the client to use the local cluster.
+  anchor.setProvider(anchor.AnchorProvider.env());
+
+  it("Is initialized!", async () => {{
+    // Add your test here.
+    const program = anchor.workspace.{};
+    const counter = anchor.web3.Keypair.generate();
+    const tx = await program.methods
+      .initialize()
+      .accounts({{ counter: counter.publicKey }})
+      .signers([counter])
+      .rpc();
+    console.log("Your transaction signature", tx);
+  }});
+}});
+"#,
+        name,
+        name.to_lower_camel_case(),
+    )
+}
+
+pub fn package_json(jest: bool, license: String, anchor_version: AnchorVersion) -> String {
+    match anchor_version {
+        AnchorVersion::V1 => package_json_v1(jest, license),
+        AnchorVersion::V2 => package_json_v2(jest, license),
+    }
+}
+
+fn package_json_v1(jest: bool, license: String) -> String {
     if jest {
         format!(
             r#"{{
@@ -666,7 +1007,67 @@ pub fn package_json(jest: bool, license: String) -> String {
     }
 }
 
-pub fn ts_package_json(jest: bool, license: String) -> String {
+// Pinned at `^1.0.0` because 2.0.0 isn't on npm yet.
+fn package_json_v2(jest: bool, license: String) -> String {
+    if jest {
+        format!(
+            r#"{{
+  "license": "{license}",
+  "scripts": {{
+    "lint:fix": "prettier */*.js \"*/**/*{{.js,.ts}}\" -w",
+    "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check"
+  }},
+  "dependencies": {{
+    "@anchor-lang/core": "^1.0.0"
+  }},
+  "devDependencies": {{
+    "jest": "^30.3.0",
+    "prettier": "^3.8.3"
+  }},
+  "overrides": {{
+    "uuid": "^9.0.1"
+  }},
+  "resolutions": {{
+    "uuid": "^9.0.1"
+  }},
+  "pnpm": {{
+    "overrides": {{
+      "uuid": "^9.0.1"
+    }}
+  }}
+}}
+    "#
+        )
+    } else {
+        format!(
+            r#"{{
+  "license": "{license}",
+  "scripts": {{
+    "lint:fix": "prettier */*.js \"*/**/*{{.js,.ts}}\" -w",
+    "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check"
+  }},
+  "dependencies": {{
+    "@anchor-lang/core": "^1.0.0"
+  }},
+  "devDependencies": {{
+    "chai": "^4.5.0",
+    "mocha": "^11.7.5",
+    "prettier": "^3.8.3"
+  }}
+}}
+"#
+        )
+    }
+}
+
+pub fn ts_package_json(jest: bool, license: String, anchor_version: AnchorVersion) -> String {
+    match anchor_version {
+        AnchorVersion::V1 => ts_package_json_v1(jest, license),
+        AnchorVersion::V2 => ts_package_json_v2(jest, license),
+    }
+}
+
+fn ts_package_json_v1(jest: bool, license: String) -> String {
     if jest {
         format!(
             r#"{{
@@ -727,7 +1128,78 @@ pub fn ts_package_json(jest: bool, license: String) -> String {
     }
 }
 
-pub fn ts_mocha(name: &str) -> String {
+// Pinned at `^1.0.0` because 2.0.0 isn't on npm yet.
+fn ts_package_json_v2(jest: bool, license: String) -> String {
+    if jest {
+        format!(
+            r#"{{
+  "license": "{license}",
+  "scripts": {{
+    "lint:fix": "prettier */*.js \"*/**/*{{.js,.ts}}\" -w",
+    "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check"
+  }},
+  "dependencies": {{
+    "@anchor-lang/core": "^1.0.0"
+  }},
+  "devDependencies": {{
+    "@types/bn.js": "^5.2.0",
+    "@types/jest": "^30.0.0",
+    "jest": "^30.3.0",
+    "prettier": "^3.8.3",
+    "ts-jest": "^29.4.9",
+    "typescript": "^5.9.3"
+  }},
+  "overrides": {{
+    "uuid": "^9.0.1"
+  }},
+  "resolutions": {{
+    "uuid": "^9.0.1"
+  }},
+  "pnpm": {{
+    "overrides": {{
+      "uuid": "^9.0.1"
+    }}
+  }}
+}}
+"#
+        )
+    } else {
+        format!(
+            r#"{{
+  "license": "{license}",
+  "scripts": {{
+    "lint:fix": "prettier */*.js \"*/**/*{{.js,.ts}}\" -w",
+    "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check"
+  }},
+  "dependencies": {{
+    "@anchor-lang/core": "^1.0.0"
+  }},
+  "devDependencies": {{
+    "chai": "^4.5.0",
+    "mocha": "^11.7.5",
+    "ts-mocha": "^11.1.0",
+    "ts-node": "^10.9.2",
+    "@types/bn.js": "^5.2.0",
+    "@types/chai": "^4.3.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^25.6.0",
+    "typescript": "^5.9.3",
+    "prettier": "^3.8.3"
+  }}
+}}
+"#
+        )
+    }
+}
+
+pub fn ts_mocha(name: &str, anchor_version: AnchorVersion) -> String {
+    match anchor_version {
+        AnchorVersion::V1 => ts_mocha_v1(name),
+        AnchorVersion::V2 => ts_mocha_v2(name),
+    }
+}
+
+fn ts_mocha_v1(name: &str) -> String {
     format!(
         r#"import * as anchor from "@anchor-lang/core";
 import {{ Program }} from "@anchor-lang/core";
@@ -767,7 +1239,46 @@ describe("{}", () => {{
     )
 }
 
-pub fn ts_jest(name: &str) -> String {
+fn ts_mocha_v2(name: &str) -> String {
+    format!(
+        r#"import * as anchor from "@anchor-lang/core";
+import {{ Program }} from "@anchor-lang/core";
+import {{ {} }} from "../target/types/{}";
+
+describe("{}", () => {{
+  // Configure the client to use the local cluster.
+  anchor.setProvider(anchor.AnchorProvider.env());
+
+  const program = anchor.workspace.{} as Program<{}>;
+
+  it("Is initialized!", async () => {{
+    // Add your test here.
+    const counter = anchor.web3.Keypair.generate();
+    const tx = await program.methods
+      .initialize()
+      .accounts({{ counter: counter.publicKey }})
+      .signers([counter])
+      .rpc();
+    console.log("Your transaction signature", tx);
+  }});
+}});
+"#,
+        name.to_pascal_case(),
+        name.to_snake_case(),
+        name,
+        name.to_lower_camel_case(),
+        name.to_pascal_case(),
+    )
+}
+
+pub fn ts_jest(name: &str, anchor_version: AnchorVersion) -> String {
+    match anchor_version {
+        AnchorVersion::V1 => ts_jest_v1(name),
+        AnchorVersion::V2 => ts_jest_v2(name),
+    }
+}
+
+fn ts_jest_v1(name: &str) -> String {
     format!(
         r#"import * as anchor from "@anchor-lang/core";
 import {{ Program }} from "@anchor-lang/core";
@@ -796,6 +1307,38 @@ describe("{}", () => {{
       .accountsPartial({{ counter }})
       .rpc();
     console.log("Increment transaction signature", incrementTx);
+  }});
+}});
+"#,
+        name.to_pascal_case(),
+        name.to_snake_case(),
+        name,
+        name.to_lower_camel_case(),
+        name.to_pascal_case(),
+    )
+}
+
+fn ts_jest_v2(name: &str) -> String {
+    format!(
+        r#"import * as anchor from "@anchor-lang/core";
+import {{ Program }} from "@anchor-lang/core";
+import {{ {} }} from "../target/types/{}";
+
+describe("{}", () => {{
+  // Configure the client to use the local cluster.
+  anchor.setProvider(anchor.AnchorProvider.env());
+
+  const program = anchor.workspace.{} as Program<{}>;
+
+  it("Is initialized!", async () => {{
+    // Add your test here.
+    const counter = anchor.web3.Keypair.generate();
+    const tx = await program.methods
+      .initialize()
+      .accounts({{ counter: counter.publicKey }})
+      .signers([counter])
+      .rpc();
+    console.log("Your transaction signature", tx);
   }});
 }});
 "#,
@@ -959,7 +1502,13 @@ impl TestTemplate {
         }
     }
 
-    pub fn create_test_files(&self, project_name: &str, js: bool, program_id: &str) -> Result<()> {
+    pub fn create_test_files(
+        &self,
+        project_name: &str,
+        js: bool,
+        program_id: &str,
+        anchor_version: AnchorVersion,
+    ) -> Result<()> {
         match self {
             Self::Mocha => {
                 // Build the test suite.
@@ -967,10 +1516,10 @@ impl TestTemplate {
 
                 if js {
                     let mut test = File::create(format!("tests/{}.js", &project_name))?;
-                    test.write_all(mocha(project_name).as_bytes())?;
+                    test.write_all(mocha(project_name, anchor_version).as_bytes())?;
                 } else {
                     let mut mocha = File::create(format!("tests/{}.ts", &project_name))?;
-                    mocha.write_all(ts_mocha(project_name).as_bytes())?;
+                    mocha.write_all(ts_mocha(project_name, anchor_version).as_bytes())?;
                 }
             }
             Self::Jest => {
@@ -979,10 +1528,10 @@ impl TestTemplate {
 
                 if js {
                     let mut test = File::create(format!("tests/{}.test.js", &project_name))?;
-                    test.write_all(js_jest(project_name).as_bytes())?;
+                    test.write_all(js_jest(project_name, anchor_version).as_bytes())?;
                 } else {
                     let mut test = File::create(format!("tests/{}.test.ts", &project_name))?;
-                    test.write_all(ts_jest(project_name).as_bytes())?;
+                    test.write_all(ts_jest(project_name, anchor_version).as_bytes())?;
                 }
             }
             Self::Rust => {
@@ -1005,12 +1554,13 @@ impl TestTemplate {
                 let tests_path = Path::new("tests");
                 files.extend(vec![(
                     tests_path.join("Cargo.toml"),
-                    tests_cargo_toml(project_name),
+                    tests_cargo_toml(project_name, anchor_version),
                 )]);
                 files.extend(create_program_template_rust_test(
                     project_name,
                     tests_path,
                     program_id,
+                    anchor_version,
                 ));
                 override_or_create_files(&files)?;
             }
@@ -1024,6 +1574,7 @@ impl TestTemplate {
                 files.extend(create_program_template_mollusk_test(
                     project_name,
                     tests_path,
+                    anchor_version,
                 ));
                 override_or_create_files(&files)?;
             }
@@ -1036,6 +1587,7 @@ impl TestTemplate {
                 files.extend(create_program_template_litesvm_test(
                     project_name,
                     tests_path,
+                    anchor_version,
                 ));
                 override_or_create_files(&files)?;
             }
@@ -1045,7 +1597,14 @@ impl TestTemplate {
     }
 }
 
-pub fn tests_cargo_toml(name: &str) -> String {
+pub fn tests_cargo_toml(name: &str, anchor_version: AnchorVersion) -> String {
+    match anchor_version {
+        AnchorVersion::V1 => tests_cargo_toml_v1(name),
+        AnchorVersion::V2 => tests_cargo_toml_v2(name),
+    }
+}
+
+fn tests_cargo_toml_v1(name: &str) -> String {
     format!(
         r#"[package]
 name = "tests"
@@ -1065,8 +1624,41 @@ solana-signer = "3"
     )
 }
 
+fn tests_cargo_toml_v2(name: &str) -> String {
+    format!(
+        r#"[package]
+name = "tests"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2021"
+rust-version = "{ANCHOR_MSRV}"
+
+[dependencies]
+# Once anchor-client v2 is published to crates.io, swap to: anchor-client = "{ANCHOR_V2_TEMPLATE_VERSION}"
+anchor-client = {{ git = "https://github.com/solana-foundation/anchor.git", branch = "anchor-next" }}
+{name} = {{ version = "0.1.0", path = "../programs/{name}" }}
+solana-keypair = "3.0.0"
+solana-pubkey = "3.0.0"
+solana-sdk-ids = "3"
+solana-signer = "3"
+"#
+    )
+}
+
 /// Generate template for Rust unit-test
-fn create_program_template_rust_test(name: &str, tests_path: &Path, program_id: &str) -> Files {
+fn create_program_template_rust_test(
+    name: &str,
+    tests_path: &Path,
+    program_id: &str,
+    anchor_version: AnchorVersion,
+) -> Files {
+    match anchor_version {
+        AnchorVersion::V1 => create_program_template_rust_test_v1(name, tests_path, program_id),
+        AnchorVersion::V2 => create_program_template_rust_test_v2(name, tests_path, program_id),
+    }
+}
+
+fn create_program_template_rust_test_v1(name: &str, tests_path: &Path, program_id: &str) -> Files {
     let src_path = tests_path.join("src");
     vec![
         (
@@ -1135,8 +1727,73 @@ fn test_initialize() {{
     ]
 }
 
+fn create_program_template_rust_test_v2(name: &str, tests_path: &Path, program_id: &str) -> Files {
+    let src_path = tests_path.join("src");
+    vec![
+        (
+            src_path.join("lib.rs"),
+            r#"#[cfg(test)]
+mod test_initialize;
+"#
+            .into(),
+        ),
+        (
+            src_path.join("test_initialize.rs"),
+            format!(
+                r#"use anchor_client::{{
+    CommitmentConfig,
+    Client, Cluster,
+}};
+use solana_keypair::{{read_keypair_file, Keypair}};
+use solana_pubkey::Pubkey;
+use solana_signer::Signer;
+
+#[test]
+fn test_initialize() {{
+    let program_id = "{0}";
+    let anchor_wallet = std::env::var("ANCHOR_WALLET").unwrap();
+    let payer = read_keypair_file(&anchor_wallet).unwrap();
+    let counter = Keypair::new();
+
+    let client = Client::new_with_options(Cluster::Localnet, &payer, CommitmentConfig::confirmed());
+    let program_id = Pubkey::try_from(program_id).unwrap();
+    let program = client.program(program_id).unwrap();
+
+    let tx = program
+        .request()
+        .accounts({1}::accounts::Initialize {{
+            payer: payer.pubkey(),
+            counter: counter.pubkey(),
+            system_program: solana_sdk_ids::system_program::id(),
+        }})
+        .args({1}::instruction::Initialize {{}})
+        .signer(&counter)
+        .send()
+        .expect("");
+
+    println!("Your transaction signature {{}}", tx);
+}}
+"#,
+                program_id,
+                name.to_snake_case(),
+            ),
+        ),
+    ]
+}
+
 /// Generate template for Mollusk Rust unit-test
-fn create_program_template_mollusk_test(name: &str, tests_path: &Path) -> Files {
+fn create_program_template_mollusk_test(
+    name: &str,
+    tests_path: &Path,
+    anchor_version: AnchorVersion,
+) -> Files {
+    match anchor_version {
+        AnchorVersion::V1 => create_program_template_mollusk_test_v1(name, tests_path),
+        AnchorVersion::V2 => create_program_template_mollusk_test_v2(name, tests_path),
+    }
+}
+
+fn create_program_template_mollusk_test_v1(name: &str, tests_path: &Path) -> Files {
     vec![(
         tests_path.join("test_initialize.rs"),
         format!(
@@ -1244,8 +1901,87 @@ fn test_initialize() {{
     )]
 }
 
+fn create_program_template_mollusk_test_v2(name: &str, tests_path: &Path) -> Files {
+    vec![(
+        tests_path.join("test_initialize.rs"),
+        format!(
+            r#"#![cfg(feature = "test-sbf")]
+
+use {{
+    anchor_lang_v2::{{
+        accounts::Account, solana_program::instruction::Instruction, InstructionData, Space,
+        ToAccountMetas,
+    }},
+    mollusk_svm::{{program::keyed_account_for_system_program, result::Check, Mollusk}},
+    solana_account::Account as SolanaAccount,
+    solana_pubkey::Pubkey,
+}};
+
+#[test]
+fn test_initialize() {{
+    let program_id = {0}::id();
+    let mollusk = Mollusk::new(&program_id, "{0}");
+
+    let payer = Pubkey::new_unique();
+    let counter = Pubkey::new_unique();
+
+    let instruction = Instruction::new_with_bytes(
+        program_id,
+        &{0}::instruction::Initialize {{}}.data(),
+        {0}::accounts::Initialize {{
+            payer,
+            counter,
+            system_program: solana_sdk_ids::system_program::id(),
+        }}
+        .to_account_metas(None),
+    );
+
+    let counter_space = <Account<{0}::state::Counter> as Space>::INIT_SPACE;
+    let accounts = vec![
+        (
+            payer,
+            SolanaAccount::new(1_000_000_000, 0, &solana_sdk_ids::system_program::id()),
+        ),
+        (counter, SolanaAccount::default()),
+        keyed_account_for_system_program(),
+    ];
+
+    let result = mollusk.process_and_validate_instruction(
+        &instruction,
+        &accounts,
+        &[Check::success()],
+    );
+
+    let counter_account = result
+        .resulting_accounts
+        .iter()
+        .find(|(pk, _)| *pk == counter)
+        .map(|(_, a)| a)
+        .expect("counter account");
+    assert_eq!(counter_account.data.len(), counter_space);
+    let counter_state: &{0}::state::Counter = bytemuck::from_bytes(&counter_account.data[8..]);
+    assert_eq!(counter_state.count, 0);
+    assert_eq!(counter_state.authority, payer);
+}}
+"#,
+            name.to_snake_case(),
+        ),
+    )]
+}
+
 /// Generate template for LiteSVM Rust unit-test
-fn create_program_template_litesvm_test(name: &str, tests_path: &Path) -> Files {
+fn create_program_template_litesvm_test(
+    name: &str,
+    tests_path: &Path,
+    anchor_version: AnchorVersion,
+) -> Files {
+    match anchor_version {
+        AnchorVersion::V1 => create_program_template_litesvm_test_v1(name, tests_path),
+        AnchorVersion::V2 => create_program_template_litesvm_test_v2(name, tests_path),
+    }
+}
+
+fn create_program_template_litesvm_test_v1(name: &str, tests_path: &Path) -> Files {
     vec![(
         tests_path.join("test_initialize.rs"),
         format!(
@@ -1331,4 +2067,103 @@ fn test_initialize() {{
             name.to_snake_case(),
         ),
     )]
+}
+
+fn create_program_template_litesvm_test_v2(name: &str, tests_path: &Path) -> Files {
+    vec![(
+        tests_path.join("test_initialize.rs"),
+        format!(
+            r#"
+use {{
+    anchor_lang_v2::{{
+        accounts::Account, bytemuck, programs::System,
+        solana_program::instruction::Instruction, Id, InstructionData, Space, ToAccountMetas,
+    }},
+    anchor_v2_testing::{{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction}},
+}};
+
+#[test]
+fn test_initialize() {{
+    let program_id = {0}::id();
+    let payer = Keypair::new();
+    let counter = Keypair::new();
+
+    // `svm()` is `LiteSVM::new()` by default. When this crate is built
+    // with `--features profile` (which `anchor test --profile` and
+    // `anchor debugger` set automatically), it also installs the
+    // register-tracing callback that writes per-test SBF traces under
+    // `target/anchor-v2-profile/`. The cfg switch lives inside
+    // `anchor-v2-testing` so test code stays clean either way.
+    let mut svm = anchor_v2_testing::svm();
+    let bytes = include_bytes!("../../../target/deploy/{0}.so");
+    svm.add_program(program_id, bytes).unwrap();
+    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+
+    let instruction = Instruction::new_with_bytes(
+        program_id,
+        &{0}::instruction::Initialize {{}}.data(),
+        {0}::accounts::Initialize {{
+            payer: payer.pubkey(),
+            counter: counter.pubkey(),
+            system_program: System::id(),
+        }}
+        .to_account_metas(None),
+    );
+
+    let blockhash = svm.latest_blockhash();
+    let msg = Message::new_with_blockhash(&[instruction], Some(&payer.pubkey()), &blockhash);
+    let tx = VersionedTransaction::try_new(
+        VersionedMessage::Legacy(msg),
+        &[&payer, &counter],
+    )
+    .unwrap();
+
+    let res = svm.send_transaction(tx);
+    assert!(res.is_ok(), "send_transaction failed: {{:?}}", res);
+
+    // Verify the counter account was initialized. Size comes from the same
+    // `Space::INIT_SPACE` expression the `init` constraint allocates with,
+    // so the assertion doesn't rot if `Counter` gains fields. The payload
+    // tail is a `Pod` struct, so we cast directly and read fields by name
+    // instead of hand-slicing bytes.
+    let account = svm.get_account(&counter.pubkey()).expect("counter account");
+    assert_eq!(account.data.len(), <Account<{0}::state::Counter> as Space>::INIT_SPACE);
+    let counter_state: &{0}::state::Counter = bytemuck::from_bytes(&account.data[8..]);
+    assert_eq!(counter_state.count, 0);
+    assert_eq!(counter_state.authority, payer.pubkey());
+}}
+"#,
+            name.to_snake_case(),
+        ),
+    )]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn v1_templates_keep_legacy_anchor_lang_shape() {
+        let manifest = cargo_toml("counter", Some(&TestTemplate::Litesvm), AnchorVersion::V1);
+        assert!(manifest.contains("anchor-lang ="));
+        assert!(manifest.contains("litesvm = \"0.10.0\""));
+        assert!(!manifest.contains("anchor-lang-v2"));
+
+        let test = ts_mocha("counter", AnchorVersion::V1);
+        assert!(test.contains("[Buffer.from(\"counter\")]"));
+        assert!(test.contains(".accountsPartial({ counter })"));
+        assert!(!test.contains("counter: counter.publicKey"));
+    }
+
+    #[test]
+    fn v2_templates_use_anchor_next_counter_shape() {
+        let manifest = cargo_toml("counter", Some(&TestTemplate::Litesvm), AnchorVersion::V2);
+        assert!(manifest.contains("anchor-lang-v2 = { git = "));
+        assert!(manifest.contains("profile = [\"anchor-v2-testing/profile\"]"));
+        assert!(manifest.contains("anchor-v2-testing = { git = "));
+
+        let test = ts_mocha("counter", AnchorVersion::V2);
+        assert!(test.contains("const counter = anchor.web3.Keypair.generate();"));
+        assert!(test.contains("counter: counter.publicKey"));
+    }
 }
