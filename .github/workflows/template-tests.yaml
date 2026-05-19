@@ -1,0 +1,214 @@
+name: Template Tests
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "docs/**"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+  workflow_dispatch:
+
+env:
+  SOLANA_VERSION: "3.1.10"
+  NODE_VERSION: "20"
+  SURFPOOL_CLI_VERSION: "1.2.0"
+
+jobs:
+  # Build CLI once to share across test jobs
+  build-cli:
+    name: Build CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup/
+
+      - uses: actions/cache@v4
+        name: Cache Cargo home
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-home-${{ runner.os }}-template-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-home-${{ runner.os }}-template-
+
+      - uses: actions/cache@v4
+        name: Cache cargo target
+        with:
+          path: ./target/
+          key: cargo-target-template-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-target-template-${{ runner.os }}-
+
+      - run: cargo install --path cli --locked --debug --force --target-dir ./target
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anchor-cli
+          path: ~/.cargo/bin/anchor
+          retention-days: 1
+          if-no-files-found: error
+
+  # Rust-only test templates: `--javascript` and `--package-manager` don't
+  # apply, so the matrix is just template x test-template (2 x 3 = 6 cells).
+  template-rust-tests:
+    name: ${{ matrix.template }} + ${{ matrix.test_template }}
+    needs: build-cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [single, multiple]
+        test_template: [rust, mollusk, litesvm]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup/
+      - uses: ./.github/actions/setup-solana/
+      - uses: ./.github/actions/setup-surfpool/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: anchor-cli
+          path: ~/.cargo/bin/
+      - run: chmod +x ~/.cargo/bin/anchor
+
+      # Pre-install so concurrent `cargo build-sbf` invocations don't race on
+      # the platform-tools extract-then-rename.
+      - run: cargo build-sbf --tools-version v1.52 --install-only
+
+      # Cache the generated project's `target/` so subsequent runs reuse
+      # compiled deps. Restored before `anchor init` (which is invoked with
+      # `--force`, leaving `target/` intact); the deps don't depend on the
+      # template-files diff, so a partial restore from a prior commit is
+      # always a hit. Per-cell key avoids cross-pollination; different
+      # test templates pull different dev-deps.
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/my_program/target/
+          key: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-${{ github.sha }}
+          restore-keys: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-
+
+      - name: anchor init
+        working-directory: /tmp
+        run: |
+          mkdir -p my_program
+          anchor init my_program \
+            --template ${{ matrix.template }} \
+            --test-template ${{ matrix.test_template }} \
+            --no-git \
+            --no-install \
+            --force
+
+      # Redirect generated v1 projects from published crates to this PR's
+      # checkout so template changes are tested against local anchor-lang /
+      # anchor-client sources.
+      - name: Patch generated project to use PR checkout
+        env:
+          REPO: ${{ github.workspace }}
+        run: |
+          cat <<EOF >> /tmp/my_program/Cargo.toml
+
+          [patch.crates-io]
+          anchor-lang = { path = "$REPO/lang" }
+          anchor-client = { path = "$REPO/client" }
+          EOF
+
+      - name: anchor test
+        working-directory: /tmp/my_program
+        run: anchor test
+
+  # JS-based test templates: cross-product over template x language x
+  # package manager (2 x 2 x 2 x 4 = 32 cells).
+  template-js-tests:
+    name: ${{ matrix.template }} + ${{ matrix.test_template }} + ${{ matrix.language }} + ${{ matrix.package_manager }}
+    needs: build-cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [single, multiple]
+        test_template: [mocha, jest]
+        language: [typescript, javascript]
+        package_manager: [npm, yarn, pnpm, bun]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup/
+      - uses: ./.github/actions/setup-solana/
+      - uses: ./.github/actions/setup-surfpool/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Each PM gets its own setup. Corepack's shim approach didn't work
+      # reliably without a `packageManager` field in package.json, and
+      # ubuntu-latest only ships yarn classic pre-installed.
+      #   - npm: bundled with Node (no setup needed)
+      #   - yarn: pre-installed on ubuntu-latest as yarn classic
+      #   - pnpm: pnpm/action-setup adds the binary to PATH
+      #   - bun:  oven-sh/setup-bun does the same
+      - if: matrix.package_manager == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - if: matrix.package_manager == 'bun'
+        uses: oven-sh/setup-bun@v2
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: anchor-cli
+          path: ~/.cargo/bin/
+      - run: chmod +x ~/.cargo/bin/anchor
+
+      - run: cargo build-sbf --tools-version v1.52 --install-only
+
+      # Cache cargo `target/` and `node_modules/` for the generated project.
+      # `anchor init --force` leaves both alone, so the dirs survive a fresh
+      # init. Caching keys are per-cell so e.g. `mocha+ts+npm` doesn't pull
+      # `jest+js+pnpm`'s lockfile artifacts. `restore-keys` lets a stale
+      # commit's cache hit when the SHA-suffixed primary key misses.
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/my_program/target/
+          key: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-${{ github.sha }}
+          restore-keys: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/my_program/node_modules/
+          key: template-nm-${{ runner.os }}-${{ matrix.test_template }}-${{ matrix.language }}-${{ matrix.package_manager }}-${{ github.sha }}
+          restore-keys: template-nm-${{ runner.os }}-${{ matrix.test_template }}-${{ matrix.language }}-${{ matrix.package_manager }}-
+
+      - name: anchor init
+        working-directory: /tmp
+        run: |
+          mkdir -p my_program
+          anchor init my_program \
+            --template ${{ matrix.template }} \
+            --test-template ${{ matrix.test_template }} \
+            --package-manager ${{ matrix.package_manager }} \
+            ${{ matrix.language == 'javascript' && '--javascript' || '' }} \
+            --no-git \
+            --force
+
+      # Redirect generated v1 projects from published crates to this PR's
+      # checkout. JS templates only need the program crate patch; the JS
+      # client package is installed through the selected package manager.
+      - name: Patch generated project to use PR checkout
+        env:
+          REPO: ${{ github.workspace }}
+        run: |
+          cat <<EOF >> /tmp/my_program/Cargo.toml
+
+          [patch.crates-io]
+          anchor-lang = { path = "$REPO/lang" }
+          anchor-client = { path = "$REPO/client" }
+          EOF
+
+      - name: anchor test
+        working-directory: /tmp/my_program
+        run: anchor test
