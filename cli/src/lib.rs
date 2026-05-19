@@ -55,8 +55,12 @@ mod abs_path;
 mod account;
 mod checks;
 pub mod config;
+pub mod coverage;
+pub mod debugger;
+mod flamegraph;
 mod keygen;
 mod metadata;
+mod profile;
 mod program;
 pub mod rust_template;
 
@@ -243,6 +247,9 @@ pub enum Command {
         /// Validator type to use for local testing
         #[clap(value_enum, long, default_value = "surfpool")]
         validator: ValidatorType,
+        /// Profile each test: record per-test SBF register traces and render flamegraph SVGs under target/anchor-v2-profile.
+        #[clap(long)]
+        profile: bool,
         args: Vec<String>,
         /// Environment variables to pass into the docker container
         #[clap(short, long, required = false)]
@@ -264,6 +271,44 @@ pub enum Command {
         /// Create new program even if there is already one
         #[clap(long, action)]
         force: bool,
+    },
+    /// Run tests under an instruction-level debugger.
+    Debugger {
+        /// Filter captured traces to tests whose name contains this substring.
+        test_name: Option<String>,
+        /// Skip the build+test phase and open the TUI over existing traces.
+        #[clap(long)]
+        skip_run: bool,
+        /// Skip `cargo build-sbf`.
+        #[clap(long)]
+        skip_build: bool,
+        /// Forwarded to the underlying `anchor test` invocation.
+        #[clap(long)]
+        skip_lint: bool,
+        /// Drive tests over sbpf's gdb-stub instead of reading dumped trace files.
+        #[clap(long)]
+        gdb: bool,
+        /// Arguments to pass to the underlying `cargo build-sbf` command.
+        #[clap(required = false, last = true)]
+        cargo_args: Vec<String>,
+    },
+    /// Generate source-level coverage from SBF register traces.
+    Coverage {
+        /// Skip the build+test phase and generate coverage from existing traces.
+        #[clap(long)]
+        skip_run: bool,
+        /// Skip `cargo build-sbf`.
+        #[clap(long)]
+        skip_build: bool,
+        /// Output path for the LCOV file.
+        #[clap(long, default_value = "target/coverage/sbf.lcov")]
+        output: String,
+        /// Directory containing register trace files.
+        #[clap(long, default_value = "target/coverage/traces")]
+        trace_dir: String,
+        /// Arguments to pass to the underlying `cargo build-sbf` command.
+        #[clap(required = false, last = true)]
+        cargo_args: Vec<String>,
     },
     /// Commands for interacting with interface definitions.
     Idl {
@@ -1284,6 +1329,7 @@ fn process_command(opts: Opts) -> Result<()> {
             detach,
             run,
             validator,
+            profile,
             args,
             env,
             cargo_args,
@@ -1299,8 +1345,40 @@ fn process_command(opts: Opts) -> Result<()> {
             detach,
             run,
             validator,
+            profile,
+            false,
             args,
             env,
+            cargo_args,
+        ),
+        Command::Debugger {
+            test_name,
+            skip_run,
+            skip_build,
+            skip_lint,
+            gdb,
+            cargo_args,
+        } => debugger(
+            &opts.cfg_override,
+            test_name,
+            skip_run,
+            skip_build,
+            skip_lint,
+            gdb,
+            cargo_args,
+        ),
+        Command::Coverage {
+            skip_run,
+            skip_build,
+            output,
+            trace_dir,
+            cargo_args,
+        } => run_coverage(
+            &opts.cfg_override,
+            skip_run,
+            skip_build,
+            &output,
+            &trace_dir,
             cargo_args,
         ),
         Command::Airdrop { amount, pubkey } => airdrop(&opts.cfg_override, amount, pubkey),
@@ -2471,6 +2549,28 @@ fn _build_rust_cwd(
 /// Subcommand and any arguments to be passed to cargo
 const BUILD_SUBCOMMAND: &[&str] = &["build-sbf", "--tools-version", "v1.52"];
 
+/// Run the configured SBF build command.
+pub fn cargo_build_sbf(cwd: Option<&Path>, extra_args: &[String]) -> Result<()> {
+    let mut cmd = std::process::Command::new("cargo");
+    if let Some(d) = cwd {
+        cmd.current_dir(d);
+    }
+    let status = cmd
+        .args(BUILD_SUBCOMMAND)
+        .args(extra_args)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .context("running cargo build-sbf")?;
+    if !status.success() {
+        return Err(anyhow!(
+            "`cargo {}` failed with status {status}",
+            BUILD_SUBCOMMAND.join(" ")
+        ));
+    }
+    Ok(())
+}
+
 pub fn verify(
     program_id: Pubkey,
     repo_url: Option<String>,
@@ -3337,6 +3437,8 @@ fn test(
     detach: bool,
     tests_to_run: Vec<String>,
     validator_type: ValidatorType,
+    profile: bool,
+    gdb: bool,
     extra_args: Vec<String>,
     env_vars: Vec<String>,
     cargo_args: Vec<String>,
@@ -3353,6 +3455,50 @@ fn test(
     with_workspace(cfg_override, |cfg| -> Result<()> {
         // Set validator type based on CLI choice
         cfg.validator = Some(validator_type);
+
+        let workspace_root = cfg.path().parent().unwrap().to_owned();
+        let profile_dir = workspace_root.join(crate::profile::DEFAULT_PROFILE_DIR);
+        let _gdb_guard: Option<crate::debugger::gdb::GdbDriver> = if profile {
+            let _ = fs::remove_dir_all(&profile_dir);
+            std::env::set_var("ANCHOR_PROFILE_DIR", &profile_dir);
+            std::env::set_var("CARGO_PROFILE_RELEASE_DEBUG", "2");
+
+            if let Some(test_script) = cfg.scripts.get_mut("test") {
+                if test_script.contains("cargo test") {
+                    *test_script =
+                        test_script.replacen("cargo test", "cargo test --features profile", 1);
+                    if gdb {
+                        let sep = if test_script.contains(" -- ") {
+                            " "
+                        } else {
+                            " -- "
+                        };
+                        *test_script = format!("{test_script}{sep}--test-threads=1");
+                    }
+                } else {
+                    eprintln!(
+                        "warning: --profile requires the `test` script in Anchor.toml to invoke \
+                         `cargo test`; got: {test_script:?}. Profiling will not activate."
+                    );
+                }
+            } else {
+                eprintln!(
+                    "warning: --profile requires a [scripts] test entry in Anchor.toml; none \
+                     found. Profiling will not activate."
+                );
+            }
+
+            if gdb {
+                let driver = crate::debugger::gdb::start_gdb_driver(&profile_dir)?;
+                std::env::set_var(crate::debugger::gdb::SOCKET_ENV, driver.sock_path());
+                std::env::set_var("RUST_TEST_THREADS", "1");
+                Some(driver)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         // Build if needed.
         if !skip_build {
@@ -3376,8 +3522,7 @@ fn test(
             )?;
         }
 
-        let root = cfg.path().parent().unwrap().to_owned();
-        cfg.add_test_config(root, test_paths)?;
+        cfg.add_test_config(workspace_root, test_paths)?;
 
         let cli_skip_local_validator = skip_local_validator;
         let skip_local_validator =
@@ -3467,6 +3612,11 @@ fn test(
             }
         }
         cfg.run_hooks(HookType::PostTest)?;
+
+        if profile {
+            render_profile(cfg, &profile_dir)?;
+        }
+
         Ok(())
     })?
 }
@@ -3477,6 +3627,355 @@ fn should_predeploy_before_test(
     cli_skip_local_validator: bool,
 ) -> bool {
     !skip_deploy && (!is_localnet || cli_skip_local_validator)
+}
+
+/// Run the test suite with profile tracing enabled and then launch the SBF instruction stepper.
+#[allow(clippy::too_many_arguments)]
+fn debugger(
+    cfg_override: &ConfigOverride,
+    test_name: Option<String>,
+    skip_run: bool,
+    skip_build: bool,
+    skip_lint: bool,
+    gdb: bool,
+    cargo_args: Vec<String>,
+) -> Result<()> {
+    let has_anchor_toml = match Config::discover(cfg_override) {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(e) => return Err(anyhow!("failed to probe for Anchor.toml: {e}")),
+    };
+
+    if has_anchor_toml {
+        debugger_anchor_workspace(
+            cfg_override,
+            test_name,
+            skip_run,
+            skip_build,
+            skip_lint,
+            gdb,
+            cargo_args,
+        )
+    } else {
+        debugger_loose(
+            cfg_override,
+            test_name,
+            skip_run,
+            skip_build,
+            gdb,
+            cargo_args,
+        )
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn debugger_anchor_workspace(
+    cfg_override: &ConfigOverride,
+    test_name: Option<String>,
+    skip_run: bool,
+    skip_build: bool,
+    skip_lint: bool,
+    gdb: bool,
+    cargo_args: Vec<String>,
+) -> Result<()> {
+    if !skip_run {
+        test(
+            cfg_override,
+            None,
+            true,
+            true,
+            skip_build,
+            skip_lint,
+            true,
+            false,
+            Vec::new(),
+            ValidatorType::Surfpool,
+            true,
+            gdb,
+            Vec::new(),
+            Vec::new(),
+            cargo_args,
+        )?;
+    }
+
+    with_workspace(cfg_override, |cfg| -> Result<()> {
+        let workspace_root = cfg.path().parent().unwrap().to_owned();
+        let profile_dir = workspace_root.join(crate::profile::DEFAULT_PROFILE_DIR);
+        let (pubkey_to_so, sources) = resolve_anchor_workspace_programs(cfg);
+
+        if pubkey_to_so.is_empty() {
+            return Err(anyhow!(
+                "no programs resolved for the debugger.\n\nEither declare them in Anchor.toml:\n  \
+                 [programs.localnet]\n  <name> = \"<pubkey>\"\n\nor run `anchor build` so \
+                 `target/deploy/<name>-keypair.json` exists."
+            ));
+        }
+
+        println!("\nResolved programs:");
+        for (pk, so) in &pubkey_to_so {
+            let src = sources.get(pk).copied().unwrap_or("unknown");
+            println!("  {pk}  ->  {}  [{src}]", display_path_relative_to_cwd(so));
+        }
+
+        debugger::run(
+            &profile_dir,
+            &pubkey_to_so,
+            Some(&workspace_root),
+            None,
+            test_name.as_deref(),
+        )
+    })?
+}
+
+#[allow(clippy::too_many_arguments)]
+fn debugger_loose(
+    _cfg_override: &ConfigOverride,
+    test_name: Option<String>,
+    skip_run: bool,
+    skip_build: bool,
+    gdb: bool,
+    cargo_args: Vec<String>,
+) -> Result<()> {
+    let cwd = std::env::current_dir().context("read current directory")?;
+    let ws = debugger::loose::LooseWorkspace::discover(cwd)?;
+
+    if !skip_run {
+        ws.check_dev_dep()?;
+    }
+    let profile_feature = ws.detect_profile_feature()?;
+    let profile_dir = ws.root.join(debugger::loose_profile_dir_name());
+
+    if !skip_run {
+        debugger::loose::clear_profile_dir(&profile_dir)?;
+        std::env::set_var("CARGO_PROFILE_RELEASE_DEBUG", "2");
+
+        let anchor_exe =
+            std::env::current_exe().context("resolve anchor binary path for RUSTC_WRAPPER")?;
+        std::env::set_var("RUSTC_WRAPPER", &anchor_exe);
+        std::env::set_var(debugger::rustc_wrapper::WRAPPER_SENTINEL, "1");
+
+        if !skip_build {
+            let build_cwd = ws.cargo_invocation_dir();
+            eprintln!("running `cargo build-sbf` from {}", build_cwd.display());
+            cargo_build_sbf(Some(build_cwd), &cargo_args)?;
+        }
+
+        std::env::remove_var("RUSTC_WRAPPER");
+        std::env::remove_var(debugger::rustc_wrapper::WRAPPER_SENTINEL);
+
+        eprintln!(
+            "running `cargo test{gdb} --features {profile_feature}{pkg}{filter}` from {dir}",
+            gdb = if gdb { " [gdb mode]" } else { "" },
+            pkg = ws
+                .current_package
+                .as_deref()
+                .map(|p| format!(" -p {p}"))
+                .unwrap_or_default(),
+            filter = test_name
+                .as_deref()
+                .map(|f| format!(" -- {f}"))
+                .unwrap_or_default(),
+            dir = ws.cargo_invocation_dir().display(),
+        );
+        if gdb {
+            debugger::gdb::run_gdb_mode(
+                ws.cargo_invocation_dir(),
+                ws.current_package.as_deref(),
+                &profile_feature,
+                &profile_dir,
+                test_name.as_deref(),
+            )?;
+        } else {
+            debugger::loose::run_cargo_test(
+                ws.cargo_invocation_dir(),
+                ws.current_package.as_deref(),
+                &profile_feature,
+                &profile_dir,
+                test_name.as_deref(),
+            )?;
+        }
+    }
+
+    let pubkey_to_so = debugger::loose::discover_programs(&ws.root, ws.current_package.as_deref())?;
+    if pubkey_to_so.is_empty() {
+        eprintln!(
+            "warning: no programs found under {}/target/deploy/.\nELFs are required for \
+             source/disasm symbolication. The debugger will still open but the static disasm pane \
+             will be empty.",
+            ws.root.display()
+        );
+    }
+
+    if !profile_dir.exists() {
+        return Err(anyhow!(
+            "no traces produced at {}.\n\nDid the test actually run? Check that:\n- the test \
+             calls `anchor_v2_testing::svm()` (NOT `LiteSVM::new()`)\n- the `{profile_feature}` \
+             feature is enabled in the test build\n- the test sent at least one transaction that \
+             hit a BPF program",
+            profile_dir.display()
+        ));
+    }
+
+    debugger::run(
+        &profile_dir,
+        &pubkey_to_so,
+        Some(&ws.root),
+        Some(&ws.cwd),
+        test_name.as_deref(),
+    )
+}
+
+fn run_coverage(
+    _cfg_override: &ConfigOverride,
+    skip_run: bool,
+    skip_build: bool,
+    output: &str,
+    trace_dir: &str,
+    cargo_args: Vec<String>,
+) -> Result<()> {
+    let cwd = std::env::current_dir().context("read current directory")?;
+    let ws = debugger::loose::LooseWorkspace::discover(cwd)?;
+
+    let trace_path = ws.root.join(trace_dir);
+    let output_path = ws.root.join(output);
+
+    if !skip_run {
+        std::env::set_var("CARGO_PROFILE_RELEASE_DEBUG", "2");
+
+        let anchor_exe =
+            std::env::current_exe().context("resolve anchor binary path for RUSTC_WRAPPER")?;
+        std::env::set_var("RUSTC_WRAPPER", &anchor_exe);
+        std::env::set_var(debugger::rustc_wrapper::WRAPPER_SENTINEL, "1");
+
+        if !skip_build {
+            let build_cwd = ws.cargo_invocation_dir();
+            eprintln!("building programs with DWARF...");
+            cargo_build_sbf(Some(build_cwd), &cargo_args)?;
+        }
+
+        if trace_path.exists() {
+            fs::remove_dir_all(&trace_path)?;
+        }
+        fs::create_dir_all(&trace_path)?;
+
+        let profile_feature = ws.detect_profile_feature().ok();
+        eprintln!("running tests with register tracing...");
+        let mut cmd = std::process::Command::new("cargo");
+        cmd.current_dir(ws.cargo_invocation_dir()).arg("test");
+        if let Some(feature) = &profile_feature {
+            cmd.env("ANCHOR_PROFILE_DIR", &trace_path)
+                .arg("--features")
+                .arg(feature);
+        } else {
+            cmd.env("SBF_TRACE_DIR", &trace_path);
+        }
+        if let Some(pkg) = &ws.current_package {
+            cmd.arg("-p").arg(pkg);
+        }
+        let status = cmd.status().context("spawn cargo test")?;
+        if !status.success() {
+            return Err(anyhow!("cargo test failed"));
+        }
+    }
+
+    if !trace_path.exists() {
+        return Err(anyhow!(
+            "no traces at {}. Run without --skip-run first.",
+            trace_path.display()
+        ));
+    }
+
+    let programs = debugger::loose::discover_programs(&ws.root, ws.current_package.as_deref())?;
+    if programs.is_empty() {
+        return Err(anyhow!(
+            "no programs found. Ensure declare_id!() is present in source.",
+        ));
+    }
+
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    coverage::generate_lcov(&trace_path, &programs, Some(&ws.root), &output_path)
+}
+
+fn display_path_relative_to_cwd(p: &Path) -> String {
+    std::env::current_dir()
+        .ok()
+        .as_deref()
+        .and_then(|c| p.strip_prefix(c).ok())
+        .map(|rel| rel.display().to_string())
+        .unwrap_or_else(|| p.display().to_string())
+}
+
+fn resolve_anchor_workspace_programs(
+    cfg: &WithPath<Config>,
+) -> (BTreeMap<String, PathBuf>, BTreeMap<String, &'static str>) {
+    let workspace_root = cfg.path().parent().unwrap();
+    let deploy_dir = workspace_root.join("target").join("deploy");
+    let mut pubkey_to_so: BTreeMap<String, PathBuf> = BTreeMap::new();
+    let mut sources: BTreeMap<String, &'static str> = BTreeMap::new();
+    for programs in cfg.programs.values() {
+        for (name, deployment) in programs {
+            let pk = deployment.address.to_string();
+            pubkey_to_so.insert(pk.clone(), deploy_dir.join(format!("{name}.so")));
+            sources.insert(pk, "Anchor.toml");
+        }
+    }
+    if let Ok(discovered) = debugger::loose::discover_programs(workspace_root, None) {
+        for (pk, so) in discovered {
+            if !pubkey_to_so.contains_key(&pk) {
+                pubkey_to_so.insert(pk.clone(), so);
+                sources.insert(pk, "target/deploy");
+            }
+        }
+    }
+    (pubkey_to_so, sources)
+}
+
+fn render_profile(cfg: &WithPath<Config>, profile_dir: &Path) -> Result<()> {
+    let workspace_root = cfg.path().parent().unwrap().to_owned();
+    let (pubkey_to_so, _sources) = resolve_anchor_workspace_programs(cfg);
+
+    let rendered = profile::render_all_tests(profile_dir, Some(&workspace_root), &pubkey_to_so)
+        .context("failed to render flamegraphs from trace directory")?;
+
+    if rendered.is_empty() {
+        eprintln!(
+            "warning: no per-test trace directories found under {}. Did your tests call \
+             `anchor_v2_testing::svm()` with the `profile` feature?",
+            profile_dir.display()
+        );
+        return Ok(());
+    }
+
+    let mut sorted: Vec<&profile::RenderedTest> = rendered.iter().collect();
+    sorted.sort_by(|a, b| a.test_name.cmp(&b.test_name));
+
+    let max_name = sorted
+        .iter()
+        .filter(|t| t.svg_paths.len() == 1)
+        .map(|t| t.test_name.len())
+        .max()
+        .unwrap_or(0);
+
+    println!("\nFlamegraphs:");
+    for test in &sorted {
+        if test.svg_paths.len() == 1 {
+            println!(
+                "  {:<width$}  ->  {}",
+                test.test_name,
+                display_path_relative_to_cwd(&test.svg_paths[0]),
+                width = max_name,
+            );
+        } else {
+            println!("  {}", test.test_name);
+            for (i, svg) in test.svg_paths.iter().enumerate() {
+                println!("    tx{}  ->  {}", i + 1, display_path_relative_to_cwd(svg));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5467,6 +5966,34 @@ mod tests {
         };
 
         assert_eq!(anchor_version, AnchorVersion::V2);
+    }
+
+    #[test]
+    fn test_debugger_and_coverage_commands_parse() {
+        let opts =
+            Opts::try_parse_from(["anchor", "debugger", "initialize", "--skip-run"]).unwrap();
+        let Command::Debugger {
+            test_name,
+            skip_run,
+            ..
+        } = opts.command
+        else {
+            panic!("expected debugger command");
+        };
+        assert_eq!(test_name.as_deref(), Some("initialize"));
+        assert!(skip_run);
+
+        let opts =
+            Opts::try_parse_from(["anchor", "coverage", "--skip-run", "--output", "lcov.info"])
+                .unwrap();
+        let Command::Coverage {
+            skip_run, output, ..
+        } = opts.command
+        else {
+            panic!("expected coverage command");
+        };
+        assert!(skip_run);
+        assert_eq!(output, "lcov.info");
     }
 
     #[test]
