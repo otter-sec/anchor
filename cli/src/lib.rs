@@ -258,6 +258,9 @@ pub enum Command {
         /// Rust program template to use
         #[clap(value_enum, short, long, default_value = "multiple")]
         template: ProgramTemplate,
+        /// Anchor template version to generate
+        #[clap(value_enum, long, default_value = "v1")]
+        anchor_version: AnchorVersion,
         /// Create new program even if there is already one
         #[clap(long, action)]
         force: bool,
@@ -1176,8 +1179,9 @@ fn process_command(opts: Opts) -> Result<()> {
         Command::New {
             name,
             template,
+            anchor_version,
             force,
-        } => new(&opts.cfg_override, name, template, force),
+        } => new(&opts.cfg_override, name, template, anchor_version, force),
         Command::Build {
             no_idl,
             idl,
@@ -1664,6 +1668,7 @@ fn new(
     cfg_override: &ConfigOverride,
     name: String,
     template: ProgramTemplate,
+    anchor_version: AnchorVersion,
     force: bool,
 ) -> Result<()> {
     with_workspace(cfg_override, |cfg| -> Result<()> {
@@ -1685,7 +1690,7 @@ fn new(
                     fs::remove_dir_all(std::env::current_dir()?.join("programs").join(&name))?;
                 }
 
-                rust_template::create_program(&name, template, None, AnchorVersion::default())?;
+                rust_template::create_program(&name, template, None, anchor_version)?;
 
                 programs.insert(
                     name.clone(),
@@ -5447,6 +5452,18 @@ mod tests {
 
         let Command::Init { anchor_version, .. } = opts.command else {
             panic!("expected init command");
+        };
+
+        assert_eq!(anchor_version, AnchorVersion::V2);
+    }
+
+    #[test]
+    fn test_new_accepts_anchor_version() {
+        let opts =
+            Opts::try_parse_from(["anchor", "new", "example", "--anchor-version", "v2"]).unwrap();
+
+        let Command::New { anchor_version, .. } = opts.command else {
+            panic!("expected new command");
         };
 
         assert_eq!(anchor_version, AnchorVersion::V2);
