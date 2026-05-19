@@ -1443,64 +1443,6 @@ fn process_command(opts: Opts) -> Result<()> {
     }
 }
 
-const PACKAGE_MANAGER_WATERFALL: &[PackageManager] = &[
-    PackageManager::PNPM,
-    PackageManager::Yarn,
-    PackageManager::NPM,
-];
-
-fn package_manager_available(pm: &PackageManager) -> bool {
-    let cmd = pm.to_string();
-    let mut command = if cfg!(target_os = "windows") {
-        let mut c = std::process::Command::new("cmd");
-        c.arg(format!("/C {cmd} --version"));
-        c
-    } else {
-        let mut c = std::process::Command::new(&cmd);
-        c.arg("--version");
-        c
-    };
-    command
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-fn resolve_package_manager(explicit: Option<PackageManager>) -> Result<PackageManager> {
-    if let Some(pm) = explicit {
-        if !package_manager_available(&pm) {
-            return Err(anyhow!(
-                "`{pm}` was requested but is not on PATH. Install it or pick a different package \
-                 manager with `--package-manager`."
-            ));
-        }
-        return Ok(pm);
-    }
-
-    let mut skipped = Vec::new();
-    for candidate in PACKAGE_MANAGER_WATERFALL {
-        if package_manager_available(candidate) {
-            if !skipped.is_empty() {
-                let missing = skipped
-                    .iter()
-                    .map(|pm: &PackageManager| pm.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                eprintln!("warning: {missing} not found on PATH, using `{candidate}` instead");
-            }
-            return Ok(candidate.clone());
-        }
-        skipped.push(candidate.clone());
-    }
-
-    Err(anyhow!(
-        "No supported package manager found on PATH (tried pnpm, yarn, npm). Install one of them, \
-         or re-run with `--no-install`."
-    ))
-}
-
 #[allow(clippy::too_many_arguments)]
 fn init(
     cfg_override: &ConfigOverride,
@@ -1648,17 +1590,12 @@ fn init(
     if !no_install && uses_node {
         let package_manager_cmd =
             package_manager_cmd.expect("Node templates resolve a package manager");
-        let package_manager_result = install_node_modules(&package_manager_cmd)?;
-        if !package_manager_result.status.success() {
-            if package_manager_cmd == "npm" {
-                eprintln!("Failed to install node modules");
-            } else {
-                println!("Failed {package_manager_cmd} install will attempt to npm install");
-                let npm_result = install_node_modules("npm")?;
-                if !npm_result.status.success() {
-                    eprintln!("Failed to install node modules");
-                }
-            }
+        let output = install_node_modules(&package_manager_cmd)?;
+        if !output.status.success() {
+            eprintln!(
+                "`{package_manager_cmd} install` failed (exit code {:?})",
+                output.status.code()
+            );
         }
     }
 
@@ -1730,6 +1667,64 @@ fn install_solana_skill() {
             );
         }
     }
+}
+
+const PACKAGE_MANAGER_WATERFALL: &[PackageManager] = &[
+    PackageManager::PNPM,
+    PackageManager::Yarn,
+    PackageManager::NPM,
+];
+
+fn package_manager_available(pm: &PackageManager) -> bool {
+    let cmd = pm.to_string();
+    let mut command = if cfg!(target_os = "windows") {
+        let mut command = std::process::Command::new("cmd");
+        command.arg(format!("/C {cmd} --version"));
+        command
+    } else {
+        let mut command = std::process::Command::new(&cmd);
+        command.arg("--version");
+        command
+    };
+    command
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn resolve_package_manager(explicit: Option<PackageManager>) -> Result<PackageManager> {
+    if let Some(pm) = explicit {
+        if !package_manager_available(&pm) {
+            return Err(anyhow!(
+                "`{pm}` was requested but is not on PATH. Install it or pick a different package \
+                 manager with `--package-manager`."
+            ));
+        }
+        return Ok(pm);
+    }
+
+    let mut skipped = Vec::new();
+    for candidate in PACKAGE_MANAGER_WATERFALL {
+        if package_manager_available(candidate) {
+            if !skipped.is_empty() {
+                let missing = skipped
+                    .iter()
+                    .map(|pm: &PackageManager| pm.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                eprintln!("warning: {missing} not found on PATH, using `{candidate}` instead");
+            }
+            return Ok(candidate.clone());
+        }
+        skipped.push(candidate.clone());
+    }
+
+    Err(anyhow!(
+        "No supported package manager found on PATH (tried pnpm, yarn, npm). Install one of them, \
+         or re-run with `--no-install`."
+    ))
 }
 
 fn install_node_modules(cmd: &str) -> Result<std::process::Output> {

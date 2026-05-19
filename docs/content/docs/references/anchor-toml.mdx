@@ -391,9 +391,9 @@ for all of its client and workspace commands.
 [Valid values](https://github.com/otter-sec/anchor/blob/cac1421e026ae27d06b52d849572cd8b5c1c5b8a/cli/src/config.rs#L309-L322)
 include `npm`, `yarn`, `pnpm`, and `bun`.
 
-Anchor will default to `yarn`, if a value is not specified. Note values should
-be in lowercase, since values are deserialized with
-`serde(rename_all = "lowercase")`.
+If a value is not specified, Anchor probes `pnpm`, `yarn`, then `npm` and uses
+the first package manager found on `PATH`. Note values should be in lowercase,
+since values are deserialized with `serde(rename_all = "lowercase")`.
 
 Example:
 
