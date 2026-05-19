@@ -10,7 +10,7 @@ runs:
         path: |
           ~/.cache/solana/
           ~/.local/share/solana/
-        key: solana-${{ runner.os }}-v0000-${{ env.SOLANA_VERSION }}
+        key: solana-${{ runner.os }}-v0001-${{ env.SOLANA_VERSION }}
     - uses: nick-fields/retry@v2
       if: steps.cache-solana.outputs.cache-hit != 'true'
       with:
@@ -20,7 +20,29 @@ runs:
         retry_on: error
         shell: bash
         command: sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
-    - run: echo "/home/runner/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+    - name: Activate requested Solana release
+      run: |
+        set -euo pipefail
+
+        install_dir="$HOME/.local/share/solana/install"
+        release_dir="$install_dir/releases/$SOLANA_VERSION/solana-release"
+
+        if [[ ! -x "$release_dir/bin/solana" ]]; then
+          sh -c "$(curl -sSfL "https://release.anza.xyz/v$SOLANA_VERSION/install")"
+        else
+          ln -sfn "$release_dir" "$install_dir/active_release"
+        fi
+
+        echo "$install_dir/active_release/bin" >> "$GITHUB_PATH"
+        actual="$("$install_dir/active_release/bin/solana" --version)"
+        echo "$actual"
+        case "$actual" in
+          "solana-cli $SOLANA_VERSION"*) ;;
+          *)
+            echo "Expected Solana $SOLANA_VERSION, got: $actual" >&2
+            exit 1
+            ;;
+        esac
       shell: bash
     - run: solana-keygen new --no-bip39-passphrase
       shell: bash
