@@ -1558,6 +1558,8 @@ fn init(
     let test_script = test_template.get_test_script(javascript, package_manager.as_ref());
     cfg.scripts.insert("test".to_owned(), test_script);
 
+    // In-process test templates drive the Solana VM inside `cargo test`, so
+    // auto-starting a validator at `anchor test` time is unnecessary.
     if matches!(test_template, TestTemplate::Litesvm | TestTemplate::Mollusk) {
         cfg.skip_local_validator = Some(true);
     }
@@ -3487,6 +3489,9 @@ fn test(
     with_workspace(cfg_override, |cfg| -> Result<()> {
         // Set validator type based on CLI choice
         cfg.validator = Some(validator_type);
+
+        let skip_local_validator =
+            skip_local_validator || cfg.skip_local_validator.unwrap_or(false);
 
         let workspace_root = cfg.path().parent().unwrap().to_owned();
         let profile_dir = workspace_root.join(crate::profile::DEFAULT_PROFILE_DIR);

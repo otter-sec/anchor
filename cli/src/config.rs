@@ -1869,6 +1869,15 @@ go = { enable = true, path = "go-client" }
     }
 
     #[test]
+    fn skip_local_validator_round_trips() {
+        let toml = "skip_local_validator = true\n".to_owned() + BASE_CONFIG;
+        let config = Config::from_str(&toml).unwrap();
+        assert_eq!(config.skip_local_validator, Some(true));
+        let serialized = config.to_string();
+        assert!(serialized.contains("skip_local_validator = true"));
+    }
+
+    #[test]
     fn parse_skip_lint_false() {
         let string = BASE_CONFIG.to_owned() + "[features]\nskip-lint = false";
         let config = Config::from_str(&string).unwrap();
