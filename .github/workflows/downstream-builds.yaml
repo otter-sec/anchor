@@ -28,10 +28,10 @@ jobs:
       - name: Checkout anchor-community
         uses: actions/checkout@v3
         with:
-          # FIXME: Switch back to otter-sec/anchor-community once the
-          # marginfi --no-idl workaround has merged.
+          # FIXME: Switch back to otter-sec/anchor-community once
+          # otter-sec/anchor-community#4 has merged.
           repository: jamie-osec/anchor-community
-          ref: marginfi-no-idl
+          ref: set-correct-solana-versions
           path: anchor-community
 
       - name: Build matrix from repos.json
