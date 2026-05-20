@@ -4,13 +4,9 @@ use {
     clap::{CommandFactory, Parser, Subcommand},
     semver::Version,
     std::{
-        env,
-        ffi::{OsStr, OsString},
-        fs,
+        ffi::OsStr,
         io::IsTerminal,
         path::{Path, PathBuf},
-        process::Command,
-        time::{SystemTime, UNIX_EPOCH},
     },
 };
 
@@ -318,23 +314,21 @@ fn anchor_proxy() -> Result<()> {
     })?;
 
     let binary_path = ensure_resolved_binary(&resolution)?;
-    let solana = ensure_resolved_solana(&cwd, &resolution)?;
-    let solana_installer_shims = solana
-        .as_ref()
-        .map(SolanaInstallerShims::create)
-        .transpose()?;
+    ensure_resolved_solana(&cwd, &resolution)?;
 
-    let mut command = Command::new(binary_path);
-    command.args(args);
-    command.env("PATH", anchor_child_path(solana_installer_shims.as_ref())?);
-    // Signal to the spawned anchor-cli that AVM has already resolved the
-    // toolchain version, so it must not re-exec via `[toolchain] anchor_version`.
-    command.env("AVM_ACTIVE", "1");
-    if let Some(shims) = &solana_installer_shims {
-        shims.apply_to_command(&mut command);
-    }
-
-    let exit = command
+    let exit = std::process::Command::new(binary_path)
+        .args(args)
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                avm::get_bin_dir_path().to_string_lossy(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        // Signal to the spawned anchor-cli that AVM has already resolved the
+        // toolchain version, so it must not re-exec via `[toolchain] anchor_version`.
+        .env("AVM_ACTIVE", "1")
         .spawn()?
         .wait_with_output()
         .expect("Failed to run anchor-cli");
@@ -348,10 +342,10 @@ fn anchor_proxy() -> Result<()> {
 
 /// Ensure the Solana CLI requested by the same project context is active
 /// before spawning the resolved Anchor binary.
-fn ensure_resolved_solana(cwd: &Path, resolution: &Resolution) -> Result<Option<Version>> {
+fn ensure_resolved_solana(cwd: &Path, resolution: &Resolution) -> Result<()> {
     let Some(solana) = avm::solana::resolve_solana_cli_for_anchor_resolution(cwd, resolution)?
     else {
-        return Ok(None);
+        return Ok(());
     };
 
     avm::solana::ensure_solana_cli(&solana.version).with_context(|| {
@@ -360,207 +354,7 @@ fn ensure_resolved_solana(cwd: &Path, resolution: &Resolution) -> Result<Option<
             solana.version,
             solana.source.describe()
         )
-    })?;
-    Ok(Some(solana.version))
-}
-
-fn anchor_child_path(solana_installer_shims: Option<&SolanaInstallerShims>) -> Result<OsString> {
-    let mut paths = Vec::<PathBuf>::new();
-    if let Some(shims) = solana_installer_shims {
-        paths.push(shims.path().to_path_buf());
-    }
-    paths.push(avm::get_bin_dir_path());
-    if let Some(path) = env::var_os("PATH") {
-        paths.extend(env::split_paths(&path));
-    }
-    env::join_paths(paths).context("Building PATH for Anchor proxy")
-}
-
-struct SolanaInstallerShims {
-    dir: PathBuf,
-    selected_version: Version,
-    real_agave_install: Option<PathBuf>,
-    real_solana_install: Option<PathBuf>,
-}
-
-impl SolanaInstallerShims {
-    /// Old anchor-cli binaries still honor `[toolchain] solana_version` after
-    /// AVM has selected Solana. Put shims in the child PATH so those installer
-    /// calls cannot downgrade the active toolchain behind AVM's back.
-    fn create(selected_version: &Version) -> Result<Self> {
-        let real_agave_install = find_command("agave-install");
-        let real_solana_install = find_command("solana-install");
-        let dir = env::temp_dir()
-            .join("avm-solana-installer-shims")
-            .join(format!(
-                "{}-{}",
-                std::process::id(),
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos()
-            ));
-        fs::create_dir_all(&dir).with_context(|| format!("Creating {}", dir.display()))?;
-        write_installer_shim(&dir, "agave-install")?;
-        write_installer_shim(&dir, "solana-install")?;
-
-        Ok(Self {
-            dir,
-            selected_version: selected_version.clone(),
-            real_agave_install,
-            real_solana_install,
-        })
-    }
-
-    fn path(&self) -> &Path {
-        &self.dir
-    }
-
-    fn apply_to_command(&self, command: &mut Command) {
-        command.env(
-            "AVM_SELECTED_SOLANA_VERSION",
-            self.selected_version.to_string(),
-        );
-        if let Some(path) = &self.real_agave_install {
-            command.env("AVM_REAL_AGAVE_INSTALL", path);
-        }
-        if let Some(path) = &self.real_solana_install {
-            command.env("AVM_REAL_SOLANA_INSTALL", path);
-        }
-    }
-}
-
-impl Drop for SolanaInstallerShims {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.dir);
-    }
-}
-
-#[cfg(unix)]
-fn write_installer_shim(dir: &Path, name: &str) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let path = dir.join(name);
-    fs::write(&path, UNIX_INSTALLER_SHIM).with_context(|| format!("Writing {}", path.display()))?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
-        .with_context(|| format!("Marking {} executable", path.display()))?;
-    Ok(())
-}
-
-#[cfg(windows)]
-fn write_installer_shim(dir: &Path, name: &str) -> Result<()> {
-    let path = dir.join(format!("{name}.cmd"));
-    fs::write(&path, WINDOWS_INSTALLER_SHIM)
-        .with_context(|| format!("Writing {}", path.display()))?;
-    Ok(())
-}
-
-#[cfg(unix)]
-const UNIX_INSTALLER_SHIM: &str = r#"#!/bin/sh
-set -u
-
-cmd=$(basename "$0")
-selected=${AVM_SELECTED_SOLANA_VERSION:-unknown}
-
-case "${1:-}" in
-  --version|-V|version)
-    printf '%s %s\n' "$cmd" "$selected"
-    exit 0
-    ;;
-  list)
-    printf '%s (current)\n' "$selected"
-    exit 0
-    ;;
-  init|update)
-    requested=${2:-$selected}
-    printf 'AVM selected Solana %s; ignoring `%s %s %s` from the spawned Anchor CLI\n' "$selected" "$cmd" "${1:-}" "$requested" >&2
-    exit 0
-    ;;
-esac
-
-real=
-case "$cmd" in
-  agave-install) real=${AVM_REAL_AGAVE_INSTALL:-} ;;
-  solana-install) real=${AVM_REAL_SOLANA_INSTALL:-} ;;
-esac
-
-if [ -n "$real" ]; then
-  exec "$real" "$@"
-fi
-
-printf 'AVM installer shim for `%s` cannot handle command `%s`\n' "$cmd" "${1:-}" >&2
-exit 1
-"#;
-
-#[cfg(windows)]
-const WINDOWS_INSTALLER_SHIM: &str = r#"@echo off
-setlocal
-set "CMD=%~n0"
-set "SELECTED=%AVM_SELECTED_SOLANA_VERSION%"
-if "%SELECTED%"=="" set "SELECTED=unknown"
-
-if "%1"=="--version" (
-  echo %CMD% %SELECTED%
-  exit /b 0
-)
-if /I "%1"=="-V" (
-  echo %CMD% %SELECTED%
-  exit /b 0
-)
-if /I "%1"=="version" (
-  echo %CMD% %SELECTED%
-  exit /b 0
-)
-if /I "%1"=="list" (
-  echo %SELECTED% (current)
-  exit /b 0
-)
-if /I "%1"=="init" (
-  echo AVM selected Solana %SELECTED%; ignoring %CMD% %1 %2 from the spawned Anchor CLI 1>&2
-  exit /b 0
-)
-if /I "%1"=="update" (
-  echo AVM selected Solana %SELECTED%; ignoring %CMD% %1 %2 from the spawned Anchor CLI 1>&2
-  exit /b 0
-)
-
-set "REAL="
-if /I "%CMD%"=="agave-install" set "REAL=%AVM_REAL_AGAVE_INSTALL%"
-if /I "%CMD%"=="solana-install" set "REAL=%AVM_REAL_SOLANA_INSTALL%"
-if not "%REAL%"=="" (
-  "%REAL%" %*
-  exit /b %ERRORLEVEL%
-)
-
-echo AVM installer shim for `%CMD%` cannot handle command `%1` 1>&2
-exit /b 1
-"#;
-
-fn find_command(name: &str) -> Option<PathBuf> {
-    let path = env::var_os("PATH")?;
-    for dir in env::split_paths(&path) {
-        for candidate in command_candidates(&dir, name) {
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
-}
-
-#[cfg(unix)]
-fn command_candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
-    vec![dir.join(name)]
-}
-
-#[cfg(windows)]
-fn command_candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
-    vec![
-        dir.join(name),
-        dir.join(format!("{name}.exe")),
-        dir.join(format!("{name}.cmd")),
-        dir.join(format!("{name}.bat")),
-    ]
+    })
 }
 
 /// Ensure the binary for `resolution.version` exists on disk, prompting the user
@@ -628,40 +422,6 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use {super::*, avm::InstallTarget};
-
-    #[test]
-    fn anchor_child_path_puts_solana_installer_shims_first() {
-        let shims = SolanaInstallerShims::create(&Version::parse("2.3.13").unwrap()).unwrap();
-        let path = anchor_child_path(Some(&shims)).unwrap();
-        let first = env::split_paths(&path).next().unwrap();
-
-        assert_eq!(first, shims.path());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn solana_installer_shim_noops_init_and_reports_selected_version() {
-        let shims = SolanaInstallerShims::create(&Version::parse("2.3.13").unwrap()).unwrap();
-
-        let mut version_cmd = Command::new(shims.path().join("agave-install"));
-        version_cmd.arg("--version");
-        shims.apply_to_command(&mut version_cmd);
-        let output = version_cmd.output().unwrap();
-        assert!(output.status.success());
-        assert_eq!(
-            String::from_utf8(output.stdout).unwrap(),
-            "agave-install 2.3.13\n"
-        );
-
-        let mut init_cmd = Command::new(shims.path().join("agave-install"));
-        init_cmd.args(["init", "2.2.0"]);
-        shims.apply_to_command(&mut init_cmd);
-        let output = init_cmd.output().unwrap();
-        assert!(output.status.success());
-        assert!(String::from_utf8(output.stderr)
-            .unwrap()
-            .contains("ignoring `agave-install init 2.2.0`"));
-    }
 
     // --- is_pre_release ---
 
