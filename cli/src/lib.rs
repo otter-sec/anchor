@@ -251,7 +251,7 @@ pub enum Command {
         #[clap(long)]
         run: Vec<String>,
         /// Validator type to use for local testing
-        #[clap(value_enum, long, default_value = "surfpool")]
+        #[clap(value_enum, long, default_value = "legacy")]
         validator: ValidatorType,
         /// Profile each test: record per-test SBF register traces and render flamegraph SVGs under target/anchor-v2-profile.
         #[clap(long)]
@@ -416,7 +416,7 @@ pub enum Command {
         #[clap(long)]
         ignore_keys: bool,
         /// Validator type to use for local testing
-        #[clap(value_enum, long, default_value = "surfpool")]
+        #[clap(value_enum, long, default_value = "legacy")]
         validator: ValidatorType,
         /// Environment variables to pass into the docker container
         #[clap(short, long, required = false)]
@@ -1601,10 +1601,11 @@ fn init(
             package_manager_cmd.expect("Node templates resolve a package manager");
         let output = install_node_modules(&package_manager_cmd)?;
         if !output.status.success() {
-            eprintln!(
-                "`{package_manager_cmd} install` failed (exit code {:?})",
+            return Err(anyhow!(
+                "`{package_manager_cmd} install` failed (exit code {:?}). Re-run with \
+                 `--no-install` to keep the generated files without installing dependencies.",
                 output.status.code()
-            );
+            ));
         }
     }
 
@@ -5186,7 +5187,7 @@ fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -
     let (cluster_url, wallet_path) = get_cluster_and_wallet(cfg_override)?;
 
     // Create RPC client
-    let client = RpcClient::new(cluster_url);
+    let client = RpcClient::new_with_commitment(cluster_url, CommitmentConfig::confirmed());
 
     // Determine recipient
     let recipient_pubkey = if let Some(pubkey) = pubkey {
@@ -5200,6 +5201,9 @@ fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -
 
     // Convert SOL to lamports
     let lamports = (amount * 1_000_000_000.0) as u64;
+    let starting_balance = client
+        .get_balance_with_commitment(&recipient_pubkey, CommitmentConfig::confirmed())?
+        .value;
 
     // Request airdrop
     println!("Requesting airdrop of {} SOL...", amount);
@@ -5211,15 +5215,48 @@ fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -
     println!("Waiting for confirmation...");
 
     // Wait for confirmation
-    client
+    let confirmed = client
         .confirm_transaction(&signature)
         .map_err(|e| anyhow!("Transaction confirmation failed: {}", e))?;
+    if !confirmed {
+        return Err(anyhow!("Transaction was not confirmed"));
+    }
 
     // Get and display the new balance
-    let balance = client.get_balance(&recipient_pubkey)?;
+    let balance = wait_for_airdrop_balance(&client, &recipient_pubkey, starting_balance, lamports)?;
     println!("{}", format_sol(balance));
 
     Ok(())
+}
+
+fn wait_for_airdrop_balance(
+    client: &RpcClient,
+    recipient_pubkey: &Pubkey,
+    starting_balance: u64,
+    lamports: u64,
+) -> Result<u64> {
+    let expected_balance = starting_balance.saturating_add(lamports);
+    let mut last_balance = starting_balance;
+
+    for attempt in 0..10 {
+        let balance = client
+            .get_balance_with_commitment(recipient_pubkey, CommitmentConfig::confirmed())?
+            .value;
+        if balance >= expected_balance {
+            return Ok(balance);
+        }
+        last_balance = balance;
+
+        if attempt < 9 {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+    }
+
+    eprintln!(
+        "warning: confirmed balance has not reflected the airdrop yet; showing latest confirmed \
+         balance"
+    );
+    Ok(last_balance)
 }
 
 fn cluster(_cmd: ClusterCommand) -> Result<()> {
@@ -6150,6 +6187,21 @@ mod tests {
         };
         assert!(skip_run);
         assert_eq!(output, "lcov.info");
+    }
+
+    #[test]
+    fn test_validator_defaults_to_legacy() {
+        let opts = Opts::try_parse_from(["anchor", "test"]).unwrap();
+        let Command::Test { validator, .. } = opts.command else {
+            panic!("expected test command");
+        };
+        assert_eq!(validator, ValidatorType::Legacy);
+
+        let opts = Opts::try_parse_from(["anchor", "localnet"]).unwrap();
+        let Command::Localnet { validator, .. } = opts.command else {
+            panic!("expected localnet command");
+        };
+        assert_eq!(validator, ValidatorType::Legacy);
     }
 
     #[test]

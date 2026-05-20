@@ -11,7 +11,7 @@ use {
         debugger::source::SourceResolver,
         flamegraph::trace::{find_unstripped_binary, REGS_ENTRY_SIZE},
     },
-    anyhow::{Context, Result},
+    anyhow::{anyhow, Context, Result},
     std::{
         collections::{BTreeMap, BTreeSet, HashMap},
         fs,
@@ -43,8 +43,7 @@ pub fn generate_lcov(
 ) -> Result<()> {
     let pc_sets = collect_pcs_from_traces(trace_dir)?;
     if pc_sets.is_empty() {
-        eprintln!("warning: no trace data found in {}", trace_dir.display());
-        return Ok(());
+        return Err(anyhow!("no trace data found in {}", trace_dir.display()));
     }
 
     eprintln!("found {} program(s) in traces", pc_sets.len());
@@ -105,6 +104,13 @@ pub fn generate_lcov(
             pcs.len(),
             resolved_count,
         );
+    }
+
+    if line_hits.is_empty() {
+        return Err(anyhow!(
+            "no source coverage resolved from trace data in {}",
+            trace_dir.display()
+        ));
     }
 
     // Write LCOV format.
@@ -209,4 +215,20 @@ fn visit_dir(dir: &Path, result: &mut BTreeMap<String, BTreeSet<u64>>) -> Result
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, tempfile::tempdir};
+
+    #[test]
+    fn generate_lcov_errors_when_no_trace_data_found() {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("lcov.info");
+        let err =
+            generate_lcov(dir.path(), &BTreeMap::new(), None, &output).expect_err("expected error");
+
+        assert!(err.to_string().contains("no trace data found"));
+        assert!(!output.exists());
+    }
 }
