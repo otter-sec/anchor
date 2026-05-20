@@ -228,17 +228,18 @@ fn resolve_project_solana_cli(start: &Path) -> Result<Option<SolanaCliResolution
 }
 
 fn project_solana_cli_version(res: &SolanaResolution) -> Result<Version> {
-    match (&res.source, res.version_req.as_deref()) {
-        (SolanaResolutionSource::CargoToml(_), Some(req)) => {
-            resolve_installable_solana_cli_req(req)
-        }
+    match res.version_req.as_deref() {
+        Some(req) => resolve_installable_solana_cli_req(req, &res.source),
         _ => Ok(res.version.clone()),
     }
 }
 
-fn resolve_installable_solana_cli_req(req_str: &str) -> Result<Version> {
+fn resolve_installable_solana_cli_req(
+    req_str: &str,
+    source: &SolanaResolutionSource,
+) -> Result<Version> {
     let req = VersionReq::parse(req_str)
-        .with_context(|| format!("Parsing solana-program version requirement `{req_str}`"))?;
+        .with_context(|| format!("Parsing Solana version requirement `{req_str}`"))?;
     INSTALLABLE_SOLANA_CLI_VERSIONS
         .iter()
         .filter(|version| req.matches(version))
@@ -246,9 +247,10 @@ fn resolve_installable_solana_cli_req(req_str: &str) -> Result<Version> {
         .cloned()
         .ok_or_else(|| {
             anyhow!(
-                "No installable Solana CLI version hosted by Anza satisfies solana-program \
-                 requirement `{req_str}`. Pin `[toolchain] solana_version` in `Anchor.toml` to \
-                 choose manually."
+                "No installable Solana CLI version hosted by Anza satisfies Solana requirement \
+                 `{req_str}` from {}. Pin `[toolchain] solana_version` in `Anchor.toml` to an \
+                 exact hosted version to choose manually.",
+                source.describe()
             )
         })
 }
@@ -632,11 +634,60 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(res.version, v("2.3.0"));
+        assert_eq!(res.version, v("2.3.13"));
         assert!(matches!(
             res.source,
             SolanaCliResolutionSource::Project(SolanaResolutionSource::AnchorToml(_))
         ));
+    }
+
+    #[test]
+    fn toolchain_solana_req_uses_newest_hosted_semver_compatible_cli() {
+        let dir = TempDir::new().unwrap();
+        write(
+            &dir.path().join("Anchor.toml"),
+            "[toolchain]\nsolana_version = \"2.2.1\"\n",
+        );
+
+        let res = resolve_solana_cli_with(dir.path(), &[], None)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(res.version, v("2.3.13"));
+        assert!(matches!(
+            res.source,
+            SolanaCliResolutionSource::Project(SolanaResolutionSource::AnchorToml(_))
+        ));
+    }
+
+    #[test]
+    fn exact_toolchain_solana_req_stays_exact_when_hosted() {
+        let dir = TempDir::new().unwrap();
+        write(
+            &dir.path().join("Anchor.toml"),
+            "[toolchain]\nsolana_version = \"=2.2.1\"\n",
+        );
+
+        let res = resolve_solana_cli_with(dir.path(), &[], None)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(res.version, v("2.2.1"));
+    }
+
+    #[test]
+    fn exact_toolchain_solana_req_errors_when_not_hosted() {
+        let dir = TempDir::new().unwrap();
+        write(
+            &dir.path().join("Anchor.toml"),
+            "[toolchain]\nsolana_version = \"=1.17.18\"\n",
+        );
+
+        let err = resolve_solana_cli_with(dir.path(), &[], None).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("No installable Solana CLI version hosted by Anza"));
     }
 
     #[test]
@@ -757,7 +808,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(res.version, v("2.3.0"));
+        assert_eq!(res.version, v("2.3.13"));
         assert!(matches!(
             res.source,
             SolanaCliResolutionSource::Project(SolanaResolutionSource::AnchorToml(_))

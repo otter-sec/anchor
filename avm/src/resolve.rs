@@ -317,8 +317,8 @@ impl SolanaResolutionSource {
 pub struct SolanaResolution {
     pub version: Version,
     pub source: SolanaResolutionSource,
-    /// Original `solana-program` requirement, preserved for callers that can
-    /// resolve against a concrete candidate set instead of using the floor.
+    /// Original project requirement, preserved for callers that can resolve
+    /// against a concrete candidate set instead of using the floor.
     pub version_req: Option<String>,
 }
 
@@ -341,7 +341,7 @@ fn resolve_solana_from_anchor_toml(start: &Path) -> Result<Option<SolanaResoluti
     let Some(ver_str) = parsed.toolchain.and_then(|t| t.solana_version) else {
         return Ok(None);
     };
-    let version = Version::parse(&ver_str).with_context(|| {
+    let version = min_version_from_req(&ver_str).with_context(|| {
         format!(
             "Parsing [toolchain] solana_version = \"{ver_str}\" in {}",
             path.display()
@@ -350,7 +350,7 @@ fn resolve_solana_from_anchor_toml(start: &Path) -> Result<Option<SolanaResoluti
     Ok(Some(SolanaResolution {
         version,
         source: SolanaResolutionSource::AnchorToml(path),
-        version_req: None,
+        version_req: Some(ver_str),
     }))
 }
 
@@ -725,7 +725,7 @@ mod tests {
         );
         let res = resolve_solana_version(dir.path()).unwrap().unwrap();
         assert_eq!(res.version, v("3.0.5"));
-        assert_eq!(res.version_req.as_deref(), None);
+        assert_eq!(res.version_req.as_deref(), Some("3.0.5"));
         assert!(matches!(res.source, SolanaResolutionSource::AnchorToml(_)));
     }
 
