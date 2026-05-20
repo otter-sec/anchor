@@ -183,6 +183,18 @@ pub mod constraints {
     pub fn check_address_into_ref(_ctx: &mut Context<CheckAddressIntoRef>) -> Result<()> {
         Ok(())
     }
+
+    /// `init` + `owner = <foreign program>` on an `UncheckedAccount`.
+    /// Mirrors the marginfi/Solend pattern: create an account that another
+    /// program will own. The derive must pass `OTHER_PROGRAM` (not
+    /// `__program_id`) as the owner argument to the system program's
+    /// `CreateAccount` CPI, and must skip the post-init owner check —
+    /// otherwise constraint validation would reject the freshly-created
+    /// account.
+    #[discrim = 19]
+    pub fn init_foreign_owned(_ctx: &mut Context<InitForeignOwned>) -> Result<()> {
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -353,6 +365,29 @@ pub struct CheckAddressInto {
 pub struct CheckAddressIntoRef {
     #[account(address = pinned_address_ref())]
     pub pinned: UncheckedAccount,
+}
+
+// 19. init + owner = <foreign program>
+//
+// The new account is a fresh PDA derived from `[b"foreign"]` under THIS
+// program's id (we're the only one that can sign for it via seeds), but
+// once created it's owned by `OTHER_PROGRAM`. `UncheckedAccount` is the
+// right wrapper — a typed `Account<T>` would refuse to load because the
+// foreign owner can't pass the wrapper's owner/disc checks.
+#[derive(Accounts)]
+pub struct InitForeignOwned {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init,
+        payer = payer,
+        seeds = [b"foreign"],
+        bump,
+        space = 64,
+        owner = OTHER_PROGRAM,
+    )]
+    pub foreign: UncheckedAccount,
+    pub system_program: Program<System>,
 }
 
 #[derive(Accounts)]

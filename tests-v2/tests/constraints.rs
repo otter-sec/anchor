@@ -870,3 +870,52 @@ fn signer_on_unchecked_rejected_when_not_signed() {
     // `ConstraintSigner` -> `ProgramError::MissingRequiredSignature`.
     assert_err_contains(&result, "MissingRequiredSignature");
 }
+
+// ---- 19. init + owner = <foreign program> --------------------------------
+//
+// Reproduction of the issue: `#[account(init, owner = OTHER_PROGRAM, ...)]`
+// on an `UncheckedAccount` must create the account owned by `OTHER_PROGRAM`
+// (not by the executing program). Before the fix the derive hardcoded
+// `__program_id` as the new account's owner and then the post-init owner
+// check failed because `OTHER_PROGRAM != __program_id`.
+
+fn foreign_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"foreign"], &program_id()).0
+}
+
+#[test]
+fn init_with_foreign_owner_creates_account_owned_by_foreign_program() {
+    let (mut svm, payer, _) = setup();
+    let foreign = foreign_pda();
+
+    // Sanity: account doesn't exist yet.
+    assert!(svm
+        .get_account(&foreign)
+        .map(|a| a.data.is_empty() && a.lamports == 0)
+        .unwrap_or(true));
+
+    call(
+        &mut svm,
+        &payer,
+        19,
+        vec![
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new(foreign, false),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        ],
+        &[],
+    )
+    .expect("init_foreign_owned");
+
+    let created = svm
+        .get_account(&foreign)
+        .expect("account exists after init");
+    assert_eq!(
+        created.owner,
+        other_program(),
+        "freshly-init'd account must be owned by the foreign program, \
+         not by the executing program — got {:?}",
+        created.owner,
+    );
+    assert_eq!(created.data.len(), 64, "space = 64 must be honored");
+}

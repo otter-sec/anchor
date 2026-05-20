@@ -1029,6 +1029,16 @@ fn emit_init_body(
         quote! { let __seeds: Option<&[&[u8]]> = None; }
     };
 
+    // Owner of the new account. Defaults to the currently-executing program;
+    // `#[account(init, owner = expr)]` lets users init accounts owned by a
+    // foreign program (e.g. when CPI'ing into another program that expects
+    // to own the account afterward). When set, we also skip the post-init
+    // owner equality check (see process_constraints) — it's tautological.
+    let owner_arg = match attrs.owner.as_ref() {
+        Some(owner_expr) => quote! { &#owner_expr },
+        None => quote! { __program_id },
+    };
+
     quote! {
         let __payer = #payer.account();
         #seeds_arg
@@ -1039,7 +1049,7 @@ fn emit_init_body(
             __p
         };
         <#field_ty as anchor_lang_v2::AccountInitialize>::create_and_initialize(
-            __payer, &__target, #space, __program_id, &__init_params, __seeds,
+            __payer, &__target, #space, #owner_arg, &__init_params, __seeds,
         )?
     }
 }
@@ -1627,17 +1637,25 @@ pub fn parse_field(
     }
 
     // owner
+    //
+    // Skipped on plain `init`: the freshly-created account is owned by the
+    // exact `owner` expression we just passed to `create_and_initialize`,
+    // so re-checking is a no-op. `init_if_needed` still emits the check —
+    // the "already exists" branch skips the create CPI and must verify the
+    // existing account's owner matches.
     if let Some(ref owner_expr) = attrs.owner {
-        let err = if let Some(ref e) = attrs.owner_error {
-            quote! { core::convert::Into::into(#e) }
-        } else {
-            quote! { anchor_lang_v2::ErrorCode::ConstraintOwner.into() }
-        };
-        constraints.push(quote! {
-            if !#field_name.account().owned_by(&#owner_expr) {
-                return Err(#err);
-            }
-        });
+        if !attrs.is_init {
+            let err = if let Some(ref e) = attrs.owner_error {
+                quote! { core::convert::Into::into(#e) }
+            } else {
+                quote! { anchor_lang_v2::ErrorCode::ConstraintOwner.into() }
+            };
+            constraints.push(quote! {
+                if !#field_name.account().owned_by(&#owner_expr) {
+                    return Err(#err);
+                }
+            });
+        }
     }
 
     // constraint(s) — emitted in the order they appeared in the attribute.
