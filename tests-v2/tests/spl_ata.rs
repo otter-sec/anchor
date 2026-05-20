@@ -203,6 +203,26 @@ fn send_init_interface_ata_with_token_program(
     send_instruction(svm, program_id(), vec![6], metas, payer, &[]).map(|_| ())
 }
 
+fn send_init_strict_ata_with_token_program(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: Pubkey,
+    owner: Pubkey,
+    ata: Pubkey,
+    token_program: Pubkey,
+) -> anyhow::Result<()> {
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(owner, false),
+        AccountMeta::new(ata, false),
+        AccountMeta::new_readonly(token_program, false),
+        AccountMeta::new_readonly(ata_program_id(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), vec![14], metas, payer, &[]).map(|_| ())
+}
+
 fn send_init_ata_if_needed(
     svm: &mut LiteSVM,
     payer: &Keypair,
@@ -573,6 +593,35 @@ fn init_with_token_program_creates_token_2022_ata() {
         token_2022_program_id(),
     )
     .is_ok());
+}
+
+#[test]
+fn strict_ata_init_rejects_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("spl-ata-strict-token-2022-mint-authority");
+    let owner = keypair_for("spl-ata-strict-token-2022-owner");
+    let mint = Keypair::new();
+    let ata = associated_token_address(&owner.pubkey(), &mint.pubkey(), &token_2022_program_id());
+
+    init_interface_mint_with_token_program(
+        &mut svm,
+        &payer,
+        &mint,
+        mint_authority.pubkey(),
+        token_2022_program_id(),
+    )
+    .expect("init token-2022 mint");
+
+    assert!(send_init_strict_ata_with_token_program(
+        &mut svm,
+        &payer,
+        mint.pubkey(),
+        owner.pubkey(),
+        ata,
+        token_2022_program_id(),
+    )
+    .is_err());
+    assert!(svm.get_account(&ata).is_none());
 }
 
 #[test]

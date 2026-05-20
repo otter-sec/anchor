@@ -326,6 +326,38 @@ pub mod program_interface_duplicate_discriminator {
 }
 
 #[test]
+fn associated_token_rejects_unknown_constraint_key() {
+    compile_fail_case(
+        "associated_token_unknown_constraint_key",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(Accounts)]
+pub struct BadAta {
+    #[account(mut)]
+    pub payer: Signer,
+    pub mint: UncheckedAccount,
+    pub authority: UncheckedAccount,
+    #[account(
+        init,
+        payer = payer,
+        associated_token::mint = mint,
+        associated_token::authority = authority,
+        associated_token::program = token_program,
+    )]
+    pub token_account: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+    pub associated_token_program: UncheckedAccount,
+    pub system_program: UncheckedAccount,
+}
+"#,
+        &["unknown `associated_token` constraint `program`"],
+    );
+}
+
+#[test]
 fn declare_program_missing_idls_directory_fails_clearly() {
     compile_fail_case(
         "declare_program_missing_idls_directory",

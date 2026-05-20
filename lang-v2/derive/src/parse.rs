@@ -458,6 +458,18 @@ fn parse_associated_token_init(
         .iter()
         .filter(|nc| nc.namespace == "associated_token")
     {
+        let target = match nc.raw_key.as_str() {
+            "mint" => &mut mint,
+            "authority" => &mut authority,
+            "token_program" => &mut token_program,
+            _ => {
+                return Err(syn::Error::new(
+                    nc.value.span(),
+                    format!("unknown `associated_token` constraint `{}`", nc.raw_key),
+                ));
+            }
+        };
+
         let Some(ident) = expr_as_field_ident(&nc.value) else {
             return Err(syn::Error::new(
                 nc.value.span(),
@@ -475,12 +487,7 @@ fn parse_associated_token_init(
             ));
         }
 
-        match nc.raw_key.as_str() {
-            "mint" => mint = Some(ident),
-            "authority" => authority = Some(ident),
-            "token_program" => token_program = Some(ident),
-            _ => {}
-        }
+        *target = Some(ident);
     }
 
     if mint.is_none() && authority.is_none() && token_program.is_none() {
@@ -1123,8 +1130,10 @@ fn emit_associated_token_init_body(
 
             // SAFETY: this field has just been initialized by the associated
             // token program, and duplicate mutable accounts are rejected by
-            // the generated account bitvec check.
-            unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut_after_init(__target, __program_id)? }
+            // the generated account bitvec check. ATA init is performed by
+            // external programs selected at runtime, so run the field type's
+            // full validation after the CPI.
+            unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target, __program_id)? }
         }
     })
 }
