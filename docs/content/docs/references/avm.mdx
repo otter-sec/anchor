@@ -142,7 +142,10 @@ avm platform-tools uninstall <version>
 
 Resolve or manage the platform-tools version used by Solana's SBF toolchain.
 When no version is passed to `install`, AVM uses the project-resolved Solana
-version and the embedded platform-tools map.
+version and the embedded platform-tools map. If the Solana version is a semver
+requirement, AVM considers hosted Solana CLI versions satisfying that
+requirement and prefers one whose platform-tools rustc can compile the locked
+program dependency graph.
 
 ## Self-update
 

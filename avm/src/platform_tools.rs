@@ -4,9 +4,12 @@
 //! `platform-tools` version that ships with that Solana release. The map is
 //! embedded at compile time from `../platform-tools-map.toml` and ordered by
 //! ascending Solana version, so resolution is a linear floor lookup: pick the
-//! entry with the largest `solana` key that is `<= requested`. When the
-//! project pins no Solana version at all, fall back to the map's `fallback`
-//! field (kept equal to the newest entry's `platform_tools`).
+//! entry with the largest `solana` key that is `<= requested`. Project Solana
+//! requirements are resolved against the hosted Solana CLI candidate set, and
+//! AVM picks the newest compatible candidate whose platform-tools rustc can
+//! compile the locked dependency graph. When the project pins no Solana version
+//! at all, fall back to the map's `fallback` field (kept equal to the newest
+//! entry's `platform_tools`).
 //!
 //! Installation: download the matching tarball from `anza-xyz/platform-tools`
 //! GitHub releases and extract into `$AVM_HOME/platform-tools/<version>/`.
@@ -15,12 +18,15 @@
 use {
     crate::{
         resolve::{resolve_solana_version, SolanaResolution, SolanaResolutionSource},
+        solana::installable_solana_cli_versions_for_req,
         AVM_HOME, DOWNLOAD_CLIENT,
     },
     anyhow::{anyhow, bail, Context, Result},
+    cargo_metadata::{DependencyKind, Metadata, MetadataCommand, PackageId, TargetKind},
     semver::Version,
     serde::Deserialize,
     std::{
+        collections::{HashMap, HashSet},
         fs,
         path::{Path, PathBuf},
         process::{Command, Stdio},
@@ -40,6 +46,7 @@ struct PlatformToolsMap {
 struct MapEntry {
     solana: String,
     platform_tools: String,
+    rustc: String,
 }
 
 /// Parsed and validated form of the static map.
@@ -47,31 +54,44 @@ struct MapEntry {
 struct ParsedMap {
     fallback: String,
     /// Sorted ascending by Solana version.
-    entries: Vec<(Version, String)>,
+    entries: Vec<PlatformToolsMapEntry>,
+}
+
+#[derive(Debug, Clone)]
+struct PlatformToolsMapEntry {
+    solana: Version,
+    platform_tools: String,
+    rustc: Version,
 }
 
 static MAP: LazyLock<ParsedMap> = LazyLock::new(|| {
     let raw: PlatformToolsMap = toml::from_str(PLATFORM_TOOLS_MAP_TOML)
         .expect("Built-in platform-tools-map.toml must parse");
 
-    let mut entries: Vec<(Version, String)> = raw
+    let mut entries: Vec<PlatformToolsMapEntry> = raw
         .entries
         .into_iter()
         .map(|e| {
-            let v = Version::parse(&e.solana).unwrap_or_else(|err| {
+            let solana = Version::parse(&e.solana).unwrap_or_else(|err| {
                 panic!("Invalid Solana version `{}` in map: {err}", e.solana)
             });
-            (v, e.platform_tools)
+            let rustc = Version::parse(&e.rustc)
+                .unwrap_or_else(|err| panic!("Invalid rustc version `{}` in map: {err}", e.rustc));
+            PlatformToolsMapEntry {
+                solana,
+                platform_tools: e.platform_tools,
+                rustc,
+            }
         })
         .collect();
 
-    let was_sorted = entries.windows(2).all(|w| w[0].0 <= w[1].0);
+    let was_sorted = entries.windows(2).all(|w| w[0].solana <= w[1].solana);
     assert!(
         was_sorted,
         "platform-tools-map.toml entries must be sorted by Solana version"
     );
     let _ = was_sorted; // silence unused-variable in release if the assert is stripped
-    entries.sort_by(|a, b| a.0.cmp(&b.0)); // defensive
+    entries.sort_by(|a, b| a.solana.cmp(&b.solana)); // defensive
 
     ParsedMap {
         fallback: raw.fallback,
@@ -123,6 +143,8 @@ pub struct PlatformToolsResolution {
     /// e.g. `"v1.54"`. Kept as a string because upstream uses the `v`-prefixed
     /// form everywhere (release tags, archive names, the `DEFAULT_…` constant).
     pub version: String,
+    /// Rust compiler bundled in this platform-tools release.
+    pub rustc: Version,
     pub source: PlatformToolsSource,
 }
 
@@ -131,42 +153,135 @@ pub struct PlatformToolsResolution {
 /// Walks the same project-detection logic as [`resolve_solana_version`], then
 /// performs a floor lookup in the embedded map.
 pub fn resolve_platform_tools(start: &Path) -> Result<PlatformToolsResolution> {
+    let required_rust = required_rust_version_from_metadata(start)?;
     match resolve_solana_version(start)? {
-        Some(solana_res) => Ok(resolve_for_solana(&solana_res)),
-        None => Ok(PlatformToolsResolution {
-            version: MAP.fallback.clone(),
-            source: PlatformToolsSource::Fallback,
-        }),
+        Some(solana_res) => resolve_for_project_solana(&solana_res, required_rust.as_ref()),
+        None => resolve_fallback(required_rust.as_ref()),
     }
 }
 
+#[cfg(test)]
 fn resolve_for_solana(solana_res: &SolanaResolution) -> PlatformToolsResolution {
-    let solana = &solana_res.version;
+    resolve_for_solana_version(&solana_res.version, solana_res.source.clone())
+}
+
+fn resolve_for_project_solana(
+    solana_res: &SolanaResolution,
+    required_rust: Option<&RequiredRustVersion>,
+) -> Result<PlatformToolsResolution> {
+    let candidates = solana_candidates(solana_res)?;
+    resolve_for_solana_candidates(solana_res, &candidates, required_rust)
+}
+
+fn resolve_for_solana_candidates(
+    solana_res: &SolanaResolution,
+    candidates: &[Version],
+    required_rust: Option<&RequiredRustVersion>,
+) -> Result<PlatformToolsResolution> {
+    let Some(newest) = candidates.last() else {
+        bail!(
+            "No Solana versions available for {}",
+            solana_res.source.describe()
+        );
+    };
+
+    for solana in candidates.iter().rev() {
+        let resolution = resolve_for_solana_version(solana, solana_res.source.clone());
+        if required_rust
+            .map(|required| resolution.rustc >= required.rustc)
+            .unwrap_or(true)
+        {
+            return Ok(resolution);
+        }
+    }
+
+    let newest_resolution = resolve_for_solana_version(newest, solana_res.source.clone());
+    let required =
+        required_rust.expect("candidate loop only fails when a rustc requirement exists");
+    let req = solana_res
+        .version_req
+        .as_deref()
+        .map(|req| format!("Solana requirement `{req}`"))
+        .unwrap_or_else(|| format!("Solana {}", solana_res.version));
+    bail!(
+        "No hosted Solana CLI satisfying {req} provides platform-tools with rustc >= {}. The \
+         newest compatible Solana candidate is {newest}, which maps to platform-tools {} with \
+         rustc {}, but {} {} requires rustc {}. Relax `[toolchain] solana_version`, update \
+         Cargo.lock, or pin a dependency version compatible with the Solana toolchain.",
+        required.rustc,
+        newest_resolution.version,
+        newest_resolution.rustc,
+        required.package,
+        required.package_version,
+        required.rustc,
+    );
+}
+
+fn resolve_fallback(
+    required_rust: Option<&RequiredRustVersion>,
+) -> Result<PlatformToolsResolution> {
+    let entry = MAP
+        .entries
+        .last()
+        .expect("platform-tools map must have at least one entry");
+    if let Some(required) = required_rust {
+        if entry.rustc < required.rustc {
+            bail!(
+                "The fallback platform-tools {} bundles rustc {}, but {} {} requires rustc {}. \
+                 Pin a Solana version whose platform-tools release has a newer rustc, update \
+                 Cargo.lock, or pin a compatible dependency version.",
+                entry.platform_tools,
+                entry.rustc,
+                required.package,
+                required.package_version,
+                required.rustc,
+            );
+        }
+    }
+    Ok(PlatformToolsResolution {
+        version: entry.platform_tools.clone(),
+        rustc: entry.rustc.clone(),
+        source: PlatformToolsSource::Fallback,
+    })
+}
+
+fn solana_candidates(solana_res: &SolanaResolution) -> Result<Vec<Version>> {
+    match solana_res.version_req.as_deref() {
+        Some(req) => installable_solana_cli_versions_for_req(req, &solana_res.source),
+        None => Ok(vec![solana_res.version.clone()]),
+    }
+}
+
+fn resolve_for_solana_version(
+    solana: &Version,
+    solana_source: SolanaResolutionSource,
+) -> PlatformToolsResolution {
     let entries = &MAP.entries;
 
-    // Floor lookup: largest entry.0 <= solana.
-    let pick = entries.iter().rposition(|(v, _)| v <= solana);
+    // Floor lookup: largest entry.solana <= solana.
+    let pick = entries.iter().rposition(|entry| entry.solana <= *solana);
     match pick {
         Some(idx) => PlatformToolsResolution {
-            version: entries[idx].1.clone(),
+            version: entries[idx].platform_tools.clone(),
+            rustc: entries[idx].rustc.clone(),
             source: PlatformToolsSource::Mapped {
                 solana: solana.clone(),
-                solana_source: solana_res.source.clone(),
+                solana_source,
             },
         },
         None => {
             // Requested Solana is older than every entry. Return the earliest
             // known platform-tools rather than the (newer) fallback — older
             // toolchains are closer to what such a project expects.
-            let earliest = &entries
+            let earliest = entries
                 .first()
-                .expect("platform-tools map must have at least one entry")
-                .1;
+                .expect("platform-tools map must have at least one entry");
             PlatformToolsResolution {
-                version: earliest.clone(),
+                version: earliest.platform_tools.clone(),
+                rustc: earliest.rustc.clone(),
                 source: PlatformToolsSource::BelowMap {
                     solana: solana.clone(),
-                    solana_source: solana_res.source.clone(),
+                    solana_source,
                 },
             }
         }
@@ -180,12 +295,12 @@ pub fn lookup_for_solana_version(solana: &Version) -> Result<String> {
     let entries = &MAP.entries;
     entries
         .iter()
-        .rposition(|(v, _)| v <= solana)
-        .map(|idx| entries[idx].1.clone())
+        .rposition(|entry| entry.solana <= *solana)
+        .map(|idx| entries[idx].platform_tools.clone())
         .ok_or_else(|| {
             anyhow!(
                 "Solana {solana} predates the earliest platform-tools map entry ({}).",
-                entries[0].0
+                entries[0].solana
             )
         })
 }
@@ -194,6 +309,178 @@ pub fn lookup_for_solana_version(solana: &Version) -> Result<String> {
 /// want to surface it to the user (e.g. `avm platform-tools resolve`).
 pub fn fallback_version() -> &'static str {
     &MAP.fallback
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RequiredRustVersion {
+    package: String,
+    package_version: Version,
+    rustc: Version,
+}
+
+fn required_rust_version_from_metadata(start: &Path) -> Result<Option<RequiredRustVersion>> {
+    let mut max = None::<RequiredRustVersion>;
+    for manifest_path in candidate_metadata_manifests(start) {
+        let Some(metadata) = locked_metadata(&manifest_path)? else {
+            continue;
+        };
+        if let Some(required) = max_required_rust_version(&metadata) {
+            if max
+                .as_ref()
+                .map(|current| required.rustc > current.rustc)
+                .unwrap_or(true)
+            {
+                max = Some(required);
+            }
+        }
+    }
+    Ok(max)
+}
+
+fn locked_metadata(manifest_path: &Path) -> Result<Option<Metadata>> {
+    match MetadataCommand::new()
+        .manifest_path(manifest_path)
+        .other_options(vec!["--locked".to_string()])
+        .exec()
+    {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(cargo_metadata::Error::CargoMetadata { stderr })
+            if find_ancestor_file(
+                manifest_path.parent().unwrap_or_else(|| Path::new(".")),
+                "Cargo.lock",
+            )
+            .is_none()
+                && stderr.contains("lock file") =>
+        {
+            Ok(None)
+        }
+        Err(err) => Err(err).with_context(|| {
+            format!(
+                "Reading Cargo metadata from {} for dependency rust-version requirements",
+                manifest_path.display()
+            )
+        }),
+    }
+}
+
+fn candidate_metadata_manifests(start: &Path) -> Vec<PathBuf> {
+    if let Some(anchor_toml) = find_ancestor_file(start, "Anchor.toml") {
+        let workspace_root = anchor_toml.parent().unwrap_or_else(|| Path::new("."));
+        let mut out = Vec::<PathBuf>::new();
+        let programs_dir = workspace_root.join("programs");
+        if let Ok(entries) = fs::read_dir(&programs_dir) {
+            for entry in entries.flatten() {
+                let candidate = entry.path().join("Cargo.toml");
+                if candidate.is_file() {
+                    out.push(candidate);
+                }
+            }
+        }
+        let root_cargo = workspace_root.join("Cargo.toml");
+        if root_cargo.is_file() {
+            out.push(root_cargo);
+        }
+        out.sort();
+        out.dedup();
+        return out;
+    }
+
+    find_ancestor_file(start, "Cargo.toml")
+        .into_iter()
+        .collect()
+}
+
+fn max_required_rust_version(metadata: &Metadata) -> Option<RequiredRustVersion> {
+    let resolve = metadata.resolve.as_ref()?;
+    let packages = metadata
+        .packages
+        .iter()
+        .map(|package| (&package.id, package))
+        .collect::<HashMap<_, _>>();
+
+    let workspace_members = metadata
+        .workspace_members
+        .iter()
+        .cloned()
+        .collect::<HashSet<_>>();
+    let mut roots = metadata
+        .packages
+        .iter()
+        .filter(|package| workspace_members.contains(&package.id))
+        .filter(|package| {
+            package
+                .targets
+                .iter()
+                .any(|target| target.kind.iter().any(|kind| kind == &TargetKind::CDyLib))
+        })
+        .map(|package| package.id.clone())
+        .collect::<Vec<_>>();
+    if roots.is_empty() {
+        roots = metadata.workspace_members.clone();
+    }
+
+    let nodes = resolve
+        .nodes
+        .iter()
+        .map(|node| (&node.id, node))
+        .collect::<HashMap<_, _>>();
+    let mut stack = roots;
+    let mut visited = HashSet::<PackageId>::new();
+    let mut max = None::<RequiredRustVersion>;
+
+    while let Some(id) = stack.pop() {
+        if !visited.insert(id.clone()) {
+            continue;
+        }
+
+        if let Some(package) = packages.get(&id) {
+            if let Some(rustc) = package.rust_version.clone() {
+                let candidate = RequiredRustVersion {
+                    package: package.name.to_string(),
+                    package_version: package.version.clone(),
+                    rustc,
+                };
+                if max
+                    .as_ref()
+                    .map(|current| candidate.rustc > current.rustc)
+                    .unwrap_or(true)
+                {
+                    max = Some(candidate);
+                }
+            }
+        }
+
+        let Some(node) = nodes.get(&id) else {
+            continue;
+        };
+        for dep in &node.deps {
+            if dep_builds_with_program_toolchain(dep) {
+                stack.push(dep.pkg.clone());
+            }
+        }
+    }
+
+    max
+}
+
+fn dep_builds_with_program_toolchain(dep: &cargo_metadata::NodeDep) -> bool {
+    dep.dep_kinds.is_empty()
+        || dep
+            .dep_kinds
+            .iter()
+            .any(|kind| matches!(kind.kind, DependencyKind::Normal | DependencyKind::Build))
+}
+
+fn find_ancestor_file(start: &Path, name: &str) -> Option<PathBuf> {
+    let mut cur = Some(start);
+    while let Some(dir) = cur {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        cur = dir.parent();
+    }
+    None
 }
 
 // ── Install / storage ────────────────────────────────────────────────────────
@@ -426,6 +713,8 @@ pub fn validate_embedded_map() -> Result<()> {
     for e in &raw.entries {
         Version::parse(&e.solana)
             .with_context(|| format!("Invalid Solana version `{}` in map", e.solana))?;
+        Version::parse(&e.rustc)
+            .with_context(|| format!("Invalid rustc version `{}` in map", e.rustc))?;
     }
     if raw.entries.is_empty() {
         return Err(anyhow!(
@@ -451,6 +740,22 @@ mod tests {
         }
     }
 
+    fn fake_solana_req(req: &str, floor: &str) -> SolanaResolution {
+        SolanaResolution {
+            version: v(floor),
+            source: SolanaResolutionSource::AnchorToml(PathBuf::from("Anchor.toml")),
+            version_req: Some(req.to_string()),
+        }
+    }
+
+    fn required_rust(package: &str, package_version: &str, rustc: &str) -> RequiredRustVersion {
+        RequiredRustVersion {
+            package: package.to_string(),
+            package_version: v(package_version),
+            rustc: v(rustc),
+        }
+    }
+
     // ── Embedded map ─────────────────────────────────────────────────────────
 
     #[test]
@@ -458,14 +763,22 @@ mod tests {
         validate_embedded_map().unwrap();
         let entries = &MAP.entries;
         assert!(entries.len() >= 2);
-        assert!(entries.windows(2).all(|w| w[0].0 < w[1].0));
+        assert!(entries.windows(2).all(|w| w[0].solana < w[1].solana));
+        assert_eq!(
+            entries
+                .iter()
+                .find(|entry| entry.platform_tools == "v1.47")
+                .unwrap()
+                .rustc,
+            v("1.84.1")
+        );
     }
 
     #[test]
     fn fallback_matches_newest_entry() {
         // Sanity: the fallback should equal the newest entry's platform_tools,
         // per the comment in platform-tools-map.toml.
-        let newest = &MAP.entries.last().unwrap().1;
+        let newest = &MAP.entries.last().unwrap().platform_tools;
         assert_eq!(&MAP.fallback, newest);
     }
 
@@ -483,19 +796,20 @@ mod tests {
         // 2.2.5 sits between (2.2.3 → v1.45) and (2.2.8 → v1.46) → floor is v1.45.
         let res = resolve_for_solana(&fake_solana("2.2.5"));
         assert_eq!(res.version, "v1.45");
+        assert_eq!(res.rustc, v("1.79.0"));
     }
 
     #[test]
     fn above_all_entries_uses_latest() {
         let res = resolve_for_solana(&fake_solana("99.0.0"));
-        let latest = &MAP.entries.last().unwrap().1;
+        let latest = &MAP.entries.last().unwrap().platform_tools;
         assert_eq!(&res.version, latest);
     }
 
     #[test]
     fn below_all_entries_uses_earliest() {
         let res = resolve_for_solana(&fake_solana("1.0.0"));
-        let earliest = &MAP.entries.first().unwrap().1;
+        let earliest = &MAP.entries.first().unwrap().platform_tools;
         assert_eq!(&res.version, earliest);
         assert!(matches!(res.source, PlatformToolsSource::BelowMap { .. }));
     }
@@ -506,6 +820,50 @@ mod tests {
         assert_eq!(lookup_for_solana_version(&v("4.5.0")).unwrap(), "v1.54");
         // Below earliest → error from this lower-level helper.
         assert!(lookup_for_solana_version(&v("0.1.0")).is_err());
+    }
+
+    // ── Rust-version aware resolution ───────────────────────────────────────
+
+    #[test]
+    fn semver_solana_req_moves_forward_for_dependency_rust_version() {
+        let res = resolve_for_project_solana(
+            &fake_solana_req("2.2.1", "2.2.1"),
+            Some(&required_rust("indexmap", "2.12.1", "1.82.0")),
+        )
+        .unwrap();
+
+        assert_eq!(res.version, "v1.48");
+        assert_eq!(res.rustc, v("1.84.1"));
+        assert!(matches!(
+            res.source,
+            PlatformToolsSource::Mapped { solana, .. } if solana == v("2.3.13")
+        ));
+    }
+
+    #[test]
+    fn semver_solana_req_uses_newest_hosted_candidate_without_rust_requirement() {
+        let res = resolve_for_project_solana(&fake_solana_req("2.2.1", "2.2.1"), None).unwrap();
+
+        assert_eq!(res.version, "v1.48");
+        assert_eq!(res.rustc, v("1.84.1"));
+        assert!(matches!(
+            res.source,
+            PlatformToolsSource::Mapped { solana, .. } if solana == v("2.3.13")
+        ));
+    }
+
+    #[test]
+    fn exact_solana_req_errors_when_platform_tools_rustc_is_too_old() {
+        let err = resolve_for_project_solana(
+            &fake_solana_req("=2.2.1", "2.2.1"),
+            Some(&required_rust("indexmap", "2.12.1", "1.82.0")),
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+
+        assert!(msg.contains("Solana requirement `=2.2.1`"));
+        assert!(msg.contains("platform-tools v1.44 with rustc 1.79.0"));
+        assert!(msg.contains("indexmap 2.12.1 requires rustc 1.82.0"));
     }
 
     // ── Specific known transitions ──────────────────────────────────────────

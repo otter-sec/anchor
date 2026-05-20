@@ -245,21 +245,34 @@ fn resolve_installable_solana_cli_req(
     req_str: &str,
     source: &SolanaResolutionSource,
 ) -> Result<Version> {
+    installable_solana_cli_versions_for_req(req_str, source).map(|versions| {
+        versions
+            .last()
+            .expect("installable_solana_cli_versions_for_req returns non-empty matches")
+            .clone()
+    })
+}
+
+pub(crate) fn installable_solana_cli_versions_for_req(
+    req_str: &str,
+    source: &SolanaResolutionSource,
+) -> Result<Vec<Version>> {
     let req = VersionReq::parse(req_str)
         .with_context(|| format!("Parsing Solana version requirement `{req_str}`"))?;
-    INSTALLABLE_SOLANA_CLI_VERSIONS
+    let versions = INSTALLABLE_SOLANA_CLI_VERSIONS
         .iter()
         .filter(|version| req.matches(version))
-        .max()
         .cloned()
-        .ok_or_else(|| {
-            anyhow!(
-                "No installable Solana CLI version hosted by Anza satisfies Solana requirement \
-                 `{req_str}` from {}. Pin `[toolchain] solana_version` in `Anchor.toml` to an \
-                 exact hosted version to choose manually.",
-                source.describe()
-            )
-        })
+        .collect::<Vec<_>>();
+    if versions.is_empty() {
+        bail!(
+            "No installable Solana CLI version hosted by Anza satisfies Solana requirement \
+             `{req_str}` from {}. Pin `[toolchain] solana_version` in `Anchor.toml` to an exact \
+             hosted version to choose manually.",
+            source.describe()
+        );
+    }
+    Ok(versions)
 }
 
 fn resolve_solana_from_anchor_resolution(anchor_res: &Resolution) -> Result<SolanaCliResolution> {

@@ -259,7 +259,12 @@ pub fn entry(opts: Cli) -> Result<()> {
             PlatformToolsCommand::Resolve => {
                 let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
                 let res = avm::resolve_platform_tools(&cwd)?;
-                println!("platform-tools {} ({})", res.version, res.source.describe());
+                println!(
+                    "platform-tools {} (rustc {}, {})",
+                    res.version,
+                    res.rustc,
+                    res.source.describe()
+                );
                 Ok(())
             }
             PlatformToolsCommand::Install { version, force } => {
@@ -269,8 +274,9 @@ pub fn entry(opts: Cli) -> Result<()> {
                         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
                         let res = avm::resolve_platform_tools(&cwd)?;
                         println!(
-                            "Installing project-resolved version {} ({})",
+                            "Installing project-resolved version {} (rustc {}, {})",
                             res.version,
+                            res.rustc,
                             res.source.describe()
                         );
                         res.version

@@ -12,6 +12,10 @@
 # largest `solana` key that is `<= S`. Entries MUST be ordered by `solana` so
 # the resolver can stop at the first key that exceeds the request.
 #
+# `rustc` is the Rust compiler bundled in the corresponding platform-tools
+# release. Source of truth: `src/version` in anza-xyz/rust on the
+# `solana-tools-<platform_tools>` branch.
+#
 # `fallback` is used when the project does not pin a Solana version at all.
 # Keep it equal to the platform-tools version of the newest entry below.
 
@@ -20,47 +24,59 @@ fallback = "v1.54"
 [[entries]]
 solana = "1.18.0"
 platform_tools = "v1.39"
+rustc = "1.72.0"
 
 [[entries]]
 solana = "1.18.8"
 platform_tools = "v1.41"
+rustc = "1.75.0"
 
 [[entries]]
 solana = "2.0.5"
 platform_tools = "v1.42"
+rustc = "1.75.0"
 
 [[entries]]
 solana = "2.1.0"
 platform_tools = "v1.43"
+rustc = "1.79.0"
 
 [[entries]]
 solana = "2.2.1"
 platform_tools = "v1.44"
+rustc = "1.79.0"
 
 [[entries]]
 solana = "2.2.3"
 platform_tools = "v1.45"
+rustc = "1.79.0"
 
 [[entries]]
 solana = "2.2.8"
 platform_tools = "v1.46"
+rustc = "1.79.0"
 
 [[entries]]
 solana = "2.2.11"
 platform_tools = "v1.47"
+rustc = "1.84.1"
 
 [[entries]]
 solana = "2.2.15"
 platform_tools = "v1.48"
+rustc = "1.84.1"
 
 [[entries]]
 solana = "3.0.0"
 platform_tools = "v1.51"
+rustc = "1.84.1"
 
 [[entries]]
 solana = "3.1.1"
 platform_tools = "v1.52"
+rustc = "1.89.0"
 
 [[entries]]
 solana = "4.0.0"
 platform_tools = "v1.54"
+rustc = "1.89.0"
