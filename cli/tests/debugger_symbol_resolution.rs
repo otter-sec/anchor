@@ -206,6 +206,37 @@ fn source_resolver_maps_pcs_to_fixture_markers() {
 }
 
 #[test]
+fn source_resolver_enumerates_executable_fixture_lines() {
+    let Some(elf) = build_fixture() else {
+        return;
+    };
+
+    let resolver = SourceResolver::from_elf_path(&elf);
+    let fixture_lines: BTreeSet<u32> = resolver
+        .executable_lines()
+        .into_iter()
+        .filter(|loc| is_fixture_lib_rs(&loc.file))
+        .map(|loc| loc.line)
+        .collect();
+
+    assert!(
+        !fixture_lines.is_empty(),
+        "no executable lines resolved for the fixture's src/lib.rs — LCOV would only be able to \
+         report executed-line maps"
+    );
+
+    for (name, expected_line) in marker_lines() {
+        let lo = expected_line.saturating_sub(MARKER_LINE_WINDOW);
+        let hi = expected_line + MARKER_LINE_WINDOW;
+        assert!(
+            fixture_lines.range(lo..=hi).next().is_some(),
+            "marker `{name}` at line {expected_line} is missing from executable-line set: {:?}",
+            fixture_lines
+        );
+    }
+}
+
+#[test]
 fn source_resolver_handles_stripped_elf_without_dwarf() {
     let Some(unstripped) = build_fixture() else {
         return;

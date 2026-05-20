@@ -13,7 +13,7 @@ use {
     },
     anyhow::{anyhow, Context, Result},
     std::{
-        collections::{BTreeMap, BTreeSet, HashMap},
+        collections::{BTreeMap, BTreeSet},
         fs,
         io::Write,
         path::{Path, PathBuf},
@@ -48,7 +48,7 @@ pub fn generate_lcov(
 
     eprintln!("found {} program(s) in traces", pc_sets.len());
 
-    let mut line_hits: HashMap<PathBuf, BTreeMap<u32, u64>> = HashMap::new();
+    let mut line_hits: BTreeMap<PathBuf, BTreeMap<u32, u64>> = BTreeMap::new();
 
     for (program_id, pcs) in &pc_sets {
         let deployed = match programs.get(program_id) {
@@ -73,6 +73,16 @@ pub fn generate_lcov(
                 dwarf_path.display()
             );
             continue;
+        }
+
+        for loc in resolver.executable_lines() {
+            if let Some(path) = resolve_source_path(&loc.file, manifest_dir) {
+                line_hits
+                    .entry(path)
+                    .or_default()
+                    .entry(loc.line)
+                    .or_insert(0);
+            }
         }
 
         // Walk the full DWARF inlining chain per PC so `#[inline(always)]`
@@ -108,22 +118,40 @@ pub fn generate_lcov(
 
     if line_hits.is_empty() {
         return Err(anyhow!(
-            "no source coverage resolved from trace data in {}",
+            "no source lines resolved from trace data in {}",
             trace_dir.display()
         ));
     }
 
-    // Write LCOV format.
+    let summary = write_lcov_records(&line_hits, output)?;
+    eprintln!(
+        "  {} source files, {}/{} lines hit",
+        summary.files, summary.hit_lines, summary.total_lines
+    );
+    Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct LcovSummary {
+    files: usize,
+    total_lines: usize,
+    hit_lines: usize,
+}
+
+fn write_lcov_records(
+    line_hits: &BTreeMap<PathBuf, BTreeMap<u32, u64>>,
+    output: &Path,
+) -> Result<LcovSummary> {
     let mut out =
         fs::File::create(output).with_context(|| format!("create {}", output.display()))?;
 
-    let mut sorted_files: Vec<_> = line_hits.into_iter().collect();
-    sorted_files.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut summary = LcovSummary {
+        files: line_hits.len(),
+        total_lines: 0,
+        hit_lines: 0,
+    };
 
-    let total_files = sorted_files.len();
-    let total_lines: usize = sorted_files.iter().map(|(_, l)| l.len()).sum();
-
-    for (file, lines) in &sorted_files {
+    for (file, lines) in line_hits {
         writeln!(out, "SF:{}", file.display())?;
         for (&line, &hits) in lines {
             writeln!(out, "DA:{line},{hits}")?;
@@ -133,10 +161,12 @@ pub fn generate_lcov(
         writeln!(out, "LF:{lf}")?;
         writeln!(out, "LH:{lh}")?;
         writeln!(out, "end_of_record")?;
+
+        summary.total_lines += lf;
+        summary.hit_lines += lh;
     }
 
-    eprintln!("  {total_files} source files, {total_lines} lines covered");
-    Ok(())
+    Ok(summary)
 }
 
 /// Resolve a DWARF-emitted source path to an absolute path that exists on
@@ -230,5 +260,32 @@ mod tests {
 
         assert!(err.to_string().contains("no trace data found"));
         assert!(!output.exists());
+    }
+
+    #[test]
+    fn lcov_writer_preserves_zero_hit_lines() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("program.rs");
+        let output = dir.path().join("lcov.info");
+        let line_hits =
+            BTreeMap::from([(source.clone(), BTreeMap::from([(10, 3), (11, 0), (12, 1)]))]);
+
+        let summary = write_lcov_records(&line_hits, &output).unwrap();
+        let lcov = fs::read_to_string(output).unwrap();
+
+        assert_eq!(
+            summary,
+            LcovSummary {
+                files: 1,
+                total_lines: 3,
+                hit_lines: 2,
+            }
+        );
+        assert!(lcov.contains(&format!("SF:{}", source.display())));
+        assert!(lcov.contains("DA:10,3\n"));
+        assert!(lcov.contains("DA:11,0\n"));
+        assert!(lcov.contains("DA:12,1\n"));
+        assert!(lcov.contains("LF:3\n"));
+        assert!(lcov.contains("LH:2\n"));
     }
 }

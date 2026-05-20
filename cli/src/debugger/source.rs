@@ -15,7 +15,10 @@ use {
     super::model::SrcLoc,
     addr2line::Loader,
     object::{Object, ObjectSection},
-    std::path::{Path, PathBuf},
+    std::{
+        collections::BTreeSet,
+        path::{Path, PathBuf},
+    },
 };
 
 const INSN_SIZE: u64 = 8;
@@ -28,6 +31,7 @@ pub struct SourceResolver {
 struct Inner {
     loader: Loader,
     text_addr: u64,
+    text_size: u64,
 }
 
 impl SourceResolver {
@@ -93,6 +97,35 @@ impl SourceResolver {
         out
     }
 
+    /// Enumerates every source line with a DWARF line-table row inside the
+    /// program's text section. Coverage uses this to emit zero-hit LCOV `DA`
+    /// records for executable lines that never appeared in the trace.
+    pub fn executable_lines(&self) -> Vec<SrcLoc> {
+        let Some(inner) = self.inner.as_ref() else {
+            return Vec::new();
+        };
+        let Some(text_end) = inner.text_addr.checked_add(inner.text_size) else {
+            return Vec::new();
+        };
+        let Ok(iter) = inner.loader.find_location_range(inner.text_addr, text_end) else {
+            return Vec::new();
+        };
+
+        let mut lines = BTreeSet::new();
+        for (_, _, loc) in iter {
+            if let (Some(file), Some(line)) = (loc.file, loc.line) {
+                if line != 0 {
+                    lines.insert((PathBuf::from(file), line));
+                }
+            }
+        }
+
+        lines
+            .into_iter()
+            .map(|(file, line)| SrcLoc { file, line })
+            .collect()
+    }
+
     /// `true` when no DWARF context was built — the TUI uses this to render
     /// a single "no source info" notice instead of per-step errors.
     pub fn is_empty(&self) -> bool {
@@ -155,7 +188,12 @@ fn build(path: &Path) -> anyhow::Result<Inner> {
         })
         .ok_or_else(|| anyhow::anyhow!("no .text section"))?;
     let text_addr = text.address();
+    let text_size = text.size();
 
     let loader = Loader::new(path).map_err(|e| anyhow::anyhow!("load DWARF: {e}"))?;
-    Ok(Inner { loader, text_addr })
+    Ok(Inner {
+        loader,
+        text_addr,
+        text_size,
+    })
 }
