@@ -38,10 +38,31 @@ fn fixture_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(FIXTURE_CRATE_REL)
 }
 
+fn cargo_build_sbf_available() -> bool {
+    match Command::new("cargo-build-sbf").arg("--version").status() {
+        Ok(status) if status.success() => true,
+        Ok(status) => {
+            eprintln!(
+                "skipping: `cargo-build-sbf --version` failed (exit {:?})",
+                status.code()
+            );
+            false
+        }
+        Err(e) => {
+            eprintln!("skipping: `cargo-build-sbf` unavailable ({e})");
+            false
+        }
+    }
+}
+
 /// Attempt to build the fixture. Returns `None` when `cargo-build-sbf`
 /// is unavailable (local dev without the Solana toolchain); the test
 /// should treat that as a skip, not a failure.
 fn build_fixture() -> Option<PathBuf> {
+    if !cargo_build_sbf_available() {
+        return None;
+    }
+
     let fixture = fixture_dir();
     let spawn = Command::new("cargo")
         .args(["build-sbf", "--tools-version", TOOLS_VERSION])
