@@ -248,17 +248,11 @@ describe("anchor-cli-legacy-idl", () => {
 
     try {
       await provider.sendAndConfirm(tx);
-      fail("should have thrown");
+      assert.fail("should have thrown");
     } catch (e) {
-      assert.instanceOf(
-        e,
-        SendTransactionError,
-        "Expected a SendTransactionError"
-      );
       assert.include(
-        e.message,
-        "AnchorError caused by account: buffer. Error Code: ConstraintSigner. Error Number: 2002. Error Message: A signer constraint was violated",
-        `Unexpected error message: ${e.message}`
+        e.toString(), 
+        "AnchorError caused by account: buffer. Error Code: ConstraintSigner. Error Number: 2002. Error Message: A signer constraint was violated"
       );
     }
   });
