@@ -5,11 +5,11 @@
 //! embedded at compile time from `../platform-tools-map.toml` and ordered by
 //! ascending Solana version, so resolution is a linear floor lookup: pick the
 //! entry with the largest `solana` key that is `<= requested`. Project Solana
-//! requirements are resolved against the known installable Solana CLI candidate
-//! set, and AVM picks the newest compatible candidate whose platform-tools
-//! rustc can compile the locked dependency graph. When the project pins no
-//! Solana version at all, fall back to the map's `fallback` field (kept equal
-//! to the newest entry's `platform_tools`).
+//! requirements are resolved against the hosted Solana CLI candidate set, and
+//! AVM picks the newest compatible candidate whose platform-tools rustc can
+//! compile the locked dependency graph. When the project pins no Solana version
+//! at all, fall back to the map's `fallback` field (kept equal to the newest
+//! entry's `platform_tools`).
 //!
 //! Installation: download the matching tarball from `anza-xyz/platform-tools`
 //! GitHub releases and extract into `$AVM_HOME/platform-tools/<version>/`.
@@ -204,9 +204,9 @@ fn resolve_for_solana_candidates(
         .map(|req| format!("Solana requirement `{req}`"))
         .unwrap_or_else(|| format!("Solana {}", solana_res.version));
     bail!(
-        "No known installable Solana CLI satisfying {req} provides platform-tools with rustc >= \
-         {}. The newest compatible Solana candidate is {newest}, which maps to platform-tools {} \
-         with rustc {}, but {} {} requires rustc {}. Relax `[toolchain] solana_version`, update \
+        "No hosted Solana CLI satisfying {req} provides platform-tools with rustc >= {}. The \
+         newest compatible Solana candidate is {newest}, which maps to platform-tools {} with \
+         rustc {}, but {} {} requires rustc {}. Relax `[toolchain] solana_version`, update \
          Cargo.lock, or pin a dependency version compatible with the Solana toolchain.",
         required.rustc,
         newest_resolution.version,

@@ -3,9 +3,8 @@
 //! Project-pinned Solana versions win. If the project does not pin Solana,
 //! AVM resolves the Anchor version and maps it to Anchor's recommended Solana
 //! CLI version using `../anchor-solana-map.toml`. `solana-program` dependency
-//! requirements are matched against known Anza installers and legacy GitHub
-//! release assets so AVM does not try to install unavailable lower-bound
-//! releases.
+//! requirements are matched against Anza's hosted installer versions so AVM
+//! does not try to install unavailable lower-bound releases.
 use {
     crate::{
         current_version, read_installed_versions,
@@ -33,7 +32,6 @@ use {
 
 const ANCHOR_SOLANA_MAP_TOML: &str = include_str!("../anchor-solana-map.toml");
 const SOLANA_CLI_VERSIONS_TOML: &str = include_str!("../solana-cli-versions.toml");
-const LEGACY_SOLANA_CLI_VERSIONS_TOML: &str = include_str!("../legacy-solana-cli-versions.toml");
 const AGAVE_INSTALL_MIN_VERSION_STR: &str = "1.18.19";
 const INSTALLER_DOWNLOAD_MAX_ATTEMPTS: usize = 4;
 const INSTALLER_DOWNLOAD_INITIAL_BACKOFF_MS: u64 = 500;
@@ -95,18 +93,25 @@ static MAP: LazyLock<ParsedMap> = LazyLock::new(|| {
 });
 
 static INSTALLABLE_SOLANA_CLI_VERSIONS: LazyLock<Vec<Version>> = LazyLock::new(|| {
-    let mut versions =
-        parse_embedded_solana_cli_versions(SOLANA_CLI_VERSIONS_TOML, "Solana CLI versions")
-            .unwrap_or_else(|err| panic!("{err:#}"));
-    versions.extend(
-        parse_embedded_solana_cli_versions(
-            LEGACY_SOLANA_CLI_VERSIONS_TOML,
-            "legacy Solana CLI versions",
-        )
-        .unwrap_or_else(|err| panic!("{err:#}")),
+    let raw: SolanaCliVersions =
+        toml::from_str(SOLANA_CLI_VERSIONS_TOML).expect("Built-in Solana CLI versions must parse");
+
+    let versions = raw
+        .versions
+        .into_iter()
+        .map(|v| {
+            Version::parse(&v)
+                .unwrap_or_else(|err| panic!("Invalid Solana CLI version `{v}`: {err}"))
+        })
+        .collect::<Vec<_>>();
+
+    let was_sorted = versions.windows(2).all(|w| w[0] < w[1]);
+    assert!(
+        was_sorted,
+        "solana-cli-versions.toml entries must be sorted by semver"
     );
-    versions.sort();
-    versions.dedup();
+    let _ = was_sorted;
+
     versions
 });
 
@@ -261,9 +266,9 @@ pub(crate) fn installable_solana_cli_versions_for_req(
         .collect::<Vec<_>>();
     if versions.is_empty() {
         bail!(
-            "No known installable Solana CLI version from Anza or legacy Solana GitHub releases \
-             satisfies Solana requirement `{req_str}` from {}. Pin `[toolchain] solana_version` \
-             in `Anchor.toml` to an exact known version to choose manually.",
+            "No installable Solana CLI version hosted by Anza satisfies Solana requirement \
+             `{req_str}` from {}. Pin `[toolchain] solana_version` in `Anchor.toml` to an exact \
+             hosted version to choose manually.",
             source.describe()
         );
     }
@@ -426,38 +431,7 @@ fn ensure_installer_command(
         }
         bail!("Failed to install `{command}` from {url}");
     }
-
-    let active_solana = read_command_version("solana")?;
-    match installer_setup_after_bootstrap(
-        installer_command_available(installer)?,
-        active_solana.as_ref(),
-        version,
-    ) {
-        Some(setup) => Ok(setup),
-        None => {
-            let active = active_solana
-                .map(|version| format!("active `solana` is {version}"))
-                .unwrap_or_else(|| "active `solana` is unavailable".to_string());
-            bail!(
-                "Ran installer from {url}, but `{command}` is still unavailable and {active}; \
-                 cannot activate Solana {version}"
-            );
-        }
-    }
-}
-
-fn installer_setup_after_bootstrap(
-    command_available: bool,
-    active_solana_version: Option<&Version>,
-    requested: &Version,
-) -> Option<InstallerSetup> {
-    if active_solana_version == Some(requested) {
-        Some(InstallerSetup::RequestedVersionInstalled)
-    } else if command_available {
-        Some(InstallerSetup::CommandAvailable)
-    } else {
-        None
-    }
+    Ok(InstallerSetup::CommandAvailable)
 }
 
 fn install_legacy_solana_from_github_release(
@@ -758,24 +732,6 @@ fn parse_version_token(token: &str) -> Option<Version> {
     Version::parse(token).ok()
 }
 
-fn parse_embedded_solana_cli_versions(raw: &str, label: &str) -> Result<Vec<Version>> {
-    let raw: SolanaCliVersions =
-        toml::from_str(raw).with_context(|| format!("Parsing embedded {label}"))?;
-    if raw.versions.is_empty() {
-        bail!("{label} must have at least one entry");
-    }
-
-    let versions = raw
-        .versions
-        .iter()
-        .map(|v| Version::parse(v).with_context(|| format!("Invalid Solana CLI version `{v}`")))
-        .collect::<Result<Vec<_>>>()?;
-    if !versions.windows(2).all(|w| w[0] < w[1]) {
-        bail!("{label} must be sorted by semver");
-    }
-    Ok(versions)
-}
-
 /// Force the map to parse at startup, surfacing embedded-data bugs clearly.
 pub fn validate_embedded_map() -> Result<()> {
     let raw: AnchorSolanaMap =
@@ -790,11 +746,19 @@ pub fn validate_embedded_map() -> Result<()> {
             .with_context(|| format!("Invalid Solana version `{}` in map", e.solana))?;
     }
 
-    parse_embedded_solana_cli_versions(SOLANA_CLI_VERSIONS_TOML, "Solana CLI versions")?;
-    parse_embedded_solana_cli_versions(
-        LEGACY_SOLANA_CLI_VERSIONS_TOML,
-        "legacy Solana CLI versions",
-    )?;
+    let raw: SolanaCliVersions =
+        toml::from_str(SOLANA_CLI_VERSIONS_TOML).context("Parsing embedded Solana CLI versions")?;
+    if raw.versions.is_empty() {
+        bail!("solana-cli-versions.toml must have at least one entry");
+    }
+    let versions = raw
+        .versions
+        .iter()
+        .map(|v| Version::parse(v).with_context(|| format!("Invalid Solana CLI version `{v}`")))
+        .collect::<Result<Vec<_>>>()?;
+    if !versions.windows(2).all(|w| w[0] < w[1]) {
+        bail!("solana-cli-versions.toml entries must be sorted by semver");
+    }
     Ok(())
 }
 
@@ -897,33 +861,18 @@ mod tests {
     }
 
     #[test]
-    fn exact_toolchain_solana_req_uses_legacy_github_release_when_not_on_anza() {
+    fn exact_toolchain_solana_req_errors_when_not_hosted() {
         let dir = TempDir::new().unwrap();
         write(
             &dir.path().join("Anchor.toml"),
             "[toolchain]\nsolana_version = \"=1.17.18\"\n",
         );
 
-        let res = resolve_solana_cli_with(dir.path(), &[], None)
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(res.version, v("1.17.18"));
-    }
-
-    #[test]
-    fn unsupported_toolchain_solana_req_errors() {
-        let dir = TempDir::new().unwrap();
-        write(
-            &dir.path().join("Anchor.toml"),
-            "[toolchain]\nsolana_version = \"=1.13.0\"\n",
-        );
-
         let err = resolve_solana_cli_with(dir.path(), &[], None).unwrap_err();
 
         assert!(err
             .to_string()
-            .contains("No known installable Solana CLI version"));
+            .contains("No installable Solana CLI version hosted by Anza"));
     }
 
     #[test]
@@ -949,7 +898,7 @@ mod tests {
     }
 
     #[test]
-    fn old_solana_program_req_uses_newest_known_compatible_cli() {
+    fn old_solana_program_req_uses_hosted_compatible_cli() {
         let dir = TempDir::new().unwrap();
         write(&dir.path().join("Anchor.toml"), "");
         write(
@@ -964,28 +913,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(res.version, v("1.18.26"));
-        assert!(matches!(
-            res.source,
-            SolanaCliResolutionSource::Project(SolanaResolutionSource::CargoToml(_))
-        ));
-    }
-
-    #[test]
-    fn old_solana_program_tilde_req_uses_newest_legacy_github_compatible_cli() {
-        let dir = TempDir::new().unwrap();
-        write(&dir.path().join("Anchor.toml"), "");
-        write(
-            &dir.path().join("programs/foo/Cargo.toml"),
-            "[package]\nname = \"foo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[lib]\npath = \
-             \"src/lib.rs\"\n[dependencies]\nsolana-program = \"~1.16.7\"\n",
-        );
-        write(&dir.path().join("programs/foo/src/lib.rs"), "");
-
-        let res = resolve_solana_cli_with(dir.path(), &[], None)
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(res.version, v("1.16.27"));
         assert!(matches!(
             res.source,
             SolanaCliResolutionSource::Project(SolanaResolutionSource::CargoToml(_))
@@ -1011,7 +938,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_solana_program_req_uses_legacy_github_release_when_not_on_anza() {
+    fn exact_solana_program_req_errors_when_not_hosted() {
         let dir = TempDir::new().unwrap();
         write(&dir.path().join("Anchor.toml"), "");
         write(
@@ -1021,11 +948,11 @@ mod tests {
         );
         write(&dir.path().join("programs/foo/src/lib.rs"), "");
 
-        let res = resolve_solana_cli_with(dir.path(), &[], None)
-            .unwrap()
-            .unwrap();
+        let err = resolve_solana_cli_with(dir.path(), &[], None).unwrap_err();
 
-        assert_eq!(res.version, v("1.17.18"));
+        assert!(err
+            .to_string()
+            .contains("No installable Solana CLI version hosted by Anza"));
     }
 
     #[test]
@@ -1231,30 +1158,6 @@ mod tests {
         assert!(msg.contains("status exit status: 1"));
         assert!(msg.contains("stdout:\n(empty)"));
         assert!(msg.contains("stderr:\nerror: invalid active_release path"));
-    }
-
-    #[test]
-    fn bootstrap_treats_requested_active_solana_as_installed_even_without_command() {
-        assert_eq!(
-            installer_setup_after_bootstrap(false, Some(&v("1.17.34")), &v("1.17.34")),
-            Some(InstallerSetup::RequestedVersionInstalled)
-        );
-    }
-
-    #[test]
-    fn bootstrap_uses_installer_command_when_active_solana_is_different() {
-        assert_eq!(
-            installer_setup_after_bootstrap(true, Some(&v("3.1.10")), &v("1.17.34")),
-            Some(InstallerSetup::CommandAvailable)
-        );
-    }
-
-    #[test]
-    fn bootstrap_errors_when_command_missing_and_active_solana_is_different() {
-        assert_eq!(
-            installer_setup_after_bootstrap(false, Some(&v("3.1.10")), &v("1.17.34")),
-            None
-        );
     }
 
     #[test]
