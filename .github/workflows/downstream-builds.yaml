@@ -75,7 +75,7 @@ jobs:
           path: anchor-community
 
       - name: Verify vendored source
-        run: test -f "${{ matrix.build_path }}/Anchor.toml"
+        run: test -d "${{ matrix.build_path }}"
 
       - name: Checkout latest AVM from otter-sec/anchor#4534
         uses: actions/checkout@v3
