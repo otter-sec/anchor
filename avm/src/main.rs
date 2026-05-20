@@ -329,6 +329,7 @@ fn anchor_proxy() -> Result<()> {
         // Signal to the spawned anchor-cli that AVM has already resolved the
         // toolchain version, so it must not re-exec via `[toolchain] anchor_version`.
         .env("AVM_ACTIVE", "1")
+        .env("CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS", "fallback")
         .spawn()?
         .wait_with_output()
         .expect("Failed to run anchor-cli");
