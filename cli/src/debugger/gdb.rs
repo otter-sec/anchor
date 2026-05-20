@@ -666,3 +666,66 @@ fn rle_decode(src: &[u8]) -> Vec<u8> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, std::fmt::Write as _, tempfile::tempdir};
+
+    fn bytes_to_hex(bytes: &[u8]) -> String {
+        let mut out = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            write!(&mut out, "{byte:02x}").unwrap();
+        }
+        out
+    }
+
+    fn regs_hex(regs: [u64; REG_COUNT]) -> String {
+        let bytes = regs
+            .iter()
+            .flat_map(|reg| reg.to_le_bytes())
+            .collect::<Vec<_>>();
+        bytes_to_hex(&bytes)
+    }
+
+    #[test]
+    fn decode_regs_hex_reads_pc_from_r11_little_endian() {
+        let mut regs = [0u64; REG_COUNT];
+        regs[0] = 0x11;
+        regs[11] = 0x1122_3344_5566_7788;
+
+        let (raw, pc, cu, insn) = decode_regs_hex(&regs_hex(regs)).unwrap();
+
+        assert_eq!(pc, 0x1122_3344_5566_7788);
+        assert_eq!(cu, 0);
+        assert_eq!(insn, [0; 8]);
+        assert_eq!(u64::from_le_bytes(raw[0..8].try_into().unwrap()), 0x11);
+    }
+
+    #[test]
+    fn decode_bytes_hex_rejects_short_or_invalid_payload() {
+        assert!(decode_bytes_hex::<8>("00").is_err());
+        assert!(decode_bytes_hex::<1>("zz").is_err());
+    }
+
+    #[test]
+    fn rle_decode_expands_gdb_rsp_runs() {
+        assert_eq!(rle_decode(b"A* B"), b"AAAAB".to_vec());
+    }
+
+    #[test]
+    fn regular_invocation_stems_ignores_gdb_sidecars_and_sorts_by_tx_inv() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("0002__tx1.regs"), vec![0u8; REG_BYTES]).unwrap();
+        std::fs::write(dir.path().join("0001__tx1.regs"), vec![0u8; REG_BYTES * 2]).unwrap();
+        std::fs::write(dir.path().join("0001__tx2.regs"), vec![0u8; REG_BYTES]).unwrap();
+        std::fs::write(dir.path().join("0001__tx1.gdb.regs"), vec![0u8; REG_BYTES]).unwrap();
+
+        let stems = regular_invocation_stems(dir.path()).unwrap();
+
+        assert_eq!(stems.len(), 3);
+        assert_eq!(stems[0].stem.file_name().unwrap(), "0001__tx1");
+        assert_eq!(stems[0].step_count, 2);
+        assert_eq!(stems[1].stem.file_name().unwrap(), "0002__tx1");
+        assert_eq!(stems[2].stem.file_name().unwrap(), "0001__tx2");
+    }
+}

@@ -12,12 +12,14 @@
 //! jobs that pin the toolchain pick it up automatically.
 
 use {
-    anchor_cli::debugger::source::SourceResolver,
+    anchor_cli::debugger::{arena, source::SourceResolver},
     std::{
-        collections::BTreeSet,
+        collections::{BTreeMap, BTreeSet},
+        fs,
         path::{Path, PathBuf},
         process::Command,
     },
+    tempfile::tempdir,
 };
 
 const FIXTURE_CRATE_REL: &str = "tests/fixtures/debugger_program";
@@ -133,6 +135,29 @@ fn is_fixture_lib_rs(p: &Path) -> bool {
     matches!((penult, last), (Some("src"), Some("lib.rs")))
 }
 
+fn regs_bytes(pcs: &[u64]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(pcs.len() * 12 * std::mem::size_of::<u64>());
+    for pc in pcs {
+        let mut regs = [0u64; 12];
+        regs[11] = *pc;
+        for reg in regs {
+            out.extend_from_slice(&reg.to_le_bytes());
+        }
+    }
+    out
+}
+
+fn write_trace_invocation(test_dir: &Path, stem: &str, program_id: &str, pcs: &[u64]) {
+    fs::create_dir_all(test_dir).unwrap();
+    fs::write(test_dir.join(format!("{stem}.regs")), regs_bytes(pcs)).unwrap();
+    fs::write(
+        test_dir.join(format!("{stem}.insns")),
+        vec![0u8; pcs.len() * 8],
+    )
+    .unwrap();
+    fs::write(test_dir.join(format!("{stem}.program_id")), program_id).unwrap();
+}
+
 #[test]
 fn source_resolver_maps_pcs_to_fixture_markers() {
     let Some(elf) = build_fixture() else {
@@ -209,4 +234,49 @@ fn source_resolver_handles_stripped_elf_without_dwarf() {
     for pc in 0..MAX_PROBE_PC {
         let _ = resolver.resolve(pc);
     }
+}
+
+#[test]
+fn debugger_session_orders_invocations_top_down_and_filters_tests() {
+    let Some(elf) = build_fixture() else {
+        return;
+    };
+
+    let dir = tempdir().unwrap();
+    let wanted = dir.path().join("wanted_case");
+    let ignored = dir.path().join("ignored_case");
+    let child_pid = "Child111111111111111111111111111111111";
+    let top_pid = "Top11111111111111111111111111111111111";
+    let ignored_pid = "Ignored111111111111111111111111111111";
+
+    // The profile callback writes nested invocations bottom-up. The debugger
+    // reverses them so users see top-level first, then CPI children.
+    write_trace_invocation(&wanted, "0001__tx1", child_pid, &[0, 1]);
+    write_trace_invocation(&wanted, "0002__tx1", top_pid, &[0, 1]);
+    write_trace_invocation(&ignored, "0001__tx1", ignored_pid, &[0]);
+
+    let programs = BTreeMap::from([
+        (child_pid.to_string(), elf.clone()),
+        (top_pid.to_string(), elf.clone()),
+        (ignored_pid.to_string(), elf),
+    ]);
+
+    let session = arena::build_session(
+        dir.path(),
+        &programs,
+        Some(&fixture_dir()),
+        Some(&fixture_dir()),
+        Some("wanted"),
+    )
+    .unwrap();
+
+    assert_eq!(session.txs.len(), 1);
+    let tx = &session.txs[0];
+    assert_eq!(tx.test_name, "wanted_case");
+    assert_eq!(tx.tx_seq, 1);
+    assert_eq!(tx.nodes.len(), 2);
+    assert_eq!(tx.nodes[0].program_id, top_pid);
+    assert_eq!(tx.nodes[1].program_id, child_pid);
+    assert!(tx.nodes.iter().all(|node| !node.steps.is_empty()));
+    assert!(tx.total_cu > 0);
 }

@@ -858,3 +858,219 @@ fn shorten_qualified_name(name: &str) -> String {
 
     parts[parts.len() - 3..].join("::")
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, std::path::Path, tempfile::tempdir};
+
+    fn regs_bytes(pcs: &[u64]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(pcs.len() * REGS_ENTRY_SIZE);
+        for pc in pcs {
+            let mut regs = [0u64; 12];
+            regs[11] = *pc;
+            for reg in regs {
+                out.extend_from_slice(&reg.to_le_bytes());
+            }
+        }
+        out
+    }
+
+    fn insns_bytes(insns: &[[u8; INSN_ENTRY_SIZE]]) -> Vec<u8> {
+        insns.iter().flat_map(|insn| insn.iter().copied()).collect()
+    }
+
+    fn plain_insns(count: usize) -> Vec<[u8; INSN_ENTRY_SIZE]> {
+        vec![[0; INSN_ENTRY_SIZE]; count]
+    }
+
+    fn call_imm(imm: u32) -> [u8; INSN_ENTRY_SIZE] {
+        let mut insn = [0; INSN_ENTRY_SIZE];
+        insn[0] = ebpf::CALL_IMM;
+        insn[4..8].copy_from_slice(&imm.to_le_bytes());
+        insn
+    }
+
+    fn write_invocation(dir: &Path, stem: &str, program_id: &str, pcs: &[u64]) {
+        std::fs::create_dir_all(dir).unwrap();
+        let insns = plain_insns(pcs.len());
+        std::fs::write(dir.join(format!("{stem}.regs")), regs_bytes(pcs)).unwrap();
+        std::fs::write(dir.join(format!("{stem}.insns")), insns_bytes(&insns)).unwrap();
+        std::fs::write(dir.join(format!("{stem}.program_id")), program_id).unwrap();
+    }
+
+    #[test]
+    fn lookup_function_with_pc_uses_nearest_lower_symbol() {
+        let symbols = BTreeMap::from([
+            (10, "entry".to_string()),
+            (20, "callee".to_string()),
+            (40, "tail".to_string()),
+        ]);
+
+        assert_eq!(
+            lookup_function_with_pc(&symbols, 20),
+            ("callee".to_string(), 20)
+        );
+        assert_eq!(
+            lookup_function_with_pc(&symbols, 27),
+            ("callee".to_string(), 20)
+        );
+        assert_eq!(
+            lookup_function_with_pc(&symbols, 9),
+            ("unknown_0x9".to_string(), 9)
+        );
+    }
+
+    #[test]
+    fn stream_trace_resyncs_call_stack_from_pc_flow() {
+        let symbols = BTreeMap::from([
+            (0, "entry".to_string()),
+            (10, "callee".to_string()),
+            (20, "tail".to_string()),
+        ]);
+        let pcs = [0, 1, 10, 11, 2, 20, 21, 3];
+        let insns = plain_insns(pcs.len());
+        let mut observed = Vec::new();
+
+        stream_trace(
+            &regs_bytes(&pcs),
+            &insns_bytes(&insns),
+            pcs.len(),
+            &symbols,
+            &BTreeMap::new(),
+            "program",
+            &ComputeBudget::new_with_defaults(false, false),
+            |step| observed.push((step.pc, step.func.to_owned(), step.call_stack.to_vec())),
+        );
+
+        assert_eq!(
+            observed
+                .iter()
+                .map(|(_, _, stack)| stack.len())
+                .collect::<Vec<_>>(),
+            vec![2, 2, 3, 3, 2, 3, 3, 2]
+        );
+        assert_eq!(observed[2].1, "callee");
+        assert_eq!(observed[4].1, "entry");
+        assert_eq!(observed[5].1, "tail");
+        assert_eq!(observed[7].1, "entry");
+    }
+
+    #[test]
+    fn stream_trace_attributes_sequential_call_imm_as_syscall_leaf() {
+        let symbols = BTreeMap::from([(0, "entry".to_string())]);
+        let syscall_hash = ebpf::hash_symbol_name(b"sol_log_64_");
+        let syscall_names = BTreeMap::from([(syscall_hash, "sol_log_64_".to_string())]);
+        let pcs = [0, 1];
+        let insns = [call_imm(syscall_hash), [0; INSN_ENTRY_SIZE]];
+        let mut observed = Vec::new();
+
+        stream_trace(
+            &regs_bytes(&pcs),
+            &insns_bytes(&insns),
+            pcs.len(),
+            &symbols,
+            &syscall_names,
+            "program",
+            &ComputeBudget::new_with_defaults(false, false),
+            |step| {
+                observed.push((
+                    step.pc,
+                    step.syscall.clone(),
+                    step.cu_cost,
+                    step.call_stack.to_vec(),
+                ))
+            },
+        );
+
+        assert_eq!(observed[0].0, 0);
+        assert_eq!(observed[0].1.as_deref(), Some("sol_log_64_"));
+        assert!(observed[0].2 > 1);
+        assert_eq!(observed[0].3, vec!["program", "entry @ 0x0"]);
+        assert_eq!(observed[1].1, None);
+        assert_eq!(observed[1].3, vec!["program", "entry @ 0x0"]);
+    }
+
+    #[test]
+    fn stream_trace_does_not_treat_last_call_imm_as_syscall() {
+        let symbols = BTreeMap::from([(0, "entry".to_string())]);
+        let syscall_hash = ebpf::hash_symbol_name(b"sol_log_64_");
+        let syscall_names = BTreeMap::from([(syscall_hash, "sol_log_64_".to_string())]);
+        let mut observed = Vec::new();
+
+        stream_trace(
+            &regs_bytes(&[0]),
+            &insns_bytes(&[call_imm(syscall_hash)]),
+            1,
+            &symbols,
+            &syscall_names,
+            "program",
+            &ComputeBudget::new_with_defaults(false, false),
+            |step| observed.push((step.syscall.clone(), step.cu_cost)),
+        );
+
+        assert_eq!(observed, vec![(None, 1)]);
+    }
+
+    #[test]
+    fn discover_invocations_sorts_by_tx_then_inv_and_ignores_incomplete_files() {
+        let dir = tempdir().unwrap();
+        write_invocation(dir.path(), "0002__tx1", "pid_b", &[0]);
+        write_invocation(dir.path(), "0001__tx2", "pid_c", &[0]);
+        write_invocation(dir.path(), "0001__tx1", "pid_a", &[0]);
+        std::fs::write(dir.path().join("bad.regs"), regs_bytes(&[0])).unwrap();
+        std::fs::write(dir.path().join("0003__tx1.regs"), regs_bytes(&[0])).unwrap();
+        std::fs::write(dir.path().join("0004__tx1.regs"), regs_bytes(&[0])).unwrap();
+        std::fs::write(
+            dir.path().join("0004__tx1.insns"),
+            insns_bytes(&plain_insns(1)),
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("0005__tx1.gdb.regs"), regs_bytes(&[0])).unwrap();
+
+        let found = discover_invocations(dir.path()).unwrap();
+
+        assert_eq!(found.len(), 3);
+        assert_eq!(
+            found
+                .iter()
+                .map(|inv| (inv.tx_seq, inv.inv_seq, inv.program_id.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(1, 1, "pid_a"), (1, 2, "pid_b"), (2, 1, "pid_c")]
+        );
+    }
+
+    #[test]
+    fn build_tx_reports_separates_transactions_and_keeps_unresolved_program_cu() {
+        let dir = tempdir().unwrap();
+        let pid = "Program111111111111111111111111111111111";
+        write_invocation(dir.path(), "0001__tx1", pid, &[0, 1]);
+        write_invocation(dir.path(), "0002__tx2", pid, &[0]);
+
+        let reports = build_tx_reports("case", dir.path(), &BTreeMap::new(), None).unwrap();
+
+        assert_eq!(reports.keys().copied().collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(reports[&1].program_name, "case · tx1");
+        assert_eq!(reports[&1].total_cu, 2);
+        assert_eq!(reports[&2].total_cu, 1);
+        assert!(reports[&1]
+            .stacks
+            .keys()
+            .any(|stack| stack.first().is_some_and(|f| f.starts_with("[unresolved "))));
+    }
+
+    #[test]
+    fn build_tx_reports_merges_multiple_invocations_in_same_tx() {
+        let dir = tempdir().unwrap();
+        let pid = "Program222222222222222222222222222222222";
+        write_invocation(dir.path(), "0001__tx7", pid, &[0]);
+        write_invocation(dir.path(), "0002__tx7", pid, &[0]);
+
+        let reports = build_tx_reports("case", dir.path(), &BTreeMap::new(), None).unwrap();
+
+        assert_eq!(reports.keys().copied().collect::<Vec<_>>(), vec![7]);
+        let report = &reports[&7];
+        assert_eq!(report.total_cu, 2);
+        assert_eq!(report.stacks.len(), 1);
+        assert_eq!(*report.stacks.values().next().unwrap(), 2);
+    }
+}

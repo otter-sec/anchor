@@ -570,3 +570,196 @@ fn short_pid(pid: &str) -> String {
         format!("{}…{}", &pid[..8], &pid[pid.len() - 4..])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, tempfile::tempdir};
+
+    fn invocation(dir: &Path) -> InvocationFiles {
+        InvocationFiles {
+            inv_seq: 1,
+            tx_seq: 1,
+            program_id: "Program1111111111111111111".to_string(),
+            regs_path: dir.join("0001__tx1.regs"),
+            insns_path: dir.join("0001__tx1.insns"),
+        }
+    }
+
+    fn regs_entries(pcs: &[u64]) -> Vec<[u64; 12]> {
+        pcs.iter()
+            .map(|pc| {
+                let mut regs = [0u64; 12];
+                regs[0] = 0x55;
+                regs[11] = *pc;
+                regs
+            })
+            .collect()
+    }
+
+    fn regs_bytes(entries: &[[u64; 12]]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(entries.len() * REGS_ENTRY_SIZE);
+        for regs in entries {
+            for reg in regs {
+                out.extend_from_slice(&reg.to_le_bytes());
+            }
+        }
+        out
+    }
+
+    fn insns_bytes(count: usize, byte: u8) -> Vec<u8> {
+        vec![byte; count * INSN_ENTRY_SIZE]
+    }
+
+    fn cu_bytes(values: &[u64]) -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect()
+    }
+
+    fn gdb_entries_for_regular(entries: &[[u64; 12]], text_addr: u64) -> Vec<[u64; 12]> {
+        entries
+            .iter()
+            .map(|regular| {
+                let mut gdb = *regular;
+                gdb[11] = text_addr + regular[11] * INSN_ENTRY_SIZE as u64;
+                gdb
+            })
+            .collect()
+    }
+
+    fn write_sidecars(
+        inv: &InvocationFiles,
+        gdb_regs: &[[u64; 12]],
+        gdb_insns: &[u8],
+        cu_remaining: &[u64],
+    ) {
+        fs::write(
+            inv.regs_path.with_extension("gdb.regs"),
+            regs_bytes(gdb_regs),
+        )
+        .unwrap();
+        fs::write(inv.regs_path.with_extension("gdb.insns"), gdb_insns).unwrap();
+        fs::write(
+            inv.regs_path.with_extension("gdb.cu"),
+            cu_bytes(cu_remaining),
+        )
+        .unwrap();
+    }
+
+    fn sidecar_err(
+        inv: &InvocationFiles,
+        regular_regs: &[u8],
+        regular_insns: &[u8],
+        regular_count: usize,
+    ) -> String {
+        match load_gdb_sidecars(inv, regular_regs, regular_insns, regular_count) {
+            Ok(_) => panic!("expected gdb sidecar validation error"),
+            Err(err) => format!("{err:#}"),
+        }
+    }
+
+    #[test]
+    fn gdb_sidecars_normalize_virtual_pc_and_override_cu_costs() {
+        let dir = tempdir().unwrap();
+        let inv = invocation(dir.path());
+        let regular_entries = regs_entries(&[0, 1, 2]);
+        let regular_regs = regs_bytes(&regular_entries);
+        let regular_insns = insns_bytes(3, 0xab);
+        let gdb_entries = gdb_entries_for_regular(&regular_entries, 0x1000);
+        write_sidecars(&inv, &gdb_entries, &regular_insns, &[100, 93, 90]);
+
+        let sidecar = load_gdb_sidecars(&inv, &regular_regs, &regular_insns, 3)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(sidecar.regs, regular_regs);
+        assert_eq!(sidecar.insns, regular_insns);
+        assert_eq!(sidecar.cu_costs, vec![0, 7, 3]);
+    }
+
+    #[test]
+    fn gdb_sidecars_reject_incomplete_sets() {
+        let dir = tempdir().unwrap();
+        let inv = invocation(dir.path());
+        let regular_entries = regs_entries(&[0]);
+        let regular_regs = regs_bytes(&regular_entries);
+        let regular_insns = insns_bytes(1, 0xab);
+        fs::write(
+            inv.regs_path.with_extension("gdb.regs"),
+            regs_bytes(&gdb_entries_for_regular(&regular_entries, 0x1000)),
+        )
+        .unwrap();
+
+        let err = sidecar_err(&inv, &regular_regs, &regular_insns, 1);
+
+        assert!(err.contains("incomplete gdb sidecar set"));
+    }
+
+    #[test]
+    fn gdb_sidecars_reject_count_mismatch() {
+        let dir = tempdir().unwrap();
+        let inv = invocation(dir.path());
+        let regular_entries = regs_entries(&[0, 1]);
+        let regular_regs = regs_bytes(&regular_entries);
+        let regular_insns = insns_bytes(2, 0xab);
+        let gdb_entries = gdb_entries_for_regular(&regular_entries[..1], 0x1000);
+        write_sidecars(
+            &inv,
+            &gdb_entries,
+            &regular_insns[..INSN_ENTRY_SIZE],
+            &[100],
+        );
+
+        let err = sidecar_err(&inv, &regular_regs, &regular_insns, 2);
+
+        assert!(err.contains("gdb sidecar count mismatch"));
+    }
+
+    #[test]
+    fn gdb_sidecars_reject_instruction_mismatch() {
+        let dir = tempdir().unwrap();
+        let inv = invocation(dir.path());
+        let regular_entries = regs_entries(&[0, 1]);
+        let regular_regs = regs_bytes(&regular_entries);
+        let regular_insns = insns_bytes(2, 0xab);
+        let gdb_entries = gdb_entries_for_regular(&regular_entries, 0x1000);
+        write_sidecars(&inv, &gdb_entries, &insns_bytes(2, 0xcd), &[100, 99]);
+
+        let err = sidecar_err(&inv, &regular_regs, &regular_insns, 2);
+
+        assert!(err.contains("gdb sidecar instruction bytes differ"));
+    }
+
+    #[test]
+    fn gdb_sidecars_reject_register_mismatch() {
+        let dir = tempdir().unwrap();
+        let inv = invocation(dir.path());
+        let regular_entries = regs_entries(&[0]);
+        let regular_regs = regs_bytes(&regular_entries);
+        let regular_insns = insns_bytes(1, 0xab);
+        let mut gdb_entries = gdb_entries_for_regular(&regular_entries, 0x1000);
+        gdb_entries[0][0] = 0x66;
+        write_sidecars(&inv, &gdb_entries, &regular_insns, &[100]);
+
+        let err = sidecar_err(&inv, &regular_regs, &regular_insns, 1);
+
+        assert!(err.contains("gdb register r0 mismatch"));
+    }
+
+    #[test]
+    fn gdb_sidecars_reject_inconsistent_text_address() {
+        let dir = tempdir().unwrap();
+        let inv = invocation(dir.path());
+        let regular_entries = regs_entries(&[0, 1]);
+        let regular_regs = regs_bytes(&regular_entries);
+        let regular_insns = insns_bytes(2, 0xab);
+        let mut gdb_entries = gdb_entries_for_regular(&regular_entries, 0x1000);
+        gdb_entries[1][11] = 0x2000 + INSN_ENTRY_SIZE as u64;
+        write_sidecars(&inv, &gdb_entries, &regular_insns, &[100, 99]);
+
+        let err = sidecar_err(&inv, &regular_regs, &regular_insns, 2);
+
+        assert!(err.contains("gdb PC/text address mismatch"));
+    }
+}
