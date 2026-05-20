@@ -20,6 +20,7 @@ use {
     serde::Deserialize,
     std::{
         fmt::Display,
+        fs,
         io::ErrorKind,
         path::Path,
         process::{Command, Output, Stdio},
@@ -153,6 +154,12 @@ pub struct SolanaCliResolution {
 pub enum SolanaInstaller {
     SolanaInstall,
     AgaveInstall,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InstallerSetup {
+    CommandAvailable,
+    RequestedVersionInstalled,
 }
 
 impl SolanaInstaller {
@@ -330,7 +337,12 @@ fn install_solana_cli_with_options(
         return Ok(());
     }
 
-    ensure_installer_command(version, installer)?;
+    if ensure_installer_command(version, installer)? == InstallerSetup::RequestedVersionInstalled {
+        if report_success {
+            println!("Now using Solana {version} via `{}`.", installer.command());
+        }
+        return Ok(());
+    }
 
     let installed = read_installed_solana_versions(installer)?;
     let quiet = installed.iter().any(|installed| installed == version);
@@ -346,6 +358,19 @@ fn install_solana_cli_with_options(
         .status()
         .with_context(|| format!("Running `{}`", installer.command()))?;
     if !status.success() {
+        if installer == SolanaInstaller::SolanaInstall {
+            install_legacy_solana_from_github_release(
+                version,
+                format!(
+                    "Failed to activate Solana {version} with `{}` (status {status})",
+                    installer.command()
+                ),
+            )?;
+            if report_success {
+                println!("Now using Solana {version} via `{}`.", installer.command());
+            }
+            return Ok(());
+        }
         bail!(
             "Failed to activate Solana {version} with `{}`",
             installer.command()
@@ -358,25 +383,115 @@ fn install_solana_cli_with_options(
     Ok(())
 }
 
-fn ensure_installer_command(version: &Version, installer: SolanaInstaller) -> Result<()> {
+fn ensure_installer_command(
+    version: &Version,
+    installer: SolanaInstaller,
+) -> Result<InstallerSetup> {
     if installer_command_available(installer)? {
-        return Ok(());
+        return Ok(InstallerSetup::CommandAvailable);
     }
 
     let command = installer.command();
     let url = installer.install_url(version);
     eprintln!("Command not installed: `{command}`. Installing from {url}");
 
-    let script = download_installer_script(&url)?;
+    let script = match download_installer_script(&url) {
+        Ok(script) => script,
+        Err(err) if installer == SolanaInstaller::SolanaInstall => {
+            install_legacy_solana_from_github_release(version, format!("{url}: {err}"))?;
+            return Ok(InstallerSetup::RequestedVersionInstalled);
+        }
+        Err(err) => return Err(err),
+    };
     let status = Command::new("sh")
         .arg("-c")
         .arg(script)
         .status()
         .with_context(|| format!("Running installer from {url}"))?;
     if !status.success() {
+        if installer == SolanaInstaller::SolanaInstall {
+            install_legacy_solana_from_github_release(
+                version,
+                format!("Failed to install `{command}` from {url} (status {status})"),
+            )?;
+            return Ok(InstallerSetup::RequestedVersionInstalled);
+        }
         bail!("Failed to install `{command}` from {url}");
     }
+    Ok(InstallerSetup::CommandAvailable)
+}
+
+fn install_legacy_solana_from_github_release(
+    version: &Version,
+    primary_error: String,
+) -> Result<()> {
+    let target = legacy_solana_release_target(std::env::consts::OS, std::env::consts::ARCH)?;
+    let url = legacy_solana_release_url(version, target);
+    eprintln!("Installing legacy Solana {version} from GitHub release asset {url}");
+
+    let installer = std::env::temp_dir().join(format!("solana-install-init-{target}-{version}"));
+    let bytes = download_installer_bytes(&url)
+        .with_context(|| format!("Primary installer error: {primary_error}"))?;
+    fs::write(&installer, bytes)
+        .with_context(|| format!("Writing legacy Solana installer to {}", installer.display()))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&installer, fs::Permissions::from_mode(0o755)).with_context(|| {
+            format!(
+                "Marking legacy Solana installer executable at {}",
+                installer.display()
+            )
+        })?;
+    }
+
+    let data_dir = solana_install_data_dir()?;
+    let output = Command::new(&installer)
+        .arg("--data-dir")
+        .arg(&data_dir)
+        .arg("--no-modify-path")
+        .arg(version.to_string())
+        .output()
+        .with_context(|| format!("Running legacy Solana installer {}", installer.display()))?;
+    if !output.status.success() {
+        bail!(
+            "Failed to install legacy Solana {version} from {url}:\n{}\nPrimary installer error: \
+             {primary_error}",
+            command_failure_message(
+                installer.to_string_lossy().as_ref(),
+                &["--data-dir", "<data-dir>", "--no-modify-path", "<version>"],
+                &output,
+            )
+        );
+    }
+
     Ok(())
+}
+
+fn legacy_solana_release_target(os: &str, arch: &str) -> Result<&'static str> {
+    match (os, arch) {
+        ("macos", "aarch64") => Ok("aarch64-apple-darwin"),
+        ("macos", "x86_64") => Ok("x86_64-apple-darwin"),
+        ("linux", "x86_64") => Ok("x86_64-unknown-linux-gnu"),
+        _ => bail!("Unsupported platform for legacy Solana GitHub release installer: {arch}-{os}"),
+    }
+}
+
+fn legacy_solana_release_url(version: &Version, target: &str) -> String {
+    format!(
+        "https://github.com/solana-labs/solana/releases/download/v{version}/\
+         solana-install-init-{target}"
+    )
+}
+
+fn solana_install_data_dir() -> Result<std::path::PathBuf> {
+    Ok(dirs::home_dir()
+        .ok_or_else(|| anyhow!("Could not find home directory"))?
+        .join(".local")
+        .join("share")
+        .join("solana")
+        .join("install"))
 }
 
 fn installer_command_available(installer: SolanaInstaller) -> Result<bool> {
@@ -491,6 +606,39 @@ fn download_installer_script(url: &str) -> Result<String> {
     ))
 }
 
+fn download_installer_bytes(url: &str) -> Result<Vec<u8>> {
+    for attempt in 1..=INSTALLER_DOWNLOAD_MAX_ATTEMPTS {
+        match try_download_installer_bytes(url) {
+            Ok(bytes) => return Ok(bytes),
+            Err(err) if err.retryable && attempt < INSTALLER_DOWNLOAD_MAX_ATTEMPTS => {
+                let delay = installer_download_backoff(attempt);
+                eprintln!(
+                    "Failed to download Solana installer asset from {url} (attempt \
+                     {attempt}/{INSTALLER_DOWNLOAD_MAX_ATTEMPTS}): {}. Retrying in {}ms...",
+                    err.error,
+                    delay.as_millis()
+                );
+                thread::sleep(delay);
+            }
+            Err(err) => {
+                if attempt > 1 {
+                    return Err(err.error).with_context(|| {
+                        format!(
+                            "Downloading Solana installer asset from {url} failed after {attempt} \
+                             attempts"
+                        )
+                    });
+                }
+                return Err(err.error);
+            }
+        }
+    }
+
+    Err(anyhow!(
+        "Downloading Solana installer asset from {url} exhausted retry attempts"
+    ))
+}
+
 struct InstallerDownloadError {
     error: anyhow::Error,
     retryable: bool,
@@ -515,6 +663,30 @@ fn try_download_installer_script(url: &str) -> std::result::Result<String, Insta
         error: anyhow!("Reading installer script from {url}: {err}"),
         retryable: true,
     })
+}
+
+fn try_download_installer_bytes(url: &str) -> std::result::Result<Vec<u8>, InstallerDownloadError> {
+    let response = DOWNLOAD_CLIENT
+        .get(url)
+        .send()
+        .map_err(|err| InstallerDownloadError {
+            error: anyhow!("Sending GET {url}: {err}"),
+            retryable: true,
+        })?;
+    if !response.status().is_success() {
+        let status = response.status();
+        return Err(InstallerDownloadError {
+            error: anyhow!("Failed to download `{url}` (status {status})"),
+            retryable: should_retry_installer_download_status(status),
+        });
+    }
+    response
+        .bytes()
+        .map(|bytes| bytes.to_vec())
+        .map_err(|err| InstallerDownloadError {
+            error: anyhow!("Reading installer asset from {url}: {err}"),
+            retryable: true,
+        })
 }
 
 fn should_retry_installer_download_status(status: StatusCode) -> bool {
@@ -918,6 +1090,32 @@ mod tests {
             SolanaInstaller::AgaveInstall.install_url(&v("3.1.10")),
             "https://release.anza.xyz/v3.1.10/install"
         );
+    }
+
+    #[test]
+    fn legacy_solana_github_release_url_uses_target_asset() {
+        assert_eq!(
+            legacy_solana_release_url(&v("1.17.18"), "x86_64-unknown-linux-gnu"),
+            "https://github.com/solana-labs/solana/releases/download/v1.17.18/\
+             solana-install-init-x86_64-unknown-linux-gnu"
+        );
+    }
+
+    #[test]
+    fn legacy_solana_release_target_matches_supported_hosts() {
+        assert_eq!(
+            legacy_solana_release_target("linux", "x86_64").unwrap(),
+            "x86_64-unknown-linux-gnu"
+        );
+        assert_eq!(
+            legacy_solana_release_target("macos", "aarch64").unwrap(),
+            "aarch64-apple-darwin"
+        );
+        assert_eq!(
+            legacy_solana_release_target("macos", "x86_64").unwrap(),
+            "x86_64-apple-darwin"
+        );
+        assert!(legacy_solana_release_target("windows", "x86_64").is_err());
     }
 
     #[test]
