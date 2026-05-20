@@ -66,7 +66,7 @@ pub struct ProgramArgs {
 impl Parse for ProgramArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut parsed = Self::default();
-        let args = input.parse_terminated::<_, Token![,]>(Ident::parse)?;
+        let args = input.parse_terminated(Ident::parse, Token![,])?;
 
         for arg in args {
             match arg.to_string().as_str() {

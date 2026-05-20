@@ -8,6 +8,7 @@
   "workspaces": [
     "anchor-cli-account",
     "anchor-cli-idl",
+    "anchor-cli-legacy-idl",
     "auction-house",
     "bench",
     "cashiers-check",

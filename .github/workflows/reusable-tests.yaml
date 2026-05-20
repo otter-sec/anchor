@@ -497,6 +497,8 @@ jobs:
             path: tests/relations-derivation
           - cmd: cd tests/anchor-cli-idl && ./test.sh
             path: tests/anchor-cli-idl
+          - cmd: cd tests/anchor-cli-legacy-idl && anchor test
+            path: tests/anchor-cli-legacy-idl
           - cmd: cd tests/anchor-cli-account && anchor test --skip-lint
             path: tests/anchor-cli-account
           - cmd: cd tests/bench && anchor test --skip-lint
