@@ -356,9 +356,9 @@ pub struct Config {
 
 #[derive(ValueEnum, Parser, Clone, Copy, PartialEq, Eq, Debug, AbsolutePath)]
 pub enum ValidatorType {
-    /// Use Surfpool validator
+    /// Use Surfpool validator (default)
     Surfpool,
-    /// Use Solana test validator (default)
+    /// Use Solana test validator
     Legacy,
 }
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]

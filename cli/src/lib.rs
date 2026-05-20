@@ -251,7 +251,7 @@ pub enum Command {
         #[clap(long)]
         run: Vec<String>,
         /// Validator type to use for local testing
-        #[clap(value_enum, long, default_value = "legacy")]
+        #[clap(value_enum, long, default_value = "surfpool")]
         validator: ValidatorType,
         /// Profile each test: record per-test SBF register traces and render flamegraph SVGs under target/anchor-v2-profile.
         #[clap(long)]
@@ -416,7 +416,7 @@ pub enum Command {
         #[clap(long)]
         ignore_keys: bool,
         /// Validator type to use for local testing
-        #[clap(value_enum, long, default_value = "legacy")]
+        #[clap(value_enum, long, default_value = "surfpool")]
         validator: ValidatorType,
         /// Environment variables to pass into the docker container
         #[clap(short, long, required = false)]
@@ -6190,18 +6190,18 @@ mod tests {
     }
 
     #[test]
-    fn test_validator_defaults_to_legacy() {
+    fn test_validator_defaults_to_surfpool() {
         let opts = Opts::try_parse_from(["anchor", "test"]).unwrap();
         let Command::Test { validator, .. } = opts.command else {
             panic!("expected test command");
         };
-        assert_eq!(validator, ValidatorType::Legacy);
+        assert_eq!(validator, ValidatorType::Surfpool);
 
         let opts = Opts::try_parse_from(["anchor", "localnet"]).unwrap();
         let Command::Localnet { validator, .. } = opts.command else {
             panic!("expected localnet command");
         };
-        assert_eq!(validator, ValidatorType::Legacy);
+        assert_eq!(validator, ValidatorType::Surfpool);
     }
 
     #[test]
