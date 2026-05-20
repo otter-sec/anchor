@@ -251,7 +251,7 @@ describe("anchor-cli-legacy-idl", () => {
       assert.fail("should have thrown");
     } catch (e) {
       assert.include(
-        e.toString(), 
+        e.toString(),
         "AnchorError caused by account: buffer. Error Code: ConstraintSigner. Error Number: 2002. Error Message: A signer constraint was violated"
       );
     }
