@@ -495,7 +495,6 @@ pub enum HookType {
 /// js-umi = false
 /// ```
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ClientsConfig {
     /// Regenerate clients automatically on `anchor build`.
     #[serde(default, skip_serializing_if = "is_false")]
@@ -1863,9 +1862,17 @@ go = { enable = true, path = "go-client" }
     }
 
     #[test]
-    fn unknown_clients_field_is_rejected() {
-        let toml = BASE_CONFIG.to_owned() + "[clients]\npython = true\n";
-        assert!(Config::from_str(&toml).is_err());
+    fn unknown_clients_fields_are_ignored_for_compatibility() {
+        let toml = BASE_CONFIG.to_owned()
+            + r#"
+[clients]
+python = true
+metadata = { owner = "sdk-team" }
+rust = true
+"#;
+        let config = Config::from_str(&toml).unwrap();
+
+        assert!(config.clients.rust.as_ref().unwrap().is_enabled());
     }
 
     #[test]

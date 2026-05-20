@@ -75,8 +75,6 @@ pub const DOCKER_BUILDER_VERSION: &str = VERSION;
 /// Default RPC port
 pub const DEFAULT_RPC_PORT: u16 = 8899;
 const DEFAULT_FAUCET_PORT: u16 = 9900;
-const DEPRECATE_RENT_EXEMPTION_THRESHOLD_FEATURE: &str =
-    "rent6iVy6PDoViPBeJ6k5EJQrkj62h7DPyLbWGHwjrC";
 
 /// WebSocket port offset for solana-test-validator (RPC port + 1)
 pub const WEBSOCKET_PORT_OFFSET: u16 = 1;
@@ -3704,20 +3702,8 @@ fn test_validator_plan(
     TestValidatorPlan {
         skip_local_validator: cli_skip_local_validator || config_skip_local_validator,
         predeploy: should_predeploy_before_test(skip_deploy, is_localnet, cli_skip_local_validator),
-        stream_program_logs: should_stream_test_logs(
-            is_localnet,
-            cli_skip_local_validator,
-            config_skip_local_validator,
-        ),
+        stream_program_logs: true,
     }
-}
-
-fn should_stream_test_logs(
-    is_localnet: bool,
-    cli_skip_local_validator: bool,
-    config_skip_local_validator: bool,
-) -> bool {
-    !is_localnet || !config_skip_local_validator || cli_skip_local_validator
 }
 
 /// Run the test suite with profile tracing enabled and then launch the SBF instruction stepper.
@@ -4481,9 +4467,6 @@ fn surfpool_flags(
         flags.push("1".to_string());
         flags.push("--no-studio".to_string());
     }
-
-    flags.push("--feature".to_string());
-    flags.push(DEPRECATE_RENT_EXEMPTION_THRESHOLD_FEATURE.to_string());
 
     match skip_deploy {
         true => flags.push("--no-deploy".to_string()),
@@ -6113,6 +6096,7 @@ mod tests {
             IdlGenericArg, IdlInstructionAccount, IdlInstructionAccountItem, IdlPda, IdlSeed,
             IdlSeedAccount, IdlTypeDef, IdlTypeDefGeneric,
         },
+        tempfile::tempdir,
     };
 
     #[test]
@@ -6281,7 +6265,7 @@ mod tests {
             TestValidatorPlan {
                 skip_local_validator: true,
                 predeploy: false,
-                stream_program_logs: false,
+                stream_program_logs: true,
             }
         );
     }
@@ -6299,10 +6283,12 @@ mod tests {
     }
 
     #[test]
-    fn surfpool_feature_flag_uses_pubkey() {
-        assert!(DEPRECATE_RENT_EXEMPTION_THRESHOLD_FEATURE
-            .parse::<Pubkey>()
-            .is_ok());
+    fn surfpool_flags_do_not_force_runtime_features() {
+        let dir = tempdir().unwrap();
+        let cfg = WithPath::new(Config::default(), dir.path().join("Anchor.toml"));
+        let flags = surfpool_flags(&cfg, &None, false, false, None).unwrap();
+
+        assert!(!flags.iter().any(|flag| flag == "--feature"));
     }
 
     #[test]
