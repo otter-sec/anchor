@@ -180,8 +180,7 @@ pub fn auto_generate_for_workspace(
     if !clients_cfg.auto {
         return Ok(());
     }
-    let base = workspace_dir.join("clients");
-    let entries = clients_cfg.enabled(&base);
+    let entries = clients_cfg.enabled(workspace_dir);
     if entries.is_empty() {
         eprintln!(
             "warning: `[clients] auto = true` but no language is enabled — nothing to generate.",

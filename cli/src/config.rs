@@ -566,8 +566,11 @@ impl ClientsConfig {
     }
 
     /// Languages the user has explicitly enabled, paired with the resolved
-    /// output directory (`<base>/<lang>` if no `path` was set on the entry).
-    pub fn enabled(&self, base: &Path) -> Vec<(&'static str, PathBuf)> {
+    /// output directory (`<workspace>/clients/<lang>` if no `path` was set on
+    /// the entry). Relative custom paths are resolved from the workspace root,
+    /// not the process cwd.
+    pub fn enabled(&self, workspace_dir: &Path) -> Vec<(&'static str, PathBuf)> {
+        let base = workspace_dir.join("clients");
         CLIENT_LANGUAGES
             .iter()
             .filter_map(|&lang| {
@@ -577,11 +580,20 @@ impl ClientsConfig {
                 }
                 let path = entry
                     .path()
-                    .map(PathBuf::from)
+                    .map(|path| resolve_client_path(workspace_dir, path))
                     .unwrap_or_else(|| base.join(lang));
                 Some((lang, path))
             })
             .collect()
+    }
+}
+
+fn resolve_client_path(workspace_dir: &Path, path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        path
+    } else {
+        workspace_dir.join(path)
     }
 }
 
@@ -1824,13 +1836,39 @@ go = { enable = true, path = "go-client" }
         assert!(go.is_enabled());
         assert_eq!(go.path(), Some("go-client"));
 
-        let resolved = clients.enabled(Path::new("clients"));
+        let workspace_dir = Path::new("workspace");
+        let resolved = clients.enabled(workspace_dir);
         assert_eq!(
             resolved,
             vec![
-                ("js-umi", PathBuf::from("clients/js-umi")),
-                ("rust", PathBuf::from("clients/rust")),
-                ("go", PathBuf::from("go-client")),
+                ("js-umi", workspace_dir.join("clients/js-umi")),
+                ("rust", workspace_dir.join("clients/rust")),
+                ("go", workspace_dir.join("go-client")),
+            ]
+        );
+    }
+
+    #[test]
+    fn clients_custom_paths_resolve_from_workspace_root() {
+        let workspace_dir = Path::new("workspace-root");
+        let clients = ClientsConfig {
+            rust: Some(ClientLanguageConfig::Detailed {
+                enable: true,
+                path: Some("sdk/rust".to_owned()),
+            }),
+            go: Some(ClientLanguageConfig::Detailed {
+                enable: true,
+                path: Some("/tmp/go-client".to_owned()),
+            }),
+            ..Default::default()
+        };
+
+        let resolved = clients.enabled(workspace_dir);
+        assert_eq!(
+            resolved,
+            vec![
+                ("rust", workspace_dir.join("sdk/rust")),
+                ("go", PathBuf::from("/tmp/go-client")),
             ]
         );
     }
