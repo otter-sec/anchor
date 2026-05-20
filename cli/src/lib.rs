@@ -2047,7 +2047,7 @@ pub fn build(
         docker_image: docker_image.unwrap_or_else(|| cfg.docker()),
         bootstrap,
     };
-    match cargo {
+    let built_idl_paths = match cargo {
         // No Cargo.toml so build the entire workspace.
         None => build_all(
             &cfg,
@@ -2093,37 +2093,19 @@ pub fn build(
             skip_lint,
             no_docs,
         )?,
-    }
+    };
     cfg.run_hooks(HookType::PostBuild)?;
 
     if cfg.clients.auto && !no_idl {
-        if let Some(idl_dir) = idl_out.as_ref() {
-            let idl_paths = collect_idl_files(idl_dir)?;
-            codama::auto_generate_for_workspace(&cfg.clients, cfg_parent, &idl_paths)?;
-        }
+        // Only pass IDLs produced by this build. The output directory can
+        // contain stale JSON from earlier full builds, especially after
+        // `anchor build --program-name ...` from inside a program crate.
+        codama::auto_generate_for_workspace(&cfg.clients, cfg_parent, &built_idl_paths)?;
     }
 
     set_workspace_dir_or_exit();
 
     Ok(())
-}
-
-fn collect_idl_files(idl_dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut idls = Vec::new();
-    if !idl_dir.exists() {
-        return Ok(idls);
-    }
-    for entry in
-        fs::read_dir(idl_dir).with_context(|| format!("Failed to read `{}`", idl_dir.display()))?
-    {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
-            idls.push(path);
-        }
-    }
-    idls.sort();
-    Ok(idls)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2140,30 +2122,33 @@ fn build_all(
     cargo_args: Vec<String>,
     skip_lint: bool,
     no_docs: bool,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     let cur_dir = std::env::current_dir()?;
-    let r = match cfg_path.parent() {
-        None => Err(anyhow!("Invalid Anchor.toml at {}", cfg_path.display())),
-        Some(_parent) => {
-            for p in cfg.get_rust_program_list()? {
-                build_rust_cwd(
-                    cfg,
-                    p.join("Cargo.toml"),
-                    no_idl,
-                    idl_out.clone(),
-                    idl_ts_out.clone(),
-                    build_config,
-                    stdout.as_ref().map(|f| f.try_clone()).transpose()?,
-                    stderr.as_ref().map(|f| f.try_clone()).transpose()?,
-                    env_vars.clone(),
-                    cargo_args.clone(),
-                    skip_lint,
-                    no_docs,
-                )?;
+    let r = (|| -> Result<Vec<PathBuf>> {
+        match cfg_path.parent() {
+            None => Err(anyhow!("Invalid Anchor.toml at {}", cfg_path.display())),
+            Some(_parent) => {
+                let mut idl_paths = Vec::new();
+                for p in cfg.get_rust_program_list()? {
+                    idl_paths.extend(build_rust_cwd(
+                        cfg,
+                        p.join("Cargo.toml"),
+                        no_idl,
+                        idl_out.clone(),
+                        idl_ts_out.clone(),
+                        build_config,
+                        stdout.as_ref().map(|f| f.try_clone()).transpose()?,
+                        stderr.as_ref().map(|f| f.try_clone()).transpose()?,
+                        env_vars.clone(),
+                        cargo_args.clone(),
+                        skip_lint,
+                        no_docs,
+                    )?);
+                }
+                Ok(idl_paths)
             }
-            Ok(())
         }
-    };
+    })();
     std::env::set_current_dir(cur_dir)?;
     r
 }
@@ -2183,7 +2168,7 @@ fn build_rust_cwd(
     cargo_args: Vec<String>,
     skip_lint: bool,
     no_docs: bool,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     match cargo_toml.parent() {
         None => return Err(anyhow!("Unable to find parent")),
         Some(p) => std::env::set_current_dir(p)?,
@@ -2219,7 +2204,7 @@ fn build_cwd_verifiable(
     env_vars: Vec<String>,
     cargo_args: Vec<String>,
     no_docs: bool,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     // Create output dirs.
     let workspace_dir = cfg.path().parent().unwrap().canonicalize()?;
     let target_dir = target_dir()?;
@@ -2244,9 +2229,10 @@ fn build_cwd_verifiable(
         cargo_args.clone(),
     );
 
-    match &result {
+    match result {
         Err(e) => {
             eprintln!("Error during Docker build: {e:?}");
+            Err(e)
         }
         Ok(_) => {
             // Build the idl.
@@ -2258,7 +2244,7 @@ fn build_cwd_verifiable(
                 .join("idl")
                 .join(&idl.metadata.name)
                 .with_extension("json");
-            write_idl(&idl, OutFile::File(out_file))?;
+            write_idl(&idl, OutFile::File(out_file.clone()))?;
 
             // Write out the TypeScript type.
             println!("Writing the .ts file");
@@ -2280,10 +2266,9 @@ fn build_cwd_verifiable(
             }
 
             println!("Build success");
+            Ok(vec![out_file])
         }
     }
-
-    result
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2533,7 +2518,7 @@ fn _build_rust_cwd(
     skip_lint: bool,
     no_docs: bool,
     cargo_args: Vec<String>,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     let exit = std::process::Command::new("cargo")
         .args(BUILD_SUBCOMMAND)
         .args(cargo_args.clone())
@@ -2565,7 +2550,7 @@ fn _build_rust_cwd(
         };
 
         // Write out the JSON file.
-        write_idl(&idl, OutFile::File(out))?;
+        write_idl(&idl, OutFile::File(out.clone()))?;
         // Write out the TypeScript type.
         fs::write(&ts_out, idl_ts(&idl)?)?;
 
@@ -2580,9 +2565,10 @@ fn _build_rust_cwd(
                     .with_extension("ts"),
             )?;
         }
+        Ok(vec![out])
+    } else {
+        Ok(Vec::new())
     }
-
-    Ok(())
 }
 
 /// Subcommand and any arguments to be passed to cargo
