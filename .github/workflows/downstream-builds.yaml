@@ -28,7 +28,10 @@ jobs:
       - name: Checkout anchor-community
         uses: actions/checkout@v3
         with:
-          repository: otter-sec/anchor-community
+          # FIXME: Switch back to otter-sec/anchor-community once the
+          # marginfi --no-idl workaround has merged.
+          repository: jamie-osec/anchor-community
+          ref: marginfi-no-idl
           path: anchor-community
 
       - name: Build matrix from repos.json
