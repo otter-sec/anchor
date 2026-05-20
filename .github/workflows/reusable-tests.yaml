@@ -391,9 +391,15 @@ jobs:
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
         run: cargo add anchor-client --manifest-path tests/Cargo.toml --path "$GITHUB_WORKSPACE/client"
 
-      - name: Run generated project tests
+      - name: Run generated JS project tests
+        if: ${{ matrix.template == 'mocha' || matrix.template == 'jest' }}
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
         run: yarn link @anchor-lang/core && yarn && anchor test && yarn lint:fix
+
+      - name: Run generated Rust project tests
+        if: ${{ matrix.template == 'rust' || matrix.template == 'mollusk' || matrix.template == 'litesvm' }}
+        working-directory: /tmp/hello-anchor-${{ matrix.template }}
+        run: anchor test
 
       - uses: ./.github/actions/git-diff/
 
@@ -457,7 +463,9 @@ jobs:
             path: tests/zero-copy
           - cmd: cd tests/chat && anchor test --skip-lint
             path: tests/chat
-          - cmd: cd tests/ido-pool && anchor test --skip-lint
+          # Use `solana-test-validator` instead of `surfpool` to fix flakiness
+          # and increase code coverage
+          - cmd: cd tests/ido-pool && anchor test --skip-lint --validator legacy
             path: tests/ido-pool
           # - cmd: cd tests/cfo && anchor run test-with-build && cd deps/stake && git checkout Cargo.lock && cd ../swap && git checkout Cargo.lock
           #   path: tests/cfo

@@ -64,11 +64,19 @@ impl CrateContext {
             for unsafe_field in ctx.unsafe_struct_fields() {
                 // Check if unsafe field type has been documented with a /// SAFETY: doc string.
                 let is_documented = unsafe_field.attrs.iter().any(|attr| {
-                    attr.tokens.clone().into_iter().any(|token| match token {
-                        // Check for doc comments containing CHECK
-                        proc_macro2::TokenTree::Literal(s) => s.to_string().contains("CHECK"),
-                        _ => false,
-                    })
+                    if let syn::Meta::NameValue(syn::MetaNameValue {
+                        value:
+                            syn::Expr::Lit(syn::ExprLit {
+                                lit: syn::Lit::Str(s),
+                                ..
+                            }),
+                        ..
+                    }) = &attr.meta
+                    {
+                        s.value().contains("CHECK")
+                    } else {
+                        false
+                    }
                 });
                 if !is_documented {
                     #[allow(
@@ -250,14 +258,16 @@ impl ParsedModule {
     fn unsafe_struct_fields(&self) -> impl Iterator<Item = &syn::Field> {
         let accounts_filter = |item_struct: &&syn::ItemStruct| {
             item_struct.attrs.iter().any(|attr| {
-                match attr.parse_meta() {
-                    Ok(syn::Meta::List(syn::MetaList{path, nested, ..})) => {
-                        path.is_ident("derive") && nested.iter().any(|nested| {
-                            matches!(nested, syn::NestedMeta::Meta(syn::Meta::Path(path)) if path.is_ident("Accounts"))
+                attr.path().is_ident("derive")
+                    && attr
+                        .parse_args_with(
+                            syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+                        )
+                        .ok()
+                        .is_some_and(|args| {
+                            args.iter()
+                                .any(|m| matches!(m, syn::Meta::Path(p) if p.is_ident("Accounts")))
                         })
-                    }
-                    _ => false
-                }
             })
         };
 

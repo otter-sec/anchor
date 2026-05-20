@@ -270,12 +270,9 @@ pub fn update(include_pre_release: bool) -> Result<()> {
 pub fn check_and_get_full_commit(commit: &str) -> Result<String> {
     let response = HTTP_CLIENT
         .get(format!(
-            "https://api.github.com/repos/solana-foundation/anchor/commits/{commit}"
+            "https://api.github.com/repos/otter-sec/anchor/commits/{commit}"
         ))
-        .header(
-            USER_AGENT,
-            "avm https://github.com/solana-foundation/anchor",
-        )
+        .header(USER_AGENT, "avm https://github.com/otter-sec/anchor")
         .send()?;
 
     if response.status() != StatusCode::OK {
@@ -299,10 +296,7 @@ pub fn check_and_get_full_commit(commit: &str) -> Result<String> {
 fn fetch_raw(client: &reqwest::blocking::Client, url: &str) -> Result<Option<String>> {
     let response = client
         .get(url)
-        .header(
-            USER_AGENT,
-            "avm https://github.com/solana-foundation/anchor",
-        )
+        .header(USER_AGENT, "avm https://github.com/otter-sec/anchor")
         .send()?;
     if response.status() == StatusCode::OK {
         Ok(Some(response.text()?))
@@ -325,7 +319,7 @@ fn append_commit(version: &mut Version, commit: &str) -> Result<()> {
 }
 
 fn get_anchor_version_from_commit(commit: &str) -> Result<Version> {
-    let base = format!("https://raw.githubusercontent.com/solana-foundation/anchor/{commit}");
+    let base = format!("https://raw.githubusercontent.com/otter-sec/anchor/{commit}");
 
     // Newer versions (workspace layout): version lives in [workspace.package] of the root Cargo.toml.
     if let Some(text) = fetch_raw(&HTTP_CLIENT, &format!("{base}/Cargo.toml"))? {
@@ -401,7 +395,7 @@ pub fn install_version(
             InstallTarget::Version(version) => {
                 args.extend_from_slice(&[
                     "--git".into(),
-                    "https://github.com/solana-foundation/anchor".into(),
+                    "https://github.com/otter-sec/anchor".into(),
                     "--tag".into(),
                     format!("v{version}"),
                 ]);
@@ -409,7 +403,7 @@ pub fn install_version(
             InstallTarget::Commit(commit) => {
                 args.extend_from_slice(&[
                     "--git".into(),
-                    "https://github.com/solana-foundation/anchor".into(),
+                    "https://github.com/otter-sec/anchor".into(),
                     "--rev".into(),
                     commit,
                 ]);
@@ -429,7 +423,7 @@ pub fn install_version(
         }
 
         // If the version is older than v0.31, install using `rustc 1.79.0` to get around the problem
-        // explained in https://github.com/solana-foundation/anchor/pull/3143
+        // explained in https://github.com/otter-sec/anchor/pull/3143
         if is_older_than_v0_31_0 {
             const REQUIRED_VERSION: &str = "1.79.0";
             let is_installed = Command::new("rustup")
@@ -447,7 +441,7 @@ pub fn install_version(
                     return Err(anyhow!(
                         "Installation of `rustc {REQUIRED_VERSION}` failed. \
                     `rustc <1.80` is required to install Anchor v{version} from source. \
-                    See https://github.com/solana-foundation/anchor/pull/3143 for more information."
+                    See https://github.com/otter-sec/anchor/pull/3143 for more information."
                     ));
                 }
             }
@@ -490,7 +484,7 @@ pub fn install_version(
         };
         let res = DOWNLOAD_CLIENT
             .get(format!(
-                "https://github.com/solana-foundation/anchor/releases/download/v{version}/anchor-{version}-{target}{ext}"
+                "https://github.com/otter-sec/anchor/releases/download/v{version}/anchor-{version}-{target}{ext}"
             ))
             .send()?;
         if !res.status().is_success() {
@@ -664,11 +658,8 @@ fn fetch_versions_with_client(
     }
 
     let response = client
-        .get("https://api.github.com/repos/solana-foundation/anchor/releases")
-        .header(
-            USER_AGENT,
-            "avm https://github.com/solana-foundation/anchor",
-        )
+        .get("https://api.github.com/repos/otter-sec/anchor/releases")
+        .header(USER_AGENT, "avm https://github.com/otter-sec/anchor")
         .send()?;
 
     if response.status().is_success() {
@@ -680,20 +671,33 @@ fn fetch_versions_with_client(
             .collect();
         Ok(versions)
     } else {
-        let reset_time_header = response
-            .headers()
-            .get("X-RateLimit-Reset")
-            .map_or("unknown", |v| v.to_str().unwrap());
-        let t = Utc.timestamp_opt(reset_time_header.parse::<i64>().unwrap(), 0);
-        let reset_time = t
-            .single()
-            .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
-            .unwrap_or_else(|| "unknown".to_string());
-        Err(anyhow!(
-            "GitHub API rate limit exceeded. Try again after {} UTC.",
-            reset_time
-        ))
+        Err(
+            if let Some(reset_time) = github_rate_limit_reset_time(response.headers()) {
+                anyhow!(
+                    "GitHub API rate limit exceeded. Try again after {} UTC.",
+                    reset_time
+                )
+            } else {
+                anyhow!("GitHub API rate limit exceeded. Try again later.",)
+            },
+        )
     }
+}
+
+fn github_rate_limit_reset_time(headers: &reqwest::header::HeaderMap) -> Option<String> {
+    let timestamp = headers
+        .get("X-RateLimit-Reset")?
+        .to_str()
+        .ok()?
+        .parse::<i64>()
+        .ok()?;
+
+    Some(
+        Utc.timestamp_opt(timestamp, 0)
+            .single()?
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string(),
+    )
 }
 
 /// Print available versions and flags indicating installed, current and latest
@@ -859,7 +863,7 @@ pub fn self_update(include_pre_release: bool, bleeding_edge: bool) -> Result<()>
     let mut args = vec![
         "install".to_string(),
         "--git".to_string(),
-        "https://github.com/solana-foundation/anchor".to_string(),
+        "https://github.com/otter-sec/anchor".to_string(),
         "--locked".to_string(),
     ];
 
@@ -983,6 +987,29 @@ mod tests {
         // Should ignore this file because it's not anchor- prefixed
         fs::File::create(AVM_HOME.join("bin").join("garbage").as_path()).unwrap();
         assert_eq!(read_installed_versions().unwrap(), expected);
+    }
+
+    #[test]
+    fn test_github_rate_limit_reset_time() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("X-RateLimit-Reset", "1715706000".parse().unwrap());
+        assert_eq!(
+            github_rate_limit_reset_time(&headers).as_deref(),
+            Some("2024-05-14 17:00:00")
+        );
+
+        assert!(github_rate_limit_reset_time(&reqwest::header::HeaderMap::new()).is_none());
+
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("X-RateLimit-Reset", "unknown".parse().unwrap());
+        assert!(github_rate_limit_reset_time(&headers).is_none());
+
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            "X-RateLimit-Reset",
+            reqwest::header::HeaderValue::from_bytes(b"\xff").unwrap(),
+        );
+        assert!(github_rate_limit_reset_time(&headers).is_none());
     }
 
     #[test]

@@ -177,7 +177,7 @@ pub fn convert_idl_type_def_to_ts(
 
         // `ser_attr` must be expanded first, as it may produce `repr(packed)`
         // This affects builtin derives so must be visible to them
-        // https://github.com/solana-foundation/anchor/issues/4072
+        // https://github.com/otter-sec/anchor/issues/4072
         quote! {
             #ser_attr
             #debug_attr
@@ -318,6 +318,30 @@ fn can_derive_copy(ty_def: &IdlTypeDef, ty_defs: &[IdlTypeDef]) -> bool {
     }
 }
 
+fn can_derive_clone(ty_def: &IdlTypeDef, ty_defs: &[IdlTypeDef]) -> bool {
+    match &ty_def.ty {
+        IdlTypeDefTy::Struct { fields } => {
+            can_derive_common(fields.as_ref(), ty_defs, can_derive_clone_ty)
+        }
+        IdlTypeDefTy::Enum { variants } => variants.iter().all(|variant| {
+            can_derive_common(variant.fields.as_ref(), ty_defs, can_derive_clone_ty)
+        }),
+        IdlTypeDefTy::Type { alias } => can_derive_clone_ty(alias, ty_defs),
+    }
+}
+
+fn can_derive_debug(ty_def: &IdlTypeDef, ty_defs: &[IdlTypeDef]) -> bool {
+    match &ty_def.ty {
+        IdlTypeDefTy::Struct { fields } => {
+            can_derive_common(fields.as_ref(), ty_defs, can_derive_debug_ty)
+        }
+        IdlTypeDefTy::Enum { variants } => variants.iter().all(|variant| {
+            can_derive_common(variant.fields.as_ref(), ty_defs, can_derive_debug_ty)
+        }),
+        IdlTypeDefTy::Type { alias } => can_derive_debug_ty(alias, ty_defs),
+    }
+}
+
 fn can_derive_default(ty_def: &IdlTypeDef, ty_defs: &[IdlTypeDef]) -> bool {
     match &ty_def.ty {
         IdlTypeDefTy::Struct { fields } => {
@@ -329,7 +353,7 @@ fn can_derive_default(ty_def: &IdlTypeDef, ty_defs: &[IdlTypeDef]) -> bool {
     }
 }
 
-fn can_derive_copy_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
+pub fn can_derive_copy_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
     match ty {
         IdlType::Option(inner) => can_derive_copy_ty(inner, ty_defs),
         IdlType::Array(inner, len) => {
@@ -356,7 +380,45 @@ fn can_derive_copy_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
     }
 }
 
-fn can_derive_default_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
+pub fn can_derive_clone_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
+    match ty {
+        IdlType::Option(inner) => can_derive_clone_ty(inner, ty_defs),
+        IdlType::Vec(inner) => can_derive_clone_ty(inner, ty_defs),
+        IdlType::Array(inner, _) => can_derive_clone_ty(inner, ty_defs),
+        #[allow(
+            clippy::expect_used,
+            reason = "IDL cross-references are guaranteed consistent by Anchor tooling"
+        )]
+        IdlType::Defined { name, .. } => ty_defs
+            .iter()
+            .find(|ty_def| &ty_def.name == name)
+            .map(|ty_def| can_derive_clone(ty_def, ty_defs))
+            .expect("Type def must exist"),
+        IdlType::Generic(_) => false,
+        _ => true,
+    }
+}
+
+pub fn can_derive_debug_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
+    match ty {
+        IdlType::Option(inner) => can_derive_debug_ty(inner, ty_defs),
+        IdlType::Vec(inner) => can_derive_debug_ty(inner, ty_defs),
+        IdlType::Array(inner, _) => can_derive_debug_ty(inner, ty_defs),
+        #[allow(
+            clippy::expect_used,
+            reason = "IDL cross-references are guaranteed consistent by Anchor tooling"
+        )]
+        IdlType::Defined { name, .. } => ty_defs
+            .iter()
+            .find(|ty_def| &ty_def.name == name)
+            .map(|ty_def| can_derive_debug(ty_def, ty_defs))
+            .expect("Type def must exist"),
+        IdlType::Generic(_) => false,
+        _ => true,
+    }
+}
+
+pub fn can_derive_default_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
     match ty {
         IdlType::Option(inner) => can_derive_default_ty(inner, ty_defs),
         IdlType::Vec(inner) => can_derive_default_ty(inner, ty_defs),
@@ -420,10 +482,10 @@ fn handle_defined_fields<R>(
 /// Combine regular instruction accounts with non-instruction composite accounts.
 pub fn get_all_instruction_accounts(idl: &Idl) -> Vec<IdlInstructionAccounts> {
     // It's possible to declare an accounts struct and not use it as an instruction, see
-    // https://github.com/solana-foundation/anchor/issues/3274
+    // https://github.com/otter-sec/anchor/issues/3274
     //
     // NOTE: Returned accounts will not be unique if non-instruction composite accounts have been
-    // used multiple times https://github.com/solana-foundation/anchor/issues/3349
+    // used multiple times https://github.com/otter-sec/anchor/issues/3349
     fn get_non_instruction_composite_accounts<'a>(
         accs: &'a [IdlInstructionAccountItem],
         idl: &'a Idl,
@@ -490,4 +552,561 @@ pub fn get_all_instruction_accounts(idl: &Idl) -> Vec<IdlInstructionAccounts> {
             });
             all
         })
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::indexing_slicing,
+    clippy::unwrap_used,
+    reason = "tests construct fixtures with known shape and only feed valid IDL types"
+)]
+mod tests {
+    use {
+        super::*,
+        anchor_lang_idl::types::{
+            IdlArrayLen, IdlDefinedFields, IdlField, IdlGenericArg, IdlSerialization, IdlType,
+            IdlTypeDef, IdlTypeDefTy,
+        },
+    };
+
+    fn struct_def(name: &str, fields: Vec<IdlField>) -> IdlTypeDef {
+        IdlTypeDef {
+            name: name.to_string(),
+            ty: IdlTypeDefTy::Struct {
+                fields: Some(IdlDefinedFields::Named(fields)),
+            },
+            generics: vec![],
+            docs: vec![],
+            serialization: IdlSerialization::Borsh,
+            repr: None,
+        }
+    }
+
+    fn field(name: &str, ty: IdlType) -> IdlField {
+        IdlField {
+            name: name.to_string(),
+            ty,
+            docs: vec![],
+        }
+    }
+
+    fn create_test_idl_types() -> Vec<IdlTypeDef> {
+        vec![
+            // [0] Simple struct with copyable types
+            struct_def("SimpleStruct", vec![field("value", IdlType::U64)]),
+            // [1] Struct with non-copyable (but cloneable/debuggable/defaultable) types
+            struct_def("NonCopyStruct", vec![field("data", IdlType::String)]),
+            // [2] Enum with copyable variants
+            IdlTypeDef {
+                name: "SimpleEnum".to_string(),
+                ty: IdlTypeDefTy::Enum {
+                    variants: vec![
+                        anchor_lang_idl::types::IdlEnumVariant {
+                            name: "Variant1".to_string(),
+                            fields: None,
+                        },
+                        anchor_lang_idl::types::IdlEnumVariant {
+                            name: "Variant2".to_string(),
+                            fields: Some(IdlDefinedFields::Named(vec![field(
+                                "value",
+                                IdlType::U32,
+                            )])),
+                        },
+                    ],
+                },
+                generics: vec![],
+                docs: vec![],
+                serialization: IdlSerialization::Borsh,
+                repr: None,
+            },
+            // [3] Type alias
+            IdlTypeDef {
+                name: "TypeAlias".to_string(),
+                ty: IdlTypeDefTy::Type {
+                    alias: IdlType::U128,
+                },
+                generics: vec![],
+                docs: vec![],
+                serialization: IdlSerialization::Borsh,
+                repr: None,
+            },
+            // [4] Struct containing a generic param — should not derive Clone/Debug/Default/Copy
+            struct_def(
+                "GenericStruct",
+                vec![field("inner", IdlType::Generic("T".to_string()))],
+            ),
+            // [5] Struct with an array too large to derive Default (>32 elements)
+            struct_def(
+                "LargeArrayStruct",
+                vec![field(
+                    "buf",
+                    IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Value(64)),
+                )],
+            ),
+            // [6] Struct that references NonCopyStruct — propagates clone/debug/default but not copy
+            struct_def(
+                "WrapperStruct",
+                vec![field(
+                    "inner",
+                    IdlType::Defined {
+                        name: "NonCopyStruct".to_string(),
+                        generics: vec![],
+                    },
+                )],
+            ),
+        ]
+    }
+
+    #[test]
+    fn test_can_derive_copy_ty() {
+        let ty_defs = create_test_idl_types();
+
+        // Test basic copyable types
+        assert!(can_derive_copy_ty(&IdlType::U8, &ty_defs));
+        assert!(can_derive_copy_ty(&IdlType::U64, &ty_defs));
+        assert!(can_derive_copy_ty(&IdlType::Bool, &ty_defs));
+        assert!(can_derive_copy_ty(&IdlType::Pubkey, &ty_defs));
+
+        // Test non-copyable types
+        assert!(!can_derive_copy_ty(&IdlType::String, &ty_defs));
+        assert!(!can_derive_copy_ty(&IdlType::Bytes, &ty_defs));
+        assert!(!can_derive_copy_ty(
+            &IdlType::Vec(Box::new(IdlType::U8)),
+            &ty_defs
+        ));
+
+        // Test Option with copyable inner type
+        assert!(can_derive_copy_ty(
+            &IdlType::Option(Box::new(IdlType::U64)),
+            &ty_defs
+        ));
+        assert!(!can_derive_copy_ty(
+            &IdlType::Option(Box::new(IdlType::String)),
+            &ty_defs
+        ));
+
+        // Test Array with copyable inner type
+        assert!(can_derive_copy_ty(
+            &IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Value(10)),
+            &ty_defs
+        ));
+        assert!(!can_derive_copy_ty(
+            &IdlType::Array(Box::new(IdlType::String), IdlArrayLen::Value(5)),
+            &ty_defs
+        ));
+
+        // Test Array with generic length (should not be copyable)
+        assert!(!can_derive_copy_ty(
+            &IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Generic("N".to_string())),
+            &ty_defs
+        ));
+
+        // Test defined types
+        assert!(can_derive_copy_ty(
+            &IdlType::Defined {
+                name: "SimpleStruct".to_string(),
+                generics: vec![],
+            },
+            &ty_defs
+        ));
+        assert!(!can_derive_copy_ty(
+            &IdlType::Defined {
+                name: "NonCopyStruct".to_string(),
+                generics: vec![],
+            },
+            &ty_defs
+        ));
+
+        // Test generic types (should not be copyable)
+        assert!(!can_derive_copy_ty(
+            &IdlType::Generic("T".to_string()),
+            &ty_defs
+        ));
+    }
+
+    #[test]
+    fn test_can_derive_clone_ty() {
+        let ty_defs = create_test_idl_types();
+
+        // Test basic cloneable types
+        assert!(can_derive_clone_ty(&IdlType::U8, &ty_defs));
+        assert!(can_derive_clone_ty(&IdlType::String, &ty_defs));
+        assert!(can_derive_clone_ty(&IdlType::Bytes, &ty_defs));
+
+        // Test Vec with cloneable inner type
+        assert!(can_derive_clone_ty(
+            &IdlType::Vec(Box::new(IdlType::U8)),
+            &ty_defs
+        ));
+        assert!(can_derive_clone_ty(
+            &IdlType::Vec(Box::new(IdlType::String)),
+            &ty_defs
+        ));
+
+        // Test Array with cloneable inner type
+        assert!(can_derive_clone_ty(
+            &IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Value(10)),
+            &ty_defs
+        ));
+
+        // Test Option with cloneable inner type
+        assert!(can_derive_clone_ty(
+            &IdlType::Option(Box::new(IdlType::String)),
+            &ty_defs
+        ));
+
+        // Test defined types
+        assert!(can_derive_clone_ty(
+            &IdlType::Defined {
+                name: "SimpleStruct".to_string(),
+                generics: vec![],
+            },
+            &ty_defs
+        ));
+        assert!(can_derive_clone_ty(
+            &IdlType::Defined {
+                name: "NonCopyStruct".to_string(),
+                generics: vec![],
+            },
+            &ty_defs
+        ));
+
+        // Test generic types (should not be cloneable)
+        assert!(!can_derive_clone_ty(
+            &IdlType::Generic("T".to_string()),
+            &ty_defs
+        ));
+    }
+
+    #[test]
+    fn test_can_derive_debug_ty() {
+        let ty_defs = create_test_idl_types();
+
+        // Test basic debuggable types
+        assert!(can_derive_debug_ty(&IdlType::U8, &ty_defs));
+        assert!(can_derive_debug_ty(&IdlType::String, &ty_defs));
+        assert!(can_derive_debug_ty(&IdlType::Bytes, &ty_defs));
+
+        // Test Vec with debuggable inner type
+        assert!(can_derive_debug_ty(
+            &IdlType::Vec(Box::new(IdlType::U8)),
+            &ty_defs
+        ));
+
+        // Test Array with debuggable inner type
+        assert!(can_derive_debug_ty(
+            &IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Value(10)),
+            &ty_defs
+        ));
+
+        // Test Option with debuggable inner type
+        assert!(can_derive_debug_ty(
+            &IdlType::Option(Box::new(IdlType::String)),
+            &ty_defs
+        ));
+
+        // Test defined types
+        assert!(can_derive_debug_ty(
+            &IdlType::Defined {
+                name: "SimpleStruct".to_string(),
+                generics: vec![],
+            },
+            &ty_defs
+        ));
+        assert!(can_derive_debug_ty(
+            &IdlType::Defined {
+                name: "NonCopyStruct".to_string(),
+                generics: vec![],
+            },
+            &ty_defs
+        ));
+
+        // Test generic types (should not be debuggable)
+        assert!(!can_derive_debug_ty(
+            &IdlType::Generic("T".to_string()),
+            &ty_defs
+        ));
+    }
+
+    #[test]
+    fn test_can_derive_default_ty() {
+        let ty_defs = create_test_idl_types();
+
+        // Test basic defaultable types
+        assert!(can_derive_default_ty(&IdlType::U8, &ty_defs));
+        assert!(can_derive_default_ty(&IdlType::String, &ty_defs));
+        assert!(can_derive_default_ty(&IdlType::Bool, &ty_defs));
+
+        // Test Vec (should be defaultable)
+        assert!(can_derive_default_ty(
+            &IdlType::Vec(Box::new(IdlType::U8)),
+            &ty_defs
+        ));
+
+        // Test Array with small fixed size (should be defaultable)
+        assert!(can_derive_default_ty(
+            &IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Value(10)),
+            &ty_defs
+        ));
+
+        // Test Array with large fixed size (should not be defaultable)
+        assert!(!can_derive_default_ty(
+            &IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Value(100)),
+            &ty_defs
+        ));
+
+        // Test Array with generic length (should not be defaultable)
+        assert!(!can_derive_default_ty(
+            &IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Generic("N".to_string())),
+            &ty_defs
+        ));
+
+        // Test Option with defaultable inner type
+        assert!(can_derive_default_ty(
+            &IdlType::Option(Box::new(IdlType::String)),
+            &ty_defs
+        ));
+
+        // Test defined types
+        assert!(can_derive_default_ty(
+            &IdlType::Defined {
+                name: "SimpleStruct".to_string(),
+                generics: vec![],
+            },
+            &ty_defs
+        ));
+        assert!(can_derive_default_ty(
+            &IdlType::Defined {
+                name: "NonCopyStruct".to_string(),
+                generics: vec![],
+            },
+            &ty_defs
+        ));
+
+        // Test generic types (should not be defaultable)
+        assert!(!can_derive_default_ty(
+            &IdlType::Generic("T".to_string()),
+            &ty_defs
+        ));
+    }
+
+    #[test]
+    fn test_can_derive_copy() {
+        let ty_defs = create_test_idl_types();
+
+        // Test struct with copyable fields
+        let simple_struct = &ty_defs[0];
+        assert!(can_derive_copy(simple_struct, &ty_defs));
+
+        // Test struct with non-copyable fields
+        let non_copy_struct = &ty_defs[1];
+        assert!(!can_derive_copy(non_copy_struct, &ty_defs));
+
+        // Test enum with copyable variants
+        let simple_enum = &ty_defs[2];
+        assert!(can_derive_copy(simple_enum, &ty_defs));
+
+        // Test type alias
+        let type_alias = &ty_defs[3];
+        assert!(can_derive_copy(type_alias, &ty_defs));
+    }
+
+    #[test]
+    fn test_can_derive_clone() {
+        let ty_defs = create_test_idl_types();
+
+        // Test struct with cloneable fields
+        let simple_struct = &ty_defs[0];
+        assert!(can_derive_clone(simple_struct, &ty_defs));
+
+        // Test struct with cloneable fields (String is cloneable)
+        let non_copy_struct = &ty_defs[1];
+        assert!(can_derive_clone(non_copy_struct, &ty_defs));
+
+        // Test enum with cloneable variants
+        let simple_enum = &ty_defs[2];
+        assert!(can_derive_clone(simple_enum, &ty_defs));
+
+        // Test type alias
+        let type_alias = &ty_defs[3];
+        assert!(can_derive_clone(type_alias, &ty_defs));
+    }
+
+    #[test]
+    fn test_can_derive_debug() {
+        let ty_defs = create_test_idl_types();
+
+        // Test struct with debuggable fields
+        let simple_struct = &ty_defs[0];
+        assert!(can_derive_debug(simple_struct, &ty_defs));
+
+        // Test struct with debuggable fields
+        let non_copy_struct = &ty_defs[1];
+        assert!(can_derive_debug(non_copy_struct, &ty_defs));
+
+        // Test enum with debuggable variants
+        let simple_enum = &ty_defs[2];
+        assert!(can_derive_debug(simple_enum, &ty_defs));
+
+        // Test type alias
+        let type_alias = &ty_defs[3];
+        assert!(can_derive_debug(type_alias, &ty_defs));
+    }
+
+    #[test]
+    fn test_can_derive_default() {
+        let ty_defs = create_test_idl_types();
+
+        // Test struct with defaultable fields
+        let simple_struct = &ty_defs[0];
+        assert!(can_derive_default(simple_struct, &ty_defs));
+
+        // Test struct with defaultable fields
+        let non_copy_struct = &ty_defs[1];
+        assert!(can_derive_default(non_copy_struct, &ty_defs));
+
+        // Test enum (should not be defaultable)
+        let simple_enum = &ty_defs[2];
+        assert!(!can_derive_default(simple_enum, &ty_defs));
+
+        // Test type alias
+        let type_alias = &ty_defs[3];
+        assert!(can_derive_default(type_alias, &ty_defs));
+
+        // Generic-bearing struct: Default has no T: Default bound expansion, so reject
+        let generic_struct = &ty_defs[4];
+        assert!(!can_derive_default(generic_struct, &ty_defs));
+
+        // Struct with an oversize array — std Default impls only go up to 32 elements
+        let large_array_struct = &ty_defs[5];
+        assert!(!can_derive_default(large_array_struct, &ty_defs));
+
+        // Wrapper around NonCopyStruct: inherits Default-able (String: Default)
+        let wrapper = &ty_defs[6];
+        assert!(can_derive_default(wrapper, &ty_defs));
+    }
+
+    #[test]
+    fn test_generic_struct_rejects_clone_debug_copy() {
+        // Regression coverage: a defined type whose field is `IdlType::Generic("T")`
+        // can't safely derive Clone/Debug/Copy from a procedural macro because the
+        // derive expansion would need a `T: Clone` bound we don't synthesise.
+        let ty_defs = create_test_idl_types();
+        let generic_struct = &ty_defs[4];
+
+        assert!(!can_derive_clone(generic_struct, &ty_defs));
+        assert!(!can_derive_debug(generic_struct, &ty_defs));
+        assert!(!can_derive_copy(generic_struct, &ty_defs));
+    }
+
+    #[test]
+    fn test_wrapper_struct_inherits_non_copy() {
+        // A struct wrapping NonCopyStruct should be Clone+Debug+Default-able but NOT Copy.
+        let ty_defs = create_test_idl_types();
+        let wrapper = &ty_defs[6];
+
+        assert!(can_derive_clone(wrapper, &ty_defs));
+        assert!(can_derive_debug(wrapper, &ty_defs));
+        assert!(can_derive_default(wrapper, &ty_defs));
+        assert!(!can_derive_copy(wrapper, &ty_defs));
+    }
+
+    #[test]
+    fn test_can_derive_ty_defined_lookup() {
+        // `_ty` helpers must walk through `IdlType::Defined` and pick up the wrapped
+        // type-def's trait status, not assume the defined type is always derivable.
+        let ty_defs = create_test_idl_types();
+
+        let wrapper_ref = IdlType::Defined {
+            name: "WrapperStruct".to_string(),
+            generics: vec![],
+        };
+        assert!(can_derive_clone_ty(&wrapper_ref, &ty_defs));
+        assert!(can_derive_debug_ty(&wrapper_ref, &ty_defs));
+        assert!(!can_derive_copy_ty(&wrapper_ref, &ty_defs));
+
+        let large_array_ref = IdlType::Defined {
+            name: "LargeArrayStruct".to_string(),
+            generics: vec![],
+        };
+        assert!(!can_derive_default_ty(&large_array_ref, &ty_defs));
+    }
+
+    #[test]
+    fn test_convert_idl_type_to_str() {
+        fn s(ty: &IdlType) -> String {
+            convert_idl_type_to_str(ty, false).unwrap()
+        }
+
+        assert_eq!(s(&IdlType::Bool), "bool");
+        assert_eq!(s(&IdlType::U8), "u8");
+        assert_eq!(s(&IdlType::U64), "u64");
+        assert_eq!(s(&IdlType::String), "String");
+        assert_eq!(s(&IdlType::Pubkey), "Pubkey");
+
+        assert_eq!(s(&IdlType::Option(Box::new(IdlType::U64))), "Option<u64>");
+        assert_eq!(s(&IdlType::Vec(Box::new(IdlType::String))), "Vec<String>");
+
+        assert_eq!(
+            s(&IdlType::Array(
+                Box::new(IdlType::U8),
+                IdlArrayLen::Value(10)
+            )),
+            "[u8; 10]"
+        );
+        assert_eq!(
+            s(&IdlType::Array(
+                Box::new(IdlType::U8),
+                IdlArrayLen::Generic("N".to_string())
+            )),
+            "[u8; N]"
+        );
+
+        assert_eq!(
+            s(&IdlType::Defined {
+                name: "MyStruct".to_string(),
+                generics: vec![],
+            }),
+            "MyStruct"
+        );
+        assert_eq!(
+            s(&IdlType::Defined {
+                name: "MyStruct".to_string(),
+                generics: vec![
+                    IdlGenericArg::Type { ty: IdlType::U64 },
+                    IdlGenericArg::Const {
+                        value: "10".to_string()
+                    },
+                ],
+            }),
+            "MyStruct<u64,10>"
+        );
+
+        assert_eq!(s(&IdlType::Generic("T".to_string())), "T");
+    }
+
+    #[test]
+    fn test_gen_discriminator() {
+        let disc = [1, 2, 3, 4, 5, 6, 7, 8];
+        let result = gen_discriminator(&disc);
+        let expected = quote! { [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8] };
+        assert_eq!(result.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn test_gen_docs() {
+        let docs = vec!["First line".to_string(), "Second line".to_string()];
+        let result = gen_docs(&docs);
+        let expected = quote! {
+            #[doc = " First line"]
+            #[doc = " Second line"]
+        };
+        assert_eq!(result.to_string(), expected.to_string());
+
+        // Test empty docs
+        let empty_docs = vec![];
+        let result = gen_docs(&empty_docs);
+        let expected = quote! {};
+        assert_eq!(result.to_string(), expected.to_string());
+    }
 }

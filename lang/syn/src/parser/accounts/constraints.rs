@@ -19,7 +19,7 @@ pub fn parse(f: &syn::Field, f_ty: Option<&Ty>) -> ParseResult<ConstraintGroup> 
 }
 
 pub fn is_account(attr: &&syn::Attribute) -> bool {
-    attr.path
+    attr.path()
         .get_ident()
         .is_some_and(|ident| ident == "account")
 }

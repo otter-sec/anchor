@@ -276,6 +276,9 @@ pub fn generate_constraint_zeroed(
     quote! {
         let #field: #ty_decl = {
             let mut __data: &[u8] = &#field.try_borrow_data()?;
+            if __data.len() < #discriminator.len() {
+                return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::AccountDidNotDeserialize).with_account_name(#name_str));
+            }
             let __disc = &__data[..#discriminator.len()];
             let __has_disc = __disc.iter().any(|b| *b != 0);
             if __has_disc {

@@ -218,6 +218,21 @@ anchor idl set-authority -n <new-authority> -p <program-id>
 Sets a new authority on the IDL account. Both the `new-authority` and
 `program-id` must be encoded in base 58.
 
+## Codama
+
+```shell
+anchor codama convert <target/idl/program.json> --out <codama-idl.json>
+anchor codama generate -l rust,js -p clients <target/idl/program.json>
+```
+
+`anchor codama convert` converts an Anchor IDL into a Codama IDL. `anchor
+codama generate` converts the IDL and invokes the Codama renderer packages for
+the requested languages. The supported language values are `js`, `js-umi`,
+`rust`, and `go`.
+
+Codama client generation can also run automatically after `anchor build` when
+`[clients] auto = true` is set in `Anchor.toml`.
+
 ## Init
 
 ```shell
@@ -248,6 +263,17 @@ anchor init --template single     # Single lib.rs file (for prototyping)
 The modular template organizes code into separate files for instructions, state,
 constants, and errors, making it easier to navigate and maintain as your program
 grows.
+
+**Anchor Version:**
+
+```shell
+anchor init --anchor-version v1  # Default: Anchor v1 Rust templates
+anchor init --anchor-version v2  # Anchor v2 Rust templates
+```
+
+The selected Anchor version controls the generated Rust program and Rust test
+template dependencies. V2 templates use the `anchor-next` git dependencies until
+the v2 crates are published.
 
 ## Keys
 
@@ -310,6 +336,13 @@ anchor new --template multiple <program-name>  # Default: Modular (recommended)
 anchor new --template single <program-name>    # Single file (for prototyping)
 ```
 
+You can also select the Anchor Rust template version:
+
+```shell
+anchor new --anchor-version v1 <program-name>  # Default: Anchor v1 Rust templates
+anchor new --anchor-version v2 <program-name>  # Anchor v2 Rust templates
+```
+
 ## Shell
 
 ```shell
@@ -344,6 +377,29 @@ If you'd prefer to run the program against your local validator use
 
 When running tests we stream program logs to
 `.anchor/program-logs/<address>.<program-name>.log`
+
+Use `--profile` with Rust/LiteSVM-style tests that enable the generated
+`profile` feature to collect SBF register traces and render flamegraph SVGs
+under `target/anchor-v2-profile/`.
+
+## Debugger
+
+```shell
+anchor debugger [test-name] [--skip-run] [--skip-build] [--gdb]
+```
+
+Runs tests with profiling enabled and opens an instruction-level TUI over the
+captured SBF traces. `--skip-run` reuses existing traces, and `--gdb` uses the
+sbpf gdb-stub trace path.
+
+## Coverage
+
+```shell
+anchor coverage [--skip-run] [--skip-build] [--output target/coverage/sbf.lcov]
+```
+
+Generates LCOV source coverage from SBF register traces. By default traces are
+collected under `target/coverage/traces`.
 
 ## Upgrade
 

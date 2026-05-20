@@ -12,7 +12,7 @@
 # Run this script from within the `example/` directory in which it is located.
 # The anchor cli must be installed.
 #
-# cargo install --git https://github.com/solana-foundation/anchor anchor-cli --locked
+# cargo install --git https://github.com/otter-sec/anchor anchor-cli --locked
 #
 ################################################################################
 

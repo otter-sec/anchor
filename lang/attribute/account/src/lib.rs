@@ -8,8 +8,8 @@ use {
         parse::{Parse, ParseStream},
         parse_macro_input,
         spanned::Spanned,
-        token::{Comma, Paren},
-        Expr, Ident, LitStr,
+        token::Paren,
+        Expr, Ident, LitStr, Token,
     },
 };
 
@@ -242,10 +242,7 @@ pub fn account(
 
                     fn try_deserialize_unchecked(buf: &mut &[u8]) -> anchor_lang::Result<Self> {
                         let data: &[u8] = &buf[#disc.len()..];
-                        // Re-interpret raw bytes into the POD data structure.
-                        let account = anchor_lang::__private::bytemuck::from_bytes(data);
-                        // Copy out the bytes into a new, owned data structure.
-                        Ok(*account)
+                        Ok(anchor_lang::__private::bytemuck::pod_read_unaligned(data))
                     }
                 }
 
@@ -327,7 +324,7 @@ struct AccountArgs {
 impl Parse for AccountArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut parsed = Self::default();
-        let args = input.parse_terminated::<_, Comma>(AccountArg::parse)?;
+        let args = input.parse_terminated(AccountArg::parse, Token![,])?;
         for arg in args {
             match arg {
                 AccountArg::ZeroCopy { is_unsafe } => {
@@ -417,33 +414,24 @@ pub fn derive_zero_copy_accessor(item: proc_macro::TokenStream) -> proc_macro::T
             field
                 .attrs
                 .iter()
-                .find(|attr| anchor_syn::parser::tts_to_string(&attr.path) == "accessor")
+                .find(|attr| anchor_syn::parser::tts_to_string(attr.path()) == "accessor")
                 .map(|attr| {
-                    let mut tts = attr.tokens.clone().into_iter();
-                    // if user writes #[accessor] with no arguments on a field, tts.next() returns None
-                    let g_stream = match tts.next() {
-                        Some(proc_macro2::TokenTree::Group(g)) => g.stream(),
-                        Some(_) => {
+                    let tokens = match &attr.meta {
+                        syn::Meta::List(list) => list.tokens.clone(),
+                        _ => {
                             return syn::Error::new_spanned(
-                                &attr.tokens,
-                                "invalid `#[accessor]` syntax, expected `#[accessor(Type)]`",
-                            )
-                            .into_compile_error();
-                        }
-                        None => {
-                            return syn::Error::new_spanned(
-                                &attr.tokens,
+                                attr,
                                 "`#[accessor]` requires a type argument, e.g `#[accessor(MyType)]`",
                             )
                             .into_compile_error();
                         }
                     };
-                    let accessor_ty = match g_stream.into_iter().next() {
+                    let accessor_ty = match tokens.into_iter().next() {
                         Some(token) => token,
                         None => {
                             return syn::Error::new_spanned(
-                                &attr.tokens,
-                                "`#[accessor]` requires a type inside the parantheses e.g \
+                                attr,
+                                "`#[accessor]` requires a type inside the parentheses e.g \
                                  `#[accessor(MyType)]`",
                             )
                             .into_compile_error()
@@ -546,7 +534,7 @@ pub fn zero_copy(
     let attr = account_strct
         .attrs
         .iter()
-        .find(|attr| anchor_syn::parser::tts_to_string(&attr.path) == "repr");
+        .find(|attr| anchor_syn::parser::tts_to_string(attr.path()) == "repr");
 
     let repr = match attr {
         // Users might want to manually specify repr modifiers e.g. repr(C, packed)
@@ -563,12 +551,17 @@ pub fn zero_copy(
     let mut has_pod_attr = false;
     let mut has_zeroable_attr = false;
     for attr in account_strct.attrs.iter() {
-        let token_string = attr.tokens.to_string();
-        if token_string.contains("bytemuck :: Pod") {
-            has_pod_attr = true;
+        if !attr.path().is_ident("derive") {
+            continue;
         }
-        if token_string.contains("bytemuck :: Zeroable") {
-            has_zeroable_attr = true;
+        if let syn::Meta::List(list) = &attr.meta {
+            let tokens_str = list.tokens.to_string();
+            if tokens_str.contains("bytemuck :: Pod") {
+                has_pod_attr = true;
+            }
+            if tokens_str.contains("bytemuck :: Zeroable") {
+                has_zeroable_attr = true;
+            }
         }
     }
 

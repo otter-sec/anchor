@@ -3,7 +3,7 @@ use {
     quote::quote,
     std::iter,
     syn::{
-        punctuated::Punctuated, ConstParam, GenericParam, LifetimeDef, PredicateLifetime, Token,
+        punctuated::Punctuated, ConstParam, GenericParam, LifetimeParam, PredicateLifetime, Token,
         TypeParam, WhereClause, WherePredicate,
     },
 };
@@ -115,8 +115,8 @@ fn generics(accs: &AccountsStruct) -> ParsedGenerics {
                     eq_token: None,
                     default: None,
                 }),
-                GenericParam::Lifetime(LifetimeDef { lifetime, .. }) => {
-                    GenericParam::Lifetime(LifetimeDef {
+                GenericParam::Lifetime(LifetimeParam { lifetime, .. }) => {
+                    GenericParam::Lifetime(LifetimeParam {
                         attrs: vec![],
                         lifetime,
                         colon_token: None,

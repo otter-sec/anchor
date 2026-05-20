@@ -33,7 +33,7 @@ or [Helius](https://docs.helius.dev/data-streaming/geyser-yellowstone).
 ### `emit`
 
 The
-[`emit!()`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/event/src/lib.rs#L103-L111)
+[`emit!()`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/event/src/lib.rs#L103-L111)
 macro provides a way to emit events through program logs. When called, it:
 
 1. Uses the
@@ -44,9 +44,9 @@ macro provides a way to emit events through program logs. When called, it:
    prefixed with `Program Data:`
 
 To receive emitted events in your client application, use the
-[`addEventListener()`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/event.ts#L74-L123)
+[`addEventListener()`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/event.ts#L74-L123)
 method. This method automatically
-[parses and decodes](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/event.ts#L252-L273)
+[parses and decodes](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/event.ts#L252-L273)
 event data from the program logs.
 
 Example usage:
@@ -142,7 +142,7 @@ Log Messages:
 ### `emit_cpi`
 
 The
-[`emit_cpi!()`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/event/src/lib.rs#L157-L196)
+[`emit_cpi!()`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/event/src/lib.rs#L157-L196)
 macro emits events through Cross Program Invocations (CPIs) to the program
 itself. The event data is encoded and included in the CPI's instruction data
 (instead of program logs).
@@ -234,9 +234,9 @@ describe("event-cpi", () => {
 </Tabs>
 
 The
-[`event_cpi`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/event/src/lib.rs#L229-L238)
+[`event_cpi`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/event/src/lib.rs#L229-L238)
 attribute must be added to the `#[derive(Accounts)]` struct for the instruction that emits events using the `emit_cpi!()` macro. This attribute
-[automatically includes additional accounts](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/parser/accounts/event_cpi.rs#L28-L69)
+[automatically includes additional accounts](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/parser/accounts/event_cpi.rs#L28-L69)
 that are required for the self CPI.
 
 ```rust title="lib.rs"

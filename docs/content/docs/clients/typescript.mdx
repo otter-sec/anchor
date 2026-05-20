@@ -6,7 +6,7 @@ description:
 ---
 
 Anchor provides a Typescript client library
-([@anchor-lang/core](https://github.com/solana-foundation/anchor/tree/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor))
+([@anchor-lang/core](https://github.com/otter-sec/anchor/tree/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor))
 that simplifies the process of interacting with Solana programs from the client
 in JavaScript or TypeScript.
 
@@ -20,11 +20,11 @@ in JavaScript or TypeScript.
 
 To interact with an Anchor program using `@anchor-lang/core`, you'll need to
 create a
-[`Program`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/index.ts#L58)
+[`Program`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/index.ts#L58)
 instance using the program's [IDL file](/docs/basics/idl).
 
 Creating an instance of the `Program` requires the program's IDL and an
-[`AnchorProvider`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/provider.ts#L59).
+[`AnchorProvider`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/provider.ts#L59).
 An `AnchorProvider` is an abstraction that combines two things:
 
 - `Connection` - the connection to a Solana cluster (i.e. localhost, devnet,
@@ -120,7 +120,7 @@ describe("hello_anchor", () => {
 ## Invoke Instructions
 
 Once the `Program` is set up using a program's IDL file, you can use the Anchor
-[`MethodsBuilder`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/methods.ts#L155)
+[`MethodsBuilder`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/methods.ts#L155)
 to:
 
 - Build individual instructions
@@ -216,9 +216,9 @@ Anchor provides multiple methods for building program instructions:
 <Tab value=".rpc">
 
 The
-[`rpc()`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/methods.ts#L428)
+[`rpc()`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/methods.ts#L428)
 method
-[sends a signed transaction](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/rpc.ts#L29)
+[sends a signed transaction](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/rpc.ts#L29)
 with the specified instruction and returns a `TransactionSignature`.
 
 When using `.rpc`, the `Wallet` from the `Provider` is automatically included as
@@ -246,9 +246,9 @@ const transactionSignature = await program.methods
 <Tab value=".transaction">
 
 The
-[`transaction()`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/methods.ts#L348)
+[`transaction()`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/methods.ts#L348)
 method
-[builds a `Transaction`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/transaction.ts#L18-L26)
+[builds a `Transaction`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/transaction.ts#L18-L26)
 with the specified instruction without sending the transaction.
 
 ```ts
@@ -277,9 +277,9 @@ const transactionSignature = await connection.sendTransaction(transaction, [
 <Tab value=".instruction">
 
 The
-[`instruction()`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/methods.ts#L323)
+[`instruction()`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/methods.ts#L323)
 method
-[builds a `TransactionInstruction`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/instruction.ts#L57-L61)
+[builds a `TransactionInstruction`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/instruction.ts#L57-L61)
 using the specified instruction. This is useful if you want to manually add the
 instruction to a transaction and combine it with other instructions.
 
@@ -322,7 +322,7 @@ IDL. Anchor provides multiple methods for fetching accounts.
 <Tab value="all">
 
 Use
-[`all()`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/account.ts#L251)
+[`all()`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/account.ts#L251)
 to fetch all existing accounts for a specific account type.
 
 ```ts
@@ -357,7 +357,7 @@ const accounts = await program.account.newAccount.all([
 <Tab value="fetch">
 
 Use
-[`fetch()`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/account.ts#L165)
+[`fetch()`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/account.ts#L165)
 to fetch the account data for a single account
 
 ```ts
@@ -369,7 +369,7 @@ const account = await program.account.newAccount.fetch(ACCOUNT_ADDRESS);
 <Tab value="fetchMultiple">
 
 Use
-[`fetchMultiple()`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/account.ts#L200)
+[`fetchMultiple()`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/account.ts#L200)
 to fetch the account data for multiple accounts by passing in an array of
 account addresses
 

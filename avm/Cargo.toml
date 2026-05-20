@@ -10,13 +10,17 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.32"
-cargo_toml = "0.19.2"
+cargo_toml.workspace = true
 cfg-if = "1.0.0"
 chrono = "0.4"
 clap = { version = "4.5.17", features = ["derive"] }
 clap_complete = "4.5.26"
 dirs = "4.0.0"
-reqwest = { version = "0.11.9", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+reqwest = { version = "0.11.9", default-features = false, features = [
+  "blocking",
+  "json",
+  "rustls-tls",
+] }
 semver = "1.0.4"
 serde = { version = "1.0.136", features = ["derive"] }
 

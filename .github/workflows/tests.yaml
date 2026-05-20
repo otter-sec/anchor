@@ -23,4 +23,4 @@ jobs:
       node_version: 20.18.0
       cargo_profile: debug
       anchor_binary_name: anchor-binary
-      surfpool_cli_version: 1.1.1
+      surfpool_cli_version: 1.2.0

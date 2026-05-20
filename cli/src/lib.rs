@@ -21,7 +21,7 @@ use {
     dirs::home_dir,
     heck::{ToKebabCase, ToLowerCamelCase, ToPascalCase, ToSnakeCase},
     regex::{Regex, RegexBuilder},
-    rust_template::{ProgramTemplate, TestTemplate},
+    rust_template::{AnchorVersion, ProgramTemplate, TestTemplate},
     semver::{Version, VersionReq},
     serde::Deserialize,
     serde_json::{json, Map, Value as JsonValue},
@@ -54,10 +54,19 @@ use {
 mod abs_path;
 mod account;
 mod checks;
+pub mod codama;
 pub mod config;
+#[cfg(not(windows))]
+pub mod coverage;
+#[cfg(not(windows))]
+pub mod debugger;
+#[cfg(not(windows))]
+mod flamegraph;
 mod keygen;
 mod legacy_idl;
 mod metadata;
+#[cfg(not(windows))]
+mod profile;
 mod program;
 pub mod rust_template;
 
@@ -66,6 +75,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DOCKER_BUILDER_VERSION: &str = VERSION;
 /// Default RPC port
 pub const DEFAULT_RPC_PORT: u16 = 8899;
+const DEFAULT_FAUCET_PORT: u16 = 9900;
 
 /// WebSocket port offset for solana-test-validator (RPC port + 1)
 pub const WEBSOCKET_PORT_OFFSET: u16 = 1;
@@ -101,15 +111,20 @@ pub enum Command {
         /// Don't install JavaScript dependencies
         #[clap(long)]
         no_install: bool,
-        /// Package Manager to use (defaults to yarn if not specified)
-        #[clap(value_enum, long, default_value = "yarn")]
-        package_manager: PackageManager,
+        /// Package Manager to use. If omitted, detection cascades
+        /// `pnpm` -> `yarn` -> `npm` and picks the first one on PATH. When
+        /// set explicitly, the chosen binary must be installed.
+        #[clap(value_enum, long)]
+        package_manager: Option<PackageManager>,
         /// Don't initialize git
         #[clap(long)]
         no_git: bool,
         /// Rust program template to use
         #[clap(value_enum, short, long, default_value = "multiple")]
         template: ProgramTemplate,
+        /// Anchor template version to generate
+        #[clap(value_enum, long, default_value = "v1")]
+        anchor_version: AnchorVersion,
         /// Test template to use
         #[clap(value_enum, long, default_value = "litesvm")]
         test_template: TestTemplate,
@@ -239,6 +254,9 @@ pub enum Command {
         /// Validator type to use for local testing
         #[clap(value_enum, long, default_value = "surfpool")]
         validator: ValidatorType,
+        /// Profile each test: record per-test SBF register traces and render flamegraph SVGs under target/anchor-v2-profile.
+        #[clap(long)]
+        profile: bool,
         args: Vec<String>,
         /// Environment variables to pass into the docker container
         #[clap(short, long, required = false)]
@@ -254,9 +272,52 @@ pub enum Command {
         /// Rust program template to use
         #[clap(value_enum, short, long, default_value = "multiple")]
         template: ProgramTemplate,
+        /// Anchor template version to generate
+        #[clap(value_enum, long, default_value = "v1")]
+        anchor_version: AnchorVersion,
         /// Create new program even if there is already one
         #[clap(long, action)]
         force: bool,
+    },
+    /// Run tests under an instruction-level debugger.
+    #[cfg(not(windows))]
+    Debugger {
+        /// Filter captured traces to tests whose name contains this substring.
+        test_name: Option<String>,
+        /// Skip the build+test phase and open the TUI over existing traces.
+        #[clap(long)]
+        skip_run: bool,
+        /// Skip `cargo build-sbf`.
+        #[clap(long)]
+        skip_build: bool,
+        /// Forwarded to the underlying `anchor test` invocation.
+        #[clap(long)]
+        skip_lint: bool,
+        /// Drive tests over sbpf's gdb-stub instead of reading dumped trace files.
+        #[clap(long)]
+        gdb: bool,
+        /// Arguments to pass to the underlying `cargo build-sbf` command.
+        #[clap(required = false, last = true)]
+        cargo_args: Vec<String>,
+    },
+    /// Generate source-level coverage from SBF register traces.
+    #[cfg(not(windows))]
+    Coverage {
+        /// Skip the build+test phase and generate coverage from existing traces.
+        #[clap(long)]
+        skip_run: bool,
+        /// Skip `cargo build-sbf`.
+        #[clap(long)]
+        skip_build: bool,
+        /// Output path for the LCOV file.
+        #[clap(long, default_value = "target/coverage/sbf.lcov")]
+        output: String,
+        /// Directory containing register trace files.
+        #[clap(long, default_value = "target/coverage/traces")]
+        trace_dir: String,
+        /// Arguments to pass to the underlying `cargo build-sbf` command.
+        #[clap(required = false, last = true)]
+        cargo_args: Vec<String>,
     },
     /// Commands for interacting with interface definitions.
     Idl {
@@ -418,6 +479,11 @@ pub enum Command {
     Program {
         #[clap(subcommand)]
         subcmd: ProgramCommand,
+    },
+    /// Codama IDL integration commands
+    Codama {
+        #[clap(subcommand)]
+        subcmd: codama::CodamaCommand,
     },
     /// [DEPRECATED] Manage legacy on-chain IDL accounts.
     /// These commands interact with the old Anchor IDL instruction protocol and will be removed
@@ -973,7 +1039,7 @@ fn override_toolchain(cfg_override: &ConfigOverride) -> Result<RestoreToolchainC
                 // binaries in various commands.
                 fn override_solana_version(version: String) -> Result<bool> {
                     // There is a deprecation warning message starting with `1.18.19` which causes
-                    // parsing problems https://github.com/solana-foundation/anchor/issues/3147
+                    // parsing problems https://github.com/otter-sec/anchor/issues/3147
                     let (cmd_name, domain) =
                         if Version::parse(&version)? < Version::parse("1.18.19")? {
                             ("solana-install", "solana.com")
@@ -1159,6 +1225,7 @@ fn process_command(opts: Opts) -> Result<()> {
             package_manager,
             no_git,
             template,
+            anchor_version,
             test_template,
             force,
             install_agent_skills,
@@ -1170,6 +1237,7 @@ fn process_command(opts: Opts) -> Result<()> {
             package_manager,
             no_git,
             template,
+            anchor_version,
             test_template,
             force,
             install_agent_skills,
@@ -1177,8 +1245,9 @@ fn process_command(opts: Opts) -> Result<()> {
         Command::New {
             name,
             template,
+            anchor_version,
             force,
-        } => new(&opts.cfg_override, name, template, force),
+        } => new(&opts.cfg_override, name, template, anchor_version, force),
         Command::Build {
             no_idl,
             idl,
@@ -1284,6 +1353,7 @@ fn process_command(opts: Opts) -> Result<()> {
             detach,
             run,
             validator,
+            profile,
             args,
             env,
             cargo_args,
@@ -1299,8 +1369,42 @@ fn process_command(opts: Opts) -> Result<()> {
             detach,
             run,
             validator,
+            profile,
+            false,
             args,
             env,
+            cargo_args,
+        ),
+        #[cfg(not(windows))]
+        Command::Debugger {
+            test_name,
+            skip_run,
+            skip_build,
+            skip_lint,
+            gdb,
+            cargo_args,
+        } => debugger(
+            &opts.cfg_override,
+            test_name,
+            skip_run,
+            skip_build,
+            skip_lint,
+            gdb,
+            cargo_args,
+        ),
+        #[cfg(not(windows))]
+        Command::Coverage {
+            skip_run,
+            skip_build,
+            output,
+            trace_dir,
+            cargo_args,
+        } => run_coverage(
+            &opts.cfg_override,
+            skip_run,
+            skip_build,
+            &output,
+            &trace_dir,
             cargo_args,
         ),
         Command::Airdrop { amount, pubkey } => airdrop(&opts.cfg_override, amount, pubkey),
@@ -1355,16 +1459,8 @@ fn process_command(opts: Opts) -> Result<()> {
         Command::ShowAccount { cmd } => account::show_account(&opts.cfg_override, cmd),
         Command::Keygen { subcmd } => keygen::keygen(&opts.cfg_override, subcmd),
         Command::Program { subcmd } => program::program(&opts.cfg_override, subcmd),
+        Command::Codama { subcmd } => codama::entry(subcmd),
     }
-}
-
-fn is_package_manager_available(pm: &PackageManager) -> bool {
-    std::process::Command::new(pm.to_string())
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1373,9 +1469,10 @@ fn init(
     name: String,
     javascript: bool,
     no_install: bool,
-    package_manager: PackageManager,
+    package_manager: Option<PackageManager>,
     no_git: bool,
     template: ProgramTemplate,
+    anchor_version: AnchorVersion,
     test_template: TestTemplate,
     force: bool,
     install_agent_skills: bool,
@@ -1404,13 +1501,6 @@ fn init(
         ));
     }
 
-    if !is_package_manager_available(&package_manager) {
-        return Err(anyhow!(
-            "Package manager {package_manager} not found. Install it or pass --package-manager \
-             <pm>."
-        ));
-    }
-
     if force {
         fs::create_dir_all(&project_name)?;
     } else {
@@ -1421,11 +1511,25 @@ fn init(
 
     let mut cfg = Config::default();
 
-    let test_script = test_template.get_test_script(javascript, &package_manager);
+    let uses_node = test_template.uses_node();
+    let package_manager = if uses_node {
+        Some(resolve_package_manager(package_manager)?)
+    } else {
+        None
+    };
+    let test_script = test_template.get_test_script(javascript, package_manager.as_ref());
     cfg.scripts.insert("test".to_owned(), test_script);
 
-    let package_manager_cmd = package_manager.to_string();
-    cfg.toolchain.package_manager = Some(package_manager);
+    // In-process test templates drive the Solana VM inside `cargo test`, so
+    // auto-starting a validator at `anchor test` time is unnecessary.
+    if matches!(test_template, TestTemplate::Litesvm | TestTemplate::Mollusk) {
+        cfg.skip_local_validator = Some(true);
+    }
+
+    let package_manager_cmd = package_manager.as_ref().map(ToString::to_string);
+    if uses_node {
+        cfg.toolchain.package_manager = package_manager.clone();
+    }
 
     // Initialize .gitignore file
     fs::write(".gitignore", rust_template::git_ignore())?;
@@ -1435,15 +1539,21 @@ fn init(
 
     // Remove the default program if `--force` is passed
     if force {
-        fs::remove_dir_all(
-            std::env::current_dir()?
-                .join("programs")
-                .join(&project_name),
-        )?;
+        let default_program_dir = std::env::current_dir()?
+            .join("programs")
+            .join(&project_name);
+        if default_program_dir.exists() {
+            fs::remove_dir_all(default_program_dir)?;
+        }
     }
 
     // Build the program.
-    rust_template::create_program(&project_name, template, Some(&test_template))?;
+    rust_template::create_program(
+        &project_name,
+        template,
+        Some(&test_template),
+        anchor_version,
+    )?;
 
     let program_id = rust_template::get_or_create_program_id(&rust_name, target_dir()?);
     let mut localnet = BTreeMap::new();
@@ -1459,42 +1569,54 @@ fn init(
     let toml = cfg.to_string();
     fs::write("Anchor.toml", toml)?;
 
-    // Build the migrations directory.
-    let migrations_path = Path::new("migrations");
-    fs::create_dir_all(migrations_path)?;
+    if uses_node {
+        // Build the migrations directory.
+        let migrations_path = Path::new("migrations");
+        fs::create_dir_all(migrations_path)?;
 
-    let license = get_npm_init_license()?;
+        let license = get_npm_init_license()?;
 
-    let jest = TestTemplate::Jest == test_template;
-    if javascript {
-        // Build javascript config
-        let mut package_json = File::create("package.json")?;
-        package_json.write_all(rust_template::package_json(jest, license).as_bytes())?;
+        let jest = TestTemplate::Jest == test_template;
+        if javascript {
+            // Build javascript config
+            let mut package_json = File::create("package.json")?;
+            package_json
+                .write_all(rust_template::package_json(jest, license, anchor_version).as_bytes())?;
 
-        let mut deploy = File::create(migrations_path.join("deploy.js"))?;
-        deploy.write_all(rust_template::deploy_script().as_bytes())?;
-    } else {
-        // Build typescript config
-        let mut ts_config = File::create("tsconfig.json")?;
-        ts_config.write_all(rust_template::ts_config(jest).as_bytes())?;
+            let mut deploy = File::create(migrations_path.join("deploy.js"))?;
+            deploy.write_all(rust_template::deploy_script().as_bytes())?;
+        } else {
+            // Build typescript config
+            let mut ts_config = File::create("tsconfig.json")?;
+            ts_config.write_all(rust_template::ts_config(jest).as_bytes())?;
 
-        let mut ts_package_json = File::create("package.json")?;
-        ts_package_json.write_all(rust_template::ts_package_json(jest, license).as_bytes())?;
+            let mut ts_package_json = File::create("package.json")?;
+            ts_package_json.write_all(
+                rust_template::ts_package_json(jest, license, anchor_version).as_bytes(),
+            )?;
 
-        let mut deploy = File::create(migrations_path.join("deploy.ts"))?;
-        deploy.write_all(rust_template::ts_deploy_script().as_bytes())?;
+            let mut deploy = File::create(migrations_path.join("deploy.ts"))?;
+            deploy.write_all(rust_template::ts_deploy_script().as_bytes())?;
+        }
     }
 
-    test_template.create_test_files(&project_name, javascript, &program_id.to_string())?;
+    test_template.create_test_files(
+        &project_name,
+        javascript,
+        &program_id.to_string(),
+        anchor_version,
+    )?;
 
-    if !no_install {
-        let package_manager_result = install_node_modules(&package_manager_cmd)?;
-
-        if !package_manager_result.status.success() && package_manager_cmd != "npm" {
-            println!("Failed {package_manager_cmd} install will attempt to npm install");
-            install_node_modules("npm")?;
-        } else {
-            eprintln!("Failed to install node modules");
+    if !no_install && uses_node {
+        let package_manager_cmd =
+            package_manager_cmd.expect("Node templates resolve a package manager");
+        let output = install_node_modules(&package_manager_cmd)?;
+        if !output.status.success() {
+            return Err(anyhow!(
+                "`{package_manager_cmd} install` failed (exit code {:?}). Re-run with \
+                 `--no-install` to keep the generated files without installing dependencies.",
+                output.status.code()
+            ));
         }
     }
 
@@ -1568,6 +1690,64 @@ fn install_solana_skill() {
     }
 }
 
+const PACKAGE_MANAGER_WATERFALL: &[PackageManager] = &[
+    PackageManager::PNPM,
+    PackageManager::Yarn,
+    PackageManager::NPM,
+];
+
+fn package_manager_available(pm: &PackageManager) -> bool {
+    let cmd = pm.to_string();
+    let mut command = if cfg!(target_os = "windows") {
+        let mut command = std::process::Command::new("cmd");
+        command.arg(format!("/C {cmd} --version"));
+        command
+    } else {
+        let mut command = std::process::Command::new(&cmd);
+        command.arg("--version");
+        command
+    };
+    command
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn resolve_package_manager(explicit: Option<PackageManager>) -> Result<PackageManager> {
+    if let Some(pm) = explicit {
+        if !package_manager_available(&pm) {
+            return Err(anyhow!(
+                "`{pm}` was requested but is not on PATH. Install it or pick a different package \
+                 manager with `--package-manager`."
+            ));
+        }
+        return Ok(pm);
+    }
+
+    let mut skipped = Vec::new();
+    for candidate in PACKAGE_MANAGER_WATERFALL {
+        if package_manager_available(candidate) {
+            if !skipped.is_empty() {
+                let missing = skipped
+                    .iter()
+                    .map(|pm: &PackageManager| pm.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                eprintln!("warning: {missing} not found on PATH, using `{candidate}` instead");
+            }
+            return Ok(candidate.clone());
+        }
+        skipped.push(candidate.clone());
+    }
+
+    Err(anyhow!(
+        "No supported package manager found on PATH (tried pnpm, yarn, npm). Install one of them, \
+         or re-run with `--no-install`."
+    ))
+}
+
 fn install_node_modules(cmd: &str) -> Result<std::process::Output> {
     if cfg!(target_os = "windows") {
         std::process::Command::new("cmd")
@@ -1591,6 +1771,7 @@ fn new(
     cfg_override: &ConfigOverride,
     name: String,
     template: ProgramTemplate,
+    anchor_version: AnchorVersion,
     force: bool,
 ) -> Result<()> {
     with_workspace(cfg_override, |cfg| -> Result<()> {
@@ -1612,7 +1793,7 @@ fn new(
                     fs::remove_dir_all(std::env::current_dir()?.join("programs").join(&name))?;
                 }
 
-                rust_template::create_program(&name, template, None)?;
+                rust_template::create_program(&name, template, None, anchor_version)?;
 
                 programs.insert(
                     name.clone(),
@@ -1877,14 +2058,14 @@ pub fn build(
         docker_image: docker_image.unwrap_or_else(|| cfg.docker()),
         bootstrap,
     };
-    match cargo {
+    let built_idl_paths = match cargo {
         // No Cargo.toml so build the entire workspace.
         None => build_all(
             &cfg,
             cfg.path(),
             no_idl,
-            idl_out,
-            idl_ts_out,
+            idl_out.clone(),
+            idl_ts_out.clone(),
             &build_config,
             stdout,
             stderr,
@@ -1898,8 +2079,8 @@ pub fn build(
             &cfg,
             cfg.path(),
             no_idl,
-            idl_out,
-            idl_ts_out,
+            idl_out.clone(),
+            idl_ts_out.clone(),
             &build_config,
             stdout,
             stderr,
@@ -1913,8 +2094,8 @@ pub fn build(
             &cfg,
             cargo.path().to_path_buf(),
             no_idl,
-            idl_out,
-            idl_ts_out,
+            idl_out.clone(),
+            idl_ts_out.clone(),
             &build_config,
             stdout,
             stderr,
@@ -1923,8 +2104,15 @@ pub fn build(
             skip_lint,
             no_docs,
         )?,
-    }
+    };
     cfg.run_hooks(HookType::PostBuild)?;
+
+    if cfg.clients.auto && !no_idl {
+        // Only pass IDLs produced by this build. The output directory can
+        // contain stale JSON from earlier full builds, especially after
+        // `anchor build --program-name ...` from inside a program crate.
+        codama::auto_generate_for_workspace(&cfg.clients, cfg_parent, &built_idl_paths)?;
+    }
 
     set_workspace_dir_or_exit();
 
@@ -1945,30 +2133,33 @@ fn build_all(
     cargo_args: Vec<String>,
     skip_lint: bool,
     no_docs: bool,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     let cur_dir = std::env::current_dir()?;
-    let r = match cfg_path.parent() {
-        None => Err(anyhow!("Invalid Anchor.toml at {}", cfg_path.display())),
-        Some(_parent) => {
-            for p in cfg.get_rust_program_list()? {
-                build_rust_cwd(
-                    cfg,
-                    p.join("Cargo.toml"),
-                    no_idl,
-                    idl_out.clone(),
-                    idl_ts_out.clone(),
-                    build_config,
-                    stdout.as_ref().map(|f| f.try_clone()).transpose()?,
-                    stderr.as_ref().map(|f| f.try_clone()).transpose()?,
-                    env_vars.clone(),
-                    cargo_args.clone(),
-                    skip_lint,
-                    no_docs,
-                )?;
+    let r = (|| -> Result<Vec<PathBuf>> {
+        match cfg_path.parent() {
+            None => Err(anyhow!("Invalid Anchor.toml at {}", cfg_path.display())),
+            Some(_parent) => {
+                let mut idl_paths = Vec::new();
+                for p in cfg.get_rust_program_list()? {
+                    idl_paths.extend(build_rust_cwd(
+                        cfg,
+                        p.join("Cargo.toml"),
+                        no_idl,
+                        idl_out.clone(),
+                        idl_ts_out.clone(),
+                        build_config,
+                        stdout.as_ref().map(|f| f.try_clone()).transpose()?,
+                        stderr.as_ref().map(|f| f.try_clone()).transpose()?,
+                        env_vars.clone(),
+                        cargo_args.clone(),
+                        skip_lint,
+                        no_docs,
+                    )?);
+                }
+                Ok(idl_paths)
             }
-            Ok(())
         }
-    };
+    })();
     std::env::set_current_dir(cur_dir)?;
     r
 }
@@ -1988,7 +2179,7 @@ fn build_rust_cwd(
     cargo_args: Vec<String>,
     skip_lint: bool,
     no_docs: bool,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     match cargo_toml.parent() {
         None => return Err(anyhow!("Unable to find parent")),
         Some(p) => std::env::set_current_dir(p)?,
@@ -2024,7 +2215,7 @@ fn build_cwd_verifiable(
     env_vars: Vec<String>,
     cargo_args: Vec<String>,
     no_docs: bool,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     // Create output dirs.
     let workspace_dir = cfg.path().parent().unwrap().canonicalize()?;
     let target_dir = target_dir()?;
@@ -2049,9 +2240,10 @@ fn build_cwd_verifiable(
         cargo_args.clone(),
     );
 
-    match &result {
+    match result {
         Err(e) => {
             eprintln!("Error during Docker build: {e:?}");
+            Err(e)
         }
         Ok(_) => {
             // Build the idl.
@@ -2063,7 +2255,7 @@ fn build_cwd_verifiable(
                 .join("idl")
                 .join(&idl.metadata.name)
                 .with_extension("json");
-            write_idl(&idl, OutFile::File(out_file))?;
+            write_idl(&idl, OutFile::File(out_file.clone()))?;
 
             // Write out the TypeScript type.
             println!("Writing the .ts file");
@@ -2085,10 +2277,9 @@ fn build_cwd_verifiable(
             }
 
             println!("Build success");
+            Ok(vec![out_file])
         }
     }
-
-    result
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2338,7 +2529,7 @@ fn _build_rust_cwd(
     skip_lint: bool,
     no_docs: bool,
     cargo_args: Vec<String>,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     let exit = std::process::Command::new("cargo")
         .args(BUILD_SUBCOMMAND)
         .args(cargo_args.clone())
@@ -2370,7 +2561,7 @@ fn _build_rust_cwd(
         };
 
         // Write out the JSON file.
-        write_idl(&idl, OutFile::File(out))?;
+        write_idl(&idl, OutFile::File(out.clone()))?;
         // Write out the TypeScript type.
         fs::write(&ts_out, idl_ts(&idl)?)?;
 
@@ -2385,13 +2576,36 @@ fn _build_rust_cwd(
                     .with_extension("ts"),
             )?;
         }
+        Ok(vec![out])
+    } else {
+        Ok(Vec::new())
     }
-
-    Ok(())
 }
 
 /// Subcommand and any arguments to be passed to cargo
 const BUILD_SUBCOMMAND: &[&str] = &["build-sbf", "--tools-version", "v1.52"];
+
+/// Run the configured SBF build command.
+pub fn cargo_build_sbf(cwd: Option<&Path>, extra_args: &[String]) -> Result<()> {
+    let mut cmd = std::process::Command::new("cargo");
+    if let Some(d) = cwd {
+        cmd.current_dir(d);
+    }
+    let status = cmd
+        .args(BUILD_SUBCOMMAND)
+        .args(extra_args)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .context("running cargo build-sbf")?;
+    if !status.success() {
+        return Err(anyhow!(
+            "`cargo {}` failed with status {status}",
+            BUILD_SUBCOMMAND.join(" ")
+        ));
+    }
+    Ok(())
+}
 
 pub fn verify(
     program_id: Pubkey,
@@ -3259,6 +3473,8 @@ fn test(
     detach: bool,
     tests_to_run: Vec<String>,
     validator_type: ValidatorType,
+    profile: bool,
+    gdb: bool,
     extra_args: Vec<String>,
     env_vars: Vec<String>,
     cargo_args: Vec<String>,
@@ -3275,6 +3491,64 @@ fn test(
     with_workspace(cfg_override, |cfg| -> Result<()> {
         // Set validator type based on CLI choice
         cfg.validator = Some(validator_type);
+
+        let cli_skip_local_validator = skip_local_validator;
+        let config_skip_local_validator = cfg.skip_local_validator.unwrap_or(false);
+        let workspace_root = cfg.path().parent().unwrap().to_owned();
+
+        #[cfg(windows)]
+        if profile {
+            return Err(anyhow!(
+                "`anchor test --profile` is not supported on Windows"
+            ));
+        }
+        #[cfg(windows)]
+        let _ = gdb;
+
+        #[cfg(not(windows))]
+        let profile_dir = workspace_root.join(crate::profile::DEFAULT_PROFILE_DIR);
+        #[cfg(not(windows))]
+        let _gdb_guard: Option<crate::debugger::gdb::GdbDriver> = if profile {
+            let _ = fs::remove_dir_all(&profile_dir);
+            std::env::set_var("ANCHOR_PROFILE_DIR", &profile_dir);
+            std::env::set_var("CARGO_PROFILE_RELEASE_DEBUG", "2");
+
+            if let Some(test_script) = cfg.scripts.get_mut("test") {
+                if test_script.contains("cargo test") {
+                    *test_script =
+                        test_script.replacen("cargo test", "cargo test --features profile", 1);
+                    if gdb {
+                        let sep = if test_script.contains(" -- ") {
+                            " "
+                        } else {
+                            " -- "
+                        };
+                        *test_script = format!("{test_script}{sep}--test-threads=1");
+                    }
+                } else {
+                    eprintln!(
+                        "warning: --profile requires the `test` script in Anchor.toml to invoke \
+                         `cargo test`; got: {test_script:?}. Profiling will not activate."
+                    );
+                }
+            } else {
+                eprintln!(
+                    "warning: --profile requires a [scripts] test entry in Anchor.toml; none \
+                     found. Profiling will not activate."
+                );
+            }
+
+            if gdb {
+                let driver = crate::debugger::gdb::start_gdb_driver(&profile_dir)?;
+                std::env::set_var(crate::debugger::gdb::SOCKET_ENV, driver.sock_path());
+                std::env::set_var("RUST_TEST_THREADS", "1");
+                Some(driver)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         // Build if needed.
         if !skip_build {
@@ -3298,17 +3572,20 @@ fn test(
             )?;
         }
 
-        let root = cfg.path().parent().unwrap().to_owned();
-        cfg.add_test_config(root, test_paths)?;
+        cfg.add_test_config(workspace_root, test_paths)?;
 
-        // Run the deploy against the cluster in two cases:
-        //
-        // 1. The cluster is not localnet.
-        // 2. The cluster is localnet, but we're not booting a local validator.
-        //
-        // In either case, skip the deploy if the user specifies.
+        // Deploy to the cluster unless told to skip. For localnet, preserve
+        // explicit `--skip-local-validator` deploys because the validator is
+        // already running, but don't let generated in-process templates force
+        // an RPC deploy through their persisted config.
         let is_localnet = cfg.provider.cluster == Cluster::Localnet;
-        if (!is_localnet || skip_local_validator) && !skip_deploy {
+        let validator_plan = test_validator_plan(
+            skip_deploy,
+            is_localnet,
+            cli_skip_local_validator,
+            config_skip_local_validator,
+        );
+        if validator_plan.predeploy {
             deploy(cfg_override, None, None, false, true, vec![])?;
         }
 
@@ -3346,12 +3623,13 @@ fn test(
                 cfg,
                 cfg.path(),
                 is_localnet,
-                skip_local_validator,
+                validator_plan.skip_local_validator,
                 skip_deploy,
                 detach,
                 validator_type,
                 &cfg.test_validator,
                 &cfg.scripts,
+                validator_plan.stream_program_logs,
                 &extra_args,
                 &cfg.surfpool_config,
             )?;
@@ -3375,20 +3653,411 @@ fn test(
                     cfg,
                     test_suite.0,
                     is_localnet,
-                    skip_local_validator,
+                    validator_plan.skip_local_validator,
                     skip_deploy,
                     detach,
                     validator_type,
                     &test_suite.1.test,
                     &test_suite.1.scripts,
+                    validator_plan.stream_program_logs,
                     &extra_args,
                     &cfg.surfpool_config,
                 )?;
             }
         }
         cfg.run_hooks(HookType::PostTest)?;
+
+        #[cfg(not(windows))]
+        if profile {
+            render_profile(cfg, &profile_dir)?;
+        }
+
         Ok(())
     })?
+}
+
+fn should_predeploy_before_test(
+    skip_deploy: bool,
+    is_localnet: bool,
+    cli_skip_local_validator: bool,
+) -> bool {
+    !skip_deploy && (!is_localnet || cli_skip_local_validator)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct TestValidatorPlan {
+    skip_local_validator: bool,
+    predeploy: bool,
+    stream_program_logs: bool,
+}
+
+fn test_validator_plan(
+    skip_deploy: bool,
+    is_localnet: bool,
+    cli_skip_local_validator: bool,
+    config_skip_local_validator: bool,
+) -> TestValidatorPlan {
+    TestValidatorPlan {
+        skip_local_validator: cli_skip_local_validator || config_skip_local_validator,
+        predeploy: should_predeploy_before_test(skip_deploy, is_localnet, cli_skip_local_validator),
+        stream_program_logs: true,
+    }
+}
+
+/// Run the test suite with profile tracing enabled and then launch the SBF instruction stepper.
+#[cfg(not(windows))]
+#[allow(clippy::too_many_arguments)]
+fn debugger(
+    cfg_override: &ConfigOverride,
+    test_name: Option<String>,
+    skip_run: bool,
+    skip_build: bool,
+    skip_lint: bool,
+    gdb: bool,
+    cargo_args: Vec<String>,
+) -> Result<()> {
+    let has_anchor_toml = match Config::discover(cfg_override) {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(e) => return Err(anyhow!("failed to probe for Anchor.toml: {e}")),
+    };
+
+    if has_anchor_toml {
+        debugger_anchor_workspace(
+            cfg_override,
+            test_name,
+            skip_run,
+            skip_build,
+            skip_lint,
+            gdb,
+            cargo_args,
+        )
+    } else {
+        debugger_loose(
+            cfg_override,
+            test_name,
+            skip_run,
+            skip_build,
+            gdb,
+            cargo_args,
+        )
+    }
+}
+
+#[cfg(not(windows))]
+#[allow(clippy::too_many_arguments)]
+fn debugger_anchor_workspace(
+    cfg_override: &ConfigOverride,
+    test_name: Option<String>,
+    skip_run: bool,
+    skip_build: bool,
+    skip_lint: bool,
+    gdb: bool,
+    cargo_args: Vec<String>,
+) -> Result<()> {
+    if !skip_run {
+        test(
+            cfg_override,
+            None,
+            true,
+            true,
+            skip_build,
+            skip_lint,
+            true,
+            false,
+            Vec::new(),
+            ValidatorType::Surfpool,
+            true,
+            gdb,
+            Vec::new(),
+            Vec::new(),
+            cargo_args,
+        )?;
+    }
+
+    with_workspace(cfg_override, |cfg| -> Result<()> {
+        let workspace_root = cfg.path().parent().unwrap().to_owned();
+        let profile_dir = workspace_root.join(crate::profile::DEFAULT_PROFILE_DIR);
+        let (pubkey_to_so, sources) = resolve_anchor_workspace_programs(cfg);
+
+        if pubkey_to_so.is_empty() {
+            return Err(anyhow!(
+                "no programs resolved for the debugger.\n\nEither declare them in Anchor.toml:\n  \
+                 [programs.localnet]\n  <name> = \"<pubkey>\"\n\nor run `anchor build` so \
+                 `target/deploy/<name>-keypair.json` exists."
+            ));
+        }
+
+        println!("\nResolved programs:");
+        for (pk, so) in &pubkey_to_so {
+            let src = sources.get(pk).copied().unwrap_or("unknown");
+            println!("  {pk}  ->  {}  [{src}]", display_path_relative_to_cwd(so));
+        }
+
+        debugger::run(
+            &profile_dir,
+            &pubkey_to_so,
+            Some(&workspace_root),
+            None,
+            test_name.as_deref(),
+        )
+    })?
+}
+
+#[cfg(not(windows))]
+#[allow(clippy::too_many_arguments)]
+fn debugger_loose(
+    _cfg_override: &ConfigOverride,
+    test_name: Option<String>,
+    skip_run: bool,
+    skip_build: bool,
+    gdb: bool,
+    cargo_args: Vec<String>,
+) -> Result<()> {
+    let cwd = std::env::current_dir().context("read current directory")?;
+    let ws = debugger::loose::LooseWorkspace::discover(cwd)?;
+
+    if !skip_run {
+        ws.check_dev_dep()?;
+    }
+    let profile_feature = ws.detect_profile_feature()?;
+    let profile_dir = ws.root.join(debugger::loose_profile_dir_name());
+
+    if !skip_run {
+        debugger::loose::clear_profile_dir(&profile_dir)?;
+        std::env::set_var("CARGO_PROFILE_RELEASE_DEBUG", "2");
+
+        let anchor_exe =
+            std::env::current_exe().context("resolve anchor binary path for RUSTC_WRAPPER")?;
+        std::env::set_var("RUSTC_WRAPPER", &anchor_exe);
+        std::env::set_var(debugger::rustc_wrapper::WRAPPER_SENTINEL, "1");
+
+        if !skip_build {
+            let build_cwd = ws.cargo_invocation_dir();
+            eprintln!("running `cargo build-sbf` from {}", build_cwd.display());
+            cargo_build_sbf(Some(build_cwd), &cargo_args)?;
+        }
+
+        std::env::remove_var("RUSTC_WRAPPER");
+        std::env::remove_var(debugger::rustc_wrapper::WRAPPER_SENTINEL);
+
+        eprintln!(
+            "running `cargo test{gdb} --features {profile_feature}{pkg}{filter}` from {dir}",
+            gdb = if gdb { " [gdb mode]" } else { "" },
+            pkg = ws
+                .current_package
+                .as_deref()
+                .map(|p| format!(" -p {p}"))
+                .unwrap_or_default(),
+            filter = test_name
+                .as_deref()
+                .map(|f| format!(" -- {f}"))
+                .unwrap_or_default(),
+            dir = ws.cargo_invocation_dir().display(),
+        );
+        if gdb {
+            debugger::gdb::run_gdb_mode(
+                ws.cargo_invocation_dir(),
+                ws.current_package.as_deref(),
+                &profile_feature,
+                &profile_dir,
+                test_name.as_deref(),
+            )?;
+        } else {
+            debugger::loose::run_cargo_test(
+                ws.cargo_invocation_dir(),
+                ws.current_package.as_deref(),
+                &profile_feature,
+                &profile_dir,
+                test_name.as_deref(),
+            )?;
+        }
+    }
+
+    let pubkey_to_so = debugger::loose::discover_programs(&ws.root, ws.current_package.as_deref())?;
+    if pubkey_to_so.is_empty() {
+        eprintln!(
+            "warning: no programs found under {}/target/deploy/.\nELFs are required for \
+             source/disasm symbolication. The debugger will still open but the static disasm pane \
+             will be empty.",
+            ws.root.display()
+        );
+    }
+
+    if !profile_dir.exists() {
+        return Err(anyhow!(
+            "no traces produced at {}.\n\nDid the test actually run? Check that:\n- the test \
+             calls `anchor_v2_testing::svm()` (NOT `LiteSVM::new()`)\n- the `{profile_feature}` \
+             feature is enabled in the test build\n- the test sent at least one transaction that \
+             hit a BPF program",
+            profile_dir.display()
+        ));
+    }
+
+    debugger::run(
+        &profile_dir,
+        &pubkey_to_so,
+        Some(&ws.root),
+        Some(&ws.cwd),
+        test_name.as_deref(),
+    )
+}
+
+#[cfg(not(windows))]
+fn run_coverage(
+    _cfg_override: &ConfigOverride,
+    skip_run: bool,
+    skip_build: bool,
+    output: &str,
+    trace_dir: &str,
+    cargo_args: Vec<String>,
+) -> Result<()> {
+    let cwd = std::env::current_dir().context("read current directory")?;
+    let ws = debugger::loose::LooseWorkspace::discover(cwd)?;
+
+    let trace_path = ws.root.join(trace_dir);
+    let output_path = ws.root.join(output);
+
+    if !skip_run {
+        std::env::set_var("CARGO_PROFILE_RELEASE_DEBUG", "2");
+
+        let anchor_exe =
+            std::env::current_exe().context("resolve anchor binary path for RUSTC_WRAPPER")?;
+        std::env::set_var("RUSTC_WRAPPER", &anchor_exe);
+        std::env::set_var(debugger::rustc_wrapper::WRAPPER_SENTINEL, "1");
+
+        if !skip_build {
+            let build_cwd = ws.cargo_invocation_dir();
+            eprintln!("building programs with DWARF...");
+            cargo_build_sbf(Some(build_cwd), &cargo_args)?;
+        }
+
+        if trace_path.exists() {
+            fs::remove_dir_all(&trace_path)?;
+        }
+        fs::create_dir_all(&trace_path)?;
+
+        let profile_feature = ws.detect_profile_feature().ok();
+        eprintln!("running tests with register tracing...");
+        let mut cmd = std::process::Command::new("cargo");
+        cmd.current_dir(ws.cargo_invocation_dir()).arg("test");
+        if let Some(feature) = &profile_feature {
+            cmd.env("ANCHOR_PROFILE_DIR", &trace_path)
+                .arg("--features")
+                .arg(feature);
+        } else {
+            cmd.env("SBF_TRACE_DIR", &trace_path);
+        }
+        if let Some(pkg) = &ws.current_package {
+            cmd.arg("-p").arg(pkg);
+        }
+        let status = cmd.status().context("spawn cargo test")?;
+        if !status.success() {
+            return Err(anyhow!("cargo test failed"));
+        }
+    }
+
+    if !trace_path.exists() {
+        return Err(anyhow!(
+            "no traces at {}. Run without --skip-run first.",
+            trace_path.display()
+        ));
+    }
+
+    let programs = debugger::loose::discover_programs(&ws.root, ws.current_package.as_deref())?;
+    if programs.is_empty() {
+        return Err(anyhow!(
+            "no programs found. Ensure declare_id!() is present in source.",
+        ));
+    }
+
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    coverage::generate_lcov(&trace_path, &programs, Some(&ws.root), &output_path)
+}
+
+#[cfg(not(windows))]
+fn display_path_relative_to_cwd(p: &Path) -> String {
+    std::env::current_dir()
+        .ok()
+        .as_deref()
+        .and_then(|c| p.strip_prefix(c).ok())
+        .map(|rel| rel.display().to_string())
+        .unwrap_or_else(|| p.display().to_string())
+}
+
+#[cfg(not(windows))]
+fn resolve_anchor_workspace_programs(
+    cfg: &WithPath<Config>,
+) -> (BTreeMap<String, PathBuf>, BTreeMap<String, &'static str>) {
+    let workspace_root = cfg.path().parent().unwrap();
+    let deploy_dir = workspace_root.join("target").join("deploy");
+    let mut pubkey_to_so: BTreeMap<String, PathBuf> = BTreeMap::new();
+    let mut sources: BTreeMap<String, &'static str> = BTreeMap::new();
+    for programs in cfg.programs.values() {
+        for (name, deployment) in programs {
+            let pk = deployment.address.to_string();
+            pubkey_to_so.insert(pk.clone(), deploy_dir.join(format!("{name}.so")));
+            sources.insert(pk, "Anchor.toml");
+        }
+    }
+    if let Ok(discovered) = debugger::loose::discover_programs(workspace_root, None) {
+        for (pk, so) in discovered {
+            if !pubkey_to_so.contains_key(&pk) {
+                pubkey_to_so.insert(pk.clone(), so);
+                sources.insert(pk, "target/deploy");
+            }
+        }
+    }
+    (pubkey_to_so, sources)
+}
+
+#[cfg(not(windows))]
+fn render_profile(cfg: &WithPath<Config>, profile_dir: &Path) -> Result<()> {
+    let workspace_root = cfg.path().parent().unwrap().to_owned();
+    let (pubkey_to_so, _sources) = resolve_anchor_workspace_programs(cfg);
+
+    let rendered = profile::render_all_tests(profile_dir, Some(&workspace_root), &pubkey_to_so)
+        .context("failed to render flamegraphs from trace directory")?;
+
+    if rendered.is_empty() {
+        eprintln!(
+            "warning: no per-test trace directories found under {}. Did your tests call \
+             `anchor_v2_testing::svm()` with the `profile` feature?",
+            profile_dir.display()
+        );
+        return Ok(());
+    }
+
+    let mut sorted: Vec<&profile::RenderedTest> = rendered.iter().collect();
+    sorted.sort_by(|a, b| a.test_name.cmp(&b.test_name));
+
+    let max_name = sorted
+        .iter()
+        .filter(|t| t.svg_paths.len() == 1)
+        .map(|t| t.test_name.len())
+        .max()
+        .unwrap_or(0);
+
+    println!("\nFlamegraphs:");
+    for test in &sorted {
+        if test.svg_paths.len() == 1 {
+            println!(
+                "  {:<width$}  ->  {}",
+                test.test_name,
+                display_path_relative_to_cwd(&test.svg_paths[0]),
+                width = max_name,
+            );
+        } else {
+            println!("  {}", test.test_name);
+            for (i, svg) in test.svg_paths.iter().enumerate() {
+                println!("    tx{}  ->  {}", i + 1, display_path_relative_to_cwd(svg));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3402,6 +4071,7 @@ fn run_test_suite(
     validator_type: ValidatorType,
     test_validator: &Option<TestValidator>,
     scripts: &ScriptsConfig,
+    stream_program_logs: bool,
     extra_args: &[String],
     surfpool_config: &Option<SurfpoolConfig>,
 ) -> Result<()> {
@@ -3448,17 +4118,21 @@ fn run_test_suite(
                 .map_err(std::env::VarError::NotUnicode)?,
             None => "".to_owned(),
         },
-        get_node_dns_option()?,
+        get_node_dns_option(),
     );
 
     // Setup log reader - kept alive until end of scope
-    let log_streams = match stream_logs(cfg, &url) {
-        Ok(streams) => Some(streams),
-        Err(e) => {
-            eprintln!("Warning: Failed to setup program log streaming: {:#}", e);
-            eprintln!("Program logs will still be visible in the test output.");
-            None
+    let log_streams = if stream_program_logs {
+        match stream_logs(cfg, &url) {
+            Ok(streams) => Some(streams),
+            Err(e) => {
+                eprintln!("Warning: Failed to setup program log streaming: {:#}", e);
+                eprintln!("Program logs will still be visible in the test output.");
+                None
+            }
         }
+    } else {
+        None
     };
 
     // Run the tests.
@@ -4000,18 +4674,36 @@ fn start_surfpool_validator(
     surfpool_config: &Option<SurfpoolConfig>,
     full_simnet_mode: bool,
 ) -> Result<Child> {
+    let (host, port) = match surfpool_config {
+        Some(SurfpoolConfig { host, rpc_port, .. }) => (host.clone(), *rpc_port),
+        _ => (SURFPOOL_HOST.to_string(), DEFAULT_RPC_PORT),
+    };
     let rpc_url = surfpool_rpc_url(surfpool_config);
 
-    let (test_validator_stdout, test_validator_stderr) = match full_simnet_mode {
-        true => (Stdio::inherit(), Stdio::inherit()),
-        false => (Stdio::null(), Stdio::null()),
+    if std::net::TcpStream::connect_timeout(
+        &format!("{host}:{port}")
+            .parse()
+            .map_err(|err| anyhow!("invalid surfpool host:port `{host}:{port}`: {err}"))?,
+        std::time::Duration::from_millis(200),
+    )
+    .is_ok()
+    {
+        return Err(anyhow!(
+            "port {port} on {host} is already in use - another validator is running there. Kill \
+             it or set `[surfpool] rpc_port = N` in Anchor.toml to pick a free port."
+        ));
+    }
+
+    let test_validator_stdout = match full_simnet_mode {
+        true => Stdio::inherit(),
+        false => Stdio::null(),
     };
 
     let mut validator_handle = std::process::Command::new("surfpool")
         .arg("start")
         .args(flags.unwrap_or_default())
         .stdout(test_validator_stdout)
-        .stderr(test_validator_stderr)
+        .stderr(Stdio::inherit())
         .spawn()
         .map_err(|e| anyhow!("Failed to spawn `surfpool`: {e}"))?;
 
@@ -4025,6 +4717,13 @@ fn start_surfpool_validator(
         .unwrap_or(STARTUP_WAIT);
 
     while count < ms_wait {
+        if let Ok(Some(status)) = validator_handle.try_wait() {
+            return Err(anyhow!(
+                "`surfpool` exited during startup with {status} - see the stderr output above. \
+                 Common causes: port {port} in use, missing deploy artifacts in `target/deploy/`, \
+                 invalid Anchor.toml config."
+            ));
+        }
         let r = client.get_latest_blockhash();
         if r.is_ok() {
             break;
@@ -4110,7 +4809,7 @@ fn start_solana_test_validator(
         .test_validator
         .as_ref()
         .and_then(|test| test.validator.as_ref().and_then(|v| v.faucet_port))
-        .unwrap_or(solana_faucet::faucet::FAUCET_PORT);
+        .unwrap_or(DEFAULT_FAUCET_PORT);
     if !portpicker::is_free(faucet_port) {
         return Err(anyhow!(
             "Your configured faucet port: {faucet_port} is already in use"
@@ -4377,10 +5076,8 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
                 rust_template::deploy_ts_script_host(&url, &module_path.display().to_string());
             fs::write(deploy_ts, deploy_script_host_str)?;
 
-            let pkg_manager_cmd = match &cfg.toolchain.package_manager {
-                Some(pkg_manager) => pkg_manager.to_string(),
-                None => PackageManager::default().to_string(),
-            };
+            let pkg_manager_cmd =
+                resolve_package_manager(cfg.toolchain.package_manager.clone())?.to_string();
 
             std::process::Command::new(pkg_manager_cmd)
                 .args([
@@ -4487,7 +5184,7 @@ fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -
     let (cluster_url, wallet_path) = get_cluster_and_wallet(cfg_override)?;
 
     // Create RPC client
-    let client = RpcClient::new(cluster_url);
+    let client = RpcClient::new_with_commitment(cluster_url, CommitmentConfig::confirmed());
 
     // Determine recipient
     let recipient_pubkey = if let Some(pubkey) = pubkey {
@@ -4501,6 +5198,9 @@ fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -
 
     // Convert SOL to lamports
     let lamports = (amount * 1_000_000_000.0) as u64;
+    let starting_balance = client
+        .get_balance_with_commitment(&recipient_pubkey, CommitmentConfig::confirmed())?
+        .value;
 
     // Request airdrop
     println!("Requesting airdrop of {} SOL...", amount);
@@ -4512,15 +5212,48 @@ fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -
     println!("Waiting for confirmation...");
 
     // Wait for confirmation
-    client
+    let confirmed = client
         .confirm_transaction(&signature)
         .map_err(|e| anyhow!("Transaction confirmation failed: {}", e))?;
+    if !confirmed {
+        return Err(anyhow!("Transaction was not confirmed"));
+    }
 
     // Get and display the new balance
-    let balance = client.get_balance(&recipient_pubkey)?;
+    let balance = wait_for_airdrop_balance(&client, &recipient_pubkey, starting_balance, lamports)?;
     println!("{}", format_sol(balance));
 
     Ok(())
+}
+
+fn wait_for_airdrop_balance(
+    client: &RpcClient,
+    recipient_pubkey: &Pubkey,
+    starting_balance: u64,
+    lamports: u64,
+) -> Result<u64> {
+    let expected_balance = starting_balance.saturating_add(lamports);
+    let mut last_balance = starting_balance;
+
+    for attempt in 0..10 {
+        let balance = client
+            .get_balance_with_commitment(recipient_pubkey, CommitmentConfig::confirmed())?
+            .value;
+        if balance >= expected_balance {
+            return Ok(balance);
+        }
+        last_balance = balance;
+
+        if attempt < 9 {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+    }
+
+    eprintln!(
+        "warning: confirmed balance has not reflected the airdrop yet; showing latest confirmed \
+         balance"
+    );
+    Ok(last_balance)
 }
 
 fn cluster(_cmd: ClusterCommand) -> Result<()> {
@@ -5020,17 +5753,67 @@ fn is_hidden(entry: &walkdir::DirEntry) -> bool {
         .unwrap_or(false)
 }
 
+fn logs_websocket_url(cfg_override: &ConfigOverride, cluster_url: &str) -> String {
+    let ws_scheme_url = cluster_url
+        .replace("https://", "wss://")
+        .replace("http://", "ws://");
+
+    let is_local = cluster_url.contains("localhost") || cluster_url.contains("127.0.0.1");
+    if !is_local {
+        return ws_scheme_url;
+    }
+
+    let default_ws_port = extract_url_port(cluster_url)
+        .map(|port| port.saturating_add(1))
+        .unwrap_or(DEFAULT_RPC_PORT + 1);
+    let ws_port = Config::discover(cfg_override)
+        .ok()
+        .flatten()
+        .and_then(|cfg| {
+            cfg.surfpool_config
+                .as_ref()
+                .and_then(|surfpool| surfpool.ws_port)
+        })
+        .unwrap_or(default_ws_port);
+
+    replace_url_port(&ws_scheme_url, ws_port)
+}
+
+fn extract_url_port(url: &str) -> Option<u16> {
+    let (_, after_scheme) = url.split_once("://")?;
+    let host_port_end = after_scheme.find('/').unwrap_or(after_scheme.len());
+    let (_, port_str) = after_scheme[..host_port_end].rsplit_once(':')?;
+    port_str.parse().ok()
+}
+
+fn replace_url_port(url: &str, new_port: u16) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+    let (host_port_part, tail) = match rest.find('/') {
+        Some(index) => (&rest[..index], &rest[index..]),
+        None => (rest, ""),
+    };
+    let host = host_port_part
+        .rsplit_once(':')
+        .map(|(host, _)| host)
+        .unwrap_or(host_port_part);
+    format!("{scheme}://{host}:{new_port}{tail}")
+}
+
 fn get_node_version() -> Result<Version> {
     let node_version = std::process::Command::new("node")
         .arg("--version")
         .stderr(Stdio::inherit())
         .output()
         .map_err(|e| anyhow::format_err!("node failed: {}", e))?;
-    let output = std::str::from_utf8(&node_version.stdout)?
-        .strip_prefix('v')
-        .unwrap()
-        .trim();
-    Version::parse(output).map_err(Into::into)
+    parse_node_version(std::str::from_utf8(&node_version.stdout)?)
+}
+
+fn parse_node_version(output: &str) -> Result<Version> {
+    let trimmed = output.trim();
+    let without_v = trimmed.strip_prefix('v').unwrap_or(trimmed);
+    Version::parse(without_v).map_err(Into::into)
 }
 
 fn add_recommended_deployment_solana_args(
@@ -5073,14 +5856,16 @@ fn add_recommended_deployment_solana_args(
     Ok(augmented_args)
 }
 
-fn get_node_dns_option() -> Result<&'static str> {
-    let version = get_node_version()?;
-    let req = VersionReq::parse(">=16.4.0").unwrap();
-    let option = match req.matches(&version) {
-        true => "--dns-result-order=ipv4first",
-        false => "",
+fn get_node_dns_option() -> &'static str {
+    let Ok(version) = get_node_version() else {
+        return "";
     };
-    Ok(option)
+    let req = VersionReq::parse(">=16.4.0").unwrap();
+    if req.matches(&version) {
+        "--dns-result-order=ipv4first"
+    } else {
+        ""
+    }
 }
 
 // Remove the current workspace directory if it prefixes a string.
@@ -5288,19 +6073,7 @@ fn logs_subscribe(
     address: Option<Vec<Pubkey>>,
 ) -> Result<()> {
     let (cluster_url, _wallet_path) = get_cluster_and_wallet(cfg_override)?;
-
-    // Convert HTTP(S) URL to WebSocket URL
-    let ws_url = if cluster_url.contains("localhost") || cluster_url.contains("127.0.0.1") {
-        // Parse the URL to extract and increment the port
-        cluster_url
-            .replace("https://", "wss://")
-            .replace("http://", "ws://")
-            .replace(":8899", ":8900") // Default test validator ports
-    } else {
-        cluster_url
-            .replace("https://", "wss://")
-            .replace("http://", "ws://")
-    };
+    let ws_url = logs_websocket_url(cfg_override, &cluster_url);
 
     println!("Connecting to {}", ws_url);
 
@@ -5357,7 +6130,105 @@ mod tests {
             IdlGenericArg, IdlInstructionAccount, IdlInstructionAccountItem, IdlPda, IdlSeed,
             IdlSeedAccount, IdlTypeDef, IdlTypeDefGeneric,
         },
+        tempfile::tempdir,
     };
+
+    #[test]
+    fn test_init_accepts_anchor_version() {
+        let opts =
+            Opts::try_parse_from(["anchor", "init", "example", "--anchor-version", "v2"]).unwrap();
+
+        let Command::Init { anchor_version, .. } = opts.command else {
+            panic!("expected init command");
+        };
+
+        assert_eq!(anchor_version, AnchorVersion::V2);
+    }
+
+    #[test]
+    fn test_new_accepts_anchor_version() {
+        let opts =
+            Opts::try_parse_from(["anchor", "new", "example", "--anchor-version", "v2"]).unwrap();
+
+        let Command::New { anchor_version, .. } = opts.command else {
+            panic!("expected new command");
+        };
+
+        assert_eq!(anchor_version, AnchorVersion::V2);
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_debugger_and_coverage_commands_parse() {
+        let opts =
+            Opts::try_parse_from(["anchor", "debugger", "initialize", "--skip-run"]).unwrap();
+        let Command::Debugger {
+            test_name,
+            skip_run,
+            ..
+        } = opts.command
+        else {
+            panic!("expected debugger command");
+        };
+        assert_eq!(test_name.as_deref(), Some("initialize"));
+        assert!(skip_run);
+
+        let opts =
+            Opts::try_parse_from(["anchor", "coverage", "--skip-run", "--output", "lcov.info"])
+                .unwrap();
+        let Command::Coverage {
+            skip_run, output, ..
+        } = opts.command
+        else {
+            panic!("expected coverage command");
+        };
+        assert!(skip_run);
+        assert_eq!(output, "lcov.info");
+    }
+
+    #[test]
+    fn test_validator_defaults_to_surfpool() {
+        let opts = Opts::try_parse_from(["anchor", "test"]).unwrap();
+        let Command::Test { validator, .. } = opts.command else {
+            panic!("expected test command");
+        };
+        assert_eq!(validator, ValidatorType::Surfpool);
+
+        let opts = Opts::try_parse_from(["anchor", "localnet"]).unwrap();
+        let Command::Localnet { validator, .. } = opts.command else {
+            panic!("expected localnet command");
+        };
+        assert_eq!(validator, ValidatorType::Surfpool);
+    }
+
+    #[test]
+    fn test_codama_command_parses() {
+        let opts = Opts::try_parse_from([
+            "anchor",
+            "codama",
+            "generate",
+            "-l",
+            "rust,go",
+            "-p",
+            "clients",
+            "target/idl/demo.json",
+        ])
+        .unwrap();
+        let Command::Codama { subcmd } = opts.command else {
+            panic!("expected codama command");
+        };
+        let codama::CodamaCommand::Generate {
+            language,
+            path,
+            idl,
+        } = subcmd
+        else {
+            panic!("expected codama generate command");
+        };
+        assert_eq!(language, vec![codama::Language::Rust, codama::Language::Go]);
+        assert_eq!(path, "clients");
+        assert_eq!(idl, "target/idl/demo.json");
+    }
 
     #[test]
     #[should_panic(expected = "Anchor workspace name must be a valid Rust identifier.")]
@@ -5371,9 +6242,10 @@ mod tests {
             "await".to_string(),
             true,
             true,
-            PackageManager::default(),
+            None,
             false,
             ProgramTemplate::default(),
+            AnchorVersion::default(),
             TestTemplate::default(),
             false,
             true,
@@ -5393,9 +6265,10 @@ mod tests {
             "fn".to_string(),
             true,
             true,
-            PackageManager::default(),
+            None,
             false,
             ProgramTemplate::default(),
+            AnchorVersion::default(),
             TestTemplate::default(),
             false,
             true,
@@ -5415,14 +6288,126 @@ mod tests {
             "1project".to_string(),
             true,
             true,
-            PackageManager::default(),
+            None,
             false,
             ProgramTemplate::default(),
+            AnchorVersion::default(),
             TestTemplate::default(),
             false,
             true,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_predeploy_preserves_explicit_external_validator() {
+        assert!(should_predeploy_before_test(false, false, false));
+        assert!(should_predeploy_before_test(false, true, true));
+        assert!(!should_predeploy_before_test(false, true, false));
+        assert!(!should_predeploy_before_test(true, true, true));
+    }
+
+    #[test]
+    fn test_validator_plan_handles_in_process_template_skip() {
+        assert_eq!(
+            test_validator_plan(false, true, false, true),
+            TestValidatorPlan {
+                skip_local_validator: true,
+                predeploy: false,
+                stream_program_logs: true,
+            }
+        );
+    }
+
+    #[test]
+    fn test_validator_plan_preserves_explicit_external_validator() {
+        assert_eq!(
+            test_validator_plan(false, true, true, false),
+            TestValidatorPlan {
+                skip_local_validator: true,
+                predeploy: true,
+                stream_program_logs: true,
+            }
+        );
+    }
+
+    #[test]
+    fn surfpool_flags_do_not_force_runtime_features() {
+        let dir = tempdir().unwrap();
+        let cfg = WithPath::new(Config::default(), dir.path().join("Anchor.toml"));
+        let flags = surfpool_flags(&cfg, &None, false, false, None).unwrap();
+
+        assert!(!flags.iter().any(|flag| flag == "--feature"));
+    }
+
+    #[test]
+    fn test_jest_package_json_pins_uuid_for_commonjs() {
+        for package_json in [
+            rust_template::package_json(true, "ISC".to_owned(), AnchorVersion::V1),
+            rust_template::ts_package_json(true, "ISC".to_owned(), AnchorVersion::V1),
+        ] {
+            let package: JsonValue = serde_json::from_str(&package_json).unwrap();
+
+            assert_eq!(package["overrides"]["uuid"], "^9.0.1");
+            assert_eq!(package["resolutions"]["uuid"], "^9.0.1");
+            assert_eq!(package["pnpm"]["overrides"]["uuid"], "^9.0.1");
+        }
+    }
+
+    #[test]
+    fn parse_node_version_with_v_prefix() {
+        let version = parse_node_version("v20.10.0\n").unwrap();
+        assert_eq!(version.major, 20);
+        assert_eq!(version.minor, 10);
+        assert_eq!(version.patch, 0);
+    }
+
+    #[test]
+    fn parse_node_version_without_v_prefix() {
+        let version = parse_node_version("20.10.0").unwrap();
+        assert_eq!(version.major, 20);
+    }
+
+    #[test]
+    fn parse_node_version_ignores_surrounding_whitespace() {
+        let version = parse_node_version("  v18.17.1  \n").unwrap();
+        assert_eq!(version.major, 18);
+        assert_eq!(version.minor, 17);
+    }
+
+    #[test]
+    fn parse_node_version_errors_on_garbage() {
+        assert!(parse_node_version("not a version").is_err());
+        assert!(parse_node_version("").is_err());
+    }
+
+    #[test]
+    fn extract_url_port_common_shapes() {
+        assert_eq!(extract_url_port("http://127.0.0.1:8899"), Some(8899));
+        assert_eq!(extract_url_port("http://127.0.0.1:8899/"), Some(8899));
+        assert_eq!(extract_url_port("ws://localhost:8900/path?q=1"), Some(8900));
+        assert_eq!(
+            extract_url_port("https://api.mainnet-beta.solana.com"),
+            None
+        );
+        assert_eq!(extract_url_port("http://127.0.0.1"), None);
+        assert_eq!(extract_url_port("not a url"), None);
+    }
+
+    #[test]
+    fn replace_url_port_preserves_structure() {
+        assert_eq!(
+            replace_url_port("http://127.0.0.1:8899", 9001),
+            "http://127.0.0.1:9001"
+        );
+        assert_eq!(
+            replace_url_port("ws://127.0.0.1:8899/path?q=1", 9050),
+            "ws://127.0.0.1:9050/path?q=1"
+        );
+        assert_eq!(
+            replace_url_port("http://127.0.0.1", 8900),
+            "http://127.0.0.1:8900"
+        );
     }
 
     #[test]
