@@ -43,6 +43,7 @@ jobs:
             repository: (.source | sub("^https://github.com/"; "") | sub("\\.git$"; "")),
             commit,
             directory,
+            build_path: ("anchor-community/programs/" + .directory),
             build_command
           }]}' anchor-community/repos.json)"
 
@@ -64,13 +65,17 @@ jobs:
       matrix: ${{ fromJson(needs.downstream-matrix.outputs.matrix) }}
 
     steps:
-      - name: Checkout ${{ matrix.source }}
+      - name: Checkout anchor-community
         uses: actions/checkout@v3
         with:
-          repository: ${{ matrix.repository }}
-          ref: ${{ matrix.commit }}
-          path: ${{ matrix.directory }}
-          submodules: recursive
+          # FIXME: Switch back to otter-sec/anchor-community once
+          # otter-sec/anchor-community#4 has merged.
+          repository: jamie-osec/anchor-community
+          ref: set-correct-solana-versions
+          path: anchor-community
+
+      - name: Verify vendored source
+        run: test -f "${{ matrix.build_path }}/Anchor.toml"
 
       - name: Checkout latest AVM from otter-sec/anchor#4534
         uses: actions/checkout@v3
@@ -147,7 +152,7 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-          key: cargo-home-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.directory)) }}
+          key: cargo-home-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.build_path)) }}
           restore-keys: |
             cargo-home-${{ runner.os }}-downstream-${{ matrix.directory }}-
 
@@ -162,14 +167,14 @@ jobs:
       - uses: actions/cache@v4
         name: Cache ${{ matrix.name }} target
         with:
-          path: ${{ matrix.directory }}/target/
-          key: cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.directory)) }}-${{ github.run_id }}
+          path: ${{ matrix.build_path }}/target/
+          key: cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.build_path)) }}-${{ github.run_id }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.directory)) }}-
+            cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.build_path)) }}-
             cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-
 
       - name: Build ${{ matrix.repository }}
-        working-directory: ${{ matrix.directory }}
+        working-directory: ${{ matrix.build_path }}
         env:
           BUILD_COMMAND: ${{ matrix.build_command }}
         run: |
