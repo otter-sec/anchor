@@ -614,6 +614,58 @@ pub fn extract_option_inner(ty: &Type) -> Option<&Type> {
     None
 }
 
+fn extract_box_inner(ty: &Type) -> Option<&Type> {
+    if let Type::Path(tp) = ty {
+        if let Some(seg) = tp.path.segments.last() {
+            if seg.ident == "Box" {
+                if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
+                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                        return Some(inner);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn transparent_account_inner(mut ty: &Type) -> &Type {
+    loop {
+        if let Some(inner) = extract_option_inner(ty) {
+            ty = inner;
+            continue;
+        }
+        if let Some(inner) = extract_box_inner(ty) {
+            ty = inner;
+            continue;
+        }
+        return ty;
+    }
+}
+
+fn validate_unchecked_account_constraints(ty: &Type, attrs: &AccountAttrs) -> syn::Result<()> {
+    let ty = transparent_account_inner(ty);
+
+    if field_ty_str(ty) != "UncheckedAccount" {
+        return Ok(());
+    }
+
+    if attrs.close.is_some() {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "`close` cannot be used on `UncheckedAccount`",
+        ));
+    }
+    if attrs.realloc.is_some() {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "`realloc` cannot be used on `UncheckedAccount`",
+        ));
+    }
+
+    Ok(())
+}
+
 pub struct AccountField {
     pub name: Ident,
     /// The field's original `syn::Type` — used by `impl_accounts` to build
@@ -1142,6 +1194,7 @@ pub fn parse_field(
     let associated_token = parse_associated_token_init(&attrs, field_names)?;
 
     let option_inner = extract_option_inner(field_ty);
+    validate_unchecked_account_constraints(field_ty, &attrs)?;
     let is_optional = option_inner.is_some();
     // Fresh-keypair init (no seeds) — caller signs the tx. Distinct from
     // `Signer`-type fields, which the IDL picks up through
