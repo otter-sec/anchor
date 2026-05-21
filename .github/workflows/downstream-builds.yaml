@@ -62,6 +62,7 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix: ${{ fromJson(needs.downstream-matrix.outputs.matrix) }}
 
     steps:
@@ -182,4 +183,18 @@ jobs:
           # project and prompts before installing a missing CLI. Run under a
           # pseudo-terminal and answer yes so CI exercises that install/download
           # path instead of relying on a pre-uploaded anchor binary.
-          printf 'y\n' | script -qec "$BUILD_COMMAND" /dev/null
+          log="$RUNNER_TEMP/downstream-build.log"
+          set +e
+          printf 'y\n' | script -qec "$BUILD_COMMAND" "$log"
+          status=$?
+          set -e
+
+          if [[ "$status" -ne 0 ]]; then
+            echo "::group::last 200 build log lines"
+            tail -n 200 "$log" || true
+            echo "::endgroup::"
+
+            summary="$(tail -n 40 "$log" | sed -e 's/%/%25/g' -e ':a;N;$!ba;s/\n/%0A/g')"
+            echo "::error title=${{ matrix.name }} build failed::$summary"
+            exit "$status"
+          fi
