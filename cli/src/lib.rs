@@ -3629,8 +3629,8 @@ fn validator_config_flags(test_validator: &Option<TestValidator>) -> Result<Vec<
                     create_client(url)
                 } else {
                     return Err(anyhow!(
-                        "Validator url for Solana's JSON RPC should be provided in order to \
-                         clone accounts from it"
+                        "Validator url for Solana's JSON RPC should be provided in order to clone \
+                         accounts from it"
                     ));
                 };
 
