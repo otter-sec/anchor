@@ -98,7 +98,9 @@ jobs:
           path: |
             ~/.cache/solana/
             ~/.local/share/solana/
-          key: downstream-solana-${{ runner.os }}-v0000-${{ env.SOLANA_VERSION }}
+          key: downstream-solana-${{ runner.os }}-v0001-${{ matrix.directory }}-${{ env.SOLANA_VERSION }}
+          restore-keys: |
+            downstream-solana-${{ runner.os }}-v0001-${{ matrix.directory }}-
 
       - uses: nick-fields/retry@v2
         if: steps.cache-solana.outputs.cache-hit != 'true'
