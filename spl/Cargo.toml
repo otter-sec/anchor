@@ -35,7 +35,7 @@ token_2022_extensions = [
 [dependencies]
 # FIXME: This should not be released, it is a temporary workaround for
 # https://github.com/anza-xyz/solana-sdk/issues/733.
-solana-zero-copy = "<1.10"
+solana-zero-copy = "<1.1.0"
 
 anchor-lang = { path = "../lang", version = "1.0.2", features = ["derive"] }
 borsh = { version = "1.5.7", optional = true }
