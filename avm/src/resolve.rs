@@ -347,10 +347,17 @@ fn resolve_solana_from_anchor_toml(start: &Path) -> Result<Option<SolanaResoluti
             path.display()
         )
     })?;
+    // Anchor CLI treats plain `solana_version = "x.y.z"` as a concrete semver,
+    // so AVM must not reinterpret it as Cargo's caret requirement syntax.
+    let version_req = if Version::parse(&ver_str).is_ok() {
+        None
+    } else {
+        Some(ver_str)
+    };
     Ok(Some(SolanaResolution {
         version,
         source: SolanaResolutionSource::AnchorToml(path),
-        version_req: Some(ver_str),
+        version_req,
     }))
 }
 
@@ -725,7 +732,7 @@ mod tests {
         );
         let res = resolve_solana_version(dir.path()).unwrap().unwrap();
         assert_eq!(res.version, v("3.0.5"));
-        assert_eq!(res.version_req.as_deref(), Some("3.0.5"));
+        assert_eq!(res.version_req, None);
         assert!(matches!(res.source, SolanaResolutionSource::AnchorToml(_)));
     }
 
@@ -801,6 +808,7 @@ mod tests {
         write(&dir.path().join("programs/foo/src/lib.rs"), "");
         let res = resolve_solana_version(dir.path()).unwrap().unwrap();
         assert_eq!(res.version, v("3.0.5"));
+        assert_eq!(res.version_req, None);
         assert!(matches!(res.source, SolanaResolutionSource::AnchorToml(_)));
     }
 

@@ -849,7 +849,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(res.version, v("2.3.13"));
+        assert_eq!(res.version, v("2.3.0"));
         assert!(matches!(
             res.source,
             SolanaCliResolutionSource::Project(SolanaResolutionSource::AnchorToml(_))
@@ -861,7 +861,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         write(
             &dir.path().join("Anchor.toml"),
-            "[toolchain]\nsolana_version = \"2.2.1\"\n",
+            "[toolchain]\nsolana_version = \"^2.2.1\"\n",
         );
 
         let res = resolve_solana_cli_with(dir.path(), &[], None)
@@ -1023,7 +1023,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(res.version, v("2.3.13"));
+        assert_eq!(res.version, v("2.3.0"));
         assert!(matches!(
             res.source,
             SolanaCliResolutionSource::Project(SolanaResolutionSource::AnchorToml(_))
