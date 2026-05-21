@@ -354,6 +354,11 @@ fn locked_metadata(manifest_path: &Path) -> Result<Option<Metadata>> {
         {
             Ok(None)
         }
+        Err(cargo_metadata::Error::CargoMetadata { stderr })
+            if is_detached_workspace_metadata_error(&stderr) =>
+        {
+            Ok(None)
+        }
         Err(err) => Err(err).with_context(|| {
             format!(
                 "Reading Cargo metadata from {} for dependency rust-version requirements",
@@ -361,6 +366,11 @@ fn locked_metadata(manifest_path: &Path) -> Result<Option<Metadata>> {
             )
         }),
     }
+}
+
+fn is_detached_workspace_metadata_error(stderr: &str) -> bool {
+    stderr.contains("current package believes it's in a workspace when it's not")
+        || stderr.contains("failed to find a workspace root")
 }
 
 fn candidate_metadata_manifests(start: &Path) -> Vec<PathBuf> {
@@ -726,7 +736,12 @@ pub fn validate_embedded_map() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::resolve::SolanaResolutionSource, std::path::PathBuf};
+    use {
+        super::*,
+        crate::resolve::SolanaResolutionSource,
+        std::{fs, path::PathBuf},
+        tempfile::TempDir,
+    };
 
     fn v(s: &str) -> Version {
         Version::parse(s).unwrap()
@@ -754,6 +769,13 @@ mod tests {
             package_version: v(package_version),
             rustc: v(rustc),
         }
+    }
+
+    fn write(path: &Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, contents).unwrap();
     }
 
     // ── Embedded map ─────────────────────────────────────────────────────────
@@ -864,6 +886,29 @@ mod tests {
         assert!(msg.contains("Solana requirement `=2.2.1`"));
         assert!(msg.contains("platform-tools v1.44 with rustc 1.79.0"));
         assert!(msg.contains("indexmap 2.12.1 requires rustc 1.82.0"));
+    }
+
+    #[test]
+    fn metadata_skips_excluded_workspace_manifest() {
+        let dir = TempDir::new().unwrap();
+        write(
+            &dir.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"programs/main\"]\nexclude = [\"programs/excluded\"]\n\
+             [workspace.dependencies]\nserde = \"1\"\n",
+        );
+        write(
+            &dir.path().join("programs/main/Cargo.toml"),
+            "[package]\nname = \"main\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        );
+        write(
+            &dir.path().join("programs/excluded/Cargo.toml"),
+            "[package]\nname = \"excluded\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\
+             [dependencies]\nserde = { workspace = true }\n",
+        );
+
+        let metadata = locked_metadata(&dir.path().join("programs/excluded/Cargo.toml")).unwrap();
+
+        assert!(metadata.is_none());
     }
 
     // ── Specific known transitions ──────────────────────────────────────────
