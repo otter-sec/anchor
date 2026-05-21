@@ -207,8 +207,16 @@ jobs:
               match = re.search(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", req or "")
               return match.group(0) if match else ""
 
-          anchor_toml = pathlib.Path("Anchor.toml")
-          if anchor_toml.exists():
+          anchor_tomls = [pathlib.Path("Anchor.toml")]
+          anchor_tomls.extend(
+              path for path in pathlib.Path(".").glob("**/Anchor.toml")
+              if "target" not in path.parts
+          )
+          seen = set()
+          for anchor_toml in anchor_tomls:
+              if anchor_toml in seen or not anchor_toml.exists():
+                  continue
+              seen.add(anchor_toml)
               version = tomllib.loads(anchor_toml.read_text()).get("toolchain", {}).get("anchor_version")
               if version:
                   print(clean_version(version))
@@ -222,6 +230,17 @@ jobs:
                   continue
               seen.add(manifest)
               data = tomllib.loads(manifest.read_text())
+              workspace_dep = data.get("workspace", {}).get("dependencies", {}).get("anchor-lang")
+              if isinstance(workspace_dep, str):
+                  version = clean_version(workspace_dep)
+              elif isinstance(workspace_dep, dict):
+                  version = clean_version(workspace_dep.get("version", ""))
+              else:
+                  version = ""
+              if version:
+                  print(version)
+                  break
+
               deps = data.get("dependencies", {})
               dep = deps.get("anchor-lang")
               if isinstance(dep, str):
