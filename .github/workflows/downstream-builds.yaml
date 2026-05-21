@@ -28,8 +28,7 @@ jobs:
       - name: Checkout anchor-community
         uses: actions/checkout@v3
         with:
-          # FIXME: Switch back to otter-sec/anchor-community once
-          # otter-sec/anchor-community#4 has merged.
+          # Continue testing local downstream-suite changes from the fork branch.
           repository: jamie-osec/anchor-community
           ref: set-correct-solana-versions
           path: anchor-community
@@ -69,8 +68,7 @@ jobs:
       - name: Checkout anchor-community
         uses: actions/checkout@v3
         with:
-          # FIXME: Switch back to otter-sec/anchor-community once
-          # otter-sec/anchor-community#4 has merged.
+          # Continue testing local downstream-suite changes from the fork branch.
           repository: jamie-osec/anchor-community
           ref: set-correct-solana-versions
           path: anchor-community
@@ -78,11 +76,11 @@ jobs:
       - name: Verify vendored source
         run: test -d "${{ matrix.build_path }}"
 
-      - name: Checkout latest AVM from otter-sec/anchor#4534
+      - name: Checkout AVM branch
         uses: actions/checkout@v3
         with:
-          repository: otter-sec/anchor
-          ref: refs/pull/4534/head
+          repository: jamie-osec/anchor
+          ref: avm-improvements
           path: avm-source
 
       - name: Show AVM checkout
