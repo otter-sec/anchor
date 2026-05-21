@@ -89,7 +89,20 @@ jobs:
         run: git -C avm-source rev-parse HEAD
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential libudev-dev
+        run: |
+          set -euo pipefail
+
+          for attempt in 1 2 3; do
+            if sudo apt-get update && sudo apt-get install -y pkg-config build-essential libudev-dev; then
+              exit 0
+            fi
+
+            if [[ "$attempt" == 3 ]]; then
+              exit 1
+            fi
+
+            sleep $((attempt * 20))
+          done
 
       - uses: actions/cache@v4
         name: Cache Solana Tool Suite
@@ -180,6 +193,8 @@ jobs:
         working-directory: ${{ matrix.build_path }}
         env:
           BUILD_COMMAND: ${{ matrix.build_command }}
+          NO_COLOR: "1"
+          TERM: dumb
         run: |
           # Preinstall the downstream-pinned Anchor CLI without relying on an
           # interactive prompt. The spawned `anchor` still exercises PR #4534's
@@ -234,11 +249,27 @@ jobs:
           set -e
 
           if [[ "$status" -ne 0 ]]; then
+            clean_log="$RUNNER_TEMP/downstream-build-clean.log"
+            python3 - "$log" "$clean_log" <<'PY'
+          import re
+          import sys
+
+          src, dst = sys.argv[1:3]
+          text = open(src, "rb").read().decode("utf-8", "replace")
+          text = text.replace("\r", "\n")
+          text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+          text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+
+          lines = [line.rstrip() for line in text.splitlines()]
+          lines = [line for line in lines if line.strip()]
+          open(dst, "w", encoding="utf-8").write("\n".join(lines[-200:]))
+          PY
+
             echo "::group::last 200 build log lines"
-            tail -n 200 "$log" || true
+            tail -n 200 "$clean_log" || true
             echo "::endgroup::"
 
-            summary="$(tail -n 40 "$log" | sed -e 's/%/%25/g' -e ':a;N;$!ba;s/\n/%0A/g')"
+            summary="$(tail -n 80 "$clean_log" | sed -e 's/%/%25/g' -e ':a;N;$!ba;s/\n/%0A/g')"
             echo "::error title=${{ matrix.name }} build failed::$summary"
             exit "$status"
           fi
