@@ -284,6 +284,7 @@ dependencies = [
  "solana-signature",
  "solana-signer",
  "solana-transaction",
+ "solana-zero-copy",
  "thiserror 1.0.69",
  "tokio",
  "tokio-tungstenite",
