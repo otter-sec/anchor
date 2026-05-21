@@ -405,6 +405,7 @@ dependencies = [
  "mpl-token-metadata",
  "solana-stake-interface",
  "solana-sysvar",
+ "solana-zero-copy",
  "spl-associated-token-account-interface",
  "spl-memo-interface",
  "spl-pod",
