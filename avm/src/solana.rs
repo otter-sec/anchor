@@ -431,7 +431,37 @@ fn ensure_installer_command(
         }
         bail!("Failed to install `{command}` from {url}");
     }
-    Ok(InstallerSetup::CommandAvailable)
+    let active_solana = read_command_version("solana")?;
+    match installer_setup_after_bootstrap(
+        installer_command_available(installer)?,
+        active_solana.as_ref(),
+        version,
+    ) {
+        Some(setup) => Ok(setup),
+        None => {
+            let active = active_solana
+                .map(|version| format!("active `solana` is {version}"))
+                .unwrap_or_else(|| "active `solana` is unavailable".to_string());
+            bail!(
+                "Ran installer from {url}, but `{command}` is still unavailable and {active}; \
+                 cannot activate Solana {version}"
+            );
+        }
+    }
+}
+
+fn installer_setup_after_bootstrap(
+    command_available: bool,
+    active_solana_version: Option<&Version>,
+    requested: &Version,
+) -> Option<InstallerSetup> {
+    if active_solana_version == Some(requested) {
+        Some(InstallerSetup::RequestedVersionInstalled)
+    } else if command_available {
+        Some(InstallerSetup::CommandAvailable)
+    } else {
+        None
+    }
 }
 
 fn install_legacy_solana_from_github_release(
@@ -1158,6 +1188,30 @@ mod tests {
         assert!(msg.contains("status exit status: 1"));
         assert!(msg.contains("stdout:\n(empty)"));
         assert!(msg.contains("stderr:\nerror: invalid active_release path"));
+    }
+
+    #[test]
+    fn bootstrap_treats_requested_active_solana_as_installed_even_without_command() {
+        assert_eq!(
+            installer_setup_after_bootstrap(false, Some(&v("1.17.34")), &v("1.17.34")),
+            Some(InstallerSetup::RequestedVersionInstalled)
+        );
+    }
+
+    #[test]
+    fn bootstrap_uses_installer_command_when_active_solana_is_different() {
+        assert_eq!(
+            installer_setup_after_bootstrap(true, Some(&v("3.1.10")), &v("1.17.34")),
+            Some(InstallerSetup::CommandAvailable)
+        );
+    }
+
+    #[test]
+    fn bootstrap_errors_when_command_missing_and_active_solana_is_different() {
+        assert_eq!(
+            installer_setup_after_bootstrap(false, Some(&v("3.1.10")), &v("1.17.34")),
+            None
+        );
     }
 
     #[test]
