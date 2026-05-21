@@ -5,6 +5,14 @@ on:
     - cron: "0 2 * * *"
   workflow_dispatch:
 
+env:
+  AWS_REGION: ${{ vars.RELEASES_S3_REGION }}
+  ## temporary workaround until our teleport cluster is upgraded to v18.1.7.
+  AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+  TELEPORT_VERSION: 18.1.5
+  TELEPORT_PROXY: ${{ vars.TELEPORT_PROXY }}
+  TELEPORT_BOT_TOKEN_NAME: ${{ vars.TELEPORT_BOT_TOKEN_NAME }}
+
 concurrency:
   group: nightly-attested-binaries
   cancel-in-progress: false
@@ -102,9 +110,44 @@ jobs:
           pattern: anchor-nightly-*
           path: dist-nightly
 
-      - name: "TODO: Upload binaries to cloud bucket"
-        shell: bash
+      ## Setting up teleport for the AWS login.     
+      - name: Set up Teleport
+        uses: teleport-actions/setup@v1
+        with:
+          version: ${{ env.TELEPORT_VERSION }}
+          enterprise: true
+
+      - name: Create tbot-config.yaml file
         run: |
-          echo "TODO: configure cloud bucket credentials, destination, and upload command."
-          echo "The attested nightly binaries are available under dist-nightly/."
-          exit 1
+          cat <<'EOF' > ${{ runner.temp }}/tbot-config.yaml
+          version: v2
+          proxy_server: ${{ env.TELEPORT_PROXY }}
+          onboarding:
+            join_method: github
+            token: ${{ env.TELEPORT_BOT_TOKEN_NAME }}
+            certificate-ttl: 15m
+          oneshot: true
+          storage:
+            type: memory
+          outputs:
+            - type: identity
+              ssh_config: off
+              allow_reissue: true
+              destination:
+                type: directory
+                path: ${{ runner.temp }}/aws-integration/machine-id
+          EOF
+
+      # Perform authentication using Teleport Machine ID for AWS integration
+      - name: Execute Teleport Machine ID Auth
+        run: |
+          tbot start -c ${{ runner.temp }}/tbot-config.yaml --oneshot
+          tsh -i ${{ runner.temp }}/aws-integration/machine-id/identity --proxy ${{ env.TELEPORT_PROXY }} login
+      # I commented out the cp and ls commands to s3, ill let you decide what to upload there! :D 
+      - name: "TODO: Upload binaries to cloud bucket"
+        run: |
+          tsh apps login aws-integration-ops-prod
+          tsh aws sts get-caller-identity
+          # tsh aws s3 cp dist/ s3://${{ vars.RELEASES_S3_BUCKET }}/${{ github.ref }}/ --recursive --exclude "*" --include "*.tar.gz" --include "*.sha256" --include "*.json"
+          # tsh aws s3 ls s3://${{ vars.RELEASES_S3_BUCKET }}/${{ github.ref }}/
+          rm -rf dist/
