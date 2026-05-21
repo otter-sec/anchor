@@ -357,7 +357,17 @@ fn install_solana_cli_with_options(
         return Ok(());
     }
 
-    let installed = read_installed_solana_versions(installer)?;
+    let installed = match read_installed_solana_versions(installer) {
+        Ok(installed) => installed,
+        Err(err) => {
+            eprintln!(
+                "Failed to list installed Solana versions with `{}`; continuing as if none are \
+                 installed: {err:#}",
+                installer.command()
+            );
+            Vec::new()
+        }
+    };
     let quiet = installed.iter().any(|installed| installed == version);
     let mut cmd = Command::new(installer.command());
     cmd.arg("init").arg(version.to_string());
