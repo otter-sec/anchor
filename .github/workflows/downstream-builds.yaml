@@ -179,13 +179,18 @@ jobs:
         env:
           BUILD_COMMAND: ${{ matrix.build_command }}
         run: |
-          # PR #4534's AVM resolves the Anchor version from the downstream
-          # project and prompts before installing a missing CLI. Run under a
-          # pseudo-terminal and answer yes so CI exercises that install/download
-          # path instead of relying on a pre-uploaded anchor binary.
+          # Preinstall the downstream-pinned Anchor CLI without relying on an
+          # interactive prompt. The spawned `anchor` still exercises PR #4534's
+          # project-aware Solana/platform-tools selection during the build.
+          anchor_version="$(python3 -c 'import pathlib, tomllib; p = pathlib.Path("Anchor.toml"); print(tomllib.loads(p.read_text()).get("toolchain", {}).get("anchor_version", "") if p.exists() else "")')"
+          if [[ -n "$anchor_version" ]]; then
+            avm install "$anchor_version"
+            avm use "$anchor_version"
+          fi
+
           log="$RUNNER_TEMP/downstream-build.log"
           set +e
-          printf 'y\n' | script -qec "$BUILD_COMMAND" "$log"
+          script -qec "$BUILD_COMMAND" "$log"
           status=$?
           set -e
 
