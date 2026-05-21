@@ -182,7 +182,44 @@ jobs:
           # Preinstall the downstream-pinned Anchor CLI without relying on an
           # interactive prompt. The spawned `anchor` still exercises PR #4534's
           # project-aware Solana/platform-tools selection during the build.
-          anchor_version="$(python3 -c 'import pathlib, tomllib; p = pathlib.Path("Anchor.toml"); print(tomllib.loads(p.read_text()).get("toolchain", {}).get("anchor_version", "") if p.exists() else "")')"
+          anchor_version="$(
+            python3 <<'PY'
+          import pathlib
+          import re
+          import tomllib
+
+          def clean_version(req):
+              match = re.search(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", req or "")
+              return match.group(0) if match else ""
+
+          anchor_toml = pathlib.Path("Anchor.toml")
+          if anchor_toml.exists():
+              version = tomllib.loads(anchor_toml.read_text()).get("toolchain", {}).get("anchor_version")
+              if version:
+                  print(clean_version(version))
+                  raise SystemExit
+
+          manifests = [pathlib.Path("Cargo.toml")]
+          manifests.extend(path for path in pathlib.Path(".").glob("**/Cargo.toml") if "target" not in path.parts)
+          seen = set()
+          for manifest in manifests:
+              if manifest in seen or not manifest.exists():
+                  continue
+              seen.add(manifest)
+              data = tomllib.loads(manifest.read_text())
+              deps = data.get("dependencies", {})
+              dep = deps.get("anchor-lang")
+              if isinstance(dep, str):
+                  version = clean_version(dep)
+              elif isinstance(dep, dict):
+                  version = clean_version(dep.get("version", ""))
+              else:
+                  version = ""
+              if version:
+                  print(version)
+                  break
+          PY
+          )"
           if [[ -n "$anchor_version" ]]; then
             avm install "$anchor_version"
             avm use "$anchor_version"
