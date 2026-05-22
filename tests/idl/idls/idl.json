@@ -1661,6 +1661,11 @@
       "value": "1000000"
     },
     {
+      "name": "SEED_PREFIX",
+      "type": "string",
+      "value": "favor"
+    },
+    {
       "name": "TEST_CONVERT_MODULE_PATHS",
       "docs": [
         "IDL test for the issue explained in https://github.com/otter-sec/anchor/issues/3358",

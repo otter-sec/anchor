@@ -606,6 +606,12 @@ describe("IDL", () => {
           c.type === "bytes" &&
           c.value === "[116, 101, 115, 116]"
       );
+      checkDefined(
+        (c) =>
+          c.name === "seedPrefix" &&
+          c.type === "string" &&
+          c.value === "favor"
+      );
     });
 
     it("Does not include constants that are not marked with `#[constant]`", () => {

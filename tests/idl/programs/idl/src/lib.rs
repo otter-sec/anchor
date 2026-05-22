@@ -15,6 +15,9 @@ pub const BYTE_STR: u8 = b't';
 #[constant]
 pub const BYTES_STR: &[u8] = b"test";
 
+#[constant]
+pub const SEED_PREFIX: &str = "favor";
+
 pub const NO_IDL: u16 = 55;
 
 #[program]
