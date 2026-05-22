@@ -17,14 +17,15 @@ concurrency:
   group: nightly-attested-binaries
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
 jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
 
     strategy:
       fail-fast: false
