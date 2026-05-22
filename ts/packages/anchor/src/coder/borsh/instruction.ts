@@ -7,6 +7,7 @@ import {
   handleDefinedFields,
   Idl,
   IdlField,
+  IdlGenericArg,
   IdlType,
   IdlTypeDef,
   IdlAccount,
@@ -67,22 +68,339 @@ export class BorshInstructionCoder implements InstructionCoder {
           }.`
         );
       }
-      const missing = encoder.args
-        .map((a) => a.name)
-        .filter((name) => !ix.hasOwnProperty(name));
-      if (missing.length > 0) {
-        throw new Error(
-          `Invalid arguments for instruction "${ixName}": missing field${
-            missing.length > 1 ? "s" : ""
-          } ${missing.map((m) => `\`${m}\``).join(", ")}.`
-        );
-      }
     }
 
-    const len = encoder.layout.encode(ix, buffer);
+    const requiredMissing = encoder.args
+      .filter(
+        (arg) => !BorshInstructionCoder.isOption(arg.type, this.idl.types)
+      )
+      .map((arg) => arg.name)
+      .filter((name) => !ix.hasOwnProperty(name));
+    if (requiredMissing.length > 0) {
+      throw new Error(
+        `Invalid arguments for instruction "${ixName}": missing field${
+          requiredMissing.length > 1 ? "s" : ""
+        } ${requiredMissing.map((m) => `\`${m}\``).join(", ")}.`
+      );
+    }
+
+    const ixWithDefinedOptions = BorshInstructionCoder.convertUndefinedOptions(
+      encoder.args,
+      ix,
+      this.idl.types
+    );
+    const len = encoder.layout.encode(ixWithDefinedOptions, buffer);
     const data = buffer.slice(0, len);
 
     return Buffer.concat([Buffer.from(encoder.discriminator), data]);
+  }
+
+  private static isOption(
+    idlType: IdlType,
+    types: IdlTypeDef[] = [],
+    visited = new Set<string>()
+  ): boolean {
+    if (typeof idlType !== "object") {
+      return false;
+    }
+    if ("option" in idlType) {
+      return true;
+    }
+    if ("defined" in idlType) {
+      const definedName = idlType.defined.name;
+      if (visited.has(definedName)) {
+        return false;
+      }
+
+      const typeDef = types.find((t) => t.name === definedName);
+      if (typeDef?.type.kind !== "type") {
+        return false;
+      }
+
+      const alias = BorshInstructionCoder.resolveGenericType(
+        typeDef.type.alias,
+        typeDef,
+        idlType.defined.generics
+      );
+      return BorshInstructionCoder.isOption(
+        alias,
+        types,
+        new Set([...visited, definedName])
+      );
+    }
+
+    return false;
+  }
+
+  private static convertUndefinedOptions(
+    args: IdlField[],
+    ix: any,
+    types: IdlTypeDef[] = []
+  ): any {
+    const converted = { ...ix };
+    args.forEach((arg) => {
+      converted[arg.name] = BorshInstructionCoder.convertUndefinedOption(
+        arg.type,
+        ix[arg.name],
+        types
+      );
+    });
+    return converted;
+  }
+
+  private static convertUndefinedOption(
+    idlType: IdlType,
+    value: any,
+    types: IdlTypeDef[]
+  ): any {
+    if (typeof idlType === "string") {
+      return value;
+    }
+
+    if ("option" in idlType) {
+      if (value === undefined) {
+        return null;
+      }
+      if (value === null) {
+        return null;
+      }
+      return BorshInstructionCoder.convertUndefinedOption(
+        idlType.option,
+        value,
+        types
+      );
+    }
+
+    if ("vec" in idlType) {
+      return Array.isArray(value)
+        ? value.map((item) =>
+            BorshInstructionCoder.convertUndefinedOption(
+              idlType.vec,
+              item,
+              types
+            )
+          )
+        : value;
+    }
+
+    if ("array" in idlType) {
+      return Array.isArray(value)
+        ? value.map((item) =>
+            BorshInstructionCoder.convertUndefinedOption(
+              idlType.array[0],
+              item,
+              types
+            )
+          )
+        : value;
+    }
+
+    if ("defined" in idlType) {
+      const typeDef = types.find((t) => t.name === idlType.defined.name);
+      if (!typeDef) {
+        return value;
+      }
+      const genericArgs = idlType.defined.generics;
+      return BorshInstructionCoder.convertUndefinedOptionDefined(
+        typeDef,
+        value,
+        types,
+        genericArgs
+      );
+    }
+
+    return value;
+  }
+
+  private static convertUndefinedOptionDefined(
+    typeDef: IdlTypeDef,
+    value: any,
+    types: IdlTypeDef[],
+    genericArgs?: IdlGenericArg[]
+  ): any {
+    if (typeDef.type.kind === "type") {
+      const alias = BorshInstructionCoder.resolveGenericType(
+        typeDef.type.alias,
+        typeDef,
+        genericArgs
+      );
+      return BorshInstructionCoder.convertUndefinedOption(alias, value, types);
+    }
+
+    if (value === null || value === undefined || typeof value !== "object") {
+      return value;
+    }
+
+    switch (typeDef.type.kind) {
+      case "struct": {
+        return handleDefinedFields(
+          typeDef.type.fields,
+          () => value,
+          (fields) => {
+            const converted = { ...value };
+            fields.forEach((field) => {
+              const fieldType = BorshInstructionCoder.resolveGenericType(
+                field.type,
+                typeDef,
+                genericArgs
+              );
+              converted[field.name] =
+                BorshInstructionCoder.convertUndefinedOption(
+                  fieldType,
+                  value[field.name],
+                  types
+                );
+            });
+            return converted;
+          },
+          (fields) => {
+            const converted = Array.isArray(value) ? [...value] : { ...value };
+            fields.forEach((field, index) => {
+              const fieldType = BorshInstructionCoder.resolveGenericType(
+                field,
+                typeDef,
+                genericArgs
+              );
+              converted[index] = BorshInstructionCoder.convertUndefinedOption(
+                fieldType,
+                value[index],
+                types
+              );
+            });
+            return converted;
+          }
+        );
+      }
+      case "enum": {
+        const variantName = Object.keys(value)[0];
+        const variant = typeDef.type.variants.find(
+          (v) => v.name === variantName
+        );
+        if (!variant) {
+          return value;
+        }
+
+        return {
+          ...value,
+          [variantName]: handleDefinedFields(
+            variant.fields,
+            () => value[variantName],
+            (fields) => {
+              const converted = { ...value[variantName] };
+              fields.forEach((field) => {
+                const fieldType = BorshInstructionCoder.resolveGenericType(
+                  field.type,
+                  typeDef,
+                  genericArgs
+                );
+                converted[field.name] =
+                  BorshInstructionCoder.convertUndefinedOption(
+                    fieldType,
+                    value[variantName][field.name],
+                    types
+                  );
+              });
+              return converted;
+            },
+            (fields) => {
+              const converted = Array.isArray(value[variantName])
+                ? [...value[variantName]]
+                : { ...value[variantName] };
+              fields.forEach((field, index) => {
+                const fieldType = BorshInstructionCoder.resolveGenericType(
+                  field,
+                  typeDef,
+                  genericArgs
+                );
+                converted[index] = BorshInstructionCoder.convertUndefinedOption(
+                  fieldType,
+                  value[variantName][index],
+                  types
+                );
+              });
+              return converted;
+            }
+          ),
+        };
+      }
+    }
+  }
+
+  private static resolveGenericType(
+    idlType: IdlType,
+    typeDef: IdlTypeDef,
+    genericArgs?: IdlGenericArg[]
+  ): IdlType {
+    if (!genericArgs || typeof idlType !== "object") {
+      return idlType;
+    }
+
+    if ("generic" in idlType) {
+      const genericIndex = typeDef.generics?.findIndex(
+        (generic) => generic.kind === "type" && generic.name === idlType.generic
+      );
+      if (genericIndex === undefined || genericIndex < 0) {
+        return idlType;
+      }
+
+      const genericArg = genericArgs[genericIndex];
+      return genericArg?.kind === "type" ? genericArg.type : idlType;
+    }
+
+    if ("option" in idlType) {
+      return {
+        option: BorshInstructionCoder.resolveGenericType(
+          idlType.option,
+          typeDef,
+          genericArgs
+        ),
+      };
+    }
+
+    if ("vec" in idlType) {
+      return {
+        vec: BorshInstructionCoder.resolveGenericType(
+          idlType.vec,
+          typeDef,
+          genericArgs
+        ),
+      };
+    }
+
+    if ("array" in idlType) {
+      return {
+        array: [
+          BorshInstructionCoder.resolveGenericType(
+            idlType.array[0],
+            typeDef,
+            genericArgs
+          ),
+          idlType.array[1],
+        ],
+      };
+    }
+
+    if ("defined" in idlType) {
+      return {
+        defined: {
+          ...idlType.defined,
+          generics: idlType.defined.generics?.map((genericArg) =>
+            genericArg.kind === "type"
+              ? {
+                  ...genericArg,
+                  type: BorshInstructionCoder.resolveGenericType(
+                    genericArg.type,
+                    typeDef,
+                    genericArgs
+                  ),
+                }
+              : genericArg
+          ),
+        },
+      };
+    }
+
+    return idlType;
   }
 
   /**
