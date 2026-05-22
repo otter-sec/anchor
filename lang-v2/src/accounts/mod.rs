@@ -15,7 +15,7 @@ pub use {
     borsh_account::{BorshAccount, BorshSerializer},
     interface::Interface,
     program::Program,
-    serialized_account::{AnchorAccountSerialize, SerializedAccount},
+    serialized_account::{AnchorAccountSerialize, SerializedAccount, SerializedAccountOwner},
     signer::Signer,
     slab::{HeaderOnly, Slab},
     slab_hooks::{SlabInit, SlabSchema},
@@ -23,6 +23,8 @@ pub use {
     sysvar::{Sysvar, SysvarId},
     unchecked_account::UncheckedAccount,
 };
+
+pub use serialized_account::SerializedAccountOwner as BorshAccountOwner;
 
 /// Anchor account with a typed header and no trailing items.
 ///

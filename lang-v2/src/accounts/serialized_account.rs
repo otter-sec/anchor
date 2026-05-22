@@ -32,6 +32,26 @@ pub trait AnchorAccountSerialize<T> {
     fn deserialize(buf: &mut &[u8]) -> Result<T, ProgramError>;
 }
 
+/// Supplies the owner checked by [`SerializedAccount`].
+///
+/// The default `SerializedAccount<T, S>` uses `T` as the owner marker, so all
+/// existing `T: Owner` account data types keep their current behavior. A
+/// foreign-owned serialized account can choose a different owner marker with
+/// `SerializedAccount<T, S, ForeignOwner>`.
+pub trait SerializedAccountOwner {
+    fn owner(program_id: &Address) -> Address;
+}
+
+impl<T> SerializedAccountOwner for T
+where
+    T: Owner,
+{
+    #[inline(always)]
+    fn owner(program_id: &Address) -> Address {
+        T::owner(program_id)
+    }
+}
+
 /// Account whose payload is encoded by a pluggable serializer `S`.
 ///
 /// Validates owner, checks discriminator, deserializes via `S`. Holds a
@@ -47,16 +67,17 @@ pub trait AnchorAccountSerialize<T> {
 /// not the user's `@ MyErr`. For a custom error, use `UncheckedAccount`
 /// with derive-level `owner = X @ MyErr` (you lose the built-in disc /
 /// codec checks).
-pub struct SerializedAccount<T, S>
+pub struct SerializedAccount<T, S, O = T>
 where
-    T: Owner + Discriminator,
+    T: Discriminator,
     S: AnchorAccountSerialize<T>,
+    O: SerializedAccountOwner,
 {
     view: AccountView,
     data: T,
     borrow: SerializedAccountBorrow,
     serialize_on_exit: bool,
-    _serializer: PhantomData<S>,
+    _marker: PhantomData<(S, O)>,
 }
 
 enum SerializedAccountBorrow {
@@ -68,18 +89,20 @@ enum SerializedAccountBorrow {
 // Forward `Space::INIT_SPACE` from the inner type and add 8 for the
 // discriminator. Lets `#[account(init)]` default to the correct size
 // when `space` is omitted.
-impl<T, S> crate::Space for SerializedAccount<T, S>
+impl<T, S, O> crate::Space for SerializedAccount<T, S, O>
 where
-    T: Owner + Discriminator + crate::Space,
+    T: Discriminator + crate::Space,
     S: AnchorAccountSerialize<T>,
+    O: SerializedAccountOwner,
 {
     const INIT_SPACE: usize = 8 + T::INIT_SPACE;
 }
 
-impl<T, S> SerializedAccount<T, S>
+impl<T, S, O> SerializedAccount<T, S, O>
 where
-    T: Owner + Discriminator,
+    T: Discriminator,
     S: AnchorAccountSerialize<T>,
+    O: SerializedAccountOwner,
 {
     /// Returns the account's on-chain address. Inherent method so
     /// `.address()` works uniformly on all wrapper types — `Signer`,
@@ -138,7 +161,7 @@ where
         // could have mutated owner, discriminator, or payload in any
         // combination — without re-checking, we'd accept an account that
         // no longer validates as `T`.
-        if !self.view.owned_by(&T::owner(program_id)) {
+        if !self.view.owned_by(&O::owner(program_id)) {
             return Err(ProgramError::IllegalOwner);
         }
         let mut view_mut = self.view;
@@ -191,7 +214,7 @@ where
         // Hot path: a single owner check. The "uninitialized placeholder"
         // disambiguation lives in `cold_owner_error` (slab.rs) — see
         // the comment there for why this is safe.
-        if !view.owned_by(&T::owner(program_id)) {
+        if !view.owned_by(&O::owner(program_id)) {
             return Err(super::slab::cold_owner_error(&view));
         }
         if data.len() < DISC_LEN {
@@ -204,10 +227,11 @@ where
     }
 }
 
-impl<T, S> AnchorAccount for SerializedAccount<T, S>
+impl<T, S, O> AnchorAccount for SerializedAccount<T, S, O>
 where
-    T: Owner + Discriminator,
+    T: Discriminator,
     S: AnchorAccountSerialize<T>,
+    O: SerializedAccountOwner,
 {
     type Data = T;
     const MIN_DATA_LEN: usize = 8;
@@ -224,7 +248,7 @@ where
             data,
             borrow: SerializedAccountBorrow::Immutable { _guard: guard },
             serialize_on_exit: Self::should_serialize_for_program(&view, program_id),
-            _serializer: PhantomData,
+            _marker: PhantomData,
         })
     }
 
@@ -252,7 +276,7 @@ where
             data,
             borrow: SerializedAccountBorrow::Mutable { guard },
             serialize_on_exit: Self::should_serialize_for_program(&view, program_id),
-            _serializer: PhantomData,
+            _marker: PhantomData,
         })
     }
 
@@ -322,10 +346,11 @@ where
     }
 }
 
-impl<T, S> Deref for SerializedAccount<T, S>
+impl<T, S, O> Deref for SerializedAccount<T, S, O>
 where
-    T: Owner + Discriminator,
+    T: Discriminator,
     S: AnchorAccountSerialize<T>,
+    O: SerializedAccountOwner,
 {
     type Target = T;
     fn deref(&self) -> &T {
@@ -333,10 +358,11 @@ where
     }
 }
 
-impl<T, S> DerefMut for SerializedAccount<T, S>
+impl<T, S, O> DerefMut for SerializedAccount<T, S, O>
 where
-    T: Owner + Discriminator,
+    T: Discriminator,
     S: AnchorAccountSerialize<T>,
+    O: SerializedAccountOwner,
 {
     fn deref_mut(&mut self) -> &mut T {
         match &self.borrow {
@@ -349,30 +375,33 @@ where
     }
 }
 
-impl<T, S> AsRef<AccountView> for SerializedAccount<T, S>
+impl<T, S, O> AsRef<AccountView> for SerializedAccount<T, S, O>
 where
-    T: Owner + Discriminator,
+    T: Discriminator,
     S: AnchorAccountSerialize<T>,
+    O: SerializedAccountOwner,
 {
     fn as_ref(&self) -> &AccountView {
         &self.view
     }
 }
 
-impl<T, S> AsRef<Address> for SerializedAccount<T, S>
+impl<T, S, O> AsRef<Address> for SerializedAccount<T, S, O>
 where
-    T: Owner + Discriminator,
+    T: Discriminator,
     S: AnchorAccountSerialize<T>,
+    O: SerializedAccountOwner,
 {
     fn as_ref(&self) -> &Address {
         self.view.address()
     }
 }
 
-impl<T, S> crate::ToCpiHandle for SerializedAccount<T, S>
+impl<T, S, O> crate::ToCpiHandle for SerializedAccount<T, S, O>
 where
-    T: Owner + Discriminator,
+    T: Discriminator,
     S: AnchorAccountSerialize<T>,
+    O: SerializedAccountOwner,
 {
     #[inline(always)]
     fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
@@ -380,10 +409,11 @@ where
     }
 }
 
-impl<T, S> crate::ToCpiHandleMut for SerializedAccount<T, S>
+impl<T, S, O> crate::ToCpiHandleMut for SerializedAccount<T, S, O>
 where
-    T: Owner + Discriminator,
+    T: Discriminator,
     S: AnchorAccountSerialize<T>,
+    O: SerializedAccountOwner,
 {
     #[inline(always)]
     fn try_to_cpi_handle_mut(
@@ -396,19 +426,21 @@ where
 /// Forward `Discriminator` from a `SerializedAccount<T, S>` to its inner type.
 /// Lets the `#[account(zeroed)]` derive codegen look up the disc via the field
 /// type directly (`<BorshAccount<Counter> as Discriminator>::DISCRIMINATOR`).
-impl<T, S> Discriminator for SerializedAccount<T, S>
+impl<T, S, O> Discriminator for SerializedAccount<T, S, O>
 where
-    T: Owner + Discriminator,
+    T: Discriminator,
     S: AnchorAccountSerialize<T>,
+    O: SerializedAccountOwner,
 {
     const DISCRIMINATOR: &'static [u8] = T::DISCRIMINATOR;
 }
 
 #[doc(hidden)]
-impl<T, S> crate::IdlAccountType for SerializedAccount<T, S>
+impl<T, S, O> crate::IdlAccountType for SerializedAccount<T, S, O>
 where
-    T: Owner + Discriminator + crate::IdlAccountType,
+    T: Discriminator + crate::IdlAccountType,
     S: AnchorAccountSerialize<T>,
+    O: SerializedAccountOwner,
 {
     const __IDL_ACCOUNT_ENTRY: Option<&'static str> = T::__IDL_ACCOUNT_ENTRY;
     const __IDL_TYPE_DEF: Option<&'static str> = T::__IDL_TYPE_DEF;
@@ -423,10 +455,11 @@ where
 /// Init for `SerializedAccount<T, S>`: creates the account, writes the
 /// discriminator, then deserializes `T` via `S` from the zero-filled tail.
 /// Types whose codec rejects all-zero encoding cannot be `init`-ed this way.
-impl<T, S> AccountInitialize for SerializedAccount<T, S>
+impl<T, S, O> AccountInitialize for SerializedAccount<T, S, O>
 where
-    T: Owner + Discriminator,
+    T: Discriminator,
     S: AnchorAccountSerialize<T>,
+    O: SerializedAccountOwner,
 {
     type Params<'a> = ();
 
@@ -442,9 +475,10 @@ where
         let disc: &[u8; 8] = T::DISCRIMINATOR
             .try_into()
             .map_err(|_| ProgramError::InvalidAccountData)?;
+        let owner = O::owner(program_id);
         match signer_seeds {
-            Some(seeds) => crate::create_account_signed(payer, account, space, program_id, seeds)?,
-            None => crate::create_account(payer, account, space, program_id)?,
+            Some(seeds) => crate::create_account_signed(payer, account, space, &owner, seeds)?,
+            None => crate::create_account(payer, account, space, &owner)?,
         }
         let mut view_mut = *account;
         let data_ref = view_mut.try_borrow_mut()?;
@@ -458,8 +492,8 @@ where
             view: *account,
             data,
             borrow: SerializedAccountBorrow::Mutable { guard },
-            serialize_on_exit: true,
-            _serializer: PhantomData,
+            serialize_on_exit: Self::should_serialize_for_program(account, program_id),
+            _marker: PhantomData,
         })
     }
 }

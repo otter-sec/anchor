@@ -45,9 +45,13 @@ where
 /// library still work. Holds a pinocchio borrow guard (`Ref` for `load`,
 /// `RefMut` for `load_mut`); `exit()` serializes through the held `RefMut`.
 ///
-/// Type alias over [`SerializedAccount<T, BorshSerializer>`]; all inherent
+/// Type alias over [`SerializedAccount<T, BorshSerializer, O>`]; all inherent
 /// methods (`address`, `release_borrow`, `reacquire_borrow_mut`,
 /// `reacquire_guard_only`) and trait impls live on `SerializedAccount`.
+///
+/// The optional owner marker defaults to `T`, preserving the usual
+/// `T: Owner` behavior. Use `BorshAccount<T, ForeignOwner>` when the account
+/// data type is declared with `#[account(borsh)]` but owned by another program.
 ///
 /// ## `#[account(owner = X @ MyErr)]` does NOT surface `MyErr`
 ///
@@ -56,4 +60,4 @@ where
 /// not the user's `@ MyErr`. For a custom error, use `UncheckedAccount`
 /// with derive-level `owner = X @ MyErr` (you lose the built-in disc/borsh
 /// checks).
-pub type BorshAccount<T> = SerializedAccount<T, BorshSerializer>;
+pub type BorshAccount<T, O = T> = SerializedAccount<T, BorshSerializer, O>;

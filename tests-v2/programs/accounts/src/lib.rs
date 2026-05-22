@@ -33,25 +33,18 @@ pub struct BorshCounter {
     pub value: u64,
 }
 
-#[derive(Clone, Default, SchemaRead, SchemaWrite)]
+#[account(borsh)]
 pub struct ForeignBorshCounter {
     pub value: u64,
 }
 
-impl Owner for ForeignBorshCounter {
+pub struct ForeignBorshOwner;
+
+impl BorshAccountOwner for ForeignBorshOwner {
     fn owner(_program_id: &Address) -> Address {
         FOREIGN_BORSH_OWNER
     }
 }
-
-impl Discriminator for ForeignBorshCounter {
-    const DISCRIMINATOR: &'static [u8] = &[0x0f, 0xb0, 0x52, 0x48, 0x0a, 0xcc, 0x7d, 0x01];
-}
-
-// TODO: Support foreign-program owners directly in `#[account(borsh)]` so
-// tests and users do not need to hand-roll `Owner`, `Discriminator`, and IDL
-// metadata for foreign-owned Borsh accounts.
-impl anchor_lang_v2::IdlAccountType for ForeignBorshCounter {}
 
 #[program]
 pub mod accounts_test {
@@ -638,7 +631,7 @@ pub struct TransferFromBorshCounterWithLamportsHelpers {
 #[derive(Accounts)]
 pub struct MutateForeignBorshCounter {
     #[account(mut)]
-    pub counter: BorshAccount<ForeignBorshCounter>,
+    pub counter: BorshAccount<ForeignBorshCounter, ForeignBorshOwner>,
 }
 
 #[derive(Accounts)]
