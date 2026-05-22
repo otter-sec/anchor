@@ -58,6 +58,13 @@ pub struct Data {
     pub value: u64,
 }
 
+#[account]
+pub struct DataWithBump {
+    pub value: u64,
+    pub bump: u8,
+    pub _padding: [u8; 7],
+}
+
 // -- Handlers ----------------------------------------------------------------
 
 #[program]
@@ -181,6 +188,17 @@ pub mod constraints {
     /// Same but feeding `address` from a function returning `&Address`.
     #[discrim = 18]
     pub fn check_address_into_ref(_ctx: &mut Context<CheckAddressIntoRef>) -> Result<()> {
+        Ok(())
+    }
+
+    /// First call creates the PDA with the canonical bump; subsequent
+    /// calls verify against the bump stored in the account.
+    #[discrim = 19]
+    pub fn do_init_if_needed_explicit_bump(
+        ctx: &mut Context<DoInitIfNeededExplicitBump>,
+    ) -> Result<()> {
+        ctx.accounts.data.bump = ctx.bumps.data;
+        ctx.accounts.data.value = ctx.accounts.data.value.wrapping_add(1);
         Ok(())
     }
 }
@@ -308,6 +326,20 @@ pub struct DoInitIfNeeded {
         bump,
     )]
     pub data: Account<Data>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct DoInitIfNeededExplicitBump {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init_if_needed,
+        payer = payer,
+        seeds = [b"maybe-explicit"],
+        bump = data.bump,
+    )]
+    pub data: Account<DataWithBump>,
     pub system_program: Program<System>,
 }
 

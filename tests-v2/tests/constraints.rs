@@ -64,6 +64,10 @@ fn maybe_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"maybe"], &program_id()).0
 }
 
+fn maybe_explicit_bump_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"maybe-explicit"], &program_id()).0
+}
+
 fn other_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"other"], &other_program()).0
 }
@@ -471,6 +475,18 @@ fn read_value(svm: &LiteSVM, pda: &Pubkey) -> Option<u64> {
     Some(u64::from_le_bytes(account.data[40..48].try_into().unwrap()))
 }
 
+/// `DataWithBump` layout: disc(8) + value(u64) + bump(u8).
+fn read_value_and_bump(svm: &LiteSVM, pda: &Pubkey) -> Option<(u64, u8)> {
+    let account = svm.get_account(pda)?;
+    if account.data.len() < 17 {
+        return None;
+    }
+    Some((
+        u64::from_le_bytes(account.data[8..16].try_into().unwrap()),
+        account.data[16],
+    ))
+}
+
 #[test]
 fn close_transfers_lamports_and_zeros_account() {
     let (mut svm, payer, authority) = setup();
@@ -623,6 +639,88 @@ fn init_if_needed_creates_then_reuses() {
         Some(2),
         "second call must reuse account, not reset its data",
     );
+}
+
+#[test]
+fn init_if_needed_allows_explicit_bump_on_reuse() {
+    let (mut svm, payer, _) = setup();
+    let pda = maybe_explicit_bump_pda();
+    let canonical_bump = Pubkey::find_program_address(&[b"maybe-explicit"], &program_id()).1;
+
+    call(
+        &mut svm,
+        &payer,
+        19,
+        vec![
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new(pda, false),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        ],
+        &[],
+    )
+    .expect("first init_if_needed explicit-bump call");
+    assert_eq!(
+        read_value_and_bump(&svm, &pda),
+        Some((1, canonical_bump)),
+        "create branch should store the canonical bump for later reuse",
+    );
+
+    svm.expire_blockhash();
+
+    call(
+        &mut svm,
+        &payer,
+        19,
+        vec![
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new(pda, false),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        ],
+        &[],
+    )
+    .expect("second init_if_needed explicit-bump call");
+    assert_eq!(
+        read_value_and_bump(&svm, &pda),
+        Some((2, canonical_bump)),
+        "existing branch should verify against the stored bump and reuse account data",
+    );
+}
+
+#[test]
+fn init_if_needed_rejects_wrong_explicit_bump_on_reuse() {
+    let (mut svm, payer, _) = setup();
+    let pda = maybe_explicit_bump_pda();
+
+    call(
+        &mut svm,
+        &payer,
+        19,
+        vec![
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new(pda, false),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        ],
+        &[],
+    )
+    .expect("first init_if_needed explicit-bump call");
+
+    let mut account = svm.get_account(&pda).expect("account exists");
+    account.data[16] = account.data[16].wrapping_add(1);
+    svm.set_account(pda, account).expect("corrupt stored bump");
+    svm.expire_blockhash();
+
+    let result = call_raw(
+        &mut svm,
+        &payer,
+        19,
+        vec![
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new(pda, false),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        ],
+        &[],
+    );
+    assert_err_contains(&result, "InvalidSeeds");
 }
 
 // ---- 13. zeroed -----------------------------------------------------------
