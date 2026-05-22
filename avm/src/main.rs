@@ -69,6 +69,12 @@ pub enum Commands {
         /// Build and install from the latest commit on the master branch
         bleeding_edge: bool,
     },
+    #[clap(about = "Enable or disable the Anchor nightly channel")]
+    Nightly {
+        #[clap(long)]
+        /// Disable the nightly channel and restore normal version resolution
+        disable: bool,
+    },
     #[clap(about = "Generate shell completions for AVM")]
     Completions {
         #[clap(value_enum)]
@@ -179,7 +185,7 @@ fn resolve_use_version(version: Option<String>) -> Result<Option<Version>> {
 pub fn entry(opts: Cli) -> Result<()> {
     if !matches!(
         opts.command,
-        Commands::SelfUpdate { .. } | Commands::Completions { .. }
+        Commands::SelfUpdate { .. } | Commands::Nightly { .. } | Commands::Completions { .. }
     ) {
         avm::check_avm_version_and_warn();
     }
@@ -214,6 +220,13 @@ pub fn entry(opts: Cli) -> Result<()> {
             pre_release,
             bleeding_edge,
         } => avm::self_update(pre_release, bleeding_edge),
+        Commands::Nightly { disable } => {
+            if disable {
+                avm::disable_nightly()
+            } else {
+                avm::enable_nightly()
+            }
+        }
         Commands::Completions { shell } => {
             clap_complete::generate(shell, &mut Cli::command(), "avm", &mut std::io::stdout());
             Ok(())
@@ -305,6 +318,10 @@ pub fn entry(opts: Cli) -> Result<()> {
 fn anchor_proxy() -> Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<String>>();
 
+    if avm::ensure_nightly_active()?.is_some() {
+        return spawn_anchor(avm::nightly_anchor_binary_path(), args);
+    }
+
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let resolution = avm::resolve_anchor_version(&cwd)?.ok_or_else(|| {
         anyhow!(
@@ -316,6 +333,10 @@ fn anchor_proxy() -> Result<()> {
     let binary_path = ensure_resolved_binary(&resolution)?;
     ensure_resolved_solana(&cwd, &resolution)?;
 
+    spawn_anchor(binary_path, args)
+}
+
+fn spawn_anchor(binary_path: PathBuf, args: Vec<String>) -> Result<()> {
     let exit = std::process::Command::new(binary_path)
         .args(args)
         .env(

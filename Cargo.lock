@@ -677,6 +677,7 @@ dependencies = [
  "reqwest 0.11.27",
  "semver",
  "serde",
+ "sha2 0.10.9",
  "tempfile",
  "toml 0.7.8",
 ]
