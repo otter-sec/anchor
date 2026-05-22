@@ -167,8 +167,6 @@ jobs:
 
       - name: Prepare cloud upload layout
         shell: bash
-        env:
-          RELEASES_S3_BUCKET: ${{ vars.RELEASES_S3_BUCKET }}
         run: |
           set -euo pipefail
 
@@ -211,7 +209,6 @@ jobs:
           const latestPrefix = `${channel}/latest`;
           const buildDir = path.join(uploadRoot, buildPrefix);
           const latestDir = path.join(uploadRoot, latestPrefix);
-          const bucket = process.env.RELEASES_S3_BUCKET || "";
 
           const buildArtifacts = [];
           const latestArtifacts = [];
@@ -252,7 +249,6 @@ jobs:
                 target,
                 file: artifact.file,
                 s3_key: buildKey,
-                s3_uri: bucket ? `s3://${bucket}/${buildKey}` : undefined,
                 sha256: archiveSha,
                 size: archiveSize,
               });
@@ -262,7 +258,6 @@ jobs:
                 target,
                 file: `${tool}.tar.gz`,
                 s3_key: latestKey,
-                s3_uri: bucket ? `s3://${bucket}/${latestKey}` : undefined,
                 sha256: archiveSha,
                 size: archiveSize,
               });
