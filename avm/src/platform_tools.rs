@@ -893,8 +893,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         write(
             &dir.path().join("Cargo.toml"),
-            "[workspace]\nmembers = [\"programs/main\"]\nexclude = [\"programs/excluded\"]\n\
-             [workspace.dependencies]\nserde = \"1\"\n",
+            "[workspace]\nmembers = [\"programs/main\"]\nexclude = \
+             [\"programs/excluded\"]\n[workspace.dependencies]\nserde = \"1\"\n",
         );
         write(
             &dir.path().join("programs/main/Cargo.toml"),
@@ -902,8 +902,8 @@ mod tests {
         );
         write(
             &dir.path().join("programs/excluded/Cargo.toml"),
-            "[package]\nname = \"excluded\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\
-             [dependencies]\nserde = { workspace = true }\n",
+            "[package]\nname = \"excluded\"\nversion = \"0.1.0\"\nedition = \
+             \"2021\"\n[dependencies]\nserde = { workspace = true }\n",
         );
 
         let metadata = locked_metadata(&dir.path().join("programs/excluded/Cargo.toml")).unwrap();
