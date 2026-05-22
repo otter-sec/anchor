@@ -76,7 +76,6 @@ BIN_DIR="$AVM_HOME/bin"
 NIGHTLY_FILE="$AVM_HOME/.nightly"
 NIGHTLY_CACHE_FILE="$AVM_HOME/.nightly-check"
 NIGHTLY_ERROR_CACHE_FILE="$AVM_HOME/.nightly-check-error"
-PATH_LINK_DIR=""
 
 detect_target() {
     if [ -n "$TARGET" ]; then
@@ -258,32 +257,12 @@ install_path_links() {
 
     [ -d "$cargo_bin" ] || return
 
-    avm_linked=0
-    anchor_linked=0
     if ! ln -sfn "$BIN_DIR/avm" "$cargo_bin/avm" 2>/dev/null; then
         err "could not link $cargo_bin/avm; use $BIN_DIR/avm directly"
-    else
-        avm_linked=1
     fi
     if ! ln -sfn "$BIN_DIR/anchor" "$cargo_bin/anchor" 2>/dev/null; then
         err "could not link $cargo_bin/anchor; use $BIN_DIR/anchor directly"
-    else
-        anchor_linked=1
     fi
-
-    if [ "$avm_linked" = "1" ] && [ "$anchor_linked" = "1" ]; then
-        PATH_LINK_DIR="$cargo_bin"
-    fi
-}
-
-installed_dir_on_path() {
-    if path_contains "$BIN_DIR"; then
-        return 0
-    fi
-    if [ -n "$PATH_LINK_DIR" ] && path_contains "$PATH_LINK_DIR"; then
-        return 0
-    fi
-    return 1
 }
 
 TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t avm-install)"
@@ -323,11 +302,7 @@ say "Installed Anchor nightly $nightly_version"
 say "AVM: $BIN_DIR/avm"
 say "Anchor: $BIN_DIR/anchor"
 
-if ! installed_dir_on_path; then
+if ! path_contains "$BIN_DIR"; then
     say "Add this to your shell profile if avm is not already on PATH:"
-    if [ -n "$PATH_LINK_DIR" ]; then
-        say "  export PATH=\"$PATH_LINK_DIR:\$PATH\""
-    else
-        say "  export PATH=\"$BIN_DIR:\$PATH\""
-    fi
+    say "  export PATH=\"$BIN_DIR:\$PATH\""
 fi

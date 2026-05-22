@@ -178,7 +178,7 @@ echo "fake stable avm"
         assert!(
             stdout.contains(&format!(
                 "export PATH=\"{}:$PATH\"",
-                cargo_home.join("bin").display()
+                self.avm_home_bin().display()
             )),
             "{stdout}"
         );
