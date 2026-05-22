@@ -78,15 +78,16 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
             accounts: &'info [AccountInfo<'info>],
             data: &'info [u8],
         ) -> anchor_lang::Result<()> {
-            #(#global_ixs)*
-
             // Legacy IDL instructions have been removed in favor of Program Metadata
             // No IDL instructions are injected into programs anymore
 
-            // Dispatch Event CPI instruction
+            // Dispatch the Event CPI instruction before user instructions so a
+            // custom discriminator cannot shadow the reserved event-CPI tag.
             if data.starts_with(anchor_lang::event::EVENT_IX_TAG_LE) {
                 return #event_cpi_handler;
             }
+
+            #(#global_ixs)*
 
             #fallback_fn
         }

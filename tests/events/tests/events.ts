@@ -118,5 +118,18 @@ describe("Events", () => {
 
       throw new Error("Was able to invoke the self-CPI instruction");
     });
+
+    it("Allows short custom discriminator overlapping event CPI tag", async () => {
+      const tx = new anchor.web3.Transaction();
+      tx.add(
+        new anchor.web3.TransactionInstruction({
+          programId: program.programId,
+          keys: [],
+          data: Buffer.from([0xe4]),
+        })
+      );
+
+      await program.provider.sendAndConfirm(tx, [], confirmOptions);
+    });
   });
 });

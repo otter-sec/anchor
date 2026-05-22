@@ -31,6 +31,11 @@ pub mod events {
         });
         Ok(())
     }
+
+    #[instruction(discriminator = 0xe4)]
+    pub fn event_cpi_shadow_probe(_ctx: Context<EventCpiShadowProbe>) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -42,6 +47,9 @@ pub struct TestEvent {}
 #[event_cpi]
 #[derive(Accounts)]
 pub struct TestEventCpi {}
+
+#[derive(Accounts)]
+pub struct EventCpiShadowProbe {}
 
 #[event]
 pub struct MyEvent {
