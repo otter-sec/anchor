@@ -138,7 +138,6 @@ echo "args=$*" >> "$AVM_TEST_ANCHOR_LOG"
 
         let cargo_home = self._temp.path().join("cargo-home");
         let home = self._temp.path().join("home");
-        fs::create_dir_all(cargo_home.join("bin")).expect("cargo bin");
         fs::create_dir_all(&home).expect("home");
 
         write_executable(
@@ -202,12 +201,8 @@ echo "fake stable avm"
             .expect(".nightly-check")
             .contains("checkout-nightly-test"));
         assert!(
-            cargo_home.join("bin").join("avm").exists(),
-            "installer should link avm into CARGO_HOME"
-        );
-        assert!(
-            cargo_home.join("bin").join("anchor").exists(),
-            "installer should link anchor into CARGO_HOME"
+            !cargo_home.join("bin").exists(),
+            "missing CARGO_HOME/bin should be a no-op, not an early exit"
         );
     }
 
