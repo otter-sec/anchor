@@ -172,6 +172,17 @@ echo "fake stable avm"
             "{stdout}"
         );
         assert!(
+            stdout.contains("Add this to your shell profile if avm is not already on PATH:"),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "export PATH=\"{}:$PATH\"",
+                cargo_home.join("bin").display()
+            )),
+            "{stdout}"
+        );
+        assert!(
             self.avm_home_bin().join("avm-nightly").is_file(),
             "avm-nightly should be installed"
         );
