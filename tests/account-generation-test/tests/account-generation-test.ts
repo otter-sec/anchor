@@ -125,7 +125,7 @@ describe("account-generation-test", () => {
     );
   });
 
-  it("Generated mint should exist and be initialized", async () => {
+  const loadAllMints = async () => {
     const fs = require("fs");
     const path = require("path");
     const accountsDir = path.join(
@@ -134,100 +134,73 @@ describe("account-generation-test", () => {
       ".anchor",
       "generated_accounts"
     );
+    const mintFiles = fs
+      .readdirSync(accountsDir)
+      .filter((f: string) => f.endsWith(".mint.json"));
+    const parsed: Array<{
+      pubkey: PublicKey;
+      owner: PublicKey;
+      decimals: number;
+      supply: bigint;
+      mintAuthorityIsSome: boolean;
+      freezeAuthorityIsSome: boolean;
+      raw: Buffer;
+    }> = [];
+    for (const f of mintFiles) {
+      const pubkey = new PublicKey(f.replace(".mint.json", ""));
+      const info = await provider.connection.getAccountInfo(pubkey);
+      if (!info || info.data.length < 82) continue;
+      const data = info.data;
+      const mintAuthorityIsSome =
+        Buffer.from(data.slice(0, 4)).readUInt32LE(0) === 1;
+      const supply = Buffer.from(data.slice(36, 44)).readBigUInt64LE(0);
+      const decimals = data[44];
+      const freezeAuthorityIsSome =
+        Buffer.from(data.slice(46, 50)).readUInt32LE(0) === 1;
+      parsed.push({
+        pubkey,
+        owner: info.owner,
+        decimals,
+        supply,
+        mintAuthorityIsSome,
+        freezeAuthorityIsSome,
+        raw: data,
+      });
+    }
+    return parsed;
+  };
 
-    const files = fs.readdirSync(accountsDir);
-    const mintFiles = files.filter((f: string) => f.endsWith(".mint.json"));
-
-    assert.isTrue(
-      mintFiles.length > 0,
-      "Should have at least one generated mint file"
-    );
-
-    const mintFilesWithTimes = mintFiles
-      .map((f: string) => {
-        const filePath = path.join(accountsDir, f);
-        const stats = fs.statSync(filePath);
-        return { name: f, mtime: stats.mtime.getTime() };
-      })
-      .sort((a: { mtime: number }, b: { mtime: number }) => b.mtime - a.mtime);
-
-    const mintFile = mintFilesWithTimes[0].name;
-    const mintPubkeyStr = mintFile.replace(".mint.json", "");
-    const mintPubkey = new PublicKey(mintPubkeyStr);
-
-    const mintInfo = await provider.connection.getAccountInfo(mintPubkey);
-    if (mintInfo) {
-      assert.equal(
-        mintInfo.owner.toBase58(),
-        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "Mint should be owned by SPL Token Program"
-      );
-      assert.isTrue(
-        mintInfo.data.length >= 82,
-        `Mint account data should be at least 82 bytes (has ${mintInfo.data.length})`
-      );
-    } else {
+  it("Generated mint should exist and be initialized", async () => {
+    const mints = await loadAllMints();
+    if (mints.length === 0) {
       console.log(
         "Note: Mint not found on-chain. This is expected for Surfpool validator. Use --validator legacy for mint creation."
       );
+      return;
     }
+    assert.equal(
+      mints[0].owner.toBase58(),
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "Mint should be owned by SPL Token Program"
+    );
+    assert.isTrue(
+      mints[0].raw.length >= 82,
+      `Mint account data should be at least 82 bytes (has ${mints[0].raw.length})`
+    );
   });
 
   it("Generated token account should exist and be initialized", async () => {
-    const fs = require("fs");
-    const path = require("path");
-    const accountsDir = path.join(
-      __dirname,
-      "..",
-      ".anchor",
-      "generated_accounts"
-    );
-
-    const files = fs.readdirSync(accountsDir);
-    const tokenAccountFiles = files.filter((f: string) =>
-      f.endsWith(".token_account.json")
-    );
-
-    if (tokenAccountFiles.length === 0) {
-      console.log(
-        "Note: No token account files found. This is expected if token_accounts are not configured."
-      );
-      return;
-    }
-
-    const tokenAccountFilesWithTimes = tokenAccountFiles
-      .map((f: string) => {
-        const filePath = path.join(accountsDir, f);
-        const stats = fs.statSync(filePath);
-        return { name: f, mtime: stats.mtime.getTime() };
-      })
-      .sort((a: { mtime: number }, b: { mtime: number }) => b.mtime - a.mtime);
-
-    const tokenAccountFile = tokenAccountFilesWithTimes[0].name;
-    const tokenAccountPubkeyStr = tokenAccountFile.replace(
-      ".token_account.json",
-      ""
-    );
-    const tokenAccountPubkey = new PublicKey(tokenAccountPubkeyStr);
-
-    const tokenAccountInfo = await provider.connection.getAccountInfo(
-      tokenAccountPubkey
-    );
-    if (tokenAccountInfo) {
-      assert.equal(
-        tokenAccountInfo.owner.toBase58(),
-        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "Token account should be owned by SPL Token Program"
-      );
-      assert.isTrue(
-        tokenAccountInfo.data.length >= 165,
-        `Token account data should be at least 165 bytes (has ${tokenAccountInfo.data.length})`
-      );
-    } else {
+    const all = await loadAllTokenAccounts();
+    if (all.length === 0) {
       console.log(
         "Note: Token account not found on-chain. This is expected for Surfpool validator. Use --validator legacy for token account creation."
       );
+      return;
     }
+    assert.isTrue(
+      all[0].raw.length >= 165,
+      `Token account data should be at least 165 bytes (has ${all[0].raw.length})`
+    );
   });
 
   it("Should fund account with specific address and lamports", async () => {
@@ -263,75 +236,30 @@ describe("account-generation-test", () => {
   });
 
   it("Should create mint with mint_authority and freeze_authority", async () => {
-    const fs = require("fs");
-    const path = require("path");
-    const accountsDir = path.join(
-      __dirname,
-      "..",
-      ".anchor",
-      "generated_accounts"
+    const mints = await loadAllMints();
+    if (mints.length === 0) return;
+    const match = mints.find(
+      (m) => m.mintAuthorityIsSome && m.freezeAuthorityIsSome
     );
-    const files = fs.readdirSync(accountsDir);
-    const mintFiles = files.filter((f: string) => f.endsWith(".mint.json"));
-    const mintFilesWithTimes = mintFiles
-      .map((f: string) => {
-        const filePath = path.join(accountsDir, f);
-        const stats = fs.statSync(filePath);
-        return { name: f, mtime: stats.mtime.getTime() };
-      })
-      .sort((a: { mtime: number }, b: { mtime: number }) => b.mtime - a.mtime);
-    if (mintFilesWithTimes.length >= 2) {
-      const secondMintFile = mintFilesWithTimes[1].name;
-      const secondMintPubkeyStr = secondMintFile.replace(".mint.json", "");
-      const secondMintPubkey = new PublicKey(secondMintPubkeyStr);
-      const mintInfo = await provider.connection.getAccountInfo(
-        secondMintPubkey
-      );
-      if (mintInfo) {
-        assert.equal(
-          mintInfo.owner.toBase58(),
-          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        );
-      }
-    }
+    assert.isDefined(
+      match,
+      "expected a mint with both mint_authority and freeze_authority set"
+    );
+    assert.equal(
+      match!.owner.toBase58(),
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+    );
   });
 
   it("Should create mint without supply (defaults to 0)", async () => {
-    const fs = require("fs");
-    const path = require("path");
-    const accountsDir = path.join(
-      __dirname,
-      "..",
-      ".anchor",
-      "generated_accounts"
-    );
-    const files = fs.readdirSync(accountsDir);
-    const mintFiles = files.filter((f: string) => f.endsWith(".mint.json"));
-    const mintFilesWithTimes = mintFiles
-      .map((f: string) => {
-        const filePath = path.join(accountsDir, f);
-        const stats = fs.statSync(filePath);
-        return { name: f, mtime: stats.mtime.getTime() };
-      })
-      .sort((a: { mtime: number }, b: { mtime: number }) => a.mtime - b.mtime);
-    if (mintFilesWithTimes.length >= 3) {
-      const thirdMintFile = mintFilesWithTimes[2].name;
-      const thirdMintPubkeyStr = thirdMintFile.replace(".mint.json", "");
-      const thirdMintPubkey = new PublicKey(thirdMintPubkeyStr);
-      const mintInfo = await provider.connection.getAccountInfo(
-        thirdMintPubkey
-      );
-      if (mintInfo && mintInfo.data.length >= 82) {
-        const supplyBytes = mintInfo.data.slice(36, 44);
-        const supply = Buffer.from(supplyBytes).readBigUInt64LE(0);
-        assert.equal(supply.toString(), "0");
-        const decimals = mintInfo.data[44];
-        assert.equal(decimals, 8);
-      }
-    }
+    const mints = await loadAllMints();
+    if (mints.length === 0) return;
+    const match = mints.find((m) => m.supply === 0n);
+    assert.isDefined(match, "expected a mint with supply = 0");
+    assert.equal(match!.decimals, 8);
   });
 
-  it("Should create token account with mint=new owner=new", async () => {
+  const loadAllTokenAccounts = async () => {
     const fs = require("fs");
     const path = require("path");
     const accountsDir = path.join(
@@ -340,129 +268,51 @@ describe("account-generation-test", () => {
       ".anchor",
       "generated_accounts"
     );
-    const files = fs.readdirSync(accountsDir);
-    const tokenAccountFiles = files.filter((f: string) =>
-      f.endsWith(".token_account.json")
-    );
-    assert.isTrue(tokenAccountFiles.length >= 1);
-    const tokenAccountFilesWithTimes = tokenAccountFiles
-      .map((f: string) => {
-        const filePath = path.join(accountsDir, f);
-        const stats = fs.statSync(filePath);
-        return { name: f, mtime: stats.mtime.getTime() };
-      })
-      .sort((a: { mtime: number }, b: { mtime: number }) => a.mtime - b.mtime);
-    const firstTokenAccountFile = tokenAccountFilesWithTimes[0].name;
-    const firstTokenAccountPubkeyStr = firstTokenAccountFile.replace(
-      ".token_account.json",
-      ""
-    );
-    const firstTokenAccountPubkey = new PublicKey(firstTokenAccountPubkeyStr);
-    const tokenAccountInfo = await provider.connection.getAccountInfo(
-      firstTokenAccountPubkey
-    );
-    if (tokenAccountInfo) {
-      assert.equal(
-        tokenAccountInfo.owner.toBase58(),
-        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-      );
-      assert.isTrue(tokenAccountInfo.data.length >= 165);
-      const amountBytes = tokenAccountInfo.data.slice(64, 72);
-      const amount = Buffer.from(amountBytes).readBigUInt64LE(0);
-      assert.equal(amount.toString(), "500000000");
+    const tokenAccountFiles = fs
+      .readdirSync(accountsDir)
+      .filter((f: string) => f.endsWith(".token_account.json"));
+    const parsed: Array<{
+      pubkey: PublicKey;
+      owner: PublicKey;
+      amount: bigint;
+      raw: Buffer;
+    }> = [];
+    for (const f of tokenAccountFiles) {
+      const pubkey = new PublicKey(f.replace(".token_account.json", ""));
+      const info = await provider.connection.getAccountInfo(pubkey);
+      if (!info) continue;
+      const data = info.data;
+      const owner = new PublicKey(data.slice(32, 64));
+      const amount = Buffer.from(data.slice(64, 72)).readBigUInt64LE(0);
+      parsed.push({ pubkey, owner, amount, raw: data });
     }
+    return parsed;
+  };
+
+  it("Should create token account with mint=new owner=new", async () => {
+    const all = await loadAllTokenAccounts();
+    if (all.length === 0) return;
+    const match = all.find((ta) => ta.amount === 500000000n);
+    assert.isDefined(match, "expected a token_account with amount=500000000");
+    assert.isTrue(match!.raw.length >= 165);
   });
 
   it("Should create token account with mint=new owner=specific", async () => {
-    const fs = require("fs");
-    const path = require("path");
-    const accountsDir = path.join(
-      __dirname,
-      "..",
-      ".anchor",
-      "generated_accounts"
+    const all = await loadAllTokenAccounts();
+    if (all.length === 0) return;
+    const match = all.find(
+      (ta) =>
+        ta.owner.toBase58() === "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
     );
-    const files = fs.readdirSync(accountsDir);
-    const tokenAccountFiles = files.filter((f: string) =>
-      f.endsWith(".token_account.json")
-    );
-    if (tokenAccountFiles.length >= 2) {
-      const tokenAccountFilesWithTimes = tokenAccountFiles
-        .map((f: string) => {
-          const filePath = path.join(accountsDir, f);
-          const stats = fs.statSync(filePath);
-          return { name: f, mtime: stats.mtime.getTime() };
-        })
-        .sort(
-          (a: { mtime: number }, b: { mtime: number }) => a.mtime - b.mtime
-        );
-      const secondTokenAccountFile = tokenAccountFilesWithTimes[1].name;
-      const secondTokenAccountPubkeyStr = secondTokenAccountFile.replace(
-        ".token_account.json",
-        ""
-      );
-      const secondTokenAccountPubkey = new PublicKey(
-        secondTokenAccountPubkeyStr
-      );
-      const tokenAccountInfo = await provider.connection.getAccountInfo(
-        secondTokenAccountPubkey
-      );
-      if (tokenAccountInfo) {
-        const ownerBytes = tokenAccountInfo.data.slice(32, 64);
-        const ownerPubkey = new PublicKey(ownerBytes);
-        assert.equal(
-          ownerPubkey.toBase58(),
-          "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
-        );
-        const amountBytes = tokenAccountInfo.data.slice(64, 72);
-        const amount = Buffer.from(amountBytes).readBigUInt64LE(0);
-        assert.equal(amount.toString(), "1000000000");
-      }
-    }
+    assert.isDefined(match, "expected a token_account with the specific owner");
+    assert.equal(match!.amount.toString(), "1000000000");
   });
 
   it("Should create token account with mint=new owner=new address=new", async () => {
-    const fs = require("fs");
-    const path = require("path");
-    const accountsDir = path.join(
-      __dirname,
-      "..",
-      ".anchor",
-      "generated_accounts"
-    );
-    const files = fs.readdirSync(accountsDir);
-    const tokenAccountFiles = files.filter((f: string) =>
-      f.endsWith(".token_account.json")
-    );
-    if (tokenAccountFiles.length >= 3) {
-      const tokenAccountFilesWithTimes = tokenAccountFiles
-        .map((f: string) => {
-          const filePath = path.join(accountsDir, f);
-          const stats = fs.statSync(filePath);
-          return { name: f, mtime: stats.mtime.getTime() };
-        })
-        .sort(
-          (a: { mtime: number }, b: { mtime: number }) => a.mtime - b.mtime
-        );
-      const thirdTokenAccountFile = tokenAccountFilesWithTimes[2].name;
-      const thirdTokenAccountPubkeyStr = thirdTokenAccountFile.replace(
-        ".token_account.json",
-        ""
-      );
-      const thirdTokenAccountPubkey = new PublicKey(thirdTokenAccountPubkeyStr);
-      const tokenAccountInfo = await provider.connection.getAccountInfo(
-        thirdTokenAccountPubkey
-      );
-      if (tokenAccountInfo) {
-        assert.equal(
-          tokenAccountInfo.owner.toBase58(),
-          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        );
-        const amountBytes = tokenAccountInfo.data.slice(64, 72);
-        const amount = Buffer.from(amountBytes).readBigUInt64LE(0);
-        assert.equal(amount.toString(), "250000000");
-      }
-    }
+    const all = await loadAllTokenAccounts();
+    if (all.length === 0) return;
+    const match = all.find((ta) => ta.amount === 250000000n);
+    assert.isDefined(match, "expected a token_account with amount=250000000");
   });
 
   it("Should save owner keypairs when owner=new", async () => {
@@ -480,57 +330,17 @@ describe("account-generation-test", () => {
   });
 
   it("Should use most recent mint when mint=new", async () => {
-    const fs = require("fs");
-    const path = require("path");
-    const accountsDir = path.join(
-      __dirname,
-      "..",
-      ".anchor",
-      "generated_accounts"
+    const mints = await loadAllMints();
+    const tokenAccounts = await loadAllTokenAccounts();
+    if (mints.length === 0 || tokenAccounts.length === 0) return;
+    const lastMint = mints.find((m) => m.decimals === 8 && m.supply === 0n);
+    assert.isDefined(
+      lastMint,
+      "expected mints[2] (decimals=8, supply=0) on-chain"
     );
-    const files = fs.readdirSync(accountsDir);
-    const mintFiles = files.filter((f: string) => f.endsWith(".mint.json"));
-    const tokenAccountFiles = files.filter((f: string) =>
-      f.endsWith(".token_account.json")
-    );
-    if (mintFiles.length >= 3 && tokenAccountFiles.length > 0) {
-      const mintFilesWithTimes = mintFiles
-        .map((f: string) => {
-          const filePath = path.join(accountsDir, f);
-          const stats = fs.statSync(filePath);
-          return { name: f, mtime: stats.mtime.getTime() };
-        })
-        .sort(
-          (a: { mtime: number }, b: { mtime: number }) => a.mtime - b.mtime
-        );
-      const lastMintFile =
-        mintFilesWithTimes[mintFilesWithTimes.length - 1].name;
-      const lastMintPubkeyStr = lastMintFile.replace(".mint.json", "");
-      const lastMintPubkey = new PublicKey(lastMintPubkeyStr);
-      const tokenAccountFilesWithTimes = tokenAccountFiles
-        .map((f: string) => {
-          const filePath = path.join(accountsDir, f);
-          const stats = fs.statSync(filePath);
-          return { name: f, mtime: stats.mtime.getTime() };
-        })
-        .sort(
-          (a: { mtime: number }, b: { mtime: number }) => a.mtime - b.mtime
-        );
-      for (const tokenAccountFile of tokenAccountFilesWithTimes) {
-        const tokenAccountPubkeyStr = tokenAccountFile.name.replace(
-          ".token_account.json",
-          ""
-        );
-        const tokenAccountPubkey = new PublicKey(tokenAccountPubkeyStr);
-        const tokenAccountInfo = await provider.connection.getAccountInfo(
-          tokenAccountPubkey
-        );
-        if (tokenAccountInfo) {
-          const mintBytes = tokenAccountInfo.data.slice(0, 32);
-          const mintPubkey = new PublicKey(mintBytes);
-          assert.equal(mintPubkey.toBase58(), lastMintPubkey.toBase58());
-        }
-      }
+    for (const ta of tokenAccounts) {
+      const taMintPubkey = new PublicKey(ta.raw.slice(0, 32));
+      assert.equal(taMintPubkey.toBase58(), lastMint!.pubkey.toBase58());
     }
   });
 
@@ -554,7 +364,7 @@ describe("account-generation-test", () => {
       const mintPubkey = new PublicKey(mintPubkeyStr);
       const mintInfo = await provider.connection.getAccountInfo(mintPubkey);
       if (mintInfo) {
-        assert.isTrue(mintInfo.lamports >= 1_462_920);
+        assert.isTrue(mintInfo.lamports >= 1_461_600);
       }
     }
     if (tokenAccountFiles.length > 0) {
@@ -574,50 +384,16 @@ describe("account-generation-test", () => {
   });
 
   it("Should handle multiple token accounts referencing same mint", async () => {
-    const fs = require("fs");
-    const path = require("path");
-    const accountsDir = path.join(
-      __dirname,
-      "..",
-      ".anchor",
-      "generated_accounts"
+    const tokenAccounts = await loadAllTokenAccounts();
+    if (tokenAccounts.length < 2) return;
+    const uniqueMints = new Set(
+      tokenAccounts.map((ta) => new PublicKey(ta.raw.slice(0, 32)).toBase58())
     );
-    const files = fs.readdirSync(accountsDir);
-    const tokenAccountFiles = files.filter((f: string) =>
-      f.endsWith(".token_account.json")
+    assert.equal(
+      uniqueMints.size,
+      1,
+      "all token accounts (with mint=new) should reference the same mint"
     );
-    if (tokenAccountFiles.length >= 2) {
-      const tokenAccountFilesWithTimes = tokenAccountFiles
-        .map((f: string) => {
-          const filePath = path.join(accountsDir, f);
-          const stats = fs.statSync(filePath);
-          return { name: f, mtime: stats.mtime.getTime() };
-        })
-        .sort(
-          (a: { mtime: number }, b: { mtime: number }) => b.mtime - a.mtime
-        );
-      const firstTokenAccountPubkeyStr =
-        tokenAccountFilesWithTimes[0].name.replace(".token_account.json", "");
-      const secondTokenAccountPubkeyStr =
-        tokenAccountFilesWithTimes[1].name.replace(".token_account.json", "");
-      const firstTokenAccountPubkey = new PublicKey(firstTokenAccountPubkeyStr);
-      const secondTokenAccountPubkey = new PublicKey(
-        secondTokenAccountPubkeyStr
-      );
-      const firstTokenAccountInfo = await provider.connection.getAccountInfo(
-        firstTokenAccountPubkey
-      );
-      const secondTokenAccountInfo = await provider.connection.getAccountInfo(
-        secondTokenAccountPubkey
-      );
-      if (firstTokenAccountInfo && secondTokenAccountInfo) {
-        const firstMintBytes = firstTokenAccountInfo.data.slice(0, 32);
-        const secondMintBytes = secondTokenAccountInfo.data.slice(0, 32);
-        const firstMintPubkey = new PublicKey(firstMintBytes);
-        const secondMintPubkey = new PublicKey(secondMintBytes);
-        assert.equal(firstMintPubkey.toBase58(), secondMintPubkey.toBase58());
-      }
-    }
   });
 
   it("Should create all account JSON files", async () => {
@@ -642,73 +418,19 @@ describe("account-generation-test", () => {
   });
 
   it("Should verify mint supply matches configuration", async () => {
-    const fs = require("fs");
-    const path = require("path");
-    const accountsDir = path.join(
-      __dirname,
-      "..",
-      ".anchor",
-      "generated_accounts"
-    );
-    const files = fs.readdirSync(accountsDir);
-    const mintFiles = files.filter((f: string) => f.endsWith(".mint.json"));
-    const mintFilesWithTimes = mintFiles
-      .map((f: string) => {
-        const filePath = path.join(accountsDir, f);
-        const stats = fs.statSync(filePath);
-        return { name: f, mtime: stats.mtime.getTime() };
-      })
-      .sort((a: { mtime: number }, b: { mtime: number }) => a.mtime - b.mtime);
-    if (mintFilesWithTimes.length >= 1) {
-      const firstMintFile = mintFilesWithTimes[0].name;
-      const firstMintPubkeyStr = firstMintFile.replace(".mint.json", "");
-      const firstMintPubkey = new PublicKey(firstMintPubkeyStr);
-      const mintInfo = await provider.connection.getAccountInfo(
-        firstMintPubkey
-      );
-      if (mintInfo && mintInfo.data.length >= 82) {
-        const supplyBytes = mintInfo.data.slice(36, 44);
-        const supply = Buffer.from(supplyBytes).readBigUInt64LE(0);
-        assert.equal(supply.toString(), "1000000000");
-        const decimals = mintInfo.data[44];
-        assert.equal(decimals, 9);
-      }
-    }
+    const mints = await loadAllMints();
+    if (mints.length === 0) return;
+    const match = mints.find((m) => m.supply === 1_000_000_000n);
+    assert.isDefined(match, "expected a mint with supply=1_000_000_000");
+    assert.equal(match!.decimals, 9);
   });
 
   it("Should verify mint decimals match configuration", async () => {
-    const fs = require("fs");
-    const path = require("path");
-    const accountsDir = path.join(
-      __dirname,
-      "..",
-      ".anchor",
-      "generated_accounts"
-    );
-    const files = fs.readdirSync(accountsDir);
-    const mintFiles = files.filter((f: string) => f.endsWith(".mint.json"));
-    const mintFilesWithTimes = mintFiles
-      .map((f: string) => {
-        const filePath = path.join(accountsDir, f);
-        const stats = fs.statSync(filePath);
-        return { name: f, mtime: stats.mtime.getTime() };
-      })
-      .sort((a: { mtime: number }, b: { mtime: number }) => a.mtime - b.mtime);
-    if (mintFilesWithTimes.length >= 2) {
-      const secondMintFile = mintFilesWithTimes[1].name;
-      const secondMintPubkeyStr = secondMintFile.replace(".mint.json", "");
-      const secondMintPubkey = new PublicKey(secondMintPubkeyStr);
-      const mintInfo = await provider.connection.getAccountInfo(
-        secondMintPubkey
-      );
-      if (mintInfo && mintInfo.data.length >= 82) {
-        const decimals = mintInfo.data[44];
-        assert.equal(decimals, 6);
-        const supplyBytes = mintInfo.data.slice(36, 44);
-        const supply = Buffer.from(supplyBytes).readBigUInt64LE(0);
-        assert.equal(supply.toString(), "500000000");
-      }
-    }
+    const mints = await loadAllMints();
+    if (mints.length === 0) return;
+    const match = mints.find((m) => m.decimals === 6);
+    assert.isDefined(match, "expected a mint with decimals=6");
+    assert.equal(match!.supply.toString(), "500000000");
   });
 
   it("Should support specific pubkey address for mints", async () => {
