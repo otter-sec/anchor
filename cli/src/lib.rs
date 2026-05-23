@@ -2,8 +2,8 @@ use {
     crate::config::{
         get_default_ledger_path, BootstrapMode, BuildConfig, Config, ConfigOverride, HookType,
         Manifest, PackageManager, ProgramDeployment, ProgramWorkspace, ScriptsConfig,
-        SurfnetInfoResponse, SurfpoolConfig, TestValidator, ValidatorType, WithPath, SHUTDOWN_WAIT,
-        STARTUP_WAIT, SURFPOOL_HOST,
+        SurfnetInfoResponse, SurfpoolConfig, TestValidator, Validator, ValidatorType, WithPath,
+        SHUTDOWN_WAIT, STARTUP_WAIT, SURFPOOL_HOST,
     },
     abs_path::AbsolutePath,
     anchor_cli_macros::AbsolutePath,
@@ -16,6 +16,7 @@ use {
         types::{Idl, IdlArrayLen, IdlDefinedFields, IdlType, IdlTypeDefTy},
     },
     anyhow::{anyhow, bail, Context, Result},
+    base64::{engine::general_purpose::STANDARD, Engine},
     checks::{check_anchor_version, check_deps, check_idl_build_feature, check_overflow},
     clap::{CommandFactory, Parser},
     dirs::home_dir,
@@ -4193,6 +4194,7 @@ fn run_test_suite(
                 let flags = Some(surfpool_flags(
                     cfg,
                     surfpool_config,
+                    test_validator,
                     full_simnet_mode,
                     skip_deploy,
                     Some(test_suite_path.as_ref()),
@@ -4200,6 +4202,8 @@ fn run_test_suite(
                 validator_handle = Some(start_surfpool_validator(
                     flags,
                     surfpool_config,
+                    test_validator,
+                    cfg,
                     full_simnet_mode,
                 )?);
             }
@@ -4297,6 +4301,278 @@ fn run_test_suite(
     Ok(())
 }
 
+fn rent_exempt_minimum(data_len: u64) -> u64 {
+    (128 + data_len) * 3480 * 2
+}
+
+const RENT_EPOCH_NEVER: u64 = u64::MAX;
+
+fn write_keypair_secure(keypair: &Keypair, path: &Path) -> Result<()> {
+    use std::io::Write;
+    let bytes = keypair.to_bytes().to_vec();
+    let json = serde_json::to_string(&bytes)
+        .with_context(|| format!("Failed to serialize keypair for {}", path.display()))?;
+
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut file = opts
+        .open(path)
+        .with_context(|| format!("Failed to create keypair file: {}", path.display()))?;
+    file.write_all(json.as_bytes())
+        .with_context(|| format!("Failed to write keypair file: {}", path.display()))?;
+    Ok(())
+}
+
+fn pack_coption_pubkey(buf: &mut Vec<u8>, value: Option<Pubkey>) {
+    match value {
+        Some(pk) => {
+            buf.extend_from_slice(&1u32.to_le_bytes());
+            buf.extend_from_slice(pk.as_ref());
+        }
+        None => {
+            buf.extend_from_slice(&0u32.to_le_bytes());
+            buf.extend_from_slice(&[0u8; 32]);
+        }
+    }
+}
+
+fn write_account_json(path: &Path, value: &JsonValue) -> Result<()> {
+    let mut file = File::create(path)
+        .with_context(|| format!("Failed to create account file: {}", path.display()))?;
+    serde_json::to_writer_pretty(&mut file, value)
+        .with_context(|| format!("Failed to write account JSON to: {}", path.display()))?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GeneratedAccountKind {
+    FundedAccount,
+    Mint,
+    TokenAccount,
+}
+
+#[derive(Debug, Clone)]
+struct GeneratedAccount {
+    pubkey: Pubkey,
+    file_path: PathBuf,
+    kind: GeneratedAccountKind,
+}
+
+fn materialize_validator_accounts(
+    cfg: &WithPath<Config>,
+    validator: &Validator,
+) -> Result<Vec<GeneratedAccount>> {
+    let mut out = Vec::new();
+    let needs_dir = validator.mints.is_some()
+        || validator.token_accounts.is_some()
+        || validator.fund_accounts.is_some();
+    if !needs_dir {
+        return Ok(out);
+    }
+
+    let workspace_root = cfg
+        .path()
+        .parent()
+        .ok_or_else(|| anyhow!("Anchor.toml path has no parent directory"))?;
+    let accounts_dir = workspace_root.join(".anchor").join("generated_accounts");
+    fs::create_dir_all(&accounts_dir).with_context(|| {
+        format!(
+            "Failed to create accounts directory: {}",
+            accounts_dir.display()
+        )
+    })?;
+
+    let mut seen_pubkeys: HashSet<Pubkey> = HashSet::new();
+    let mut record_pubkey = |pk: Pubkey, section: &str| -> Result<()> {
+        if !seen_pubkeys.insert(pk) {
+            bail!(
+                "Duplicate pubkey {} across [test.validator] sections (collision detected in \
+                 `{}`). Each generated account must have a unique address.",
+                pk,
+                section
+            );
+        }
+        Ok(())
+    };
+
+    let mut created_mints: Vec<Pubkey> = Vec::new();
+
+    if let Some(mints) = &validator.mints {
+        for token_mint in mints {
+            let pubkey = if token_mint.address.to_lowercase() == "new" {
+                let keypair = Keypair::new();
+                let pubkey = keypair.pubkey();
+                let keypair_path = accounts_dir.join(format!("{}.mint.json", pubkey));
+                write_keypair_secure(&keypair, &keypair_path)?;
+                pubkey
+            } else {
+                Pubkey::try_from(token_mint.address.as_str())
+                    .map_err(|_| anyhow!("Invalid mint pubkey address: {}", token_mint.address))?
+            };
+            record_pubkey(pubkey, "mints")?;
+            created_mints.push(pubkey);
+
+            let parse_authority = |opt: &Option<String>, field: &str| -> Result<Option<Pubkey>> {
+                opt.as_ref()
+                    .map(|s| {
+                        Pubkey::try_from(s.as_str()).map_err(|_| {
+                            anyhow!("Invalid {} pubkey for mint {}: {}", field, pubkey, s)
+                        })
+                    })
+                    .transpose()
+            };
+            let mint_authority = parse_authority(&token_mint.mint_authority, "mint_authority")?;
+            let freeze_authority =
+                parse_authority(&token_mint.freeze_authority, "freeze_authority")?;
+
+            let mut data = Vec::with_capacity(82);
+            pack_coption_pubkey(&mut data, mint_authority);
+            data.extend_from_slice(&token_mint.supply.unwrap_or(0).to_le_bytes());
+            data.push(token_mint.decimals);
+            data.push(1u8); // is_initialized
+            pack_coption_pubkey(&mut data, freeze_authority);
+
+            let account_json = json!({
+                "pubkey": pubkey.to_string(),
+                "account": {
+                    "lamports": rent_exempt_minimum(82),
+                    "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+                    "executable": false,
+                    "rentEpoch": RENT_EPOCH_NEVER,
+                    "data": [STANDARD.encode(&data), "base64"]
+                }
+            });
+            let file_path = accounts_dir.join(format!("{}.json", pubkey));
+            write_account_json(&file_path, &account_json)?;
+            out.push(GeneratedAccount {
+                pubkey,
+                file_path,
+                kind: GeneratedAccountKind::Mint,
+            });
+        }
+    }
+
+    if let Some(token_accounts) = &validator.token_accounts {
+        for token_account in token_accounts {
+            let mint_pubkey = if token_account.mint.to_lowercase() == "new" {
+                *created_mints.last().ok_or_else(|| {
+                    anyhow!(
+                        "token_account specifies `mint = \"new\"` but no [[test.validator.mints]] \
+                         entries are configured"
+                    )
+                })?
+            } else {
+                Pubkey::try_from(token_account.mint.as_str()).map_err(|_| {
+                    anyhow!(
+                        "Invalid mint pubkey in token_account: {}",
+                        token_account.mint
+                    )
+                })?
+            };
+
+            let owner_pubkey = if token_account.owner.to_lowercase() == "new" {
+                let kp = Keypair::new();
+                let pk = kp.pubkey();
+                let owner_path = accounts_dir.join(format!("{}.owner.json", pk));
+                write_keypair_secure(&kp, &owner_path)?;
+                pk
+            } else {
+                Pubkey::try_from(token_account.owner.as_str()).map_err(|_| {
+                    anyhow!(
+                        "Invalid owner pubkey in token_account: {}",
+                        token_account.owner
+                    )
+                })?
+            };
+
+            let token_account_pubkey = match &token_account.address {
+                Some(addr) if addr.to_lowercase() != "new" => Pubkey::try_from(addr.as_str())
+                    .map_err(|_| anyhow!("Invalid token_account address pubkey: {}", addr))?,
+                _ => {
+                    let kp = Keypair::new();
+                    let pk = kp.pubkey();
+                    let ta_path = accounts_dir.join(format!("{}.token_account.json", pk));
+                    write_keypair_secure(&kp, &ta_path)?;
+                    pk
+                }
+            };
+            record_pubkey(token_account_pubkey, "token_accounts")?;
+
+            let mut data = Vec::with_capacity(165);
+            data.extend_from_slice(mint_pubkey.as_ref());
+            data.extend_from_slice(owner_pubkey.as_ref());
+            data.extend_from_slice(&token_account.amount.to_le_bytes());
+            pack_coption_pubkey(&mut data, None); // delegate
+            data.push(1u8); // state = initialized
+            data.extend_from_slice(&0u32.to_le_bytes()); // is_native None tag
+            data.extend_from_slice(&[0u8; 8]); // is_native body
+            data.extend_from_slice(&0u64.to_le_bytes()); // delegated_amount
+            pack_coption_pubkey(&mut data, None); // close_authority
+
+            let account_json = json!({
+                "pubkey": token_account_pubkey.to_string(),
+                "account": {
+                    "lamports": rent_exempt_minimum(165),
+                    "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+                    "executable": false,
+                    "rentEpoch": RENT_EPOCH_NEVER,
+                    "data": [STANDARD.encode(&data), "base64"]
+                }
+            });
+            let file_path = accounts_dir.join(format!("{}.json", token_account_pubkey));
+            write_account_json(&file_path, &account_json)?;
+            out.push(GeneratedAccount {
+                pubkey: token_account_pubkey,
+                file_path,
+                kind: GeneratedAccountKind::TokenAccount,
+            });
+        }
+    }
+
+    if let Some(fund_accounts) = &validator.fund_accounts {
+        for funded_account in fund_accounts {
+            let pubkey = if funded_account.address.to_lowercase() == "new" {
+                let keypair = Keypair::new();
+                let pubkey = keypair.pubkey();
+                let keypair_path = accounts_dir.join(format!("{}.keypair.json", pubkey));
+                write_keypair_secure(&keypair, &keypair_path)?;
+                pubkey
+            } else {
+                Pubkey::try_from(funded_account.address.as_str())
+                    .map_err(|_| anyhow!("Invalid pubkey address: {}", funded_account.address))?
+            };
+            record_pubkey(pubkey, "fund_accounts")?;
+
+            let lamports = funded_account.lamports.unwrap_or(1_000_000_000);
+
+            let account_json = json!({
+                "pubkey": pubkey.to_string(),
+                "account": {
+                    "lamports": lamports,
+                    "owner": "11111111111111111111111111111111",
+                    "executable": false,
+                    "rentEpoch": RENT_EPOCH_NEVER,
+                    "data": ["", "base64"]
+                }
+            });
+            let file_path = accounts_dir.join(format!("{}.json", pubkey));
+            write_account_json(&file_path, &account_json)?;
+            out.push(GeneratedAccount {
+                pubkey,
+                file_path,
+                kind: GeneratedAccountKind::FundedAccount,
+            });
+        }
+    }
+
+    Ok(out)
+}
+
 // Returns the solana-test-validator flags. This will embed the workspace
 // programs in the genesis block so we don't have to deploy every time. It also
 // allows control of other solana-test-validator features.
@@ -4369,6 +4645,12 @@ fn validator_flags(
             }
         }
         if let Some(validator) = &test.validator {
+            for acct in materialize_validator_accounts(cfg, validator)? {
+                flags.push("--account".to_string());
+                flags.push(acct.pubkey.to_string());
+                flags.push(acct.file_path.display().to_string());
+            }
+
             let entries = serde_json::to_value(validator)?;
             for (key, value) in entries.as_object().unwrap() {
                 if key == "ledger" {
@@ -4376,6 +4658,9 @@ fn validator_flags(
                     // these validator flags.
                     continue;
                 };
+                if key == "fund_accounts" || key == "mints" || key == "token_accounts" {
+                    continue;
+                }
                 if key == "account" {
                     for entry in value.as_array().unwrap() {
                         // Push the account flag for each array entry
@@ -4474,6 +4759,7 @@ fn validator_flags(
 fn surfpool_flags(
     cfg: &WithPath<Config>,
     surfpool_config: &Option<SurfpoolConfig>,
+    test_validator: &Option<TestValidator>,
     full_simnet_mode: bool,
     skip_deploy: bool,
     test_suite_path: Option<&Path>,
@@ -4494,6 +4780,17 @@ fn surfpool_flags(
                 .join(&idl.metadata.name)
                 .with_extension("json");
             write_idl(idl, OutFile::File(idl_out))?;
+        }
+    }
+
+    if let Some(test) = test_validator.as_ref() {
+        if let Some(validator) = &test.validator {
+            for acct in materialize_validator_accounts(cfg, validator)? {
+                if matches!(acct.kind, GeneratedAccountKind::FundedAccount) {
+                    flags.push("--airdrop".to_string());
+                    flags.push(acct.pubkey.to_string());
+                }
+            }
         }
     }
 
@@ -4790,6 +5087,8 @@ fn stream_solana_logs(config: &WithPath<Config>, rpc_url: &str) -> Result<Vec<Lo
 fn start_surfpool_validator(
     flags: Option<Vec<String>>,
     surfpool_config: &Option<SurfpoolConfig>,
+    test_validator: &Option<TestValidator>,
+    cfg: &WithPath<Config>,
     full_simnet_mode: bool,
 ) -> Result<Child> {
     let (host, port) = match surfpool_config {
@@ -4872,6 +5171,68 @@ fn start_surfpool_validator(
         );
         validator_handle.kill()?;
         std::process::exit(1);
+    }
+
+    if let Some(test) = test_validator.as_ref() {
+        if let Some(validator) = &test.validator {
+            if let Some(fund_accounts) = &validator.fund_accounts {
+                let workspace_root = cfg.path().parent().expect("Invalid Anchor.toml path");
+                let accounts_dir = workspace_root.join(".anchor").join("generated_accounts");
+                let _ = fs::create_dir_all(&accounts_dir);
+
+                for funded_account in fund_accounts {
+                    let pubkey = if funded_account.address.to_lowercase() == "new" {
+                        let mut keypair_files: Vec<_> = match fs::read_dir(&accounts_dir) {
+                            Ok(dir) => dir
+                                .filter_map(|entry| {
+                                    let entry = entry.ok()?;
+                                    let path = entry.path();
+                                    let file_name = path.file_name()?.to_string_lossy();
+                                    if file_name.ends_with(".keypair.json") {
+                                        entry.metadata().ok().and_then(|m| {
+                                            m.modified().ok().map(|modified| (modified, path))
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect(),
+                            Err(_) => Vec::new(),
+                        };
+                        keypair_files.sort_by_key(|f| std::cmp::Reverse(f.0));
+
+                        match keypair_files.first() {
+                            Some((_, path)) => {
+                                match path
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .and_then(|s| s.strip_suffix(".keypair"))
+                                    .and_then(|s| s.parse::<Pubkey>().ok())
+                                {
+                                    Some(p) => p,
+                                    None => continue,
+                                }
+                            }
+                            None => continue,
+                        }
+                    } else {
+                        match Pubkey::try_from(funded_account.address.as_str()) {
+                            Ok(p) => p,
+                            Err(_) => continue,
+                        }
+                    };
+
+                    let target_lamports = funded_account.lamports.unwrap_or(1_000_000_000);
+                    let current_balance = client.get_balance(&pubkey).unwrap_or(0);
+
+                    if current_balance < target_lamports {
+                        if let Ok(sig) = client.request_airdrop(&pubkey, target_lamports) {
+                            let _ = client.confirm_transaction(&sig);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     loop {
@@ -5720,6 +6081,7 @@ fn localnet(
                 let flags = Some(surfpool_flags(
                     cfg,
                     &cfg.surfpool_config,
+                    &cfg.test_validator,
                     full_simnet_mode,
                     skip_deploy,
                     None,
@@ -5727,6 +6089,8 @@ fn localnet(
                 Some(start_surfpool_validator(
                     flags,
                     &cfg.surfpool_config,
+                    &cfg.test_validator,
+                    cfg,
                     full_simnet_mode,
                 )?)
             }

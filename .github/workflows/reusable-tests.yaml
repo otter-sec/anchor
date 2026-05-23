@@ -505,6 +505,8 @@ jobs:
             path: tests/lazy-account
           - cmd: cd tests/test-instruction-validation && ./test.sh
             path: tests/test-instruction-validation
+          - cmd: cd tests/account-generation-test && anchor test
+            path: tests/account-generation-test
 
     steps:
       - uses: actions/checkout@v3
