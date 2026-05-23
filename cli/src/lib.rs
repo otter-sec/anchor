@@ -4921,7 +4921,7 @@ fn validator_deploy_flags(
                                     .collect(),
                                 Err(_) => Vec::new(),
                             };
-                            mint_files.sort_by(|a, b| b.0.cmp(&a.0));
+                            mint_files.sort_by_key(|f| std::cmp::Reverse(f.0));
                             match mint_files.first() {
                                 Some((_, path)) => {
                                     match path
@@ -4953,7 +4953,10 @@ fn validator_deploy_flags(
                         match created_mints.last() {
                             Some(&mint) => mint,
                             None => {
-                                eprintln!("Warning: No mint found for 'new' reference in token account. Skipping.");
+                                eprintln!(
+                                    "Warning: No mint found for 'new' reference in token account. \
+                                     Skipping."
+                                );
                                 continue;
                             }
                         }
@@ -5161,9 +5164,7 @@ fn validator_deploy_flags(
 
                 for funded_account in fund_accounts {
                     // Check if address is "new" to generate a random keypair
-                    let (pubkey, address_str) = if funded_account.address.to_lowercase()
-                        == "new"
-                    {
+                    let (pubkey, address_str) = if funded_account.address.to_lowercase() == "new" {
                         // Generate a random keypair
                         let keypair = Keypair::new();
                         let pubkey = keypair.pubkey();
@@ -5955,7 +5956,7 @@ fn start_surfpool_validator(
                                 .collect(),
                             Err(_) => Vec::new(),
                         };
-                        keypair_files.sort_by(|a, b| b.0.cmp(&a.0)); // Sort by modified time, newest first
+                        keypair_files.sort_by_key(|f| std::cmp::Reverse(f.0)); // Sort by modified time, newest first
 
                         // Try to parse the newest file as a pubkey
                         match keypair_files.first() {
@@ -6034,7 +6035,7 @@ fn start_surfpool_validator(
                                     .collect(),
                                 Err(_) => Vec::new(),
                             };
-                            mint_files.sort_by(|a, b| b.0.cmp(&a.0));
+                            mint_files.sort_by_key(|f| std::cmp::Reverse(f.0));
                             match mint_files.first() {
                                 Some((_, path)) => {
                                     match path
@@ -6065,7 +6066,10 @@ fn start_surfpool_validator(
                         match created_mints.last() {
                             Some(&mint) => mint,
                             None => {
-                                eprintln!("Warning: No mint found for 'new' reference in token account. Skipping.");
+                                eprintln!(
+                                    "Warning: No mint found for 'new' reference in token account. \
+                                     Skipping."
+                                );
                                 continue;
                             }
                         }
@@ -7934,7 +7938,7 @@ mod tests {
     fn surfpool_flags_do_not_force_runtime_features() {
         let dir = tempdir().unwrap();
         let cfg = WithPath::new(Config::default(), dir.path().join("Anchor.toml"));
-        let flags = surfpool_flags(&cfg, &None, false, false, None).unwrap();
+        let flags = surfpool_flags(&cfg, &None, &None, false, false, None).unwrap();
 
         assert!(!flags.iter().any(|flag| flag == "--feature"));
     }
