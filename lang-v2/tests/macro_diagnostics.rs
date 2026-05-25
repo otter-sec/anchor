@@ -176,7 +176,7 @@ pub mod bad_discriminator {
 #[derive(Accounts)]
 pub struct Noop {}
 "#,
-        &["`#[discrim = N]` value must be an integer literal"],
+        &["`#[discrim = ...]` value must be an integer literal or byte array literal"],
     );
 }
 
