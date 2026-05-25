@@ -3334,6 +3334,7 @@ fn idl_ts(idl: &Idl) -> Result<String> {
     let idl_name = &idl.metadata.name;
     let type_name = idl_name.to_pascal_case();
     let mut camel_idl = serde_json::to_value(idl)?;
+    normalize_string_const_values_for_ts(&mut camel_idl);
     camel_case_idl_identifiers(&mut camel_idl);
     let camel_idl = serde_json::to_string_pretty(&serde_json::from_value::<Idl>(camel_idl)?)?;
 
@@ -3347,6 +3348,37 @@ fn idl_ts(idl: &Idl) -> Result<String> {
 export type {type_name} = {camel_idl};
 "#
     ))
+}
+
+fn normalize_string_const_values_for_ts(idl: &mut JsonValue) {
+    let Some(constants) = idl.get_mut("constants").and_then(JsonValue::as_array_mut) else {
+        return;
+    };
+
+    for constant in constants {
+        let Some(constant) = constant.as_object_mut() else {
+            continue;
+        };
+
+        if !matches!(
+            constant.get("type").and_then(JsonValue::as_str),
+            Some("string")
+        ) {
+            continue;
+        }
+
+        let Some(value) = constant.get_mut("value") else {
+            continue;
+        };
+
+        let Some(value_str) = value.as_str() else {
+            continue;
+        };
+
+        if let Ok(parsed_value) = serde_json::from_str::<String>(value_str) {
+            *value = JsonValue::String(parsed_value);
+        }
+    }
 }
 
 fn camel_case_idl_identifiers(value: &mut JsonValue) {
@@ -6788,12 +6820,20 @@ mod tests {
                     },
                 },
             }],
-            constants: vec![anchor_lang_idl::types::IdlConst {
-                name: "seed_prefix".to_string(),
-                docs: Vec::new(),
-                ty: IdlType::String,
-                value: "SEED_PREFIX".to_string(),
-            }],
+            constants: vec![
+                anchor_lang_idl::types::IdlConst {
+                    name: "seed_prefix".to_string(),
+                    docs: Vec::new(),
+                    ty: IdlType::String,
+                    value: "SEED_PREFIX".to_string(),
+                },
+                anchor_lang_idl::types::IdlConst {
+                    name: "literal_seed".to_string(),
+                    docs: Vec::new(),
+                    ty: IdlType::String,
+                    value: "\"favor\"".to_string(),
+                },
+            ],
         };
 
         let ts = idl_ts(&idl).unwrap();
@@ -6813,6 +6853,8 @@ mod tests {
         assert!(ts.contains(r#""generic": "itemType""#));
         assert!(ts.contains(r#""name": "seedPrefix""#));
         assert!(ts.contains(r#""value": "SEED_PREFIX""#));
+        assert!(ts.contains(r#""name": "literalSeed""#));
+        assert!(ts.contains(r#""value": "favor""#));
     }
 
     #[test]

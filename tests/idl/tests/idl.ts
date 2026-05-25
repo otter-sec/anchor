@@ -608,7 +608,9 @@ describe("IDL", () => {
       );
       checkDefined(
         (c) =>
-          c.name === "seedPrefix" && c.type === "string" && c.value === "favor"
+          c.name === "seedPrefix" &&
+          c.type === "string" &&
+          c.value === '"favor"'
       );
     });
 

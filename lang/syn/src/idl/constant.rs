@@ -22,12 +22,6 @@ pub fn gen_idl_print_fn_constant(item: &syn::ItemConst) -> TokenStream {
         _ => quote! { vec![] },
     };
 
-    let value = if is_string_type(&item.ty) {
-        quote! { #expr.to_string() }
-    } else {
-        quote! { format!("{:?}", #expr) }
-    };
-
     let fn_body = match gen_idl_type(&item.ty, &[]) {
         Ok((ty, _)) => gen_print_section(
             "const",
@@ -36,7 +30,7 @@ pub fn gen_idl_print_fn_constant(item: &syn::ItemConst) -> TokenStream {
                     name: #name.into(),
                     docs: #docs,
                     ty: #ty,
-                    value: #value,
+                    value: format!("{:?}", #expr),
                 }
             },
         ),
@@ -48,19 +42,5 @@ pub fn gen_idl_print_fn_constant(item: &syn::ItemConst) -> TokenStream {
         pub fn #fn_name() {
             #fn_body
         }
-    }
-}
-
-fn is_string_type(ty: &syn::Type) -> bool {
-    match ty {
-        syn::Type::Path(path) => {
-            path.path.segments.len() == 1
-                && matches!(
-                    path.path.segments.first().map(|segment| &segment.ident),
-                    Some(ident) if ident == "String" || ident == "str"
-                )
-        }
-        syn::Type::Reference(reference) => is_string_type(&reference.elem),
-        _ => false,
     }
 }

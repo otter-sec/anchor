@@ -1663,7 +1663,7 @@
     {
       "name": "SEED_PREFIX",
       "type": "string",
-      "value": "favor"
+      "value": "\"favor\""
     },
     {
       "name": "TEST_CONVERT_MODULE_PATHS",
