@@ -204,6 +204,7 @@ dependencies = [
  "clap_complete",
  "console 0.15.11",
  "crossterm",
+ "crucible-fuzz-cli",
  "dirs",
  "ed25519-dalek",
  "heck 0.4.1",
@@ -1417,6 +1418,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "acdd7c62a3665c7f6830a51635d9ac9b23ed385797f70a83bb8bafe9c572ab2b"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "crucible-fuzz-cli"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4958f4ea2b8611aed7ed087c7d6856cd46398b2c4f0c9bd1a3a85eabd7bef3a"
+dependencies = [
+ "anyhow",
+ "clap 4.6.1",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
