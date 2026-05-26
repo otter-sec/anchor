@@ -472,16 +472,16 @@ impl<T: AsRef<AccountView>> Lamports for T {}
 /// Declares which program owns accounts of this data type.
 ///
 /// For your own program's types, `#[account]` generates this automatically
-/// returning `*program_id` (no `declare_id!` needed).
+/// from the program's declared ID.
 ///
 /// External crates implement this with their program's address:
 /// ```ignore
 /// impl Owner for TokenAccountData {
-///     fn owner(_program_id: &Address) -> Address { Token::id() }
+///     const OWNER: Address = Token::ID;
 /// }
 /// ```
 pub trait Owner {
-    fn owner(program_id: &Address) -> Address;
+    const OWNER: Address;
 }
 
 /// Declares the on-chain address for a program marker type.

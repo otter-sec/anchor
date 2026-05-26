@@ -35,9 +35,7 @@ struct Counter {
 }
 
 impl Owner for Counter {
-    fn owner(program_id: &Address) -> Address {
-        *program_id
-    }
+    const OWNER: Address = Address::new_from_array(PROGRAM_ID);
 }
 
 impl Discriminator for Counter {
@@ -51,9 +49,7 @@ struct ForeignCounter {
 }
 
 impl Owner for ForeignCounter {
-    fn owner(_program_id: &Address) -> Address {
-        Address::new_from_array(FOREIGN_PROGRAM_ID)
-    }
+    const OWNER: Address = Address::new_from_array(FOREIGN_PROGRAM_ID);
 }
 
 impl Discriminator for ForeignCounter {
@@ -342,7 +338,7 @@ fn reacquire_rejects_when_discriminator_changes_during_release() {
 // transfer the account to a different owner. Without an owner check,
 // `reacquire_borrow_mut` would silently accept the now-foreign-owned
 // account as `BorshAccount<T>`. Post-fix: the caller passes `program_id`
-// into `reacquire_borrow_mut`, which re-runs `view.owned_by(&T::owner(program_id))`
+// into `reacquire_borrow_mut`, which re-runs `view.owned_by(&T::OWNER)`
 // against the live header.
 
 #[test]
@@ -366,7 +362,7 @@ fn reacquire_rejects_when_owner_changes_during_release() {
         result.err(),
         Some(ProgramError::IllegalOwner),
         "reacquire_borrow_mut must reject when the on-chain owner no longer matches \
-         `T::owner(program_id)` — otherwise the program continues holding BorshAccount<T> over a \
+         `T::OWNER` — otherwise the program continues holding BorshAccount<T> over a \
          foreign-owned account."
     );
 }

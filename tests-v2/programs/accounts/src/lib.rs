@@ -54,9 +54,7 @@ pub struct ForeignBorshCounter {
 }
 
 impl Owner for ForeignBorshCounter {
-    fn owner(_program_id: &Address) -> Address {
-        FOREIGN_BORSH_OWNER
-    }
+    const OWNER: Address = FOREIGN_BORSH_OWNER;
 }
 
 impl Discriminator for ForeignBorshCounter {

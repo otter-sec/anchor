@@ -31,9 +31,7 @@ struct HeaderAlign1 {
 }
 
 impl Owner for HeaderAlign1 {
-    fn owner(program_id: &Address) -> Address {
-        *program_id
-    }
+    const OWNER: Address = Address::new_from_array(PROGRAM_ID);
 }
 
 impl Discriminator for HeaderAlign1 {

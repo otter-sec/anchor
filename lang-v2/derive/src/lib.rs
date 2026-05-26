@@ -1930,7 +1930,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
         #pod_impls
 
         impl anchor_lang_v2::Owner for #name {
-            fn owner(program_id: &anchor_lang_v2::Address) -> anchor_lang_v2::Address { *program_id }
+            const OWNER: anchor_lang_v2::Address = crate::ID;
         }
         impl anchor_lang_v2::Discriminator for #name {
             const DISCRIMINATOR: &'static [u8] = &[#(#disc_literals),*];
@@ -2724,9 +2724,7 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
             let ty_generics = &generics.ty_generics;
             quote! {
                 impl #impl_generics anchor_lang_v2::Owner for #ident #ty_generics {
-                    fn owner(_program_id: &anchor_lang_v2::Address) -> anchor_lang_v2::Address {
-                        ID
-                    }
+                    const OWNER: anchor_lang_v2::Address = ID;
                 }
 
                 impl #impl_generics anchor_lang_v2::Discriminator for #ident #ty_generics {

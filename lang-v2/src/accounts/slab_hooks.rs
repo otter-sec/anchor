@@ -39,10 +39,7 @@ impl<T: Owner + Discriminator> SlabSchema for T {
 
     #[inline(always)]
     fn validate(view: &AccountView, data: &[u8], program_id: &Address) -> Result<(), ProgramError> {
-        require!(
-            view.owned_by(&T::owner(program_id)),
-            super::slab::cold_owner_error(view)
-        );
+        require!(view.owned_by(&T::OWNER), super::slab::cold_owner_error(view));
         let disc = T::DISCRIMINATOR;
         if data.len() < Self::MIN_DATA_LEN {
             return Err(ProgramError::AccountDataTooSmall);

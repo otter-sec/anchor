@@ -42,9 +42,7 @@ struct Counter {
 }
 
 impl Owner for Counter {
-    fn owner(program_id: &Address) -> Address {
-        *program_id
-    }
+    const OWNER: Address = Address::new_from_array(PROGRAM_ID);
 }
 
 impl Discriminator for Counter {
@@ -59,9 +57,7 @@ struct PodCounter {
 }
 
 impl Owner for PodCounter {
-    fn owner(program_id: &Address) -> Address {
-        *program_id
-    }
+    const OWNER: Address = Address::new_from_array(PROGRAM_ID);
 }
 
 impl Discriminator for PodCounter {

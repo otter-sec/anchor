@@ -87,7 +87,7 @@ fn declared_program_type_serialization_controls_account_traits() {
     );
 
     assert_eq!(
-        <serialization::ImplicitBorshAccount as anchor_lang_v2::Owner>::owner(&serialization::ID),
+        <serialization::ImplicitBorshAccount as anchor_lang_v2::Owner>::OWNER,
         serialization::ID
     );
 

@@ -157,10 +157,7 @@ where
         // could have mutated owner, discriminator, or payload in any
         // combination — without re-checking, we'd accept an account that
         // no longer validates as `T`.
-        require!(
-            self.view.owned_by(&T::owner(program_id)),
-            ProgramError::IllegalOwner
-        );
+        require!(self.view.owned_by(&T::OWNER), ProgramError::IllegalOwner);
         let mut view_mut = self.view;
         let data_ref = view_mut.try_borrow_mut()?;
         if data_ref.len() < DISC_LEN {
@@ -222,10 +219,7 @@ where
         // Hot path: a single owner check. The "uninitialized placeholder"
         // disambiguation lives in `cold_owner_error` (slab.rs) — see
         // the comment there for why this is safe.
-        require!(
-            view.owned_by(&T::owner(program_id)),
-            super::slab::cold_owner_error(&view)
-        );
+        require!(view.owned_by(&T::OWNER), super::slab::cold_owner_error(&view));
         if data.len() < DISC_LEN {
             return Err(ProgramError::AccountDataTooSmall);
         }

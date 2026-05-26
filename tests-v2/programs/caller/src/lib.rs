@@ -15,9 +15,7 @@ pub struct CalleeData {
 }
 
 impl Owner for CalleeData {
-    fn owner(_program_id: &Address) -> Address {
-        callee::id()
-    }
+    const OWNER: Address = callee::ID;
 }
 
 impl Discriminator for CalleeData {
