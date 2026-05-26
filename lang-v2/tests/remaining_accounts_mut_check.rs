@@ -183,13 +183,10 @@ fn trailing_account_aliasing_nested_mut_is_rejected() {
     // `b` after the nested-shift). A trailing account aliasing slot 1
     // must still be caught — this is the "Nested children merge into
     // the top-level mask" case.
-    let mut mask = [0u64; 4];
-    mask[0] = 0b10;
-    // Leaked to get 'static; test-only.
-    let mask_ref: &'static [u64; 4] = alloc::boxed::Box::leak(alloc::boxed::Box::new(mask));
+    static NESTED_MUT_MASK: [u64; 4] = [0b10, 0, 0, 0];
 
     let records = [fresh(1), fresh(2), AccountRecord::Dup { index: 1 }];
-    let result = run_with(&records, /*header_size*/ 2, mask_ref);
+    let result = run_with(&records, /*header_size*/ 2, &NESTED_MUT_MASK);
     match result {
         Err(ProgramError::Custom(code)) if code == DUP_MUT_ERROR => {}
         other => panic!(
