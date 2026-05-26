@@ -3,17 +3,17 @@ description: "Setup ts"
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-node@v3
+    - uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3
       with:
         node-version: ${{ env.NODE_VERSION }}
-    - uses: actions/cache@v3
+    - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
       name: Cache Typescript node_modules
       id: cache-typescript-node-modules
       with:
         path: |
           ./ts/node_modules/
         key: solana-${{ runner.os }}-v0000-${{ env.NODE_VERSION }}-${{ hashFiles('./ts/**/yarn.lock') }}
-    - uses: actions/cache@v3
+    - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
       name: Cache Typescript Dist
       id: cache-typescript-dist
       with:

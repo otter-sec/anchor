@@ -5,7 +5,8 @@ runs:
   steps:
     - run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential libudev-dev
       shell: bash
-    - run: echo "ANCHOR_VERSION=$(cat ./VERSION)" >> $GITHUB_ENV
+    # zizmor: value comes from ./VERSION (tracked repo file, not user input) — safe to write to GITHUB_ENV
+    - run: echo "ANCHOR_VERSION=$(cat ./VERSION)" >> $GITHUB_ENV # zizmor: ignore[github-env]
       shell: bash
     - run: git submodule update --init --recursive --depth 1
       shell: bash
