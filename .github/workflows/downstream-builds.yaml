@@ -12,9 +12,6 @@ on:
     paths-ignore:
       - "docs/**"
 
-env:
-  SOLANA_VERSION: "3.1.10"
-
 jobs:
   downstream-matrix:
     name: Build downstream matrix
@@ -28,9 +25,8 @@ jobs:
       - name: Checkout anchor-community
         uses: actions/checkout@v3
         with:
-          # Continue testing local downstream-suite changes from the fork branch.
-          repository: jamie-osec/anchor-community
-          ref: set-correct-solana-versions
+          repository: otter-sec/anchor-community
+          ref: main
           path: anchor-community
 
       - name: Build matrix from repos.json
@@ -68,23 +64,19 @@ jobs:
       - name: Checkout anchor-community
         uses: actions/checkout@v3
         with:
-          # Continue testing local downstream-suite changes from the fork branch.
-          repository: jamie-osec/anchor-community
-          ref: set-correct-solana-versions
+          repository: otter-sec/anchor-community
+          ref: main
           path: anchor-community
 
       - name: Verify vendored source
         run: test -d "${{ matrix.build_path }}"
 
-      - name: Checkout AVM branch
+      - name: Checkout AVM
         uses: actions/checkout@v3
         with:
-          repository: jamie-osec/anchor
-          ref: avm-improvements
+          repository: otter-sec/anchor
+          ref: master
           path: avm-source
-
-      - name: Show AVM checkout
-        run: git -C avm-source rev-parse HEAD
 
       - name: Install dependencies
         run: |
@@ -103,61 +95,12 @@ jobs:
           done
 
       - uses: actions/cache@v4
-        name: Cache Solana Tool Suite
-        id: cache-solana
-        with:
-          path: |
-            ~/.cache/solana/
-            ~/.local/share/solana/
-          key: downstream-solana-${{ runner.os }}-v0001-${{ matrix.directory }}-${{ env.SOLANA_VERSION }}
-          restore-keys: |
-            downstream-solana-${{ runner.os }}-v0001-${{ matrix.directory }}-
-
-      - uses: nick-fields/retry@v2
-        if: steps.cache-solana.outputs.cache-hit != 'true'
-        with:
-          retry_wait_seconds: 300
-          timeout_minutes: 2
-          max_attempts: 10
-          retry_on: error
-          shell: bash
-          command: sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
-
-      - name: Activate requested Solana release
-        run: |
-          set -euo pipefail
-
-          install_dir="$HOME/.local/share/solana/install"
-          release_dir="$install_dir/releases/$SOLANA_VERSION/solana-release"
-
-          if [[ ! -x "$release_dir/bin/solana" ]]; then
-            sh -c "$(curl -sSfL "https://release.anza.xyz/v$SOLANA_VERSION/install")"
-          else
-            ln -sfn "$release_dir" "$install_dir/active_release"
-          fi
-
-          echo "$install_dir/active_release/bin" >> "$GITHUB_PATH"
-          actual="$("$install_dir/active_release/bin/solana" --version)"
-          echo "$actual"
-          case "$actual" in
-            "solana-cli $SOLANA_VERSION"*) ;;
-            *)
-              echo "Expected Solana $SOLANA_VERSION, got: $actual" >&2
-              exit 1
-              ;;
-          esac
-        shell: bash
-
-      - run: solana-keygen new --no-bip39-passphrase
-      - run: solana config set --url localhost
-
-      - uses: actions/cache@v4
         name: Cache AVM target
         with:
           path: avm-target/
-          key: cargo-target-${{ runner.os }}-downstream-avm-4534-${{ hashFiles('avm-source/Cargo.lock', 'avm-source/avm/src/**') }}
+          key: cargo-target-${{ runner.os }}-downstream-avm-master-${{ hashFiles('avm-source/Cargo.lock', 'avm-source/avm/src/**') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-downstream-avm-4534-
+            cargo-target-${{ runner.os }}-downstream-avm-master-
 
       - uses: actions/cache@v4
         name: Cache ${{ matrix.name }} Cargo home
@@ -178,6 +121,46 @@ jobs:
           avm --version
           echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
 
+      - name: Resolve Solana CLI version
+        id: solana
+        working-directory: ${{ matrix.build_path }}
+        run: |
+          set -euo pipefail
+
+          resolution="$(avm solana resolve)"
+          echo "$resolution"
+          version="$(awk '{print $2}' <<< "$resolution")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - uses: actions/cache@v4
+        name: Cache Solana Tool Suite
+        with:
+          path: |
+            ~/.cache/solana/
+            ~/.local/share/solana/
+          key: downstream-solana-${{ runner.os }}-v0002-${{ matrix.directory }}-${{ steps.solana.outputs.version }}
+          restore-keys: |
+            downstream-solana-${{ runner.os }}-v0002-${{ matrix.directory }}-
+
+      - name: Install project Solana CLI
+        working-directory: ${{ matrix.build_path }}
+        run: |
+          set -euo pipefail
+
+          solana_bin="$HOME/.local/share/solana/install/active_release/bin"
+          if [[ -d "$solana_bin" ]]; then
+            export PATH="$solana_bin:$PATH"
+          fi
+
+          avm solana install "${{ steps.solana.outputs.version }}"
+          echo "$solana_bin" >> "$GITHUB_PATH"
+          "$solana_bin/solana" --version
+        shell: bash
+
+      - run: solana-keygen new --no-bip39-passphrase
+      - run: solana config set --url localhost
+
       - uses: actions/cache@v4
         name: Cache ${{ matrix.name }} target
         with:
@@ -195,8 +178,8 @@ jobs:
           TERM: dumb
         run: |
           # Preinstall the downstream-pinned Anchor CLI without relying on an
-          # interactive prompt. The spawned `anchor` still exercises PR #4534's
-          # project-aware Solana/platform-tools selection during the build.
+          # interactive prompt. The spawned `anchor` still exercises AVM's
+          # project-aware toolchain selection during the build.
           anchor_version="$(
             python3 <<'PY'
           import pathlib
