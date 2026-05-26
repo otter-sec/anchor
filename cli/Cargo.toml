@@ -33,6 +33,7 @@ cargo_metadata = "0.23.1"
 cargo_toml.workspace = true
 chrono = "0.4.19"
 clap = { version = "4.5.17", features = ["derive"] }
+crucible-fuzz-cli = "=0.2.0"
 clap_complete = "4.5.26"
 console = "0.15"
 dirs = "4.0"

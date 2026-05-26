@@ -339,6 +339,8 @@ pub enum Command {
         #[clap(required = false, last = true)]
         cargo_args: Vec<String>,
     },
+    /// Coverage-guided fuzzing for Solana programs (powered by Crucible).
+    Fuzz(crucible_fuzz_cli::Cli),
     /// Creates a new program.
     New {
         /// Program name
@@ -1332,6 +1334,7 @@ fn process_command(opts: Opts) -> Result<()> {
             force,
             install_agent_skills,
         ),
+        Command::Fuzz(cli) => crucible_fuzz_cli::run(cli),
         Command::New {
             name,
             template,
