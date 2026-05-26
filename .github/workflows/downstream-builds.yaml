@@ -121,9 +121,27 @@ jobs:
           avm --version
           echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
 
+      - name: Resolve downstream project path
+        id: project
+        working-directory: ${{ matrix.build_path }}
+        env:
+          BUILD_COMMAND: ${{ matrix.build_command }}
+        run: |
+          set -euo pipefail
+
+          project_dir="$PWD"
+          cd_regex='^[[:space:]]*cd[[:space:]]+([^[:space:]&;]+)[[:space:]]*&&'
+          if [[ "$BUILD_COMMAND" =~ $cd_regex ]]; then
+            project_dir="$project_dir/${BASH_REMATCH[1]}"
+          fi
+
+          test -d "$project_dir"
+          echo "path=$project_dir" >> "$GITHUB_OUTPUT"
+        shell: bash
+
       - name: Resolve Solana CLI version
         id: solana
-        working-directory: ${{ matrix.build_path }}
+        working-directory: ${{ steps.project.outputs.path }}
         run: |
           set -euo pipefail
 
@@ -144,15 +162,12 @@ jobs:
             downstream-solana-${{ runner.os }}-v0002-${{ matrix.directory }}-
 
       - name: Install project Solana CLI
-        working-directory: ${{ matrix.build_path }}
+        working-directory: ${{ steps.project.outputs.path }}
         run: |
           set -euo pipefail
 
           solana_bin="$HOME/.local/share/solana/install/active_release/bin"
-          if [[ -d "$solana_bin" ]]; then
-            export PATH="$solana_bin:$PATH"
-          fi
-
+          export PATH="$solana_bin:$PATH"
           avm solana install "${{ steps.solana.outputs.version }}"
           echo "$solana_bin" >> "$GITHUB_PATH"
           "$solana_bin/solana" --version
