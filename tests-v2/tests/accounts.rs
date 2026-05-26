@@ -63,7 +63,7 @@ fn foreign_borsh_owner() -> Pubkey {
 }
 
 fn foreign_borsh_counter_disc() -> [u8; 8] {
-    [0x0f, 0xb0, 0x52, 0x48, 0x0a, 0xcc, 0x7d, 0x01]
+    [0x8d, 0xb8, 0x46, 0xd8, 0x4f, 0xf6, 0x08, 0x9c]
 }
 
 const SYSTEM_SEED: &str = "anchor-v2-seed";
@@ -120,7 +120,7 @@ fn set_system_account(svm: &mut LiteSVM, address: Pubkey, lamports: u64, data_le
     .unwrap();
 }
 
-fn set_foreign_borsh_counter(svm: &mut LiteSVM, address: Pubkey, value: u64) {
+fn set_borsh_counter_with_owner(svm: &mut LiteSVM, address: Pubkey, owner: Pubkey, value: u64) {
     let mut data = Vec::with_capacity(16);
     data.extend_from_slice(&foreign_borsh_counter_disc());
     data.extend_from_slice(&value.to_le_bytes());
@@ -129,12 +129,16 @@ fn set_foreign_borsh_counter(svm: &mut LiteSVM, address: Pubkey, value: u64) {
         solana_account::Account {
             lamports: 1_000_000,
             data,
-            owner: foreign_borsh_owner(),
+            owner,
             executable: false,
             rent_epoch: 0,
         },
     )
     .unwrap();
+}
+
+fn set_foreign_borsh_counter(svm: &mut LiteSVM, address: Pubkey, value: u64) {
+    set_borsh_counter_with_owner(svm, address, foreign_borsh_owner(), value);
 }
 
 fn add_account_lamports(svm: &mut LiteSVM, address: Pubkey, lamports: u64) {
@@ -368,6 +372,23 @@ fn foreign_borsh_account_mutation_is_not_written_on_exit() {
     assert_eq!(
         value, 42,
         "generated exit must not serialize in-memory mutations into foreign-owned account data"
+    );
+}
+
+#[test]
+fn foreign_borsh_account_rejects_program_owned_cosplay() {
+    let (mut svm, payer) = setup();
+    let counterfeit = Pubkey::new_unique();
+    set_borsh_counter_with_owner(&mut svm, counterfeit, program_id(), 42);
+
+    let metas = vec![AccountMeta::new(counterfeit, false)];
+    let err = send_instruction(&mut svm, program_id(), vec![32], metas, &payer, &[])
+        .expect_err("program-owned account must not pass the foreign owner check")
+        .to_string();
+
+    assert!(
+        err.contains("IllegalOwner"),
+        "expected IllegalOwner for program-owned foreign account cosplay, got: {err}"
     );
 }
 

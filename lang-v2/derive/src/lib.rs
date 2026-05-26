@@ -1280,10 +1280,12 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
 
 #[proc_macro_attribute]
 pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let is_borsh = match parse_account_mode(attr) {
-        Ok(b) => b,
+    let config = match parse_account_config(attr) {
+        Ok(config) => config,
         Err(err) => return err.to_compile_error().into(),
     };
+    let is_borsh = config.is_borsh;
+    let owner = &config.owner;
     let input = parse_macro_input!(item as DeriveInput);
     let name = &input.ident;
     let name_str = name.to_string();
@@ -1471,6 +1473,23 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
             },
         )
     };
+    let owner_impl = if let Some(owner) = owner {
+        quote! {
+            impl anchor_lang_v2::Owner for #name {
+                fn owner(_program_id: &anchor_lang_v2::Address) -> anchor_lang_v2::Address {
+                    #owner
+                }
+            }
+        }
+    } else {
+        quote! {
+            impl anchor_lang_v2::Owner for #name {
+                fn owner(program_id: &anchor_lang_v2::Address) -> anchor_lang_v2::Address {
+                    *program_id
+                }
+            }
+        }
+    };
 
     TokenStream::from(quote! {
         #(#attrs)*
@@ -1479,9 +1498,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         #pod_impls
 
-        impl anchor_lang_v2::Owner for #name {
-            fn owner(program_id: &anchor_lang_v2::Address) -> anchor_lang_v2::Address { *program_id }
-        }
+        #owner_impl
         impl anchor_lang_v2::Discriminator for #name {
             const DISCRIMINATOR: &'static [u8] = &[#(#disc_literals),*];
         }
@@ -4701,31 +4718,88 @@ enum EventMode {
     Bytemuck,
 }
 
-/// Parse the `#[account]` attribute's optional mode argument.
+struct AccountConfig {
+    is_borsh: bool,
+    owner: Option<Expr>,
+}
+
+/// Parse the `#[account]` attribute's optional mode and owner arguments.
 ///
-/// Accepts: `#[account]` (default → zero-copy Pod) or `#[account(borsh)]`.
-/// Under the hood the borsh mode encodes/decodes via wincode using
-/// `BORSH_CONFIG`, so the on-chain bytes still match what a borsh library
-/// would produce, while paying for wincode's faster encode/decode path.
-fn parse_account_mode(attr: TokenStream) -> Result<bool, syn::Error> {
+/// Accepts: `#[account]` (default → zero-copy Pod), `#[account(borsh)]`, and
+/// `#[account(borsh, owner = some_program::ID)]`.
+fn parse_account_config(attr: TokenStream) -> Result<AccountConfig, syn::Error> {
+    parse_account_config_tokens(attr.into())
+}
+
+fn parse_account_config_tokens(attr: TokenStream2) -> Result<AccountConfig, syn::Error> {
     if attr.is_empty() {
-        return Ok(false);
+        return Ok(AccountConfig {
+            is_borsh: false,
+            owner: None,
+        });
     }
-    let attr2: proc_macro2::TokenStream = attr.into();
-    let ident: syn::Ident = syn::parse2(attr2.clone()).map_err(|_| {
-        syn::Error::new_spanned(
-            &attr2,
-            "expected `#[account]` or `#[account(borsh)]` — no other arguments are supported",
-        )
-    })?;
-    if ident == "borsh" {
-        Ok(true)
-    } else {
-        Err(syn::Error::new_spanned(
-            ident,
-            "unknown `#[account]` mode — only `borsh` is accepted",
-        ))
+
+    let metas = syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated
+        .parse2(attr.clone())
+        .map_err(|_| {
+            syn::Error::new_spanned(
+                &attr,
+                "expected `#[account]`, `#[account(borsh)]`, or `#[account(borsh, owner = \
+                 <expr>)]`",
+            )
+        })?;
+
+    let mut is_borsh = false;
+    let mut owner = None;
+    let mut owner_span = None;
+
+    for meta in metas {
+        match meta {
+            syn::Meta::Path(path) if path.is_ident("borsh") => {
+                if is_borsh {
+                    return Err(syn::Error::new(path.span(), "duplicate `borsh` argument"));
+                }
+                is_borsh = true;
+            }
+            syn::Meta::NameValue(nv) if nv.path.is_ident("owner") => {
+                if owner.is_some() {
+                    return Err(syn::Error::new(
+                        nv.path.span(),
+                        "duplicate `owner` argument",
+                    ));
+                }
+                owner_span = Some(nv.path.span());
+                owner = Some(nv.value);
+            }
+            syn::Meta::Path(path) => {
+                return Err(syn::Error::new(
+                    path.span(),
+                    "unknown `#[account]` argument; expected `borsh` or `owner = <expr>`",
+                ));
+            }
+            syn::Meta::NameValue(nv) => {
+                return Err(syn::Error::new(
+                    nv.path.span(),
+                    "unknown `#[account]` argument; expected `borsh` or `owner = <expr>`",
+                ));
+            }
+            syn::Meta::List(list) => {
+                return Err(syn::Error::new(
+                    list.path.span(),
+                    "unknown `#[account]` argument; expected `borsh` or `owner = <expr>`",
+                ));
+            }
+        }
     }
+
+    if owner.is_some() && !is_borsh {
+        return Err(syn::Error::new(
+            owner_span.unwrap_or_else(|| attr.span()),
+            "`owner` is only supported with `#[account(borsh, owner = <expr>)]`",
+        ));
+    }
+
+    Ok(AccountConfig { is_borsh, owner })
 }
 
 fn parse_event_mode(attr: TokenStream) -> Result<EventMode, syn::Error> {
@@ -5295,6 +5369,28 @@ mod tests {
 
         assert!(
             err.to_string().contains("expected `:`"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn account_attrs_parse_borsh_owner() {
+        let config = parse_account_config_tokens(quote!(borsh, owner = some_program::ID)).unwrap();
+
+        assert!(config.is_borsh);
+        let owner = config.owner.unwrap();
+        assert_eq!(quote!(#owner).to_string(), "some_program :: ID");
+    }
+
+    #[test]
+    fn account_attrs_reject_owner_without_borsh() {
+        let err = match parse_account_config_tokens(quote!(owner = some_program::ID)) {
+            Ok(_) => panic!("owner without borsh unexpectedly parsed"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains("only supported with"),
             "unexpected error: {err}"
         );
     }
