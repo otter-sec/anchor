@@ -129,7 +129,29 @@ export function publicKey(property?: string): Layout<PublicKey> {
   );
 }
 
-class OptionLayout<T> extends LayoutCls<T | null> {
+const OPTION_SOME: unique symbol = Symbol.for(
+  "@anchor-lang/borsh.option.some"
+) as never;
+
+export type Some<T> = {
+  readonly [OPTION_SOME]: true;
+  readonly value: T;
+};
+
+export type Option<T> = Some<T> | T | null;
+
+export function some<T>(value: T): Some<T> {
+  return {
+    [OPTION_SOME]: true,
+    value,
+  };
+}
+
+export function isSome<T>(src: unknown): src is Some<T> {
+  return typeof src === "object" && src !== null && OPTION_SOME in src;
+}
+
+class OptionLayout<T> extends LayoutCls<Option<T>> {
   layout: Layout<T>;
   discriminator: Layout<number>;
 
@@ -139,7 +161,11 @@ class OptionLayout<T> extends LayoutCls<T | null> {
     this.discriminator = u8();
   }
 
-  encode(src: T | null, b: Buffer, offset = 0): number {
+  encode(src: Option<T> | undefined, b: Buffer, offset = 0): number {
+    if (isSome(src)) {
+      this.discriminator.encode(1, b, offset);
+      return this.layout.encode(src.value, b, offset + 1) + 1;
+    }
     if (src === null || src === undefined) {
       return this.discriminator.encode(0, b, offset);
     }
@@ -147,12 +173,12 @@ class OptionLayout<T> extends LayoutCls<T | null> {
     return this.layout.encode(src, b, offset + 1) + 1;
   }
 
-  decode(b: Buffer, offset = 0): T | null {
+  decode(b: Buffer, offset = 0): Some<T> | null {
     const discriminator = this.discriminator.decode(b, offset);
     if (discriminator === 0) {
       return null;
     } else if (discriminator === 1) {
-      return this.layout.decode(b, offset + 1);
+      return some(this.layout.decode(b, offset + 1));
     }
     throw new Error("Invalid option " + this.property);
   }
@@ -171,7 +197,7 @@ class OptionLayout<T> extends LayoutCls<T | null> {
 export function option<T>(
   layout: Layout<T>,
   property?: string
-): Layout<T | null> {
+): Layout<Option<T>> {
   return new OptionLayout<T>(layout, property);
 }
 

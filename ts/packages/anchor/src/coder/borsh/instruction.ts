@@ -221,13 +221,19 @@ class InstructionFormatter {
       );
     }
     if ("option" in idlField.type) {
-      return data === null
-        ? "null"
-        : this.formatIdlData(
-            { name: "", type: idlField.type.option },
-            data,
-            types
-          );
+      if (data === null) {
+        return "null";
+      }
+
+      const isSome = borsh.isSome(data);
+      const value = isSome ? data.value : data;
+      const formatted = this.formatIdlData(
+        { name: "", type: idlField.type.option },
+        value as Object,
+        types
+      );
+
+      return isSome ? `Some(${formatted})` : formatted;
     }
     if ("defined" in idlField.type) {
       if (!types) {

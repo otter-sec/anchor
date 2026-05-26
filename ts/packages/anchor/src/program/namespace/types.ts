@@ -1,4 +1,5 @@
 import { PublicKey } from "@solana/web3.js";
+import { type Option as BorshOption } from "@anchor-lang/borsh";
 import BN from "bn.js";
 import {
   Idl,
@@ -138,7 +139,7 @@ export type DecodeType<T extends IdlType, Defined> = IdlType extends T
   : T extends { defined: { name: keyof Defined } }
   ? Defined[T["defined"]["name"]]
   : T extends { option: IdlType }
-  ? DecodeType<T["option"], Defined> | null
+  ? BorshOption<DecodeType<T["option"], Defined>>
   : T extends { coption: IdlType }
   ? DecodeType<T["coption"], Defined> | null
   : T extends { vec: IdlType }
