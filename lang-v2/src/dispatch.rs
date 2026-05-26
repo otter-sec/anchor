@@ -1,6 +1,6 @@
 use {
     crate::{
-        context::{Bumps, Context},
+        context::{Bumps, Context, MutMask},
         cursor::{AccountBitvec, AccountCursor},
         loader::AccountLoader,
     },
@@ -30,6 +30,16 @@ pub trait TryAccounts: Bumps + Sized {
     /// a `None` slot (encoded as `program_id`) stays silent the way it
     /// does today.
     const MUT_MASK: [u64; 4];
+
+    /// True when [`Self::active_mut_mask`] can differ from [`Self::MUT_MASK`].
+    /// This lets accounts without optional mutable fields keep the old static
+    /// mask path.
+    const HAS_DYNAMIC_MUT_MASK: bool;
+
+    /// Runtime mutable-account mask for checks that happen after declared
+    /// accounts are loaded. This includes optional mutable accounts only when
+    /// they resolved to `Some`.
+    fn active_mut_mask(&self) -> [u64; 4];
 
     /// Parsed instruction args carried alongside validated accounts.
     /// Accounts structs without `#[instruction(...)]` use `()`.
@@ -86,13 +96,18 @@ pub fn run_handler<'a, T: TryAccounts, R>(
     };
     const _: () = assert!(pinocchio::MAX_TX_ACCOUNTS <= u8::MAX as usize);
     let remaining_num = (num_accounts - T::HEADER_SIZE) as u8;
+    let mut_mask = if remaining_num != 0 && T::HAS_DYNAMIC_MUT_MASK {
+        MutMask::Dynamic(ctx_accounts.active_mut_mask())
+    } else {
+        MutMask::Static(&T::MUT_MASK)
+    };
     let mut ctx = Context::new(
         program_id,
         ctx_accounts,
         bumps,
         cursor,
         remaining_num,
-        &T::MUT_MASK,
+        mut_mask,
     );
     let result = handler(&mut ctx, ix_args)?;
     ctx.accounts.exit_accounts()?;

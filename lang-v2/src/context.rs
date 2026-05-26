@@ -27,14 +27,31 @@ pub struct Context<'a, T: Bumps> {
     /// After `remaining_accounts` is called this holds a cache of the result.
     remaining_accounts: RemainingAccounts<'a>,
 
-    /// Mutable-account mask covering the declared region (from
-    /// `T::MUT_MASK`). Used by [`Self::remaining_accounts`] to
-    /// re-check each trailing account against declared mut slots —
+    /// Mutable-account mask covering active mutable accounts in the declared
+    /// region. Starts from `T::MUT_MASK` and includes optional mutable fields
+    /// only when the loaded account is `Some`. Used by
+    /// [`Self::remaining_accounts`] to re-check each trailing account against
+    /// declared mut slots —
     /// without this, a trailing account whose dup index points at a
     /// mut declared account would silently alias it (bug 3: the
     /// `HEADER_SIZE`-only check in `run_handler` can't see dups that
     /// only surface during the trailing walk).
-    mut_mask: &'static [u64; 4],
+    mut_mask: MutMask,
+}
+
+pub enum MutMask {
+    Static(&'static [u64; 4]),
+    Dynamic([u64; 4]),
+}
+
+impl MutMask {
+    #[inline(always)]
+    fn as_ref(&self) -> &[u64; 4] {
+        match self {
+            Self::Static(mask) => mask,
+            Self::Dynamic(mask) => mask,
+        }
+    }
 }
 
 enum RemainingAccounts<'a> {
@@ -63,7 +80,7 @@ impl<'a, T: Bumps> Context<'a, T> {
         bumps: T::Bumps,
         cursor: &'a mut AccountCursor,
         remaining_num: u8,
-        mut_mask: &'static [u64; 4],
+        mut_mask: MutMask,
     ) -> Self {
         Self {
             program_id,
@@ -86,17 +103,17 @@ impl<'a, T: Bumps> Context<'a, T> {
     /// another `cursor.next()` loop.
     ///
     /// After each cursor advance, re-tests the cursor's duplicate bitvec
-    /// against `T::MUT_MASK`. If a trailing account's dup index resolves
-    /// to a declared mut slot, returns
+    /// against the active mutable mask. If a trailing account's dup index
+    /// resolves to a declared mut slot, returns
     /// `ConstraintDuplicateMutableAccount`. The `HEADER_SIZE`-only check
     /// in `run_handler` only sees duplicates that existed at the end of
     /// the declared walk; trailing-region dups can only be caught here.
     ///
-    /// `MUT_MASK` is sized per declared field, so bits set for trailing
-    /// indices (past `HEADER_SIZE`) are naturally zero — the intersect
-    /// only fires when a trailing slot's bit overlaps with a declared
-    /// mut slot's bit, which by construction means the runtime resolved
-    /// the trailing slot as a dup of that declared mut account.
+    /// The mask is sized per declared field, so bits set for trailing indices
+    /// (past `HEADER_SIZE`) are naturally zero — the intersect only fires when
+    /// a trailing slot's bit overlaps with an active declared mut slot's bit,
+    /// which by construction means the runtime resolved the trailing slot as a
+    /// dup of that declared mut account.
     pub fn remaining_accounts(&mut self) -> Result<alloc::vec::Vec<AccountView>, ProgramError> {
         if self.remaining_accounts.is_unparsed() {
             self.remaining_accounts = RemainingAccounts::Cached(self.walk_remaining());
@@ -118,6 +135,7 @@ impl<'a, T: Bumps> Context<'a, T> {
             unreachable!()
         };
         let mut v = alloc::vec::Vec::with_capacity(remaining as usize);
+        let mut_mask = self.mut_mask.as_ref();
         for _ in 0..remaining {
             // SAFETY: cursor is positioned at the start of the remaining
             // region and `remaining_num` is the exact number of accounts
@@ -125,7 +143,7 @@ impl<'a, T: Bumps> Context<'a, T> {
             // never advance past the remaining region.
             v.push(unsafe { cursor.next() });
             if let Some(dups) = cursor.duplicates() {
-                if dups.intersects(self.mut_mask) {
+                if dups.intersects(mut_mask) {
                     return Err(crate::ErrorCode::ConstraintDuplicateMutableAccount.into());
                 }
             }

@@ -169,7 +169,7 @@ pub use {
         program, Accounts, InitSpace,
     },
     bytemuck,
-    context::{Bumps, Context},
+    context::{Bumps, Context, MutMask},
     context_cpi::{invoke_signed_fixed, CpiContext},
     cpi::{
         create_account, create_account_signed, create_program_address,

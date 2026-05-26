@@ -35,7 +35,7 @@ extern crate alloc;
 use {
     anchor_lang_v2::{
         testing::{AccountRecord, SbfInputBuffer},
-        AccountCursor, AccountView, Bumps, Context,
+        AccountCursor, AccountView, Bumps, Context, MutMask,
     },
     core::mem::MaybeUninit,
     solana_address::Address,
@@ -103,7 +103,7 @@ fn run_with(
         (),
         &mut cursor,
         remaining_num,
-        mut_mask,
+        MutMask::Static(mut_mask),
     );
     ctx.remaining_accounts()
 }
@@ -215,8 +215,14 @@ fn remaining_accounts_error_is_cached_on_failure() {
     let mut cursor =
         unsafe { AccountCursor::new(buf.as_mut_ptr(), lookup.as_mut_ptr() as *mut AccountView) };
     let (_views, _dups) = unsafe { cursor.walk_n(1) };
-    let mut ctx: Context<NoAccounts> =
-        Context::new(&program_id, NoAccounts, (), &mut cursor, 1, MUT_MASK_SLOT0);
+    let mut ctx: Context<NoAccounts> = Context::new(
+        &program_id,
+        NoAccounts,
+        (),
+        &mut cursor,
+        1,
+        MutMask::Static(MUT_MASK_SLOT0),
+    );
 
     for _ in 0..5 {
         match ctx.remaining_accounts() {
@@ -242,8 +248,14 @@ fn remaining_accounts_result_is_cached_on_success() {
     let mut cursor =
         unsafe { AccountCursor::new(buf.as_mut_ptr(), lookup.as_mut_ptr() as *mut AccountView) };
     let (_views, _dups) = unsafe { cursor.walk_n(1) };
-    let mut ctx: Context<NoAccounts> =
-        Context::new(&program_id, NoAccounts, (), &mut cursor, 2, MUT_MASK_SLOT0);
+    let mut ctx: Context<NoAccounts> = Context::new(
+        &program_id,
+        NoAccounts,
+        (),
+        &mut cursor,
+        2,
+        MutMask::Static(MUT_MASK_SLOT0),
+    );
 
     let first = ctx.remaining_accounts().expect("first call");
     let second = ctx.remaining_accounts().expect("second call");

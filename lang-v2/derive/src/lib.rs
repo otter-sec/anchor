@@ -468,6 +468,62 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             }
         }
     };
+    let dynamic_mut_mask_terms: Vec<proc_macro2::TokenStream> = fields
+        .iter()
+        .filter_map(|f| {
+            if f.contributes_active_mut_bit {
+                Some(quote::quote! { true })
+            } else {
+                parse::extract_nested_inner_type(&f.ty).map(|inner_ty| {
+                    quote::quote! {
+                        <#inner_ty as anchor_lang_v2::TryAccounts>::HAS_DYNAMIC_MUT_MASK
+                    }
+                })
+            }
+        })
+        .collect();
+    let has_dynamic_mut_mask_expr = if dynamic_mut_mask_terms.is_empty() {
+        quote::quote! { false }
+    } else {
+        quote::quote! {
+            false #(|| #dynamic_mut_mask_terms)*
+        }
+    };
+    let active_mut_mask_steps: Vec<proc_macro2::TokenStream> = fields
+        .iter()
+        .filter_map(|f| {
+            let field_name = &f.name;
+            let offset = &f.offset_expr;
+            if f.contributes_active_mut_bit {
+                Some(quote! {
+                    if self.#field_name.is_some() {
+                        __mask = anchor_lang_v2::mut_mask_set_bit(__mask, #offset);
+                    }
+                })
+            } else if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
+                Some(quote! {
+                    if <#inner_ty as anchor_lang_v2::TryAccounts>::HAS_DYNAMIC_MUT_MASK {
+                        __mask = anchor_lang_v2::mut_mask_or_shifted(
+                            __mask,
+                            <#inner_ty as anchor_lang_v2::TryAccounts>::active_mut_mask(&self.#field_name.0),
+                            #offset,
+                        );
+                    }
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+    let active_mut_mask_body = if active_mut_mask_steps.is_empty() {
+        quote::quote! { Self::MUT_MASK }
+    } else {
+        quote::quote! {
+            let mut __mask = Self::MUT_MASK;
+            #(#active_mut_mask_steps)*
+            __mask
+        }
+    };
 
     // IDL collection — the accounts-JSON emission is a runtime function
     // (not a `&'static str` const) so it can read
@@ -1158,6 +1214,12 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         impl anchor_lang_v2::TryAccounts for #name {
             const HEADER_SIZE: usize = #header_size_expr;
             const MUT_MASK: [u64; 4] = #mut_mask_expr;
+            const HAS_DYNAMIC_MUT_MASK: bool = #has_dynamic_mut_mask_expr;
+
+            #[inline(always)]
+            fn active_mut_mask(&self) -> [u64; 4] {
+                #active_mut_mask_body
+            }
 
             #ix_args_assoc
 
