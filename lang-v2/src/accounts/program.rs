@@ -31,7 +31,7 @@ impl<T: Id> Program<T> {
 impl<T: Id> AnchorAccount for Program<T> {
     type Data = AccountView;
     #[inline(always)]
-    fn load(view: AccountView, _program_id: &Address) -> Result<Self, ProgramError> {
+    fn load(view: AccountView) -> Result<Self, ProgramError> {
         #[cfg(feature = "guardrails")]
         require!(view.executable(), ProgramError::InvalidAccountData);
         let id = T::id();

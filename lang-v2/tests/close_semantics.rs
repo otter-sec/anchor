@@ -118,12 +118,10 @@ fn close_zeros_the_48_byte_header() {
     dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
     dest_buf.set_lamports(100);
 
-    let program_id = Address::new_from_array(PROGRAM_ID);
-
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view, &program_id) }.unwrap();
+        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
         vault.close(dest_view).unwrap();
     }
 
@@ -156,12 +154,10 @@ fn close_scrubs_discriminator_to_closed_sentinel() {
     let dest_buf = AccountBuffer::<256>::new();
     dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
 
-    let program_id = Address::new_from_array(PROGRAM_ID);
-
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view, &program_id) }.unwrap();
+        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
         vault.close(dest_view).unwrap();
     }
 
@@ -198,12 +194,10 @@ fn close_scrubs_discriminator_even_after_release_borrow() {
     let mut dest_buf = AccountBuffer::<256>::new();
     dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
 
-    let program_id = Address::new_from_array(PROGRAM_ID);
-
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view, &program_id) }.unwrap();
+        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
 
         // Simulate the handler committing state and dropping the guard
         // (e.g. pre-CPI) before close runs in exit_accounts.
@@ -230,19 +224,17 @@ fn load_after_close_rejects_with_data_too_small() {
     let dest_buf = AccountBuffer::<256>::new();
     dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
 
-    let program_id = Address::new_from_array(PROGRAM_ID);
-
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view, &program_id) }.unwrap();
+        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
         vault.close(dest_view).unwrap();
     }
 
     // Even though data bytes retain the disc, the framework rejects
     // because `data_len = 0` (< DISC_LEN=8 → AccountDataTooSmall).
     let view = unsafe { buf.view() };
-    let result = BorshAccount::<Vault>::load(view, &program_id);
+    let result = BorshAccount::<Vault>::load(view);
     assert!(
         result.is_err(),
         "BorshAccount::load must reject a closed account (owner is [0;32] != program_id, AND \
@@ -265,12 +257,10 @@ fn resurrected_account_reload_rejects_after_disc_scrub() {
     let dest_buf = AccountBuffer::<256>::new();
     dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
 
-    let program_id = Address::new_from_array(PROGRAM_ID);
-
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view, &program_id) }.unwrap();
+        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
         vault.close(dest_view).unwrap();
     }
 
@@ -285,7 +275,7 @@ fn resurrected_account_reload_rejects_after_disc_scrub() {
     // Post-fix: disc bytes are [u8::MAX; 8], which doesn't match
     // Vault::DISCRIMINATOR. Load must reject with InvalidAccountData.
     let view = unsafe { buf.view() };
-    let result = BorshAccount::<Vault>::load(view, &program_id);
+    let result = BorshAccount::<Vault>::load(view);
     assert!(
         result.is_err(),
         "Post-fix: reload must reject because scrubbed disc != Vault::DISCRIMINATOR"
@@ -329,9 +319,8 @@ fn create_account_zeroes_data_on_allocation() {
 
     // After this correct SVM behavior, the first 8 data bytes are
     // zero — no valid discriminator. Load rejects.
-    let program_id = Address::new_from_array(PROGRAM_ID);
     let view = unsafe { buf.view() };
-    let result = BorshAccount::<Vault>::load(view, &program_id);
+    let result = BorshAccount::<Vault>::load(view);
     assert!(
         result.is_err(),
         "after create_account's SVM-mandated zero-on-allocate, load must reject (data[..8] = [0; \
@@ -389,12 +378,10 @@ fn slab_close_scrubs_discriminator_to_closed_sentinel() {
     let mut dest_buf = AccountBuffer::<256>::new();
     dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
 
-    let program_id = Address::new_from_array(PROGRAM_ID);
-
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view, &program_id) }.unwrap();
+        let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
         counter.close(dest_view).unwrap();
     }
 
@@ -417,11 +404,9 @@ fn slab_close_flips_is_mutable_so_deref_mut_panics() {
 
     let mut dest_buf = AccountBuffer::<256>::new();
     dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
-
-    let program_id = Address::new_from_array(PROGRAM_ID);
     let view = unsafe { buf.view() };
     let dest_view = unsafe { dest_buf.view() };
-    let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view, &program_id) }.unwrap();
+    let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
     counter.close(dest_view).unwrap();
 
     // Post-close: is_mutable should be flipped to false. DerefMut must
@@ -438,12 +423,10 @@ fn slab_resurrected_account_reload_rejects_after_disc_scrub() {
     let mut dest_buf = AccountBuffer::<256>::new();
     dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
 
-    let program_id = Address::new_from_array(PROGRAM_ID);
-
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view, &program_id) }.unwrap();
+        let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
         counter.close(dest_view).unwrap();
     }
 
@@ -457,7 +440,7 @@ fn slab_resurrected_account_reload_rejects_after_disc_scrub() {
     }
 
     let view = unsafe { buf.view() };
-    let result = Slab::<CounterHeader>::load(view, &program_id);
+    let result = Slab::<CounterHeader>::load(view);
     assert!(
         result.is_err(),
         "Post-fix: reload must reject because scrubbed disc != CounterHeader::DISCRIMINATOR"

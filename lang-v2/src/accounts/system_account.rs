@@ -19,7 +19,7 @@ impl SystemAccount {
 impl AnchorAccount for SystemAccount {
     type Data = AccountView;
     #[inline(always)]
-    fn load(view: AccountView, _program_id: &Address) -> Result<Self, ProgramError> {
+    fn load(view: AccountView) -> Result<Self, ProgramError> {
         require!(view.owned_by(&System::id()), ProgramError::IllegalOwner);
         Ok(Self { view })
     }

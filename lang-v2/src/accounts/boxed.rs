@@ -12,27 +12,24 @@ impl<T: AnchorAccount> AnchorAccount for Box<T> {
     const IS_SIGNER: bool = T::IS_SIGNER;
     const MIN_DATA_LEN: usize = T::MIN_DATA_LEN;
 
-    fn load(view: AccountView, program_id: &Address) -> Result<Self, ProgramError> {
-        T::load(view, program_id).map(Box::new)
+    fn load(view: AccountView) -> Result<Self, ProgramError> {
+        T::load(view).map(Box::new)
     }
 
     /// # Safety
     ///
     /// See [`AnchorAccount::load_mut`] — caller must ensure no other live
     /// `&mut` to the same account data exists.
-    unsafe fn load_mut(view: AccountView, program_id: &Address) -> Result<Self, ProgramError> {
-        T::load_mut(view, program_id).map(Box::new)
+    unsafe fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
+        T::load_mut(view).map(Box::new)
     }
 
     /// # Safety
     ///
     /// See [`AnchorAccount::load_mut_after_init`] — caller must ensure no
     /// other live `&mut` to the same account data exists.
-    unsafe fn load_mut_after_init(
-        view: AccountView,
-        program_id: &Address,
-    ) -> Result<Self, ProgramError> {
-        T::load_mut_after_init(view, program_id).map(Box::new)
+    unsafe fn load_mut_after_init(view: AccountView) -> Result<Self, ProgramError> {
+        T::load_mut_after_init(view).map(Box::new)
     }
 
     fn account(&self) -> &AccountView {
@@ -105,12 +102,11 @@ impl<T: AccountInitialize> AccountInitialize for Box<T> {
         payer: &AccountView,
         account: &AccountView,
         space: usize,
-        program_id: &Address,
+        owner: &Address,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
     ) -> Result<Self, ProgramError> {
-        T::create_and_initialize(payer, account, space, program_id, params, signer_seeds)
-            .map(Box::new)
+        T::create_and_initialize(payer, account, space, owner, params, signer_seeds).map(Box::new)
     }
 }
 

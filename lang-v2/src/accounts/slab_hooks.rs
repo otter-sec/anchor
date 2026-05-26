@@ -7,7 +7,7 @@
 
 use {
     crate::{require, require_eq, Discriminator, Owner},
-    pinocchio::{account::AccountView, address::Address},
+    pinocchio::account::AccountView,
     solana_program_error::ProgramError,
 };
 
@@ -27,7 +27,7 @@ pub trait SlabSchema {
     /// Minimum account data length that can contain `Self` at `DATA_OFFSET`.
     const MIN_DATA_LEN: usize;
 
-    fn validate(view: &AccountView, data: &[u8], program_id: &Address) -> Result<(), ProgramError>;
+    fn validate(view: &AccountView, data: &[u8]) -> Result<(), ProgramError>;
 }
 
 impl<T: Owner + Discriminator> SlabSchema for T {
@@ -38,7 +38,7 @@ impl<T: Owner + Discriminator> SlabSchema for T {
     };
 
     #[inline(always)]
-    fn validate(view: &AccountView, data: &[u8], program_id: &Address) -> Result<(), ProgramError> {
+    fn validate(view: &AccountView, data: &[u8]) -> Result<(), ProgramError> {
         require!(view.owned_by(&T::OWNER), super::slab::cold_owner_error(view));
         let disc = T::DISCRIMINATOR;
         if data.len() < Self::MIN_DATA_LEN {
@@ -62,7 +62,6 @@ pub trait SlabInit {
         payer: &AccountView,
         account: &AccountView,
         space: usize,
-        program_id: &Address,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
     ) -> Result<(), ProgramError>;
@@ -76,14 +75,13 @@ impl<T: Owner + Discriminator> SlabInit for T {
         payer: &AccountView,
         account: &AccountView,
         space: usize,
-        program_id: &Address,
         _params: &(),
         signer_seeds: Option<&[&[u8]]>,
     ) -> Result<(), ProgramError> {
         let disc = T::DISCRIMINATOR;
         match signer_seeds {
-            Some(seeds) => crate::create_account_signed(payer, account, space, program_id, seeds)?,
-            None => crate::create_account(payer, account, space, program_id)?,
+            Some(seeds) => crate::create_account_signed(payer, account, space, &T::OWNER, seeds)?,
+            None => crate::create_account(payer, account, space, &T::OWNER)?,
         }
         let mut account_view = *account;
         let data = unsafe { account_view.borrow_unchecked_mut() };

@@ -148,11 +148,7 @@ impl SlabSchema for Interface<crate::TokenAccount> {
     const MIN_DATA_LEN: usize = core::mem::size_of::<Self>();
 
     #[inline(always)]
-    fn validate(
-        view: &AccountView,
-        data: &[u8],
-        _program_id: &Address,
-    ) -> Result<(), ProgramError> {
+    fn validate(view: &AccountView, data: &[u8]) -> Result<(), ProgramError> {
         require!(
             view.owned_by(&Token::id()) || view.owned_by(&Token2022Program::id()),
             ProgramError::IllegalOwner
@@ -172,11 +168,7 @@ impl SlabSchema for Interface<crate::Mint> {
     const MIN_DATA_LEN: usize = core::mem::size_of::<Self>();
 
     #[inline(always)]
-    fn validate(
-        view: &AccountView,
-        data: &[u8],
-        _program_id: &Address,
-    ) -> Result<(), ProgramError> {
+    fn validate(view: &AccountView, data: &[u8]) -> Result<(), ProgramError> {
         require!(
             view.owned_by(&Token::id()) || view.owned_by(&Token2022Program::id()),
             ProgramError::IllegalOwner
@@ -230,7 +222,6 @@ impl SlabInit for Interface<crate::TokenAccount> {
         payer: &AccountView,
         account: &AccountView,
         _space: usize,
-        _program_id: &Address,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
     ) -> Result<(), ProgramError> {
@@ -279,7 +270,6 @@ impl SlabInit for Interface<crate::Mint> {
         payer: &AccountView,
         account: &AccountView,
         _space: usize,
-        _program_id: &Address,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
     ) -> Result<(), ProgramError> {

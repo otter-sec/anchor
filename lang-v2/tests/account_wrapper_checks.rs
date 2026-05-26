@@ -32,10 +32,6 @@ use {
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
 const SYSTEM_PROGRAM_ID: [u8; 32] = [0u8; 32];
 
-fn program_id() -> Address {
-    Address::new_from_array(PROGRAM_ID)
-}
-
 #[derive(SchemaRead, SchemaWrite, Default)]
 struct Counter {
     value: u64,
@@ -72,9 +68,7 @@ struct ShortDiscBytes {
 }
 
 impl Owner for ShortDiscBytes {
-    fn owner(program_id: &Address) -> Address {
-        *program_id
-    }
+    const OWNER: Address = Address::new_from_array(PROGRAM_ID);
 }
 
 impl Discriminator for ShortDiscBytes {
@@ -88,9 +82,7 @@ struct LongDiscCounter {
 }
 
 impl Owner for LongDiscCounter {
-    fn owner(program_id: &Address) -> Address {
-        *program_id
-    }
+    const OWNER: Address = Address::new_from_array(PROGRAM_ID);
 }
 
 impl Discriminator for LongDiscCounter {
@@ -158,7 +150,7 @@ fn signer_load_rejects_non_signer() {
         false,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(Signer::load(view, &program_id()));
+    let err = expect_err(Signer::load(view));
     assert_eq!(err, ProgramError::MissingRequiredSignature);
 }
 
@@ -174,7 +166,7 @@ fn signer_load_accepts_signer() {
         false,
     );
     let view = unsafe { buf.view() };
-    let signer = Signer::load(view, &program_id()).unwrap();
+    let signer = Signer::load(view).unwrap();
     assert_eq!(signer.address().to_bytes(), [0x01; 32]);
 }
 
@@ -183,7 +175,7 @@ fn signer_load_mut_rejects_non_signer_non_writable() {
     let mut buf = AccountBuffer::<128>::new();
     buf.init([0x01; 32], SYSTEM_PROGRAM_ID, 0, false, false, false);
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { Signer::load_mut(view, &program_id()) });
+    let err = expect_err(unsafe { Signer::load_mut(view) });
     // Fused check: either flag missing maps to ConstraintSigner.
     assert_eq!(err, ErrorCode::ConstraintSigner.into());
 }
@@ -200,7 +192,7 @@ fn signer_load_mut_rejects_signer_without_writable() {
         false,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { Signer::load_mut(view, &program_id()) });
+    let err = expect_err(unsafe { Signer::load_mut(view) });
     assert_eq!(err, ErrorCode::ConstraintSigner.into());
 }
 
@@ -216,7 +208,7 @@ fn signer_load_mut_rejects_writable_without_signer() {
         false,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { Signer::load_mut(view, &program_id()) });
+    let err = expect_err(unsafe { Signer::load_mut(view) });
     assert_eq!(err, ErrorCode::ConstraintSigner.into());
 }
 
@@ -232,7 +224,7 @@ fn signer_load_mut_accepts_signer_and_writable() {
         false,
     );
     let view = unsafe { buf.view() };
-    let signer = unsafe { Signer::load_mut(view, &program_id()) }.unwrap();
+    let signer = unsafe { Signer::load_mut(view) }.unwrap();
     assert_eq!(signer.address().to_bytes(), [0x01; 32]);
 }
 
@@ -244,7 +236,7 @@ fn system_account_load_rejects_non_system_owner() {
     // Owner = [0x42; 32] (program_id), not the all-zero System program id.
     buf.init([0x01; 32], PROGRAM_ID, 0, false, false, false);
     let view = unsafe { buf.view() };
-    let err = expect_err(SystemAccount::load(view, &program_id()));
+    let err = expect_err(SystemAccount::load(view));
     assert_eq!(err, ProgramError::IllegalOwner);
 }
 
@@ -253,7 +245,7 @@ fn system_account_load_accepts_system_owner() {
     let mut buf = AccountBuffer::<128>::new();
     buf.init([0x01; 32], SYSTEM_PROGRAM_ID, 0, false, false, false);
     let view = unsafe { buf.view() };
-    let sa = SystemAccount::load(view, &program_id()).unwrap();
+    let sa = SystemAccount::load(view).unwrap();
     assert_eq!(sa.address().to_bytes(), [0x01; 32]);
 }
 
@@ -268,7 +260,7 @@ fn system_account_default_load_mut_rejects_non_writable() {
         [0x01; 32], PROGRAM_ID, 0, false, /*writable*/ false, false,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { SystemAccount::load_mut(view, &program_id()) });
+    let err = expect_err(unsafe { SystemAccount::load_mut(view) });
     assert_eq!(err, ErrorCode::ConstraintMut.into());
 }
 
@@ -280,7 +272,7 @@ fn system_account_default_load_mut_rejects_writable_wrong_owner() {
         [0x01; 32], PROGRAM_ID, 0, false, /*writable*/ true, false,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { SystemAccount::load_mut(view, &program_id()) });
+    let err = expect_err(unsafe { SystemAccount::load_mut(view) });
     assert_eq!(err, ProgramError::IllegalOwner);
 }
 
@@ -294,7 +286,7 @@ fn unchecked_account_load_accepts_anything() {
     let mut buf = AccountBuffer::<128>::new();
     buf.init([0xAB; 32], [0x99; 32], 0, false, false, false);
     let view = unsafe { buf.view() };
-    let ua = UncheckedAccount::load(view, &program_id()).unwrap();
+    let ua = UncheckedAccount::load(view).unwrap();
     assert_eq!(ua.address().to_bytes(), [0xAB; 32]);
 }
 
@@ -305,7 +297,7 @@ fn unchecked_account_default_load_mut_rejects_non_writable() {
         [0xAB; 32], [0x99; 32], 0, false, /*writable*/ false, false,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { UncheckedAccount::load_mut(view, &program_id()) });
+    let err = expect_err(unsafe { UncheckedAccount::load_mut(view) });
     assert_eq!(err, ErrorCode::ConstraintMut.into());
 }
 
@@ -316,7 +308,7 @@ fn unchecked_account_load_mut_accepts_writable() {
         [0xAB; 32], [0x99; 32], 0, false, /*writable*/ true, false,
     );
     let view = unsafe { buf.view() };
-    let ua = unsafe { UncheckedAccount::load_mut(view, &program_id()) }.unwrap();
+    let ua = unsafe { UncheckedAccount::load_mut(view) }.unwrap();
     assert_eq!(ua.address().to_bytes(), [0xAB; 32]);
 }
 
@@ -330,7 +322,8 @@ fn unchecked_account_close_constraint_fails_at_runtime() {
 
     let views = [unsafe { data_buf.view() }, unsafe { receiver_buf.view() }];
     let (mut accounts, _, _) =
-        CloseUnchecked::try_accounts(&program_id(), &views, None, 0, &[]).unwrap();
+        CloseUnchecked::try_accounts(&Address::new_from_array(PROGRAM_ID), &views, None, 0, &[])
+            .unwrap();
 
     let err = expect_err(accounts.exit_accounts());
     assert_eq!(err, ProgramError::InvalidArgument);
@@ -346,7 +339,7 @@ fn program_load_rejects_wrong_address() {
         [0x01; 32], [0u8; 32], 0, false, false, /*executable*/ true,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(Program::<System>::load(view, &program_id()));
+    let err = expect_err(Program::<System>::load(view));
     assert_eq!(err, ProgramError::IncorrectProgramId);
 }
 
@@ -358,7 +351,7 @@ fn program_load_accepts_matching_system_address() {
         [0u8; 32], [0u8; 32], 0, false, false, /*executable*/ true,
     );
     let view = unsafe { buf.view() };
-    let p = Program::<System>::load(view, &program_id()).unwrap();
+    let p = Program::<System>::load(view).unwrap();
     assert_eq!(p.address().to_bytes(), [0u8; 32]);
 }
 
@@ -371,7 +364,7 @@ fn program_load_rejects_non_executable_under_guardrails() {
         [0u8; 32], [0u8; 32], 0, false, false, /*executable*/ false,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(Program::<System>::load(view, &program_id()));
+    let err = expect_err(Program::<System>::load(view));
     assert_eq!(err, ProgramError::InvalidAccountData);
 }
 
@@ -383,7 +376,7 @@ fn program_load_token_wrong_address_rejects() {
         [0x01; 32], [0u8; 32], 0, false, false, /*executable*/ true,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(Program::<Token>::load(view, &program_id()));
+    let err = expect_err(Program::<Token>::load(view));
     assert_eq!(err, ProgramError::IncorrectProgramId);
 }
 
@@ -396,10 +389,7 @@ fn sysvar_load_rejects_wrong_address() {
     let mut buf = AccountBuffer::<128>::new();
     buf.init([0x01; 32], [0u8; 32], 0, false, false, false);
     let view = unsafe { buf.view() };
-    let err = expect_err(Sysvar::<pinocchio::sysvars::clock::Clock>::load(
-        view,
-        &program_id(),
-    ));
+    let err = expect_err(Sysvar::<pinocchio::sysvars::clock::Clock>::load(view));
     assert_eq!(err, ProgramError::InvalidArgument);
 }
 
@@ -410,7 +400,7 @@ fn account_load_accepts_valid_owner_and_discriminator() {
     let mut buf = AccountBuffer::<128>::new();
     setup_pod_counter_buf(&mut buf, PROGRAM_ID, false, 17);
     let view = unsafe { buf.view() };
-    let acct = Account::<PodCounter>::load(view, &program_id()).unwrap();
+    let acct = Account::<PodCounter>::load(view).unwrap();
     assert_eq!(acct.value, 17);
 }
 
@@ -441,7 +431,7 @@ fn account_load_uses_short_discriminator_len_as_data_offset() {
     buf.write_data(&data);
 
     let view = unsafe { buf.view() };
-    let acct = Account::<ShortDiscBytes>::load(view, &program_id()).unwrap();
+    let acct = Account::<ShortDiscBytes>::load(view).unwrap();
     assert_eq!(acct.value, [1, 2, 3, 4]);
 }
 
@@ -471,7 +461,7 @@ fn account_load_uses_long_discriminator_len_as_data_offset() {
     buf.write_data(&data);
 
     let view = unsafe { buf.view() };
-    let acct = Account::<LongDiscCounter>::load(view, &program_id()).unwrap();
+    let acct = Account::<LongDiscCounter>::load(view).unwrap();
     assert_eq!(acct.value, 123);
 }
 
@@ -481,7 +471,7 @@ fn account_load_mut_rejects_non_writable() {
     let mut buf = AccountBuffer::<128>::new();
     setup_pod_counter_buf(&mut buf, PROGRAM_ID, false, 17);
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { Account::<PodCounter>::load_mut(view, &program_id()) });
+    let err = expect_err(unsafe { Account::<PodCounter>::load_mut(view) });
     assert_eq!(err, ProgramError::InvalidAccountData);
 }
 
@@ -494,7 +484,7 @@ fn account_deref_mut_panics_when_loaded_read_only() {
     let mut buf = AccountBuffer::<128>::new();
     setup_pod_counter_buf(&mut buf, PROGRAM_ID, false, 17);
     let view = unsafe { buf.view() };
-    let mut acct = Account::<PodCounter>::load(view, &program_id()).unwrap();
+    let mut acct = Account::<PodCounter>::load(view).unwrap();
     acct.value = 18;
 }
 
@@ -505,7 +495,7 @@ fn borsh_account_load_accepts_valid_owner_and_discriminator() {
     let mut buf = AccountBuffer::<128>::new();
     setup_borsh_counter_buf(&mut buf, PROGRAM_ID, false, 9);
     let view = unsafe { buf.view() };
-    let acct = BorshAccount::<Counter>::load(view, &program_id()).unwrap();
+    let acct = BorshAccount::<Counter>::load(view).unwrap();
     assert_eq!(acct.value, 9);
 }
 
@@ -515,7 +505,7 @@ fn borsh_account_load_mut_rejects_non_writable() {
     let mut buf = AccountBuffer::<128>::new();
     setup_borsh_counter_buf(&mut buf, PROGRAM_ID, false, 9);
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { BorshAccount::<Counter>::load_mut(view, &program_id()) });
+    let err = expect_err(unsafe { BorshAccount::<Counter>::load_mut(view) });
     assert_eq!(err, ProgramError::InvalidAccountData);
 }
 
@@ -524,7 +514,7 @@ fn borsh_account_load_rejects_wrong_owner() {
     let mut buf = AccountBuffer::<128>::new();
     setup_borsh_counter_buf(&mut buf, [0x99; 32], true, 9);
     let view = unsafe { buf.view() };
-    let err = expect_err(BorshAccount::<Counter>::load(view, &program_id()));
+    let err = expect_err(BorshAccount::<Counter>::load(view));
     assert_eq!(err, ProgramError::IllegalOwner);
 }
 
@@ -533,7 +523,7 @@ fn borsh_account_load_mut_accepts_writable_account() {
     let mut buf = AccountBuffer::<128>::new();
     setup_borsh_counter_buf(&mut buf, PROGRAM_ID, true, 9);
     let view = unsafe { buf.view() };
-    let acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id()) }.unwrap();
+    let acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
     assert_eq!(acct.value, 9);
 }
 
@@ -543,6 +533,6 @@ fn borsh_account_deref_mut_panics_when_loaded_read_only() {
     let mut buf = AccountBuffer::<128>::new();
     setup_borsh_counter_buf(&mut buf, PROGRAM_ID, false, 9);
     let view = unsafe { buf.view() };
-    let mut acct = BorshAccount::<Counter>::load(view, &program_id()).unwrap();
+    let mut acct = BorshAccount::<Counter>::load(view).unwrap();
     acct.value = 10;
 }

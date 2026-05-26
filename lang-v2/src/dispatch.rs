@@ -78,7 +78,7 @@ pub fn run_handler<'a, T: TryAccounts, R>(
         return Err(crate::ErrorCode::AccountNotEnoughKeys.into());
     }
     let (ctx_accounts, bumps, ix_args) = {
-        let mut loader = AccountLoader::new(program_id, cursor);
+        let mut loader = AccountLoader::new(cursor);
         let (views, duplicates) = loader.walk_n(T::HEADER_SIZE);
         // Single AND+test across the whole struct tree — replaces the
         // per-mut-field `__duplicates.get()` checks the derive used to

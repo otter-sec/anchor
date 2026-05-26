@@ -57,7 +57,7 @@ fn setup_counter_buffer() -> AccountBuffer<128> {
     let data_len = 8 + core::mem::size_of::<Counter>();
     buf.init(
         [0xAA; 32], // address
-        PROGRAM_ID, // owner = Counter::owner(program_id) = program_id
+        PROGRAM_ID, // owner = Counter::OWNER
         data_len, /*is_signer*/ false, /*is_writable*/ true, /*executable*/ false,
     );
     // Write the discriminator into the first 8 bytes of data.
@@ -74,8 +74,7 @@ fn setup_counter_buffer() -> AccountBuffer<128> {
 fn load_succeeds_with_correct_disc_and_owner() {
     let buf = setup_counter_buffer();
     let view = unsafe { buf.view() };
-    let program_id = Address::new_from_array(PROGRAM_ID);
-    let acct = CounterAccount::load(view, &program_id).unwrap();
+    let acct = CounterAccount::load(view).unwrap();
     assert_eq!(acct.value, 0);
     assert_eq!(acct.bump, 0);
 }
@@ -94,8 +93,7 @@ fn load_rejects_wrong_owner() {
     buf.write_data(&data);
 
     let view = unsafe { buf.view() };
-    let program_id = Address::new_from_array(PROGRAM_ID);
-    assert!(CounterAccount::load(view, &program_id).is_err());
+    assert!(CounterAccount::load(view).is_err());
 }
 
 #[test]
@@ -109,8 +107,7 @@ fn load_rejects_wrong_disc() {
     buf.write_data(&data);
 
     let view = unsafe { buf.view() };
-    let program_id = Address::new_from_array(PROGRAM_ID);
-    assert!(CounterAccount::load(view, &program_id).is_err());
+    assert!(CounterAccount::load(view).is_err());
 }
 
 // -- The header_ptr provenance witness --------------------------------
@@ -125,17 +122,16 @@ fn load_rejects_wrong_disc() {
 fn load_mut_deref_mut_writes_propagate_to_bytes() {
     let buf = setup_counter_buffer();
     let view = unsafe { buf.view() };
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     {
-        let mut acct = unsafe { CounterAccount::load_mut(view, &program_id) }.unwrap();
+        let mut acct = unsafe { CounterAccount::load_mut(view) }.unwrap();
         acct.value = 0xDEADBEEF;
         acct.bump = 0xAB;
     } // acct drops here
 
     // Re-read through a fresh load to verify the writes hit the buffer.
     let view2 = unsafe { buf.view() };
-    let acct2 = CounterAccount::load(view2, &program_id).unwrap();
+    let acct2 = CounterAccount::load(view2).unwrap();
     assert_eq!(acct2.value, 0xDEADBEEF);
     assert_eq!(acct2.bump, 0xAB);
 }
@@ -148,16 +144,15 @@ fn load_mut_deref_mut_writes_propagate_to_bytes() {
 #[test]
 fn drop_mut_then_load_immutable_sees_writes() {
     let buf = setup_counter_buffer();
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { CounterAccount::load_mut(view, &program_id) }.unwrap();
+        let mut acct = unsafe { CounterAccount::load_mut(view) }.unwrap();
         acct.value = 99;
     }
 
     let view = unsafe { buf.view() };
-    let acct = CounterAccount::load(view, &program_id).unwrap();
+    let acct = CounterAccount::load(view).unwrap();
     assert_eq!(acct.value, 99);
 }
 
@@ -166,16 +161,15 @@ fn drop_mut_then_load_immutable_sees_writes() {
 #[test]
 fn multiple_mut_load_cycles_preserve_state() {
     let buf = setup_counter_buffer();
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     for i in 0u64..20 {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { CounterAccount::load_mut(view, &program_id) }.unwrap();
+        let mut acct = unsafe { CounterAccount::load_mut(view) }.unwrap();
         acct.value = i * 10;
         drop(acct);
 
         let view_r = unsafe { buf.view() };
-        let acct_r = CounterAccount::load(view_r, &program_id).unwrap();
+        let acct_r = CounterAccount::load(view_r).unwrap();
         assert_eq!(acct_r.value, i * 10);
     }
 }

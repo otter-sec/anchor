@@ -1128,14 +1128,13 @@ impl SlabSchema for BadHeader {
     fn validate(
         _view: &AccountView,
         _data: &[u8],
-        _program_id: &Address,
     ) -> core::result::Result<(), ProgramError> {
         Ok(())
     }
 }
 
-pub unsafe fn load_bad(view: AccountView, program_id: &Address) {
-    let _ = <Slab<BadHeader> as AnchorAccount>::load_mut(view, program_id);
+pub unsafe fn load_bad(view: AccountView) {
+    let _ = <Slab<BadHeader> as AnchorAccount>::load_mut(view);
 }
 "#,
     )
@@ -1170,14 +1169,13 @@ impl SlabSchema for BadHeader {
     fn validate(
         _view: &AccountView,
         _data: &[u8],
-        _program_id: &Address,
     ) -> core::result::Result<(), ProgramError> {
         Ok(())
     }
 }
 
-pub unsafe fn load_bad(view: AccountView, program_id: &Address) {
-    let _ = <Slab<BadHeader> as AnchorAccount>::load_mut(view, program_id);
+pub unsafe fn load_bad(view: AccountView) {
+    let _ = <Slab<BadHeader> as AnchorAccount>::load_mut(view);
 }
 "#,
     )
@@ -1356,9 +1354,7 @@ pub struct Data {
 }
 
 impl Owner for Data {
-    fn owner(program_id: &Address) -> Address {
-        *program_id
-    }
+    const OWNER: Address = Address::from_str_const("11111111111111111111111111111111");
 }
 
 impl Discriminator for Data {

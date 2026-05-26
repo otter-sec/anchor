@@ -3,28 +3,27 @@ use {
         cursor::{AccountBitvec, AccountCursor},
         AnchorAccount,
     },
-    pinocchio::{account::AccountView, address::Address},
+    pinocchio::account::AccountView,
     solana_program_error::ProgramError,
 };
 
 /// Sequential account loader for `#[derive(Accounts)]`.
 ///
-/// Thin wrapper around an [`AccountCursor`] and a borrowed `program_id`.
-/// The dispatcher bulk-walks the declared account region with [`Self::walk_n`],
-/// and specialized init paths can still walk individual accounts through
-/// `next_view` / `load_next` / `next_mut`.
+/// Thin wrapper around an [`AccountCursor`]. The dispatcher bulk-walks the
+/// declared account region with [`Self::walk_n`], and specialized init paths
+/// can still walk individual accounts through `next_view` / `load_next` /
+/// `next_mut`.
 ///
 /// Bounds checking is done before the declared-region walk: the dispatcher has
 /// already verified `num_accounts >= T::HEADER_SIZE`.
 pub struct AccountLoader<'a> {
-    program_id: &'a Address,
     cursor: &'a mut AccountCursor,
 }
 
 impl<'a> AccountLoader<'a> {
     #[inline(always)]
-    pub fn new(program_id: &'a Address, cursor: &'a mut AccountCursor) -> Self {
-        Self { program_id, cursor }
+    pub fn new(cursor: &'a mut AccountCursor) -> Self {
+        Self { cursor }
     }
 
     #[inline(always)]
@@ -58,7 +57,7 @@ impl<'a> AccountLoader<'a> {
     #[inline(always)]
     pub fn load_next<T: AnchorAccount>(&mut self) -> Result<T, ProgramError> {
         let view = unsafe { self.cursor.next() };
-        T::load(view, self.program_id)
+        T::load(view)
     }
 
     /// Walk + `T::load_mut()` the next account.
@@ -70,6 +69,6 @@ impl<'a> AccountLoader<'a> {
     #[inline(always)]
     pub unsafe fn next_mut<T: AnchorAccount>(&mut self) -> Result<T, ProgramError> {
         let view = self.cursor.next();
-        T::load_mut(view, self.program_id)
+        T::load_mut(view)
     }
 }

@@ -15,10 +15,6 @@ use {
 
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
 
-fn program_id() -> Address {
-    Address::new_from_array(PROGRAM_ID)
-}
-
 #[derive(SchemaRead, SchemaWrite, Default, Clone)]
 struct Counter {
     value: u64,
@@ -62,7 +58,7 @@ fn borsh_account_get_add_and_sub_lamports() {
     setup_counter_buf(&mut buf);
 
     let view = unsafe { buf.view() };
-    let account = BorshAccount::<Counter>::load(view, &program_id()).unwrap();
+    let account = BorshAccount::<Counter>::load(view).unwrap();
     assert_eq!(account.get_lamports(), 100);
 
     account.add_lamports(900).unwrap();

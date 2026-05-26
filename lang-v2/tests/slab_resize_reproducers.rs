@@ -111,10 +111,9 @@ fn slab_realloc_rejects_shrink_below_typed_header_layout() {
     let buf = setup_counter_account();
     let payer = AccountBuffer::<128>::new();
     payer.init([0xCC; 32], PROGRAM_ID, 0, true, true, false);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut account = unsafe { CounterAccount::load_mut(view, &program_id) }.unwrap();
+    let mut account = unsafe { CounterAccount::load_mut(view) }.unwrap();
     let payer_view = unsafe { payer.view() };
 
     let err = account
@@ -133,10 +132,9 @@ fn slab_realloc_clamps_tail_len_to_resized_capacity() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
     let payer = AccountBuffer::<128>::new();
     payer.init([0xCC; 32], PROGRAM_ID, 0, true, true, false);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
     let payer_view = unsafe { payer.view() };
 
     slab.realloc_account(ITEMS_OFFSET + ITEM_SIZE, payer_view, false)
@@ -144,7 +142,7 @@ fn slab_realloc_clamps_tail_len_to_resized_capacity() {
 
     assert_eq!(slab.capacity(), 1);
     assert_eq!(slab.len(), 1);
-    assert_eq!(CounterLedger::load(view, &program_id).unwrap().len(), 1);
+    assert_eq!(CounterLedger::load(view).unwrap().len(), 1);
 }
 
 // -- `load_mut` rejects a buffer shrunk below ITEMS_OFFSET -----------
@@ -152,11 +150,10 @@ fn slab_realloc_clamps_tail_len_to_resized_capacity() {
 #[test]
 fn load_mut_rejects_data_len_below_items_offset() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 0);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     // Load succeeds — data_len (60) > ITEMS_OFFSET (28).
     let view = unsafe { buf.view() };
-    let slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
     assert_eq!(slab.capacity(), 4);
     assert_eq!(slab.len(), 0);
     drop(slab);
@@ -170,7 +167,7 @@ fn load_mut_rejects_data_len_below_items_offset() {
     // this? `slab.rs:596` checks `data.len() < Self::ITEMS_OFFSET` —
     // returns AccountDataTooSmall. Good — `load_mut` catches it.
     let view2 = unsafe { buf.view() };
-    let reload = unsafe { CounterLedger::load_mut(view2, &program_id) };
+    let reload = unsafe { CounterLedger::load_mut(view2) };
     assert!(
         reload.is_err(),
         "load_mut should reject data_len < ITEMS_OFFSET — if it doesn't, the subsequent \
@@ -182,20 +179,18 @@ fn load_mut_rejects_data_len_below_items_offset() {
 fn load_rejects_len_greater_than_capacity_via_from_ref_validate_tail() {
     let buf = setup_ledger(/*capacity*/ 1, /*len*/ 2);
     let mut buf = buf;
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let result = CounterLedger::load(view, &program_id);
+    let result = CounterLedger::load(view);
     assert_eq!(result.err(), Some(ProgramError::InvalidAccountData));
 }
 
 #[test]
 fn load_mut_rejects_len_greater_than_capacity_via_validate_tail() {
     let mut buf = setup_ledger(/*capacity*/ 1, /*len*/ 2);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let result = unsafe { CounterLedger::load_mut(view, &program_id) };
+    let result = unsafe { CounterLedger::load_mut(view) };
     assert_eq!(result.err(), Some(ProgramError::InvalidAccountData));
 }
 
@@ -205,10 +200,9 @@ fn load_mut_rejects_len_greater_than_capacity_via_validate_tail() {
 #[test]
 fn capacity_returns_zero_when_data_len_below_items_offset() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 0);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
     assert_eq!(slab.capacity(), 4);
 
     // External resize shrinks buffer while we still hold `slab`.
@@ -225,10 +219,9 @@ fn capacity_returns_zero_when_data_len_below_items_offset() {
 fn as_slice_clamps_len_to_capacity_after_external_shrink() {
     // Buffer with capacity 4, populated with 3 items (len=3).
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
     assert_eq!(slab.len(), 3);
     assert_eq!(slab.capacity(), 4);
 
@@ -253,10 +246,9 @@ fn as_slice_clamps_len_to_capacity_after_external_shrink() {
 #[test]
 fn pop_after_external_shrink_uses_effective_len() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
     assert_eq!(slab.len(), 3);
     assert_eq!(slab.capacity(), 4);
 
@@ -277,10 +269,9 @@ fn pop_after_external_shrink_uses_effective_len() {
 #[test]
 fn swap_remove_after_external_shrink_uses_effective_len() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
 
     // Shrink: capacity drops to 2 with the slab still in scope.
     buf.set_data_len((ITEMS_OFFSET + 2 * ITEM_SIZE) as u64);
@@ -296,10 +287,9 @@ fn swap_remove_after_external_shrink_uses_effective_len() {
 #[should_panic(expected = "swap_remove index out of bounds")]
 fn swap_remove_panics_when_index_geq_effective_len() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
 
     // Shrink: capacity drops to 1 with the slab still in scope.
     buf.set_data_len((ITEMS_OFFSET + ITEM_SIZE) as u64);
@@ -314,10 +304,9 @@ fn swap_remove_panics_when_index_geq_effective_len() {
 )]
 fn clear_panics_when_tail_mutation_uses_guard_bytes_mut_on_read_only_slab() {
     let mut buf = setup_ledger(/*capacity*/ 2, /*len*/ 1);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut slab = CounterLedger::load(view, &program_id).unwrap();
+    let mut slab = CounterLedger::load(view).unwrap();
     slab.clear();
 }
 
@@ -326,10 +315,9 @@ fn clear_panics_when_tail_mutation_uses_guard_bytes_mut_on_read_only_slab() {
 #[test]
 fn truncate_clamps_to_effective_len_after_shrink() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
 
     // Shrink while slab is in scope.
     buf.set_data_len((ITEMS_OFFSET + ITEM_SIZE) as u64);
@@ -352,10 +340,9 @@ fn truncate_clamps_to_effective_len_after_shrink() {
 #[test]
 fn slab_resize_to_capacity_clamps_len() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
     assert_eq!(slab.len(), 3);
 
     // This is a smoke test for the defensive pattern. It also documents
@@ -375,10 +362,9 @@ fn slab_resize_to_capacity_clamps_len() {
 #[test]
 fn min_lamports_matches_rent_helper_for_current_space() {
     let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 1);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
 
     assert_eq!(slab.current_space(), ITEMS_OFFSET + 4 * ITEM_SIZE);
     assert_eq!(
@@ -390,7 +376,6 @@ fn min_lamports_matches_rent_helper_for_current_space() {
 #[test]
 fn refund_moves_excess_lamports_to_recipient() {
     let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 1);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let required = expected_min_lamports(ITEMS_OFFSET + 4 * ITEM_SIZE).unwrap();
     buf.set_lamports(required + 500);
@@ -400,7 +385,7 @@ fn refund_moves_excess_lamports_to_recipient() {
     recipient.set_lamports(25);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
     let mut recipient_view = unsafe { recipient.view() };
 
     slab.refund(&mut recipient_view).unwrap();
@@ -412,7 +397,6 @@ fn refund_moves_excess_lamports_to_recipient() {
 #[test]
 fn refund_is_noop_when_account_is_at_rent_floor() {
     let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 1);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let required = expected_min_lamports(ITEMS_OFFSET + 4 * ITEM_SIZE).unwrap();
     buf.set_lamports(required);
@@ -422,7 +406,7 @@ fn refund_is_noop_when_account_is_at_rent_floor() {
     recipient.set_lamports(25);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
     let mut recipient_view = unsafe { recipient.view() };
 
     slab.refund(&mut recipient_view).unwrap();
@@ -434,7 +418,6 @@ fn refund_is_noop_when_account_is_at_rent_floor() {
 #[test]
 fn top_up_is_noop_when_account_already_has_enough_lamports() {
     let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 1);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let required = expected_min_lamports(ITEMS_OFFSET + 4 * ITEM_SIZE).unwrap();
     buf.set_lamports(required + 123);
@@ -444,7 +427,7 @@ fn top_up_is_noop_when_account_already_has_enough_lamports() {
     payer.set_lamports(999);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
     let payer_view = unsafe { payer.view() };
 
     slab.top_up(&payer_view).unwrap();

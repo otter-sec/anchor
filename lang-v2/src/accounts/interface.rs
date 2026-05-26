@@ -23,7 +23,7 @@ impl<T: Ids> AnchorAccount for Interface<'_, T> {
     type Data = AccountView;
 
     #[inline(always)]
-    fn load(view: AccountView, _program_id: &Address) -> Result<Self, ProgramError> {
+    fn load(view: AccountView) -> Result<Self, ProgramError> {
         #[cfg(feature = "guardrails")]
         require!(view.executable(), ProgramError::InvalidAccountData);
         require!(

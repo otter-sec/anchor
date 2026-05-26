@@ -15,7 +15,6 @@ use anchor_lang_v2::{
     programs::{System, Token},
     AnchorAccount,
 };
-use pinocchio::address::Address;
 
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
 
@@ -29,8 +28,7 @@ fn system_account_loads_for_system_owned() {
         0, false, true, false,
     );
     let view = unsafe { buf.view() };
-    let program_id = Address::new_from_array(PROGRAM_ID);
-    let acct = SystemAccount::load(view, &program_id).unwrap();
+    let acct = SystemAccount::load(view).unwrap();
     assert_eq!(acct.address().to_bytes(), [0x11; 32]);
 }
 
@@ -39,8 +37,7 @@ fn system_account_rejects_non_system_owner() {
     let buf = AccountBuffer::<256>::new();
     buf.init([0x11; 32], PROGRAM_ID, 0, false, true, false);
     let view = unsafe { buf.view() };
-    let program_id = Address::new_from_array(PROGRAM_ID);
-    assert!(SystemAccount::load(view, &program_id).is_err());
+    assert!(SystemAccount::load(view).is_err());
 }
 
 // -- UncheckedAccount (always loads regardless of owner) -------------
@@ -51,9 +48,8 @@ fn unchecked_account_loads_for_any_owner() {
         let buf = AccountBuffer::<256>::new();
         buf.init([0x22; 32], owner, 0, false, true, false);
         let view = unsafe { buf.view() };
-        let program_id = Address::new_from_array(PROGRAM_ID);
         assert!(
-            UncheckedAccount::load(view, &program_id).is_ok(),
+            UncheckedAccount::load(view).is_ok(),
             "UncheckedAccount must accept any owner: {:?}",
             owner
         );
@@ -69,8 +65,7 @@ fn program_of_system_loads_when_address_matches_and_executable() {
         /*address = System::id()*/ [0; 32], [0; 32], 0, false, false, /*executable*/ true,
     );
     let view = unsafe { buf.view() };
-    let program_id = Address::new_from_array(PROGRAM_ID);
-    assert!(Program::<System>::load(view, &program_id).is_ok());
+    assert!(Program::<System>::load(view).is_ok());
 }
 
 #[test]
@@ -82,8 +77,7 @@ fn program_of_token_rejects_wrong_address() {
         [0; 32], 0, false, false, true,
     );
     let view = unsafe { buf.view() };
-    let program_id = Address::new_from_array(PROGRAM_ID);
-    assert!(Program::<Token>::load(view, &program_id).is_err());
+    assert!(Program::<Token>::load(view).is_err());
 }
 
 #[test]
@@ -93,9 +87,8 @@ fn program_rejects_non_executable_account() {
     let buf = AccountBuffer::<256>::new();
     buf.init([0; 32], [0; 32], 0, false, false, /*executable*/ false);
     let view = unsafe { buf.view() };
-    let program_id = Address::new_from_array(PROGRAM_ID);
     // Under guardrails, Program<T> rejects non-executable.
-    assert!(Program::<System>::load(view, &program_id).is_err());
+    assert!(Program::<System>::load(view).is_err());
 }
 
 // -- Signer ----------------------------------------------------------
@@ -105,8 +98,7 @@ fn signer_loads_when_is_signer_set() {
     let buf = AccountBuffer::<256>::new();
     buf.init([0x33; 32], [0; 32], 0, /*signer*/ true, true, false);
     let view = unsafe { buf.view() };
-    let program_id = Address::new_from_array(PROGRAM_ID);
-    let signer = Signer::load(view, &program_id).unwrap();
+    let signer = Signer::load(view).unwrap();
     assert_eq!(signer.address().to_bytes(), [0x33; 32]);
 }
 
@@ -115,8 +107,7 @@ fn signer_rejects_non_signer() {
     let buf = AccountBuffer::<256>::new();
     buf.init([0x33; 32], [0; 32], 0, /*signer*/ false, true, false);
     let view = unsafe { buf.view() };
-    let program_id = Address::new_from_array(PROGRAM_ID);
-    assert!(Signer::load(view, &program_id).is_err());
+    assert!(Signer::load(view).is_err());
 }
 
 // -- Aliasing witnesses: multiple wrappers can co-exist if non-conflicting --
@@ -136,10 +127,9 @@ fn distinct_wrapper_types_on_distinct_buffers() {
 
     let view1 = unsafe { buf1.view() };
     let view2 = unsafe { buf2.view() };
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
-    let sys = SystemAccount::load(view1, &program_id).unwrap();
-    let unchecked = UncheckedAccount::load(view2, &program_id).unwrap();
+    let sys = SystemAccount::load(view1).unwrap();
+    let unchecked = UncheckedAccount::load(view2).unwrap();
 
     assert_ne!(sys.address().to_bytes(), unchecked.address().to_bytes());
 }

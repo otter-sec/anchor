@@ -118,11 +118,7 @@ impl SlabSchema for TokenAccount {
     const MIN_DATA_LEN: usize = core::mem::size_of::<Self>();
 
     #[inline(always)]
-    fn validate(
-        view: &AccountView,
-        data: &[u8],
-        _program_id: &Address,
-    ) -> Result<(), ProgramError> {
+    fn validate(view: &AccountView, data: &[u8]) -> Result<(), ProgramError> {
         require!(view.owned_by(&Token::id()), ProgramError::IllegalOwner);
         // Exact size distinguishes TokenAccount (165) from Mint (82).
         require_eq!(
@@ -150,7 +146,6 @@ impl SlabInit for TokenAccount {
         payer: &AccountView,
         account: &AccountView,
         _space: usize,
-        _program_id: &Address,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
     ) -> Result<(), ProgramError> {

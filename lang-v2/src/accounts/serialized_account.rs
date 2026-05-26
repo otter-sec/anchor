@@ -112,8 +112,8 @@ where
         Ok(())
     }
 
-    fn should_serialize_for_program(view: &AccountView, program_id: &Address) -> bool {
-        view.owned_by(program_id)
+    fn should_serialize_for_owner(view: &AccountView) -> bool {
+        view.owned_by(&T::OWNER)
     }
 
     fn serialize_current_owner(
@@ -152,7 +152,7 @@ where
     ///
     /// Returns `IllegalOwner` / `AccountDataTooSmall` /
     /// `InvalidAccountData` if the account no longer validates as `T`.
-    pub fn reacquire_borrow_mut(&mut self, program_id: &Address) -> Result<(), ProgramError> {
+    pub fn reacquire_borrow_mut(&mut self) -> Result<(), ProgramError> {
         // Re-run the load-time invariants. A CPI in the release window
         // could have mutated owner, discriminator, or payload in any
         // combination — without re-checking, we'd accept an account that
@@ -171,7 +171,7 @@ where
         let (data, serialized_len) = Self::deserialize_payload_with_len(&data_ref[DISC_LEN..])?;
         self.data = data;
         self.serialized_len = serialized_len;
-        self.serialize_on_exit = Self::should_serialize_for_program(&self.view, program_id);
+        self.serialize_on_exit = Self::should_serialize_for_owner(&self.view);
         let guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
         self.borrow = SerializedAccountBorrow::Mutable { guard };
         Ok(())
@@ -214,7 +214,6 @@ where
     fn validate_and_load(
         view: AccountView,
         data: &[u8],
-        program_id: &Address,
     ) -> Result<(T, usize), ProgramError> {
         // Hot path: a single owner check. The "uninitialized placeholder"
         // disambiguation lives in `cold_owner_error` (slab.rs) — see
@@ -240,9 +239,9 @@ where
     type Data = T;
     const MIN_DATA_LEN: usize = 8;
 
-    fn load(view: AccountView, program_id: &Address) -> Result<Self, ProgramError> {
+    fn load(view: AccountView) -> Result<Self, ProgramError> {
         let data_ref = view.try_borrow()?;
-        let (data, serialized_len) = Self::validate_and_load(view, &data_ref, program_id)?;
+        let (data, serialized_len) = Self::validate_and_load(view, &data_ref)?;
         // SAFETY: AccountView's raw pointer is valid for the entire instruction
         // lifetime (Solana runtime guarantee). We hold the Ref to prevent
         // subsequent mutable borrows on the same account (duplicate detection).
@@ -252,7 +251,7 @@ where
             data,
             borrow: SerializedAccountBorrow::Immutable { _guard: guard },
             serialized_len,
-            serialize_on_exit: Self::should_serialize_for_program(&view, program_id),
+            serialize_on_exit: Self::should_serialize_for_owner(&view),
             _serializer: PhantomData,
         })
     }
@@ -261,7 +260,7 @@ where
     ///
     /// See [`AnchorAccount::load_mut`] — caller must ensure no other live
     /// `&mut` to the same account data exists.
-    unsafe fn load_mut(view: AccountView, program_id: &Address) -> Result<Self, ProgramError> {
+    unsafe fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
         // Guardrail: catches "forgot `#[account(mut)]`" early with a clear
         // error. Under `default-features = false` the Solana runtime still
         // rejects the tx when we try to write, just with a less specific
@@ -272,7 +271,7 @@ where
         }
         let mut view_mut = view;
         let data_ref = view_mut.try_borrow_mut()?;
-        let (data, serialized_len) = Self::validate_and_load(view, &data_ref, program_id)?;
+        let (data, serialized_len) = Self::validate_and_load(view, &data_ref)?;
         // SAFETY: Same as load(). RefMut provides exclusive access and prevents
         // any other borrow on the same account.
         let guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
@@ -281,7 +280,7 @@ where
             data,
             borrow: SerializedAccountBorrow::Mutable { guard },
             serialized_len,
-            serialize_on_exit: Self::should_serialize_for_program(&view, program_id),
+            serialize_on_exit: Self::should_serialize_for_owner(&view),
             _serializer: PhantomData,
         })
     }
@@ -492,7 +491,7 @@ where
         payer: &AccountView,
         account: &AccountView,
         space: usize,
-        program_id: &Address,
+        _owner: &Address,
         _params: &(),
         signer_seeds: Option<&[&[u8]]>,
     ) -> Result<Self, ProgramError> {
@@ -500,8 +499,8 @@ where
             .try_into()
             .map_err(|_| ProgramError::InvalidAccountData)?;
         match signer_seeds {
-            Some(seeds) => crate::create_account_signed(payer, account, space, program_id, seeds)?,
-            None => crate::create_account(payer, account, space, program_id)?,
+            Some(seeds) => crate::create_account_signed(payer, account, space, &T::OWNER, seeds)?,
+            None => crate::create_account(payer, account, space, &T::OWNER)?,
         }
         let mut view_mut = *account;
         let data_ref = view_mut.try_borrow_mut()?;

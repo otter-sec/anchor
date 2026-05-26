@@ -67,14 +67,14 @@ where
         payer: &AccountView,
         account: &AccountView,
         space: usize,
-        program_id: &Address,
+        _owner: &Address,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
     ) -> Result<Self, ProgramError> {
-        H::create_and_initialize(payer, account, space, program_id, params, signer_seeds)?;
+        H::create_and_initialize(payer, account, space, params, signer_seeds)?;
         // SAFETY: `create_and_initialize` just created this account; no other
         // mutable reference to its data can exist yet.
-        unsafe { <Self as AnchorAccount>::load_mut_after_init(*account, program_id) }
+        unsafe { <Self as AnchorAccount>::load_mut_after_init(*account) }
     }
 }
 
@@ -249,13 +249,13 @@ where
     }
 
     #[inline(always)]
-    fn from_ref(view: AccountView, program_id: &Address) -> Result<Self, ProgramError> {
+    fn from_ref(view: AccountView) -> Result<Self, ProgramError> {
         Self::assert_header_alignment();
         // SAFETY: AccountView's data pointer is valid for the instruction lifetime
         // (Solana runtime guarantee). Duplicate mutable accounts are rejected at
         // deserialization, so no aliasing can occur.
         let data = unsafe { view.borrow_unchecked() };
-        H::validate(&view, data, program_id)?;
+        H::validate(&view, data)?;
         if data.len() < Self::ITEMS_OFFSET {
             return Err(ProgramError::AccountDataTooSmall);
         }
@@ -661,8 +661,8 @@ where
     const MIN_DATA_LEN: usize = Slab::<H, T>::MIN_DATA_LEN;
 
     #[inline(always)]
-    fn load(view: AccountView, program_id: &Address) -> Result<Self, ProgramError> {
-        Self::from_ref(view, program_id)
+    fn load(view: AccountView) -> Result<Self, ProgramError> {
+        Self::from_ref(view)
     }
 
     /// # Safety
@@ -670,13 +670,13 @@ where
     /// See [`AnchorAccount::load_mut`] — caller must ensure no other live
     /// `&mut` to the same account data exists.
     #[inline(always)]
-    unsafe fn load_mut(view: AccountView, program_id: &Address) -> Result<Self, ProgramError> {
+    unsafe fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
         // Reuses the post-init primitive for construction, then layers full
         // validation on top.
-        let slab = Self::load_mut_after_init(view, program_id)?;
+        let slab = Self::load_mut_after_init(view)?;
         // SAFETY: build_mutable succeeded, so the data pointer is valid.
         let data: &[u8] = unsafe { slab.view.borrow_unchecked() };
-        H::validate(&slab.view, data, program_id)?;
+        H::validate(&slab.view, data)?;
         if data.len() < Self::ITEMS_OFFSET {
             return Err(ProgramError::AccountDataTooSmall);
         }
@@ -692,10 +692,7 @@ where
     /// See [`AnchorAccount::load_mut`] — no other live `&mut` to the
     /// same account data.
     #[inline(always)]
-    unsafe fn load_mut_after_init(
-        view: AccountView,
-        _program_id: &Address,
-    ) -> Result<Self, ProgramError> {
+    unsafe fn load_mut_after_init(view: AccountView) -> Result<Self, ProgramError> {
         // Guardrail: catches "forgot `#[account(mut)]`" early with a clear
         // error. Under `default-features = false` the Solana runtime still
         // rejects the tx when we try to write, just with a less specific
@@ -960,10 +957,9 @@ mod tests {
     fn read_only_load_blocks_try_borrow_mut_on_copy() {
         let mut buf = AccountBuffer::<256>::new();
         setup(&mut buf, false);
-        let pid = Address::new_from_array(PROGRAM_ID);
         let view = unsafe { buf.view() };
 
-        let acct = CounterAccount::load(view, &pid).unwrap();
+        let acct = CounterAccount::load(view).unwrap();
         assert_eq!(acct.value, 42);
 
         let mut view_copy = view;
@@ -980,10 +976,9 @@ mod tests {
     fn read_only_load_allows_try_borrow_on_copy() {
         let mut buf = AccountBuffer::<256>::new();
         setup(&mut buf, false);
-        let pid = Address::new_from_array(PROGRAM_ID);
         let view = unsafe { buf.view() };
 
-        let acct = CounterAccount::load(view, &pid).unwrap();
+        let acct = CounterAccount::load(view).unwrap();
 
         let view_copy = view;
         assert!(
@@ -998,11 +993,10 @@ mod tests {
     fn mut_load_blocks_all_borrows_on_copy() {
         let mut buf = AccountBuffer::<256>::new();
         setup(&mut buf, true);
-        let pid = Address::new_from_array(PROGRAM_ID);
         let view = unsafe { buf.view() };
 
         // SAFETY: this is the only live wrapper over `view`'s data.
-        let mut acct = unsafe { CounterAccount::load_mut(view, &pid).unwrap() };
+        let mut acct = unsafe { CounterAccount::load_mut(view).unwrap() };
         acct.value = 99;
 
         let mut view_copy = view;

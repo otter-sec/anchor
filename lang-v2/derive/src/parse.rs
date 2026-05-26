@@ -1095,25 +1095,25 @@ fn emit_associated_token_init_body(
         {
             let mut __payer =
                 <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
-                    ::load(__views[#payer_offset], __program_id)?;
+                    ::load(__views[#payer_offset])?;
             let mut __associated_token =
                 <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
-                    ::load(__target, __program_id)?;
+                    ::load(__target)?;
             let __authority =
                 <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
-                    ::load(__views[#authority_offset], __program_id)?;
+                    ::load(__views[#authority_offset])?;
             let __mint =
                 <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
-                    ::load(__views[#mint_offset], __program_id)?;
+                    ::load(__views[#mint_offset])?;
             let __system_program =
                 <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
-                    ::load(__views[#system_program_offset], __program_id)?;
+                    ::load(__views[#system_program_offset])?;
             let __token_program =
                 <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
-                    ::load(__views[#token_program_offset], __program_id)?;
+                    ::load(__views[#token_program_offset])?;
             let __associated_token_program =
                 <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
-                    ::load(__views[#associated_token_program_offset], __program_id)?;
+                    ::load(__views[#associated_token_program_offset])?;
 
             if !anchor_lang_v2::address_eq(
                 __system_program.account().address(),
@@ -1144,7 +1144,7 @@ fn emit_associated_token_init_body(
             // the generated account bitvec check. ATA init is performed by
             // external programs selected at runtime, so run the field type's
             // full validation after the CPI.
-            unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target, __program_id)? }
+            unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target)? }
         }
     })
 }
@@ -1346,9 +1346,7 @@ pub fn parse_field(
                     // SAFETY: the bitvec duplicate-account check below ensures
                     // no other mutable reference to this account's data exists.
                     Some(unsafe {
-                        <#inner_ty as anchor_lang_v2::AnchorAccount>::load_mut(
-                            __target, __program_id,
-                        )?
+                        <#inner_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target)?
                     })
                 } else {
                     Some({ #init_body_with_constraints })
@@ -1374,9 +1372,7 @@ pub fn parse_field(
                     // SAFETY: the bitvec duplicate-account check below ensures
                     // no other mutable reference to this account's data exists.
                     Some(unsafe {
-                        <#inner_ty as anchor_lang_v2::AnchorAccount>::load_mut(
-                            __target, __program_id,
-                        )?
+                        <#inner_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target)?
                     })
                 }
             }
@@ -1385,16 +1381,12 @@ pub fn parse_field(
                 // SAFETY: the bitvec duplicate-account check below ensures
                 // no other mutable reference to this account's data exists.
                 Some(unsafe {
-                    <#inner_ty as anchor_lang_v2::AnchorAccount>::load_mut(
-                        __target, __program_id,
-                    )?
+                    <#inner_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target)?
                 })
             }
         } else {
             quote! {
-                Some(<#inner_ty as anchor_lang_v2::AnchorAccount>::load(
-                    __target, __program_id,
-                )?)
+                Some(<#inner_ty as anchor_lang_v2::AnchorAccount>::load(__target)?)
             }
         };
         let init_if_needed_existed_binding = init_if_needed_existed.as_ref().map(|existed| {
@@ -1459,7 +1451,7 @@ pub fn parse_field(
                 if #existed {
                     // SAFETY: the bitvec duplicate-account check below ensures
                     // no other mutable reference to this account's data exists.
-                    unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target, __program_id)? }
+                    unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target)? }
                 } else {
                     // Create branch: run `AccountConstraint::init` for every
                     // runtime-only constraint AFTER the account's typed
@@ -1490,18 +1482,18 @@ pub fn parse_field(
                 }
                 // SAFETY: the bitvec duplicate-account check below ensures
                 // no other mutable reference to this account's data exists.
-                unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target, __program_id)? }
+                unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target)? }
             };
         }
     } else if attrs.is_mut {
         quote! {
             // SAFETY: the bitvec duplicate-account check below ensures no
             // other mutable reference to this account's data exists.
-            let mut #field_name = unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__views[#offset_expr], __program_id)? };
+            let mut #field_name = unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__views[#offset_expr])? };
         }
     } else {
         quote! {
-            let #field_name: #field_ty = anchor_lang_v2::AnchorAccount::load(__views[#offset_expr], __program_id)?;
+            let #field_name: #field_ty = anchor_lang_v2::AnchorAccount::load(__views[#offset_expr])?;
         }
     };
 

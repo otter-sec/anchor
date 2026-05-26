@@ -735,7 +735,7 @@ impl AccountDeserialize for MetadataAccount {
 impl AnchorAccount for MetadataAccount {
     type Data = mpl_token_metadata::accounts::Metadata;
 
-    fn load(view: AccountView, _program_id: &Address) -> Result<Self> {
+    fn load(view: AccountView) -> Result<Self> {
         require!(view.owned_by(&ID), ProgramError::IllegalOwner);
         let data_ref = view.try_borrow()?;
         let data = Self::parse(&data_ref)?;
@@ -791,7 +791,7 @@ impl AccountDeserialize for MasterEditionAccount {
 impl AnchorAccount for MasterEditionAccount {
     type Data = mpl_token_metadata::accounts::MasterEdition;
 
-    fn load(view: AccountView, _program_id: &Address) -> Result<Self> {
+    fn load(view: AccountView) -> Result<Self> {
         require!(view.owned_by(&ID), ProgramError::IllegalOwner);
         let data_ref = view.try_borrow()?;
         let data = Self::parse(&data_ref)?;
@@ -849,7 +849,7 @@ impl AccountDeserialize for TokenRecordAccount {
 impl AnchorAccount for TokenRecordAccount {
     type Data = mpl_token_metadata::accounts::TokenRecord;
 
-    fn load(view: AccountView, _program_id: &Address) -> Result<Self> {
+    fn load(view: AccountView) -> Result<Self> {
         require!(view.owned_by(&ID), ProgramError::IllegalOwner);
         let data_ref = view.try_borrow()?;
         let data = Self::parse(&data_ref)?;

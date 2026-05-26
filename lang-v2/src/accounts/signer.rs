@@ -21,7 +21,7 @@ impl AnchorAccount for Signer {
     const IS_SIGNER: bool = true;
 
     #[inline(always)]
-    fn load(view: AccountView, _program_id: &Address) -> Result<Self, ProgramError> {
+    fn load(view: AccountView) -> Result<Self, ProgramError> {
         require!(view.is_signer(), ProgramError::MissingRequiredSignature);
         Ok(Self { view })
     }
@@ -39,7 +39,7 @@ impl AnchorAccount for Signer {
     ///
     /// Returns `ConstraintSigner` if either flag is unset.
     #[inline(always)]
-    unsafe fn load_mut(view: AccountView, _program_id: &Address) -> Result<Self, ProgramError> {
+    unsafe fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
         // SAFETY: view.account_ptr() points at a valid RuntimeAccount header.
         // Byte `+1` and `+2` are always in bounds within the 88-byte header.
         // The read is byte-aligned (offset 1 into a u16) but SBF allows

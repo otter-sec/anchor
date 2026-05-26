@@ -19,7 +19,7 @@ impl UncheckedAccount {
 impl AnchorAccount for UncheckedAccount {
     type Data = AccountView;
     #[inline(always)]
-    fn load(view: AccountView, _program_id: &Address) -> Result<Self, ProgramError> {
+    fn load(view: AccountView) -> Result<Self, ProgramError> {
         Ok(Self { view })
     }
     #[inline(always)]
@@ -48,7 +48,7 @@ impl AccountInitialize for UncheckedAccount {
             Some(seeds) => crate::create_account_signed(payer, account, space, owner, seeds)?,
             None => crate::create_account(payer, account, space, owner)?,
         }
-        Self::load(*account, owner)
+        Self::load(*account)
     }
 }
 

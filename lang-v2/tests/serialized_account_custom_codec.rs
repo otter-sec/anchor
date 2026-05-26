@@ -117,10 +117,9 @@ fn setup_stats_buf(buf: &mut AccountBuffer<256>, count: u32, flags: u32) {
 fn le_codec_immutable_load_deserializes() {
     let mut buf = AccountBuffer::<256>::new();
     setup_stats_buf(&mut buf, 7, 0xABCD_1234);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let acct = StatsAccount::load(view, &program_id).unwrap();
+    let acct = StatsAccount::load(view).unwrap();
     assert_eq!(acct.count, 7);
     assert_eq!(acct.flags, 0xABCD_1234);
 }
@@ -131,11 +130,10 @@ fn le_codec_immutable_load_deserializes() {
 fn le_codec_load_mut_exit_writes_back() {
     let mut buf = AccountBuffer::<256>::new();
     setup_stats_buf(&mut buf, 1, 0);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { StatsAccount::load_mut(view, &program_id) }.unwrap();
+        let mut acct = unsafe { StatsAccount::load_mut(view) }.unwrap();
         acct.count = 42;
         acct.flags = 0xDEAD_BEEF;
         acct.exit().unwrap();
@@ -155,10 +153,9 @@ fn le_codec_load_mut_exit_writes_back() {
 fn le_codec_release_borrow_commits() {
     let mut buf = AccountBuffer::<256>::new();
     setup_stats_buf(&mut buf, 1, 0);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { StatsAccount::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { StatsAccount::load_mut(view) }.unwrap();
     acct.count = 999;
     acct.release_borrow().unwrap();
 
@@ -176,10 +173,9 @@ fn le_codec_release_borrow_commits() {
 fn le_codec_reacquire_refreshes_from_buffer() {
     let mut buf = AccountBuffer::<256>::new();
     setup_stats_buf(&mut buf, 1, 0);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { StatsAccount::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { StatsAccount::load_mut(view) }.unwrap();
 
     acct.count = 100;
     acct.release_borrow().unwrap();
@@ -190,7 +186,7 @@ fn le_codec_reacquire_refreshes_from_buffer() {
     new_payload[4..8].copy_from_slice(&0x1111_2222u32.to_le_bytes());
     set_data_bytes(&mut buf, 8, &new_payload);
 
-    acct.reacquire_borrow_mut(&program_id).unwrap();
+    acct.reacquire_borrow_mut().unwrap();
     assert_eq!(acct.count, 777);
     assert_eq!(acct.flags, 0x1111_2222);
 }
@@ -203,10 +199,9 @@ fn le_codec_load_rejects_wrong_discriminator() {
     setup_stats_buf(&mut buf, 1, 0);
     // Corrupt the disc.
     set_data_bytes(&mut buf, 0, &[0u8; 8]);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let err = StatsAccount::load(view, &program_id).err();
+    let err = StatsAccount::load(view).err();
     assert_eq!(err, Some(ProgramError::InvalidAccountData));
 }
 
@@ -217,10 +212,9 @@ fn le_codec_load_rejects_wrong_owner() {
     let mut buf = AccountBuffer::<256>::new();
     setup_stats_buf(&mut buf, 1, 0);
     buf.set_owner([0xFE; 32]);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let err = StatsAccount::load(view, &program_id).err();
+    let err = StatsAccount::load(view).err();
     assert_eq!(err, Some(ProgramError::IllegalOwner));
 }
 
@@ -233,13 +227,12 @@ fn le_codec_load_rejects_short_data() {
     buf.init([0xAA; 32], PROGRAM_ID, 8, false, true, false);
     buf.write_data(&STATS_DISC);
     buf.set_lamports(1_000_000_000);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
     // The codec returns InvalidAccountData when the payload is too short
     // (8 - 8 = 0 bytes available, codec needs 8).
     assert_eq!(
-        StatsAccount::load(view, &program_id).err(),
+        StatsAccount::load(view).err(),
         Some(ProgramError::InvalidAccountData)
     );
 }
@@ -250,14 +243,13 @@ fn le_codec_load_rejects_short_data() {
 fn le_codec_reacquire_rejects_disc_swap() {
     let mut buf = AccountBuffer::<256>::new();
     setup_stats_buf(&mut buf, 1, 0);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { StatsAccount::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { StatsAccount::load_mut(view) }.unwrap();
     acct.release_borrow().unwrap();
 
     set_data_bytes(&mut buf, 0, &[0xFF; 8]);
-    let err = acct.reacquire_borrow_mut(&program_id).unwrap_err();
+    let err = acct.reacquire_borrow_mut().unwrap_err();
     assert_eq!(err, ProgramError::InvalidAccountData);
 }
 
@@ -267,14 +259,13 @@ fn le_codec_reacquire_rejects_disc_swap() {
 fn le_codec_reacquire_rejects_owner_change() {
     let mut buf = AccountBuffer::<256>::new();
     setup_stats_buf(&mut buf, 1, 0);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { StatsAccount::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { StatsAccount::load_mut(view) }.unwrap();
     acct.release_borrow().unwrap();
 
     buf.set_owner([0xFE; 32]);
-    let err = acct.reacquire_borrow_mut(&program_id).unwrap_err();
+    let err = acct.reacquire_borrow_mut().unwrap_err();
     assert_eq!(err, ProgramError::IllegalOwner);
 }
 
@@ -284,10 +275,9 @@ fn le_codec_reacquire_rejects_owner_change() {
 fn le_codec_exit_on_closed_account_is_noop() {
     let mut buf = AccountBuffer::<256>::new();
     setup_stats_buf(&mut buf, 1, 0xAABB_CCDD);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { StatsAccount::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { StatsAccount::load_mut(view) }.unwrap();
     acct.count = 555;
     buf.set_lamports(0);
     acct.exit().unwrap();
@@ -370,10 +360,9 @@ fn setup_ledger_buf(buf: &mut AccountBuffer<256>, balance: u64, nonce: u32) {
 fn wincode_codec_load_deserializes() {
     let mut buf = AccountBuffer::<256>::new();
     setup_ledger_buf(&mut buf, 1_000_000, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let acct = LedgerAccount::load(view, &program_id).unwrap();
+    let acct = LedgerAccount::load(view).unwrap();
     assert_eq!(acct.balance, 1_000_000);
     assert_eq!(acct.nonce, 42);
 }
@@ -382,11 +371,10 @@ fn wincode_codec_load_deserializes() {
 fn wincode_codec_load_mut_exit_round_trip() {
     let mut buf = AccountBuffer::<256>::new();
     setup_ledger_buf(&mut buf, 0, 0);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { LedgerAccount::load_mut(view, &program_id) }.unwrap();
+        let mut acct = unsafe { LedgerAccount::load_mut(view) }.unwrap();
         acct.balance = 9_999;
         acct.nonce = 7;
         acct.exit().unwrap();
@@ -394,7 +382,7 @@ fn wincode_codec_load_mut_exit_round_trip() {
 
     // Re-load and verify the wire bytes deserialize back to the new values.
     let view = unsafe { buf.view() };
-    let acct = LedgerAccount::load(view, &program_id).unwrap();
+    let acct = LedgerAccount::load(view).unwrap();
     assert_eq!(acct.balance, 9_999);
     assert_eq!(acct.nonce, 7);
 }
@@ -404,11 +392,10 @@ fn wincode_codec_rejects_wrong_disc() {
     let mut buf = AccountBuffer::<256>::new();
     setup_ledger_buf(&mut buf, 0, 0);
     set_data_bytes(&mut buf, 0, &[0u8; 8]);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
     assert_eq!(
-        LedgerAccount::load(view, &program_id).err(),
+        LedgerAccount::load(view).err(),
         Some(ProgramError::InvalidAccountData)
     );
 }
@@ -417,10 +404,9 @@ fn wincode_codec_rejects_wrong_disc() {
 fn wincode_codec_release_reacquire_picks_up_cpi_write() {
     let mut buf = AccountBuffer::<256>::new();
     setup_ledger_buf(&mut buf, 0, 0);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { LedgerAccount::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { LedgerAccount::load_mut(view) }.unwrap();
     acct.release_borrow().unwrap();
 
     // Simulated CPI writes a new ledger payload using the same codec.
@@ -431,7 +417,7 @@ fn wincode_codec_release_reacquire_picks_up_cpi_write() {
     .unwrap();
     set_data_bytes(&mut buf, 8, &cpi_payload);
 
-    acct.reacquire_borrow_mut(&program_id).unwrap();
+    acct.reacquire_borrow_mut().unwrap();
     assert_eq!(acct.balance, 12_345);
     assert_eq!(acct.nonce, 99);
 }
