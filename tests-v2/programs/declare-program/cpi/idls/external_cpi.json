@@ -1,0 +1,132 @@
+{
+  "address": "BF748KR4UhPq7xbhFQYd7yFKmh5UYdqed9GbD6oZvEyu",
+  "metadata": {
+    "name": "external_cpi",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "declare_program CPI fixture"
+  },
+  "instructions": [
+    {
+      "name": "initialize",
+      "discriminator": [0],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "data",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "systemProgram"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "setValue",
+      "discriminator": [1],
+      "accounts": [
+        {
+          "name": "data",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "composite",
+      "discriminator": [2],
+      "accounts": [
+        {
+          "name": "inner",
+          "accounts": [
+            {
+              "name": "data",
+              "writable": true
+            },
+            {
+              "name": "authority",
+              "signer": true
+            }
+          ]
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "count",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "definedArgs",
+      "discriminator": [3],
+      "accounts": [
+        {
+          "name": "data",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "MyArgs"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "MyArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "tag",
+            "type": {
+              "array": ["u8", 3]
+            }
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          }
+        ]
+      }
+    }
+  ]
+}

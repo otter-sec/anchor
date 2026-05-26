@@ -1,0 +1,64 @@
+{
+  "address": "FfuEBk58icFrsQX6rPQEKS2bQzvCjRrgErasDce6KsD7",
+  "metadata": {
+    "name": "hash_cpi",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "declare_program default discriminator CPI fixture"
+  },
+  "instructions": [
+    {
+      "name": "initialize",
+      "discriminator": [175, 175, 109, 31, 13, 152, 155, 237],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "data",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "systemProgram"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "apply",
+      "discriminator": [248, 243, 145, 24, 105, 50, 162, 225],
+      "accounts": [
+        {
+          "name": "data",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "delta",
+          "type": "i64"
+        },
+        {
+          "name": "flag",
+          "type": "bool"
+        },
+        {
+          "name": "marker",
+          "type": {
+            "array": ["u8", 4]
+          }
+        }
+      ]
+    }
+  ]
+}

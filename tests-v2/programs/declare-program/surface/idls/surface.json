@@ -1,0 +1,252 @@
+{
+  "address": "D9t6cEFPTDWmTZfcikokLbnuuyeJT6oXnpEbyXB45LU2",
+  "metadata": {
+    "name": "surface",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "declare_program broad client surface fixture"
+  },
+  "instructions": [
+    {
+      "name": "noAccounts",
+      "discriminator": [235, 2, 155, 160, 177, 167, 169, 207],
+      "accounts": [],
+      "args": []
+    },
+    {
+      "name": "legacyFlags",
+      "discriminator": [10, 11, 12, 13, 14],
+      "accounts": [
+        {
+          "name": "legacySigner",
+          "signer": true
+        },
+        {
+          "name": "legacyWritable",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "enabled",
+          "type": "bool"
+        },
+        {
+          "name": "small",
+          "type": "i8"
+        },
+        {
+          "name": "medium",
+          "type": "i16"
+        },
+        {
+          "name": "large",
+          "type": "i32"
+        },
+        {
+          "name": "wide",
+          "type": "u128"
+        }
+      ]
+    },
+    {
+      "name": "optionalAccounts",
+      "discriminator": [20, 21],
+      "accounts": [
+        {
+          "name": "required",
+          "writable": true
+        },
+        {
+          "name": "maybeSigner",
+          "optional": true,
+          "signer": true
+        },
+        {
+          "name": "maybeData",
+          "optional": true,
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "nestedLevels",
+      "discriminator": [30, 31, 32],
+      "accounts": [
+        {
+          "name": "outer",
+          "accounts": [
+            {
+              "name": "middle",
+              "accounts": [
+                {
+                  "name": "leafSigner",
+                  "signer": true
+                },
+                {
+                  "name": "leafWritable",
+                  "writable": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "complexArgs",
+      "discriminator": [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55],
+      "accounts": [],
+      "args": [
+        {
+          "name": "amounts",
+          "type": {
+            "vec": "u16"
+          }
+        },
+        {
+          "name": "maybeOwner",
+          "type": {
+            "option": "pubkey"
+          }
+        },
+        {
+          "name": "fixed",
+          "type": {
+            "array": ["u8", 4]
+          }
+        },
+        {
+          "name": "byObject",
+          "type": {
+            "defined": {
+              "name": "SurfaceArgs"
+            }
+          }
+        },
+        {
+          "name": "byString",
+          "type": {
+            "defined": {
+              "name": "SurfaceArgs"
+            }
+          }
+        },
+        {
+          "name": "byEnum",
+          "type": {
+            "defined": {
+              "name": "SurfaceMode"
+            }
+          }
+        },
+        {
+          "name": "byTuple",
+          "type": {
+            "defined": {
+              "name": "TupleFlag"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "SurfaceArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "enabled",
+            "type": "bool"
+          },
+          {
+            "name": "small",
+            "type": "i8"
+          },
+          {
+            "name": "count",
+            "type": "u128"
+          },
+          {
+            "name": "maybeLabel",
+            "type": {
+              "option": "string"
+            }
+          },
+          {
+            "name": "keys",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "pair",
+            "type": {
+              "array": ["i16", 2]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "SurfaceMode",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Paused"
+          },
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Limit",
+            "fields": [
+              "u64",
+              {
+                "defined": {
+                  "name": "TupleFlag"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Named",
+            "fields": [
+              {
+                "name": "authority",
+                "type": "pubkey"
+              },
+              {
+                "name": "args",
+                "type": {
+                  "defined": {
+                    "name": "SurfaceArgs"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "TupleFlag",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          "bool"
+        ]
+      }
+    }
+  ]
+}

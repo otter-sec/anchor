@@ -322,6 +322,29 @@ where
     }
 }
 
+#[cfg(feature = "account-resize")]
+impl<T, S> crate::AccountRealloc for SerializedAccount<T, S>
+where
+    T: Owner + Discriminator,
+    S: AnchorAccountSerialize<T>,
+{
+    #[inline(always)]
+    fn realloc_account(
+        &mut self,
+        new_space: usize,
+        payer: AccountView,
+        zero: bool,
+    ) -> pinocchio::ProgramResult {
+        let mut view = *self.account();
+        if new_space != view.data_len() {
+            self.release_borrow()?;
+            crate::realloc_account(&mut view, new_space, &payer, zero)?;
+            self.reacquire_guard_only()?;
+        }
+        Ok(())
+    }
+}
+
 impl<T, S> Deref for SerializedAccount<T, S>
 where
     T: Owner + Discriminator,
@@ -366,6 +389,30 @@ where
 {
     fn as_ref(&self) -> &Address {
         self.view.address()
+    }
+}
+
+impl<T, S> crate::ToCpiHandle for SerializedAccount<T, S>
+where
+    T: Owner + Discriminator,
+    S: AnchorAccountSerialize<T>,
+{
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
+        crate::AnchorAccount::cpi_handle(self)
+    }
+}
+
+impl<T, S> crate::ToCpiHandleMut for SerializedAccount<T, S>
+where
+    T: Owner + Discriminator,
+    S: AnchorAccountSerialize<T>,
+{
+    #[inline(always)]
+    fn try_to_cpi_handle_mut(
+        &mut self,
+    ) -> Result<crate::CpiHandle<'_>, solana_program_error::ProgramError> {
+        crate::AnchorAccount::try_cpi_handle_mut(self)
     }
 }
 

@@ -1,0 +1,22 @@
+[package]
+name = "declare-program-returns"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = ["cpi", "no-log-ix-name"]
+no-entrypoint = []
+cpi = []
+no-idl = []
+no-log-ix-name = []
+
+[dependencies]
+anchor-lang-v2 = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
+wincode = { version = "0.5", features = ["derive"] }
+
+[lints.rust.unexpected_cfgs]
+level = "allow"

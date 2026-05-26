@@ -458,6 +458,18 @@ fn parse_associated_token_init(
         .iter()
         .filter(|nc| nc.namespace == "associated_token")
     {
+        let target = match nc.raw_key.as_str() {
+            "mint" => &mut mint,
+            "authority" => &mut authority,
+            "token_program" => &mut token_program,
+            _ => {
+                return Err(syn::Error::new(
+                    nc.value.span(),
+                    format!("unknown `associated_token` constraint `{}`", nc.raw_key),
+                ));
+            }
+        };
+
         let Some(ident) = expr_as_field_ident(&nc.value) else {
             return Err(syn::Error::new(
                 nc.value.span(),
@@ -475,12 +487,7 @@ fn parse_associated_token_init(
             ));
         }
 
-        match nc.raw_key.as_str() {
-            "mint" => mint = Some(ident),
-            "authority" => authority = Some(ident),
-            "token_program" => token_program = Some(ident),
-            _ => {}
-        }
+        *target = Some(ident);
     }
 
     if mint.is_none() && authority.is_none() && token_program.is_none() {
@@ -536,7 +543,8 @@ fn wrap_init_body_with_constraints(
             let ns = syn::Ident::new(&nc.namespace, proc_macro2::Span::call_site());
             let key = syn::Ident::new(&nc.key, proc_macro2::Span::call_site());
             let value = &nc.value;
-            let expected = if nc.is_field_ref && (nc.namespace == "mint" || nc.namespace == "token") {
+            let expected = if nc.is_field_ref && (nc.namespace == "mint" || nc.namespace == "token")
+            {
                 quote! { anchor_lang_v2::AccountAddress::account_address(&#value) }
             } else if nc.is_field_ref {
                 quote! { AsRef::as_ref(&#value) }
@@ -644,6 +652,9 @@ pub struct AccountField {
     /// client sends `program_id` as the address) should still silence the
     /// dup check; the derive keeps the gated per-field `get()` for those.
     pub contributes_mut_bit: bool,
+    /// `true` iff this optional field contributes to the runtime active
+    /// mutable mask when it loads as `Some`.
+    pub contributes_active_mut_bit: bool,
     /// The local payer field named by this field's `init`/`init_if_needed`
     /// constraint, if present.
     pub init_payer: Option<String>,
@@ -1099,16 +1110,6 @@ fn emit_associated_token_init_body(
             ) {
                 return Err(anchor_lang_v2::ErrorCode::ConstraintAddress.into());
             }
-            if !anchor_lang_v2::address_eq(
-                __token_program.account().address(),
-                &<anchor_lang_v2::programs::Token as anchor_lang_v2::Id>::id(),
-            ) && !anchor_lang_v2::address_eq(
-                __token_program.account().address(),
-                &<anchor_lang_v2::programs::Token2022 as anchor_lang_v2::Id>::id(),
-            ) {
-                return Err(anchor_lang_v2::ErrorCode::ConstraintAddress.into());
-            }
-
             anchor_spl_v2::associated_token::create(anchor_lang_v2::CpiContext::new(
                 __associated_token_program.account().address(),
                 anchor_spl_v2::associated_token::Create {
@@ -1123,8 +1124,10 @@ fn emit_associated_token_init_body(
 
             // SAFETY: this field has just been initialized by the associated
             // token program, and duplicate mutable accounts are rejected by
-            // the generated account bitvec check.
-            unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut_after_init(__target, __program_id)? }
+            // the generated account bitvec check. ATA init is performed by
+            // external programs selected at runtime, so run the field type's
+            // full validation after the CPI.
+            unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target, __program_id)? }
         }
     })
 }
@@ -1139,16 +1142,23 @@ pub fn parse_field(
     let field_name = field.ident.as_ref().expect("named field");
     let field_ty = &field.ty;
     let attrs = parse_account_attrs(&field.attrs)?;
+    if attrs.close.is_some() && !attrs.is_mut {
+        return Err(syn::Error::new(
+            field_name.span(),
+            "mut must be provided when using close",
+        ));
+    }
     let associated_token = parse_associated_token_init(&attrs, field_names)?;
 
     let option_inner = extract_option_inner(field_ty);
     let is_optional = option_inner.is_some();
-    // Fresh-keypair init (no seeds) — caller signs the tx. Distinct from
-    // `Signer`-type fields, which the IDL picks up through
-    // `IdlAccountType::__IDL_IS_SIGNER` at runtime.
-    let idl_init_signer = (attrs.is_init || attrs.is_init_if_needed)
-        && attrs.seeds.is_none()
-        && associated_token.is_none();
+    // Explicit signer constraint or fresh-keypair init (no seeds) — caller
+    // signs the tx. Distinct from `Signer`-type fields, which the IDL picks
+    // up through `IdlAccountType::__IDL_IS_SIGNER` at runtime.
+    let idl_init_signer = attrs.is_signer
+        || ((attrs.is_init || attrs.is_init_if_needed)
+            && attrs.seeds.is_none()
+            && associated_token.is_none());
     let idl_writable = attrs.is_mut;
     let idl_has_one: Vec<String> = attrs
         .has_one
@@ -1255,6 +1265,7 @@ pub fn parse_field(
             // into the parent's; they don't set a bit at the nested field's
             // own offset.
             contributes_mut_bit: false,
+            contributes_active_mut_bit: false,
             init_payer: None,
             idl_writable: false,
             idl_init_signer: false,
@@ -1778,40 +1789,21 @@ pub fn parse_field(
             .as_ref()
             .expect("realloc requires realloc_payer");
         let zero_fill = attrs.realloc_zero;
-        // BorshAccount holds a pinocchio RefMut that (a) blocks the system
-        // program Transfer CPI inside realloc_account and (b) captures a
-        // stale slice length after resize. Release before, reacquire after.
-        // Slab holds no pinocchio borrow so needs neither step.
-        let base_ty = option_inner.unwrap_or(field_ty);
-        let is_borsh_account = field_ty_str(base_ty) == "BorshAccount";
-        let pre_realloc = if is_borsh_account {
-            quote! { #field_name.release_borrow()?; }
+        let realloc_target = if is_optional {
+            quote! { #field_name }
         } else {
-            quote! {}
-        };
-        let post_realloc = if is_borsh_account {
-            // Guard-only: realloc preserves owner/disc, and a full
-            // reacquire would re-deserialize the pre-resize buffer —
-            // fails on shrink.
-            quote! { #field_name.reacquire_guard_only()?; }
-        } else {
-            quote! {}
+            quote! { &mut #field_name }
         };
         constraints.push(quote! {
             {
                 let __new_space = #new_space;
-                let mut __view = *#field_name.account();
                 let __payer_view = *#realloc_payer.account();
-                if __new_space != __view.data_len() {
-                    #pre_realloc
-                    anchor_lang_v2::realloc_account(
-                        &mut __view,
-                        __new_space,
-                        &__payer_view,
-                        #zero_fill,
-                    )?;
-                    #post_realloc
-                }
+                anchor_lang_v2::AccountRealloc::realloc_account(
+                    #realloc_target,
+                    __new_space,
+                    __payer_view,
+                    #zero_fill,
+                )?;
             }
         });
     }
@@ -1831,7 +1823,8 @@ pub fn parse_field(
             let ns = syn::Ident::new(&nc.namespace, proc_macro2::Span::call_site());
             let key = syn::Ident::new(&nc.key, proc_macro2::Span::call_site());
             let value = &nc.value;
-            let expected = if nc.is_field_ref && (nc.namespace == "mint" || nc.namespace == "token") {
+            let expected = if nc.is_field_ref && (nc.namespace == "mint" || nc.namespace == "token")
+            {
                 quote! { anchor_lang_v2::AccountAddress::account_address(&self.#value) }
             } else if nc.is_field_ref {
                 quote! { AsRef::as_ref(&self.#value) }
@@ -1955,13 +1948,14 @@ pub fn parse_field(
                     let ns = syn::Ident::new(&nc.namespace, proc_macro2::Span::call_site());
                     let key = syn::Ident::new(&nc.key, proc_macro2::Span::call_site());
                     let value = &nc.value;
-                    let expected = if nc.is_field_ref && (nc.namespace == "mint" || nc.namespace == "token") {
-                        quote! { anchor_lang_v2::AccountAddress::account_address(&self.#value) }
-                    } else if nc.is_field_ref {
-                        quote! { AsRef::as_ref(&self.#value) }
-                    } else {
-                        quote! { &#value }
-                    };
+                    let expected =
+                        if nc.is_field_ref && (nc.namespace == "mint" || nc.namespace == "token") {
+                            quote! { anchor_lang_v2::AccountAddress::account_address(&self.#value) }
+                        } else if nc.is_field_ref {
+                            quote! { AsRef::as_ref(&self.#value) }
+                        } else {
+                            quote! { &#value }
+                        };
                     quote! {
                         <#ns::#key as anchor_lang_v2::AccountConstraint<_>>::exit(
                             __inner, #expected,
@@ -2001,6 +1995,7 @@ pub fn parse_field(
     };
 
     let contributes_mut_bit = attrs.is_mut && !attrs.is_dup && !is_optional;
+    let contributes_active_mut_bit = attrs.is_mut && !attrs.is_dup && is_optional;
     let init_payer = (attrs.is_init || attrs.is_init_if_needed)
         .then(|| attrs.payer.as_ref().map(ToString::to_string))
         .flatten();
@@ -2017,6 +2012,7 @@ pub fn parse_field(
         is_optional,
         offset_expr,
         contributes_mut_bit,
+        contributes_active_mut_bit,
         init_payer,
         idl_writable,
         idl_init_signer,
@@ -2043,6 +2039,16 @@ mod tests {
         assert!(parsed_attrs.seeds.is_some());
         assert!(parsed_attrs.bump.is_some());
         assert!(parsed_attrs.is_signer);
+    }
+
+    #[test]
+    fn close_does_not_imply_mutability() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(close = receiver)]
+        )];
+        let parsed_attrs = parse_account_attrs(&attrs).unwrap();
+        assert!(!parsed_attrs.is_mut);
+        assert_eq!(parsed_attrs.close.unwrap().to_string(), "receiver");
     }
 
     #[test]

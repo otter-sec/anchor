@@ -76,6 +76,21 @@ macro_rules! view_wrapper_traits {
                 self.view.address()
             }
         }
+        impl crate::ToCpiHandle for $Type {
+            #[inline(always)]
+            fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
+                crate::AnchorAccount::cpi_handle(self)
+            }
+        }
+
+        impl crate::ToCpiHandleMut for $Type {
+            #[inline(always)]
+            fn try_to_cpi_handle_mut(
+                &mut self,
+            ) -> Result<crate::CpiHandle<'_>, solana_program_error::ProgramError> {
+                crate::AnchorAccount::try_cpi_handle_mut(self)
+            }
+        }
     };
 }
 pub(crate) use view_wrapper_traits;

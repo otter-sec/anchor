@@ -23,7 +23,7 @@ use {
     anchor_lang_v2::{
         cursor::{mut_mask_or_shifted, mut_mask_set_bit, AccountBitvec, AccountCursor},
         testing::{AccountRecord, SbfInputBuffer},
-        Bumps, Context,
+        AccountViewCompat, Bumps, Context, MutMask,
     },
     core::mem::MaybeUninit,
     pinocchio::account::AccountView,
@@ -37,6 +37,11 @@ struct DummyHeader;
 impl Bumps for DummyHeader {
     type Bumps = ();
 }
+
+/// No declared mut fields — these tests don't exercise the
+/// trailing-dup-vs-declared-mut check (that's covered by
+/// `remaining_accounts_mut_check.rs`).
+const EMPTY_MUT_MASK: &[u64; 4] = &[0, 0, 0, 0];
 
 fn unique_addr(i: u8) -> [u8; 32] {
     let mut a = [0u8; 32];
@@ -202,13 +207,46 @@ fn remaining_accounts_walks_trailing_region() {
         (),
         &mut cursor,
         /*remaining_num*/ 3,
+        MutMask::Static(EMPTY_MUT_MASK),
     );
 
-    let remaining = ctx.remaining_accounts();
+    let remaining = ctx.remaining_accounts().expect("walk");
     assert_eq!(remaining.len(), 3);
     assert_eq!(remaining[0].address().to_bytes(), unique_addr(2));
     assert_eq!(remaining[1].address().to_bytes(), unique_addr(3));
     assert_eq!(remaining[2].address().to_bytes(), unique_addr(4));
+}
+
+#[test]
+fn remaining_account_views_expose_compat_helpers() {
+    let records = [
+        non_dup(0),
+        non_dup_with_data(1, 16),
+        non_dup_with_data(2, 32),
+    ];
+    let mut sbf = SbfInputBuffer::build(&records);
+    let mut lookup = fresh_lookup();
+    let mut cursor =
+        unsafe { AccountCursor::new(sbf.as_mut_ptr(), lookup.as_mut_ptr() as *mut AccountView) };
+
+    let _ = unsafe { cursor.walk_n(1) };
+
+    let program_id = Address::new_from_array([0x42; 32]);
+    let mut ctx: Context<'_, DummyHeader> = Context::new(
+        &program_id,
+        DummyHeader,
+        (),
+        &mut cursor,
+        /*remaining_num*/ 2,
+        MutMask::Static(EMPTY_MUT_MASK),
+    );
+
+    let mut remaining = ctx.remaining_accounts().expect("walk");
+    assert_eq!(remaining[0].key().to_bytes(), unique_addr(1));
+    assert!(!remaining[0].data_is_empty());
+    assert_eq!(remaining[0].try_data_len().unwrap(), 16);
+    assert_eq!(remaining[0].try_borrow_data().unwrap().len(), 16);
+    assert_eq!(remaining[0].try_borrow_mut_data().unwrap().len(), 16);
 }
 
 #[test]
@@ -220,12 +258,18 @@ fn remaining_accounts_returns_empty_when_nothing_trails() {
     let _ = unsafe { cursor.walk_n(2) };
 
     let program_id = Address::new_from_array([0x42; 32]);
-    let mut ctx: Context<'_, DummyHeader> =
-        Context::new(&program_id, DummyHeader, (), &mut cursor, 0);
+    let mut ctx: Context<'_, DummyHeader> = Context::new(
+        &program_id,
+        DummyHeader,
+        (),
+        &mut cursor,
+        0,
+        MutMask::Static(EMPTY_MUT_MASK),
+    );
 
-    assert!(ctx.remaining_accounts().is_empty());
+    assert!(ctx.remaining_accounts().expect("walk").is_empty());
     // Second call on empty — still empty, no cache bookkeeping bug.
-    assert!(ctx.remaining_accounts().is_empty());
+    assert!(ctx.remaining_accounts().expect("walk").is_empty());
 }
 
 #[test]
@@ -247,10 +291,11 @@ fn remaining_accounts_caches_and_does_not_re_walk_cursor() {
         (),
         &mut cursor,
         /*remaining_num*/ 2,
+        MutMask::Static(EMPTY_MUT_MASK),
     );
 
-    let first = ctx.remaining_accounts();
-    let second = ctx.remaining_accounts();
+    let first = ctx.remaining_accounts().expect("first walk");
+    let second = ctx.remaining_accounts().expect("second walk");
 
     // Structural equality via address, since AccountView is Copy and the
     // cache returns a clone each call.

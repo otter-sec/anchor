@@ -3,6 +3,7 @@ extern crate alloc;
 use {
     crate::{CpiHandle, ToCpiAccounts},
     alloc::vec::Vec,
+    core::mem::MaybeUninit,
     pinocchio::{
         address::Address,
         instruction::{InstructionAccount, InstructionView},
@@ -134,6 +135,69 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
                 ),
                 &signers,
             );
+        }
+    }
+}
+
+#[inline(always)]
+fn signer_from_seeds<'a>(seeds: &'a [&'a [u8]]) -> pinocchio::cpi::Signer<'a, 'a> {
+    // SAFETY: pinocchio::cpi::Seed is repr(C) { *const u8, u64, PhantomData }
+    // which has the same layout as &[u8] on SBF. This is verified by the
+    // static assertion in cpi.rs.
+    let cpi_seeds: &[pinocchio::cpi::Seed] = unsafe {
+        core::slice::from_raw_parts(seeds.as_ptr() as *const pinocchio::cpi::Seed, seeds.len())
+    };
+    pinocchio::cpi::Signer::from(cpi_seeds)
+}
+
+/// Stack-backed fast path for fixed-account CPIs.
+///
+/// This preserves the same [`CpiHandle`] safety model as [`CpiContext::invoke`]
+/// but avoids heap-allocating account metadata and `CpiAccount` buffers for
+/// common SPL instructions with a static account list.
+#[inline(always)]
+pub fn invoke_signed_fixed<'a, const N: usize>(
+    program: &'a Address,
+    data: &[u8],
+    instruction_accounts: &[InstructionAccount<'a>; N],
+    handles: &[CpiHandle<'a>; N],
+    signer_seeds: &'a [&'a [&'a [u8]]],
+) {
+    let instruction = InstructionView {
+        program_id: program,
+        data,
+        accounts: instruction_accounts,
+    };
+
+    let mut cpi_accounts = [const { MaybeUninit::<pinocchio::cpi::CpiAccount>::uninit() }; N];
+    for (handle, slot) in handles.iter().zip(cpi_accounts.iter_mut()) {
+        pinocchio::cpi::CpiAccount::init_from_account_view(handle.account_view(), slot);
+    }
+    let cpi_accounts = unsafe {
+        core::slice::from_raw_parts(
+            cpi_accounts.as_ptr() as *const pinocchio::cpi::CpiAccount,
+            N,
+        )
+    };
+
+    match signer_seeds {
+        [] => unsafe {
+            pinocchio::cpi::invoke_signed_unchecked(&instruction, cpi_accounts, &[]);
+        },
+        [seeds] => {
+            let signer = signer_from_seeds(seeds);
+            unsafe {
+                pinocchio::cpi::invoke_signed_unchecked(&instruction, cpi_accounts, &[signer]);
+            }
+        }
+        _ => {
+            let signers: Vec<pinocchio::cpi::Signer<'a, 'a>> = signer_seeds
+                .iter()
+                .map(|seeds| signer_from_seeds(seeds))
+                .collect();
+            unsafe {
+                pinocchio::cpi::invoke_signed_unchecked(&instruction, cpi_accounts, &signers);
+            }
         }
     }
 }

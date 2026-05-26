@@ -70,6 +70,22 @@ impl<T: Id> AsRef<Address> for Program<T> {
     }
 }
 
+impl<T: Id> crate::ToCpiHandle for Program<T> {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
+        crate::AnchorAccount::cpi_handle(self)
+    }
+}
+
+impl<T: Id> crate::ToCpiHandleMut for Program<T> {
+    #[inline(always)]
+    fn try_to_cpi_handle_mut(
+        &mut self,
+    ) -> Result<crate::CpiHandle<'_>, solana_program_error::ProgramError> {
+        crate::AnchorAccount::try_cpi_handle_mut(self)
+    }
+}
+
 #[doc(hidden)]
 impl<T: Id> crate::IdlAccountType for Program<T> {
     // `Id::IDL_ADDRESS` defaults to `""`; convert empty → None so unknown

@@ -725,6 +725,26 @@ where
     }
 }
 
+#[cfg(feature = "account-resize")]
+impl<H, T> crate::AccountRealloc for Slab<H, T>
+where
+    H: Pod + Zeroable + SlabSchema,
+{
+    #[inline(always)]
+    fn realloc_account(
+        &mut self,
+        new_space: usize,
+        payer: AccountView,
+        zero: bool,
+    ) -> pinocchio::ProgramResult {
+        let mut view = *self.account();
+        if new_space != view.data_len() {
+            crate::realloc_account(&mut view, new_space, &payer, zero)?;
+        }
+        Ok(())
+    }
+}
+
 impl<H, T> Deref for Slab<H, T>
 where
     H: Pod + Zeroable + SlabSchema,
@@ -757,6 +777,28 @@ where
         // SAFETY: is_mutable guarantees header_ptr was derived via data_mut_ptr
         // (write provenance). No other live mutable borrow exists; we hold &mut self.
         unsafe { &mut *self.header_ptr }
+    }
+}
+
+impl<H, T> crate::ToCpiHandle for Slab<H, T>
+where
+    H: Pod + Zeroable + SlabSchema,
+{
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
+        crate::AnchorAccount::cpi_handle(self)
+    }
+}
+
+impl<H, T> crate::ToCpiHandleMut for Slab<H, T>
+where
+    H: Pod + Zeroable + SlabSchema,
+{
+    #[inline(always)]
+    fn try_to_cpi_handle_mut(
+        &mut self,
+    ) -> Result<crate::CpiHandle<'_>, solana_program_error::ProgramError> {
+        crate::AnchorAccount::try_cpi_handle_mut(self)
     }
 }
 

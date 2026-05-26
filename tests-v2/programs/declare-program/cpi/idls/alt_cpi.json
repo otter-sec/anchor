@@ -1,0 +1,54 @@
+{
+  "address": "Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp",
+  "metadata": {
+    "name": "alt_cpi",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "second declare_program CPI fixture"
+  },
+  "instructions": [
+    {
+      "name": "initialize",
+      "discriminator": [0],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "data",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "systemProgram"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "bump",
+      "discriminator": [1],
+      "accounts": [
+        {
+          "name": "data",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "delta",
+          "type": "u8"
+        }
+      ]
+    }
+  ]
+}

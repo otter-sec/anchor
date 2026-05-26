@@ -18,6 +18,7 @@ impl Signer {
 
 impl AnchorAccount for Signer {
     type Data = AccountView;
+    const IS_SIGNER: bool = true;
 
     #[inline(always)]
     fn load(view: AccountView, _program_id: &Address) -> Result<Self, ProgramError> {

@@ -1,0 +1,135 @@
+{
+  "address": "BF748KR4UhPq7xbhFQYd7yFKmh5UYdqed9GbD6oZvEyu",
+  "metadata": {
+    "name": "return_callee",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
+  "instructions": [
+    {
+      "name": "initialize",
+      "discriminator": [0],
+      "accounts": [
+        { "name": "payer", "writable": true, "signer": true },
+        { "name": "data", "writable": true },
+        { "name": "authority", "signer": true },
+        { "name": "system_program" }
+      ],
+      "args": []
+    },
+    {
+      "name": "calculate",
+      "discriminator": [1],
+      "accounts": [
+        { "name": "data", "writable": true },
+        { "name": "authority", "signer": true }
+      ],
+      "args": [
+        { "name": "base", "type": "u64" },
+        { "name": "bonus", "type": "u16" }
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "describe",
+      "discriminator": [2],
+      "accounts": [
+        { "name": "data", "writable": true },
+        { "name": "authority", "signer": true }
+      ],
+      "args": [
+        { "name": "base", "type": "u64" },
+        { "name": "bonus", "type": "u16" }
+      ],
+      "returns": {
+        "defined": {
+          "name": "ReturnPayload"
+        }
+      }
+    },
+    {
+      "name": "noReturnButIdlSays",
+      "discriminator": [3],
+      "accounts": [
+        { "name": "data", "writable": true },
+        { "name": "authority", "signer": true }
+      ],
+      "args": [
+        { "name": "base", "type": "u64" }
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "shortReturn",
+      "discriminator": [4],
+      "accounts": [
+        { "name": "data", "writable": true },
+        { "name": "authority", "signer": true }
+      ],
+      "args": [
+        { "name": "base", "type": "u64" }
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "spoofedReturn",
+      "discriminator": [5],
+      "accounts": [
+        { "name": "data", "writable": true },
+        { "name": "authority", "signer": true },
+        { "name": "spoofProgram" }
+      ],
+      "args": [
+        { "name": "base", "type": "u64" }
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "malformedPayload",
+      "discriminator": [6],
+      "accounts": [
+        { "name": "data", "writable": true },
+        { "name": "authority", "signer": true }
+      ],
+      "args": [
+        { "name": "base", "type": "u64" }
+      ],
+      "returns": {
+        "defined": {
+          "name": "ReturnPayload"
+        }
+      }
+    },
+    {
+      "name": "describeEmpty",
+      "discriminator": [7],
+      "accounts": [
+        { "name": "data", "writable": true },
+        { "name": "authority", "signer": true }
+      ],
+      "args": [
+        { "name": "base", "type": "u64" },
+        { "name": "bonus", "type": "u16" }
+      ],
+      "returns": {
+        "defined": {
+          "name": "ReturnPayload"
+        }
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "ReturnPayload",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "amount", "type": "u64" },
+          { "name": "label", "type": "string" },
+          { "name": "samples", "type": { "vec": "u16" } },
+          { "name": "maybeAuthority", "type": { "option": "pubkey" } }
+        ]
+      }
+    }
+  ]
+}

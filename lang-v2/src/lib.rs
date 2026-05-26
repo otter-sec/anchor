@@ -3,7 +3,6 @@
 //! `#![no_std]` compatible.
 
 #![no_std]
-
 extern crate alloc;
 
 pub mod accounts;
@@ -19,6 +18,7 @@ pub mod idl_build;
 pub mod loader;
 pub mod pod;
 pub mod prelude;
+mod program;
 pub mod programs;
 pub mod system_program;
 #[cfg(feature = "testing")]
@@ -148,6 +148,8 @@ pub use idl_build::IdlAccountType;
 // ---------------------------------------------------------------------------
 // Client-side types — for building instructions off-chain (tests, CPI, SDK)
 // ---------------------------------------------------------------------------
+#[cfg(feature = "event-cpi")]
+pub use anchor_derive_accounts_v2::{emit_cpi, event_cpi};
 /// Metadata for a single account in a transaction instruction.
 ///
 /// Re-exported from `solana-instruction` so tests and CPI builders can pass
@@ -163,12 +165,12 @@ pub use solana_instruction::account_meta::AccountMeta;
 pub use {
     accounts::{AccountInitialize, SlabInit},
     anchor_derive_accounts_v2::{
-        access_control, account, constant, emit, error_code, event, pod_wrapper, program, Accounts,
-        InitSpace,
+        access_control, account, constant, declare_program, emit, error_code, event, pod_wrapper,
+        program, Accounts, InitSpace,
     },
     bytemuck,
-    context::{Bumps, Context},
-    context_cpi::CpiContext,
+    context::{Bumps, Context, MutMask},
+    context_cpi::{invoke_signed_fixed, CpiContext},
     cpi::{
         create_account, create_account_signed, create_program_address,
         find_and_verify_program_address, find_and_verify_program_address_skip_curve,
@@ -220,7 +222,7 @@ pub mod solana_program {
     }
 
     pub mod program {
-        pub use solana_cpi::*;
+        pub use crate::program::*;
     }
 }
 

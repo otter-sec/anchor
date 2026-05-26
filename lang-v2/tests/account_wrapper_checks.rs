@@ -21,7 +21,7 @@ use {
         programs::{System, Token},
         testing::AccountBuffer,
         wincode::{SchemaRead, SchemaWrite},
-        AnchorAccount, Discriminator, ErrorCode, Owner,
+        Accounts, AnchorAccount, Discriminator, ErrorCode, Owner, TryAccounts,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::address::Address,
@@ -66,6 +66,14 @@ impl Owner for PodCounter {
 impl Discriminator for PodCounter {
     // sha256("account:PodCounter")[..8]
     const DISCRIMINATOR: &'static [u8] = &[0x4c, 0xde, 0x7f, 0x28, 0x61, 0x2f, 0x07, 0x73];
+}
+
+#[derive(Accounts)]
+struct CloseUnchecked {
+    #[account(mut, close = receiver)]
+    data: UncheckedAccount,
+    #[account(mut)]
+    receiver: UncheckedAccount,
 }
 
 fn setup_borsh_counter_buf(
@@ -278,6 +286,22 @@ fn unchecked_account_load_mut_accepts_writable() {
     let view = unsafe { buf.view() };
     let ua = unsafe { UncheckedAccount::load_mut(view, &program_id()) }.unwrap();
     assert_eq!(ua.address().to_bytes(), [0xAB; 32]);
+}
+
+#[test]
+fn unchecked_account_close_constraint_fails_at_runtime() {
+    let data_buf = AccountBuffer::<128>::new();
+    data_buf.init([0xAB; 32], [0x99; 32], 0, false, true, false);
+
+    let receiver_buf = AccountBuffer::<128>::new();
+    receiver_buf.init([0xCD; 32], [0x99; 32], 0, false, true, false);
+
+    let views = [unsafe { data_buf.view() }, unsafe { receiver_buf.view() }];
+    let (mut accounts, _, _) =
+        CloseUnchecked::try_accounts(&program_id(), &views, None, 0, &[]).unwrap();
+
+    let err = expect_err(accounts.exit_accounts());
+    assert_eq!(err, ProgramError::InvalidArgument);
 }
 
 // -- Program<T> ---------------------------------------------------------

@@ -1,6 +1,6 @@
 use {
     crate::{
-        context::{Bumps, Context},
+        context::{Bumps, Context, MutMask},
         cursor::{AccountBitvec, AccountCursor},
         loader::AccountLoader,
     },
@@ -31,6 +31,16 @@ pub trait TryAccounts: Bumps + Sized {
     /// does today.
     const MUT_MASK: [u64; 4];
 
+    /// True when [`Self::active_mut_mask`] can differ from [`Self::MUT_MASK`].
+    /// This lets accounts without optional mutable fields keep the old static
+    /// mask path.
+    const HAS_DYNAMIC_MUT_MASK: bool;
+
+    /// Runtime mutable-account mask for checks that happen after declared
+    /// accounts are loaded. This includes optional mutable accounts only when
+    /// they resolved to `Some`.
+    fn active_mut_mask(&self) -> [u64; 4];
+
     /// Parsed instruction args carried alongside validated accounts.
     /// Accounts structs without `#[instruction(...)]` use `()`.
     type IxArgs<'ix>;
@@ -57,13 +67,13 @@ pub trait TryAccounts: Bumps + Sized {
 /// constraint checking.  The residual cursor (past the declared accounts)
 /// is handed to `Context` for lazy `remaining_accounts()` access.
 #[inline(always)]
-pub fn run_handler<'a, T: TryAccounts>(
+pub fn run_handler<'a, T: TryAccounts, R>(
     program_id: &'a Address,
     cursor: &'a mut AccountCursor,
     ix_data: &'a [u8],
     num_accounts: usize,
-    handler: impl FnOnce(&mut Context<'a, T>, T::IxArgs<'a>) -> Result<(), ProgramError>,
-) -> Result<(), ProgramError> {
+    handler: impl FnOnce(&mut Context<'a, T>, T::IxArgs<'a>) -> Result<R, ProgramError>,
+) -> Result<R, ProgramError> {
     if num_accounts < T::HEADER_SIZE {
         return Err(crate::ErrorCode::AccountNotEnoughKeys.into());
     }
@@ -84,9 +94,22 @@ pub fn run_handler<'a, T: TryAccounts>(
         }
         T::try_accounts(program_id, views, duplicates, 0, ix_data)?
     };
+    const _: () = assert!(pinocchio::MAX_TX_ACCOUNTS <= u8::MAX as usize);
     let remaining_num = (num_accounts - T::HEADER_SIZE) as u8;
-    let mut ctx = Context::new(program_id, ctx_accounts, bumps, cursor, remaining_num);
-    handler(&mut ctx, ix_args)?;
+    let mut_mask = if remaining_num != 0 && T::HAS_DYNAMIC_MUT_MASK {
+        MutMask::Dynamic(ctx_accounts.active_mut_mask())
+    } else {
+        MutMask::Static(&T::MUT_MASK)
+    };
+    let mut ctx = Context::new(
+        program_id,
+        ctx_accounts,
+        bumps,
+        cursor,
+        remaining_num,
+        mut_mask,
+    );
+    let result = handler(&mut ctx, ix_args)?;
     ctx.accounts.exit_accounts()?;
-    Ok(())
+    Ok(result)
 }

@@ -1,0 +1,430 @@
+{
+  "address": "Hy6xBbKVJBPx5PV7VsUqrJxGaRFgbmyJkYyzc1L6YMmU",
+  "metadata": {
+    "name": "weird_types",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "declare_program IDL type edge-case fixture"
+  },
+  "instructions": [
+    {
+      "name": "useWeirdTypes",
+      "discriminator": [90, 91, 92, 93],
+      "accounts": [],
+      "args": [
+        {
+          "name": "float32",
+          "type": "f32"
+        },
+        {
+          "name": "float64",
+          "type": "f64"
+        },
+        {
+          "name": "unit",
+          "type": {
+            "defined": {
+              "name": "UnitMarker"
+            }
+          }
+        },
+        {
+          "name": "empty",
+          "type": {
+            "defined": {
+              "name": "EmptyNamed"
+            }
+          }
+        },
+        {
+          "name": "tuple",
+          "type": {
+            "defined": {
+              "name": "PairTuple"
+            }
+          }
+        },
+        {
+          "name": "alias",
+          "type": {
+            "defined": {
+              "name": "AliasU64"
+            }
+          }
+        },
+        {
+          "name": "generic",
+          "type": {
+            "defined": {
+              "name": "GenericBox",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": "u64"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "fixed",
+          "type": {
+            "defined": {
+              "name": "FixedBytes",
+              "generics": [
+                {
+                  "kind": "const",
+                  "value": "4"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "nested",
+          "type": {
+            "defined": {
+              "name": "NestedGeneric",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": "u16"
+                },
+                {
+                  "kind": "const",
+                  "value": "4"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "mode",
+          "type": {
+            "defined": {
+              "name": "WeirdEnum",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": "u16"
+                },
+                {
+                  "kind": "const",
+                  "value": "4"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "boxedAlias",
+          "type": {
+            "defined": {
+              "name": "BoxedU64"
+            }
+          }
+        },
+        {
+          "name": "documented",
+          "type": {
+            "defined": {
+              "name": "DocumentedBorsh"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "UnitMarker",
+      "type": {
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "EmptyNamed",
+      "type": {
+        "kind": "struct",
+        "fields": []
+      }
+    },
+    {
+      "name": "PairTuple",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          "u8",
+          "bool"
+        ]
+      }
+    },
+    {
+      "name": "AliasU64",
+      "type": {
+        "kind": "type",
+        "alias": "u64"
+      }
+    },
+    {
+      "name": "GenericBox",
+      "generics": [
+        {
+          "kind": "type",
+          "name": "T"
+        }
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "value",
+            "type": {
+              "generic": "T"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "FixedBytes",
+      "generics": [
+        {
+          "kind": "const",
+          "name": "N",
+          "type": "usize"
+        }
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "data",
+            "type": {
+              "array": [
+                "u8",
+                {
+                  "generic": "N"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "NestedGeneric",
+      "generics": [
+        {
+          "kind": "type",
+          "name": "T"
+        },
+        {
+          "kind": "const",
+          "name": "N",
+          "type": "usize"
+        }
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "boxed",
+            "type": {
+              "defined": {
+                "name": "GenericBox",
+                "generics": [
+                  {
+                    "kind": "type",
+                    "type": {
+                      "generic": "T"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "fixed",
+            "type": {
+              "defined": {
+                "name": "FixedBytes",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "N"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "items",
+            "type": {
+              "vec": {
+                "generic": "T"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "WeirdEnum",
+      "generics": [
+        {
+          "kind": "type",
+          "name": "T"
+        },
+        {
+          "kind": "const",
+          "name": "N",
+          "type": "usize"
+        }
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Unit"
+          },
+          {
+            "name": "Tuple",
+            "fields": [
+              "f32",
+              {
+                "generic": "T"
+              }
+            ]
+          },
+          {
+            "name": "Named",
+            "fields": [
+              {
+                "name": "fixed",
+                "type": {
+                  "array": [
+                    "u8",
+                    {
+                      "generic": "N"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "boxed",
+                "type": {
+                  "defined": {
+                    "name": "GenericBox",
+                    "generics": [
+                      {
+                        "kind": "type",
+                        "type": {
+                          "generic": "T"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "BoxedU64",
+      "type": {
+        "kind": "type",
+        "alias": {
+          "defined": {
+            "name": "GenericBox",
+            "generics": [
+              {
+                "kind": "type",
+                "type": "u64"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "DocumentedBorsh",
+      "docs": [
+        "A borsh type with docs and explicit repr metadata."
+      ],
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "value",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PackedBytemuck",
+      "docs": [
+        "A packed bytemuck type with no implicit repr(C) override."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c",
+        "packed": true
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wide",
+            "type": "u64"
+          },
+          {
+            "name": "tag",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TransparentBytemuck",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "transparent"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "value",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AlignedBytemuck",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c",
+        "align": 16
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "data",
+            "type": {
+              "array": ["u8", 16]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+{
+  "address": "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw",
+  "metadata": {
+    "name": "serialization",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "generic declare_program serialization fixture"
+  },
+  "instructions": [
+    {
+      "name": "useImplicit",
+      "discriminator": [1, 2, 3],
+      "accounts": [],
+      "args": [
+        {
+          "name": "data",
+          "type": {
+            "defined": {
+              "name": "ImplicitBorshAccount"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "useExplicit",
+      "discriminator": [4, 5, 6],
+      "accounts": [],
+      "args": [
+        {
+          "name": "data",
+          "type": {
+            "defined": {
+              "name": "ExplicitBorshAccount"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "ImplicitBorshAccount",
+      "discriminator": [11, 12, 13, 14, 15, 16, 17, 18]
+    },
+    {
+      "name": "ExplicitBorshAccount",
+      "discriminator": [21, 22, 23, 24, 25, 26, 27, 28]
+    },
+    {
+      "name": "ZeroCopyAccount",
+      "discriminator": [31, 32, 33, 34, 35, 36, 37, 38]
+    },
+    {
+      "name": "UnsafeZeroCopyAccount",
+      "discriminator": [41, 42, 43, 44, 45, 46, 47, 48]
+    }
+  ],
+  "types": [
+    {
+      "name": "ImplicitBorshAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "count",
+            "type": "u64"
+          },
+          {
+            "name": "label",
+            "type": "string"
+          },
+          {
+            "name": "items",
+            "type": {
+              "vec": "u16"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ExplicitBorshAccount",
+      "serialization": "borsh",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "enabled",
+            "type": "bool"
+          },
+          {
+            "name": "fixed",
+            "type": {
+              "array": ["u8", 4]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ZeroCopyAccount",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wide",
+            "type": "u64"
+          },
+          {
+            "name": "narrow",
+            "type": "u32"
+          },
+          {
+            "name": "tag",
+            "type": {
+              "array": ["u8", 4]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "UnsafeZeroCopyAccount",
+      "serialization": "bytemuckunsafe",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wide",
+            "type": "u64"
+          },
+          {
+            "name": "narrow",
+            "type": "u32"
+          },
+          {
+            "name": "tag",
+            "type": {
+              "array": ["u8", 4]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

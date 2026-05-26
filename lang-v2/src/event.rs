@@ -1,5 +1,9 @@
 use {crate::Discriminator, alloc::vec::Vec};
 
+// Sha256(anchor:event)[..8], matching Anchor v1's self-CPI event instruction tag.
+pub const EVENT_IX_TAG: u64 = 0x1d9acb512ea545e4;
+pub const EVENT_IX_TAG_LE: &[u8] = &EVENT_IX_TAG.to_le_bytes();
+
 /// Trait for event structs. Implemented by the `#[event]` attribute macro.
 ///
 /// Two serialization modes are emitted by the macro, both exposed via the

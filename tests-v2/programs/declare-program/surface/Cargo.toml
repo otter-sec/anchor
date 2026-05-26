@@ -1,0 +1,18 @@
+[package]
+name = "declare-program-surface"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["lib"]
+
+[features]
+default = []
+
+[dependencies]
+anchor-lang-v2 = { path = "../../../../lang-v2" }
+wincode = { version = "0.5", features = ["derive"] }
+
+[lints.rust.unexpected_cfgs]
+level = "allow"

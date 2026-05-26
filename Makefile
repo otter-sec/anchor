@@ -172,10 +172,21 @@ coverage-v2-html: $(COVERAGE_DIR)/combined.lcov
 		exit 1; \
 	}
 	rm -rf $(COVERAGE_HTML)
+	@GENHTML_IGNORE_ERRORS=source,unmapped,category; \
+	GENHTML_PROBE="$(COVERAGE_DIR)/genhtml-range-probe.lcov"; \
+	printf 'TN:\nSF:$(PWD)/Makefile\nDA:1,0\nend_of_record\n' > "$$GENHTML_PROBE"; \
+	if genhtml "$$GENHTML_PROBE" \
+		--output-directory "$(COVERAGE_DIR)/genhtml-range-probe" \
+		--prefix "$(PWD)" \
+		--ignore-errors "$$GENHTML_IGNORE_ERRORS,range" \
+		--quiet >/dev/null 2>&1; then \
+		GENHTML_IGNORE_ERRORS="$$GENHTML_IGNORE_ERRORS,range"; \
+	fi; \
+	rm -rf "$(COVERAGE_DIR)/genhtml-range-probe" "$$GENHTML_PROBE"; \
 	genhtml $(COVERAGE_DIR)/combined.lcov \
 		--output-directory $(COVERAGE_HTML) \
 		--prefix $(PWD) \
-		--ignore-errors source,unmapped,category \
+		--ignore-errors "$$GENHTML_IGNORE_ERRORS" \
 		--quiet
 
 $(COVERAGE_DIR)/combined.lcov: coverage-v2-merge

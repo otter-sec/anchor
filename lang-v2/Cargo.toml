@@ -13,6 +13,8 @@ alloc = ["pinocchio/alloc"]
 # Default-off because some shims preserve syntax while keeping v2's cheaper
 # runtime model, and `debug!` still heap-allocates through `alloc::format!`.
 compat = ["dep:solana-program-log", "solana-address/decode"]
+# Enables v1-compatible `#[event_cpi]` and `emit_cpi!` support.
+event-cpi = ["anchor-derive-accounts-v2/event-cpi"]
 # Runtime safety nets that catch caller bugs the Rust borrow checker
 # can't see statically. Default-on. Disabling saves CU at the cost of
 # diagnostic panics for misuse — see lib.rs / Account<T> docs.
@@ -40,10 +42,11 @@ const-rent = []
 # Enables the `anchor_lang_v2::testing` module: stack-backed mock pinocchio
 # types (`AccountView`, SBF input buffer) used by the `tests/` integration
 # tests + Miri witnesses. Also enables `const-rent` so host-side tests can
-# exercise rent-dependent helpers without SVM sysvar support.
+# exercise rent-dependent helpers without SVM sysvar support, and `compat`
+# so tests can cover the v1-style raw remaining-account shims.
 # Off by default so production BPF binaries never ship the scaffold.
 # `cargo test -p anchor-lang-v2 --features testing`.
-testing = ["const-rent"]
+testing = ["const-rent", "compat"]
 
 [dependencies]
 anchor-derive-accounts-v2 = { path = "./derive", version = "2.0.0" }
@@ -51,7 +54,6 @@ anchor-derive-accounts-v2 = { path = "./derive", version = "2.0.0" }
 pinocchio = { workspace = true, features = ["copy"] }
 pinocchio-system = "0.6"
 solana-address = { version = "2.0", features = ["bytemuck", "syscalls", "curve25519", "wincode"] }
-solana-cpi = "3.0"
 solana-instruction = { version = "3", default-features = false }
 solana-program-error = "3.0"
 solana-msg = { version = "3.1", default-features = false, features = ["alloc"] }
@@ -78,8 +80,9 @@ level = "warn"
 # tests, which apply those derives in a crate without the feature.
 check-cfg = [
     'cfg(target_os, values("solana"))',
-    'cfg(feature, values("idl-build"))',
+    'cfg(feature, values("event-cpi", "idl-build"))',
     'cfg(kani)',
+    'cfg(miri)',
 ]
 
 # Integration tests that exercise `unsafe` paths via the `testing`
@@ -131,4 +134,8 @@ required-features = ["testing"]
 
 [[test]]
 name = "miri_wrapper_accounts"
+required-features = ["testing"]
+
+[[test]]
+name = "remaining_accounts_mut_check"
 required-features = ["testing"]

@@ -23,11 +23,16 @@ pub use {
 mod profile;
 
 #[cfg(feature = "profile")]
-pub use profile::svm;
+pub use profile::{svm, svm_with_trace_dir};
 
 /// When the `profile` feature is off, `svm()` is just `LiteSVM::new()`
 /// with zero runtime overhead.
 #[cfg(not(feature = "profile"))]
 pub fn svm() -> LiteSVM {
+    LiteSVM::new()
+}
+
+#[cfg(not(feature = "profile"))]
+pub fn svm_with_trace_dir(_trace_dir: impl Into<std::path::PathBuf>) -> LiteSVM {
     LiteSVM::new()
 }

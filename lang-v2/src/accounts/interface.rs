@@ -69,5 +69,21 @@ impl<T: Ids> AsRef<Address> for Interface<'_, T> {
     }
 }
 
+impl<T: Ids> crate::ToCpiHandle for Interface<'_, T> {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
+        crate::AnchorAccount::cpi_handle(self)
+    }
+}
+
+impl<T: Ids> crate::ToCpiHandleMut for Interface<'_, T> {
+    #[inline(always)]
+    fn try_to_cpi_handle_mut(
+        &mut self,
+    ) -> Result<crate::CpiHandle<'_>, solana_program_error::ProgramError> {
+        crate::AnchorAccount::try_cpi_handle_mut(self)
+    }
+}
+
 #[doc(hidden)]
 impl<T: Ids> crate::IdlAccountType for Interface<'_, T> {}

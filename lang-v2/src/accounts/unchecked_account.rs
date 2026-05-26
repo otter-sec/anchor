@@ -26,6 +26,10 @@ impl AnchorAccount for UncheckedAccount {
     fn account(&self) -> &AccountView {
         &self.view
     }
+
+    fn close(&mut self, _destination: AccountView) -> pinocchio::ProgramResult {
+        Err(ProgramError::InvalidArgument)
+    }
 }
 
 view_wrapper_traits!(UncheckedAccount);

@@ -14,8 +14,8 @@ use {
     proc_macro2::TokenStream as TokenStream2,
     quote::quote,
     syn::{
-        parse_macro_input, spanned::Spanned, Data, DeriveInput, Fields, FnArg, Ident, ItemMod, Pat,
-        Type,
+        parse::Parser, parse_macro_input, spanned::Spanned, Data, DeriveInput, Expr, Fields, FnArg,
+        Ident, ItemMod, ItemStruct, Pat, Type,
     },
 };
 
@@ -23,7 +23,7 @@ use {
 // #[derive(Accounts)]
 // ---------------------------------------------------------------------------
 
-#[proc_macro_derive(Accounts, attributes(account, instruction))]
+#[proc_macro_derive(Accounts, attributes(account, instruction, accounts_program_id))]
 pub fn derive_accounts(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     TokenStream::from(impl_accounts(&input))
@@ -115,7 +115,36 @@ fn nested_client_accounts_type(ty: &Type) -> Option<TokenStream2> {
         ),
         inner_ident.span(),
     );
-    Some(quote! { crate::#module_ident::#inner_ident })
+    Some(quote! { super::#module_ident::#inner_ident })
+}
+
+fn idl_field_ty(field: &parse::AccountField) -> Option<&Type> {
+    field.idl_field_ty.as_ref()
+}
+
+fn client_meta_signer_expr(field: &parse::AccountField) -> TokenStream2 {
+    let init_signer = field.idl_init_signer;
+    match idl_field_ty(field) {
+        Some(ty) => quote! {
+            if <#ty as anchor_lang_v2::AnchorAccount>::IS_SIGNER || #init_signer {
+                _is_signer.unwrap_or(true)
+            } else {
+                false
+            }
+        },
+        None if init_signer => quote! { _is_signer.unwrap_or(true) },
+        None => quote! { false },
+    }
+}
+
+fn cpi_meta_signer_expr(field: &parse::AccountField) -> TokenStream2 {
+    let init_signer = field.idl_init_signer;
+    match idl_field_ty(field) {
+        Some(ty) => quote! {
+            <#ty as anchor_lang_v2::AnchorAccount>::IS_SIGNER || #init_signer
+        },
+        None => quote! { #init_signer },
+    }
 }
 
 struct ArgsDeser {
@@ -218,9 +247,33 @@ fn parse_instruction_attrs(attrs: &[syn::Attribute]) -> syn::Result<Vec<(Ident, 
     Ok(result)
 }
 
+/// Parse the internal `#[accounts_program_id(expr)]` override used by
+/// `declare_program!` for generated account structs. Ordinary user-written
+/// `#[derive(Accounts)]` structs continue to default to the current crate's ID.
+fn parse_accounts_program_id_attr(attrs: &[syn::Attribute]) -> syn::Result<Expr> {
+    let mut program_id = None;
+    for attr in attrs {
+        if !attr.path().is_ident("accounts_program_id") {
+            continue;
+        }
+        if program_id.is_some() {
+            return Err(syn::Error::new(
+                attr.span(),
+                "duplicate `accounts_program_id` attribute",
+            ));
+        }
+        program_id = Some(attr.parse_args::<Expr>()?);
+    }
+    Ok(program_id.unwrap_or_else(|| syn::parse_quote!(crate::ID)))
+}
+
 fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     let name = &input.ident;
     let bumps_name = syn::Ident::new(&format!("{name}Bumps"), name.span());
+    let accounts_program_id = match parse_accounts_program_id_attr(&input.attrs) {
+        Ok(program_id) => program_id,
+        Err(err) => return err.to_compile_error(),
+    };
 
     // Bail with a properly-spanned diagnostic on unsupported shapes.
     let named_fields = match &input.data {
@@ -413,6 +466,62 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 #(#mut_mask_steps)*
                 __mask
             }
+        }
+    };
+    let dynamic_mut_mask_terms: Vec<proc_macro2::TokenStream> = fields
+        .iter()
+        .filter_map(|f| {
+            if f.contributes_active_mut_bit {
+                Some(quote::quote! { true })
+            } else {
+                parse::extract_nested_inner_type(&f.ty).map(|inner_ty| {
+                    quote::quote! {
+                        <#inner_ty as anchor_lang_v2::TryAccounts>::HAS_DYNAMIC_MUT_MASK
+                    }
+                })
+            }
+        })
+        .collect();
+    let has_dynamic_mut_mask_expr = if dynamic_mut_mask_terms.is_empty() {
+        quote::quote! { false }
+    } else {
+        quote::quote! {
+            false #(|| #dynamic_mut_mask_terms)*
+        }
+    };
+    let active_mut_mask_steps: Vec<proc_macro2::TokenStream> = fields
+        .iter()
+        .filter_map(|f| {
+            let field_name = &f.name;
+            let offset = &f.offset_expr;
+            if f.contributes_active_mut_bit {
+                Some(quote! {
+                    if self.#field_name.is_some() {
+                        __mask = anchor_lang_v2::mut_mask_set_bit(__mask, #offset);
+                    }
+                })
+            } else if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
+                Some(quote! {
+                    if <#inner_ty as anchor_lang_v2::TryAccounts>::HAS_DYNAMIC_MUT_MASK {
+                        __mask = anchor_lang_v2::mut_mask_or_shifted(
+                            __mask,
+                            <#inner_ty as anchor_lang_v2::TryAccounts>::active_mut_mask(&self.#field_name.0),
+                            #offset,
+                        );
+                    }
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+    let active_mut_mask_body = if active_mut_mask_steps.is_empty() {
+        quote::quote! { Self::MUT_MASK }
+    } else {
+        quote::quote! {
+            let mut __mask = Self::MUT_MASK;
+            #(#active_mut_mask_steps)*
+            __mask
         }
     };
 
@@ -708,7 +817,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                         Some(quote! {
                             let #ident = {
                                 let (__addr, _) = anchor_lang_v2::find_program_address(
-                                    &[#(#seed_exprs),*], &crate::ID,
+                                    &[#(#seed_exprs),*], &#accounts_program_id,
                                 );
                                 Some(__addr)
                             };
@@ -716,7 +825,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                     } else {
                         Some(quote! {
                             let (#ident, _) = anchor_lang_v2::find_program_address(
-                                &[#(#seed_exprs),*], &crate::ID,
+                                &[#(#seed_exprs),*], &#accounts_program_id,
                             );
                         })
                     }
@@ -731,16 +840,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .iter()
         .map(|(field, _kind)| {
             let writable = field.idl_writable;
-            let is_signer_ty = parse::field_ty_str(match parse::extract_option_inner(&field.ty) {
-                Some(inner) => inner,
-                None => &field.ty,
-            }) == "Signer";
-            let signer = is_signer_ty || field.idl_init_signer;
-            let signer_expr = if signer {
-                quote! { _is_signer.unwrap_or(true) }
-            } else {
-                quote! { false }
-            };
+            let signer_expr = client_meta_signer_expr(field);
             let field_ident = &field.name;
             if nested_client_accounts_type(&field.ty).is_some() {
                 quote! {
@@ -758,7 +858,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                             is_signer: #signer_expr,
                         }),
                         None => __metas.push(anchor_lang_v2::AccountMeta {
-                            pubkey: crate::ID,
+                            pubkey: #accounts_program_id,
                             is_writable: false,
                             is_signer: false,
                         }),
@@ -838,7 +938,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 pub fn #fn_name(#(#params),*) -> (anchor_lang_v2::Address, u8) {
                     anchor_lang_v2::find_program_address(
                         &[#(#seed_exprs),*],
-                        &crate::ID,
+                        &#accounts_program_id,
                     )
                 }
             })
@@ -865,16 +965,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .iter()
         .map(|field| {
             let writable = field.idl_writable;
-            let is_signer_ty = parse::field_ty_str(match parse::extract_option_inner(&field.ty) {
-                Some(inner) => inner,
-                None => &field.ty,
-            }) == "Signer";
-            let signer = is_signer_ty || field.idl_init_signer;
-            let signer_expr = if signer {
-                quote! { _is_signer.unwrap_or(true) }
-            } else {
-                quote! { false }
-            };
+            let signer_expr = client_meta_signer_expr(field);
             let field_ident = &field.name;
             if nested_client_accounts_type(&field.ty).is_some() {
                 quote! {
@@ -892,7 +983,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                             is_signer: #signer_expr,
                         }),
                         None => __metas.push(anchor_lang_v2::AccountMeta {
-                            pubkey: crate::ID,
+                            pubkey: #accounts_program_id,
                             is_writable: false,
                             is_signer: false,
                         }),
@@ -918,20 +1009,18 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     // `CpiHandle<'a>` fields and a `ToCpiAccounts<'a>` impl driven by each
     // field's compile-time writable / signer flags. `Nested<T>` fields hold
     // T's generated CPI accounts struct and flatten through `ToCpiAccounts`,
-    // matching the account ordering used by `TryAccounts`. Skipped when the
-    // Accounts struct contains `Option<_>` fields — those need sentinel
-    // fallback logic that this codegen pass does not yet handle. The
-    // `#[program]` macro re-exports the resulting type under
+    // matching the account ordering used by `TryAccounts`. Optional accounts
+    // are emitted as `Option<CpiHandle<'a>>`; `None` emits the program-id
+    // sentinel account meta and omits the handle, matching the callee's
+    // optional-account parser.
+    // The `#[program]` macro re-exports the resulting type under
     // `cpi::accounts::<name>` and synthesizes the per-instruction wrapper
     // functions.
     let cpi_mod_name = syn::Ident::new(
         &format!("__cpi_accounts_{}", name.to_string().to_lowercase()),
         name.span(),
     );
-    let cpi_unsupported = fields.iter().any(|f| f.is_optional);
-    let cpi_accounts_mod = if cpi_unsupported {
-        quote! {}
-    } else {
+    let cpi_accounts_mod = {
         let cpi_field_decls: Vec<_> = fields
             .iter()
             .map(|f| {
@@ -947,6 +1036,8 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                         n.span(),
                     );
                     quote! { pub #n: super::#inner_mod::#inner_ident<'a> }
+                } else if f.is_optional {
+                    quote! { pub #n: ::core::option::Option<anchor_lang_v2::CpiHandle<'a>> }
                 } else {
                     quote! { pub #n: anchor_lang_v2::CpiHandle<'a> }
                 }
@@ -964,19 +1055,38 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                     };
                 }
                 let writable = f.idl_writable;
-                let is_signer_ty = parse::field_ty_str(&f.ty) == "Signer" || f.idl_init_signer;
-                let ctor = match (writable, is_signer_ty) {
-                    (true, true) => quote! { writable_signer },
-                    (true, false) => quote! { writable },
-                    (false, true) => quote! { readonly_signer },
-                    (false, false) => quote! { readonly },
-                };
-                quote! {
-                    __accounts.push(
-                        anchor_lang_v2::pinocchio::instruction::InstructionAccount::#ctor(
-                            self.#n.address(),
-                        ),
-                    );
+                let signer_expr = cpi_meta_signer_expr(f);
+                if f.is_optional {
+                    quote! {
+                        match &self.#n {
+                            ::core::option::Option::Some(__account) => {
+                                __accounts.push(
+                                    anchor_lang_v2::pinocchio::instruction::InstructionAccount::new(
+                                        __account.address(),
+                                        #writable,
+                                        #signer_expr,
+                                    ),
+                                );
+                            }
+                            ::core::option::Option::None => {
+                                __accounts.push(
+                                    anchor_lang_v2::pinocchio::instruction::InstructionAccount::readonly(
+                                        &#accounts_program_id,
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    quote! {
+                        __accounts.push(
+                            anchor_lang_v2::pinocchio::instruction::InstructionAccount::new(
+                                self.#n.address(),
+                                #writable,
+                                #signer_expr,
+                            ),
+                        );
+                    }
                 }
             })
             .collect();
@@ -987,6 +1097,12 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 if parse::is_nested_type(&f.ty) {
                     quote! {
                         __handles.extend(anchor_lang_v2::ToCpiAccounts::to_cpi_handles(&self.#n));
+                    }
+                } else if f.is_optional {
+                    quote! {
+                        if let ::core::option::Option::Some(__account) = self.#n {
+                            __handles.push(__account);
+                        }
                     }
                 } else {
                     quote! { __handles.push(self.#n); }
@@ -1098,6 +1214,12 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         impl anchor_lang_v2::TryAccounts for #name {
             const HEADER_SIZE: usize = #header_size_expr;
             const MUT_MASK: [u64; 4] = #mut_mask_expr;
+            const HAS_DYNAMIC_MUT_MASK: bool = #has_dynamic_mut_mask_expr;
+
+            #[inline(always)]
+            fn active_mut_mask(&self) -> [u64; 4] {
+                #active_mut_mask_body
+            }
 
             #ix_args_assoc
 
@@ -1601,9 +1723,1536 @@ fn diagnose_non_pod_field(ty: &Type, field_name: &str, struct_name: &str) -> Opt
 // ---------------------------------------------------------------------------
 
 #[proc_macro_attribute]
-pub fn program(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn program(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let config = match parse_program_config(attr) {
+        Ok(config) => config,
+        Err(err) => return TokenStream::from(err.to_compile_error()),
+    };
     let module = parse_macro_input!(item as ItemMod);
-    TokenStream::from(impl_program(&module))
+    TokenStream::from(impl_program(&module, &config))
+}
+
+#[proc_macro]
+pub fn declare_program(input: TokenStream) -> TokenStream {
+    let name = parse_macro_input!(input as Ident);
+    match impl_declare_program(&name) {
+        Ok(tokens) => TokenStream::from(tokens),
+        Err(err) => TokenStream::from(err.to_compile_error()),
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProgramMode {
+    Executable,
+    Interface,
+}
+
+struct ProgramConfig {
+    mode: ProgramMode,
+    program_id: Expr,
+}
+
+#[derive(Clone)]
+struct DiscrimAttr {
+    bytes: Vec<u8>,
+    span: proc_macro2::Span,
+}
+
+fn parse_program_config(attr: TokenStream) -> syn::Result<ProgramConfig> {
+    parse_program_config_tokens(TokenStream2::from(attr))
+}
+
+fn parse_program_config_tokens(attr: TokenStream2) -> syn::Result<ProgramConfig> {
+    let mut mode = ProgramMode::Executable;
+    let mut program_id = None;
+    let mut program_id_span = None;
+
+    if attr.is_empty() {
+        return Ok(ProgramConfig {
+            mode,
+            program_id: syn::parse_quote!(crate::ID),
+        });
+    }
+
+    let parser = syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated;
+    for meta in parser.parse2(attr)? {
+        match meta {
+            syn::Meta::Path(path) if path.is_ident("interface") => {
+                mode = ProgramMode::Interface;
+            }
+            syn::Meta::NameValue(nv) if nv.path.is_ident("program_id") => {
+                if program_id.is_some() {
+                    return Err(syn::Error::new(nv.path.span(), "duplicate `program_id`"));
+                }
+                program_id_span = Some(nv.path.span());
+                program_id = Some(nv.value);
+            }
+            other => {
+                return Err(syn::Error::new(
+                    other.span(),
+                    "unsupported `#[program]` argument; expected `interface` or `program_id = <expr>`",
+                ));
+            }
+        }
+    }
+
+    if mode == ProgramMode::Executable {
+        if let Some(span) = program_id_span {
+            return Err(syn::Error::new(
+                span,
+                "`program_id` is only supported with `#[program(interface, ...)]`",
+            ));
+        }
+    }
+
+    Ok(ProgramConfig {
+        mode,
+        program_id: program_id.unwrap_or_else(|| syn::parse_quote!(crate::ID)),
+    })
+}
+
+fn impl_declare_program(name: &Ident) -> syn::Result<TokenStream2> {
+    let idl = read_declare_program_idl(name)?;
+    gen_declared_program(name, &idl)
+}
+
+fn read_declare_program_idl(name: &Ident) -> syn::Result<serde_json::Value> {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").map_err(|err| {
+        syn::Error::new(
+            name.span(),
+            format!("failed to read `CARGO_MANIFEST_DIR` for `declare_program!`: {err}"),
+        )
+    })?;
+    let manifest_dir = std::path::PathBuf::from(manifest_dir);
+    let idl_dir = manifest_dir
+        .ancestors()
+        .find_map(|ancestor| {
+            let candidate = ancestor.join("idls");
+            candidate.exists().then_some(candidate)
+        })
+        .ok_or_else(|| syn::Error::new(name.span(), "`idls` directory not found"))?;
+    let idl_path = idl_dir.join(name.to_string()).with_extension("json");
+    let idl = std::fs::read(&idl_path).map_err(|err| {
+        syn::Error::new(
+            name.span(),
+            format!("failed to read IDL `{}`: {err}", idl_path.display()),
+        )
+    })?;
+    let idl = anchor_lang_idl::convert::convert_idl(&idl).map_err(|err| {
+        syn::Error::new(
+            name.span(),
+            format!("failed to parse IDL `{}`: {err}", idl_path.display()),
+        )
+    })?;
+    serde_json::to_value(idl).map_err(|err| {
+        syn::Error::new(
+            name.span(),
+            format!(
+                "failed to normalize IDL `{}` after parsing: {err}",
+                idl_path.display()
+            ),
+        )
+    })
+}
+
+fn gen_declared_program(name: &Ident, idl: &serde_json::Value) -> syn::Result<TokenStream2> {
+    let address = idl
+        .get("address")
+        .or_else(|| idl.pointer("/metadata/address"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| syn::Error::new(name.span(), "IDL is missing program address"))?;
+    let address_lit = syn::LitStr::new(address, name.span());
+    let instructions = idl
+        .get("instructions")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| syn::Error::new(name.span(), "IDL is missing instructions array"))?;
+    validate_declare_program_discriminators(idl, name.span())?;
+
+    let types = gen_declare_program_types(idl)?;
+    let type_idents = gen_declare_program_type_idents(idl)?;
+    let type_reexports = type_idents
+        .iter()
+        .map(|ident| quote! { pub use super::#ident; });
+    let constants = gen_declare_program_constants(idl)?;
+    let events = gen_declare_program_events(idl)?;
+    let errors = gen_declare_program_errors(idl, name.span())?;
+    let mut account_groups = std::collections::BTreeMap::<String, Vec<DeclareAccountField>>::new();
+    let mut handlers = Vec::new();
+    for ix in instructions {
+        let ix_name = json_str(ix, "name", name.span())?;
+        let ix_ident = Ident::new(&to_snake_case(ix_name), name.span());
+        let accounts_name = to_type_name(ix_name);
+        let accounts_ident = Ident::new(&accounts_name, name.span());
+        let accounts = ix
+            .get("accounts")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| {
+                syn::Error::new(
+                    name.span(),
+                    format!("instruction `{ix_name}` is missing accounts array"),
+                )
+            })?;
+        collect_declare_account_group(&accounts_name, accounts, &mut account_groups, name.span())?;
+
+        let discrim = ix
+            .get("discriminator")
+            .and_then(serde_json::Value::as_array)
+            .map(|values| parse_discriminator_array(values, name.span()))
+            .transpose()?
+            .unwrap_or_else(|| default_instruction_discriminator(&to_snake_case(ix_name)));
+        let discrim_tokens: Vec<_> = discrim.iter().map(|b| quote! { #b }).collect();
+
+        let args = ix
+            .get("args")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| {
+                syn::Error::new(
+                    name.span(),
+                    format!("instruction `{ix_name}` is missing args array"),
+                )
+            })?;
+        let mut arg_decls = Vec::new();
+        let mut arg_uses = Vec::new();
+        for arg in args {
+            let arg_name = json_str(arg, "name", name.span())?;
+            let arg_ident = Ident::new(&to_snake_case(arg_name), name.span());
+            let ty_value = arg.get("type").ok_or_else(|| {
+                syn::Error::new(
+                    name.span(),
+                    format!("argument `{arg_name}` is missing type"),
+                )
+            })?;
+            let ty = declare_idl_type_to_tokens(ty_value, name.span())?;
+            arg_decls.push(quote! { #arg_ident: #ty });
+            arg_uses.push(quote! { let _ = #arg_ident; });
+        }
+        let return_ty = ix
+            .get("returns")
+            .map(|ty| declare_idl_type_to_tokens(ty, name.span()))
+            .transpose()?
+            .unwrap_or_else(|| quote! { () });
+
+        handlers.push(quote! {
+            #[discrim = [#(#discrim_tokens),*]]
+            pub fn #ix_ident(_ctx: &mut anchor_lang_v2::Context<#accounts_ident>, #(#arg_decls),*) -> anchor_lang_v2::Result<#return_ty> {
+                #(#arg_uses)*
+                unreachable!()
+            }
+        });
+    }
+
+    let mut account_structs = Vec::new();
+    for (group_name, fields) in account_groups {
+        let group_ident = Ident::new(&group_name, name.span());
+        let field_tokens = fields.into_iter().map(|field| field.to_tokens());
+        account_structs.push(quote! {
+            #[derive(anchor_lang_v2::Accounts)]
+            #[accounts_program_id(ID)]
+            pub struct #group_ident {
+                #(#field_tokens)*
+            }
+        });
+    }
+
+    let marker_name = Ident::new(&to_type_name(&name.to_string()), name.span());
+    Ok(quote! {
+        pub mod #name {
+            use super::*;
+
+            pub const ID: anchor_lang_v2::Address =
+                anchor_lang_v2::Address::from_str_const(#address_lit);
+
+            pub mod program {
+                pub struct #marker_name;
+
+                impl anchor_lang_v2::Id for #marker_name {
+                    fn id() -> anchor_lang_v2::Address {
+                        super::ID
+                    }
+                }
+            }
+
+            #(#types)*
+            pub mod types {
+                #(#type_reexports)*
+            }
+            pub mod constants {
+                #(#constants)*
+            }
+            #events
+            #errors
+            #(#account_structs)*
+
+            #[anchor_lang_v2::program(interface, program_id = ID)]
+            pub mod __program {
+                use super::*;
+                #(#handlers)*
+            }
+        }
+    })
+}
+
+fn gen_declare_program_errors(
+    idl: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    let Some(errors) = idl.get("errors").and_then(serde_json::Value::as_array) else {
+        return Ok(quote! {
+            pub mod error {
+                use super::*;
+            }
+        });
+    };
+
+    if errors.is_empty() {
+        return Ok(quote! {
+            pub mod error {
+                use super::*;
+            }
+        });
+    }
+
+    let program_name = idl
+        .pointer("/metadata/name")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("DeclaredProgram");
+    let enum_ident = Ident::new(&format!("{}Error", to_type_name(program_name)), span);
+    let mut variants = Vec::new();
+    for error in errors {
+        let name = json_str(error, "name", span)?;
+        let ident = Ident::new(&to_type_name(name), span);
+        let code = error
+            .get("code")
+            .and_then(serde_json::Value::as_u64)
+            .filter(|code| *code <= u32::MAX as u64)
+            .ok_or_else(|| {
+                syn::Error::new(
+                    span,
+                    format!("IDL error `{name}` is missing a u32 code in `{error}`"),
+                )
+            })? as u32;
+        let msg = error
+            .get("msg")
+            .and_then(serde_json::Value::as_str)
+            .map(|msg| {
+                let msg_lit = syn::LitStr::new(msg, span);
+                quote! { #[msg(#msg_lit)] }
+            });
+        variants.push(quote! {
+            #msg
+            #ident = #code,
+        });
+    }
+
+    Ok(quote! {
+        pub mod error {
+            use super::*;
+
+            #[anchor_lang_v2::error_code(offset = 0)]
+            pub enum #enum_ident {
+                #(#variants)*
+            }
+        }
+    })
+}
+
+fn validate_declare_program_discriminators(
+    idl: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<()> {
+    let instructions = idl
+        .get("instructions")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|ix| {
+            let name = json_str(ix, "name", span)?;
+            let discriminator = ix
+                .get("discriminator")
+                .and_then(serde_json::Value::as_array)
+                .map(|values| parse_discriminator_array(values, span))
+                .transpose()?
+                .unwrap_or_else(|| default_instruction_discriminator(&to_snake_case(name)));
+            Ok((name.to_string(), discriminator))
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
+    validate_discriminator_prefixes("instructions", &instructions, span)?;
+
+    for section in ["accounts", "events"] {
+        let discriminators = idl
+            .get(section)
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|item| {
+                let name = match json_str(item, "name", span) {
+                    Ok(name) => name,
+                    Err(err) => return Some(Err(err)),
+                };
+                let discriminator = item.get("discriminator")?.as_array()?;
+                Some(
+                    parse_discriminator_array(discriminator, span)
+                        .map(|discriminator| (name.to_string(), discriminator)),
+                )
+            })
+            .collect::<syn::Result<Vec<_>>>()?;
+        validate_discriminator_prefixes(section, &discriminators, span)?;
+    }
+
+    Ok(())
+}
+
+fn validate_discriminator_prefixes(
+    section: &str,
+    discriminators: &[(String, Vec<u8>)],
+    span: proc_macro2::Span,
+) -> syn::Result<()> {
+    for (outer_name, outer_disc) in discriminators {
+        for (inner_name, inner_disc) in discriminators {
+            if outer_name != inner_name && outer_disc.starts_with(inner_disc) {
+                return Err(syn::Error::new(
+                    span,
+                    format!(
+                        "Ambiguous discriminators for {section} `{outer_name}` and `{inner_name}`"
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+struct DeclareAccountField {
+    name: Ident,
+    ty: TokenStream2,
+    attrs: TokenStream2,
+}
+
+impl DeclareAccountField {
+    fn to_tokens(self) -> TokenStream2 {
+        let name = self.name;
+        let ty = self.ty;
+        let attrs = self.attrs;
+        quote! {
+            #attrs
+            pub #name: #ty,
+        }
+    }
+}
+
+fn collect_declare_account_group(
+    group_name: &str,
+    accounts: &[serde_json::Value],
+    groups: &mut std::collections::BTreeMap<String, Vec<DeclareAccountField>>,
+    span: proc_macro2::Span,
+) -> syn::Result<()> {
+    if groups.contains_key(group_name) {
+        return Ok(());
+    }
+
+    let mut fields = Vec::new();
+    for account in accounts {
+        let name = json_str(account, "name", span)?;
+        let ident = Ident::new(&to_snake_case(name), span);
+        if let Some(nested) = account
+            .get("accounts")
+            .and_then(serde_json::Value::as_array)
+        {
+            let nested_name = to_type_name(name);
+            collect_declare_account_group(&nested_name, nested, groups, span)?;
+            let nested_ident = Ident::new(&nested_name, span);
+            fields.push(DeclareAccountField {
+                name: ident,
+                ty: quote! { anchor_lang_v2::Nested<#nested_ident> },
+                attrs: quote! {},
+            });
+            continue;
+        }
+
+        let writable = account
+            .get("writable")
+            .or_else(|| account.get("isMut"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let signer = account
+            .get("signer")
+            .or_else(|| account.get("isSigner"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let optional = account
+            .get("optional")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+
+        let base_ty = quote! { anchor_lang_v2::accounts::UncheckedAccount };
+        let ty = if optional {
+            quote! { Option<#base_ty> }
+        } else {
+            base_ty
+        };
+        let attrs = match (writable, signer) {
+            (true, true) => quote! { #[account(mut, signer)] },
+            (true, false) => quote! { #[account(mut)] },
+            (false, true) => quote! { #[account(signer)] },
+            (false, false) => quote! {},
+        };
+        fields.push(DeclareAccountField {
+            name: ident,
+            ty,
+            attrs,
+        });
+    }
+
+    groups.insert(group_name.to_string(), fields);
+    Ok(())
+}
+
+fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenStream2>> {
+    let Some(types) = idl.get("types").and_then(serde_json::Value::as_array) else {
+        return Ok(Vec::new());
+    };
+    let account_entries: std::collections::BTreeMap<_, _> = idl
+        .get("accounts")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|account| {
+            let name = account.get("name")?.as_str()?;
+            Some((name, account))
+        })
+        .collect();
+    let mut out = Vec::new();
+    for ty_def in types {
+        let name = json_str(ty_def, "name", proc_macro2::Span::call_site())?;
+        let ident = Ident::new(&to_type_name(name), proc_macro2::Span::call_site());
+        let docs = gen_declare_program_docs(ty_def, ident.span());
+        let repr = gen_declare_program_repr(ty_def, ident.span())?;
+        let serialization = declare_type_serialization(ty_def, ident.span())?;
+        let bytemuck_repr = if repr.is_none() && serialization.is_bytemuck() {
+            quote! { #[repr(C)] }
+        } else {
+            quote! { #repr }
+        };
+        let generics = gen_declare_program_type_generics(ty_def, ident.span())?;
+        let account_entry = account_entries.get(name).copied();
+        let discriminator = account_entry
+            .and_then(|account| account.get("discriminator"))
+            .and_then(serde_json::Value::as_array);
+        let discriminator_impl = if let Some(discriminator) = discriminator {
+            let bytes: Vec<_> = discriminator
+                .iter()
+                .map(|value| {
+                    let byte = value.as_u64().ok_or_else(|| {
+                        syn::Error::new(
+                            ident.span(),
+                            format!("account `{name}` discriminator entries must be integers"),
+                        )
+                    })?;
+                    if byte > u8::MAX as u64 {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            format!("account `{name}` discriminator entry `{byte}` exceeds u8"),
+                        ));
+                    }
+                    Ok(byte as u8)
+                })
+                .collect::<syn::Result<_>>()?;
+            let bytes = bytes.iter().map(|byte| quote! { #byte });
+            let impl_generics = &generics.impl_generics;
+            let ty_generics = &generics.ty_generics;
+            quote! {
+                impl #impl_generics anchor_lang_v2::Owner for #ident #ty_generics {
+                    fn owner(_program_id: &anchor_lang_v2::Address) -> anchor_lang_v2::Address {
+                        ID
+                    }
+                }
+
+                impl #impl_generics anchor_lang_v2::Discriminator for #ident #ty_generics {
+                    const DISCRIMINATOR: &'static [u8] = &[#(#bytes),*];
+                }
+            }
+        } else {
+            quote! {}
+        };
+        let type_obj = ty_def.get("type").ok_or_else(|| {
+            syn::Error::new(ident.span(), format!("type `{name}` is missing type body"))
+        })?;
+        let idl_type_def = syn::LitStr::new(&ty_def.to_string(), ident.span());
+        let idl_account_entry =
+            account_entry.map(|account| syn::LitStr::new(&account.to_string(), ident.span()));
+        let kind = json_str(type_obj, "kind", ident.span())?;
+        match kind {
+            "struct" => {
+                let fields = match type_obj.get("fields") {
+                    Some(fields) => {
+                        let fields = fields.as_array().ok_or_else(|| {
+                            syn::Error::new(
+                                ident.span(),
+                                format!("struct type `{name}` fields must be an array"),
+                            )
+                        })?;
+                        gen_declare_program_type_fields(fields, ident.span(), true)?
+                    }
+                    None => DeclareTypeFields::Unit,
+                };
+                let idl_field_tys = fields.tys();
+                let idl_impl = gen_declare_program_idl_account_type_impl(
+                    &ident,
+                    &generics,
+                    idl_account_entry.as_ref(),
+                    &idl_type_def,
+                    idl_field_tys,
+                );
+                let pod_impls = serialization
+                    .is_bytemuck()
+                    .then(|| gen_declare_program_pod_impls(&ident, &generics, &fields))
+                    .unwrap_or_default();
+                let impl_generics = &generics.impl_generics;
+                out.push(match fields {
+                    DeclareTypeFields::Named { fields, .. } if serialization.is_bytemuck() => quote! {
+                        #(#docs)*
+                        #[derive(Clone, Copy)]
+                        #bytemuck_repr
+                        pub struct #ident #impl_generics {
+                            #(#fields)*
+                        }
+                        #pod_impls
+                        #discriminator_impl
+                        #idl_impl
+                    },
+                    DeclareTypeFields::Named { fields, .. } => quote! {
+                        #(#docs)*
+                        #repr
+                        #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+                        pub struct #ident #impl_generics {
+                            #(#fields)*
+                        }
+                        #discriminator_impl
+                        #idl_impl
+                    },
+                    DeclareTypeFields::Tuple { fields, .. } if serialization.is_bytemuck() => quote! {
+                        #(#docs)*
+                        #[derive(Clone, Copy)]
+                        #bytemuck_repr
+                        pub struct #ident #impl_generics(#(#fields),*);
+                        #pod_impls
+                        #discriminator_impl
+                        #idl_impl
+                    },
+                    DeclareTypeFields::Tuple { fields, .. } => quote! {
+                        #(#docs)*
+                        #repr
+                        #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+                        pub struct #ident #impl_generics(#(#fields),*);
+                        #discriminator_impl
+                        #idl_impl
+                    },
+                    DeclareTypeFields::Unit if serialization.is_bytemuck() => quote! {
+                        #(#docs)*
+                        #[derive(Clone, Copy)]
+                        #bytemuck_repr
+                        pub struct #ident #impl_generics;
+                        #pod_impls
+                        #discriminator_impl
+                        #idl_impl
+                    },
+                    DeclareTypeFields::Unit => quote! {
+                        #(#docs)*
+                        #repr
+                        #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+                        pub struct #ident #impl_generics;
+                        #discriminator_impl
+                        #idl_impl
+                    },
+                });
+            }
+            "enum" => {
+                if serialization.is_bytemuck() {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        format!("declare_program! does not support bytemuck enum type `{name}`"),
+                    ));
+                }
+                let variants = type_obj
+                    .get("variants")
+                    .and_then(serde_json::Value::as_array)
+                    .ok_or_else(|| {
+                        syn::Error::new(
+                            ident.span(),
+                            format!("enum type `{name}` is missing variants"),
+                        )
+                    })?;
+                let mut variant_tokens = Vec::new();
+                let mut idl_field_tys = Vec::new();
+                for variant in variants {
+                    let variant_name = json_str(variant, "name", ident.span())?;
+                    let variant_ident = Ident::new(variant_name, ident.span());
+                    let Some(fields) = variant.get("fields") else {
+                        variant_tokens.push(quote! { #variant_ident, });
+                        continue;
+                    };
+                    let fields = fields.as_array().ok_or_else(|| {
+                        syn::Error::new(
+                            ident.span(),
+                            format!("variant `{variant_name}` fields must be an array"),
+                        )
+                    })?;
+                    let fields = gen_declare_program_type_fields(fields, ident.span(), false)?;
+                    idl_field_tys.extend(fields.tys().iter().cloned());
+                    match fields {
+                        DeclareTypeFields::Named { fields, .. } => {
+                            variant_tokens.push(quote! { #variant_ident { #(#fields)* }, });
+                        }
+                        DeclareTypeFields::Tuple { fields, .. } => {
+                            variant_tokens.push(quote! { #variant_ident(#(#fields),*), });
+                        }
+                        DeclareTypeFields::Unit => {
+                            variant_tokens.push(quote! { #variant_ident, });
+                        }
+                    }
+                }
+                let idl_impl = gen_declare_program_idl_account_type_impl(
+                    &ident,
+                    &generics,
+                    idl_account_entry.as_ref(),
+                    &idl_type_def,
+                    &idl_field_tys,
+                );
+                let impl_generics = &generics.impl_generics;
+                out.push(quote! {
+                    #(#docs)*
+                    #repr
+                    #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+                    pub enum #ident #impl_generics {
+                        #(#variant_tokens)*
+                    }
+                    #discriminator_impl
+                    #idl_impl
+                });
+            }
+            "type" => {
+                let alias = type_obj.get("alias").ok_or_else(|| {
+                    syn::Error::new(
+                        ident.span(),
+                        format!("type alias `{name}` is missing alias"),
+                    )
+                })?;
+                let alias = declare_idl_type_to_tokens(alias, ident.span())?;
+                let impl_generics = &generics.impl_generics;
+                out.push(quote! {
+                    #(#docs)*
+                    pub type #ident #impl_generics = #alias;
+                });
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    format!("declare_program! only supports struct, enum, and type alias IDL types for now, got `{kind}`"),
+                ));
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[derive(Clone, Copy)]
+enum DeclareTypeSerialization {
+    Borsh,
+    Bytemuck,
+    BytemuckUnsafe,
+}
+
+impl DeclareTypeSerialization {
+    fn is_bytemuck(self) -> bool {
+        matches!(self, Self::Bytemuck | Self::BytemuckUnsafe)
+    }
+}
+
+fn gen_declare_program_docs(
+    value: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> Vec<TokenStream2> {
+    value
+        .get("docs")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .map(|doc| format!("{}{doc}", if doc.is_empty() { "" } else { " " }))
+        .map(|doc| {
+            let doc = syn::LitStr::new(&doc, span);
+            quote! { #[doc = #doc] }
+        })
+        .collect()
+}
+
+fn gen_declare_program_repr(
+    ty_def: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<Option<TokenStream2>> {
+    let Some(repr) = ty_def.get("repr") else {
+        return Ok(None);
+    };
+    let kind = match json_str(repr, "kind", span)? {
+        "rust" => Ident::new("Rust", span),
+        "c" => Ident::new("C", span),
+        "transparent" => Ident::new("transparent", span),
+        other => {
+            return Err(syn::Error::new(
+                span,
+                format!("unsupported IDL repr kind `{other}`"),
+            ))
+        }
+    };
+
+    let modifier = if repr.get("kind").and_then(serde_json::Value::as_str) == Some("transparent") {
+        None
+    } else {
+        let packed = repr
+            .get("packed")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+            .then_some(quote! { packed });
+        let align = repr
+            .get("align")
+            .and_then(serde_json::Value::as_u64)
+            .map(|align| proc_macro2::Literal::usize_unsuffixed(align as usize))
+            .map(|align| quote! { align(#align) });
+
+        match (packed, align) {
+            (None, None) => None,
+            (Some(packed), None) => Some(quote! { #packed }),
+            (None, Some(align)) => Some(quote! { #align }),
+            (Some(packed), Some(align)) => Some(quote! { #packed, #align }),
+        }
+    }
+    .map(|modifier| quote! { , #modifier });
+
+    Ok(Some(quote! { #[repr(#kind #modifier)] }))
+}
+
+fn declare_type_serialization(
+    ty_def: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<DeclareTypeSerialization> {
+    match ty_def
+        .get("serialization")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("borsh")
+    {
+        "borsh" => Ok(DeclareTypeSerialization::Borsh),
+        "bytemuck" => Ok(DeclareTypeSerialization::Bytemuck),
+        "bytemuckunsafe" | "bytemuckUnsafe" => Ok(DeclareTypeSerialization::BytemuckUnsafe),
+        other => Err(syn::Error::new(
+            span,
+            format!("unsupported IDL type serialization `{other}`"),
+        )),
+    }
+}
+
+fn gen_declare_program_type_idents(idl: &serde_json::Value) -> syn::Result<Vec<Ident>> {
+    let mut names = std::collections::BTreeSet::new();
+    for section in ["accounts", "types"] {
+        if let Some(items) = idl.get(section).and_then(serde_json::Value::as_array) {
+            for item in items {
+                names.insert(json_str(item, "name", proc_macro2::Span::call_site())?.to_string());
+            }
+        }
+    }
+    Ok(names
+        .into_iter()
+        .map(|name| Ident::new(&to_type_name(&name), proc_macro2::Span::call_site()))
+        .collect())
+}
+
+fn gen_declare_program_constants(idl: &serde_json::Value) -> syn::Result<Vec<TokenStream2>> {
+    let Some(constants) = idl.get("constants").and_then(serde_json::Value::as_array) else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    for constant in constants {
+        let name = json_str(constant, "name", proc_macro2::Span::call_site())?;
+        let ident = Ident::new(name, proc_macro2::Span::call_site());
+        let docs = gen_declare_program_docs(constant, ident.span());
+        let ty_value = constant.get("type").ok_or_else(|| {
+            syn::Error::new(ident.span(), format!("constant `{name}` is missing type"))
+        })?;
+        let value = json_str(constant, "value", ident.span())?;
+        let constant = gen_declare_program_constant(&ident, ty_value, value)?;
+        out.push(quote! {
+            #(#docs)*
+            #constant
+        });
+    }
+    Ok(out)
+}
+
+fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStream2> {
+    let Some(events) = idl.get("events").and_then(serde_json::Value::as_array) else {
+        return Ok(quote! {
+            pub mod events {
+                use super::*;
+            }
+        });
+    };
+
+    let type_defs: std::collections::BTreeMap<_, _> = idl
+        .get("types")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|ty_def| {
+            let name = ty_def.get("name")?.as_str()?;
+            Some((name, ty_def))
+        })
+        .collect();
+
+    let mut event_reexports = Vec::new();
+    let mut impls = Vec::new();
+    let mut parser_variants = Vec::new();
+    let mut parser_branches = Vec::new();
+    let span = proc_macro2::Span::call_site();
+
+    for event in events {
+        let name = json_str(event, "name", span)?;
+        let ident = Ident::new(&to_type_name(name), span);
+        let discriminator = event
+            .get("discriminator")
+            .and_then(serde_json::Value::as_array)
+            .map(|values| parse_discriminator_array(values, span))
+            .transpose()?
+            .ok_or_else(|| {
+                syn::Error::new(
+                    span,
+                    format!("event `{name}` is missing discriminator in `{event}`"),
+                )
+            })?;
+        let discriminator = discriminator.iter().map(|byte| quote! { #byte });
+        let ty_def = type_defs.get(name).copied().ok_or_else(|| {
+            syn::Error::new(
+                span,
+                format!("event `{name}` is missing matching type definition"),
+            )
+        })?;
+        let serialization = declare_type_serialization(ty_def, span)?;
+
+        event_reexports.push(quote! { pub use super::#ident; });
+        parser_variants.push(quote! { #ident(super::events::#ident) });
+
+        let event_impl = if serialization.is_bytemuck() {
+            quote! {
+                impl anchor_lang_v2::Event for #ident {
+                    fn data(&self) -> anchor_lang_v2::__alloc::vec::Vec<u8> {
+                        let disc = <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR;
+                        let payload = anchor_lang_v2::bytemuck::bytes_of(self);
+                        let mut data =
+                            anchor_lang_v2::__alloc::vec::Vec::with_capacity(disc.len() + payload.len());
+                        data.extend_from_slice(disc);
+                        data.extend_from_slice(payload);
+                        data
+                    }
+                }
+            }
+        } else {
+            quote! {
+                impl anchor_lang_v2::Event for #ident {
+                    fn data(&self) -> anchor_lang_v2::__alloc::vec::Vec<u8> {
+                        let disc = <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR;
+                        let mut data =
+                            anchor_lang_v2::__alloc::vec::Vec::with_capacity(disc.len() + 256);
+                        data.extend_from_slice(disc);
+                        anchor_lang_v2::wincode::config::serialize_into(
+                            &mut data,
+                            self,
+                            anchor_lang_v2::BORSH_CONFIG,
+                        )
+                        .expect("declared event serialization cannot fail for derived SchemaWrite types");
+                        data
+                    }
+                }
+            }
+        };
+
+        impls.push(quote! {
+            impl anchor_lang_v2::Discriminator for #ident {
+                const DISCRIMINATOR: &'static [u8] = &[#(#discriminator),*];
+            }
+
+            #event_impl
+        });
+
+        let parser_body = if serialization.is_bytemuck() {
+            quote! {
+                let payload = &value[<super::events::#ident as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len()..];
+                let expected = core::mem::size_of::<super::events::#ident>();
+                if payload.len() != expected {
+                    return Err(anchor_lang_v2::Error::InvalidInstructionData);
+                }
+                return Ok(Self::#ident(
+                    anchor_lang_v2::bytemuck::pod_read_unaligned(payload)
+                ));
+            }
+        } else {
+            quote! {
+                let mut payload = &value[<super::events::#ident as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len()..];
+                let decoded =
+                    <super::events::#ident as anchor_lang_v2::wincode::SchemaRead<
+                        '_,
+                        anchor_lang_v2::BorshConfig,
+                    >>::get(&mut payload)
+                    .map_err(|_| anchor_lang_v2::Error::InvalidInstructionData)?;
+                if !payload.is_empty() {
+                    return Err(anchor_lang_v2::Error::InvalidInstructionData);
+                }
+                return Ok(Self::#ident(decoded));
+            }
+        };
+        parser_branches.push(quote! {
+            if value.starts_with(
+                <super::events::#ident as anchor_lang_v2::Discriminator>::DISCRIMINATOR,
+            ) {
+                #parser_body
+            }
+        });
+    }
+
+    let parser_mod = if parser_variants.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            pub mod parsers {
+                use super::*;
+
+                pub enum Event {
+                    #(#parser_variants,)*
+                }
+
+                impl Event {
+                    pub fn parse(data: &[u8]) -> anchor_lang_v2::Result<Self> {
+                        Self::try_from(data)
+                    }
+                }
+
+                impl core::convert::TryFrom<&[u8]> for Event {
+                    type Error = anchor_lang_v2::Error;
+
+                    fn try_from(value: &[u8]) -> anchor_lang_v2::Result<Self> {
+                        #(#parser_branches)*
+                        Err(anchor_lang_v2::Error::InvalidArgument)
+                    }
+                }
+            }
+        }
+    };
+
+    Ok(quote! {
+        pub mod events {
+            use super::*;
+
+            #(#event_reexports)*
+        }
+
+        #(#impls)*
+
+        #parser_mod
+    })
+}
+
+fn gen_declare_program_constant(
+    ident: &Ident,
+    ty_value: &serde_json::Value,
+    value: &str,
+) -> syn::Result<TokenStream2> {
+    let span = ident.span();
+    if ty_value.as_str() == Some("bytes") {
+        let bytes = parse_declare_program_byte_array(value, span)?;
+        let bytes = bytes.iter().map(|b| quote! { #b });
+        return Ok(quote! { pub const #ident: &'static [u8] = &[#(#bytes),*]; });
+    }
+
+    if ty_value.as_str() == Some("string") {
+        let expr: Expr = syn::parse_str(value).map_err(|err| {
+            syn::Error::new(
+                span,
+                format!("failed to parse string constant value: {err}"),
+            )
+        })?;
+        return Ok(quote! { pub const #ident: &'static str = #expr; });
+    }
+
+    if ty_value.as_str() == Some("pubkey") {
+        let value = syn::parse_str::<syn::LitStr>(value)
+            .map(|value| value.value())
+            .unwrap_or_else(|_| value.to_owned());
+        let value = syn::LitStr::new(&value, span);
+        return Ok(quote! {
+            pub const #ident: anchor_lang_v2::Address =
+                anchor_lang_v2::Address::from_str_const(#value);
+        });
+    }
+
+    if let Some(array) = ty_value.get("array").and_then(serde_json::Value::as_array) {
+        if array.len() == 2 && array[0].as_str() == Some("u8") {
+            let len = declare_idl_array_len_to_tokens(&array[1], span)?;
+            let bytes = parse_declare_program_byte_array(value, span)?;
+            if let Some(len) = array[1].as_u64() {
+                let len = len as usize;
+                if bytes.len() != len {
+                    return Err(syn::Error::new(
+                        span,
+                        format!(
+                            "constant `{ident}` has {} bytes, expected {len}",
+                            bytes.len()
+                        ),
+                    ));
+                }
+            }
+            let bytes = bytes.iter().map(|b| quote! { #b });
+            return Ok(quote! { pub const #ident: [u8; #len] = [#(#bytes),*]; });
+        }
+    }
+
+    let ty = declare_idl_const_type_to_tokens(ty_value, span)?;
+    let expr: Expr = syn::parse_str(value)
+        .map_err(|err| syn::Error::new(span, format!("failed to parse constant value: {err}")))?;
+    Ok(quote! { pub const #ident: #ty = #expr; })
+}
+
+fn declare_idl_const_type_to_tokens(
+    value: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    if let Some(s) = value.as_str() {
+        match s {
+            "bytes" => return Ok(quote! { &'static [u8] }),
+            "string" => return Ok(quote! { &'static str }),
+            _ => {}
+        }
+    }
+    declare_idl_type_to_tokens(value, span)
+}
+
+fn parse_declare_program_byte_array(value: &str, span: proc_macro2::Span) -> syn::Result<Vec<u8>> {
+    let value = value.trim();
+    let value = value
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .ok_or_else(|| syn::Error::new(span, "byte-array constant value must be `[u8, ...]`"))?;
+    if value.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    value
+        .split(',')
+        .map(|part| {
+            part.trim()
+                .parse::<u8>()
+                .map_err(|err| syn::Error::new(span, format!("invalid byte constant: {err}")))
+        })
+        .collect()
+}
+
+enum DeclareTypeFields {
+    Named {
+        fields: Vec<TokenStream2>,
+        tys: Vec<TokenStream2>,
+    },
+    Tuple {
+        fields: Vec<TokenStream2>,
+        tys: Vec<TokenStream2>,
+    },
+    Unit,
+}
+
+impl DeclareTypeFields {
+    fn tys(&self) -> &[TokenStream2] {
+        match self {
+            Self::Named { tys, .. } | Self::Tuple { tys, .. } => tys,
+            Self::Unit => &[],
+        }
+    }
+}
+
+struct DeclareTypeGenerics {
+    impl_generics: TokenStream2,
+    ty_generics: TokenStream2,
+    idl_where_clause: TokenStream2,
+    pod_where_clause: TokenStream2,
+}
+
+fn gen_declare_program_type_generics(
+    ty_def: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<DeclareTypeGenerics> {
+    let Some(generics) = ty_def.get("generics").and_then(serde_json::Value::as_array) else {
+        return Ok(DeclareTypeGenerics {
+            impl_generics: quote! {},
+            ty_generics: quote! {},
+            idl_where_clause: quote! {},
+            pod_where_clause: quote! {},
+        });
+    };
+    let mut impl_params = Vec::new();
+    let mut ty_params = Vec::new();
+    let mut idl_bounds = Vec::new();
+    let mut pod_bounds = Vec::new();
+    for generic in generics {
+        let name = json_str(generic, "name", span)?;
+        let ident = Ident::new(name, span);
+        match json_str(generic, "kind", span)? {
+            "type" => {
+                impl_params.push(quote! { #ident });
+                ty_params.push(quote! { #ident });
+                idl_bounds.push(quote! { #ident: anchor_lang_v2::IdlAccountType });
+                pod_bounds.push(quote! {
+                    #ident: anchor_lang_v2::bytemuck::Pod + anchor_lang_v2::bytemuck::Zeroable
+                });
+            }
+            "const" => {
+                let ty = json_str(generic, "type", span)?;
+                let ty: Type = syn::parse_str(ty).map_err(|err| {
+                    syn::Error::new(
+                        span,
+                        format!("failed to parse const generic `{name}` type `{ty}`: {err}"),
+                    )
+                })?;
+                impl_params.push(quote! { const #ident: #ty });
+                ty_params.push(quote! { #ident });
+            }
+            other => {
+                return Err(syn::Error::new(
+                    span,
+                    format!("unsupported IDL type generic kind `{other}`"),
+                ))
+            }
+        }
+    }
+    let impl_generics = quote! { <#(#impl_params),*> };
+    let ty_generics = quote! { <#(#ty_params),*> };
+    let idl_where_clause = if idl_bounds.is_empty() {
+        quote! {}
+    } else {
+        quote! { where #(#idl_bounds),* }
+    };
+    let pod_where_clause = if pod_bounds.is_empty() {
+        quote! {}
+    } else {
+        quote! { where #(#pod_bounds),* }
+    };
+    Ok(DeclareTypeGenerics {
+        impl_generics,
+        ty_generics,
+        idl_where_clause,
+        pod_where_clause,
+    })
+}
+
+fn gen_declare_program_idl_account_type_impl(
+    ident: &Ident,
+    generics: &DeclareTypeGenerics,
+    account_entry: Option<&syn::LitStr>,
+    type_def: &syn::LitStr,
+    field_tys: &[TokenStream2],
+) -> TokenStream2 {
+    let account_entry = match account_entry {
+        Some(account_entry) => quote! { Some(#account_entry) },
+        None => quote! { None },
+    };
+    let impl_generics = &generics.impl_generics;
+    let ty_generics = &generics.ty_generics;
+    let where_clause = &generics.idl_where_clause;
+    quote! {
+        #[doc(hidden)]
+        impl #impl_generics anchor_lang_v2::IdlAccountType for #ident #ty_generics #where_clause {
+            const __IDL_ACCOUNT_ENTRY: Option<&'static str> = #account_entry;
+            const __IDL_TYPE_DEF: Option<&'static str> = Some(#type_def);
+
+            fn __register_idl_deps(
+                accounts: &mut anchor_lang_v2::__alloc::vec::Vec<&'static str>,
+                types: &mut anchor_lang_v2::__alloc::vec::Vec<&'static str>,
+            ) {
+                if let Some(a) = <Self as anchor_lang_v2::IdlAccountType>::__IDL_ACCOUNT_ENTRY {
+                    accounts.push(a);
+                }
+                if let Some(t) = <Self as anchor_lang_v2::IdlAccountType>::__IDL_TYPE_DEF {
+                    types.push(t);
+                }
+                #(
+                    <#field_tys as anchor_lang_v2::IdlAccountType>::__register_idl_deps(accounts, types);
+                )*
+            }
+        }
+    }
+}
+
+fn gen_declare_program_pod_impls(
+    ident: &Ident,
+    generics: &DeclareTypeGenerics,
+    fields: &DeclareTypeFields,
+) -> TokenStream2 {
+    let field_types = fields.tys();
+    let impl_generics = &generics.impl_generics;
+    let ty_generics = &generics.ty_generics;
+    let where_clause = &generics.pod_where_clause;
+    quote! {
+        impl #impl_generics #ident #ty_generics #where_clause {
+            const __ANCHOR_DECLARE_PROGRAM_POD_ASSERT: fn() = || {
+                fn assert_pod<T: anchor_lang_v2::bytemuck::Pod>() {}
+                #( assert_pod::<#field_types>(); )*
+            };
+            const __ANCHOR_DECLARE_PROGRAM_NO_PADDING: () = assert!(
+                core::mem::size_of::<Self>() == 0 #(+ core::mem::size_of::<#field_types>())*,
+                "declared bytemuck type has padding bytes"
+            );
+        }
+        unsafe impl #impl_generics anchor_lang_v2::bytemuck::Pod for #ident #ty_generics #where_clause {}
+        unsafe impl #impl_generics anchor_lang_v2::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
+    }
+}
+
+fn gen_declare_program_type_fields(
+    fields: &[serde_json::Value],
+    span: proc_macro2::Span,
+    public: bool,
+) -> syn::Result<DeclareTypeFields> {
+    let visibility = public.then(|| quote! { pub });
+    if fields.iter().all(serde_json::Value::is_object) {
+        let mut field_tokens = Vec::new();
+        let mut field_tys = Vec::new();
+        for field in fields {
+            let field_name = json_str(field, "name", span)?;
+            let field_ident = Ident::new(&to_snake_case(field_name), span);
+            let ty_value = field.get("type").ok_or_else(|| {
+                syn::Error::new(span, format!("field `{field_name}` is missing type"))
+            })?;
+            let ty = declare_idl_type_to_tokens(ty_value, span)?;
+            field_tokens.push(quote! { #visibility #field_ident: #ty, });
+            field_tys.push(ty);
+        }
+        Ok(DeclareTypeFields::Named {
+            fields: field_tokens,
+            tys: field_tys,
+        })
+    } else {
+        let mut field_tokens = Vec::new();
+        let mut field_tys = Vec::new();
+        for field in fields {
+            let ty = declare_idl_type_to_tokens(field, span)?;
+            field_tokens.push(quote! { #visibility #ty });
+            field_tys.push(ty);
+        }
+        Ok(DeclareTypeFields::Tuple {
+            fields: field_tokens,
+            tys: field_tys,
+        })
+    }
+}
+
+fn declare_idl_type_to_tokens(
+    value: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    if let Some(s) = value.as_str() {
+        return Ok(match s {
+            "bool" => quote! { bool },
+            "u8" => quote! { u8 },
+            "i8" => quote! { i8 },
+            "u16" => quote! { u16 },
+            "i16" => quote! { i16 },
+            "u32" => quote! { u32 },
+            "i32" => quote! { i32 },
+            "f32" => quote! { f32 },
+            "u64" => quote! { u64 },
+            "i64" => quote! { i64 },
+            "f64" => quote! { f64 },
+            "u128" => quote! { u128 },
+            "i128" => quote! { i128 },
+            "bytes" => quote! { anchor_lang_v2::__alloc::vec::Vec<u8> },
+            "string" => quote! { anchor_lang_v2::__alloc::string::String },
+            "pubkey" => quote! { anchor_lang_v2::Address },
+            other => {
+                return Err(syn::Error::new(
+                    span,
+                    format!("unsupported IDL type string `{other}`"),
+                ))
+            }
+        });
+    }
+
+    if let Some(defined) = value.get("defined") {
+        let defined_name = if let Some(name) = defined.as_str() {
+            name
+        } else {
+            json_str(defined, "name", span)?
+        };
+        let ident = Ident::new(&to_type_name(defined_name), span);
+        let generic_args = defined
+            .get("generics")
+            .and_then(serde_json::Value::as_array)
+            .map(|generics| {
+                generics
+                    .iter()
+                    .map(|generic| declare_idl_generic_arg_to_tokens(generic, span))
+                    .collect::<syn::Result<Vec<_>>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        if generic_args.is_empty() {
+            return Ok(quote! { #ident });
+        }
+        return Ok(quote! { #ident<#(#generic_args),*> });
+    }
+    if let Some(generic) = value.get("generic").and_then(serde_json::Value::as_str) {
+        let ident = Ident::new(generic, span);
+        return Ok(quote! { #ident });
+    }
+    if let Some(inner) = value.get("vec") {
+        let inner = declare_idl_type_to_tokens(inner, span)?;
+        return Ok(quote! { anchor_lang_v2::__alloc::vec::Vec<#inner> });
+    }
+    if let Some(inner) = value.get("option") {
+        let inner = declare_idl_type_to_tokens(inner, span)?;
+        return Ok(quote! { Option<#inner> });
+    }
+    if let Some(array) = value.get("array").and_then(serde_json::Value::as_array) {
+        if array.len() != 2 {
+            return Err(syn::Error::new(
+                span,
+                "IDL array type must have two elements",
+            ));
+        }
+        let inner = declare_idl_type_to_tokens(&array[0], span)?;
+        let len = declare_idl_array_len_to_tokens(&array[1], span)?;
+        return Ok(quote! { [#inner; #len] });
+    }
+
+    Err(syn::Error::new(
+        span,
+        format!("unsupported IDL type `{value}`"),
+    ))
+}
+
+fn declare_idl_array_len_to_tokens(
+    value: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    if let Some(len) = value.as_u64() {
+        let len = len as usize;
+        return Ok(quote! { #len });
+    }
+    if let Some(generic) = value.get("generic").and_then(serde_json::Value::as_str) {
+        let ident = Ident::new(generic, span);
+        return Ok(quote! { #ident });
+    }
+    if let Some(generic) = value.as_str() {
+        let ident = Ident::new(generic, span);
+        return Ok(quote! { #ident });
+    }
+    Err(syn::Error::new(
+        span,
+        format!("unsupported IDL array length `{value}`"),
+    ))
+}
+
+fn declare_idl_generic_arg_to_tokens(
+    value: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    match json_str(value, "kind", span)? {
+        "type" => {
+            let ty = value.get("type").ok_or_else(|| {
+                syn::Error::new(
+                    span,
+                    format!("generic type arg is missing type in `{value}`"),
+                )
+            })?;
+            declare_idl_type_to_tokens(ty, span)
+        }
+        "const" => {
+            let value = json_str(value, "value", span)?;
+            let expr: Expr = syn::parse_str(value).map_err(|err| {
+                syn::Error::new(
+                    span,
+                    format!("failed to parse const generic value `{value}`: {err}"),
+                )
+            })?;
+            Ok(quote! { #expr })
+        }
+        other => Err(syn::Error::new(
+            span,
+            format!("unsupported IDL generic arg kind `{other}`"),
+        )),
+    }
+}
+
+fn json_str<'a>(
+    value: &'a serde_json::Value,
+    key: &str,
+    span: proc_macro2::Span,
+) -> syn::Result<&'a str> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            syn::Error::new(
+                span,
+                format!("IDL object is missing string field `{key}` in `{value}`"),
+            )
+        })
+}
+
+fn parse_discriminator_array(
+    values: &[serde_json::Value],
+    span: proc_macro2::Span,
+) -> syn::Result<Vec<u8>> {
+    if values.is_empty() {
+        return Err(syn::Error::new(span, "IDL discriminator must not be empty"));
+    }
+    values
+        .iter()
+        .map(|value| {
+            value
+                .as_u64()
+                .filter(|value| *value <= u8::MAX as u64)
+                .map(|value| value as u8)
+                .ok_or_else(|| syn::Error::new(span, "IDL discriminator values must be bytes"))
+        })
+        .collect()
+}
+
+fn default_instruction_discriminator(name: &str) -> Vec<u8> {
+    use sha2::Digest;
+    sha2::Sha256::digest(format!("global:{name}").as_bytes())[..8].to_vec()
+}
+
+fn to_snake_case(input: &str) -> String {
+    let mut out = String::new();
+    for (i, ch) in input.chars().enumerate() {
+        if ch == '-' || ch == ' ' {
+            out.push('_');
+        } else if ch.is_ascii_uppercase() {
+            if i != 0 {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn to_type_name(input: &str) -> String {
+    to_snake_case(input)
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect()
 }
 
 struct HandlerCodegen {
@@ -1625,6 +3274,7 @@ struct HandlerCodegen {
     idl_name: String,
     idl_disc: String,
     idl_args: String,
+    idl_returns_json: String,
     /// Pre-rendered `,"docs":[...]` fragment (including the leading comma
     /// separator) that gets spliced into the per-instruction IDL JSON
     /// between `"name"` and `"discriminator"`. Empty string when the
@@ -1633,6 +3283,7 @@ struct HandlerCodegen {
     idl_accounts_type: TokenStream2,
     /// Original (non-lifetime-transformed) arg types for min-length computation.
     arg_types: Vec<Type>,
+    return_type: Option<Type>,
 }
 
 impl HandlerCodegen {
@@ -1659,10 +3310,59 @@ impl HandlerCodegen {
             idl_name: fn_name.to_string(),
             idl_disc: "[]".to_string(),
             idl_args: "[]".to_string(),
+            idl_returns_json: String::new(),
             idl_docs_json: String::new(),
             idl_accounts_type: quote! { () },
             arg_types: Vec::new(),
+            return_type: None,
         }
+    }
+}
+
+fn is_unit_type(ty: &Type) -> bool {
+    matches!(ty, Type::Tuple(tuple) if tuple.elems.is_empty())
+}
+
+fn extract_result_return_type(output: &syn::ReturnType) -> syn::Result<Option<Type>> {
+    let syn::ReturnType::Type(_, ty) = output else {
+        return Ok(None);
+    };
+
+    let Type::Path(type_path) = &**ty else {
+        return Err(syn::Error::new(
+            ty.span(),
+            "handler return type must be `Result<T>`",
+        ));
+    };
+    let Some(segment) = type_path.path.segments.last() else {
+        return Err(syn::Error::new(
+            ty.span(),
+            "handler return type must be `Result<T>`",
+        ));
+    };
+    if segment.ident != "Result" {
+        return Err(syn::Error::new(
+            ty.span(),
+            "handler return type must be `Result<T>`",
+        ));
+    }
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return Err(syn::Error::new(
+            ty.span(),
+            "handler return type must be `Result<T>`",
+        ));
+    };
+    let Some(syn::GenericArgument::Type(return_ty)) = args.args.first() else {
+        return Err(syn::Error::new(
+            ty.span(),
+            "handler return type must be `Result<T>`",
+        ));
+    };
+
+    if is_unit_type(return_ty) {
+        Ok(None)
+    } else {
+        Ok(Some(return_ty.clone()))
     }
 }
 
@@ -1670,22 +3370,62 @@ fn process_handler(
     handler: &syn::ItemFn,
     mod_name: &Ident,
     use_byte_disc: bool,
-    discrim_byte: Option<u8>,
+    discrim_bytes: Option<&[u8]>,
+    program_id: &Expr,
 ) -> HandlerCodegen {
     let fn_name = &handler.sig.ident;
     let fn_name_str = fn_name.to_string();
+    let return_type = match extract_result_return_type(&handler.sig.output) {
+        Ok(return_ty) => return_ty,
+        Err(err) => return HandlerCodegen::error(handler, err),
+    };
+    let return_ty = return_type
+        .as_ref()
+        .map(|return_ty| quote! { #return_ty })
+        .unwrap_or_else(|| quote! { () });
+    let returns_value = return_type.is_some();
+    let idl_returns_json = return_type
+        .as_ref()
+        .map(|return_ty| format!(",\"returns\":{}", idl::rust_type_to_idl(return_ty)))
+        .unwrap_or_default();
+    let set_return_data = returns_value.then(|| {
+        quote! {
+            let mut __return_data = anchor_lang_v2::__alloc::vec::Vec::with_capacity(256);
+            anchor_lang_v2::wincode::config::serialize_into(
+                &mut __return_data,
+                &__result,
+                anchor_lang_v2::BORSH_CONFIG,
+            )
+                .expect("return data serialization failed");
+            anchor_lang_v2::pinocchio::cpi::set_return_data(&__return_data);
+        }
+    });
 
-    // Discriminator: 1-byte user-specified or 8-byte sha256 hash.
+    // Discriminator: explicit bytes for declared interfaces, 1-byte
+    // user-specified executable dispatch, or 8-byte sha256 hash by default.
     use sha2::Digest;
     let hash = sha2::Sha256::digest(format!("global:{fn_name_str}").as_bytes());
     let (disc_bytes_for_idl, disc_literal_bytes, disc_match_arm_pattern): (
         Vec<u8>,
         Vec<TokenStream2>,
         TokenStream2,
-    ) = if use_byte_disc {
-        let byte = discrim_byte
-            .expect("all-or-nothing discrim check guarantees Some when use_byte_disc is true");
-        (vec![byte], vec![quote! { #byte }], quote! { #byte })
+    ) = if let Some(discrim_bytes) = discrim_bytes {
+        let lits: Vec<_> = discrim_bytes.iter().map(|b| quote! { #b }).collect();
+        let match_arm = if use_byte_disc {
+            let byte = discrim_bytes[0];
+            quote! { #byte }
+        } else if discrim_bytes.len() == 8 {
+            let disc_u64 = u64::from_le_bytes(
+                discrim_bytes
+                    .try_into()
+                    .expect("checked length before u64 conversion"),
+            );
+            quote! { #disc_u64 }
+        } else {
+            // Non-executable interface mode does not emit dispatch arms.
+            quote! { _ }
+        };
+        (discrim_bytes.to_vec(), lits, match_arm)
     } else {
         let disc_bytes = &hash[..8];
         let disc_u64 = u64::from_le_bytes(
@@ -1753,7 +3493,7 @@ fn process_handler(
                 #[inline(always)]
                 fn __anchor_assert_no_ix_args(_: ()) {}
 
-                match anchor_lang_v2::run_handler::<#accounts_type>(
+                match anchor_lang_v2::run_handler::<#accounts_type, #return_ty>(
                     __program_id,
                     __cursor,
                     __ix_data,
@@ -1763,7 +3503,10 @@ fn process_handler(
                         #mod_name::#fn_name(__ctx)
                     },
                 ) {
-                    Ok(()) => 0,
+                    Ok(__result) => {
+                        #set_return_data
+                        0
+                    },
                     Err(__e) => __e.into(),
                 }
             }
@@ -1802,7 +3545,7 @@ fn process_handler(
                     }
                 }
 
-                match anchor_lang_v2::run_handler::<#accounts_type>(
+                match anchor_lang_v2::run_handler::<#accounts_type, #return_ty>(
                     __program_id,
                     __cursor,
                     __ix_data,
@@ -1813,7 +3556,10 @@ fn process_handler(
                         #mod_name::#fn_name(__ctx, #(#extra_arg_names),*)
                     },
                 ) {
-                    Ok(()) => 0,
+                    Ok(__result) => {
+                        #set_return_data
+                        0
+                    },
                     Err(__e) => __e.into(),
                 }
             }
@@ -1854,7 +3600,7 @@ fn process_handler(
                 accounts: impl anchor_lang_v2::ToAccountMetas,
             ) -> anchor_lang_v2::solana_program::instruction::Instruction {
                 anchor_lang_v2::solana_program::instruction::Instruction::new_with_bytes(
-                    crate::ID,
+                    #program_id,
                     &<Self as anchor_lang_v2::InstructionData>::data(&self),
                     accounts.to_account_metas(None),
                 )
@@ -1900,11 +3646,24 @@ fn process_handler(
         } else {
             (quote! { <'a> }, quote! {})
         };
+        let (ret_ty, ret_value) = if returns_value {
+            (
+                quote! { -> anchor_lang_v2::Result<Return<#return_ty>> },
+                quote! {
+                    Ok(Return {
+                        program: *__ctx.program,
+                        phantom: core::marker::PhantomData,
+                    })
+                },
+            )
+        } else {
+            (quote! {}, quote! {})
+        };
         quote! {
             pub fn #fn_name #lt_decl(
                 __ctx: anchor_lang_v2::CpiContext<'a, accounts::#accounts_type<'a>>,
                 #(#extra_arg_names: #extra_arg_types,)*
-            ) {
+            ) #ret_ty {
                 let __ix = super::instruction::#ix_struct_name #ix_lt_use_local {
                     #(#extra_arg_names,)*
                 };
@@ -1913,6 +3672,7 @@ fn process_handler(
                     as anchor_lang_v2::InstructionData
                 >::data(&__ix);
                 __ctx.invoke(&__data);
+                #ret_value
             }
         }
     };
@@ -1939,13 +3699,15 @@ fn process_handler(
         idl_name: fn_name_str,
         idl_disc: idl::disc_json(&disc_bytes_for_idl),
         idl_args: idl::build_args_json(&extra_args),
+        idl_returns_json,
         idl_docs_json,
         idl_accounts_type: quote! { #accounts_type },
         arg_types: extra_args.iter().map(|(_, t)| (*t).clone()).collect(),
+        return_type,
     }
 }
 
-fn impl_program(module: &ItemMod) -> TokenStream2 {
+fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
     let mod_name = &module.ident;
     let mod_vis = &module.vis;
     let content = match &module.content {
@@ -1972,9 +3734,10 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
     }
 
     // --- Parse #[discrim = N] attributes ---
-    // If any handler has #[discrim = N], all must. The byte value becomes
-    // the 1-byte discriminator instead of the default sha256("global:<name>")[..8].
-    let discrim_attrs: Vec<Option<(u8, proc_macro2::Span)>> = match handlers
+    // Executable programs preserve the existing all-or-nothing 1-byte custom
+    // discriminator mode. Interface-only code can carry exact IDL discriminator
+    // bytes with `#[discrim = [..]]` because it does not emit dispatch.
+    let discrim_attrs: Vec<Option<DiscrimAttr>> = match handlers
         .iter()
         .map(|h| parse_discrim_attr(h))
         .collect::<Result<Vec<_>, _>>()
@@ -1985,7 +3748,7 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
 
     let has_any_discrim = discrim_attrs.iter().any(|d| d.is_some());
     let has_all_discrim = discrim_attrs.iter().all(|d| d.is_some());
-    if has_any_discrim && !has_all_discrim {
+    if config.mode == ProgramMode::Executable && has_any_discrim && !has_all_discrim {
         // Point at the first handler missing #[discrim = N] for clarity.
         let missing = handlers
             .iter()
@@ -1999,14 +3762,24 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
         )
         .to_compile_error();
     }
-    let use_byte_disc = has_any_discrim;
+    let use_byte_disc = config.mode == ProgramMode::Executable && has_any_discrim;
 
-    if use_byte_disc {
+    if config.mode == ProgramMode::Executable && has_any_discrim {
         let mut seen: std::collections::HashMap<u8, proc_macro2::Span> =
             std::collections::HashMap::new();
         for (i, d) in discrim_attrs.iter().enumerate() {
-            let (byte, span) =
-                d.expect("all-or-nothing discrim check guarantees every entry is Some");
+            let d = d
+                .as_ref()
+                .expect("all-or-nothing discrim check guarantees every entry is Some");
+            if d.bytes.len() != 1 {
+                return syn::Error::new(
+                    d.span,
+                    "executable `#[program]` custom discriminators must be one byte; use `#[program(interface, ...)]` for arbitrary IDL discriminator bytes",
+                )
+                .to_compile_error();
+            }
+            let byte = d.bytes[0];
+            let span = d.span;
             if let Some(_first_span) = seen.insert(byte, span) {
                 return syn::Error::new(
                     span,
@@ -2018,13 +3791,40 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
                 .to_compile_error();
             }
         }
+    } else if config.mode == ProgramMode::Interface {
+        let mut seen: std::collections::HashMap<Vec<u8>, proc_macro2::Span> =
+            std::collections::HashMap::new();
+        for (i, d) in discrim_attrs.iter().enumerate() {
+            let Some(d) = d else { continue };
+            if let Some(_first_span) = seen.insert(d.bytes.clone(), d.span) {
+                return syn::Error::new(
+                    d.span,
+                    format!(
+                        "duplicate `#[discrim = ...]` on instruction `{}`",
+                        handlers[i].sig.ident
+                    ),
+                )
+                .to_compile_error();
+            }
+        }
     }
-    let discrim_attrs: Vec<Option<u8>> = discrim_attrs.iter().map(|d| d.map(|(b, _)| b)).collect();
+    let discrim_attrs: Vec<Option<Vec<u8>>> = discrim_attrs
+        .iter()
+        .map(|d| d.as_ref().map(|d| d.bytes.clone()))
+        .collect();
 
     let codegen: Vec<HandlerCodegen> = handlers
         .iter()
         .enumerate()
-        .map(|(i, h)| process_handler(h, mod_name, use_byte_disc, discrim_attrs[i]))
+        .map(|(i, h)| {
+            process_handler(
+                h,
+                mod_name,
+                use_byte_disc,
+                discrim_attrs[i].as_deref(),
+                &config.program_id,
+            )
+        })
         .collect();
     let handler_errors: Vec<_> = codegen.iter().filter_map(|c| c.error.as_ref()).collect();
     if !handler_errors.is_empty() {
@@ -2058,6 +3858,7 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
     let idl_ix_names: Vec<_> = codegen.iter().map(|c| &c.idl_name).collect();
     let idl_ix_discs: Vec<_> = codegen.iter().map(|c| &c.idl_disc).collect();
     let idl_ix_args: Vec<_> = codegen.iter().map(|c| &c.idl_args).collect();
+    let idl_ix_returns: Vec<_> = codegen.iter().map(|c| &c.idl_returns_json).collect();
     let idl_ix_docs: Vec<_> = codegen.iter().map(|c| &c.idl_docs_json).collect();
     let idl_accounts_types: Vec<_> = codegen.iter().map(|c| &c.idl_accounts_type).collect();
     // One `Vec<Type>` per handler, for the ix-arg transitive IDL walker.
@@ -2068,6 +3869,18 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
     // flow through (with the blanket no-op impls for non-`IdlType` types).
     let ix_arg_types_per_handler: Vec<&Vec<Type>> = codegen.iter().map(|c| &c.arg_types).collect();
     let all_ix_arg_types: Vec<_> = codegen.iter().map(|c| &c.arg_types).collect();
+    let ix_return_type_registers: Vec<_> = codegen
+        .iter()
+        .filter_map(|c| c.return_type.as_ref())
+        .map(|return_type| {
+            quote! {
+                <#return_type as anchor_lang_v2::IdlAccountType>::__register_idl_deps(
+                    &mut accounts_entries,
+                    &mut types_entries,
+                );
+            }
+        })
+        .collect();
 
     // Generate disc parsing code based on mode.
     // Returns u64 error code on failure (not Err) since __anchor_dispatch
@@ -2150,6 +3963,53 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
                 ::core::slice::from_raw_parts(__ix_data_ptr.add(8), __ix_data_len - 8);
         }
     };
+    let event_cpi_dispatch = {
+        #[cfg(feature = "event-cpi")]
+        {
+            quote! {
+                // Reserve the full event-CPI tag before user dispatch. A custom
+                // 1-byte discriminator can overlap the first tag byte, but it
+                // must not intercept self-CPI event instructions.
+                if __ix_data_len >= 8 {
+                    let __event_disc: u64 = u64::from_le_bytes(
+                        *(__ix_data_ptr as *const [u8; 8])
+                    );
+                    if __event_disc == anchor_lang_v2::event::EVENT_IX_TAG {
+                        if __num < 1 {
+                            return anchor_lang_v2::Error::from(
+                                anchor_lang_v2::ErrorCode::AccountNotEnoughKeys,
+                            ).into();
+                        }
+                        let mut __cursor = anchor_lang_v2::AccountCursor::new(__input, __lookup);
+                        let __event_authority = __cursor.next();
+                        if !__event_authority.is_signer() {
+                            return anchor_lang_v2::Error::from(
+                                anchor_lang_v2::ErrorCode::ConstraintSigner,
+                            ).into();
+                        }
+                        let (__expected_event_authority, _) =
+                            anchor_lang_v2::find_program_address(
+                                &[b"__event_authority"],
+                                __program_id,
+                            );
+                        if !anchor_lang_v2::address_eq(
+                            __event_authority.address(),
+                            &__expected_event_authority,
+                        ) {
+                            return anchor_lang_v2::Error::from(
+                                anchor_lang_v2::ErrorCode::ConstraintSeeds,
+                            ).into();
+                        }
+                        return 0;
+                    }
+                }
+            }
+        }
+        #[cfg(not(feature = "event-cpi"))]
+        {
+            quote! {}
+        }
+    };
 
     // Strip #[discrim = N] attributes from handler outputs so rustc
     // doesn't complain about an unknown attribute.
@@ -2167,6 +4027,90 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
             func
         })
         .collect();
+
+    let interface_account_reexports = if config.mode == ProgramMode::Interface {
+        quote! { pub use super::*; }
+    } else {
+        quote! {}
+    };
+
+    let cpi_cfg =
+        (config.mode != ProgramMode::Interface).then(|| quote! { #[cfg(feature = "cpi")] });
+    let client_interface = quote! {
+        /// Client-side instruction structs for off-chain use.
+        pub mod instruction {
+            extern crate alloc;
+            use super::*;
+            use anchor_lang_v2::Discriminator as _;
+            #(#instruction_structs)*
+        }
+
+        /// Client-side accounts structs (re-exports) for off-chain use.
+        pub mod accounts {
+            #interface_account_reexports
+            #(#accounts_reexports)*
+        }
+
+        /// CPI module — gated on the `cpi` feature, on by convention when a
+        /// caller crate depends on this program for cross-program invocation.
+        /// `accounts::*` re-exports the auto-generated CPI accounts structs
+        /// (one per `#[derive(Accounts)]` Accounts struct, emitted as
+        /// `__cpi_accounts_<lowercase>` at this same scope). The free
+        /// functions wrap each instruction handler: pack args into the
+        /// matching `instruction::<Camel>` struct, serialize, and dispatch
+        /// through `CpiContext::invoke`.
+        #cpi_cfg
+        pub mod cpi {
+            extern crate alloc;
+            use super::*;
+            use anchor_lang_v2::InstructionData as _;
+
+            pub struct Return<T> {
+                program: anchor_lang_v2::Address,
+                phantom: core::marker::PhantomData<T>,
+            }
+
+            impl<T> Return<T>
+            where
+                T: for<'de> anchor_lang_v2::wincode::SchemaRead<
+                    'de,
+                    anchor_lang_v2::BorshConfig,
+                    Dst = T,
+                >,
+            {
+                pub fn get(&self) -> T {
+                    let __return_data =
+                        anchor_lang_v2::pinocchio::cpi::get_return_data().unwrap();
+                    assert!(
+                        anchor_lang_v2::address_eq(__return_data.program_id(), &self.program),
+                        "return data program id mismatch"
+                    );
+                    anchor_lang_v2::wincode::config::deserialize(
+                        __return_data.as_slice(),
+                        anchor_lang_v2::BORSH_CONFIG,
+                    )
+                        .unwrap()
+                }
+            }
+
+            pub mod accounts {
+                #(#cpi_accounts_reexports)*
+            }
+
+            #(#cpi_wrappers)*
+        }
+    };
+
+    if config.mode == ProgramMode::Interface {
+        return quote! {
+            #mod_vis mod #mod_name {
+                #(#other_items)*
+                #(#handlers)*
+            }
+
+            #client_interface
+        };
+    }
 
     quote! {
         #mod_vis mod #mod_name {
@@ -2220,6 +4164,23 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
             __input: *mut u8,
             __ix_data_ptr: *const u8,
         ) -> u64 {
+            let mut __lookup: [::core::mem::MaybeUninit<anchor_lang_v2::AccountView>;
+                __ANCHOR_MAX_ACCOUNTS] =
+                [const { ::core::mem::MaybeUninit::uninit() }; __ANCHOR_MAX_ACCOUNTS];
+
+            __anchor_dispatch_internal(
+                __input,
+                __ix_data_ptr,
+                __lookup.as_mut_ptr() as *mut anchor_lang_v2::AccountView,
+            )
+        }
+
+        #[inline(never)]
+        unsafe fn __anchor_dispatch_internal(
+            __input: *mut u8,
+            __ix_data_ptr: *const u8,
+            __lookup: *mut anchor_lang_v2::AccountView,
+        ) -> u64 {
             let __ix_data_len = *(__ix_data_ptr.sub(8) as *const u64) as usize;
             let __program_id: &anchor_lang_v2::Address =
                 &*(__ix_data_ptr.add(__ix_data_len) as *const anchor_lang_v2::Address);
@@ -2228,17 +4189,13 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
                 return __e.into();
             }
 
+            let __num = *(__input as *const u64) as usize;
+            #event_cpi_dispatch
+
             // Parse the discriminator.
             #disc_parse
-            let __num = *(__input as *const u64) as usize;
 
-            let mut __lookup: [::core::mem::MaybeUninit<anchor_lang_v2::AccountView>;
-                __ANCHOR_MAX_ACCOUNTS] =
-                [const { ::core::mem::MaybeUninit::uninit() }; __ANCHOR_MAX_ACCOUNTS];
-            let mut __cursor = anchor_lang_v2::AccountCursor::new(
-                __input,
-                __lookup.as_mut_ptr() as *mut anchor_lang_v2::AccountView,
-            );
+            let mut __cursor = anchor_lang_v2::AccountCursor::new(__input, __lookup);
 
             // Each dispatch arm returns u64 directly (0 = success).
             match __disc {
@@ -2255,39 +4212,7 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
             #(#handler_wrappers)*
         }
 
-        /// Client-side instruction structs for off-chain use.
-        pub mod instruction {
-            extern crate alloc;
-            use super::*;
-            use anchor_lang_v2::Discriminator as _;
-            #(#instruction_structs)*
-        }
-
-        /// Client-side accounts structs (re-exports) for off-chain use.
-        pub mod accounts {
-            #(#accounts_reexports)*
-        }
-
-        /// CPI module — gated on the `cpi` feature, on by convention when a
-        /// caller crate depends on this program for cross-program invocation.
-        /// `accounts::*` re-exports the auto-generated CPI accounts structs
-        /// (one per `#[derive(Accounts)]` Accounts struct, emitted as
-        /// `__cpi_accounts_<lowercase>` at this same scope). The free
-        /// functions wrap each instruction handler: pack args into the
-        /// matching `instruction::<Camel>` struct, serialize, and dispatch
-        /// through `CpiContext::invoke`.
-        #[cfg(feature = "cpi")]
-        pub mod cpi {
-            extern crate alloc;
-            use super::*;
-            use anchor_lang_v2::InstructionData as _;
-
-            pub mod accounts {
-                #(#cpi_accounts_reexports)*
-            }
-
-            #(#cpi_wrappers)*
-        }
+        #client_interface
 
         // IDL generation: prints structured output consumed by `anchor idl build`.
         // The CLI runs `cargo test __anchor_private_print_idl --features idl-build`
@@ -2310,12 +4235,13 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
                 let instructions = vec![
                     #(
                         format!(
-                            "{{\"name\":\"{}\"{},\"discriminator\":{},\"accounts\":{},\"args\":{}}}",
+                            "{{\"name\":\"{}\"{},\"discriminator\":{},\"accounts\":{},\"args\":{}{} }}",
                             #idl_ix_names,
                             #idl_ix_docs,
                             #idl_ix_discs,
                             #idl_accounts_types::__idl_accounts(),
                             #idl_ix_args,
+                            #idl_ix_returns,
                         )
                     ),*
                 ];
@@ -2355,6 +4281,7 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
                         );
                     )*
                 )*
+                #(#ix_return_type_registers)*
                 accounts_entries.sort();
                 accounts_entries.dedup();
                 types_entries.sort();
@@ -2897,6 +4824,117 @@ pub fn emit(input: TokenStream) -> TokenStream {
     })
 }
 
+/// Emits an event via self-CPI so indexers can recover it from instruction data
+/// instead of logs. Requires `#[event_cpi]` on the handler's accounts struct
+/// and a local handler variable named `ctx`, matching Anchor v1.
+#[proc_macro]
+pub fn emit_cpi(input: TokenStream) -> TokenStream {
+    let event_struct: proc_macro2::TokenStream = input.into();
+    TokenStream::from(quote! {
+        {
+            struct __AnchorEventCpiAccounts<'a> {
+                event_authority: anchor_lang_v2::CpiHandle<'a>,
+            }
+
+            impl<'a> anchor_lang_v2::ToCpiAccounts<'a> for __AnchorEventCpiAccounts<'a> {
+                fn to_instruction_accounts(
+                    &self,
+                ) -> anchor_lang_v2::__alloc::vec::Vec<
+                    anchor_lang_v2::pinocchio::instruction::InstructionAccount<'a>
+                > {
+                    let mut __accounts = anchor_lang_v2::__alloc::vec::Vec::with_capacity(1);
+                    __accounts.push(
+                        anchor_lang_v2::pinocchio::instruction::InstructionAccount::readonly_signer(
+                            self.event_authority.address(),
+                        ),
+                    );
+                    __accounts
+                }
+
+                fn to_cpi_handles(
+                    &self,
+                ) -> anchor_lang_v2::__alloc::vec::Vec<anchor_lang_v2::CpiHandle<'a>> {
+                    let mut __handles = anchor_lang_v2::__alloc::vec::Vec::with_capacity(1);
+                    __handles.push(self.event_authority);
+                    __handles
+                }
+            }
+
+            let __event_authority =
+                anchor_lang_v2::AnchorAccount::cpi_handle(&ctx.accounts.event_authority);
+            let __event_data = anchor_lang_v2::Event::data(&#event_struct);
+            let mut __ix_data = anchor_lang_v2::__alloc::vec::Vec::with_capacity(
+                anchor_lang_v2::event::EVENT_IX_TAG_LE.len() + __event_data.len(),
+            );
+            __ix_data.extend_from_slice(anchor_lang_v2::event::EVENT_IX_TAG_LE);
+            __ix_data.extend_from_slice(&__event_data);
+
+            let __event_authority_bump = [ctx.bumps.event_authority];
+            let __event_authority_seeds: &[&[u8]] =
+                &[b"__event_authority", __event_authority_bump.as_ref()];
+            let __event_authority_signers: &[&[&[u8]]] = &[__event_authority_seeds];
+            anchor_lang_v2::CpiContext::new_with_signer(
+                ctx.program_id,
+                __AnchorEventCpiAccounts { event_authority: __event_authority },
+                __event_authority_signers,
+            ).invoke(&__ix_data);
+        }
+    })
+}
+
+/// Adds the self-CPI event authority accounts expected by `emit_cpi!`.
+///
+/// The injected shape intentionally mirrors Anchor v1's user-facing API, but
+/// uses a normal v2 seeds constraint so `ctx.bumps.event_authority` is available
+/// without making `declare_id!` synthesize an extra constant.
+#[proc_macro_attribute]
+pub fn event_cpi(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    let accounts_struct = parse_macro_input!(input as ItemStruct);
+    let ItemStruct {
+        attrs,
+        vis,
+        struct_token,
+        ident,
+        generics,
+        fields,
+        semi_token,
+    } = accounts_struct;
+
+    if semi_token.is_some() {
+        return syn::Error::new(
+            ident.span(),
+            "`#[event_cpi]` only supports accounts structs with named fields",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let fields = match fields {
+        Fields::Named(fields) => fields.named,
+        _ => {
+            return syn::Error::new(
+                ident.span(),
+                "`#[event_cpi]` only supports accounts structs with named fields",
+            )
+            .to_compile_error()
+            .into()
+        }
+    };
+
+    TokenStream::from(quote! {
+        #(#attrs)*
+        #vis #struct_token #ident #generics {
+            #fields
+
+            /// CHECK: Only the event authority can invoke self-CPI
+            #[account(seeds = [b"__event_authority"], bump)]
+            pub event_authority: anchor_lang_v2::accounts::UncheckedAccount,
+            /// CHECK: Kept for v1-compatible account ordering and IDL shape
+            pub program: anchor_lang_v2::accounts::UncheckedAccount,
+        }
+    })
+}
+
 // ---------------------------------------------------------------------------
 // #[access_control]
 // ---------------------------------------------------------------------------
@@ -3050,10 +5088,10 @@ pub fn error_code(args: TokenStream, input: TokenStream) -> TokenStream {
     error_code::expand(args, input)
 }
 
-/// Parse the optional `#[discrim = N]` attribute on a handler fn.
-/// Returns `Ok(Some((byte, span)))` if present, `Ok(None)` if absent,
+/// Parse the optional `#[discrim = ...]` attribute on a handler fn.
+/// Returns `Ok(Some(...))` if present, `Ok(None)` if absent,
 /// or `Err` with a properly-spanned diagnostic on malformed input.
-fn parse_discrim_attr(handler: &syn::ItemFn) -> syn::Result<Option<(u8, proc_macro2::Span)>> {
+fn parse_discrim_attr(handler: &syn::ItemFn) -> syn::Result<Option<DiscrimAttr>> {
     for attr in &handler.attrs {
         if let syn::Meta::NameValue(nv) = &attr.meta {
             if nv.path.is_ident("discrim") {
@@ -3069,11 +5107,44 @@ fn parse_discrim_attr(handler: &syn::ItemFn) -> syn::Result<Option<(u8, proc_mac
                             "`#[discrim = N]` value must fit in a u8 (0..=255)",
                         )
                     })?;
-                    return Ok(Some((byte, span)));
+                    return Ok(Some(DiscrimAttr {
+                        bytes: vec![byte],
+                        span,
+                    }));
+                }
+                if let syn::Expr::Array(array) = &nv.value {
+                    if array.elems.is_empty() {
+                        return Err(syn::Error::new(
+                            array.span(),
+                            "`#[discrim = [...]]` must contain at least one byte",
+                        ));
+                    }
+
+                    let mut bytes = Vec::with_capacity(array.elems.len());
+                    for elem in &array.elems {
+                        let syn::Expr::Lit(syn::ExprLit {
+                            lit: syn::Lit::Int(lit),
+                            ..
+                        }) = elem
+                        else {
+                            return Err(syn::Error::new(
+                                elem.span(),
+                                "`#[discrim = [...]]` values must be integer literals",
+                            ));
+                        };
+                        bytes.push(lit.base10_parse::<u8>().map_err(|_| {
+                            syn::Error::new(
+                                lit.span(),
+                                "`#[discrim = [...]]` values must fit in a u8 (0..=255)",
+                            )
+                        })?);
+                    }
+
+                    return Ok(Some(DiscrimAttr { bytes, span }));
                 }
                 return Err(syn::Error::new(
                     span,
-                    "`#[discrim = N]` value must be an integer literal",
+                    "`#[discrim = ...]` value must be an integer literal or byte array literal",
                 ));
             }
         }
@@ -3239,8 +5310,9 @@ mod tests {
             }
         };
         let mod_name: syn::Ident = syn::parse_quote!(my_program);
+        let program_id: syn::Expr = syn::parse_quote!(crate::ID);
 
-        let generated = process_handler(&handler, &mod_name, false, None);
+        let generated = process_handler(&handler, &mod_name, false, None, &program_id);
         let wrapper = generated.wrapper.to_string();
 
         assert!(
@@ -3250,6 +5322,79 @@ mod tests {
         assert!(
             wrapper.contains("impl < 'ix > __AnchorIxArgCoerce < 'ix > for ()"),
             "expected missing-#[instruction] fallback impl in wrapper: {wrapper}"
+        );
+    }
+
+    #[test]
+    fn program_attrs_parse_interface_program_id() {
+        let config = parse_program_config_tokens(quote!(interface, program_id = super::ID))
+            .expect("program attrs should parse");
+        let program_id = &config.program_id;
+
+        assert!(config.mode == ProgramMode::Interface);
+        assert_eq!(quote!(#program_id).to_string(), "super :: ID");
+    }
+
+    #[test]
+    fn program_attrs_reject_program_id_without_interface() {
+        let err = match parse_program_config_tokens(quote!(program_id = super::ID)) {
+            Ok(_) => panic!("program_id without interface unexpectedly parsed"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains("only supported with"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn program_interface_mode_emits_client_surface_only() {
+        let module: syn::ItemMod = syn::parse_quote! {
+            pub mod external_program {
+                use super::*;
+
+                #[discrim = [1, 2, 3, 4]]
+                pub fn do_it(ctx: &mut Context<MyAccounts>, amount: u64) -> Result<()> {
+                    let _ = (ctx, amount);
+                    unreachable!()
+                }
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Interface,
+            program_id: syn::parse_quote!(super::ID),
+        };
+
+        let generated = impl_program(&module, &config).to_string();
+
+        assert!(
+            generated.contains("pub mod instruction"),
+            "expected instruction module: {generated}"
+        );
+        assert!(
+            generated.contains("pub mod accounts"),
+            "expected accounts module: {generated}"
+        );
+        assert!(
+            generated.contains("pub mod cpi"),
+            "expected cpi module: {generated}"
+        );
+        assert!(
+            generated.contains("super :: ID"),
+            "expected custom program id in instruction builder: {generated}"
+        );
+        assert!(
+            generated.contains("1u8") && generated.contains("2u8"),
+            "expected explicit discriminator bytes in instruction builder: {generated}"
+        );
+        assert!(
+            !generated.contains("__anchor_dispatch"),
+            "interface mode must not emit executable dispatch: {generated}"
+        );
+        assert!(
+            !generated.contains("default_allocator"),
+            "interface mode must not emit entrypoint runtime: {generated}"
         );
     }
 }

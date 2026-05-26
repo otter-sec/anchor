@@ -1,0 +1,69 @@
+{
+  "address": "11111111111111111111111111111111",
+  "metadata": {
+    "name": "constants",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "declare_program constants fixture"
+  },
+  "instructions": [],
+  "constants": [
+    {
+      "name": "DOC_BYTES",
+      "docs": [
+        "A documented byte-slice constant."
+      ],
+      "type": "bytes",
+      "value": "[100, 111, 99]"
+    },
+    {
+      "name": "TEXT",
+      "type": "string",
+      "value": "\"constant text\""
+    },
+    {
+      "name": "PROGRAM_KEY",
+      "type": "pubkey",
+      "value": "11111111111111111111111111111111"
+    },
+    {
+      "name": "QUOTED_PROGRAM_KEY",
+      "type": "pubkey",
+      "value": "\"11111111111111111111111111111111\""
+    },
+    {
+      "name": "FIXED_BYTES",
+      "type": {
+        "array": ["u8", 4]
+      },
+      "value": "[1, 2, 3, 4]"
+    },
+    {
+      "name": "FIXED_WORDS",
+      "type": {
+        "array": ["u16", 3]
+      },
+      "value": "[10, 20, 30]"
+    },
+    {
+      "name": "ENABLED",
+      "type": "bool",
+      "value": "true"
+    },
+    {
+      "name": "SIGNED",
+      "type": "i64",
+      "value": "-9"
+    },
+    {
+      "name": "WIDE",
+      "type": "u128",
+      "value": "340282366920938463463374607431768211455"
+    },
+    {
+      "name": "RATIO",
+      "type": "f64",
+      "value": "1.25"
+    }
+  ]
+}

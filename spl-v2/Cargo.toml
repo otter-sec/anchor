@@ -17,7 +17,6 @@ pinocchio-token = "0.6"
 pinocchio-token-2022 = "0.3"
 bytemuck = { version = "1", features = ["derive"] }
 solana-address = { version = "2.0", features = ["bytemuck"] }
-solana-cpi = "3.1"
 solana-instruction = "3.0"
 solana-program-error = "3.0"
 solana-pubkey = "3.0"

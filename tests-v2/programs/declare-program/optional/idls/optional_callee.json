@@ -1,0 +1,58 @@
+{
+  "address": "D9t6cEFPTDWmTZfcikokLbnuuyeJT6oXnpEbyXB45LU2",
+  "metadata": {
+    "name": "optional_callee",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "declare_program optional account CPI fixture"
+  },
+  "instructions": [
+    {
+      "name": "initialize",
+      "discriminator": [0],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "data",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "systemProgram"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "record",
+      "discriminator": [1],
+      "accounts": [
+        {
+          "name": "data",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "maybeMarker",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ]
+    }
+  ]
+}

@@ -4,6 +4,9 @@ use {
     solana_program_error::{ProgramError, ProgramResult},
 };
 
+#[cfg(feature = "compat")]
+use pinocchio::account::{Ref, RefMut};
+
 /// Zero-cost CPI handle that borrows an anchor account at the Rust level.
 ///
 /// Obtained via [`AnchorAccount::cpi_handle`] (shared borrow) or
@@ -20,6 +23,22 @@ pub struct CpiHandle<'a> {
 }
 
 impl<'a> CpiHandle<'a> {
+    #[inline(always)]
+    pub fn readonly(view: &'a AccountView) -> Self {
+        Self {
+            view,
+            writable: false,
+        }
+    }
+
+    #[inline(always)]
+    pub fn writable(view: &'a mut AccountView) -> Self {
+        Self {
+            view,
+            writable: true,
+        }
+    }
+
     /// The account's on-chain address.
     ///
     /// Returns a reference with the inner `'a` lifetime so callers can
@@ -67,6 +86,10 @@ pub trait ToCpiAccounts<'a> {
 
 pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     type Data;
+
+    /// Whether this account wrapper requires the transaction account meta to
+    /// be marked as a signer in generated clients and CPI account structs.
+    const IS_SIGNER: bool = false;
 
     /// Minimum account data length for this type. When > 0, PDA
     /// verification can skip `sol_curve_validate_point`: a non-empty
@@ -169,16 +192,115 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// the transaction.
     #[inline(always)]
     fn cpi_handle_mut(&mut self) -> CpiHandle<'_> {
-        // Unconditional (not guardrails-gated): passing a read-only account
-        // to a CPI that writes is a program bug, not a "nice to have" check.
-        assert!(
-            self.account().is_writable(),
-            "cpi_handle_mut called on a read-only account"
-        );
-        CpiHandle {
+        self.try_cpi_handle_mut()
+            .expect("cpi_handle_mut called on a read-only account")
+    }
+
+    /// Fallible variant of [`cpi_handle_mut`](Self::cpi_handle_mut).
+    ///
+    /// Returns [`ProgramError::InvalidArgument`] when the underlying account
+    /// is not marked writable in the transaction.
+    #[inline(always)]
+    fn try_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError> {
+        if !self.account().is_writable() {
+            return Err(ProgramError::InvalidArgument);
+        }
+        Ok(CpiHandle {
             view: self.account(),
             writable: true,
+        })
+    }
+}
+
+/// Account wrapper capability for `#[account(realloc = ...)]`.
+///
+/// The derive emits a call to this trait instead of deciding realloc safety
+/// from syntactic type names. That lets rustc resolve aliases and wrapper
+/// forwards normally: unsupported wrappers simply do not implement the trait.
+#[cfg(feature = "account-resize")]
+pub trait AccountRealloc: AnchorAccount {
+    fn realloc_account(
+        &mut self,
+        new_space: usize,
+        payer: AccountView,
+        zero: bool,
+    ) -> ProgramResult;
+}
+
+/// Account-like value that can be passed into a CPI account struct.
+///
+/// This is the v2 equivalent of v1's `ToAccountInfo` for CPI construction:
+/// callers get a [`CpiHandle`] instead of cloning an `AccountInfo`.
+pub trait ToCpiHandle {
+    fn to_cpi_handle(&self) -> CpiHandle<'_>;
+}
+
+/// Account-like value that can be passed into a writable CPI account slot.
+pub trait ToCpiHandleMut {
+    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError>;
+
+    #[inline(always)]
+    fn to_cpi_handle_mut(&mut self) -> CpiHandle<'_> {
+        self.try_to_cpi_handle_mut()
+            .expect("to_cpi_handle_mut called on a read-only account")
+    }
+}
+
+impl<T: ToCpiHandle + ?Sized> ToCpiHandle for &T {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> CpiHandle<'_> {
+        (*self).to_cpi_handle()
+    }
+}
+
+impl<T: ToCpiHandle + ?Sized> ToCpiHandle for &mut T {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> CpiHandle<'_> {
+        (**self).to_cpi_handle()
+    }
+}
+
+impl<T: ToCpiHandleMut + ?Sized> ToCpiHandleMut for &mut T {
+    #[inline(always)]
+    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError> {
+        (**self).try_to_cpi_handle_mut()
+    }
+}
+
+impl ToCpiHandle for CpiHandle<'_> {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> CpiHandle<'_> {
+        *self
+    }
+}
+
+impl ToCpiHandleMut for CpiHandle<'_> {
+    #[inline(always)]
+    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError> {
+        if !self.account_view().is_writable() {
+            return Err(ProgramError::InvalidArgument);
         }
+        Ok(CpiHandle {
+            view: self.account_view(),
+            writable: true,
+        })
+    }
+}
+
+impl ToCpiHandle for AccountView {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> CpiHandle<'_> {
+        CpiHandle::readonly(self)
+    }
+}
+
+impl ToCpiHandleMut for AccountView {
+    #[inline(always)]
+    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError> {
+        if !self.is_writable() {
+            return Err(ProgramError::InvalidArgument);
+        }
+        Ok(CpiHandle::writable(self))
     }
 }
 
@@ -208,17 +330,45 @@ impl<T: AccountAddress> AccountAddress for Option<T> {
     }
 }
 
-/// v1-compatible key projection for raw remaining-account views.
+/// v1-compatible utility methods for raw remaining-account views.
 #[cfg(feature = "compat")]
-pub trait Key {
+pub trait AccountViewCompat {
     fn key(&self) -> crate::solana_program::pubkey::Pubkey;
+
+    fn data_is_empty(&self) -> bool;
+
+    fn try_data_len(&self) -> Result<usize, ProgramError>;
+
+    fn try_borrow_data(&self) -> Result<Ref<'_, [u8]>, ProgramError>;
+
+    fn try_borrow_mut_data(&mut self) -> Result<RefMut<'_, [u8]>, ProgramError>;
 }
 
 #[cfg(feature = "compat")]
-impl Key for AccountView {
+impl AccountViewCompat for AccountView {
     #[inline(always)]
     fn key(&self) -> crate::solana_program::pubkey::Pubkey {
         *self.address()
+    }
+
+    #[inline(always)]
+    fn data_is_empty(&self) -> bool {
+        self.data_len() == 0
+    }
+
+    #[inline(always)]
+    fn try_data_len(&self) -> Result<usize, ProgramError> {
+        Ok(self.data_len())
+    }
+
+    #[inline(always)]
+    fn try_borrow_data(&self) -> Result<Ref<'_, [u8]>, ProgramError> {
+        self.try_borrow()
+    }
+
+    #[inline(always)]
+    fn try_borrow_mut_data(&mut self) -> Result<RefMut<'_, [u8]>, ProgramError> {
+        self.try_borrow_mut()
     }
 }
 

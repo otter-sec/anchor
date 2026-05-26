@@ -82,6 +82,18 @@ impl AccountCursor {
         self.consumed
     }
 
+    /// Current duplicate-tracking bitvec. `None` if the cursor has not
+    /// yet yielded a duplicate account (lazy allocation — see
+    /// [`Self::next`]). Used by
+    /// [`Context::remaining_accounts`](crate::context::Context::remaining_accounts)
+    /// to re-check `MUT_MASK` after each trailing account is walked,
+    /// catching aliases of declared mut accounts that only surface past
+    /// `HEADER_SIZE`.
+    #[inline(always)]
+    pub fn duplicates(&self) -> Option<&AccountBitvec> {
+        self.duplicate.as_ref()
+    }
+
     /// Walk N accounts in a tight loop, storing views in the lookup array.
     /// Returns a slice of the walked views and the duplicate tracking bitvec.
     /// This avoids interleaving cursor math with validation logic, letting

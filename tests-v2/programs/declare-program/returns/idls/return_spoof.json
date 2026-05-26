@@ -1,0 +1,21 @@
+{
+  "address": "Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp",
+  "metadata": {
+    "name": "return_spoof",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
+  "instructions": [
+    {
+      "name": "spoof",
+      "discriminator": [9],
+      "accounts": [
+        { "name": "data" }
+      ],
+      "args": [
+        { "name": "value", "type": "u64" }
+      ],
+      "returns": "u64"
+    }
+  ]
+}

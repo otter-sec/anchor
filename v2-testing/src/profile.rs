@@ -95,6 +95,20 @@ pub fn svm() -> LiteSVM {
     svm
 }
 
+/// Construct a debuggable `LiteSVM` that writes all captured traces directly
+/// into `trace_dir`.
+///
+/// This is useful for one-off transaction replay tools where there is no Rust
+/// test name to key the trace directory.
+pub fn svm_with_trace_dir(trace_dir: impl Into<PathBuf>) -> LiteSVM {
+    #[cfg(feature = "profile")]
+    let _gdb_guard = setup_gdb_port();
+
+    let mut svm = LiteSVM::new_debuggable(true);
+    svm.set_invocation_inspect_callback(TestNameCallback::new_with_fixed_dir(trace_dir.into()));
+    svm
+}
+
 /// Allocates a free TCP port, sets `VM_DEBUG_PORT`, and announces the
 /// port to `anchor debugger --gdb` over the Unix socket identified by
 /// `ANCHOR_GDB_SOCKET`. Returns a `MutexGuard` that keeps the environment
@@ -158,6 +172,7 @@ struct TestState {
 /// [`LiteSVM::set_invocation_inspect_callback`].
 pub struct TestNameCallback {
     root: PathBuf,
+    fixed_dir: Option<PathBuf>,
     state: Mutex<HashMap<String, TestState>>,
 }
 
@@ -168,19 +183,34 @@ impl TestNameCallback {
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_DIR));
         Self {
             root,
+            fixed_dir: None,
             state: Mutex::new(HashMap::new()),
         }
     }
 
-    fn test_name() -> String {
-        std::thread::current()
-            .name()
-            .unwrap_or("unknown")
-            .replace("::", "__")
+    pub fn new_with_fixed_dir(dir: PathBuf) -> Self {
+        Self {
+            root: PathBuf::new(),
+            fixed_dir: Some(dir),
+            state: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn test_name(&self) -> String {
+        if self.fixed_dir.is_some() {
+            "trace".to_owned()
+        } else {
+            std::thread::current()
+                .name()
+                .unwrap_or("unknown")
+                .replace("::", "__")
+        }
     }
 
     fn test_dir(&self, test: &str) -> PathBuf {
-        self.root.join(test)
+        self.fixed_dir
+            .clone()
+            .unwrap_or_else(|| self.root.join(test))
     }
 
     /// Bumps the tx counter (called from `before_invocation`, so only
@@ -249,7 +279,7 @@ impl InvocationInspectCallback for TestNameCallback {
             return;
         }
 
-        let test = Self::test_name();
+        let test = self.test_name();
         let dir = self.test_dir(&test);
         let bumped_tx = std::cell::Cell::new(false);
 

@@ -431,7 +431,7 @@ pub struct InitIfNeededNoSeeds {
 // `seeds` / `seeds::program` are already covered structurally
 // by the `seeds` program fixture; adding a duplicate here would only
 // retest the shared `classify_seed` path.
-#[cfg(test)]
+#[cfg(all(test, feature = "idl-build"))]
 mod idl_tests {
     use {
         super::*,

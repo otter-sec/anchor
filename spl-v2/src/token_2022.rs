@@ -4,11 +4,14 @@ extern crate alloc;
 
 use {
     alloc::{string::String, vec, vec::Vec},
-    anchor_lang_v2::{CpiContext, CpiHandle, Id, ToCpiAccounts},
+    anchor_lang_v2::{solana_program::program, CpiContext, CpiHandle, ToCpiAccounts},
     pinocchio::{address::Address, instruction::InstructionAccount},
+    solana_instruction::{AccountMeta, Instruction},
     solana_program_error::ProgramError,
-    solana_pubkey::Pubkey,
 };
+
+#[cfg(any(feature = "guardrails", test))]
+use anchor_lang_v2::{programs::Token, Id};
 
 pub use anchor_lang_v2::programs::Token2022;
 pub use spl_token_2022_interface::{self as spl_token_2022, extension::ExtensionType, ID};
@@ -533,254 +536,271 @@ impl<'a> ToCpiAccounts<'a> for PermanentDelegateInitialize<'a> {
     }
 }
 
-const DISC_INITIALIZE_MINT: u8 = 0;
-const DISC_INITIALIZE_ACCOUNT: u8 = 1;
-const DISC_TRANSFER: u8 = 3;
-const DISC_APPROVE: u8 = 4;
-const DISC_REVOKE: u8 = 5;
-const DISC_MINT_TO: u8 = 7;
-const DISC_BURN: u8 = 8;
-const DISC_CLOSE_ACCOUNT: u8 = 9;
-const DISC_FREEZE_ACCOUNT: u8 = 10;
-const DISC_THAW_ACCOUNT: u8 = 11;
-const DISC_TRANSFER_CHECKED: u8 = 12;
-const DISC_APPROVE_CHECKED: u8 = 13;
-const DISC_MINT_TO_CHECKED: u8 = 14;
-const DISC_BURN_CHECKED: u8 = 15;
-const DISC_SYNC_NATIVE: u8 = 17;
-const DISC_INITIALIZE_MINT2: u8 = 20;
-const DISC_GET_ACCOUNT_DATA_SIZE: u8 = 21;
-const DISC_INITIALIZE_IMMUTABLE_OWNER: u8 = 22;
-const DISC_AMOUNT_TO_UI_AMOUNT: u8 = 23;
-const DISC_UI_AMOUNT_TO_AMOUNT: u8 = 24;
-const DISC_INITIALIZE_MINT_CLOSE_AUTHORITY: u8 = 25;
-const DISC_INITIALIZE_PERMANENT_DELEGATE: u8 = 35;
-const DISC_REALLOCATE: u8 = 29;
-const DISC_CREATE_NATIVE_MINT: u8 = 31;
-const DISC_INITIALIZE_NON_TRANSFERABLE_MINT: u8 = 32;
-const DISC_WITHDRAW_EXCESS_LAMPORTS: u8 = 38;
-
-fn assert_token_2022_program(program: &Address) {
-    assert!(
-        *program == Token2022::id(),
-        "incorrect Token-2022 program id"
-    );
-}
-
-fn address_to_pubkey(address: &Address) -> Pubkey {
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(address.as_ref());
-    Pubkey::new_from_array(bytes)
-}
-
-fn optional_address_to_pubkey(address: Option<&Address>) -> Option<Pubkey> {
-    address.map(address_to_pubkey)
-}
-
+#[cfg(feature = "guardrails")]
 #[inline]
-fn encode_amount_ix(disc: u8, amount: u64) -> [u8; 9] {
-    let mut data = [0u8; 9];
-    data[0] = disc;
-    data[1..9].copy_from_slice(&amount.to_le_bytes());
-    data
-}
-
-#[inline]
-fn encode_amount_decimals_ix(disc: u8, amount: u64, decimals: u8) -> [u8; 10] {
-    let mut data = [0u8; 10];
-    data[0] = disc;
-    data[1..9].copy_from_slice(&amount.to_le_bytes());
-    data[9] = decimals;
-    data
-}
-
-fn encode_address_option_ix(disc: u8, address: Option<&Address>) -> Vec<u8> {
-    let mut data = Vec::with_capacity(34);
-    data.push(disc);
-    match address {
-        Some(address) => {
-            data.push(1);
-            data.extend_from_slice(address.as_ref());
-        }
-        None => data.push(0),
+fn validate_token_2022_program(program: &Address) -> Result<(), ProgramError> {
+    if *program != Token2022::id() {
+        return Err(ProgramError::IncorrectProgramId);
     }
-    data
+    Ok(())
 }
 
-fn encode_initialize_mint_ix(
-    disc: u8,
+#[cfg(not(feature = "guardrails"))]
+#[inline]
+fn validate_token_2022_program(_program: &Address) -> Result<(), ProgramError> {
+    Ok(())
+}
+
+#[cfg(feature = "guardrails")]
+#[inline]
+fn validate_spl_token_program(program: &Address) -> Result<(), ProgramError> {
+    if *program != Token::id() && *program != Token2022::id() {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "guardrails"))]
+#[inline]
+fn validate_spl_token_program(_program: &Address) -> Result<(), ProgramError> {
+    Ok(())
+}
+
+fn invoke_token_2022<'a, T: ToCpiAccounts<'a>>(
+    ctx: &CpiContext<'a, T>,
+    mut ix: Instruction,
+) -> Result<(), ProgramError> {
+    let mut instruction_accounts = ctx.accounts.to_instruction_accounts();
+    let mut handles = ctx.accounts.to_cpi_handles();
+
+    for handle in &ctx.remaining_accounts {
+        instruction_accounts.push(InstructionAccount::new(
+            handle.address(),
+            handle.is_writable(),
+            handle.is_signer(),
+        ));
+        handles.push(*handle);
+    }
+
+    ix.accounts = instruction_accounts
+        .iter()
+        .map(|account| AccountMeta {
+            pubkey: *account.address,
+            is_writable: account.is_writable,
+            is_signer: account.is_signer,
+        })
+        .collect();
+
+    program::invoke_signed(&ix, &handles, ctx.signer_seeds)
+}
+
+fn return_data_from(program: &Address) -> Result<Vec<u8>, ProgramError> {
+    let (return_program, data) = anchor_lang_v2::solana_program::program::get_return_data()
+        .ok_or(ProgramError::InvalidInstructionData)?;
+    if return_program.to_bytes().as_slice() != program.as_ref() {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+    Ok(data)
+}
+
+pub fn transfer<'a>(ctx: CpiContext<'a, Transfer<'a>>, amount: u64) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    #[allow(deprecated)]
+    let ix = spl_token_2022::instruction::transfer(
+        ctx.program,
+        ctx.accounts.from.address(),
+        ctx.accounts.to.address(),
+        ctx.accounts.authority.address(),
+        &[],
+        amount,
+    )?;
+    invoke_token_2022(&ctx, ix)
+}
+
+pub fn transfer_checked<'a>(
+    ctx: CpiContext<'a, TransferChecked<'a>>,
+    amount: u64,
     decimals: u8,
-    authority: &Address,
-    freeze_authority: Option<&Address>,
-) -> Vec<u8> {
-    let mut data = Vec::with_capacity(67);
-    data.push(disc);
-    data.push(decimals);
-    data.extend_from_slice(authority.as_ref());
-    match freeze_authority {
-        Some(authority) => {
-            data.push(1);
-            data.extend_from_slice(authority.as_ref());
-        }
-        None => data.push(0),
-    }
-    data
-}
-
-fn encode_permanent_delegate_ix(delegate: &Address) -> [u8; 33] {
-    let mut data = [0u8; 33];
-    data[0] = DISC_INITIALIZE_PERMANENT_DELEGATE;
-    data[1..33].copy_from_slice(delegate.as_ref());
-    data
-}
-
-fn encode_reallocate_ix(extension_types: &[ExtensionType]) -> Vec<u8> {
-    let mut data = Vec::with_capacity(1 + extension_types.len() * 2);
-    data.push(DISC_REALLOCATE);
-    for extension_type in extension_types {
-        data.extend_from_slice(&<[u8; 2]>::from(*extension_type));
-    }
-    data
-}
-
-fn encode_get_account_data_size_ix(extension_types: &[ExtensionType]) -> Vec<u8> {
-    let mut data = Vec::with_capacity(1 + extension_types.len() * 2);
-    data.push(DISC_GET_ACCOUNT_DATA_SIZE);
-    for extension_type in extension_types {
-        data.extend_from_slice(&<[u8; 2]>::from(*extension_type));
-    }
-    data
-}
-
-fn encode_ui_amount_to_amount_ix(ui_amount: &str) -> Vec<u8> {
-    let bytes = ui_amount.as_bytes();
-    let mut data = Vec::with_capacity(1 + bytes.len());
-    data.push(DISC_UI_AMOUNT_TO_AMOUNT);
-    data.extend_from_slice(bytes);
-    data
-}
-
-fn build_data<T>(instruction: Result<T, ProgramError>) -> Vec<u8>
-where
-    T: IntoInstructionData,
-{
-    instruction
-        .expect("failed to build Token-2022 instruction")
-        .into_data()
-}
-
-trait IntoInstructionData {
-    fn into_data(self) -> Vec<u8>;
-}
-
-impl IntoInstructionData for solana_instruction::Instruction {
-    fn into_data(self) -> Vec<u8> {
-        self.data
-    }
-}
-
-fn return_data_from(program: &Address) -> Vec<u8> {
-    let (return_program, data) = solana_cpi::get_return_data().expect("missing return data");
-    assert_eq!(
-        return_program.to_bytes().as_slice(),
-        program.as_ref(),
-        "return data from incorrect program"
-    );
-    data
-}
-
-pub fn transfer<'a>(ctx: CpiContext<'a, Transfer<'a>>, amount: u64) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_amount_ix(DISC_TRANSFER, amount));
-}
-
-pub fn transfer_checked<'a>(ctx: CpiContext<'a, TransferChecked<'a>>, amount: u64, decimals: u8) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_amount_decimals_ix(
-        DISC_TRANSFER_CHECKED,
+) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::transfer_checked(
+        ctx.program,
+        ctx.accounts.from.address(),
+        ctx.accounts.mint.address(),
+        ctx.accounts.to.address(),
+        ctx.accounts.authority.address(),
+        &[],
         amount,
         decimals,
-    ));
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn mint_to<'a>(ctx: CpiContext<'a, MintTo<'a>>, amount: u64) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_amount_ix(DISC_MINT_TO, amount));
+pub fn mint_to<'a>(ctx: CpiContext<'a, MintTo<'a>>, amount: u64) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::mint_to(
+        ctx.program,
+        ctx.accounts.mint.address(),
+        ctx.accounts.to.address(),
+        ctx.accounts.authority.address(),
+        &[],
+        amount,
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn mint_to_checked<'a>(ctx: CpiContext<'a, MintToChecked<'a>>, amount: u64, decimals: u8) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_amount_decimals_ix(
-        DISC_MINT_TO_CHECKED,
+pub fn mint_to_checked<'a>(
+    ctx: CpiContext<'a, MintToChecked<'a>>,
+    amount: u64,
+    decimals: u8,
+) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::mint_to_checked(
+        ctx.program,
+        ctx.accounts.mint.address(),
+        ctx.accounts.to.address(),
+        ctx.accounts.authority.address(),
+        &[],
         amount,
         decimals,
-    ));
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn burn<'a>(ctx: CpiContext<'a, Burn<'a>>, amount: u64) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_amount_ix(DISC_BURN, amount));
+pub fn burn<'a>(ctx: CpiContext<'a, Burn<'a>>, amount: u64) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::burn(
+        ctx.program,
+        ctx.accounts.from.address(),
+        ctx.accounts.mint.address(),
+        ctx.accounts.authority.address(),
+        &[],
+        amount,
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn burn_checked<'a>(ctx: CpiContext<'a, BurnChecked<'a>>, amount: u64, decimals: u8) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_amount_decimals_ix(
-        DISC_BURN_CHECKED,
+pub fn burn_checked<'a>(
+    ctx: CpiContext<'a, BurnChecked<'a>>,
+    amount: u64,
+    decimals: u8,
+) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::burn_checked(
+        ctx.program,
+        ctx.accounts.from.address(),
+        ctx.accounts.mint.address(),
+        ctx.accounts.authority.address(),
+        &[],
         amount,
         decimals,
-    ));
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn approve<'a>(ctx: CpiContext<'a, Approve<'a>>, amount: u64) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_amount_ix(DISC_APPROVE, amount));
+pub fn approve<'a>(ctx: CpiContext<'a, Approve<'a>>, amount: u64) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::approve(
+        ctx.program,
+        ctx.accounts.to.address(),
+        ctx.accounts.delegate.address(),
+        ctx.accounts.authority.address(),
+        &[],
+        amount,
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn approve_checked<'a>(ctx: CpiContext<'a, ApproveChecked<'a>>, amount: u64, decimals: u8) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_amount_decimals_ix(
-        DISC_APPROVE_CHECKED,
+pub fn approve_checked<'a>(
+    ctx: CpiContext<'a, ApproveChecked<'a>>,
+    amount: u64,
+    decimals: u8,
+) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::approve_checked(
+        ctx.program,
+        ctx.accounts.to.address(),
+        ctx.accounts.mint.address(),
+        ctx.accounts.delegate.address(),
+        ctx.accounts.authority.address(),
+        &[],
         amount,
         decimals,
-    ));
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn revoke<'a>(ctx: CpiContext<'a, Revoke<'a>>) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&[DISC_REVOKE]);
+pub fn revoke<'a>(ctx: CpiContext<'a, Revoke<'a>>) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::revoke(
+        ctx.program,
+        ctx.accounts.source.address(),
+        ctx.accounts.authority.address(),
+        &[],
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn initialize_account<'a>(ctx: CpiContext<'a, InitializeAccount<'a>>) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&[DISC_INITIALIZE_ACCOUNT]);
+pub fn initialize_account<'a>(
+    ctx: CpiContext<'a, InitializeAccount<'a>>,
+) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::initialize_account(
+        ctx.program,
+        ctx.accounts.account.address(),
+        ctx.accounts.mint.address(),
+        ctx.accounts.authority.address(),
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn initialize_account3<'a>(ctx: CpiContext<'a, InitializeAccount3<'a>>) {
-    assert_token_2022_program(ctx.program);
-    let owner = address_to_pubkey(ctx.accounts.authority.address());
-    ctx.invoke(&build_data(
-        spl_token_2022::instruction::initialize_account3(
-            &address_to_pubkey(ctx.program),
-            &address_to_pubkey(ctx.accounts.account.address()),
-            &address_to_pubkey(ctx.accounts.mint.address()),
-            &owner,
-        ),
-    ));
+pub fn initialize_account3<'a>(
+    ctx: CpiContext<'a, InitializeAccount3<'a>>,
+) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::initialize_account3(
+        ctx.program,
+        ctx.accounts.account.address(),
+        ctx.accounts.mint.address(),
+        ctx.accounts.authority.address(),
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn close_account<'a>(ctx: CpiContext<'a, CloseAccount<'a>>) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&[DISC_CLOSE_ACCOUNT]);
+pub fn close_account<'a>(ctx: CpiContext<'a, CloseAccount<'a>>) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::close_account(
+        ctx.program,
+        ctx.accounts.account.address(),
+        ctx.accounts.destination.address(),
+        ctx.accounts.authority.address(),
+        &[],
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn freeze_account<'a>(ctx: CpiContext<'a, FreezeAccount<'a>>) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&[DISC_FREEZE_ACCOUNT]);
+pub fn freeze_account<'a>(ctx: CpiContext<'a, FreezeAccount<'a>>) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::freeze_account(
+        ctx.program,
+        ctx.accounts.account.address(),
+        ctx.accounts.mint.address(),
+        ctx.accounts.authority.address(),
+        &[],
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn thaw_account<'a>(ctx: CpiContext<'a, ThawAccount<'a>>) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&[DISC_THAW_ACCOUNT]);
+pub fn thaw_account<'a>(ctx: CpiContext<'a, ThawAccount<'a>>) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::thaw_account(
+        ctx.program,
+        ctx.accounts.account.address(),
+        ctx.accounts.mint.address(),
+        ctx.accounts.authority.address(),
+        &[],
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
 pub fn initialize_mint<'a>(
@@ -788,14 +808,16 @@ pub fn initialize_mint<'a>(
     decimals: u8,
     authority: &Address,
     freeze_authority: Option<&Address>,
-) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_initialize_mint_ix(
-        DISC_INITIALIZE_MINT,
-        decimals,
+) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::initialize_mint(
+        ctx.program,
+        ctx.accounts.mint.address(),
         authority,
         freeze_authority,
-    ));
+        decimals,
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
 pub fn initialize_mint2<'a>(
@@ -803,116 +825,179 @@ pub fn initialize_mint2<'a>(
     decimals: u8,
     authority: &Address,
     freeze_authority: Option<&Address>,
-) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_initialize_mint_ix(
-        DISC_INITIALIZE_MINT2,
-        decimals,
+) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::initialize_mint2(
+        ctx.program,
+        ctx.accounts.mint.address(),
         authority,
         freeze_authority,
-    ));
+        decimals,
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
 pub fn set_authority<'a>(
     ctx: CpiContext<'a, SetAuthority<'a>>,
     authority_type: spl_token_2022::instruction::AuthorityType,
     new_authority: Option<&Address>,
-) {
-    assert_token_2022_program(ctx.program);
-    let data = spl_token_2022::instruction::set_authority(
-        &address_to_pubkey(ctx.program),
-        &address_to_pubkey(ctx.accounts.account_or_mint.address()),
-        optional_address_to_pubkey(new_authority).as_ref(),
+) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::set_authority(
+        ctx.program,
+        ctx.accounts.account_or_mint.address(),
+        new_authority,
         authority_type,
-        &address_to_pubkey(ctx.accounts.current_authority.address()),
+        ctx.accounts.current_authority.address(),
         &[],
-    )
-    .expect("failed to build Token-2022 set_authority instruction")
-    .data;
-    ctx.invoke(&data);
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn sync_native<'a>(ctx: CpiContext<'a, SyncNative<'a>>) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&[DISC_SYNC_NATIVE]);
+pub fn sync_native<'a>(ctx: CpiContext<'a, SyncNative<'a>>) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::sync_native(ctx.program, ctx.accounts.account.address())?;
+    invoke_token_2022(&ctx, ix)
 }
 
 pub fn get_account_data_size<'a>(
     ctx: CpiContext<'a, GetAccountDataSize<'a>>,
     extension_types: &[ExtensionType],
-) -> u64 {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_get_account_data_size_ix(extension_types));
-    let data = return_data_from(ctx.program);
+) -> Result<u64, ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::get_account_data_size(
+        ctx.program,
+        ctx.accounts.mint.address(),
+        extension_types,
+    )?;
+    invoke_token_2022(&ctx, ix)?;
+    let data = return_data_from(ctx.program)?;
     let bytes: [u8; 8] = data
         .as_slice()
         .try_into()
-        .expect("invalid get_account_data_size return data");
-    u64::from_le_bytes(bytes)
+        .map_err(|_| ProgramError::InvalidInstructionData)?;
+    Ok(u64::from_le_bytes(bytes))
 }
 
 pub fn initialize_mint_close_authority<'a>(
     ctx: CpiContext<'a, InitializeMintCloseAuthority<'a>>,
     close_authority: Option<&Address>,
-) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_address_option_ix(
-        DISC_INITIALIZE_MINT_CLOSE_AUTHORITY,
+) -> Result<(), ProgramError> {
+    validate_token_2022_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::initialize_mint_close_authority(
+        ctx.program,
+        ctx.accounts.mint.address(),
         close_authority,
-    ));
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn initialize_immutable_owner<'a>(ctx: CpiContext<'a, InitializeImmutableOwner<'a>>) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&[DISC_INITIALIZE_IMMUTABLE_OWNER]);
+pub fn initialize_immutable_owner<'a>(
+    ctx: CpiContext<'a, InitializeImmutableOwner<'a>>,
+) -> Result<(), ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::initialize_immutable_owner(
+        ctx.program,
+        ctx.accounts.account.address(),
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn amount_to_ui_amount<'a>(ctx: CpiContext<'a, AmountToUiAmount<'a>>, amount: u64) -> String {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_amount_ix(DISC_AMOUNT_TO_UI_AMOUNT, amount));
-    String::from_utf8(return_data_from(ctx.program))
-        .expect("invalid amount_to_ui_amount return data")
+pub fn amount_to_ui_amount<'a>(
+    ctx: CpiContext<'a, AmountToUiAmount<'a>>,
+    amount: u64,
+) -> Result<String, ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::amount_to_ui_amount(
+        ctx.program,
+        ctx.accounts.account.address(),
+        amount,
+    )?;
+    invoke_token_2022(&ctx, ix)?;
+    String::from_utf8(return_data_from(ctx.program)?)
+        .map_err(|_| ProgramError::InvalidInstructionData)
 }
 
-pub fn ui_amount_to_amount<'a>(ctx: CpiContext<'a, UiAmountToAmount<'a>>, ui_amount: &str) -> u64 {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_ui_amount_to_amount_ix(ui_amount));
-    let data = return_data_from(ctx.program);
+pub fn ui_amount_to_amount<'a>(
+    ctx: CpiContext<'a, UiAmountToAmount<'a>>,
+    ui_amount: &str,
+) -> Result<u64, ProgramError> {
+    validate_spl_token_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::ui_amount_to_amount(
+        ctx.program,
+        ctx.accounts.account.address(),
+        ui_amount,
+    )?;
+    invoke_token_2022(&ctx, ix)?;
+    let data = return_data_from(ctx.program)?;
     let bytes: [u8; 8] = data
         .as_slice()
         .try_into()
-        .expect("invalid ui_amount_to_amount return data");
-    u64::from_le_bytes(bytes)
+        .map_err(|_| ProgramError::InvalidInstructionData)?;
+    Ok(u64::from_le_bytes(bytes))
 }
 
-pub fn reallocate<'a>(ctx: CpiContext<'a, Reallocate<'a>>, extension_types: &[ExtensionType]) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_reallocate_ix(extension_types));
+pub fn reallocate<'a>(
+    ctx: CpiContext<'a, Reallocate<'a>>,
+    extension_types: &[ExtensionType],
+) -> Result<(), ProgramError> {
+    validate_token_2022_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::reallocate(
+        ctx.program,
+        ctx.accounts.account.address(),
+        ctx.accounts.payer.address(),
+        ctx.accounts.authority.address(),
+        &[],
+        extension_types,
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn withdraw_excess_lamports<'a>(ctx: CpiContext<'a, WithdrawExcessLamports<'a>>) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&[DISC_WITHDRAW_EXCESS_LAMPORTS]);
+pub fn withdraw_excess_lamports<'a>(
+    ctx: CpiContext<'a, WithdrawExcessLamports<'a>>,
+) -> Result<(), ProgramError> {
+    validate_token_2022_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::withdraw_excess_lamports(
+        ctx.program,
+        ctx.accounts.source.address(),
+        ctx.accounts.destination.address(),
+        ctx.accounts.authority.address(),
+        &[],
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
-pub fn create_native_mint<'a>(ctx: CpiContext<'a, CreateNativeMint<'a>>) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&[DISC_CREATE_NATIVE_MINT]);
+pub fn create_native_mint<'a>(
+    ctx: CpiContext<'a, CreateNativeMint<'a>>,
+) -> Result<(), ProgramError> {
+    validate_token_2022_program(ctx.program)?;
+    let ix =
+        spl_token_2022::instruction::create_native_mint(ctx.program, ctx.accounts.payer.address())?;
+    invoke_token_2022(&ctx, ix)
 }
 
 pub fn initialize_non_transferable_mint<'a>(
     ctx: CpiContext<'a, InitializeNonTransferableMint<'a>>,
-) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&[DISC_INITIALIZE_NON_TRANSFERABLE_MINT]);
+) -> Result<(), ProgramError> {
+    validate_token_2022_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::initialize_non_transferable_mint(
+        ctx.program,
+        ctx.accounts.mint.address(),
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
 pub fn initialize_permanent_delegate<'a>(
     ctx: CpiContext<'a, PermanentDelegateInitialize<'a>>,
     permanent_delegate: &Address,
-) {
-    assert_token_2022_program(ctx.program);
-    ctx.invoke(&encode_permanent_delegate_ix(permanent_delegate));
+) -> Result<(), ProgramError> {
+    validate_token_2022_program(ctx.program)?;
+    let ix = spl_token_2022::instruction::initialize_permanent_delegate(
+        ctx.program,
+        ctx.accounts.mint.address(),
+        permanent_delegate,
+    )?;
+    invoke_token_2022(&ctx, ix)
 }
 
 #[cfg(test)]
@@ -921,92 +1006,30 @@ mod tests {
 
     #[test]
     fn token_2022_program_check_accepts_canonical_id() {
-        assert_token_2022_program(&Token2022::id());
+        assert_eq!(validate_token_2022_program(&Token2022::id()), Ok(()));
     }
 
     #[test]
-    #[should_panic(expected = "incorrect Token-2022 program id")]
+    fn spl_token_program_check_accepts_token_and_token_2022_ids() {
+        assert_eq!(validate_spl_token_program(&Token::id()), Ok(()));
+        assert_eq!(validate_spl_token_program(&Token2022::id()), Ok(()));
+    }
+
+    #[test]
+    #[cfg(feature = "guardrails")]
     fn token_2022_program_check_rejects_other_programs() {
-        assert_token_2022_program(&Address::new_from_array([1; 32]));
-    }
-
-    #[test]
-    fn reallocate_encoder_matches_v1_extension_discriminants() {
         assert_eq!(
-            encode_reallocate_ix(&[ExtensionType::GroupPointer, ExtensionType::PausableAccount]),
-            vec![DISC_REALLOCATE, 20, 0, 27, 0]
+            validate_token_2022_program(&Address::new_from_array([1; 32])),
+            Err(ProgramError::IncorrectProgramId)
         );
     }
 
     #[test]
-    fn initialize_mint_encoder_uses_coption_layout() {
-        let authority = Address::new_from_array([7; 32]);
-        let freeze_authority = Address::new_from_array([8; 32]);
-        let data =
-            encode_initialize_mint_ix(DISC_INITIALIZE_MINT, 9, &authority, Some(&freeze_authority));
-        let expected = spl_token_2022::instruction::initialize_mint(
-            &address_to_pubkey(&Token2022::id()),
-            &Pubkey::new_unique(),
-            &address_to_pubkey(&authority),
-            Some(&address_to_pubkey(&freeze_authority)),
-            9,
-        )
-        .unwrap()
-        .data;
-
-        assert_eq!(data[0], DISC_INITIALIZE_MINT);
-        assert_eq!(data[1], 9);
-        assert_eq!(&data[2..34], authority.as_ref());
-        assert_eq!(data[34], 1);
-        assert_eq!(&data[35..67], freeze_authority.as_ref());
-        assert_eq!(data, expected);
+    #[cfg(feature = "guardrails")]
+    fn spl_token_program_check_rejects_other_programs() {
         assert_eq!(
-            encode_initialize_mint_ix(DISC_INITIALIZE_MINT, 9, &authority, None),
-            spl_token_2022::instruction::initialize_mint(
-                &address_to_pubkey(&Token2022::id()),
-                &Pubkey::new_unique(),
-                &address_to_pubkey(&authority),
-                None,
-                9,
-            )
-            .unwrap()
-            .data
-        );
-    }
-
-    #[test]
-    fn option_and_string_encoders_match_interface_layout() {
-        let address = Address::new_from_array([9; 32]);
-
-        assert_eq!(
-            encode_address_option_ix(DISC_INITIALIZE_MINT_CLOSE_AUTHORITY, Some(&address)),
-            spl_token_2022::instruction::initialize_mint_close_authority(
-                &address_to_pubkey(&Token2022::id()),
-                &Pubkey::new_unique(),
-                Some(&address_to_pubkey(&address)),
-            )
-            .unwrap()
-            .data
-        );
-        assert_eq!(
-            encode_address_option_ix(DISC_INITIALIZE_MINT_CLOSE_AUTHORITY, None),
-            spl_token_2022::instruction::initialize_mint_close_authority(
-                &address_to_pubkey(&Token2022::id()),
-                &Pubkey::new_unique(),
-                None,
-            )
-            .unwrap()
-            .data
-        );
-        assert_eq!(
-            encode_ui_amount_to_amount_ix("1.25"),
-            spl_token_2022::instruction::ui_amount_to_amount(
-                &address_to_pubkey(&Token2022::id()),
-                &Pubkey::new_unique(),
-                "1.25",
-            )
-            .unwrap()
-            .data
+            validate_spl_token_program(&Address::new_from_array([1; 32])),
+            Err(ProgramError::IncorrectProgramId)
         );
     }
 }

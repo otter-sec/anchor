@@ -12,17 +12,63 @@ pub use mpl_token_metadata;
 use {
     alloc::{vec, vec::Vec},
     anchor_lang_v2::{
-        AccountDeserialize, AnchorAccount, CpiContext, CpiHandle, Id, IdlAccountType, Result,
-        ToCpiAccounts,
+        solana_program::program, AccountDeserialize, AnchorAccount, CpiContext, CpiHandle, Id,
+        IdlAccountType, Result, ToCpiAccounts,
     },
     core::ops::Deref,
     pinocchio::{account::AccountView, instruction::InstructionAccount},
     solana_address::Address,
+    solana_instruction::{AccountMeta, Instruction},
     solana_program_error::ProgramError,
     solana_pubkey::Pubkey,
 };
 
 pub const ID: Address = Address::from_str_const("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+
+#[cfg(feature = "guardrails")]
+#[inline]
+fn validate_metadata_program(program: &Address) -> Result<()> {
+    if *program != ID {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "guardrails"))]
+#[inline]
+fn validate_metadata_program(_program: &Address) -> Result<()> {
+    Ok(())
+}
+
+fn invoke_metadata<'info, T: ToCpiAccounts<'info>>(
+    ctx: &CpiContext<'info, T>,
+    mut ix: Instruction,
+) -> Result<()> {
+    validate_metadata_program(ctx.program)?;
+
+    let mut instruction_accounts = ctx.accounts.to_instruction_accounts();
+    let mut handles = ctx.accounts.to_cpi_handles();
+
+    for handle in &ctx.remaining_accounts {
+        instruction_accounts.push(InstructionAccount::new(
+            handle.address(),
+            handle.is_writable(),
+            handle.is_signer(),
+        ));
+        handles.push(*handle);
+    }
+
+    ix.accounts = instruction_accounts
+        .iter()
+        .map(|account| AccountMeta {
+            pubkey: *account.address,
+            is_writable: account.is_writable,
+            is_signer: account.is_signer,
+        })
+        .collect();
+
+    program::invoke_signed(&ix, &handles, ctx.signer_seeds)
+}
 
 macro_rules! impl_cpi_accounts {
     ($name:ident { $($field:ident),* $(,)? }) => {
@@ -57,8 +103,7 @@ pub fn approve_collection_authority<'info>(
         update_authority: *ctx.accounts.update_authority.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn bubblegum_set_collection_size<'info>(
@@ -78,8 +123,7 @@ pub fn bubblegum_set_collection_size<'info>(
             set_collection_size_args: mpl_token_metadata::types::SetCollectionSizeArgs { size },
         },
     );
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn burn_edition_nft<'info>(ctx: CpiContext<'info, BurnEditionNft<'info>>) -> Result<()> {
@@ -96,8 +140,7 @@ pub fn burn_edition_nft<'info>(ctx: CpiContext<'info, BurnEditionNft<'info>>) ->
         spl_token_program: *ctx.accounts.spl_token.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 /// Burn an NFT by closing its token, metadata and edition accounts.
@@ -129,8 +172,7 @@ pub fn burn_nft<'info>(
         token_account: *ctx.accounts.token.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn create_metadata_accounts_v3<'info>(
@@ -159,8 +201,7 @@ pub fn create_metadata_accounts_v3<'info>(
             is_mutable,
         },
     );
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn update_metadata_accounts_v2<'info>(
@@ -182,8 +223,7 @@ pub fn update_metadata_accounts_v2<'info>(
             is_mutable,
         },
     );
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn create_master_edition_v3<'info>(
@@ -204,8 +244,7 @@ pub fn create_master_edition_v3<'info>(
     .instruction(
         mpl_token_metadata::instructions::CreateMasterEditionV3InstructionArgs { max_supply },
     );
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn mint_new_edition_from_master_edition_via_token<'info>(
@@ -234,8 +273,7 @@ pub fn mint_new_edition_from_master_edition_via_token<'info>(
                 mpl_token_metadata::types::MintNewEditionFromMasterEditionViaTokenArgs { edition },
         },
     );
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn revoke_collection_authority<'info>(
@@ -249,8 +287,7 @@ pub fn revoke_collection_authority<'info>(
         revoke_authority: *ctx.accounts.revoke_authority.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn set_collection_size<'info>(
@@ -269,8 +306,7 @@ pub fn set_collection_size<'info>(
             set_collection_size_args: mpl_token_metadata::types::SetCollectionSizeArgs { size },
         },
     );
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn verify_collection<'info>(
@@ -287,8 +323,7 @@ pub fn verify_collection<'info>(
         payer: *ctx.accounts.payer.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn verify_sized_collection_item<'info>(
@@ -305,8 +340,7 @@ pub fn verify_sized_collection_item<'info>(
         payer: *ctx.accounts.payer.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn set_and_verify_collection<'info>(
@@ -324,8 +358,7 @@ pub fn set_and_verify_collection<'info>(
         update_authority: *ctx.accounts.update_authority.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn set_and_verify_sized_collection_item<'info>(
@@ -343,8 +376,7 @@ pub fn set_and_verify_sized_collection_item<'info>(
         update_authority: *ctx.accounts.update_authority.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn freeze_delegated_account<'info>(
@@ -358,8 +390,7 @@ pub fn freeze_delegated_account<'info>(
         token_program: *ctx.accounts.token_program.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn thaw_delegated_account<'info>(
@@ -373,8 +404,7 @@ pub fn thaw_delegated_account<'info>(
         token_program: *ctx.accounts.token_program.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn update_primary_sale_happened_via_token<'info>(
@@ -386,8 +416,7 @@ pub fn update_primary_sale_happened_via_token<'info>(
         token: *ctx.accounts.token.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn set_token_standard<'info>(
@@ -401,8 +430,7 @@ pub fn set_token_standard<'info>(
         update_authority: *ctx.accounts.update_authority.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn sign_metadata<'info>(ctx: CpiContext<'info, SignMetadata<'info>>) -> Result<()> {
@@ -411,8 +439,7 @@ pub fn sign_metadata<'info>(ctx: CpiContext<'info, SignMetadata<'info>>) -> Resu
         metadata: *ctx.accounts.metadata.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn remove_creator_verification<'info>(
@@ -423,8 +450,7 @@ pub fn remove_creator_verification<'info>(
         metadata: *ctx.accounts.metadata.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn utilize<'info>(
@@ -447,8 +473,7 @@ pub fn utilize<'info>(
         use_authority_record,
     }
     .instruction(mpl_token_metadata::instructions::UtilizeInstructionArgs { number_of_uses });
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn unverify_collection<'info>(
@@ -467,8 +492,7 @@ pub fn unverify_collection<'info>(
         metadata: *ctx.accounts.metadata.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub fn unverify_sized_collection_item<'info>(
@@ -488,8 +512,7 @@ pub fn unverify_sized_collection_item<'info>(
         payer: *ctx.accounts.payer.address(),
     }
     .instruction();
-    ctx.invoke(&ix.data);
-    Ok(())
+    invoke_metadata(&ctx, ix)
 }
 
 pub struct ApproveCollectionAuthority<'info> {
@@ -537,7 +560,6 @@ pub struct CreateMetadataAccountsV3<'info> {
     pub payer: CpiHandle<'info>,
     pub update_authority: CpiHandle<'info>,
     pub system_program: CpiHandle<'info>,
-    pub rent: CpiHandle<'info>,
 }
 
 pub struct UpdateMetadataAccountsV2<'info> {
@@ -740,8 +762,7 @@ impl_cpi_accounts!(CreateMetadataAccountsV3 {
     mint_authority,
     payer,
     update_authority,
-    system_program,
-    rent
+    system_program
 });
 impl_cpi_accounts!(UpdateMetadataAccountsV2 {
     metadata,

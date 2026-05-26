@@ -1,0 +1,17 @@
+[package]
+name = "declare-program-constants"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["lib"]
+
+[features]
+default = []
+
+[dependencies]
+anchor-lang-v2 = { path = "../../../../lang-v2" }
+
+[lints.rust.unexpected_cfgs]
+level = "allow"

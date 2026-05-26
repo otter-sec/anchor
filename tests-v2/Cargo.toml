@@ -21,11 +21,22 @@ caller = { path = "programs/caller", features = ["cpi"] }
 client-builders = { path = "programs/client-builders" }
 constraints = { path = "programs/constraints" }
 custom-constraints = { path = "programs/custom-constraints", features = ["cpi"] }
+declare-program-constants = { path = "programs/declare-program/constants" }
+declare-program-cpi = { path = "programs/declare-program/cpi", features = ["cpi"] }
+declare-program-errors = { path = "programs/declare-program/errors" }
+declare-program-events = { path = "programs/declare-program/events" }
+declare-program-optional = { path = "programs/declare-program/optional", features = ["cpi"] }
+declare-program-returns = { path = "programs/declare-program/returns", features = ["cpi"] }
+declare-program-serialization = { path = "programs/declare-program/serialization" }
+declare-program-surface = { path = "programs/declare-program/surface" }
+declare-program-types = { path = "programs/declare-program/types" }
 dispatch-remaining = { path = "programs/dispatch-remaining" }
 dup-mut = { path = "programs/dup-mut" }
+event-cpi-test = { path = "programs/event-cpi" }
 init-space-usability = { path = "programs/init-space-usability" }
 ix-macro = { path = "programs/ix-macro" }
 optional-accounts = { path = "programs/optional-accounts" }
+program-interface = { path = "programs/program-interface", features = ["cpi"] }
 seeds = { path = "programs/seeds" }
 spl-test = { path = "programs/spl", features = ["cpi"] }
 spl-ata-test = { path = "programs/spl-ata", features = ["cpi"] }

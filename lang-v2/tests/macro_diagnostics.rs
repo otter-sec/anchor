@@ -46,6 +46,10 @@ wincode = {{ version = "0.5", features = ["derive"] }}
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn raw_constraint_rejects_obvious_non_bool_literals() {
     compile_fail_case(
         "raw_constraint_non_bool",
@@ -66,6 +70,10 @@ pub struct Bad {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn invalid_account_arguments_are_targeted() {
     compile_fail_case(
         "invalid_account_argument",
@@ -83,6 +91,10 @@ pub struct Bad {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn unsafe_dup_constraint_has_targeted_message() {
     compile_fail_case(
         "unsafe_dup_required",
@@ -103,6 +115,10 @@ pub struct Bad {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn init_space_rejects_union_and_unsized_reference_fields() {
     compile_fail_case(
         "init_space_union",
@@ -135,6 +151,10 @@ pub struct Bad<'a> {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn malformed_discriminator_attribute_has_targeted_message() {
     compile_fail_case(
         "bad_discriminator",
@@ -156,11 +176,15 @@ pub mod bad_discriminator {
 #[derive(Accounts)]
 pub struct Noop {}
 "#,
-        &["`#[discrim = N]` value must be an integer literal"],
+        &["`#[discrim = ...]` value must be an integer literal or byte array literal"],
     );
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn instruction_args_must_match_zero_arg_handler() {
     compile_fail_case(
         "instruction_args_without_handler_args",
@@ -191,6 +215,10 @@ pub struct Bad {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn slot_hashes_is_not_a_supported_sysvar_account() {
     compile_fail_case(
         "unsupported_slot_hashes_sysvar",
@@ -210,6 +238,10 @@ fn check() {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn init_payer_must_be_mutable() {
     compile_fail_case(
         "init_payer_must_be_mutable",

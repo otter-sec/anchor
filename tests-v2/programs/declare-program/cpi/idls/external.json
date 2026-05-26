@@ -1,0 +1,131 @@
+{
+  "address": "Externa111111111111111111111111111111111111",
+  "metadata": {
+    "name": "external",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "declare_program v2 fixture"
+  },
+  "instructions": [
+    {
+      "name": "defaultDisc",
+      "discriminator": [113, 228, 29, 105, 50, 82, 109, 96],
+      "accounts": [],
+      "args": []
+    },
+    {
+      "name": "update",
+      "discriminator": [9, 8, 7, 6],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "data",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "value",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "definedArgs",
+      "discriminator": [1, 3, 5, 7, 9, 11, 13, 15],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "MyArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "bytesAndString",
+      "discriminator": [2, 4, 6, 8],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "payload",
+          "type": "bytes"
+        },
+        {
+          "name": "label",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "composite",
+      "discriminator": [44, 45, 46],
+      "accounts": [
+        {
+          "name": "inner",
+          "accounts": [
+            {
+              "name": "authority",
+              "signer": true
+            },
+            {
+              "name": "vault",
+              "writable": true
+            }
+          ]
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "count",
+          "type": "u16"
+        }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "MyArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "tag",
+            "type": {
+              "array": ["u8", 3]
+            }
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          }
+        ]
+      }
+    }
+  ]
+}

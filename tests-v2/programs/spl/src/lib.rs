@@ -554,7 +554,7 @@ pub mod spl_test {
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
         #[allow(deprecated)]
-        token_2022_ext_cpi::cpi_guard_enable(cpi_ctx);
+        token_2022_ext_cpi::cpi_guard_enable(cpi_ctx)?;
         Ok(())
     }
 
@@ -569,7 +569,7 @@ pub mod spl_test {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_2022_ext_cpi::group_pointer_update(cpi_ctx, Some(&group_address));
+        token_2022_ext_cpi::group_pointer_update(cpi_ctx, Some(&group_address))?;
         Ok(())
     }
 
@@ -584,7 +584,7 @@ pub mod spl_test {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_2022_ext_cpi::group_member_pointer_update(cpi_ctx, Some(&member_address));
+        token_2022_ext_cpi::group_member_pointer_update(cpi_ctx, Some(&member_address))?;
         Ok(())
     }
 
@@ -598,7 +598,7 @@ pub mod spl_test {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_2022_cpi::reallocate(cpi_ctx, &[token_2022_cpi::ExtensionType::GroupPointer]);
+        token_2022_cpi::reallocate(cpi_ctx, &[token_2022_cpi::ExtensionType::GroupPointer])?;
 
         Ok(())
     }
@@ -613,7 +613,7 @@ pub mod spl_test {
             update_authority: ctx.accounts.update_authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_2022_ext_cpi::token_metadata_remove_key(cpi_ctx, "field".into(), true);
+        token_2022_ext_cpi::token_metadata_remove_key(cpi_ctx, "field".into(), true)?;
         Ok(())
     }
 
@@ -634,7 +634,7 @@ pub mod spl_test {
             "name".into(),
             "SYM".into(),
             "https://example.invalid".into(),
-        );
+        )?;
         Ok(())
     }
 
@@ -652,7 +652,7 @@ pub mod spl_test {
         token_2022_ext_cpi::token_metadata_update_authority(
             cpi_ctx,
             Some(ctx.accounts.new_authority.address()),
-        );
+        )?;
         Ok(())
     }
 
@@ -670,7 +670,7 @@ pub mod spl_test {
             cpi_ctx,
             token_2022_ext_cpi::token_metadata::Field::Name,
             "name".into(),
-        );
+        )?;
         Ok(())
     }
 
@@ -683,7 +683,7 @@ pub mod spl_test {
             mint_authority: ctx.accounts.mint_authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_2022_ext_cpi::token_group_initialize(cpi_ctx, None, 10);
+        token_2022_ext_cpi::token_group_initialize(cpi_ctx, None, 10)?;
         Ok(())
     }
 
@@ -698,7 +698,7 @@ pub mod spl_test {
             group_update_authority: ctx.accounts.group_update_authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_2022_ext_cpi::token_member_initialize(cpi_ctx);
+        token_2022_ext_cpi::token_member_initialize(cpi_ctx)?;
         Ok(())
     }
 

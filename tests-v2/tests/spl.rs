@@ -997,8 +997,8 @@ fn assert_incorrect_token_2022_program_error<T, E: std::fmt::Display>(
     };
     let error = error.to_string();
     assert!(
-        error.contains("PANICKED") && error.contains("spl-v2/src/token_2022_extensions.rs"),
-        "{context}: expected canonical Token-2022 program assertion panic, got:\n{error}"
+        error.contains("IncorrectProgramId") || error.contains("incorrect program id"),
+        "{context}: expected IncorrectProgramId, got:\n{error}"
     );
 }
 
@@ -1077,6 +1077,28 @@ fn read_interface_mint_rejects_token_2022_account_type_mismatch() {
     assert_invalid_account_data_error(
         send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[]),
         "Token-2022 account type marker must match InterfaceAccount<Mint>",
+    );
+}
+
+#[test]
+fn read_interface_mint_rejects_token_account() {
+    let (mut svm, payer) = setup();
+    let mint = Pubkey::new_unique();
+    let owner = keypair_for("iface-mint-cosplay-owner");
+    let token = Pubkey::new_unique();
+
+    // A 165-byte token account is longer than a Mint (82 bytes), so a
+    // length-only check would accept it here. Regression test for #4510.
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 42, &[]),
+    );
+
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    assert_invalid_account_data_error(
+        send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[]),
+        "a token account must not load as InterfaceAccount<Mint>",
     );
 }
 

@@ -130,6 +130,13 @@ pub mod spl_ata_test {
         associated_token::create(cpi_ctx)?;
         Ok(())
     }
+
+    #[discrim = 14]
+    pub fn init_strict_ata_with_token_program(
+        _ctx: &mut Context<InitStrictAtaWithTokenProgram>,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -240,6 +247,25 @@ pub struct InitInterfaceAtaWithTokenProgram {
         associated_token::token_program = token_program,
     )]
     pub token_account: InterfaceAccount<token_interface::TokenAccount>,
+    pub token_program: UncheckedAccount,
+    pub associated_token_program: Program<AssociatedToken>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct InitStrictAtaWithTokenProgram {
+    #[account(mut)]
+    pub payer: Signer,
+    pub mint: InterfaceAccount<token_interface::Mint>,
+    pub authority: UncheckedAccount,
+    #[account(
+        init,
+        payer = payer,
+        associated_token::mint = mint,
+        associated_token::authority = authority,
+        associated_token::token_program = token_program,
+    )]
+    pub token_account: Account<TokenAccount>,
     pub token_program: UncheckedAccount,
     pub associated_token_program: Program<AssociatedToken>,
     pub system_program: Program<System>,

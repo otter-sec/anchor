@@ -92,6 +92,22 @@ impl<T: PinocchioSysvar + SysvarId + Copy> AsRef<AccountView> for Sysvar<T> {
     }
 }
 
+impl<T: PinocchioSysvar + SysvarId + Copy> crate::ToCpiHandle for Sysvar<T> {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
+        crate::AnchorAccount::cpi_handle(self)
+    }
+}
+
+impl<T: PinocchioSysvar + SysvarId + Copy> crate::ToCpiHandleMut for Sysvar<T> {
+    #[inline(always)]
+    fn try_to_cpi_handle_mut(
+        &mut self,
+    ) -> Result<crate::CpiHandle<'_>, solana_program_error::ProgramError> {
+        crate::AnchorAccount::try_cpi_handle_mut(self)
+    }
+}
+
 #[doc(hidden)]
 impl<T: PinocchioSysvar + SysvarId + Copy> crate::IdlAccountType for Sysvar<T> {
     const __IDL_ADDRESS: Option<&'static str> = if T::IDL_ADDRESS.is_empty() {

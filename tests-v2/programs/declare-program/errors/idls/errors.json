@@ -1,0 +1,21 @@
+{
+  "address": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
+  "metadata": {
+    "name": "errors",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "declare_program errors fixture"
+  },
+  "instructions": [],
+  "errors": [
+    {
+      "code": 7000,
+      "name": "NotAllowed",
+      "msg": "not allowed"
+    },
+    {
+      "code": 7001,
+      "name": "legacy_shape_failed"
+    }
+  ]
+}

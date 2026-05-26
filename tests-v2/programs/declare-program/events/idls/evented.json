@@ -1,0 +1,73 @@
+{
+  "address": "11111111111111111111111111111111",
+  "metadata": {
+    "name": "evented",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "declare_program events fixture"
+  },
+  "instructions": [],
+  "events": [
+    {
+      "name": "BorshEvent",
+      "discriminator": [1, 2, 3, 4]
+    },
+    {
+      "name": "PodEvent",
+      "discriminator": [9, 8, 7, 6, 5]
+    }
+  ],
+  "types": [
+    {
+      "name": "BorshEvent",
+      "docs": [
+        "Default declared event with borsh-compatible wire format."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "label",
+            "type": "string"
+          },
+          {
+            "name": "flag",
+            "type": {
+              "option": "bool"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PodEvent",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wide",
+            "type": "u64"
+          },
+          {
+            "name": "tag",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "type": {
+              "array": ["u8", 7]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

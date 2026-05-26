@@ -9,6 +9,7 @@ use {
 
 impl<T: AnchorAccount> AnchorAccount for Box<T> {
     type Data = T;
+    const IS_SIGNER: bool = T::IS_SIGNER;
     const MIN_DATA_LEN: usize = T::MIN_DATA_LEN;
 
     fn load(view: AccountView, program_id: &Address) -> Result<Self, ProgramError> {
@@ -44,6 +45,35 @@ impl<T: AnchorAccount> AnchorAccount for Box<T> {
 
     fn close(&mut self, destination: AccountView) -> pinocchio::ProgramResult {
         (**self).close(destination)
+    }
+}
+
+impl<T: crate::ToCpiHandle + ?Sized> crate::ToCpiHandle for Box<T> {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
+        self.as_ref().to_cpi_handle()
+    }
+}
+
+impl<T: crate::ToCpiHandleMut + ?Sized> crate::ToCpiHandleMut for Box<T> {
+    #[inline(always)]
+    fn try_to_cpi_handle_mut(
+        &mut self,
+    ) -> Result<crate::CpiHandle<'_>, solana_program_error::ProgramError> {
+        self.as_mut().try_to_cpi_handle_mut()
+    }
+}
+
+#[cfg(feature = "account-resize")]
+impl<T: crate::AccountRealloc> crate::AccountRealloc for Box<T> {
+    #[inline(always)]
+    fn realloc_account(
+        &mut self,
+        new_space: usize,
+        payer: AccountView,
+        zero: bool,
+    ) -> pinocchio::ProgramResult {
+        self.as_mut().realloc_account(new_space, payer, zero)
     }
 }
 
