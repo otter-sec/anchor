@@ -9,13 +9,12 @@ use {
     alloc::{vec, vec::Vec},
     anchor_lang_v2::{
         accounts::{Account, SlabInit, SlabSchema},
-        solana_program::program,
         AccountConstraint, CpiContext, CpiHandle, Id, ToCpiAccounts,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::{account::AccountView, instruction::InstructionAccount},
     solana_address::Address,
-    solana_instruction::{AccountMeta, Instruction},
+    solana_instruction::Instruction,
     solana_program_error::ProgramError,
     spl_token_2022_interface as spl_token_2022,
 };
@@ -708,30 +707,10 @@ pub(crate) fn validate_token_program(_program_id: &Address) -> Result<(), Progra
 
 fn invoke_token<'a, T: ToCpiAccounts<'a>>(
     ctx: &CpiContext<'a, T>,
-    mut ix: Instruction,
+    ix: Instruction,
 ) -> Result<(), ProgramError> {
-    let mut instruction_accounts = ctx.accounts.to_instruction_accounts();
-    let mut handles = ctx.accounts.to_cpi_handles();
-
-    for handle in &ctx.remaining_accounts {
-        instruction_accounts.push(InstructionAccount::new(
-            handle.address(),
-            handle.is_writable(),
-            handle.is_signer(),
-        ));
-        handles.push(*handle);
-    }
-
-    ix.accounts = instruction_accounts
-        .iter()
-        .map(|account| AccountMeta {
-            pubkey: *account.address,
-            is_writable: account.is_writable,
-            is_signer: account.is_signer,
-        })
-        .collect();
-
-    program::invoke_signed(&ix, &handles, ctx.signer_seeds)
+    ctx.invoke(&ix.data);
+    Ok(())
 }
 
 pub fn initialize_account<'a>(
