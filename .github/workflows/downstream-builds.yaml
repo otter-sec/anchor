@@ -6,11 +6,6 @@ on:
       - anchor-next
     paths-ignore:
       - "docs/**"
-  # FIXME: Remove this before final merge; downstream builds should only run
-  # on pushes to anchor-next once the workflow has been validated.
-  pull_request:
-    paths-ignore:
-      - "docs/**"
 
 jobs:
   downstream-matrix:

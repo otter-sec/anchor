@@ -281,11 +281,9 @@ jobs:
           path: tests/bpf-upgradeable-state/target
           key: cargo-${{ runner.os }}-tests/bpf-upgradeable-state-${{ env.ANCHOR_VERSION }}-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
 
-      # FIXME: drop `--feature deprecate_rent_exemption_threshold` once
-      # surfpool's bundled mainnet defaults catch up — currently stale
-      # and missing this SIMD, so pinocchio's `Rent::get` reads half the
-      # rent-exempt minimum and `init` simulations fail with
-      # `InsufficientFundsForRent`.
+      # Surfpool's bundled mainnet defaults are currently missing this
+      # SIMD, so pinocchio's `Rent::get` reads half the rent-exempt
+      # minimum and `init` simulations fail with `InsufficientFundsForRent`.
       - run: surfpool start --ci --offline --feature deprecate_rent_exemption_threshold &
         name: start surfpool
       - run: cd tests/bpf-upgradeable-state && yarn --frozen-lockfile
