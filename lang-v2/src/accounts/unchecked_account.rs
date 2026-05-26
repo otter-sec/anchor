@@ -1,5 +1,5 @@
 use {
-    crate::{accounts::view_wrapper_traits, AnchorAccount},
+    crate::{accounts::view_wrapper_traits, AccountInitialize, AnchorAccount, ForeignOwnerInit},
     pinocchio::{account::AccountView, address::Address},
     solana_program_error::ProgramError,
 };
@@ -31,6 +31,28 @@ impl AnchorAccount for UncheckedAccount {
         Err(ProgramError::InvalidArgument)
     }
 }
+
+impl AccountInitialize for UncheckedAccount {
+    type Params<'a> = ();
+
+    #[inline(always)]
+    fn create_and_initialize<'a>(
+        payer: &AccountView,
+        account: &AccountView,
+        space: usize,
+        owner: &Address,
+        _params: &(),
+        signer_seeds: Option<&[&[u8]]>,
+    ) -> Result<Self, ProgramError> {
+        match signer_seeds {
+            Some(seeds) => crate::create_account_signed(payer, account, space, owner, seeds)?,
+            None => crate::create_account(payer, account, space, owner)?,
+        }
+        Self::load(*account, owner)
+    }
+}
+
+impl ForeignOwnerInit for UncheckedAccount {}
 
 view_wrapper_traits!(UncheckedAccount);
 

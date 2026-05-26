@@ -508,6 +508,15 @@ pub trait AccountInitialize: Sized {
     ) -> Result<Self, ProgramError>;
 }
 
+/// Marker for account wrappers that may be allocated with an explicit
+/// foreign owner through `#[account(init, owner = ...)]`.
+///
+/// Typed account wrappers intentionally do not implement this: their init
+/// paths stamp and load Anchor-owned data, so they must stay owned by the
+/// current program. `UncheckedAccount` is the escape hatch for allocating
+/// bytes that a foreign program will initialize or validate later.
+pub trait ForeignOwnerInit: AccountInitialize {}
+
 // ---------------------------------------------------------------------------
 // Extensible constraint system
 // ---------------------------------------------------------------------------

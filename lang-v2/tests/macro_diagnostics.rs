@@ -266,3 +266,69 @@ pub struct Bad {
         &["the payer specified for an init constraint must be mutable"],
     );
 }
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn init_owner_override_rejects_typed_accounts() {
+    fn case(name: &str, account_attr: &str, field_ty: &str) {
+        let source = format!(
+            r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+pub const OTHER_PROGRAM: Address =
+    Address::from_str_const("Gue5TpR6sstSyGhSvmVeH2TeKqBYYqmXpRCacB9jAk8u");
+
+{account_attr}
+pub struct Data {{
+    pub value: u64,
+}}
+
+#[derive(Accounts)]
+pub struct Bad {{
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + core::mem::size_of::<Data>(),
+        owner = OTHER_PROGRAM,
+    )]
+    pub data: {field_ty},
+    pub system_program: Program<System>,
+}}
+"#
+        );
+        compile_fail_case(name, &source, &["ForeignOwnerInit", "is not implemented"]);
+    }
+
+    case(
+        "init_owner_override_account",
+        "#[account]",
+        "Account<Data>",
+    );
+    case(
+        "init_owner_override_boxed_account",
+        "#[account]",
+        "Box<Account<Data>>",
+    );
+    case(
+        "init_owner_override_interface_account",
+        "#[account]",
+        "InterfaceAccount<Data>",
+    );
+    case(
+        "init_owner_override_borsh_account",
+        "#[account(borsh)]",
+        "BorshAccount<Data>",
+    );
+    case(
+        "init_owner_override_boxed_borsh_account",
+        "#[account(borsh)]",
+        "Box<BorshAccount<Data>>",
+    );
+}

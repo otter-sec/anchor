@@ -978,6 +978,18 @@ fn emit_init_body(
         Some(expr) => quote! { #expr },
         None => quote! { <#field_ty as anchor_lang_v2::Space>::INIT_SPACE },
     };
+    let owner = match attrs.owner.as_ref() {
+        Some(expr) => quote! { #expr },
+        None => quote! { *__program_id },
+    };
+    let owner_check = attrs.owner.as_ref().map(|_| {
+        quote! {
+            fn __anchor_assert_foreign_owner_init<
+                T: anchor_lang_v2::ForeignOwnerInit,
+            >() {}
+            __anchor_assert_foreign_owner_init::<#field_ty>();
+        }
+    });
 
     // Init params come from namespaced constraints that name init-time
     // inputs (e.g. `mint::authority = x`). Runtime-only constraints —
@@ -1047,6 +1059,8 @@ fn emit_init_body(
     quote! {
         let __payer = #payer.account();
         #seeds_arg
+        #owner_check
+        let __owner = #owner;
         let __init_params = {
             type __P<'__a> = <#field_ty as anchor_lang_v2::AccountInitialize>::Params<'__a>;
             let mut __p = <__P as Default>::default();
@@ -1054,7 +1068,7 @@ fn emit_init_body(
             __p
         };
         <#field_ty as anchor_lang_v2::AccountInitialize>::create_and_initialize(
-            __payer, &__target, #space, __program_id, &__init_params, __seeds,
+            __payer, &__target, #space, &__owner, &__init_params, __seeds,
         )?
     }
 }

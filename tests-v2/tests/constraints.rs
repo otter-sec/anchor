@@ -68,6 +68,10 @@ fn maybe_explicit_bump_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"maybe-explicit"], &program_id()).0
 }
 
+fn foreign_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"foreign"], &program_id()).0
+}
+
 fn other_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"other"], &other_program()).0
 }
@@ -374,6 +378,29 @@ fn owner_custom_err_mismatch_surfaces_custom() {
         &[],
     );
     assert_custom(&result, ERR_BAD_OWNER);
+}
+
+#[test]
+fn init_with_owner_creates_foreign_owned_unchecked_account() {
+    let (mut svm, payer, _) = setup();
+    let foreign = foreign_pda();
+
+    call(
+        &mut svm,
+        &payer,
+        20,
+        vec![
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new(foreign, false),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        ],
+        &[],
+    )
+    .expect("init foreign-owned unchecked account");
+
+    let account = svm.get_account(&foreign).expect("created account");
+    assert_eq!(account.owner, other_program());
+    assert_eq!(account.data.len(), 8);
 }
 
 // ---- 7. constraint = expr --------------------------------------------------

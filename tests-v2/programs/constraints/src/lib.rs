@@ -201,6 +201,15 @@ pub mod constraints {
         ctx.accounts.data.value = ctx.accounts.data.value.wrapping_add(1);
         Ok(())
     }
+
+    /// `init` with an explicit `owner = ...` creates the account under
+    /// that owner instead of this program id.
+    #[discrim = 20]
+    pub fn init_foreign_owned_unchecked(
+        _ctx: &mut Context<InitForeignOwnedUnchecked>,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -443,6 +452,25 @@ pub struct InitIfNeededNoSeeds {
     pub payer: Signer,
     #[account(init_if_needed, payer = payer)]
     pub data: Account<Data>,
+    pub system_program: Program<System>,
+}
+
+/// Regression fixture for `#[account(init, owner = ...)]` on unchecked
+/// accounts. The account is only allocated here; the foreign program owns
+/// any later initialization of its bytes.
+#[derive(Accounts)]
+pub struct InitForeignOwnedUnchecked {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init,
+        payer = payer,
+        space = 8,
+        owner = OTHER_PROGRAM,
+        seeds = [b"foreign"],
+        bump,
+    )]
+    pub foreign: UncheckedAccount,
     pub system_program: Program<System>,
 }
 
