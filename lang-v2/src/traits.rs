@@ -472,10 +472,17 @@ impl<T: AsRef<AccountView>> Lamports for T {}
 /// ```ignore
 /// impl Owner for TokenAccountData {
 ///     const OWNER: Address = Token::ID;
+///     const SERIALIZE_ON_EXIT: bool = false;
 /// }
 /// ```
 pub trait Owner {
     const OWNER: Address;
+
+    /// Whether deserialized account wrappers should write in-memory changes
+    /// back on exit. Program-local account types use the default; foreign
+    /// account mirrors should opt out because the current program does not own
+    /// their data at runtime.
+    const SERIALIZE_ON_EXIT: bool = true;
 }
 
 /// Declares the on-chain address for a program marker type.

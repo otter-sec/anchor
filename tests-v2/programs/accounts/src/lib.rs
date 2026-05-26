@@ -55,6 +55,7 @@ pub struct ForeignBorshCounter {
 
 impl Owner for ForeignBorshCounter {
     const OWNER: Address = FOREIGN_BORSH_OWNER;
+    const SERIALIZE_ON_EXIT: bool = false;
 }
 
 impl Discriminator for ForeignBorshCounter {

@@ -2725,6 +2725,7 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
             quote! {
                 impl #impl_generics anchor_lang_v2::Owner for #ident #ty_generics {
                     const OWNER: anchor_lang_v2::Address = ID;
+                    const SERIALIZE_ON_EXIT: bool = false;
                 }
 
                 impl #impl_generics anchor_lang_v2::Discriminator for #ident #ty_generics {

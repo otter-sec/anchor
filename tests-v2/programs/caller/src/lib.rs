@@ -16,6 +16,7 @@ pub struct CalleeData {
 
 impl Owner for CalleeData {
     const OWNER: Address = callee::ID;
+    const SERIALIZE_ON_EXIT: bool = false;
 }
 
 impl Discriminator for CalleeData {

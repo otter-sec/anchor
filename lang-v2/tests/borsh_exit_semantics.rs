@@ -50,6 +50,7 @@ struct ForeignCounter {
 
 impl Owner for ForeignCounter {
     const OWNER: Address = Address::new_from_array(FOREIGN_PROGRAM_ID);
+    const SERIALIZE_ON_EXIT: bool = false;
 }
 
 impl Discriminator for ForeignCounter {
