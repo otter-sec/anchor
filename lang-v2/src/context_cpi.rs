@@ -1,13 +1,15 @@
 extern crate alloc;
 
 use {
-    crate::{CpiHandle, ToCpiAccounts},
+    crate::{address_eq, CpiHandle, ToCpiAccounts},
     alloc::vec::Vec,
     core::mem::MaybeUninit,
     pinocchio::{
         address::Address,
         instruction::{InstructionAccount, InstructionView},
     },
+    solana_instruction::Instruction,
+    solana_program_error::{ProgramError, ProgramResult},
 };
 
 /// Context for cross-program invocations.
@@ -136,6 +138,26 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
                 &signers,
             );
         }
+    }
+
+    /// Invoke a fully built instruction using this context's CPI handles.
+    ///
+    /// The instruction's program id must match this context's program. Account
+    /// metas are taken from the instruction, while account handles are collected
+    /// from [`ToCpiAccounts`] and `remaining_accounts`.
+    pub fn invoke_ix(&self, ix: Instruction) -> ProgramResult {
+        if !address_eq(self.program, &ix.program_id) {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
+        let mut handles = self.accounts.to_cpi_handles();
+        handles.extend(self.remaining_accounts.iter().copied());
+
+        // SAFETY: `CpiContext` already ties every handle to a Rust borrow of
+        // the caller's typed account. The checked path would reject Slab-backed
+        // mutable accounts because their Pinocchio borrow flag intentionally
+        // remains set while the wrapper is alive.
+        unsafe { crate::program::invoke_signed_unchecked(&ix, &handles, self.signer_seeds) }
     }
 }
 

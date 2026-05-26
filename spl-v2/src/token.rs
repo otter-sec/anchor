@@ -14,7 +14,6 @@ use {
     bytemuck::{Pod, Zeroable},
     pinocchio::{account::AccountView, instruction::InstructionAccount},
     solana_address::Address,
-    solana_instruction::Instruction,
     solana_program_error::ProgramError,
     spl_token_2022_interface as spl_token_2022,
 };
@@ -705,14 +704,6 @@ pub(crate) fn validate_token_program(_program_id: &Address) -> Result<(), Progra
     Ok(())
 }
 
-fn invoke_token<'a, T: ToCpiAccounts<'a>>(
-    ctx: &CpiContext<'a, T>,
-    ix: Instruction,
-) -> Result<(), ProgramError> {
-    ctx.invoke(&ix.data);
-    Ok(())
-}
-
 pub fn initialize_account<'a>(
     ctx: CpiContext<'a, accounts::InitializeAccount<'a>>,
 ) -> Result<(), ProgramError> {
@@ -723,7 +714,7 @@ pub fn initialize_account<'a>(
         ctx.accounts.mint.address(),
         ctx.accounts.authority.address(),
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn initialize_account3<'a>(
@@ -736,7 +727,7 @@ pub fn initialize_account3<'a>(
         ctx.accounts.mint.address(),
         ctx.accounts.authority.address(),
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn initialize_mint<'a>(
@@ -753,7 +744,7 @@ pub fn initialize_mint<'a>(
         freeze_authority,
         decimals,
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn initialize_mint2<'a>(
@@ -770,7 +761,7 @@ pub fn initialize_mint2<'a>(
         freeze_authority,
         decimals,
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn transfer<'a>(
@@ -787,7 +778,7 @@ pub fn transfer<'a>(
         &[],
         amount,
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn transfer_checked<'a>(
@@ -806,7 +797,7 @@ pub fn transfer_checked<'a>(
         amount,
         decimals,
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn mint_to<'a>(
@@ -822,7 +813,7 @@ pub fn mint_to<'a>(
         &[],
         amount,
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn mint_to_checked<'a>(
@@ -840,7 +831,7 @@ pub fn mint_to_checked<'a>(
         amount,
         decimals,
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn burn<'a>(ctx: CpiContext<'a, accounts::Burn<'a>>, amount: u64) -> Result<(), ProgramError> {
@@ -853,7 +844,7 @@ pub fn burn<'a>(ctx: CpiContext<'a, accounts::Burn<'a>>, amount: u64) -> Result<
         &[],
         amount,
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn burn_checked<'a>(
@@ -871,7 +862,7 @@ pub fn burn_checked<'a>(
         amount,
         decimals,
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn approve<'a>(
@@ -887,7 +878,7 @@ pub fn approve<'a>(
         &[],
         amount,
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn approve_checked<'a>(
@@ -906,7 +897,7 @@ pub fn approve_checked<'a>(
         amount,
         decimals,
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn revoke<'a>(ctx: CpiContext<'a, accounts::Revoke<'a>>) -> Result<(), ProgramError> {
@@ -917,7 +908,7 @@ pub fn revoke<'a>(ctx: CpiContext<'a, accounts::Revoke<'a>>) -> Result<(), Progr
         ctx.accounts.authority.address(),
         &[],
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn set_authority<'a>(
@@ -934,7 +925,7 @@ pub fn set_authority<'a>(
         ctx.accounts.current_authority.address(),
         &[],
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn close_account<'a>(
@@ -948,7 +939,7 @@ pub fn close_account<'a>(
         ctx.accounts.authority.address(),
         &[],
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn freeze_account<'a>(
@@ -962,7 +953,7 @@ pub fn freeze_account<'a>(
         ctx.accounts.authority.address(),
         &[],
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn thaw_account<'a>(
@@ -976,13 +967,13 @@ pub fn thaw_account<'a>(
         ctx.accounts.authority.address(),
         &[],
     )?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn sync_native<'a>(ctx: CpiContext<'a, accounts::SyncNative<'a>>) -> Result<(), ProgramError> {
     validate_token_program(ctx.program)?;
     let ix = spl_token_2022::instruction::sync_native(ctx.program, ctx.accounts.account.address())?;
-    invoke_token(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 #[cfg(test)]

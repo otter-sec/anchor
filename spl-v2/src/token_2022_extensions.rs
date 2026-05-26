@@ -5,9 +5,8 @@ extern crate alloc;
 use {
     crate::token_2022::spl_token_2022,
     alloc::{string::String, vec, vec::Vec},
-    anchor_lang_v2::{solana_program::program, CpiContext, CpiHandle, ToCpiAccounts},
+    anchor_lang_v2::{CpiContext, CpiHandle, ToCpiAccounts},
     pinocchio::{address::Address, instruction::InstructionAccount},
-    solana_instruction::{AccountMeta, Instruction},
     solana_program_error::ProgramError,
     solana_pubkey::Pubkey,
     spl_pod::optional_keys::OptionalNonZeroPubkey,
@@ -30,51 +29,6 @@ fn validate_token_2022_program(program: &Address) -> Result<(), ProgramError> {
 #[inline]
 fn validate_token_2022_program(_program: &Address) -> Result<(), ProgramError> {
     Ok(())
-}
-
-fn invoke_token_2022_extension<'a, T: ToCpiAccounts<'a>>(
-    ctx: &CpiContext<'a, T>,
-    ix: Instruction,
-) -> Result<(), ProgramError> {
-    invoke_token_2022_extension_with_handles(ctx, ix, &[])
-}
-
-fn invoke_token_2022_extension_with_handles<'a, T: ToCpiAccounts<'a>>(
-    ctx: &CpiContext<'a, T>,
-    mut ix: Instruction,
-    extra_handles: &[CpiHandle<'a>],
-) -> Result<(), ProgramError> {
-    let mut instruction_accounts = ctx.accounts.to_instruction_accounts();
-    let mut handles = ctx.accounts.to_cpi_handles();
-
-    for handle in extra_handles {
-        instruction_accounts.push(InstructionAccount::new(
-            handle.address(),
-            handle.is_writable(),
-            handle.is_signer(),
-        ));
-        handles.push(*handle);
-    }
-
-    for handle in &ctx.remaining_accounts {
-        instruction_accounts.push(InstructionAccount::new(
-            handle.address(),
-            handle.is_writable(),
-            handle.is_signer(),
-        ));
-        handles.push(*handle);
-    }
-
-    ix.accounts = instruction_accounts
-        .iter()
-        .map(|account| AccountMeta {
-            pubkey: *account.address,
-            is_writable: account.is_writable,
-            is_signer: account.is_signer,
-        })
-        .collect();
-
-    program::invoke_signed(&ix, &handles, ctx.signer_seeds)
 }
 
 fn pubkey_refs(pubkeys: &[Pubkey]) -> Vec<&Pubkey> {
@@ -651,7 +605,7 @@ pub fn cpi_guard_enable<'a>(ctx: CpiContext<'a, CpiGuard<'a>>) -> Result<(), Pro
         ctx.accounts.owner.address(),
         &[],
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 #[deprecated(
@@ -665,7 +619,7 @@ pub fn cpi_guard_disable<'a>(ctx: CpiContext<'a, CpiGuard<'a>>) -> Result<(), Pr
         ctx.accounts.owner.address(),
         &[],
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn group_pointer_initialize<'a>(
@@ -680,7 +634,7 @@ pub fn group_pointer_initialize<'a>(
         authority.copied(),
         group_address.copied(),
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn group_pointer_update<'a>(
@@ -695,7 +649,7 @@ pub fn group_pointer_update<'a>(
         &[ctx.accounts.authority.address()],
         group_address.copied(),
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn group_member_pointer_initialize<'a>(
@@ -710,7 +664,7 @@ pub fn group_member_pointer_initialize<'a>(
         authority.copied(),
         member_address.copied(),
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn group_member_pointer_update<'a>(
@@ -725,7 +679,7 @@ pub fn group_member_pointer_update<'a>(
         &[],
         member_address.copied(),
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn pausable_initialize<'a>(
@@ -738,7 +692,7 @@ pub fn pausable_initialize<'a>(
         ctx.accounts.mint.address(),
         authority,
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn pausable_pause<'a>(ctx: CpiContext<'a, PausableToggle<'a>>) -> Result<(), ProgramError> {
@@ -749,7 +703,7 @@ pub fn pausable_pause<'a>(ctx: CpiContext<'a, PausableToggle<'a>>) -> Result<(),
         ctx.accounts.authority.address(),
         &[],
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn pausable_resume<'a>(ctx: CpiContext<'a, PausableToggle<'a>>) -> Result<(), ProgramError> {
@@ -760,7 +714,7 @@ pub fn pausable_resume<'a>(ctx: CpiContext<'a, PausableToggle<'a>>) -> Result<()
         ctx.accounts.authority.address(),
         &[],
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn token_metadata_remove_key<'a>(
@@ -777,7 +731,7 @@ pub fn token_metadata_remove_key<'a>(
         key,
         idempotent,
     );
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn default_account_state_initialize<'a>(
@@ -792,7 +746,7 @@ pub fn default_account_state_initialize<'a>(
             ctx.accounts.mint.address(),
             state,
         )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn default_account_state_update<'a>(
@@ -809,7 +763,7 @@ pub fn default_account_state_update<'a>(
             &[],
             state,
         )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn immutable_owner_initialize<'a>(
@@ -821,7 +775,7 @@ pub fn immutable_owner_initialize<'a>(
         &program,
         ctx.accounts.token_account.address(),
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn interest_bearing_mint_initialize<'a>(
@@ -837,7 +791,7 @@ pub fn interest_bearing_mint_initialize<'a>(
         rate_authority.copied(),
         rate,
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn interest_bearing_mint_update_rate<'a>(
@@ -853,7 +807,7 @@ pub fn interest_bearing_mint_update_rate<'a>(
         &[],
         rate,
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn memo_transfer_initialize<'a>(
@@ -867,7 +821,7 @@ pub fn memo_transfer_initialize<'a>(
         ctx.accounts.owner.address(),
         &[],
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn memo_transfer_disable<'a>(
@@ -882,7 +836,7 @@ pub fn memo_transfer_disable<'a>(
             ctx.accounts.owner.address(),
             &[],
         )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn metadata_pointer_initialize<'a>(
@@ -898,7 +852,7 @@ pub fn metadata_pointer_initialize<'a>(
         authority.copied(),
         metadata_address.copied(),
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn metadata_pointer_update<'a>(
@@ -914,7 +868,7 @@ pub fn metadata_pointer_update<'a>(
         &[],
         metadata_address.copied(),
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn mint_close_authority_initialize<'a>(
@@ -929,7 +883,7 @@ pub fn mint_close_authority_initialize<'a>(
         ctx.accounts.mint.address(),
         close_authority.as_ref(),
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn non_transferable_mint_initialize<'a>(
@@ -941,7 +895,7 @@ pub fn non_transferable_mint_initialize<'a>(
         &program,
         ctx.accounts.mint.address(),
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn permanent_delegate_initialize<'a>(
@@ -955,7 +909,7 @@ pub fn permanent_delegate_initialize<'a>(
         ctx.accounts.mint.address(),
         permanent_delegate,
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn token_metadata_initialize<'a>(
@@ -976,7 +930,7 @@ pub fn token_metadata_initialize<'a>(
         symbol,
         uri,
     );
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn token_metadata_update_authority<'a>(
@@ -993,7 +947,7 @@ pub fn token_metadata_update_authority<'a>(
         ctx.accounts.current_authority.address(),
         new_authority,
     );
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn token_metadata_update_field<'a>(
@@ -1010,7 +964,7 @@ pub fn token_metadata_update_field<'a>(
         field,
         value,
     );
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn token_group_initialize<'a>(
@@ -1028,7 +982,7 @@ pub fn token_group_initialize<'a>(
         update_authority.copied(),
         max_size,
     );
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn token_member_initialize<'a>(
@@ -1044,7 +998,7 @@ pub fn token_member_initialize<'a>(
         ctx.accounts.group.address(),
         ctx.accounts.group_update_authority.address(),
     );
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn transfer_fee_initialize<'a>(
@@ -1066,7 +1020,7 @@ pub fn transfer_fee_initialize<'a>(
         transfer_fee_basis_points,
         maximum_fee,
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn transfer_fee_set<'a>(
@@ -1084,7 +1038,7 @@ pub fn transfer_fee_set<'a>(
         transfer_fee_basis_points,
         maximum_fee,
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn transfer_checked_with_fee<'a>(
@@ -1106,7 +1060,7 @@ pub fn transfer_checked_with_fee<'a>(
         decimals,
         fee,
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn harvest_withheld_tokens_to_mint<'a>(
@@ -1122,7 +1076,10 @@ pub fn harvest_withheld_tokens_to_mint<'a>(
         ctx.accounts.mint.address(),
         &source_refs,
     )?;
-    invoke_token_2022_extension_with_handles(&ctx, ix, &sources)
+    let mut remaining_accounts = sources;
+    remaining_accounts.extend(ctx.remaining_accounts.iter().copied());
+    ctx.with_remaining_accounts(remaining_accounts)
+        .invoke_ix(ix)
 }
 
 pub fn withdraw_withheld_tokens_from_mint<'a>(
@@ -1138,7 +1095,7 @@ pub fn withdraw_withheld_tokens_from_mint<'a>(
             ctx.accounts.authority.address(),
             &[],
         )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn withdraw_withheld_tokens_from_accounts<'a>(
@@ -1158,7 +1115,10 @@ pub fn withdraw_withheld_tokens_from_accounts<'a>(
             &[],
             &source_refs,
         )?;
-    invoke_token_2022_extension_with_handles(&ctx, ix, &sources)
+    let mut remaining_accounts = sources;
+    remaining_accounts.extend(ctx.remaining_accounts.iter().copied());
+    ctx.with_remaining_accounts(remaining_accounts)
+        .invoke_ix(ix)
 }
 
 pub fn transfer_hook_initialize<'a>(
@@ -1174,7 +1134,7 @@ pub fn transfer_hook_initialize<'a>(
         authority.copied(),
         transfer_hook_program_id.copied(),
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn transfer_hook_update<'a>(
@@ -1190,7 +1150,7 @@ pub fn transfer_hook_update<'a>(
         &[],
         transfer_hook_program_id.copied(),
     )?;
-    invoke_token_2022_extension(&ctx, ix)
+    ctx.invoke_ix(ix)
 }
 
 #[allow(deprecated)]
