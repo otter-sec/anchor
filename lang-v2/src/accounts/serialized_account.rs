@@ -384,7 +384,12 @@ where
 {
     type Target = T;
     fn deref(&self) -> &T {
-        &self.data
+        match &self.borrow {
+            SerializedAccountBorrow::Mutable { .. } | SerializedAccountBorrow::Immutable { .. } => {
+                &self.data
+            }
+            SerializedAccountBorrow::Released => panic!("account borrow released (closed)"),
+        }
     }
 }
 
