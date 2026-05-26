@@ -1,0 +1,16 @@
+[package]
+name = "foreign-borsh-account"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+default = []
+idl-build = []
+
+[dependencies]
+anchor-lang-v2 = { path = "../../../lang-v2", default-features = false, features = ["alloc"] }
+wincode = { version = "0.5", features = ["derive"] }
+
+[lints.rust.unexpected_cfgs]
+level = "allow"

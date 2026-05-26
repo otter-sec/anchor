@@ -50,7 +50,6 @@ struct ForeignCounter {
 
 impl Owner for ForeignCounter {
     const OWNER: Address = Address::new_from_array(FOREIGN_PROGRAM_ID);
-    const SERIALIZE_ON_EXIT: bool = false;
 }
 
 impl Discriminator for ForeignCounter {
@@ -161,7 +160,7 @@ fn exit_writes_modified_in_memory_state_to_guard() {
 }
 
 #[test]
-fn exit_skips_serialization_for_foreign_owned_account() {
+fn exit_serializes_mutably_loaded_foreign_owned_account() {
     let mut buf = AccountBuffer::<256>::new();
     setup_foreign_counter_buf(&mut buf, 42);
 
@@ -175,11 +174,11 @@ fn exit_skips_serialization_for_foreign_owned_account() {
     }
 
     let bytes = read_data_bytes(&buf, 8, 8);
-    assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 42);
+    assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 999);
 }
 
 #[test]
-fn release_borrow_skips_serialization_for_foreign_owned_account() {
+fn release_borrow_serializes_mutably_loaded_foreign_owned_account() {
     let mut buf = AccountBuffer::<256>::new();
     setup_foreign_counter_buf(&mut buf, 42);
 
@@ -193,7 +192,7 @@ fn release_borrow_skips_serialization_for_foreign_owned_account() {
     }
 
     let bytes = read_data_bytes(&buf, 8, 8);
-    assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 42);
+    assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 999);
 }
 
 // -- 2. Stale detection: content-only change is NOT detected ---------

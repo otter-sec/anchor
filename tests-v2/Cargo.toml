@@ -41,6 +41,7 @@ declare-program-types = { path = "programs/declare-program/types" }
 dispatch-remaining = { path = "programs/dispatch-remaining" }
 dup-mut = { path = "programs/dup-mut" }
 event-cpi-test = { path = "programs/event-cpi" }
+foreign-borsh-account = { path = "programs/foreign-borsh-account" }
 init-space-usability = { path = "programs/init-space-usability" }
 ix-macro = { path = "programs/ix-macro" }
 optional-accounts = { path = "programs/optional-accounts" }

@@ -7,6 +7,7 @@ use {
         solana_program::instruction::{AccountMeta, Instruction},
         Id,
     },
+    foreign_borsh_account::{ForeignBorshCounter, FOREIGN_BORSH_OWNER},
     litesvm::{types::TransactionResult, LiteSVM},
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
@@ -61,13 +62,11 @@ fn ledger_pda() -> Pubkey {
 }
 
 fn foreign_borsh_owner() -> Pubkey {
-    "Gue5TpR6sstSyGhSvmVeH2TeKqBYYqmXpRCacB9jAk8u"
-        .parse()
-        .unwrap()
+    FOREIGN_BORSH_OWNER.parse().unwrap()
 }
 
-fn foreign_borsh_counter_disc() -> [u8; 8] {
-    [0x0f, 0xb0, 0x52, 0x48, 0x0a, 0xcc, 0x7d, 0x01]
+fn foreign_borsh_counter_disc() -> &'static [u8] {
+    <ForeignBorshCounter as anchor_lang_v2::Discriminator>::DISCRIMINATOR
 }
 
 const SYSTEM_SEED: &str = "anchor-v2-seed";
@@ -452,14 +451,17 @@ fn lamports_helpers_reject_underflow_and_preserve_balances() {
 }
 
 #[test]
-fn foreign_borsh_account_mutation_is_not_written_on_exit() {
+fn foreign_borsh_account_mutation_is_rejected_on_exit() {
     let (mut svm, payer) = setup();
     let foreign_counter = Pubkey::new_unique();
     set_foreign_borsh_counter(&mut svm, foreign_counter, 42);
 
     let metas = vec![AccountMeta::new(foreign_counter, false)];
-    send_instruction(&mut svm, program_id(), vec![32], metas, &payer, &[])
-        .expect("foreign-owned BorshAccount<T> should load and handler should succeed");
+    let result = send_instruction(&mut svm, program_id(), vec![32], metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "serializing a mutable foreign-owned BorshAccount<T> should be rejected by the runtime"
+    );
 
     let account = svm
         .get_account(&foreign_counter)
@@ -467,13 +469,13 @@ fn foreign_borsh_account_mutation_is_not_written_on_exit() {
     assert_eq!(account.owner, foreign_borsh_owner());
     assert_eq!(
         &account.data[..8],
-        &foreign_borsh_counter_disc(),
+        foreign_borsh_counter_disc(),
         "discriminator should be unchanged"
     );
     let value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
     assert_eq!(
         value, 42,
-        "generated exit must not serialize in-memory mutations into foreign-owned account data"
+        "failed transaction must leave foreign-owned account data unchanged"
     );
 }
 

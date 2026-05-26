@@ -59,7 +59,6 @@ where
     data: T,
     borrow: SerializedAccountBorrow,
     serialized_len: usize,
-    serialize_on_exit: bool,
     _serializer: PhantomData<S>,
 }
 
@@ -102,27 +101,20 @@ where
     /// this, `exit()` becomes a no-op until `reacquire_borrow_mut()` is
     /// called. Immutable / already-released borrows skip the commit.
     pub fn release_borrow(&mut self) -> Result<(), ProgramError> {
-        Self::serialize_current_owner(
-            &self.view,
+        Self::serialize_mutable_borrow(
             &self.data,
             &mut self.borrow,
             &mut self.serialized_len,
-            self.serialize_on_exit,
         )?;
         self.borrow = SerializedAccountBorrow::Released;
         Ok(())
     }
 
-    fn serialize_current_owner(
-        view: &AccountView,
+    fn serialize_mutable_borrow(
         data: &T,
         borrow: &mut SerializedAccountBorrow,
         serialized_len: &mut usize,
-        serialize_on_exit: bool,
     ) -> Result<(), ProgramError> {
-        if !serialize_on_exit || !view.owned_by(&T::OWNER) {
-            return Ok(());
-        }
         if let SerializedAccountBorrow::Mutable { ref mut guard } = borrow {
             let payload_len = guard.len() - DISC_LEN;
             let mut payload = &mut guard[DISC_LEN..];
@@ -169,7 +161,6 @@ where
         let (data, serialized_len) = Self::deserialize_payload_with_len(&data_ref[DISC_LEN..])?;
         self.data = data;
         self.serialized_len = serialized_len;
-        self.serialize_on_exit = T::SERIALIZE_ON_EXIT && self.view.owned_by(&T::OWNER);
         let guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
         self.borrow = SerializedAccountBorrow::Mutable { guard };
         Ok(())
@@ -249,7 +240,6 @@ where
             data,
             borrow: SerializedAccountBorrow::Immutable { _guard: guard },
             serialized_len,
-            serialize_on_exit: T::SERIALIZE_ON_EXIT && view.owned_by(&T::OWNER),
             _serializer: PhantomData,
         })
     }
@@ -278,7 +268,6 @@ where
             data,
             borrow: SerializedAccountBorrow::Mutable { guard },
             serialized_len,
-            serialize_on_exit: T::SERIALIZE_ON_EXIT && view.owned_by(&T::OWNER),
             _serializer: PhantomData,
         })
     }
@@ -344,12 +333,10 @@ where
             self.borrow = SerializedAccountBorrow::Released;
             self.reacquire_guard_only()?;
         }
-        Self::serialize_current_owner(
-            &self.view,
+        Self::serialize_mutable_borrow(
             &self.data,
             &mut self.borrow,
             &mut self.serialized_len,
-            self.serialize_on_exit,
         )?;
         Ok(())
     }
@@ -519,7 +506,6 @@ where
             data,
             borrow: SerializedAccountBorrow::Mutable { guard },
             serialized_len,
-            serialize_on_exit: true,
             _serializer: PhantomData,
         })
     }
