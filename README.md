@@ -103,9 +103,13 @@ and [tests](https://github.com/otter-sec/anchor/tree/master/tests) directories.
 
 ## Fuzzing
 
-`anchor fuzz` provides coverage-guided program fuzzing via [Crucible](https://github.com/asymmetric-research/crucible) — stateful invariant testing, multi-core fuzzing, crash minimization, and LCOV coverage for Solana programs. See the Crucible repo for docs and CLI reference.
+`anchor fuzz` integrates [Crucible](https://github.com/asymmetric-research/crucible) for coverage-guided program fuzzing. See the [fuzzing docs](https://anchor-lang.com/docs/testing/fuzzing) or the [Crucible docs](https://github.com/asymmetric-research/crucible#quick-start).
 
-```
+```sh
+# scaffold a fuzz harness
+anchor fuzz init program_name
+
+# run a fuzz test
 anchor fuzz run program_name test_name --release
 ```
 
