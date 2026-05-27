@@ -62,9 +62,7 @@ struct ShrinkableBytes {
 }
 
 impl Owner for ShrinkableBytes {
-    fn owner(program_id: &Address) -> Address {
-        *program_id
-    }
+    const OWNER: Address = Address::new_from_array(PROGRAM_ID);
 }
 
 impl Discriminator for ShrinkableBytes {
@@ -166,8 +164,7 @@ fn exit_serializes_mutably_loaded_foreign_owned_account() {
 
     {
         let view = unsafe { buf.view() };
-        let mut acct =
-            unsafe { BorshAccount::<ForeignCounter>::load_mut(view) }.unwrap();
+        let mut acct = unsafe { BorshAccount::<ForeignCounter>::load_mut(view) }.unwrap();
         assert_eq!(acct.value, 42);
         acct.value = 999;
         acct.exit().unwrap();
@@ -184,8 +181,7 @@ fn release_borrow_serializes_mutably_loaded_foreign_owned_account() {
 
     {
         let view = unsafe { buf.view() };
-        let mut acct =
-            unsafe { BorshAccount::<ForeignCounter>::load_mut(view) }.unwrap();
+        let mut acct = unsafe { BorshAccount::<ForeignCounter>::load_mut(view) }.unwrap();
         assert_eq!(acct.value, 42);
         acct.value = 999;
         acct.release_borrow().unwrap();
@@ -210,9 +206,8 @@ fn release_borrow_serializes_mutably_loaded_foreign_owned_account() {
 // correctly rejects it. Covered under regular `cargo test`.
 #[cfg_attr(
     miri,
-    ignore = "simulates external mutation by violating Rust's \
-    exclusive-borrow invariant — inexpressible under Tree Borrows; covered \
-    under cargo test"
+    ignore = "simulates external mutation by violating Rust's exclusive-borrow invariant — \
+              inexpressible under Tree Borrows; covered under cargo test"
 )]
 fn stale_detection_misses_content_only_out_of_band_mutation() {
     let mut buf = AccountBuffer::<256>::new();
@@ -353,9 +348,8 @@ fn reacquire_rejects_when_owner_changes_during_release() {
     assert_eq!(
         result.err(),
         Some(ProgramError::IllegalOwner),
-        "reacquire_borrow_mut must reject when the on-chain owner no longer matches \
-         `T::OWNER` — otherwise the program continues holding BorshAccount<T> over a \
-         foreign-owned account."
+        "reacquire_borrow_mut must reject when the on-chain owner no longer matches `T::OWNER` — \
+         otherwise the program continues holding BorshAccount<T> over a foreign-owned account."
     );
 }
 
@@ -420,12 +414,10 @@ fn release_borrow_commits_in_memory_changes_to_buffer() {
 fn exit_zeroes_bytes_between_new_and_old_serialized_lengths() {
     let mut buf = AccountBuffer::<256>::new();
     setup_shrinkable_bytes_buf(&mut buf, &[1, 2, 3], &[0xAA, 0xBB]);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     {
         let view = unsafe { buf.view() };
-        let mut acct =
-            unsafe { BorshAccount::<ShrinkableBytes>::load_mut(view, &program_id) }.unwrap();
+        let mut acct = unsafe { BorshAccount::<ShrinkableBytes>::load_mut(view) }.unwrap();
         acct.items = vec![1, 2];
         acct.exit().unwrap();
     }
@@ -445,10 +437,9 @@ fn exit_zeroes_bytes_between_new_and_old_serialized_lengths() {
 fn release_borrow_zeroes_bytes_between_new_and_old_serialized_lengths() {
     let mut buf = AccountBuffer::<256>::new();
     setup_shrinkable_bytes_buf(&mut buf, &[1, 2, 3], &[0xAA, 0xBB]);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<ShrinkableBytes>::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { BorshAccount::<ShrinkableBytes>::load_mut(view) }.unwrap();
     acct.items.clear();
     acct.release_borrow().unwrap();
 

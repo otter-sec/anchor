@@ -131,5 +131,9 @@ name = "remaining_accounts_mut_check"
 required-features = ["testing"]
 
 [[test]]
+name = "program_invoke"
+required-features = ["testing"]
+
+[[test]]
 name = "to_cpi_accounts_derive"
 required-features = ["testing"]
