@@ -61,7 +61,7 @@ export default async function Page(props: {
 
 function EditOnGithub({ path }: { path: string }) {
   // placeholder
-  const href = `https://github.com/solana-foundation/anchor/blob/master/docs/content/docs/${path.startsWith("/") ? path.slice(1) : path}`;
+  const href = `https://github.com/otter-sec/anchor/blob/master/docs/content/docs/${path.startsWith("/") ? path.slice(1) : path}`;
   return (
     <a
       href={href}

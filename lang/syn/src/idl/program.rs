@@ -166,7 +166,7 @@ fn check_safety_comments() -> Result<()> {
         //
         // - Anchor CLI version is incompatible with the current version
         // - The error is coming from Rust Analyzer when the user has `idl-build` feature enabled,
-        // likely due to enabling all features (https://github.com/solana-foundation/anchor/issues/3042)
+        // likely due to enabling all features (https://github.com/otter-sec/anchor/issues/3042)
         //
         // For the first case, we have a warning when the user is using different versions of the
         // lang and CLI crate. For the second case, users would either have to disable the

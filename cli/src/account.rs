@@ -3,6 +3,7 @@ use {
         config::{Config, ConfigOverride},
         AbsolutePath,
     },
+    anchor_client::Cluster,
     anyhow::{anyhow, Result},
     clap::Parser,
     solana_commitment_config::CommitmentConfig,
@@ -27,18 +28,7 @@ pub struct ShowAccountCommand {
 }
 
 pub fn show_account(cfg_override: &ConfigOverride, cmd: ShowAccountCommand) -> Result<()> {
-    let config = Config::discover(cfg_override)?;
-    let url = match config {
-        Some(ref cfg) => cfg.provider.cluster.url().to_string(),
-        None => {
-            // If not in workspace, use cluster override or default to localhost
-            if let Some(ref cluster) = cfg_override.cluster {
-                cluster.url().to_string()
-            } else {
-                "https://api.mainnet-beta.solana.com".to_string()
-            }
-        }
-    };
+    let url = show_account_cluster_url(cfg_override)?;
 
     let rpc_client = RpcClient::new_with_commitment(url, CommitmentConfig::confirmed());
 
@@ -111,6 +101,27 @@ pub fn show_account(cfg_override: &ConfigOverride, cmd: ShowAccountCommand) -> R
     Ok(())
 }
 
+fn show_account_cluster_url(cfg_override: &ConfigOverride) -> Result<String> {
+    let workspace_cfg = Config::discover(cfg_override)?;
+    Ok(show_account_cluster_url_from(
+        cfg_override.cluster.as_ref(),
+        workspace_cfg.as_deref(),
+    ))
+}
+
+fn show_account_cluster_url_from(
+    cluster_override: Option<&Cluster>,
+    workspace_cfg: Option<&Config>,
+) -> String {
+    if let Some(cluster) = cluster_override {
+        cluster.url().to_string()
+    } else if let Some(cfg) = workspace_cfg {
+        cfg.provider.cluster.url().to_string()
+    } else {
+        Cluster::Mainnet.url().to_string()
+    }
+}
+
 fn print_hex_dump(data: &[u8]) {
     const BYTES_PER_LINE: usize = 16;
 
@@ -151,5 +162,50 @@ fn print_hex_dump(data: &[u8]) {
         }
 
         println!();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, crate::config::ProviderConfig};
+
+    #[test]
+    fn show_account_defaults_to_mainnet_without_workspace_or_override() {
+        assert_eq!(
+            show_account_cluster_url_from(None, None),
+            Cluster::Mainnet.url().to_string()
+        );
+    }
+
+    #[test]
+    fn show_account_uses_workspace_cluster_before_default() {
+        let cfg = Config {
+            provider: ProviderConfig {
+                cluster: Cluster::Devnet,
+                ..ProviderConfig::default()
+            },
+            ..Config::default()
+        };
+
+        assert_eq!(
+            show_account_cluster_url_from(None, Some(&cfg)),
+            Cluster::Devnet.url().to_string()
+        );
+    }
+
+    #[test]
+    fn show_account_cluster_override_wins() {
+        let cfg = Config {
+            provider: ProviderConfig {
+                cluster: Cluster::Devnet,
+                ..ProviderConfig::default()
+            },
+            ..Config::default()
+        };
+
+        assert_eq!(
+            show_account_cluster_url_from(Some(&Cluster::Localnet), Some(&cfg)),
+            Cluster::Localnet.url().to_string()
+        );
     }
 }

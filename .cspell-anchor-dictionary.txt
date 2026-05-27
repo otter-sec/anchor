@@ -64,6 +64,7 @@ programdata
 projectserum
 pubkeys
 publickey
+realizor
 reallocs
 repr
 reqwest
@@ -91,9 +92,15 @@ syscalls
 sysvar
 Sysvar
 sysvars
+timelock
+toolsuite
+unbonding
 underyling
 unsized
 Unsized
+unstaked
+unstakes
+unstaking
 unverify
 Zeroable
 Znext

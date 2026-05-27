@@ -19,6 +19,8 @@ on:
 
   workflow_dispatch:
 
+permissions: {}
+
 env:
   DIST: dist-dry-run
 
@@ -26,12 +28,16 @@ jobs:
   publish-crates-dryrun:
     name: Publish crates (dry-run)
     uses: ./.github/workflows/publish-crates.yaml
+    permissions:
+      contents: read
     with:
       dry_run: true
 
   publish-npmjs-dryrun:
     name: Publish npmjs packages (dry-run)
     uses: ./.github/workflows/publish-npmjs.yaml
+    permissions:
+      contents: read
     with:
       dry_run: true
 
@@ -42,6 +48,10 @@ jobs:
   build-cli-dryrun:
     name: Build binaries (dry-run)
     uses: ./.github/workflows/build-cli.yaml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     with:
       dry_run: true
       dist: dist-dry-run

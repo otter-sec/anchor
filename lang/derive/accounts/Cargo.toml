@@ -3,7 +3,7 @@ name = "anchor-derive-accounts"
 version.workspace = true
 publish = true
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/solana-foundation/anchor"
+repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
 description = "Anchor Derive macro for accounts"
 edition = "2021"
@@ -27,4 +27,4 @@ init-if-needed = ["anchor-syn/init-if-needed"]
 [dependencies]
 anchor-syn = { path = "../../syn", version = "1.0.2" }
 quote = "1"
-syn = { version = "1", features = ["full"] }
+syn = { workspace = true, features = ["full"] }

@@ -3,7 +3,7 @@ name = "anchor-derive-serde"
 version.workspace = true
 publish = true
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/solana-foundation/anchor"
+repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
 description = "Anchor Derive macro for serialization and deserialization"
 edition = "2021"
@@ -27,7 +27,7 @@ anchor-syn = { path = "../../syn", version = "1.0.2" }
 proc-macro-crate = "3.4.0"
 proc-macro2 = "1"
 quote = "1"
-syn = { version = "1", features = ["full"] }
+syn = { workspace = true, features = ["full"] }
 
 [dev-dependencies]
 # Serialization macros require `anchor-lang` to be available to locate `borsh`

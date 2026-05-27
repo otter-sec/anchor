@@ -3,7 +3,7 @@ name = "anchor-lang-error"
 version.workspace = true
 publish = true
 edition = "2021"
-repository = "https://github.com/solana-foundation/anchor"
+repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
 description = "Error definitions for anchor-lang"
 

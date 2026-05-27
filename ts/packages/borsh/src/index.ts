@@ -1,8 +1,6 @@
 import {
   blob,
   Layout as LayoutCls,
-  offset,
-  seq,
   struct,
   u32,
   u8,
@@ -192,21 +190,328 @@ function encodeBool(value: boolean): number {
   return value ? 1 : 0;
 }
 
+const U32_SPAN = 4;
+const MAX_U32 = 0xffffffff;
+
+function formatProperty(property?: string): string {
+  return property ? ` for "${property}"` : "";
+}
+
+function assertReadableBytes(
+  b: Buffer,
+  offset: number,
+  size: number,
+  kind: string,
+  property?: string
+) {
+  const remaining = Math.max(0, b.length - offset);
+  if (offset < 0 || size < 0 || remaining < size) {
+    throw new RangeError(
+      `Invalid ${kind}${formatProperty(
+        property
+      )}: need ${size} bytes, only ${remaining} remaining bytes`
+    );
+  }
+}
+
+function assertWritableLength(
+  length: number,
+  kind: string,
+  property?: string
+): void {
+  if (!Number.isSafeInteger(length) || length < 0 || length > MAX_U32) {
+    throw new RangeError(
+      `Invalid ${kind}${formatProperty(
+        property
+      )}: length ${length} is outside the supported u32 range`
+    );
+  }
+}
+
+function readU32Length(
+  b: Buffer,
+  offset: number,
+  kind: string,
+  property?: string
+): number {
+  assertReadableBytes(b, offset, U32_SPAN, kind, property);
+  return u32().decode(b, offset);
+}
+
+function assertCollectionFitsRemaining<T>(
+  count: number,
+  elementLayout: Layout<T>,
+  remainingBytes: number,
+  kind: string,
+  property?: string
+) {
+  if (elementLayout.span > 0) {
+    const requiredBytes = count * elementLayout.span;
+    if (
+      !Number.isSafeInteger(requiredBytes) ||
+      requiredBytes > remainingBytes
+    ) {
+      throw new RangeError(
+        `Invalid ${kind}${formatProperty(
+          property
+        )}: length ${count} requires ${requiredBytes} bytes, only ${remainingBytes} remaining bytes`
+      );
+    }
+    return;
+  }
+
+  // Dynamic layouts must consume at least one byte per element in all supported
+  // Borsh collection element shapes. This rejects impossible counts before any
+  // allocation or iteration.
+  if (elementLayout.span < 0 && count > remainingBytes) {
+    throw new RangeError(
+      `Invalid ${kind}${formatProperty(
+        property
+      )}: length ${count} exceeds ${remainingBytes} remaining bytes`
+    );
+  }
+}
+
+function decodeCollectionValues<T>(
+  count: number,
+  elementLayout: Layout<T>,
+  b: Buffer,
+  offset: number,
+  kind: string,
+  property?: string
+): { values: T[]; span: number } {
+  const remainingBytes = Math.max(0, b.length - offset);
+  assertCollectionFitsRemaining(
+    count,
+    elementLayout,
+    remainingBytes,
+    kind,
+    property
+  );
+
+  const values: T[] = [];
+  let cursor = offset;
+
+  for (let i = 0; i < count; i += 1) {
+    const value = elementLayout.decode(b, cursor);
+    const span = elementLayout.getSpan(b, cursor);
+    if (!Number.isSafeInteger(span) || span < 0) {
+      throw new RangeError(
+        `Invalid ${kind}${formatProperty(
+          property
+        )}: element ${i} has invalid span ${span}`
+      );
+    }
+
+    cursor += span;
+    if (cursor > b.length) {
+      throw new RangeError(
+        `Invalid ${kind}${formatProperty(
+          property
+        )}: decoded past the end of the buffer`
+      );
+    }
+
+    values.push(value);
+  }
+
+  return { values, span: cursor - offset };
+}
+
+function measureCollectionSpan<T>(
+  count: number,
+  elementLayout: Layout<T>,
+  b: Buffer,
+  offset: number,
+  kind: string,
+  property?: string
+): number {
+  const remainingBytes = Math.max(0, b.length - offset);
+  assertCollectionFitsRemaining(
+    count,
+    elementLayout,
+    remainingBytes,
+    kind,
+    property
+  );
+
+  if (elementLayout.span > 0) {
+    return count * elementLayout.span;
+  }
+
+  let cursor = offset;
+  for (let i = 0; i < count; i += 1) {
+    const span = elementLayout.getSpan(b, cursor);
+    if (!Number.isSafeInteger(span) || span < 0) {
+      throw new RangeError(
+        `Invalid ${kind}${formatProperty(
+          property
+        )}: element ${i} has invalid span ${span}`
+      );
+    }
+
+    cursor += span;
+    if (cursor > b.length) {
+      throw new RangeError(
+        `Invalid ${kind}${formatProperty(
+          property
+        )}: decoded past the end of the buffer`
+      );
+    }
+  }
+
+  return cursor - offset;
+}
+
+class VecLayout<T> extends LayoutCls<T[]> {
+  elementLayout: Layout<T>;
+
+  constructor(elementLayout: Layout<T>, property?: string) {
+    super(-1, property);
+    this.elementLayout = elementLayout;
+  }
+
+  encode(src: T[], b: Buffer, offset = 0): number {
+    assertWritableLength(src.length, "vec", this.property);
+    let cursor = offset;
+    cursor += u32().encode(src.length, b, cursor);
+    for (const value of src) {
+      cursor += this.elementLayout.encode(value, b, cursor);
+    }
+    return cursor - offset;
+  }
+
+  decode(b: Buffer, offset = 0): T[] {
+    const count = readU32Length(b, offset, "vec", this.property);
+    const dataOffset = offset + U32_SPAN;
+    return decodeCollectionValues(
+      count,
+      this.elementLayout,
+      b,
+      dataOffset,
+      "vec",
+      this.property
+    ).values;
+  }
+
+  getSpan(b: Buffer, offset = 0): number {
+    const count = readU32Length(b, offset, "vec", this.property);
+    return (
+      U32_SPAN +
+      measureCollectionSpan(
+        count,
+        this.elementLayout,
+        b,
+        offset + U32_SPAN,
+        "vec",
+        this.property
+      )
+    );
+  }
+}
+
+class BytesLayout extends LayoutCls<Buffer> {
+  constructor(property?: string) {
+    super(-1, property);
+  }
+
+  encode(src: Buffer, b: Buffer, offset = 0): number {
+    assertWritableLength(src.length, "bytes", this.property);
+    let cursor = offset;
+    cursor += u32().encode(src.length, b, cursor);
+    assertReadableBytes(b, cursor, src.length, "bytes", this.property);
+    src.copy(b, cursor);
+    return U32_SPAN + src.length;
+  }
+
+  decode(b: Buffer, offset = 0): Buffer {
+    const length = readU32Length(b, offset, "bytes", this.property);
+    const dataOffset = offset + U32_SPAN;
+    const remainingBytes = Math.max(0, b.length - dataOffset);
+    if (length > remainingBytes) {
+      throw new RangeError(
+        `Invalid bytes${formatProperty(
+          this.property
+        )}: length ${length} exceeds ${remainingBytes} remaining bytes`
+      );
+    }
+    return b.subarray(dataOffset, dataOffset + length);
+  }
+
+  getSpan(b: Buffer, offset = 0): number {
+    const length = readU32Length(b, offset, "bytes", this.property);
+    const remainingBytes = Math.max(0, b.length - (offset + U32_SPAN));
+    if (length > remainingBytes) {
+      throw new RangeError(
+        `Invalid bytes${formatProperty(
+          this.property
+        )}: length ${length} exceeds ${remainingBytes} remaining bytes`
+      );
+    }
+    return U32_SPAN + length;
+  }
+}
+
+class FixedArrayLayout<T> extends LayoutCls<T[]> {
+  elementLayout: Layout<T>;
+  length: number;
+
+  constructor(elementLayout: Layout<T>, length: number, property?: string) {
+    assertWritableLength(length, "array", property);
+    const span =
+      elementLayout.span > 0 &&
+      Number.isSafeInteger(elementLayout.span * length)
+        ? elementLayout.span * length
+        : -1;
+    super(span, property);
+    this.elementLayout = elementLayout;
+    this.length = length;
+  }
+
+  encode(src: T[], b: Buffer, offset = 0): number {
+    if (src.length !== this.length) {
+      throw new RangeError(
+        `Invalid array${formatProperty(this.property)}: expected ${
+          this.length
+        } items, received ${src.length}`
+      );
+    }
+
+    let cursor = offset;
+    for (const value of src) {
+      cursor += this.elementLayout.encode(value, b, cursor);
+    }
+    return cursor - offset;
+  }
+
+  decode(b: Buffer, offset = 0): T[] {
+    return decodeCollectionValues(
+      this.length,
+      this.elementLayout,
+      b,
+      offset,
+      "array",
+      this.property
+    ).values;
+  }
+
+  getSpan(b: Buffer, offset = 0): number {
+    return measureCollectionSpan(
+      this.length,
+      this.elementLayout,
+      b,
+      offset,
+      "array",
+      this.property
+    );
+  }
+}
+
 export function vec<T>(
   elementLayout: Layout<T>,
   property?: string
 ): Layout<T[]> {
-  const length = u32("length");
-  const layout: Layout<{ values: T[] }> = struct([
-    length,
-    seq(elementLayout, offset(length, -length.span), "values"),
-  ]);
-  return new WrappedLayout(
-    layout,
-    ({ values }) => values,
-    (values) => ({ values }),
-    property
-  );
+  return new VecLayout(elementLayout, property);
 }
 
 export function tagged<T>(
@@ -240,17 +545,7 @@ export function tagged<T>(
 }
 
 export function vecU8(property?: string): Layout<Buffer> {
-  const length = u32("length");
-  const layout: Layout<{ data: Buffer }> = struct([
-    length,
-    blob(offset(length, -length.span), "data"),
-  ]);
-  return new WrappedLayout(
-    layout,
-    ({ data }) => data,
-    (data) => ({ data }),
-    property
-  );
+  return new BytesLayout(property);
 }
 
 export function str(property?: string): Layout<string> {
@@ -283,15 +578,7 @@ export function array<T>(
   length: number,
   property?: string
 ): Layout<T[]> {
-  const layout: Layout<{ values: T[] }> = struct([
-    seq(elementLayout, length, "values"),
-  ]);
-  return new WrappedLayout(
-    layout,
-    ({ values }) => values,
-    (values) => ({ values }),
-    property
-  );
+  return new FixedArrayLayout(elementLayout, length, property);
 }
 
 class MapEntryLayout<K, V> extends LayoutCls<[K, V]> {
@@ -299,7 +586,13 @@ class MapEntryLayout<K, V> extends LayoutCls<[K, V]> {
   valueLayout: Layout<V>;
 
   constructor(keyLayout: Layout<K>, valueLayout: Layout<V>, property?: string) {
-    super(keyLayout.span + valueLayout.span, property);
+    const span =
+      keyLayout.span >= 0 &&
+      valueLayout.span >= 0 &&
+      Number.isSafeInteger(keyLayout.span + valueLayout.span)
+        ? keyLayout.span + valueLayout.span
+        : -1;
+    super(span, property);
     this.keyLayout = keyLayout;
     this.valueLayout = valueLayout;
   }
@@ -322,8 +615,56 @@ class MapEntryLayout<K, V> extends LayoutCls<[K, V]> {
   }
 
   getSpan(b: Buffer, offset?: number): number {
+    offset = offset || 0;
+    const keySpan = this.keyLayout.getSpan(b, offset);
+    return keySpan + this.valueLayout.getSpan(b, offset + keySpan);
+  }
+}
+
+class MapLayout<K, V> extends LayoutCls<Map<K, V>> {
+  entryLayout: Layout<[K, V]>;
+
+  constructor(keyLayout: Layout<K>, valueLayout: Layout<V>, property?: string) {
+    super(-1, property);
+    this.entryLayout = new MapEntryLayout(keyLayout, valueLayout);
+  }
+
+  encode(src: Map<K, V>, b: Buffer, offset = 0): number {
+    const entries = Array.from(src.entries());
+    assertWritableLength(entries.length, "map", this.property);
+    let cursor = offset;
+    cursor += u32().encode(entries.length, b, cursor);
+    for (const entry of entries) {
+      cursor += this.entryLayout.encode(entry, b, cursor);
+    }
+    return cursor - offset;
+  }
+
+  decode(b: Buffer, offset = 0): Map<K, V> {
+    const count = readU32Length(b, offset, "map", this.property);
+    const values = decodeCollectionValues(
+      count,
+      this.entryLayout,
+      b,
+      offset + U32_SPAN,
+      "map",
+      this.property
+    ).values;
+    return new Map(values);
+  }
+
+  getSpan(b: Buffer, offset = 0): number {
+    const count = readU32Length(b, offset, "map", this.property);
     return (
-      this.keyLayout.getSpan(b, offset) + this.valueLayout.getSpan(b, offset)
+      U32_SPAN +
+      measureCollectionSpan(
+        count,
+        this.entryLayout,
+        b,
+        offset + U32_SPAN,
+        "map",
+        this.property
+      )
     );
   }
 }
@@ -333,19 +674,5 @@ export function map<K, V>(
   valueLayout: Layout<V>,
   property?: string
 ): Layout<Map<K, V>> {
-  const length = u32("length");
-  const layout: Layout<{ values: [K, V][] }> = struct([
-    length,
-    seq(
-      new MapEntryLayout(keyLayout, valueLayout),
-      offset(length, -length.span),
-      "values"
-    ),
-  ]);
-  return new WrappedLayout(
-    layout,
-    ({ values }) => new Map(values),
-    (values) => ({ values: Array.from(values.entries()) }),
-    property
-  );
+  return new MapLayout(keyLayout, valueLayout, property);
 }

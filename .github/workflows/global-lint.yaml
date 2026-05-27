@@ -4,13 +4,19 @@ on:
   workflow_dispatch:
   pull_request:
 
+permissions: {}
+
 # Manually run cspell locally via:
 #    make spellcheck
 jobs:
   spellcheck:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       # Pinned version of the v7.2.0 tag, which is a lightweight and hence mutable tag
       - uses: streetsidesoftware/cspell-action@dcd03dc3e8a59ec2e360d0c62db517baa0b4bb6d
         with:

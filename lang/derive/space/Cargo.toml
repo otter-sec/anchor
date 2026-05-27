@@ -3,7 +3,7 @@ name = "anchor-derive-space"
 version.workspace = true
 publish = true
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/solana-foundation/anchor"
+repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
 description = "Anchor Derive macro to automatically calculate the size of a structure or an enum"
 edition = "2021"
@@ -21,4 +21,4 @@ indexing-slicing = "deny"
 [dependencies]
 proc-macro2 = "1"
 quote = "1"
-syn = { version = "1", features = ["extra-traits"] }
+syn = { workspace = true, features = ["extra-traits", "parsing"] }

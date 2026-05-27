@@ -9,7 +9,7 @@ use {
         punctuated::Punctuated,
         spanned::Spanned,
         token::Comma,
-        Attribute, DeriveInput, Expr, Field, Fields, GenericArgument, PathArguments, Type,
+        Attribute, DeriveInput, Expr, Field, Fields, GenericArgument, PathArguments, Token, Type,
         TypeArray,
     },
 };
@@ -201,7 +201,7 @@ fn get_first_ty_arg(args: &PathArguments) -> Option<Type> {
 
 fn parse_len_arg(item: ParseStream) -> Result<VecDeque<TokenStream2>, syn::Error> {
     // Parse comma-separated expressions
-    let exprs = item.parse_terminated::<Expr, syn::token::Comma>(Expr::parse)?;
+    let exprs = item.parse_terminated(Expr::parse, Token![,])?;
     let mut result = VecDeque::new();
 
     // Push them in reverse because get_next_arg() pops from the back
@@ -221,7 +221,7 @@ fn parse_len_arg(item: ParseStream) -> Result<VecDeque<TokenStream2>, syn::Error
 fn get_max_len_args(attributes: &[Attribute]) -> Option<VecDeque<TokenStream2>> {
     attributes
         .iter()
-        .find(|a| a.path.is_ident("max_len"))
+        .find(|a| a.path().is_ident("max_len"))
         .and_then(|a| a.parse_args_with(parse_len_arg).ok())
 }
 

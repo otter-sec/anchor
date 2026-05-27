@@ -14,23 +14,29 @@ use {
     proc_macro2::{Span, TokenStream as TokenStream2},
     proc_macro_crate::FoundCrate,
     quote::quote,
-    syn::{parse_macro_input, DeriveInput, Ident, Meta, NestedMeta},
+    syn::{parse_macro_input, DeriveInput, Ident},
 };
 
 /// Only one item-level `#[borsh]` attribute may be present, and we apply our own borsh attribute.
 /// Remove any user-provided `#[borsh]` attributes to apply in our generated derive.
-fn extract_borsh_attrs(input: &mut DeriveInput) -> Vec<NestedMeta> {
+fn extract_borsh_attrs(input: &mut DeriveInput) -> Vec<syn::Meta> {
     input
         .attrs
-        .extract_if(.., |attr| attr.path.is_ident("borsh"))
+        .extract_if(.., |attr| attr.path().is_ident("borsh"))
         .filter_map(|attr| {
-            if let Ok(Meta::List(list)) = attr.parse_meta() {
-                Some(list)
+            if let syn::Meta::List(list) = attr.meta {
+                Some(list.tokens)
             } else {
                 None
             }
         })
-        .flat_map(|list| list.nested)
+        .flat_map(|tokens| {
+            syn::parse::Parser::parse2(
+                syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+                tokens,
+            )
+            .unwrap_or_default()
+        })
         .collect()
 }
 
@@ -43,19 +49,19 @@ fn find_field_borsh_attr(input: &DeriveInput) -> Option<&syn::Attribute> {
             .fields
             .iter()
             .flat_map(|field| field.attrs.iter())
-            .find(|attr| attr.path.is_ident("borsh")),
+            .find(|attr| attr.path().is_ident("borsh")),
         syn::Data::Enum(data) => data
             .variants
             .iter()
             .flat_map(|variant| variant.fields.iter())
             .flat_map(|field| field.attrs.iter())
-            .find(|attr| attr.path.is_ident("borsh")),
+            .find(|attr| attr.path().is_ident("borsh")),
         syn::Data::Union(data) => data
             .fields
             .named
             .iter()
             .flat_map(|field| field.attrs.iter())
-            .find(|attr| attr.path.is_ident("borsh")),
+            .find(|attr| attr.path().is_ident("borsh")),
     }
 }
 
@@ -131,9 +137,13 @@ fn gen_borsh_deserialize(input: TokenStream) -> TokenStream {
         let unsupported = borsh_attrs.iter().find(|attr| {
             !matches!(
                 attr,
-                NestedMeta::Meta(Meta::NameValue(nv))
+                syn::Meta::NameValue(nv)
                     if nv.path.is_ident("use_discriminant")
-                        && matches!(&nv.lit, syn::Lit::Bool(b) if !b.value)
+                        && matches!(
+                            &nv.value,
+                            syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Bool(b), .. })
+                                if !b.value
+                        )
             )
         });
         if let Some(attr) = unsupported {
@@ -200,7 +210,7 @@ pub fn anchor_deserialize(input: TokenStream) -> TokenStream {
     gen_borsh_deserialize(input)
 }
 
-fn helper_attrs(mac: &str, borsh_attrs: Vec<NestedMeta>) -> TokenStream2 {
+fn helper_attrs(mac: &str, borsh_attrs: Vec<syn::Meta>) -> TokenStream2 {
     // We need to emit the original borsh deserialization macros on our type,
     // but derive macros can't emit other derives. To get around this, we use a hack:
     // 1. Define an `__erase` attribute macro which deletes the item it is applied to

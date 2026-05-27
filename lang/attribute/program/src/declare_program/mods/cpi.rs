@@ -104,6 +104,7 @@ fn gen_cpi_instructions(idl: &Idl) -> proc_macro2::TokenStream {
 
 fn gen_cpi_return_type() -> proc_macro2::TokenStream {
     quote! {
+        #[derive(Debug, Clone, Copy)]
         pub struct Return<T> {
             phantom: std::marker::PhantomData<T>,
             program_id: anchor_lang::solana_program::pubkey::Pubkey,
