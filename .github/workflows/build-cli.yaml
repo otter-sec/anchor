@@ -43,6 +43,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
@@ -68,6 +70,8 @@ jobs:
       - name: Prepare
         id: prepare
         shell: bash
+        env:
+          DIST: ${{ inputs.dist }}
         run: |
           if [[ "${{ inputs.dry_run }}" == "true" ]]; then
             version="dry-run"
@@ -77,8 +81,8 @@ jobs:
           ext=""
           [[ "${{ matrix.os }}" == windows-latest ]] && ext=".exe"
 
-          mkdir ${{ inputs.dist }}
-          mv "target/${{ matrix.target }}/release/anchor$ext" ${{ inputs.dist }}/anchor-$version-${{ matrix.target }}$ext
+          mkdir "$DIST"
+          mv "target/${{ matrix.target }}/release/anchor$ext" "$DIST/anchor-$version-${{ matrix.target }}$ext"
 
           echo "version=$version" >> $GITHUB_OUTPUT
 

@@ -19,7 +19,7 @@
 //!
 //! For detailed tutorials and examples on how to use Anchor, see the guided
 //! [tutorials](https://anchor-lang.com) or examples in the GitHub
-//! [repository](https://github.com/solana-foundation/anchor).
+//! [repository](https://github.com/otter-sec/anchor).
 //!
 //! Presented here are the Rust primitives for building on Solana.
 
@@ -235,7 +235,7 @@ pub trait DuplicateMutableAccountKeys {
     fn duplicate_mutable_account_keys(&self) -> Vec<Pubkey>;
 }
 
-/// The close procedure to initiate garabage collection of an account, allowing
+/// The close procedure to initiate garbage collection of an account, allowing
 /// one to retrieve the rent exemption.
 pub trait AccountsClose<'info>: ToAccountInfos<'info> {
     fn close(&self, sol_destination: AccountInfo<'info>) -> Result<()>;

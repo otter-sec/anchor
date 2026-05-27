@@ -26,6 +26,8 @@ SUBCOMMANDS:
     uninstall      Uninstall a version of Anchor
     update         Update to the latest Anchor version
     use            Use a specific version of Anchor
+    solana         Resolve or install the Solana CLI for the current project
+    platform-tools Inspect or manage the Solana platform-tools toolchain
     self-update    Update avm itself to the latest version
 ```
 
@@ -108,6 +110,42 @@ calling the same command again. Similarly to `avm install`, you can use
 avm use latest
 avm use latest-pre-release
 ```
+
+## Solana
+
+```shell
+avm solana resolve
+avm solana install [version] [--force]
+```
+
+Resolve or install the Solana CLI version for the current project. When no
+version is passed to `install`, AVM first checks `[toolchain] solana_version`
+in `Anchor.toml`, then the `solana-program` dependency in `Cargo.toml`. If the
+project does not pin Solana directly, AVM resolves the Anchor version and maps
+it to Anchor's recommended Solana version.
+
+Project Solana versions are parsed as semver requirements. AVM chooses the
+newest hosted Solana CLI installer that satisfies the requirement; use an exact
+comparator such as `=3.1.10` to require one specific hosted version.
+
+When `anchor` is invoked through the AVM stub, AVM also ensures the resolved
+Solana CLI version is active before spawning the selected `anchor-cli` binary.
+
+## Platform Tools
+
+```shell
+avm platform-tools resolve
+avm platform-tools install [version] [--force]
+avm platform-tools list
+avm platform-tools uninstall <version>
+```
+
+Resolve or manage the platform-tools version used by Solana's SBF toolchain.
+When no version is passed to `install`, AVM uses the project-resolved Solana
+version and the embedded platform-tools map. If the Solana version is a semver
+requirement, AVM considers hosted Solana CLI versions satisfying that
+requirement and prefers one whose platform-tools rustc can compile the locked
+program dependency graph.
 
 ## Self-update
 

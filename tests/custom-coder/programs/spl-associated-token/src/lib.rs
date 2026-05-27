@@ -1,4 +1,4 @@
-// See https://github.com/solana-foundation/anchor/blob/master/ts/packages/spl-associated-token-account/program/lib.rs
+// See https://github.com/otter-sec/anchor/blob/master/ts/packages/spl-associated-token-account/program/lib.rs
 
 use anchor_lang::prelude::*;
 

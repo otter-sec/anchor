@@ -4,7 +4,7 @@ The bench program and its tests are used to measure the performance of Anchor pr
 
 ## How
 
-We run the same tests that measure some metric for each Anchor version starting from `0.27.0`. If the difference between the results is greater than 1%, the new data will be saved in `bench.json` and Markdown files in [/bench](https://github.com/solana-foundation/anchor/tree/master/bench) will be updated accordingly.
+We run the same tests that measure some metric for each Anchor version starting from `0.27.0`. If the difference between the results is greater than 1%, the new data will be saved in `bench.json` and Markdown files in [/bench](https://github.com/otter-sec/anchor/tree/master/bench) will be updated accordingly.
 
 ## Scripts
 
@@ -20,7 +20,7 @@ The following scripts are useful when making changes to how benchmarking works.
 
 `anchor run sync`: Sync all benchmark files by running tests for each version. If you've made changes to the bench program or its tests, you should run this command to sync the results.
 
-`anchor run sync-markdown`: Sync Markdown files in [/bench](https://github.com/solana-foundation/anchor/tree/master/bench) based on the data from `bench.json`.
+`anchor run sync-markdown`: Sync Markdown files in [/bench](https://github.com/otter-sec/anchor/tree/master/bench) based on the data from `bench.json`.
 
 `anchor run generate-ix`: Generate program instructions with repetitive accounts.
 

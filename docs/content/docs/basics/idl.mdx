@@ -15,10 +15,19 @@ Key Benefits of the IDL:
 - Standardization: Provides a consistent format for describing the program's
   instructions and accounts
 - Client Generation: Used to generate client code to interact with the program
+- On-chain Storage: IDLs can be stored on-chain using
+  [Program Metadata](https://github.com/solana-program/program-metadata),
+  allowing clients to fetch and use the IDL directly from the blockchain
 
 <Callout type="info">
 The `anchor build` command generates an IDL file located at
 `/target/idl/<program-name>.json`.
+</Callout>
+
+<Callout type="info">
+On-chain IDL storage uses the Program Metadata system. This reduces program
+binary sizes and provides a standardized approach to on-chain metadata. Use
+`anchor idl init` to upload your IDL to the blockchain.
 </Callout>
 
 The code snippets in the sections below highlight how the program, IDL, and
@@ -428,10 +437,10 @@ ed = 237
 
 You can find the implementation of the discriminator generation in the Anchor
 codebase
-[here](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/program/common.rs#L5-L22), 
-for the [`gen_discriminator` method here](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/program/common.rs#L19-L22),
+[here](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/program/common.rs#L5-L22),
+for the [`gen_discriminator` method here](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/program/common.rs#L19-L22),
 which is used
-[here](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/program/instruction.rs#L33).
+[here](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/program/instruction.rs#L33).
 
 </Tab>
 <Tab value="Accounts">
@@ -480,7 +489,7 @@ e8 = 232
 
 You can find the implementation of the discriminator generation in the Anchor
 codebase
-[here](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/account/src/lib.rs#L113-L125).
+[here](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/account/src/lib.rs#L113-L125).
 
 <Callout type="info">
   Note that different programs using identical account names will generate the

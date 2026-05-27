@@ -69,7 +69,7 @@ anchor-lang = "1.0.2"
 ### Define a Zero Copy Account
 
 To define an account type that uses zero-copy, annotate the struct with
-[`#[account(zero_copy)]`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/account/src/lib.rs#L419).
+[`#[account(zero_copy)]`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/account/src/lib.rs#L419).
 
 ```rust
 // [!code highlight]
@@ -97,7 +97,7 @@ struct Data {
 ### Use AccountLoader for Zero Copy Accounts
 
 To deserialize a zero-copy account, use
-[`AccountLoader<'info, T>`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/accounts/account_loader.rs#L97-L101),
+[`AccountLoader<'info, T>`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/accounts/account_loader.rs#L97-L101),
 where `T` is the zero-copy account type defined with the `#[account(zero_copy)]`
 attribute.
 
@@ -142,7 +142,7 @@ pub struct Initialize<'info> {
 </Callout>
 
 When initializing a zero-copy account for the first time, use
-[`load_init`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/accounts/account_loader.rs#L201-L223)
+[`load_init`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/accounts/account_loader.rs#L201-L223)
 to get a mutable reference to the account data. The `load_init` method also sets
 the account discriminator.
 
@@ -157,7 +157,7 @@ pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
 ```
 
 For accounts that require more than 10240 bytes, use the
-[`zero`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/accounts/constraints.rs#L209-L273)
+[`zero`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/accounts/constraints.rs#L209-L273)
 constraint instead of `init`. The `zero` constraint verifies the account has not
 been initialized by checking that its discriminator has not been set.
 
@@ -193,7 +193,7 @@ pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
 #### Update a Zero Copy Account
 
 Use
-[`load_mut`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/accounts/account_loader.rs#L174-L197)
+[`load_mut`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/accounts/account_loader.rs#L174-L197)
 when you need mutable access to update an existing zero-copy account:
 
 ```rust
@@ -218,7 +218,7 @@ pub fn update(ctx: Context<Update>) -> Result<()> {
 #### Read a Zero Copy Account
 
 Use
-[`load`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/accounts/account_loader.rs#L156-L171)
+[`load`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/accounts/account_loader.rs#L156-L171)
 to only read the account data.
 
 ```rust

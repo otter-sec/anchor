@@ -3,7 +3,7 @@ name = "anchor-syn"
 version.workspace = true
 publish = true
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/solana-foundation/anchor"
+repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
 description = "Anchor syntax parsing and code generation tools"
 edition = "2021"
@@ -39,5 +39,5 @@ proc-macro2 = { version = "1.0.100", features = ["span-locations"] }
 quote = "1"
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.11"
-syn = { version = "1", features = ["full", "extra-traits", "parsing"] }
+syn = { workspace = true, features = ["full", "extra-traits", "parsing"] }
 thiserror = "1"

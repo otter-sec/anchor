@@ -62,6 +62,7 @@ solana-transaction = "3.0.1"
 
 # Non solana crates
 cargo_toml = "0.22.3"
+syn = "2"
 
 [profile.release]
 lto = true

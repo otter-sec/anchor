@@ -1,0 +1,89 @@
+%YAML 1.2
+---
+# Sublime-syntax grammar for Solana SBPF disassembly as emitted by
+# `solana_sbpf::static_analysis::Analysis::disassemble_instruction`.
+#
+# Token classes -> standard Sublime scopes so any theme colours them:
+#   - control flow (ja, jeq*, exit, return)         -> keyword.control
+#   - calls (call, callx, syscall)                  -> keyword.other
+#   - ALU mnemonics (mov*, add*, sub*, ...)         -> keyword.operator
+#   - load/store mnemonics (ldx*, stx*, lddw, ...)  -> storage.type
+#   - registers (r0..r11)                           -> variable.language
+#   - numeric literals (0x..., decimals, +/- offs)  -> constant.numeric
+#   - call/syscall targets                          -> entity.name.function
+#   - punctuation                                   -> punctuation
+#   - line comments                                 -> comment.line
+#
+# Kept declarative — no Rust code touches this file. To extend, add
+# patterns under `match:` and pick an appropriate scope.
+
+name: SBPF Assembly
+file_extensions: [sbpf]
+scope: source.sbpf
+
+variables:
+  reg: '\br(?:1[01]|[0-9])\b'
+  hex: '0x[0-9a-fA-F]+'
+  dec: '[+-]?[0-9]+'
+
+contexts:
+  main:
+    - match: '^\s*//.*$'
+      scope: comment.line.double-slash.sbpf
+    - match: '\b(?:exit|return)\b'
+      scope: keyword.control.return.sbpf
+    - match: '\b(?:ja|jeq|jne|jgt|jge|jlt|jle|jsgt|jsge|jslt|jsle|jset)(?:32)?\b'
+      scope: keyword.control.branch.sbpf
+    - match: '\b(?:call|callx)\b'
+      scope: keyword.other.call.sbpf
+      push: call_target
+    - match: '\bsyscall\b'
+      scope: keyword.other.syscall.sbpf
+      push: call_target
+    - match: '\b(?:mov|add|sub|mul|div|mod|or|and|xor|lsh|rsh|neg|arsh|le|be|hor)(?:32|64)?\b'
+      scope: keyword.operator.alu.sbpf
+    - match: '\b(?:lddw|ld|ldx[bhwdw]+|st[bhwdw]+|stx[bhwdw]+|ldxw|ldxh|ldxb|ldxdw|stxw|stxh|stxb|stxdw|stw|sth|stb|stdw)\b'
+      scope: storage.type.memory.sbpf
+    - include: registers
+    - include: numbers
+    - include: punct
+
+  # After a call/syscall mnemonic, color the next identifier as the
+  # target name so syscalls like `sol_log_` and internal labels like
+  # `function_42` stand out from default operands.
+  call_target:
+    - match: '\s+'
+    - match: '\[invalid\]'
+      scope: invalid.illegal.sbpf
+      pop: true
+    - match: '{{reg}}'
+      scope: variable.language.register.sbpf
+      pop: true
+    - match: '[A-Za-z_][\w@/\.]*'
+      scope: entity.name.function.sbpf
+      pop: true
+    - match: '{{hex}}|{{dec}}'
+      scope: constant.numeric.target.sbpf
+      pop: true
+    - match: '\S'
+      pop: true
+
+  registers:
+    - match: '{{reg}}'
+      scope: variable.language.register.sbpf
+
+  numbers:
+    - match: '{{hex}}'
+      scope: constant.numeric.hex.sbpf
+    - match: '{{dec}}'
+      scope: constant.numeric.dec.sbpf
+
+  punct:
+    - match: '\['
+      scope: punctuation.section.brackets.begin.sbpf
+    - match: '\]'
+      scope: punctuation.section.brackets.end.sbpf
+    - match: ','
+      scope: punctuation.separator.sbpf
+    - match: '[+\-*]'
+      scope: keyword.operator.arithmetic.sbpf
