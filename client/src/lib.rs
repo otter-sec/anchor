@@ -1057,7 +1057,7 @@ mod tests {
         Ok(())
     }
 
-   /// Regression for #4461: a program-emitted `Program log:` line that ends
+    /// Regression for #4461: a program-emitted `Program log:` line that ends
     /// with the literal `"invoke [1]"` (e.g. log content that happens to
     /// describe a CPI) used to satisfy the `ends_with` gate but fail the
     /// strict `^Program <pubkey> invoke [N]$` regex, panicking on
