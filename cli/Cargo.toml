@@ -91,13 +91,11 @@ addr2line = { version = "0.24", default-features = false, features = [
   "rustc-demangle",
   "loader",
 ] }
-crossterm = "0.28"
-ratatui = { version = "0.29", default-features = false, features = [
+ratatui = { version = "0.30", default-features = false, features = [
   "crossterm"
 ] }
 syntect = { version = "5.3", default-features = false, features = [
   "default-fancy"
 ] }
-syntect-tui = { version = "3.0", default-features = false }
 two-face = "0.5"
 terminal-colorsaurus = "1.0"

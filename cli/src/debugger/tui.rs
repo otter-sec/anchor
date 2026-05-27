@@ -27,15 +27,18 @@ use {
         model::{DebugSession, DebugStep, DebugTx},
         path_label::{classify, PathLabel},
     },
-    crossterm::{
-        event::{
-            self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
-        },
-        execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    },
     ratatui::{
         backend::CrosstermBackend,
+        crossterm::{
+            event::{
+                self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent,
+                KeyModifiers,
+            },
+            execute,
+            terminal::{
+                disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+            },
+        },
         layout::{Alignment, Constraint, Direction, Layout, Rect},
         style::{Color, Modifier, Style},
         text::{Line, Span},
