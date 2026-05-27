@@ -1,0 +1,69 @@
+---
+title: Profiling and debugger
+description: Record SBF register traces, render flamegraphs, and inspect them in the debugger TUI.
+---
+
+`$ <blue>anchor</blue> test <dim>--profile</dim>` and `$ <blue>anchor</blue> debugger` share a trace pipeline. The test build enables the feature that forwards to `anchor-v2-testing/profile`, tests call `anchor_v2_testing::svm(){:rs}`, and trace files land under `target/anchor-v2-profile/{:dir}`.
+
+## Profile
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> test <dim>--profile</dim>
+```
+
+The profile run writes per-test traces:
+
+<FileTree>
+  <Dir name="target">
+    <Dir name="anchor-v2-profile">
+      <Dir name="deposit_and_withdraw">
+        <File name="0001__tx1.regs" comment="tx 1, top-level invocation" />
+        <File name="0001__tx1.insns" />
+        <File name="0001__tx1.program_id" />
+        <File name="0002__tx1.regs" comment="tx 1, CPI invocation" />
+        <File name="0002__tx1.insns" />
+        <File name="0002__tx1.program_id" />
+      </Dir>
+    </Dir>
+  </Dir>
+</FileTree>
+
+The CLI post-processes those traces into flamegraph SVGs next to the trace directories.
+
+## Debugger
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> debugger
+```
+
+If traces are missing, the debugger first runs the trace pipeline. Then it opens a TUI over the captured SBF steps. The debugger shows:
+
+- the current instruction and touched registers
+- source-line mapping from DWARF
+- a timeline of instructions
+- CPI frames in the call stack
+- per-instruction CU cost where available
+
+Use `$ <blue>anchor</blue> debugger <dim><test-name-fragment></dim>` to capture or open a subset of tests.
+
+## Skip run
+
+When traces already exist:
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> debugger <dim>--skip-run</dim>
+```
+
+Use this for fast TUI iteration after a previous profile/debugger run.
+
+## GDB mode
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> debugger <dim>--gdb</dim>
+```
+
+GDB mode drives the `solana-sbpf` gdb stub and is much slower than the default trace path. Use it when you need breakpoint-style debugging rather than trace navigation.
+
+## Common failure
+
+If the debugger reports no traces, check that the test calls `anchor_v2_testing::svm(){:rs}` and that the package has a feature forwarding to `anchor-v2-testing/profile`.

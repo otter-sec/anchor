@@ -1,0 +1,53 @@
+---
+title: Errors and require
+description: 'Custom errors and `#![no_std]{:rs}` require macros.'
+---
+
+Use `#[error_code]{:rs}` to name custom program errors and `require!{:rs}` helpers to return them from validation checks. Custom error names and messages are IDL metadata. The program returns `ProgramError::Custom(code){:rs}` on chain.
+
+## Custom errors
+
+```rust showLineNumbers=false
+#[error_code]
+pub enum VaultError {
+    #[msg("The requested amount is zero")]
+    ZeroAmount,
+    #[msg("The caller is not the vault authority")]
+    BadAuthority,
+}
+```
+
+By default, variants start at the standard Anchor custom-error offset. Override the offset when a program needs to preserve an existing error-code range:
+
+```rust showLineNumbers=false
+#[error_code(offset = 7000)]
+pub enum MarketError {
+    InvalidPrice,
+}
+```
+
+## Require macros
+
+Anchor exports no_std-friendly require macros:
+
+```rust showLineNumbers=false
+require!(amount > 0, VaultError::ZeroAmount);
+require_keys_eq!(ctx.accounts.authority.address(), &ctx.accounts.vault.authority);
+require_gte!(available, amount);
+```
+
+Available helpers include:
+
+- `require!{:rs}`
+- `require_eq!{:rs}`
+- `require_neq!{:rs}`
+- `require_keys_eq!{:rs}`
+- `require_keys_neq!{:rs}`
+- `require_gt!{:rs}`
+- `require_gte!{:rs}`
+
+The key-specific helpers handle `Address{:rs}` comparisons, while the ordinary helpers cover numeric or other displayable values.
+
+## No runtime AnchorError
+
+The runtime does not allocate an `AnchorError{:rs}` structure with file, line, name, and message fields. That data is useful to clients through the IDL, but keeping it out of the SBF runtime avoids heap allocation and formatting cost in the error path.

@@ -1,0 +1,71 @@
+---
+import wordmarkDark from '@/assets/wordmark-dark.svg'
+import wordmarkLight from '@/assets/wordmark-light.svg'
+import Sidebar from '@/components/docs/sidebar.astro'
+import VersionSwitcher from '@/components/docs/version-switcher.astro'
+import Icon from '@/components/icon.astro'
+import Link from '@/components/link.astro'
+import { Button } from '@/components/ui/button'
+import { SITE } from '@/consts'
+import { BASE_URL } from '@/lib/docs'
+import type { DocsVersionSwitchOption } from '@/lib/sidebar'
+import type { SidebarNode } from '@/types'
+import { Image } from 'astro:assets'
+
+interface Props {
+  tree: SidebarNode[]
+  versionTrees?: {
+    v1: SidebarNode[]
+    v2: SidebarNode[]
+  }
+  versionOptions?: DocsVersionSwitchOption[]
+}
+
+const { tree, versionTrees, versionOptions } = Astro.props
+---
+
+<dialog
+  id="mobile-sidebar"
+  class="bg-background text-foreground fixed inset-y-0 left-0 m-0 h-dvh max-h-dvh w-80 max-w-full border-r p-0 outline-none backdrop:bg-black/40 open:flex open:flex-col open:gap-2 open:p-4 xl:hidden"
+  aria-label="Documentation navigation"
+>
+  <header class="flex items-center justify-between pb-2">
+    <Link href={BASE_URL} class="flex items-center no-underline" aria-label={SITE.title}>
+      <Image src={wordmarkLight} alt={SITE.title} class="block h-5 w-auto dark:hidden" />
+      <Image src={wordmarkDark} alt={SITE.title} class="hidden h-5 w-auto dark:block" />
+    </Link>
+    <Button
+      id="mobile-sidebar-close"
+      variant="ghost"
+      size="icon"
+      title="Close navigation"
+      aria-label="Close navigation"
+      className="size-8"
+    >
+      <Icon name="x" class="size-4" />
+    </Button>
+  </header>
+  {versionOptions && <VersionSwitcher options={versionOptions} />}
+  <div class="min-h-0 flex-1">
+    {
+      versionTrees ? (
+        <>
+          <div class="h-full" data-version-sidebar="v2">
+            <Sidebar tree={versionTrees.v2} class="h-full" />
+          </div>
+          <div class="h-full" data-version-sidebar="v1" hidden>
+            <Sidebar tree={versionTrees.v1} class="h-full" />
+          </div>
+        </>
+      ) : (
+        <Sidebar tree={tree} class="h-full" />
+      )
+    }
+  </div>
+</dialog>
+
+<script>
+  import { mountMobileSidebar } from '@/lib/client/mobile-sidebar'
+
+  mountMobileSidebar()
+</script>

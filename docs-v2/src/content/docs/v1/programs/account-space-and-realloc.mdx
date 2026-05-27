@@ -1,0 +1,92 @@
+---
+title: Account space
+description: Reference for calculating account data size requirements by Rust type.
+---
+
+The `space{:rs}` constraint on an [`init{:rs}`](/docs/v1/programs/account-types/) account must reserve enough bytes for the account's serialized data plus an 8-byte Anchor discriminator. The table below lists the byte size of each Rust type Anchor supports.
+
+This applies to accounts that use Borsh serialization. Accounts annotated with `#[account(zero_copy)]{:rs}` use `repr(C){:rs}` with a pointer cast, so the C layout rules apply instead.
+
+## Type chart
+
+| Type | Space in bytes | Details |
+| --- | --- | --- |
+| `bool{:rs}` | 1 | One byte even though only 1 bit is meaningful |
+| `u8{:rs}` / `i8{:rs}` | 1 |  |
+| `u16{:rs}` / `i16{:rs}` | 2 |  |
+| `u32{:rs}` / `i32{:rs}` | 4 |  |
+| `u64{:rs}` / `i64{:rs}` | 8 |  |
+| `u128{:rs}` / `i128{:rs}` | 16 |  |
+| `f32{:rs}` | 4 | Serialization fails for `NaN{:rs}` |
+| `f64{:rs}` | 8 | Serialization fails for `NaN{:rs}` |
+| `[T; N]{:rs}` | `space(T) * N{:rs}` | e.g. `[u16; 32]{:rs}` is `2 * 32 = 64{:rs}` |
+| `Pubkey{:rs}` | 32 |  |
+| `Vec<T>{:rs}` | `4 + space(T) * length{:rs}` | 4-byte length prefix plus elements |
+| `String{:rs}` | `4 + len{:rs}` | 4-byte length prefix plus UTF-8 bytes |
+| `Option<T>{:rs}` | `1 + space(T){:rs}` | 1-byte tag plus the inner value |
+| `enum{:rs}` | `1 + largest variant{:rs}` | e.g. `enum E { A, B { val: u8 }, C { val: u16 } }{:rs}` is `1 + 2 = 3{:rs}` |
+
+## Manual calculation
+
+Add up the field sizes and store the total as a `MAX_SIZE{:rs}` constant on the struct, then reference it in the `space{:rs}` constraint along with 8 bytes for the discriminator:
+
+```rust title="lib.rs" showLineNumbers=false {"up to 10 players":5-6}
+#[account]
+pub struct MyData {
+    pub val: u16,
+    pub state: GameState,
+
+    pub players: Vec<Pubkey>,
+}
+
+impl MyData {
+    pub const MAX_SIZE: usize = 2 + (1 + 32) + (4 + 10 * 32);
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
+pub enum GameState {
+    Active,
+    Tie,
+    Won { winner: Pubkey },
+}
+
+#[derive(Accounts)]
+pub struct InitializeMyData<'info> {
+    #[account(init, payer = signer, space = 8 + MyData::MAX_SIZE)]
+    pub acc: Account<'info, MyData>,
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+```
+
+## `#[derive(InitSpace)]{:rs}`
+
+The [`InitSpace{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/derive.InitSpace.html) derive macro generates an `INIT_SPACE{:rs}` associated constant that holds the struct's serialized size. The struct does not need `#[account]{:rs}` for the derive to work:
+
+```rust title="lib.rs" showLineNumbers=false
+#[account]
+#[derive(InitSpace)]
+pub struct ExampleAccount {
+    pub data: u64,
+    #[max_len(50)]
+    pub string_one: String,
+    #[max_len(10, 5)]
+    pub nested: Vec<Vec<u8>>,
+}
+
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+    #[account(init, payer = payer, space = 8 + ExampleAccount::INIT_SPACE)]
+    pub data: Account<'info, ExampleAccount>,
+}
+```
+
+`InitSpace{:rs}` follows three rules:
+
+- Always add 8 bytes to `space{:rs}` for the discriminator. The macro does not include it.
+- `#[max_len]{:rs}` declares the maximum number of _elements_, not bytes. On `Vec<u32>{:rs}`, `#[max_len(10)]{:rs}` reserves 10 elements × 4 bytes plus a 4-byte length prefix for 44 bytes total.
+- Nested vectors take one length per dimension. `#[max_len(10, 5)]{:rs}` on `Vec<Vec<u8>>{:rs}` allows up to 10 outer elements, each holding up to 5 inner.

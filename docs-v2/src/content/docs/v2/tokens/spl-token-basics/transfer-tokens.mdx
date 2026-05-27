@@ -1,0 +1,147 @@
+---
+title: Transfer tokens
+description: Transfer SPL tokens between token accounts through CPI helpers.
+---
+
+Transferring tokens moves units between two token accounts for the same mint. The source token account's authority must authorize the CPI, and both token accounts must be writable because their balances change.
+
+Anchor exposes transfer helpers under `anchor_spl_v2::token::cpi{:rs}`. Prefer `transfer_checked{:rs}` for user-facing transfers because it includes the mint account and verifies the mint decimals.
+
+## Imports
+
+Import the token CPI module and account wrappers:
+
+```rust showLineNumbers=false
+use {
+    anchor_lang_v2::prelude::*,
+    anchor_spl_v2::{
+        mint::Mint,
+        token::{self, cpi as token_cpi, TokenAccount},
+    },
+};
+```
+
+## Transfer patterns
+
+<Tabs items={['Checked transfer', 'Unchecked transfer']}>
+<Tab>
+
+The account struct should validate that the source and destination accounts use the expected mint, and that the source account belongs to the signer:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct TransferTokens {
+    pub mint: Account<Mint>,
+    #[account(
+        mut,
+        token::mint = mint,
+        token::authority = authority,
+    )]
+    pub from: Account<TokenAccount>,
+    #[account(mut, token::mint = mint)]
+    pub to: Account<TokenAccount>,
+    pub authority: Signer,
+    pub token_program: Program<Token>,
+}
+```
+
+Build a `TransferChecked{:rs}` CPI account struct and pass it through `CpiContext{:rs}`:
+
+```rust showLineNumbers=false
+pub fn transfer_tokens(
+    ctx: &mut Context<TransferTokens>,
+    amount: u64,
+    decimals: u8,
+) -> Result<()> {
+    let accounts = token_cpi::accounts::TransferChecked {
+        from: ctx.accounts.from.cpi_handle_mut(),
+        mint: ctx.accounts.mint.cpi_handle(),
+        to: ctx.accounts.to.cpi_handle_mut(),
+        authority: ctx.accounts.authority.cpi_handle(),
+    };
+    let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts);
+    token_cpi::transfer_checked(cpi, amount, decimals)
+}
+```
+
+`amount{:rs}` is in base units. If the mint has `6{:rs}` decimals, `1_000_000{:rs}` is one whole token. The `decimals{:rs}` argument must match the mint account.
+
+</Tab>
+<Tab>
+
+The plain `transfer{:rs}` helper omits the mint and decimals check:
+
+```rust showLineNumbers=false
+pub fn transfer(ctx: &mut Context<TransferTokens>, amount: u64) -> Result<()> {
+    let accounts = token_cpi::accounts::Transfer {
+        from: ctx.accounts.from.cpi_handle_mut(),
+        to: ctx.accounts.to.cpi_handle_mut(),
+        authority: ctx.accounts.authority.cpi_handle(),
+    };
+    let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts);
+    token_cpi::transfer(cpi, amount)
+}
+```
+
+Use it only when another part of the instruction already guarantees the mint and decimals relationship you need.
+
+</Tab>
+</Tabs>
+
+## PDA authority
+
+When a program controls the source token account, set the token account authority to a PDA and sign the CPI with that PDA's seeds:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct TransferFromVault {
+    pub mint: Account<Mint>,
+    #[account(seeds = [b"vault-authority", mint.address().as_ref()], bump)]
+    pub vault_authority: UncheckedAccount,
+    #[account(
+        mut,
+        token::mint = mint,
+        token::authority = vault_authority,
+    )]
+    pub vault: Account<TokenAccount>,
+    #[account(mut, token::mint = mint)]
+    pub recipient: Account<TokenAccount>,
+    pub token_program: Program<Token>,
+}
+
+pub fn transfer_from_vault(
+    ctx: &mut Context<TransferFromVault>,
+    amount: u64,
+    decimals: u8,
+) -> Result<()> {
+    let signer_seeds: &[&[&[u8]]] = &[&[
+        b"vault-authority",
+        ctx.accounts.mint.address().as_ref(),
+        &[ctx.bumps.vault_authority],
+    ]];
+    let accounts = token_cpi::accounts::TransferChecked {
+        from: ctx.accounts.vault.cpi_handle_mut(),
+        mint: ctx.accounts.mint.cpi_handle(),
+        to: ctx.accounts.recipient.cpi_handle_mut(),
+        authority: ctx.accounts.vault_authority.cpi_handle(),
+    };
+    let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts)
+        .with_signer(signer_seeds);
+    token_cpi::transfer_checked(cpi, amount, decimals)
+}
+```
+
+The authority PDA is separate from the token account in this example, which keeps the account list easy to reason about. A program can use the same PDA as both the token account address and authority when it has a specific reason to do so.
+
+## Common validation checks
+
+Use constraints to reject mismatched accounts before the CPI runs:
+
+| Constraint | What it protects |
+| --- | --- |
+| `token::mint = mint{:rs}` | Prevents transferring the wrong token. |
+| `token::authority = authority{:rs}` | Ensures the signer controls the source account. |
+| `address = expected{:rs}` | Locks an account to a known PDA or associated token account. |
+| `mut{:rs}` | Required for accounts whose balances change. |
+
+For associated token accounts, derive the expected address with `get_associated_token_address{:rs}` and use `address = ...{:rs}` or `constraint = ...{:rs}`.

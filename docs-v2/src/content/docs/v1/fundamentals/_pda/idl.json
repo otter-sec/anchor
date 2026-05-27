@@ -1,0 +1,37 @@
+{
+  "address": "BZLiJ62bzRryYp9mRobz47uA66WDgtfTXhhgM25tJyx5",
+  "metadata": {
+    "name": "hello_anchor",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "test_instruction",
+      "discriminator": [33, 223, 61, 208, 32, 193, 201, 79],
+      "accounts": [
+        {
+          "name": "signer",
+          "signer": true
+        },
+        {
+          "name": "pda_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [104, 101, 108, 108, 111, 95, 119, 111, 114, 108, 100]
+              },
+              {
+                "kind": "account",
+                "path": "signer"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    }
+  ]
+}

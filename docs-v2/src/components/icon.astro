@@ -1,0 +1,41 @@
+---
+interface Props {
+  name: string
+  class?: string
+  [key: string]: unknown
+}
+
+const { name, class: className, ...rest } = Astro.props
+
+const icons = import.meta.glob<string>('@/icons/*.svg', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+})
+
+const raw = icons[`/src/icons/${name}.svg`]
+if (!raw) {
+  throw new Error(`Icon not found: src/icons/${name}.svg`)
+}
+
+const stripped = raw.replace(/<!--[\s\S]*?-->\s*/g, '').trim()
+
+const escape = (value: unknown) =>
+  String(value).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')
+const isEmptyAttribute = (value: unknown) =>
+  value === undefined || value === null || value === false
+const serializeAttributeValue = (value: unknown) =>
+  Array.isArray(value) ? value.filter(Boolean).join(' ') : value
+const attributes: Record<string, unknown> = {
+  ...(className ? { class: className } : {}),
+  ...rest,
+}
+const attrs = Object.entries(attributes)
+  .filter(([, v]) => !isEmptyAttribute(v))
+  .map(([k, v]) => (v === true ? k : `${k}="${escape(serializeAttributeValue(v))}"`))
+  .join(' ')
+
+const svg = attrs ? stripped.replace(/^<svg\s+/, `<svg ${attrs} `) : stripped
+---
+
+<Fragment set:html={svg} />

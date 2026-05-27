@@ -1,0 +1,73 @@
+---
+import Icon from '@/components/icon.astro'
+import Link from '@/components/link.astro'
+import { buttonVariants } from '@/components/ui/button'
+import { renderDescription } from '@/lib/render-description'
+import { cn } from '@/lib/utils'
+import type { FlatDoc } from '@/types'
+
+interface Props {
+  prev: FlatDoc | null
+  next: FlatDoc | null
+}
+
+const { prev, next } = Astro.props
+const prevLabel = prev ? await renderDescription(prev.label) : null
+const nextLabel = next ? await renderDescription(next.label) : null
+---
+
+{
+  (prev || next) && (
+    <nav class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {prev ? (
+        <Link
+          href={prev.href}
+          class={cn(
+            buttonVariants({ variant: 'outline' }),
+            'group flex size-full items-center justify-start rounded-lg',
+          )}
+        >
+          <Icon
+            name="arrow-left"
+            class="mr-2 size-4 transition-transform group-hover:-translate-x-1"
+          />
+          <div class="flex flex-col items-start overflow-hidden text-wrap">
+            <span class="text-muted-foreground text-left text-xs">Previous</span>
+            <span
+              class="w-full text-left text-sm text-balance text-ellipsis"
+              data-doc-title
+              set:html={prevLabel!.html}
+            />
+          </div>
+        </Link>
+      ) : (
+        <div class="hidden sm:block" />
+      )}
+
+      {next ? (
+        <Link
+          href={next.href}
+          class={cn(
+            buttonVariants({ variant: 'outline' }),
+            'group flex size-full items-center justify-end rounded-lg',
+          )}
+        >
+          <div class="flex flex-col items-end overflow-hidden text-wrap">
+            <span class="text-muted-foreground text-right text-xs">Next</span>
+            <span
+              class="w-full text-right text-sm text-balance text-ellipsis"
+              data-doc-title
+              set:html={nextLabel!.html}
+            />
+          </div>
+          <Icon
+            name="arrow-right"
+            class="ml-2 size-4 transition-transform group-hover:translate-x-1"
+          />
+        </Link>
+      ) : (
+        <div class="hidden sm:block" />
+      )}
+    </nav>
+  )
+}

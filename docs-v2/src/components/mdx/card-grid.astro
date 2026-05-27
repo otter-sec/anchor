@@ -1,0 +1,20 @@
+---
+import { cn } from '@/lib/utils'
+
+interface Props {
+  columns?: 2 | 3 | 4
+  class?: string
+}
+
+const { columns = 2, class: className } = Astro.props
+
+const columnClass: Record<number, string> = {
+  2: 'sm:grid-cols-2',
+  3: 'sm:grid-cols-2 lg:grid-cols-3',
+  4: 'sm:grid-cols-2 lg:grid-cols-4',
+}
+---
+
+<div class={cn('not-prose grid grid-cols-1 gap-4 my-6', columnClass[columns], className)}>
+  <slot />
+</div>

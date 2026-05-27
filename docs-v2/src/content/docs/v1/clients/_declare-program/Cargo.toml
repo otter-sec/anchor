@@ -1,0 +1,10 @@
+[package]
+name = "rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anchor-client = { version = "1.0.1", features = ["async"] }
+anchor-lang = "1.0.1"
+anyhow = "1.0.93"
+tokio = { version = "1.0", features = ["full"] }

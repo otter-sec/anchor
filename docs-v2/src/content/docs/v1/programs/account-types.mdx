@@ -1,0 +1,232 @@
+---
+title: Account types
+description: 'Reference for the Anchor account types used in the `#[derive(Accounts)]{:rs}` struct.'
+---
+
+Anchor's [account types](https://docs.rs/anchor-lang/latest/anchor_lang/accounts/index.html) are the type wrappers used in fields of a `#[derive(Accounts)]{:rs}` struct. Each type performs a specific runtime check on the account before the instruction handler runs, complementing the [account constraints](/docs/v1/reference/account-constraints/) declared in the `#[account(...)]{:rs}` attribute.
+
+For background on how account types fit into instruction validation, see [account validation](/docs/v1/fundamentals/program-structure/#deriveaccounts).
+
+## `Account<'info, T>{:rs}`
+
+[`Account<'info, T>{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/accounts/account/struct.Account.html) wraps an `AccountInfo{:rs}`, deserializes its data into the type `T{:rs}`, and verifies that the account is owned by the program declared in `declare_id!(){:rs}`:
+
+```rust showLineNumbers=false {3}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    pub account: Account<'info, CustomAccountType>,
+}
+
+#[account]
+pub struct CustomAccountType {
+    data: u64,
+}
+```
+
+## `Signer<'info>{:rs}`
+
+[`Signer<'info>{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/accounts/signer/struct.Signer.html) verifies that the account signed the transaction. Use it when the handler needs proof of authorization but does not read or write the account's data:
+
+```rust showLineNumbers=false {3}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    pub signer: Signer<'info>,
+}
+```
+
+## `SystemAccount<'info>{:rs}`
+
+[`SystemAccount<'info>{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/accounts/system_account/struct.SystemAccount.html) verifies that the account is owned by the System Program:
+
+```rust showLineNumbers=false {3}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    pub account: SystemAccount<'info>,
+}
+```
+
+## `Program<'info, T>{:rs}`
+
+[`Program<'info, T>{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/accounts/program/struct.Program.html) verifies that the account is the executable program identified by `T{:rs}`. Use it for any program invoked through CPI:
+
+```rust showLineNumbers=false {5-6}
+use anchor_spl::token::Token;
+
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+}
+```
+
+## `Interface<'info, T>{:rs}`
+
+[`Interface<'info, T>{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/accounts/interface/struct.Interface.html) verifies that the account is one of a known set of programs sharing an interface. The canonical use is accepting either the SPL Token program or Token-2022:
+
+```rust showLineNumbers=false {6}
+// Token program or Token2022 program
+use anchor_spl::token_interface::TokenInterface;
+
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    pub program: Interface<'info, TokenInterface>,
+}
+```
+
+## `InterfaceAccount<'info, T>{:rs}`
+
+[`InterfaceAccount<'info, T>{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/accounts/interface_account/struct.InterfaceAccount.html) deserializes account data into `T{:rs}` and verifies ownership against any program in the interface set. Use it for token accounts and mints that may be owned by either SPL Token or Token-2022:
+
+```rust showLineNumbers=false {6-8}
+// Token program or Token2022 program Mint/TokenAccount
+use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
+
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    pub mint: InterfaceAccount<'info, Mint>,
+    pub token: InterfaceAccount<'info, TokenAccount>,
+    pub program: Interface<'info, TokenInterface>,
+}
+```
+
+## `Sysvar<'info, T>{:rs}`
+
+[`Sysvar<'info, T>{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/accounts/sysvar/struct.Sysvar.html) verifies that the account is the Solana sysvar identified by `T{:rs}` and deserializes its data:
+
+```rust showLineNumbers=false {4-5}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    pub rent: Sysvar<'info, Rent>,
+    pub clock: Sysvar<'info, Clock>,
+}
+```
+
+## `UncheckedAccount<'info>{:rs}`
+
+[`UncheckedAccount<'info>{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/accounts/unchecked_account/struct.UncheckedAccount.html) is an explicit wrapper around `AccountInfo{:rs}` that performs no checks. Every field of this type requires a `/// CHECK:{:rs}` doc comment explaining why the lack of validation is safe:
+
+```rust showLineNumbers=false {4}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    /// CHECK: No checks are performed
+    pub account: UncheckedAccount<'info>,
+}
+```
+
+## `AccountInfo<'info>{:rs}`
+
+[`AccountInfo<'info>{:rs}`](https://docs.rs/solana-program/latest/solana_program/account_info/struct.AccountInfo.html) is the raw Solana account type and performs no checks. Prefer `UncheckedAccount{:rs}` instead, which makes the lack of validation explicit and requires a `/// CHECK:{:rs}` comment:
+
+```rust showLineNumbers=false {4}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    /// CHECK: AccountInfo is an unchecked account
+    pub unchecked_account: AccountInfo<'info>,
+}
+```
+
+## `Box<Account<'info, T>>{:rs}`
+
+`Box{:rs}` moves an account to the heap, freeing space on the BPF stack. Use it when the wrapped type is large enough to risk a stack overflow during instruction execution:
+
+```rust showLineNumbers=false {3}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    pub account: Box<Account<'info, AccountType>>,
+}
+```
+
+## `Option<Account<'info, T>>{:rs}`
+
+Wrapping an account type in `Option{:rs}` marks it as optional. Clients pass `None{:rs}` to omit the account, and the handler accesses it as `Option<T>{:rs}`:
+
+```rust showLineNumbers=false {3}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    pub account: Option<Account<'info, AccountType>>,
+}
+```
+
+## `AccountLoader<'info, T>{:rs}`
+
+[`AccountLoader<'info, T>{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/accounts/account_loader/struct.AccountLoader.html) provides on-demand zero-copy deserialization for accounts marked with `#[account(zero_copy)]{:rs}`. The handler calls `load(){:rs}` or `load_mut(){:rs}` to obtain a reference into the account's bytes without copying:
+
+```rust showLineNumbers=false {3}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    pub account: AccountLoader<'info, ZeroCopyAccountType>,
+}
+
+#[account(zero_copy)]
+pub struct ZeroCopyAccountType {
+    data: u64,
+}
+```
+
+## `Migration<'info, From, To>{:rs}`
+
+`Migration<'info, From, To>{:rs}` handles schema migrations between two account types. The account must deserialize as `From{:rs}` on entry and is migrated to `To{:rs}` before serialization on exit. Pair it with the `realloc{:rs}` constraint to resize the account when the new schema is larger.
+
+The type performs three checks: ownership matches `From::owner(){:rs}`, the account is initialized (not a zero-lamport System Program account), and its data deserializes as `From{:rs}`:
+
+```rust showLineNumbers=false {16-22}
+use anchor_lang::prelude::*;
+
+#[account]
+pub struct AccountV1 {
+    pub data: u64,
+}
+
+#[account]
+pub struct AccountV2 {
+    pub data: u64,
+    pub new_field: u64,
+}
+
+#[derive(Accounts)]
+pub struct MigrateAccount<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        mut,
+        realloc = 8 + AccountV2::INIT_SPACE,
+        realloc::payer = payer,
+        realloc::zero = false
+    )]
+    pub my_account: Migration<'info, AccountV1, AccountV2>,
+    pub system_program: Program<'info, System>,
+}
+```
+
+### Usage patterns
+
+Call `migrate(){:rs}` for an explicit one-shot migration. Old fields remain accessible through `Deref{:rs}` until the call:
+
+```rust showLineNumbers=false
+let old_data = ctx.accounts.my_account.data;
+
+ctx.accounts.my_account.migrate(AccountV2 {
+    data: old_data,
+    new_field: 42,
+})?;
+```
+
+Call `into_inner(){:rs}` for an idempotent migration that returns a reference to the new data, migrating only if needed:
+
+```rust showLineNumbers=false
+let migrated = ctx.accounts.my_account.into_inner(AccountV2 {
+    data: ctx.accounts.my_account.data,
+    new_field: ctx.accounts.my_account.data * 2,
+});
+msg!("New field: {}", migrated.new_field);
+```
+
+Call `into_inner_mut(){:rs}` for the same idempotent migration with a mutable reference:
+
+```rust
+let migrated = ctx.accounts.my_account.into_inner_mut(AccountV2 {
+    data: ctx.accounts.my_account.data,
+    new_field: 0,
+});
+migrated.new_field = 42;
+```

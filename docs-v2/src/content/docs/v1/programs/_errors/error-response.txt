@@ -1,0 +1,23 @@
+{
+  errorLogs: [
+    'Program log: AnchorError thrown in programs/custom-error/src/lib.rs:11. Error Code: AmountTooLarge. Error Number: 6001. Error Message: Amount must be less than or equal to 100.'
+  ],
+  logs: [
+    'Program 9oECKMeeyf1fWNPKzyrB2x1AbLjHDFjs139kEyFwBpoV invoke [1]',
+    'Program log: Instruction: ValidateAmount',
+    'Program log: AnchorError thrown in programs/custom-error/src/lib.rs:11. Error Code: AmountTooLarge. Error Number: 6001. Error Message: Amount must be less than or equal to 100.',
+    'Program 9oECKMeeyf1fWNPKzyrB2x1AbLjHDFjs139kEyFwBpoV consumed 2153 of 200000 compute units',
+    'Program 9oECKMeeyf1fWNPKzyrB2x1AbLjHDFjs139kEyFwBpoV failed: custom program error: 0x1771'
+  ],
+  error: {
+    errorCode: { code: 'AmountTooLarge', number: 6001 },
+    errorMessage: 'Amount must be less than or equal to 100',
+    comparedValues: undefined,
+    origin: { file: 'programs/custom-error/src/lib.rs', line: 11 }
+  },
+  _programErrorStack: ProgramErrorStack {
+    stack: [
+      [PublicKey [PublicKey(9oECKMeeyf1fWNPKzyrB2x1AbLjHDFjs139kEyFwBpoV)]]
+    ]
+  }
+}

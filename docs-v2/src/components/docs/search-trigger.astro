@@ -1,0 +1,34 @@
+---
+import Icon from '@/components/icon.astro'
+import { Button } from '@/components/ui/button'
+import { DOCS } from '@/consts'
+
+const { mac, windows } = DOCS.search.hotkey
+---
+
+<Button
+  data-search-trigger
+  variant="outline"
+  size="sm"
+  className="text-muted-foreground flex h-8 items-center gap-2 px-2 text-xs font-normal sm:min-w-40 sm:px-3"
+  aria-label="Search documentation"
+  aria-haspopup="dialog"
+  aria-controls="search-dialog"
+>
+  <Icon name="search" class="size-3.5" />
+  <span class="hidden sm:inline">Search docs...</span>
+  <kbd
+    class="bg-muted text-muted-foreground hidden rounded border px-1.5 py-0.5 font-mono text-[0.625rem] xl:ml-auto xl:inline-flex"
+    data-hotkey
+    data-hotkey-mac={mac}
+    data-hotkey-other={windows}
+  >
+    {windows}
+  </kbd>
+</Button>
+
+<script>
+  import { mountHotkeyLabels } from '@/lib/client/hotkey-labels'
+
+  mountHotkeyLabels()
+</script>

@@ -1,0 +1,33 @@
+---
+title: Program development
+description: Build program state, errors, events, and extension points.
+autoCards: false
+---
+
+Program development starts with the account data model. A Solana program mostly reads accounts, checks they are the right accounts, mutates account data, and sometimes calls other programs.
+
+In v2, fixed-size state is zero-copy by default, variable-length state opts into borsh, and account or constraint behavior can be extended from downstream crates. If you are not sure where to start, read Account data model first, then Account types.
+
+<CardGrid>
+
+<Card title="Account data model" href="/docs/v2/programs/account-data-model/">
+The mental model for discriminators, Pod-backed bytes, `Account<T>{:rs}`, and `BorshAccount<T>{:rs}`.
+</Card>
+
+<Card title="Account types" href="/docs/v2/programs/account-types/">
+The wrapper lineup includes `Account<T>{:rs}`, `BorshAccount<T>{:rs}`, `Slab<H, Item>{:rs}`, `Nested<T>{:rs}`, optional accounts, signers, programs, sysvars, and unchecked accounts.
+</Card>
+
+<Card title="Pod types" href="/docs/v2/programs/pod-types/">
+Alignment-1 integer wrappers, `PodBool{:rs}`, `PodVec<T, MAX>{:rs}`, and `#[pod_wrapper]{:rs}`.
+</Card>
+
+<Card title="Borsh accounts and realloc" href="/docs/v2/programs/borsh-accounts-and-realloc/">
+Variable-length data, `InitSpace{:rs}`, realloc constraints, and CPI re-entry with `release_borrow(){:rs}`.
+</Card>
+
+<Card title="Extensibility" href="/docs/v2/programs/extensibility/">
+  Write account wrappers and constraint markers without forking the macro.
+</Card>
+
+</CardGrid>

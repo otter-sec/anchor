@@ -1,0 +1,16 @@
+---
+title: Alpha limitations
+description: Known caveats and incomplete surfaces while v2 is alpha.
+---
+
+This version is alpha. It is not audited, not on `crates.io`, and APIs may break between commits.
+
+Keep these limitations in mind while depending on the `anchor-next` branch:
+
+- Rust crates are consumed from git on `anchor-next`.
+- no stable v2 TypeScript package has been published yet. Current scaffolds remain pinned to `@anchor-lang/core` `^1.0.0`.
+- `anchor-spl-v2` covers core token, mint, interface account, and several Token-2022 extension paths. Less-common SPL surfaces, especially metadata-oriented constraints, may not be covered yet.
+- generated `program::cpi::*{:rs}` wrappers are available for supported account structs, but account structs containing `Option<_>{:rs}` or `Nested<_>{:rs}` are currently skipped by CPI wrapper generation.
+- runtime PDA validation supports both array-form seeds and opaque seed expressions. Client-side derivation and rich IDL seed metadata work best for array-form seeds that the macro can inspect.
+
+Do not treat the safety defaults as an audit. Review, fuzz, and test before depending on this version for production funds.

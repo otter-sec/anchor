@@ -1,0 +1,109 @@
+---
+import SidebarBadge from '@/components/docs/sidebar-badge.astro'
+import Icon from '@/components/icon.astro'
+import Link from '@/components/link.astro'
+import { renderDescription } from '@/lib/render-description'
+import { cn } from '@/lib/utils'
+import type { SidebarNode } from '@/types'
+
+interface Props {
+  node: SidebarNode
+  depth?: number
+  path?: string[]
+}
+
+const { node, depth = 0, path = [] } = Astro.props
+const renderedLabel = await renderDescription(node.label)
+const groupPath = [...path, node.label]
+const groupKey = groupPath.join('/')
+---
+
+{
+  node.type === 'link' ? (
+    <Link
+      href={node.href}
+      data-sidebar-link={node.href}
+      aria-current={node.isCurrent ? 'page' : undefined}
+      class={cn(
+        'flex items-center justify-between gap-2 rounded-md px-2 py-1 text-sm no-underline',
+        'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+        'aria-[current=page]:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]',
+        'aria-[current=page]:text-accent aria-[current=page]:font-medium',
+        'aria-[current=page]:hover:bg-[color-mix(in_oklch,var(--accent)_18%,transparent)]',
+        'aria-[current=page]:hover:text-accent',
+      )}
+    >
+      <span class="wrap-break-word" data-doc-title set:html={renderedLabel.html} />
+      {node.badge && <SidebarBadge badge={node.badge} />}
+    </Link>
+  ) : node.forceOpen ? (
+    <div data-sidebar-group data-force-open data-group-path={groupKey}>
+      <div
+        class={cn(
+          'text-foreground flex items-center justify-between gap-2 rounded-md px-2 py-1 text-sm font-medium select-none',
+        )}
+      >
+        <span class="flex min-w-0 items-center gap-2">
+          <span class="wrap-break-word" data-doc-title set:html={renderedLabel.html} />
+          {node.badge && <SidebarBadge badge={node.badge} />}
+        </span>
+      </div>
+      <ul class="border-border/70 mt-0.5 ml-3 flex flex-col gap-0.5 border-l pl-2">
+        {node.items.map((child) => (
+          <li>
+            <Astro.self node={child} depth={depth + 1} path={groupPath} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  ) : (
+    <details open={!node.collapsed} data-sidebar-group data-group-path={groupKey}>
+      <summary
+        class={cn(
+          'text-foreground flex cursor-pointer list-none items-center justify-between gap-1 rounded-md px-2 py-1 text-sm font-medium select-none',
+          '[&::-webkit-details-marker]:hidden',
+          'hover:bg-muted/50',
+          // React to the inner overview link's aria-current rather than carrying
+          // a stale aria-current on the <summary> across CSN navigations.
+          'has-[a[aria-current=page]]:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]',
+          'has-[a[aria-current=page]]:text-accent',
+          'has-[a[aria-current=page]]:hover:bg-[color-mix(in_oklch,var(--accent)_18%,transparent)]',
+        )}
+      >
+        {node.href ? (
+          <Link
+            href={node.href}
+            data-sidebar-link={node.href}
+            data-sidebar-overview-link
+            aria-current={node.isCurrent ? 'page' : undefined}
+            class="flex min-w-0 grow items-center gap-2 text-inherit no-underline"
+          >
+            <span class="wrap-break-word" data-doc-title set:html={renderedLabel.html} />
+            {node.badge && <SidebarBadge badge={node.badge} />}
+          </Link>
+        ) : (
+          <span class="flex min-w-0 grow items-center gap-2">
+            <span class="wrap-break-word" data-doc-title set:html={renderedLabel.html} />
+            {node.badge && <SidebarBadge badge={node.badge} />}
+          </span>
+        )}
+        <span
+          data-sidebar-group-toggle
+          class="hover:bg-foreground/10 -mr-1 flex size-5 shrink-0 items-center justify-center rounded-md opacity-60"
+        >
+          <Icon
+            name="chevron-right"
+            class="size-4 transition-transform duration-200 [[open]>summary>span>&]:rotate-90"
+          />
+        </span>
+      </summary>
+      <ul class={cn('border-border/70 mt-0.5 ml-3 flex flex-col gap-0.5 border-l pl-2')}>
+        {node.items.map((child) => (
+          <li>
+            <Astro.self node={child} depth={depth + 1} path={groupPath} />
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
+}

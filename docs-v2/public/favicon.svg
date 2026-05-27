@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1000"><metadata><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Description><dc:creator>RealFaviconGenerator</dc:creator><dc:source>https://realfavicongenerator.net</dc:source></rdf:Description></rdf:RDF></metadata><style>
+    #light-icon {
+      display: inline;
+    }
+    #dark-icon {
+      display: none;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      #light-icon {
+        display: none;
+      }
+      #dark-icon {
+        display: inline;
+      }
+    }
+  </style><g id="light-icon"><svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1000"><g><g transform="matrix(9.25925925925926,0,0,9.25925925925926,0,0)"><svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108" fill="none"><path d="M64 22C64 16.4772 59.5228 12 54 12C48.4772 12 44 16.4772 44 22C44 27.5228 48.4772 32 54 32C59.5228 32 64 27.5228 64 22ZM76 22C76 32.0701 69.2339 40.5591 60 43.1709V95.5703C80.3535 92.6587 96 75.1586 96 54H108C108 83.8234 83.8234 108 54 108C24.1766 108 0 83.8234 0 54H12C12 75.1586 27.6465 92.6587 48 95.5703V43.1709C38.7661 40.5591 32 32.0701 32 22C32 9.84974 41.8497 0 54 0C66.1503 0 76 9.84974 76 22Z" fill="#4B5169"></path></svg></g></g></svg></g><g id="dark-icon"><svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1000"><g><g transform="matrix(9.25925925925926,0,0,9.25925925925926,0,0)"><svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108" fill="none"><path d="M64 22C64 16.4772 59.5228 12 54 12C48.4772 12 44 16.4772 44 22C44 27.5228 48.4772 32 54 32C59.5228 32 64 27.5228 64 22ZM76 22C76 32.0701 69.2339 40.5591 60 43.1709V95.5703C80.3535 92.6587 96 75.1586 96 54H108C108 83.8234 83.8234 108 54 108C24.1766 108 0 83.8234 0 54H12C12 75.1586 27.6465 92.6587 48 95.5703V43.1709C38.7661 40.5591 32 32.0701 32 22C32 9.84974 41.8497 0 54 0C66.1503 0 76 9.84974 76 22Z" fill="#CED7F3"></path></svg></g></g></svg></g></svg>

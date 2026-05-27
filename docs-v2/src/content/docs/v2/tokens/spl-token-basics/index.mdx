@@ -1,0 +1,48 @@
+---
+title: SPL token basics
+description: Common SPL token workflows with anchor-spl-v2.
+autoCards: false
+---
+
+This section covers the common SPL token operations from an Anchor program. The examples focus on the legacy Token Program path because that surface is the most complete today. Token-2022 interface accounts and extension readers are covered separately.
+
+A mint defines a token. A token account holds a balance for one mint and one authority. Minting creates new units of a token, and transferring moves existing units between token accounts. Anchor checks the mint, authority, and writable flags before your handler invokes the Token Program.
+
+The SPL surface mirrors Anchor's normal account model:
+
+- `Account<Mint>{:rs}` zero-copies SPL mint data
+- `Account<TokenAccount>{:rs}` zero-copies SPL token account data
+- `mint::*{:rs}` and `token::*{:rs}` constraints are downstream `AccountConstraint{:rs}` markers
+- CPI helpers come from `anchor_spl_v2::token::cpi{:rs}`
+- CPI account structs are built from `cpi_handle(){:rs}` and `cpi_handle_mut(){:rs}`
+
+<CardGrid>
+
+<Card title="Create mint" href="/docs/v2/tokens/spl-token-basics/create-mint/">
+Initialize an SPL mint with `mint::decimals{:rs}` and `mint::authority{:rs}`.
+</Card>
+
+<Card title="Create token account" href="/docs/v2/tokens/spl-token-basics/create-token-account/">
+Initialize a token account with `token::mint{:rs}` and `token::authority{:rs}`.
+</Card>
+
+<Card title="Mint tokens" href="/docs/v2/tokens/spl-token-basics/mint-tokens/">
+Call the token program through `token::cpi::mint_to{:rs}`.
+</Card>
+
+<Card title="Transfer tokens" href="/docs/v2/tokens/spl-token-basics/transfer-tokens/">
+Transfer with `transfer{:rs}` or `transfer_checked{:rs}`.
+</Card>
+
+</CardGrid>
+
+## Common workflow
+
+Most token programs follow this order:
+
+1. Create a mint with `mint::decimals{:rs}` and `mint::authority{:rs}`.
+2. Create token accounts with `token::mint{:rs}` and `token::authority{:rs}`.
+3. Mint tokens by invoking `token::cpi::mint_to{:rs}` or `mint_to_checked{:rs}`.
+4. Transfer tokens by invoking `token::cpi::transfer_checked{:rs}`.
+
+For program-controlled tokens, make the mint authority or token account authority a PDA and pass signer seeds through `CpiContext::with_signer(){:rs}`.

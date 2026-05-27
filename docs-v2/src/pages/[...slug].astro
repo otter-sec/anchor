@@ -1,0 +1,243 @@
+---
+import TOCSidebar from '@/components/toc-sidebar.astro'
+import DocLayout from '@/layouts/doc.astro'
+import Card from '@/components/mdx/card.astro'
+import CardGrid from '@/components/mdx/card-grid.astro'
+import {
+  docHref,
+  docLabel,
+  docSlugFromId,
+  getAllDocs,
+  getEditUrl,
+  resolveLastUpdated,
+  resolveTOC,
+  type Doc,
+} from '@/lib/docs'
+import { gitLastUpdated } from '@/lib/git-lastmod'
+import { mdxComponents } from '@/lib/mdx-components'
+import { renderDescription } from '@/lib/render-description'
+import { scrollGroupSectionId } from '@/lib/scroll-groups'
+import {
+  getDocsVersionSwitchOptionsFromContext,
+  getIndexChildrenFromContext,
+  getPrevNextFromContext,
+  getScrollableGroupFromContext,
+  getScrollGroupPrevNextFromContext,
+  getSidebarTreeFromContext,
+  getVersionSidebarsFromContext,
+  loadSidebarContext,
+} from '@/lib/sidebar'
+import { trimTrailingSlash } from '@/lib/utils'
+import type { MarkdownHeading } from 'astro'
+import { render } from 'astro:content'
+
+export async function getStaticPaths() {
+  const docs = await getAllDocs()
+  return docs.map((doc) => ({
+    params: { slug: docSlugFromId(doc.id) },
+    props: { doc },
+  }))
+}
+
+interface Props {
+  doc: Doc
+}
+
+const { doc } = Astro.props
+const sidebarContext = await loadSidebarContext()
+
+const href = docHref(doc.id)
+const isIndex = doc.id === 'index' || /\/index\.mdx?$/.test(doc.filePath ?? '')
+const isUpdatesDoc = doc.id.startsWith('updates/')
+const scrollGroup = getScrollableGroupFromContext(sidebarContext, doc, href)
+const pages = scrollGroup?.pages ?? [{ doc, href, label: docLabel(doc) }]
+
+function docLastUpdated(doc: Doc): Date | null {
+  const frontmatterLastUpdated = resolveLastUpdated(doc)
+  return (
+    frontmatterLastUpdated ??
+    (doc.data.lastUpdated === false ? null : doc.filePath ? gitLastUpdated(doc.filePath) : null)
+  )
+}
+
+function latestDate(dates: Array<Date | null>): Date | null {
+  const sorted = dates
+    .filter((date): date is Date => date !== null)
+    .sort((a, b) => b.getTime() - a.getTime())
+  return sorted[0] ?? null
+}
+
+function isGroupOverviewPage(pageDoc: Doc): boolean {
+  if (!scrollGroup) return false
+  return pageDoc.id === scrollGroup.path || pageDoc.id === `${scrollGroup.path}/index`
+}
+
+const renderedPages = await Promise.all(
+  pages.map(async (page) => {
+    const isOverview = isGroupOverviewPage(page.doc)
+    const [rendered, renderedLabel, renderedDescription] = await Promise.all([
+      render(page.doc),
+      renderDescription(page.label),
+      // The page header already shows the overview's description; don't
+      // duplicate it inside the section.
+      isOverview || !page.doc.data.description
+        ? Promise.resolve(null)
+        : renderDescription(page.doc.data.description),
+    ])
+
+    return {
+      ...page,
+      ...rendered,
+      sectionId: scrollGroupSectionId(page.doc.id),
+      tocHeadings: rendered.headings.map((heading) => ({
+        ...heading,
+        slug: `${scrollGroupSectionId(page.doc.id)}-${heading.slug}`,
+      })),
+      renderedLabel,
+      renderedDescription,
+      isCurrent: trimTrailingSlash(page.href) === trimTrailingSlash(href),
+    }
+  }),
+)
+
+const currentPage = renderedPages.find((page) => page.isCurrent) ?? renderedPages[0]
+if (!currentPage) throw new Error(`Could not render docs page for ${doc.id}`)
+
+const Content = currentPage.Content
+const headings: MarkdownHeading[] = scrollGroup
+  ? renderedPages
+      .filter((page) => !isGroupOverviewPage(page.doc))
+      .map((page) => ({
+        depth: 2,
+        slug: page.sectionId,
+        text: page.label,
+      }))
+  : currentPage.headings
+
+const sidebar = getSidebarTreeFromContext(sidebarContext, href)
+const versionSidebars = isUpdatesDoc
+  ? getVersionSidebarsFromContext(sidebarContext, href)
+  : undefined
+const versionOptions = getDocsVersionSwitchOptionsFromContext(sidebarContext, href)
+const prevNext = scrollGroup
+  ? getScrollGroupPrevNextFromContext(sidebarContext, scrollGroup)
+  : getPrevNextFromContext(sidebarContext, href)
+const indexChildren =
+  !scrollGroup && isIndex && doc.data.autoCards !== false
+    ? getIndexChildrenFromContext(sidebarContext, href)
+    : []
+
+const overviewPage = scrollGroup
+  ? renderedPages.find((page) => isGroupOverviewPage(page.doc))
+  : null
+const overviewIndexChildren =
+  overviewPage && overviewPage.doc.data.autoCards !== false
+    ? getIndexChildrenFromContext(sidebarContext, docHref(overviewPage.doc.id))
+    : []
+const renderedOverviewIndexChildren = await Promise.all(
+  overviewIndexChildren.map(async (child) => ({
+    ...child,
+    renderedLabel: await renderDescription(child.label),
+    rendered: child.description ? await renderDescription(child.description) : null,
+  })),
+)
+
+const navDoc = scrollGroup?.pages[0].doc ?? doc
+let { prev, next } = prevNext
+if (navDoc.data.prev === false) prev = null
+if (navDoc.data.next === false) next = null
+const editUrl = getEditUrl(doc)
+
+const lastUpdated = scrollGroup
+  ? latestDate(scrollGroup.pages.map((page) => docLastUpdated(page.doc)))
+  : docLastUpdated(doc)
+const toc = resolveTOC(scrollGroup?.pages[0]?.doc ?? doc)
+---
+
+<DocLayout
+  doc={doc}
+  headings={headings}
+  sidebar={sidebar}
+  versionSidebars={versionSidebars}
+  versionOptions={versionOptions}
+  prev={prev}
+  next={next}
+  editUrl={editUrl}
+  lastUpdated={lastUpdated}
+  tocMinDepth={toc.minDepth}
+  tocMaxDepth={toc.maxDepth}
+  tocEnabled={toc.enabled}
+  indexChildren={indexChildren}
+  scrollGroup={scrollGroup}
+>
+  {
+    scrollGroup ? (
+      renderedPages.map((page, index) => {
+        const PageContent = page.Content
+        const isOverview = isGroupOverviewPage(page.doc)
+
+        return (
+          <section
+            data-scroll-page-section
+            data-scroll-page-href={page.href}
+            data-scroll-page-target={isOverview ? 'post-title' : page.sectionId}
+            data-scroll-page-prefix={page.sectionId}
+            data-pagefind-ignore={page.isCurrent ? undefined : ''}
+            data-doc-content-grid
+            class:list={[
+              'grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,42rem)_minmax(14rem,16rem)]',
+              index > 0 && 'mt-12 border-t-2 pt-12',
+            ]}
+          >
+            <div class="prose max-w-none" data-mdx-aside-layout>
+              {!isOverview && (
+                <header class="not-prose mb-7">
+                  <h2
+                    id={page.sectionId}
+                    data-scroll-page-title
+                    class="text-foreground scroll-mt-32 text-2xl leading-tight font-medium text-balance sm:text-3xl xl:scroll-mt-[calc(var(--docs-announcement-offset,0)+4rem-4px)]"
+                    data-doc-title
+                    set:html={page.renderedLabel.html}
+                  />
+                  {page.renderedDescription && (
+                    <p
+                      class="text-muted-foreground mt-3 text-lg text-pretty"
+                      data-doc-description
+                      set:html={page.renderedDescription.html}
+                    />
+                  )}
+                </header>
+              )}
+              <PageContent components={mdxComponents} />
+              {isOverview && renderedOverviewIndexChildren.length > 0 && (
+                <CardGrid class="not-prose mt-4">
+                  {renderedOverviewIndexChildren.map((child) => (
+                    <Card
+                      title={child.label}
+                      titleHtml={child.renderedLabel.html}
+                      href={child.href}
+                    >
+                      {child.rendered && (
+                        <span data-doc-description set:html={child.rendered.html} />
+                      )}
+                    </Card>
+                  ))}
+                </CardGrid>
+              )}
+            </div>
+            <TOCSidebar
+              headings={page.tocHeadings}
+              minDepth={toc.minDepth}
+              maxDepth={toc.maxDepth}
+              title={page.label}
+              titleTargetId={isOverview ? 'post-title' : page.sectionId}
+              pagefindIgnore
+            />
+          </section>
+        )
+      })
+    ) : (
+      <Content components={mdxComponents} />
+    )
+  }
+</DocLayout>

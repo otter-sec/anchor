@@ -1,0 +1,365 @@
+---
+title: Anchor CLI
+description: Anchor CLI reference documentation.
+---
+
+The Anchor CLI manages an Anchor workspace: scaffolding projects, building programs, deploying to a cluster, running tests, and interacting with on-chain IDLs. Run `$ <blue>anchor</blue> <dim>--help</dim>` on any subcommand for the full list of flags:
+
+```console
+$ <blue>anchor</blue> <dim>--help</dim>
+<bold>Usage:</bold> <bold>anchor-1.0.1</bold> [OPTIONS] <COMMAND>
+
+<bold>Commands:</bold>
+  <bold>init</bold>          Initializes a workspace
+  <bold>build</bold>         Builds the workspace
+  <bold>expand</bold>        Expands macros (wrapper around cargo expand)
+  <bold>verify</bold>        Verifies the on-chain bytecode matches the locally compiled artifact. Run this command inside a program subdirectory, i.e., in the dir containing the program's Cargo.toml
+  <bold>test</bold>          Runs integration tests
+  <bold>new</bold>           Creates a new program
+  <bold>idl</bold>           Commands for interacting with interface definitions
+  <bold>clean</bold>         Remove all artifacts from the generated directories except program keypairs
+  <bold>migrate</bold>       Runs the deploy migration script
+  <bold>airdrop</bold>       Request an airdrop of SOL
+  <bold>cluster</bold>       Cluster commands
+  <bold>config</bold>        Configuration management commands
+  <bold>shell</bold>         Starts a node shell with an Anchor client setup according to the local config
+  <bold>run</bold>           Runs the script defined by the current workspace's Anchor.toml
+  <bold>keys</bold>          Program keypair commands
+  <bold>localnet</bold>      Localnet commands
+  <bold>account</bold>       Fetch and deserialize an account using the IDL provided
+  <bold>completions</bold>   Generates shell completions
+  <bold>address</bold>       Get your public key
+  <bold>balance</bold>       Get your balance
+  <bold>epoch</bold>         Get current epoch
+  <bold>epoch-info</bold>    Get information about the current epoch
+  <bold>logs</bold>          Stream transaction logs
+  <bold>show-account</bold>  Show the contents of an account
+  <bold>keygen</bold>        Keypair generation and management
+  <bold>program</bold>       Program deployment and management commands
+  <bold>help</bold>          Print this message or the help of the given subcommand(s)
+
+<bold>Options:</bold>
+      <bold>--provider.cluster</bold> <CLUSTER>  Cluster override
+      <bold>--provider.wallet</bold> <WALLET>    Wallet override
+      <bold>--commitment</bold> <COMMITMENT>     Commitment override (valid values: processed, confirmed, finalized)
+  <bold>-h</bold>, <bold>--help</bold>                        Print help
+  <bold>-V</bold>, <bold>--version</bold>                     Print version
+```
+
+## `<blue>anchor</blue> account`
+
+```console
+$ <blue>anchor</blue> account <dim><program-name></dim>.<dim><AccountTypeName></dim> <dim><account-pubkey></dim>
+```
+
+Fetches an account with the given public key and deserializes the data to JSON using the type name provided. When run inside a workspace, the workspace's IDL files supply the data types. Otherwise, an IDL file path must be provided.
+
+| Argument | Description |
+| --- | --- |
+| `<dim><program-name></dim>` | The name of the program where the account struct resides, usually under `programs/<program-name>/{:dir}`. Case-sensitive, exactly matching the folder name (typically kebab-case). |
+| `<dim><AccountTypeName></dim>` | The name of the account struct, usually in PascalCase. |
+| `<dim><account-pubkey></dim>` | The Pubkey of the account to deserialize, in Base58. |
+
+For example, `$ <blue>anchor</blue> account anchor-escrow.EscrowAccount 3PNkzWKXCsbjijbasnx55NEpJe8DFXvEEbJKdRKpDcfK` deserializes the account at the given pubkey using the `EscrowAccount` struct defined in the `anchor-escrow` program:
+
+```console
+$ <blue>anchor</blue> account <dim><program-name></dim>.<dim><AccountTypeName></dim> <dim><account-pubkey></dim> <dim>--idl</dim> <dim><path/to/idl.json></dim>
+```
+
+Pass `<dim>--idl</dim>` to deserialize using a specific IDL file even when inside a workspace.
+
+## `<blue>anchor</blue> build`
+
+```console
+$ <blue>anchor</blue> build
+```
+
+Builds programs in the workspace targeting Solana's BPF runtime and emits IDLs into the `target/idl{:dir}` directory:
+
+```console
+$ <blue>anchor</blue> build <dim>--verifiable</dim>
+```
+
+Runs the build inside a Docker image so that the output binary is deterministic (assuming a `Cargo.lock{:file}` file is used). This command must be run from within a single crate subdirectory in the workspace, for example `programs/<my-program>/{:dir}`. See [verifiable builds](/docs/v1/security/verifiable-builds/) for details.
+
+<Callout variant="tip" title="Passing arguments to cargo build-sbf">
+Forward arguments to the underlying `cargo build-sbf` command with `-- <ARGS>`:
+
+```console
+$ <blue>anchor</blue> build <dim>--</dim> <dim>--features</dim> my-feature
+```
+
+</Callout>
+
+## Cluster
+
+### `<blue>anchor</blue> cluster list`
+
+```console
+$ <blue>anchor</blue> cluster list
+```
+
+Lists the cluster endpoints:
+
+```text
+Cluster Endpoints:
+
+* Mainnet - https://api.mainnet-beta.solana.com
+* Devnet  - https://api.devnet.solana.com
+* Testnet - https://api.testnet.solana.com
+```
+
+## `<blue>anchor</blue> codama`
+
+```console
+$ <blue>anchor</blue> codama convert <dim><target/idl/program.json></dim> <dim>--out</dim> <dim><codama-idl.json></dim>
+$ <blue>anchor</blue> codama generate <dim>-l</dim> <dim>rust,js</dim> <dim>-p</dim> clients <dim><target/idl/program.json></dim>
+```
+
+`convert` translates an Anchor IDL into a [Codama](https://github.com/codama-idl/codama) IDL. `generate` runs the same conversion in-process and then invokes the Codama renderer packages for the requested languages. Supported language values are `js`, `js-umi`, `rust`, and `go`.
+
+Codama client generation can also run automatically after `$ <blue>anchor</blue> build` when `[clients] auto = true` is set in [`Anchor.toml`](/docs/v1/reference/anchor-toml/#clients).
+
+## `<blue>anchor</blue> coverage`
+
+```console
+$ <blue>cd</blue> programs/<dim><program-name></dim>
+$ <blue>anchor</blue> coverage [<dim>--skip-run</dim>] [<dim>--skip-build</dim>] [<dim>--output</dim> <dim>target/coverage/sbf.lcov</dim>]
+```
+
+Generates LCOV source coverage from SBF register traces. Run from inside a program directory unless `<dim>--trace-dir</dim>` points at an existing trace set. By default traces are collected under `target/coverage/traces{:dir}`. Pass `<dim>--skip-run</dim>` to generate coverage from existing traces.
+
+## `<blue>anchor</blue> debugger`
+
+```console
+$ <blue>anchor</blue> debugger [<dim><test-name></dim>] [<dim>--skip-run</dim>] [<dim>--skip-build</dim>] [<dim>--gdb</dim>]
+```
+
+Runs tests with profiling enabled and opens an instruction-level TUI over the captured SBF traces. `<dim>--skip-run</dim>` reuses existing traces, and `<dim>--gdb</dim>` captures through the sbpf gdb-stub trace path (which is much slower).
+
+## `<blue>anchor</blue> deploy`
+
+```console
+$ <blue>anchor</blue> deploy
+```
+
+Deploys all programs in the workspace to the configured cluster.
+
+<Callout variant="tip" title="Different from solana program deploy">
+  Each invocation of `$ <blue>anchor</blue> deploy` generates a *new* program address. To upgrade an
+  existing program, use `$ <blue>anchor</blue> upgrade` or `$ <blue>solana</blue> program deploy`
+  with the existing program ID.
+</Callout>
+
+## `<blue>anchor</blue> expand`
+
+```console
+$ <blue>anchor</blue> expand
+```
+
+Expands the macros of the program when run inside a program folder, or the entire workspace when run from the workspace root. Pass `<dim>--program-name</dim>` to expand only a specific program.
+
+## IDL
+
+The `idl` subcommand provides commands for interacting with interface definition files. Storing an IDL on chain at a deterministic address (a function of the program's ID) lets clients be generated from nothing but the program ID.
+
+### `<blue>anchor</blue> idl build`
+
+```console
+$ <blue>anchor</blue> idl build
+```
+
+Generates the IDL for the program using the compilation method.
+
+### `<blue>anchor</blue> idl init`
+
+```console
+$ <blue>anchor</blue> idl init <dim>-f</dim> <dim><target/idl/program.json></dim> <dim><program-id></dim>
+```
+
+Creates an IDL account, writing the given `<dim><target/idl/program.json></dim>` file into a program-owned account. By default, the size of the account is double the size of the IDL, leaving room for growth in case the IDL is upgraded later. The `<dim><program-id</dim>` argument is optional. When omitted, `idl.address` from `Anchor.toml{:file}` is used.
+
+### `<blue>anchor</blue> idl fetch`
+
+```console
+$ <blue>anchor</blue> idl fetch <dim>-o</dim> <dim><out-file.json></dim> <dim><program-id></dim>
+```
+
+Fetches an IDL from the configured blockchain. For example, point `Anchor.toml{:file}` at the `mainnet` cluster and run:
+
+```console
+$ <blue>anchor</blue> idl fetch GrAkKfEpTKQuVHG2Y97Y2FF4i7y7Q5AHLK94JBy7Y5yv
+```
+
+### `<blue>anchor</blue> idl authority`
+
+```console
+$ <blue>anchor</blue> idl authority <dim><program-id></dim>
+```
+
+Outputs the IDL account's authority, which is the wallet that has the ability to update the IDL.
+
+### `<blue>anchor</blue> idl erase-authority`
+
+```console
+$ <blue>anchor</blue> idl erase-authority <dim>-p</dim> <dim><program-id></dim>
+```
+
+Erases the IDL account's authority so that upgrades can no longer occur. The configured wallet must be the current authority.
+
+### `<blue>anchor</blue> idl upgrade`
+
+```console
+$ <blue>anchor</blue> idl upgrade <dim>-f</dim> <dim><target/idl/program.json></dim>
+```
+
+Upgrades the on-chain IDL to the new `target/idl/program.json{:file}`. The configured wallet must be the current authority. The `program-id` argument is optional. When omitted, `idl.address` is used:
+
+```console
+$ <blue>anchor</blue> idl set-authority <dim>-n</dim> <dim><new-authority></dim> <dim>-p</dim> <dim><program-id></dim>
+```
+
+Sets a new authority on the IDL account. Both `new-authority` and `program-id` must be encoded in base 58.
+
+## `<blue>anchor</blue> init`
+
+```console
+$ <blue>anchor</blue> init <dim><project-name></dim>
+```
+
+Initializes a project workspace with the following structure:
+
+<FileTree>
+  <Dir name="app" comment="Application frontend" />
+  <Dir name="migrations">
+    <File name="deploy.js" comment="Deploy script" />
+  </Dir>
+  <Dir name="programs" comment="Solana program crates" />
+  <Dir name="tests" comment="JavaScript integration tests" />
+  <File name="Anchor.toml" comment="Anchor configuration file" />
+  <File name="Cargo.toml" comment="Rust workspace configuration" />
+  <File name="package.json" comment="JavaScript dependencies" />
+</FileTree>
+
+By default, programs are initialized with a modular structure (multiple files) to promote better code organization. The `<dim>--template</dim>` flag selects a different layout:
+
+```console
+$ <blue>anchor</blue> init <dim>--template</dim> multiple  <dim># Default: modular structure (recommended)</dim>
+$ <blue>anchor</blue> init <dim>--template</dim> single    <dim># Single lib.rs file (for prototyping)</dim>
+```
+
+The modular template organizes code into separate files for instructions, state, constants, and errors, making it easier to navigate and maintain as the program grows. See [Anchor.toml](/docs/v1/reference/anchor-toml/) for the full configuration reference.
+
+Pass `<dim>--anchor-version</dim>` to select v1 or v2 Rust templates:
+
+```console
+$ <blue>anchor</blue> init <dim>--anchor-version</dim> v1  <dim># Default: Anchor v1 Rust templates</dim>
+$ <blue>anchor</blue> init <dim>--anchor-version</dim> v2  <dim># Anchor v2 Rust templates</dim>
+```
+
+The v2 templates depend on the `anchor-next` git crates until the v2 release is published.
+
+## Keys
+
+Program keypair commands.
+
+### `<blue>anchor</blue> keys list`
+
+```console
+$ <blue>anchor</blue> keys list
+```
+
+Lists all program keypairs declared in the workspace.
+
+### `<blue>anchor</blue> keys sync`
+
+```console
+$ <blue>anchor</blue> keys sync
+```
+
+Syncs each program's `declare_id!(){:rs}` value with the actual pubkey of its keypair file.
+
+## `<blue>anchor</blue> migrate`
+
+```console
+$ <blue>anchor</blue> migrate
+```
+
+Runs the deploy script located at `migrations/deploy.js{:file}`, injecting a provider configured from the workspace's `Anchor.toml{:file}`:
+
+```javascript title="migrations/deploy.js" showLineNumbers=false
+const anchor = require('@anchor-lang/core')
+
+module.exports = async function (provider) {
+  anchor.setProvider(provider)
+
+  // Add your deploy script here.
+}
+```
+
+Migrations currently support only this simple deploy script.
+
+## `<blue>anchor</blue> new`
+
+```console
+$ <blue>anchor</blue> new <dim><program-name></dim>
+```
+
+Creates a new program in the workspace's `programs/{:dir}` directory initialized with boilerplate. By default the modular structure template is used. Pass `<dim>--template</dim>` to select another:
+
+```console
+$ <blue>anchor</blue> new <dim>--template</dim> multiple <dim><program-name></dim>  <dim># Default: modular (recommended)</dim>
+$ <blue>anchor</blue> new <dim>--template</dim> single <dim><program-name></dim>    <dim># Single file (for prototyping)</dim>
+```
+
+Pass `<dim>--anchor-version</dim>` to select v1 or v2 Rust templates:
+
+```console
+$ <blue>anchor</blue> new <dim>--anchor-version</dim> v1 <dim><program-name></dim>  <dim># Default: Anchor v1 Rust templates</dim>
+$ <blue>anchor</blue> new <dim>--anchor-version</dim> v2 <dim><program-name></dim>  <dim># Anchor v2 Rust templates</dim>
+```
+
+## `<blue>anchor</blue> shell`
+
+```console
+$ <blue>anchor</blue> shell
+```
+
+Starts a Node.js shell with an Anchor client set up according to the local config. The client can interact with deployed programs in the workspace.
+
+## `<blue>anchor</blue> test`
+
+```console
+$ <blue>anchor</blue> test
+```
+
+Runs an integration test suite against the configured cluster, deploying fresh versions of all workspace programs first.
+
+When the configured network is a localnet, `$ <blue>anchor</blue> test` starts the local network automatically and runs the tests against it. By default, [Surfpool](https://github.com/solana-foundation/surfpool) is used as the local network backend. Pass `<dim>--validator legacy</dim>` to use `solana-test-validator` instead.
+
+<Callout variant="note" title="Local validator conflicts">
+`$ <blue>anchor</blue> test` starts its own local validator. Shut down any other local validators first, or the command fails.
+
+To run against a local validator that's already running, pass `<dim>--skip-local-validator</dim>`.
+
+</Callout>
+
+Program logs are streamed to `.anchor/program-logs/<address>.<program-name>.log{:file}` while tests run.
+
+Pass `<dim>--profile</dim>` with Rust/LiteSVM-style tests that enable the generated `profile{:toml}` feature to collect SBF register traces and render flamegraph SVGs under `target/anchor-v2-profile/{:dir}`. Those traces also feed `$ <blue>anchor</blue> debugger` and `$ <blue>anchor</blue> coverage`.
+
+## `<blue>anchor</blue> upgrade`
+
+```console
+$ <blue>anchor</blue> upgrade <dim><target/deploy/program.so></dim> <dim>--program-id</dim> <dim><program-id></dim>
+```
+
+Uses Solana's upgradeable BPF loader to upgrade the on-chain program code. The configured wallet must be the upgrade authority.
+
+## `<blue>anchor</blue> verify`
+
+```console
+$ <blue>anchor</blue> verify <dim><program-id></dim>
+```
+
+Verifies that the on-chain bytecode matches the locally compiled artifact. See [verifiable builds](/docs/v1/security/verifiable-builds/) for the build setup that produces a deterministic binary.

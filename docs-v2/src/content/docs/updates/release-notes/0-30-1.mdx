@@ -1,0 +1,239 @@
+---
+title: 0.30.1
+description: Anchor release notes for 0.30.1.
+---
+
+`0.30.1` is a quality-of-life patch release. There are no major breaking changes from `0.30.0`.
+
+---
+
+## How to upgrade
+
+1. Update `anchor-cli`:
+
+   ```bash
+   $ <blue>avm</blue> install 0.30.1
+   ```
+
+2. Update Anchor crate(s) to `0.30.1`.
+
+3. Update TS package(s) to `0.30.1`.
+
+## Recommended Solana version
+
+This release supports any Solana version above `1.17.3`, with `1.18.17` recommended. Upgrade Solana tools with:
+
+```console
+$ <blue>solana-install</blue> init 1.18.17
+```
+
+## IDL
+
+### Convert legacy IDLs
+
+The IDL crate gained support for converting legacy IDLs (pre-Anchor v0.30) to the new spec. Add the `convert` feature to enable it programmatically:
+
+```toml title="Cargo.toml"
+anchor-lang-idl = { version = "0.1.1", features = ["convert"] }
+```
+
+Then call [`convert_idl`](https://docs.rs/anchor-lang-idl/0.1.1/anchor_lang_idl/convert/fn.convert_idl.html). The same conversion is also exposed as the [`idl convert`](#idl-convert-command) CLI command.
+
+### Unsupported seed expressions
+
+Some seed expressions cannot currently be stored in the IDL. A representative case is the math expression `&(my_account.data + 1).to_le_bytes(){:rs}`:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct SeedMathExpr<'info> {
+    #[account(seeds = [&(my_account.data + 1).to_le_bytes()], bump)]
+    pub math_expr_account: UncheckedAccount<'info>,
+    pub my_account: Account<'info, MyAccount>,
+}
+
+#[account]
+pub struct MyAccount {
+    data: u64,
+}
+```
+
+A regression in IDL generation had been surfacing such expressions as compile errors. The compile errors are gone, with the side effect that clients cannot automatically resolve these accounts either.
+
+### Fields with `address{:rs}` constraint
+
+Field expressions used as an address constraint no longer fail IDL generation:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(address = my_account.authority)]
+    pub authority: UncheckedAccount<'info>,
+    pub my_account: Account<'info, MyAccount>,
+}
+
+#[account]
+pub struct MyAccount {
+    authority: u64,
+}
+```
+
+Such accounts still don't resolve automatically when the constraint expression isn't constant. The `has_one{:rs}` constraint is preferable in those cases:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    pub authority: UncheckedAccount<'info>,
+    #[account(has_one = authority)]
+    pub my_account: Account<'info, MyAccount>,
+}
+```
+
+### Override `nightly` version on builds
+
+IDL generation uses the `nightly` compiler, which can fail to build on certain nightly versions. The toolchain can now be pinned via the `RUSTUP_TOOLCHAIN` environment variable.
+
+### Recursive generation
+
+Recursive external type resolution during IDL generation no longer produces a compile error. See [PR #2946](https://github.com/otter-sec/anchor/pull/2946) for the underlying cause.
+
+### New spec crate
+
+Adding features to the IDL crate (such as the [`convert{:rs}`](https://github.com/otter-sec/anchor/pull/2986) feature) previously forced a version bump even when the spec itself was unchanged. The IDL spec now lives in its own [crate](https://docs.rs/anchor-lang-idl-spec), whose version is recorded in the `idl.metadata.spec{:rs}` field. The new spec crate is also re-exported through [`anchor_lang_idl::types{:rs}`](https://docs.rs/anchor-lang-idl/0.1.1/anchor_lang_idl/types/index.html) for convenience.
+
+## CLI
+
+### `<blue>anchor</blue> idl convert` command
+
+Convert a legacy IDL JSON file to the new spec:
+
+```console
+$ <blue>anchor</blue> idl convert <dim><PATH_TO_IDL_JSON></dim>
+```
+
+### `<blue>anchor</blue> idl type` command
+
+Generate a TypeScript IDL type (with camelCase fields) from an existing IDL JSON file:
+
+```console
+$ <blue>anchor</blue> idl type <dim><PATH_TO_IDL_JSON></dim>
+```
+
+### `<blue>anchor</blue> idl build` toolchain override
+
+See [the IDL section](#override-nightly-version-on-builds) for context. The CLI honors the same environment variable:
+
+```console
+$ RUSTUP_TOOLCHAIN="nightly-2024-05-09" <blue>anchor</blue> idl build
+```
+
+### Automatic program id updates
+
+When building a program for the first time, the program id declarations are updated automatically if `Anchor.toml{:file}` has no `[programs.localnet]{:toml}` entry. This is equivalent to running `$ <blue>anchor</blue> keys sync`, but happens only on that first build.
+
+### Upgradeable program clones
+
+A breaking change in Solana `1.17.12` left programs cloned through `[[test.validator.clone]]` unusable in the test validator. The minimal repro:
+
+```toml
+[test.validator]
+url = "https://api.mainnet-beta.solana.com"
+
+[[test.validator.clone]]
+address = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+```
+
+The fix landed on both the Anchor and Solana sides and requires `solana-cli >= 1.18.10`.
+
+### File system error improvements
+
+Rust's default file-not-found error omits the offending path, which makes debugging painful. Filesystem errors raised by Anchor now include the path.
+
+## Lang
+
+### Using legacy IDLs with `declare_program!{:rs}`
+
+[`declare_program!(){:rs}`](https://www.anchor-lang.com/release-notes/0.30.0#dependency-free-program-declaration) now accepts legacy (pre-v0.30) IDLs. The macro works as long as the legacy spec can describe the program faithfully. Programs that use non-default features (zero-copy, custom `repr{:rs}`, etc.) may produce a declaration that fails to compile or is silently incorrect.
+
+There are two paths around this. The first is to run `$ <blue>anchor</blue> idl convert` and patch the result by hand. The second, preferred path is to upgrade the program to v0.30 and regenerate its IDL, since the new IDL spec was added precisely because the legacy spec couldn't describe modern programs reliably. If dependency upgrades are blocking, strip them. IDL generation only inspects signatures, so program logic and non-Anchor dependencies can be deleted from the temporary build. The [`spl-token` IDL stub](https://github.com/otter-sec/anchor/blob/cc43e67399ad50cf7d33466f7bcd7e6dcee88ae2/ts/packages/spl-token/program/lib.rs) demonstrates the minimal shape required.
+
+### `declare_program!{:rs}` fixes
+
+Several inputs that should have worked previously caused `declare_program!(){:rs}` to fail compilation:
+
+- Defined types (e.g. `struct{:rs}`s) used as instruction parameters
+- Types with `const{:rs}` generics
+- `Vec<u8>{:rs}` arguments
+- Instructions with a non-unit return type
+- Optional accounts in client-generated code
+- The `bytemuckunsafe` account serialization mode
+
+Tuple struct fields, which previously inherited Rust's private default, are now generated as public.
+
+### `pubkey!{:rs}` macro
+
+[`solana-program`](https://docs.rs/solana-program/1.18.17/solana_program/index.html) provides [`pubkey!{:rs}`](https://docs.rs/solana-program/1.18.17/solana_program/macro.pubkey.html) for compile-time pubkey literals:
+
+```rust showLineNumbers=false
+let key = pubkey!("11111111111111111111111111111111");
+```
+
+```rust showLineNumbers=false
+use std::str::FromStr;
+let key = Pubkey::from_str("11111111111111111111111111111111").unwrap();
+```
+
+The macro previously expanded to `::solana_program{:rs}`, so consumers had to include `solana-program` directly even when using Anchor. `pubkey!(){:rs}` is now re-exported from `anchor_lang::prelude{:rs}`, and `solana_program{:rs}` is itself re-exported from `anchor_lang{:rs}`, so the direct `solana-program` dependency can be dropped from `Cargo.toml{:file}` if it was added solely for this macro.
+
+### `ID_CONST{:rs}` constant
+
+[`declare_id!(){:rs}`](https://docs.rs/anchor-lang/0.30.1/anchor_lang/macro.declare_id.html) and [`declare_program!(){:rs}`](https://docs.rs/anchor-lang/0.30.1/anchor_lang/macro.declare_program.html) declare `ID{:rs}` as `static{:rs}`, which prevents compile-time use. Both macros now also emit `ID_CONST{:rs}`, the same value declared as `const{:rs}` so it can participate in const evaluation.
+
+### Stack usage of token extensions
+
+The [token extensions constraints](https://www.anchor-lang.com/release-notes/0.30.0#token-extensions) added in `0.30.0` use less stack.
+
+### Error propagation from integer conversion errors
+
+Integer conversion errors now propagate through `?{:rs}`:
+
+```rust showLineNumbers=false
+let n: i32 = u32::MAX.try_into()?;
+```
+
+## SPL
+
+### Export ATA crate
+
+[`spl-associated-token-account`](https://crates.io/crates/spl-associated-token-account) is now re-exported from `anchor_spl::associated_token{:rs}`. Drop the direct dependency the same way [`mpl-token-metadata`](https://www.anchor-lang.com/release-notes/0.29.0#export-mpl-token-metadata) was dropped in `0.29.0`:
+
+```toml title="Cargo.toml" del={3}
+[dependencies]
+anchor-spl = "0.30.1"
+spl-associated-token-account = "3.0.2"
+```
+
+## TypeScript
+
+### ATA resolution
+
+[Account resolution](https://www.anchor-lang.com/release-notes/0.30.0#account-resolution) now also covers associated token accounts. Instructions that include ATAs now type-error when those accounts are passed to `.accounts(){:ts}`. Drop them from the call so the resolver can fill them in.
+
+### Defined types in generics
+
+Defined types (structs, enums, or type aliases) used as generic arguments no longer fail IDL generation:
+
+```rust showLineNumbers=false
+param: GenericStruct<MyStruct>,
+```
+
+### Versioned transactions
+
+`AnchorProvider{:ts}` now sets `maxSupportedTransactionVersion{:ts}` correctly when sending versioned transactions.
+
+### New errors package
+
+Anchor's TS error definitions now live in their own package, [`@coral-xyz/anchor-errors`](https://www.npmjs.com/package/@coral-xyz/anchor-errors).
+
+---
+
+See the full list of notable changes in the [CHANGELOG](https://github.com/otter-sec/anchor/blob/v0.30.1/CHANGELOG.md#0301---2024-06-20).

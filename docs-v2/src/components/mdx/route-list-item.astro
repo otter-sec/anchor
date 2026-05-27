@@ -1,0 +1,50 @@
+---
+import Icon from '@/components/icon.astro'
+import { cn } from '@/lib/utils'
+
+interface Props {
+  title: string
+  method: string
+  path: string
+  href: string
+  class?: string
+}
+
+const { title, method, path, href, class: className } = Astro.props
+const normalizedMethod = method.toUpperCase()
+
+const methodClass =
+  {
+    GET: 'text-[var(--inline-tone-cyan)]',
+    POST: 'text-[var(--inline-tone-green)]',
+    PUT: 'text-[var(--inline-tone-magenta)]',
+    PATCH: 'text-[var(--inline-tone-orange)]',
+    DELETE: 'text-[var(--inline-tone-red)]',
+  }[normalizedMethod] ?? 'text-foreground'
+---
+
+<a
+  href={href}
+  class={cn(
+    'group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-4 no-underline',
+    'text-foreground hover:text-accent',
+    className,
+  )}
+>
+  <span class="min-w-0">
+    <span class="block text-base leading-snug">{title}</span>
+    <span class="mt-1 flex min-w-0 items-baseline gap-2">
+      <span class={cn('font-mono text-sm leading-none', methodClass)}>
+        {normalizedMethod}
+      </span>
+      <span class="text-muted-foreground min-w-0 truncate font-mono text-sm leading-none">
+        {path}
+      </span>
+    </span>
+  </span>
+  <Icon
+    name="chevron-right"
+    class="text-muted-foreground size-5 shrink-0 group-hover:text-current"
+    aria-hidden="true"
+  />
+</a>

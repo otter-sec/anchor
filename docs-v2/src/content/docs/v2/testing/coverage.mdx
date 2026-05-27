@@ -1,0 +1,34 @@
+---
+title: Coverage
+description: Generate LCOV coverage from SBF register traces.
+---
+
+`$ <blue>anchor</blue> coverage` maps executed SBF program counters back to Rust source lines and emits LCOV. Run it from inside a program directory unless you pass `<dim>--trace-dir</dim>` to point at an existing trace set.
+
+```console showLineNumbers=false
+$ <blue>cd</blue> programs/counter
+$ <blue>anchor</blue> coverage
+```
+
+By default, output lands at:
+
+```text showLineNumbers=false
+target/coverage/sbf.lcov
+```
+
+## Options
+
+Useful flags:
+
+| Flag | Effect |
+| --- | --- |
+| `<dim>--skip-run</dim>` | Reuse existing traces. |
+| `<dim>--skip-build</dim>` | Skip `$ <blue>cargo</blue> build-sbf` when deploy artifacts are already fresh. |
+| `<dim>--output</dim> <dim><path></dim>` | Write LCOV somewhere other than `target/coverage/sbf.lcov{:file}`. |
+| `<dim>--trace-dir</dim> <dim><dir></dim>` | Read or write traces from a custom directory. |
+
+Coverage uses the same underlying trace data as profiling and debugger, so the same test-harness requirement applies. Tests should call `anchor_v2_testing::svm(){:rs}`.
+
+## DWARF
+
+The command builds programs with DWARF debug info so `addr2line` can resolve PCs to source. If source lines are missing, make sure the deploy `.so{:file}` exists and was built by the same source tree that produced the traces.

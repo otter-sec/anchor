@@ -1,0 +1,79 @@
+---
+title: Transfer tokens
+description: Learn how to transfer tokens between token accounts through cross program invocations (CPIs) in Anchor.
+---
+
+import Code from '@/components/code.astro'
+import lib from './_transfer-tokens/lib.rs?raw'
+import libPda from './_transfer-tokens/lib_pda.rs?raw'
+import test from './_transfer-tokens/test.ts?raw'
+
+Transferring tokens moves units between two token accounts that share a mint. The Token Program and [Token Extension Program](/docs/v1/tokens/token-2022-and-extensions/) expose this through the [`transfer_checked(){:rs}`](https://github.com/solana-program/token/blob/main/program/src/instruction.rs#L1235-L1265) instruction. Only the address registered as the source token account's authority can transfer tokens out of it.
+
+<Callout variant="note">
+  The [Token
+  Program](https://github.com/solana-program/token/blob/main/program/src/processor.rs#L229-L343) and
+  [Token Extension
+  Program](https://github.com/solana-program/token-2022/blob/main/program/src/processor.rs#L290-L561)
+  share the same implementation for `transfer_checked(){:rs}`.
+</Callout>
+
+## Transfer tokens via CPI
+
+An Anchor program transfers tokens by issuing a [cross program invocation](/docs/v1/fundamentals/cpi/) to `transfer_checked(){:rs}` on either token program. The program acts as an intermediary, forwarding the required accounts, instruction data, and signatures.
+
+The `token_interface::transfer_checked(){:rs}` helper takes a `TransferChecked{:rs}` struct and an `amount{:rs}` in base units adjusted by `mint::decimals{:rs}` (an amount of `100{:rs}` with 2 decimals represents one whole token). The struct holds four accounts:
+
+- `mint{:rs}` is the mint specifying the token type
+- `from{:rs}` is the source token account
+- `to{:rs}` is the destination token account
+- `authority{:rs}` is the owner of `from{:rs}`
+
+<Code code={lib} lang="rust" title="lib.rs" meta="{21}" />
+
+The `TransferTokens{:rs}` accounts struct declares the source authority, the mint, the source and destination [token accounts](/docs/v1/tokens/spl-token-basics/create-token-account/), and the token program:
+
+<Code code={lib} lang="rust" title="lib.rs" meta="collapse={1-25}" />
+
+The instruction body builds a `CpiContext{:rs}` from the `TransferChecked{:rs}` accounts and the token program, then calls `transfer_checked(){:rs}`:
+
+<Code code={lib} lang="rust" title="lib.rs" meta="collapse={1-9, 24-37}" />
+
+## Transfer tokens with a PDA owner via CPI
+
+A token account can be owned by a [Program Derived Address (PDA)](/docs/v1/fundamentals/pdas/), letting the program itself authorize transfers by signing the CPI with the PDA's seeds. This pattern is useful when transfer eligibility depends on conditions enforced by the program.
+
+<Tabs items={['Program', 'Client']}>
+<Tab>
+
+<Code code={libPda} lang="rust" title="lib.rs" />
+
+</Tab>
+<Tab>
+
+<Code code={test} lang="ts" title="test.ts" />
+
+</Tab>
+</Tabs>
+
+The source token account's `token::authority{:rs}` is set to the PDA derived from `b"token"{:rs}`. The same PDA is used as both the address of the token account and its authority:
+
+<Code
+  code={libPda}
+  lang="rust"
+  title="lib.rs"
+  meta="{64} collapse={1-45, 72-102} 'token_account'"
+/>
+
+To authorize the transfer, the program reconstructs the PDA's seeds (including the bump from `ctx.bumps{:rs}`) and attaches them via `with_signer(){:rs}` on the `CpiContext{:rs}`:
+
+<Code
+  code={libPda}
+  lang="rust"
+  title="lib.rs"
+  meta="{28,40} collapse={1-26, 44-102} 'signer_seeds'"
+/>
+
+<Callout variant="note">
+  The same PDA serves as both the address of the source token account and its owner.
+</Callout>

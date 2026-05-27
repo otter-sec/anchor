@@ -1,0 +1,279 @@
+---
+title: Local development
+description: Learn how to build Solana programs using the Anchor framework on your local machine.
+---
+
+The Anchor framework streamlines the process of writing, testing, and deploying Solana programs. This guide walks through creating a new project, iterating on it locally, and deploying it to a public cluster.
+
+## Prerequisites
+
+Before you begin, ensure you have Rust, the Solana CLI, and the Anchor CLI installed. See the [Installation](/docs/v1/get-started/installation/) page for step-by-step instructions.
+
+## Getting started
+
+<Steps>
+
+<Step>
+
+### Create a new project
+
+To start a new project, use the `$ anchor init <dim><project-name></dim>` (for our examples, we will use `my-project` for `<dim><project-name></dim>`). This creates a new directory with the specified name and scaffolds a default program and test file. By default, Anchor generates a modular program structure to promote better code organization and maintainability:
+
+<FileTree>
+  <Dir name="programs">
+    <Dir name="my-project">
+      <Dir name="src">
+        <Dir name="instructions" comment="Instruction handler implementations">
+          <File name="initialize.rs" />
+        </Dir>
+        <File name="constants.rs" comment="Program constants" />
+        <File name="error.rs" comment="Custom error definitions" />
+        <File name="instructions.rs" comment="Instructions module root" />
+        <File name="lib.rs" comment="Main entry point" highlight />
+        <File name="state.rs" comment="Account state module root" />
+      </Dir>
+    </Dir>
+  </Dir>
+</FileTree>
+
+`lib.rs{:file}` is the program's entry point. It declares each submodule and wires instruction handlers into the `#[program]{:rs}` block. The `declare_id!(){:rs}` value is your program's on-chain address (by default, the public key of the keypair at `/target/deploy/my_project-keypair.json{:file}`).
+
+<Tabs items={["lib.rs", "instructions/initialize.rs"]}>
+<Tab>
+```rust
+pub mod constants;
+pub mod error;
+pub mod instructions;
+pub mod state;
+
+use anchor_lang::prelude::\*;
+
+pub use constants::_; pub use instructions::_; pub use state::\*;
+
+declare_id!("3ynNB373Q3VAzKp7m4x238po36hjAGFXFJB4ybN2iTyg");
+
+#[program] pub mod my_project { use super::\*;
+
+    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+        initialize::handler(ctx)
+    }
+
+}
+
+````
+</Tab>
+<Tab>
+```rust
+use anchor_lang::prelude::*;
+
+#[derive(Accounts)]
+pub struct Initialize {}
+
+pub fn handler(ctx: Context<Initialize>) -> Result<()> {
+    msg!("Greetings from: {:?}", ctx.program_id);
+    Ok(())
+}
+````
+
+</Tab>
+</Tabs>
+
+<Callout variant="tip" title="Single-file template">
+  For quick prototypes, skip the module split with `$ anchor init <dim>--template</dim> single`. The
+  modular layout is recommended for anything you plan to maintain.
+</Callout>
+
+### Test file
+
+Anchor generates a test file alongside the program. TypeScript is the default. To get a Rust test instead, pass `<dim>--test-template</dim> rust` ([Rust client](/docs/v1/clients/rust/)) or `<dim>--test-template</dim> mollusk` ([Mollusk](/docs/v1/testing/mollusk/)).
+
+<Tabs items={["TypeScript", "Rust"]}>
+<Tab>
+Located at `/tests/my-project.ts{:file}`. Invokes the `initialize(){:ts}` instruction via the generated client:
+
+```ts title="tests/my-project.ts"
+import * as anchor from '@anchor-lang/core'
+import { Program } from '@anchor-lang/core'
+import { MyProject } from '../target/types/my_project'
+
+describe('my-project', () => {
+  anchor.setProvider(anchor.AnchorProvider.env())
+  const program = anchor.workspace.MyProject as Program<MyProject>
+
+  it('Is initialized!', async () => {
+    const tx = await program.methods.initialize().rpc()
+    console.log('Your transaction signature', tx)
+  })
+})
+```
+
+</Tab>
+<Tab>
+Located at `/tests/src/test_initialize.rs{:file}`. Uses `<yellow>anchor_client</yellow>` to call the program against localnet:
+
+```rust title="tests/src/test_initialize.rs"
+use std::str::FromStr;
+
+use anchor_client::{
+    solana_sdk::{
+        commitment_config::CommitmentConfig, pubkey::Pubkey, signature::read_keypair_file,
+    },
+    Client, Cluster,
+};
+
+#[test]
+fn test_initialize() {
+    let program_id = "3ynNB373Q3VAzKp7m4x238po36hjAGFXFJB4ybN2iTyg";
+    let anchor_wallet = std::env::var("ANCHOR_WALLET").unwrap();
+    let payer = read_keypair_file(&anchor_wallet).unwrap();
+
+    let client = Client::new_with_options(Cluster::Localnet, &payer, CommitmentConfig::confirmed());
+    let program_id = Pubkey::from_str(program_id).unwrap();
+    let program = client.program(program_id).unwrap();
+
+    let tx = program
+        .request()
+        .accounts(my_program::accounts::Initialize {})
+        .args(my_program::instruction::Initialize {})
+        .send()
+        .expect("");
+
+    println!("Your transaction signature {}", tx);
+}
+```
+
+</Tab>
+</Tabs>
+
+</Step>
+<Step>
+
+### Build the program
+
+Run `$ <blue>anchor</blue> build` to compile the program. The compiled artifact is written to `/target/deploy/my_project.so{:file}`. This binary is the executable bytecode uploaded to the chain during deployment.
+
+</Step>
+<Step>
+
+### Test the program
+
+Run `$ <blue>anchor</blue> test` to execute the test suite against a local cluster.
+
+With the default `Anchor.toml{:file}` targeting `localnet`, this starts a local validator, builds and deploys the program, runs the tests in `/tests{:dir}`, then shuts the validator down.
+
+<Callout variant="tip" title="Persistent validator for debugging">
+  To keep the validator running between iterations so you can inspect accounts and transaction logs
+  on the [Solana Explorer](https://explorer.solana.com/?cluster=custom) while developing, start `${' '}
+  <blue>solana-test-validator</blue>` in a separate terminal. From there, pass `
+  <dim>--skip-local-validator</dim>` to `$ <blue>anchor</blue> test{' '}
+  <dim>--skip-local-validator</dim>` so tests attach to the running instance instead of spawning
+  their own.
+</Callout>
+
+</Step>
+<Step>
+
+### Deploy to Devnet
+
+By default, the `Anchor.toml{:file}` config file in an Anchor project specifies the localnet cluster. To deploy your program to devnet, change the `cluster{:toml}` value to `"Devnet"{:js}`:
+
+```toml title="Anchor.toml" showLineNumbers add={12} del={11}
+[toolchain]
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+my_program = "3ynNB373Q3VAzKp7m4x238po36hjAGFXFJB4ybN2iTyg"
+
+[provider]
+cluster = "Localnet"
+cluster = "Devnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+```
+
+<Callout variant="important" title="Funding the deploy wallet">
+  Deploying to devnet requires your wallet to have enough SOL to cover the deployment cost. You can
+  get devnet SOL using the [Web Faucet](https://faucet.solana.com/).
+</Callout>
+
+Run `$ <blue>anchor</blue> deploy` to push the program to the cluster specified in `Anchor.toml{:file}`. The `$ <blue>anchor</blue> test` command also respects this setting.
+
+To deploy to mainnet, update the `Anchor.toml{:file}` file to specify the mainnet cluster:
+
+```toml title="Anchor.toml" add={3} del={2}
+[provider]
+cluster = "Devnet"
+cluster = "Mainnet"
+wallet = "~/.config/solana/id.json"
+```
+
+</Step>
+<Step>
+
+### Update the program
+
+Solana programs are updated in place by redeploying a new build to the same program ID. After making code changes, run `$ <blue>anchor</blue> build` to produce an updated `.so{:file}` artifact, then `$ <blue>anchor</blue> deploy` to upload it.
+
+</Step>
+<Step>
+
+### Close the program
+
+Closing a program reclaims the SOL allocated to its on-chain account. Run `$ solana program close <dim><program-id></dim>` to retire it:
+
+```console
+$ <blue>solana</blue> program close <dim><program-id></dim> --bypass-warning
+```
+
+The program ID is permanently retired once closed. You cannot redeploy to the same address.
+
+</Step>
+
+</Steps>
+
+## Project file structure
+
+A default Anchor workspace contains the following top-level files and directories. A single workspace may host multiple programs under `programs/{:dir}`, though `$ <blue>anchor</blue> init` generates one by default.
+
+{/* cspell:disable */}
+
+<FileTree>
+  <Dir name=".anchor" open={false}>
+    <File name="program-logs" comment="Transaction logs from the last test run" />
+  </Dir>
+  <Dir name="app" comment="Frontend code (empty by default)" />
+  <Dir name="migrations" comment="Deployment scripts (optional)" />
+  <Dir name="programs" comment="Anchor programs">
+    <Dir name="[project-name]">
+      <Dir name="src">
+        <Dir name="instructions">
+          <File name="initialize.rs" />
+        </Dir>
+        <File name="constants.rs" />
+        <File name="error.rs" />
+        <File name="instructions.rs" comment="Instructions module root" />
+        <File name="lib.rs" comment="Program entry point and #[program] module" />
+        <File name="state.rs" comment="Account state module root" />
+      </Dir>
+      <File name="Cargo.toml" />
+    </Dir>
+  </Dir>
+  <Dir name="target" comment="Build outputs">
+    <Dir name="deploy" comment="Program binary (.so) and keypair" />
+    <Dir name="idl" comment="JSON IDL generated from the program" />
+    <Dir name="types" comment="TypeScript types derived from the IDL" />
+  </Dir>
+  <Dir name="tests" comment="Integration tests (TypeScript by default)">
+    <File name="[project-name].ts" />
+  </Dir>
+  <File name="Anchor.toml" comment="Workspace config (clusters, wallet, scripts)" />
+  <File name="Cargo.toml" comment="Rust workspace manifest" />
+  <File name="package.json" comment="Node dependencies for TypeScript tests" />
+</FileTree>
+
+{/* cspell:enable */}

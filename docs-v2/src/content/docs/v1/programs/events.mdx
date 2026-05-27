@@ -1,0 +1,300 @@
+---
+title: Emit events
+description: 'Learn how to emit events in Anchor programs using `emit!(){:rs}` and `emit_cpi!(){:rs}` macros.'
+---
+
+Anchor exposes two macros for emitting events from a program. The `emit!(){:rs}` macro writes events to program logs, which is the simpler path but can be truncated by some data providers. The `emit_cpi!(){:rs}` macro emits events through a Cross Program Invocation (CPI) by including the event data in the inner instruction's data, which is less likely to be truncated.
+
+<Callout variant="remark" title="Why two macros exist">
+  `emit_cpi!(){:rs}` was introduced as an alternative to program logs, which can sometimes be truncated by data providers. CPI instruction data is less likely to be truncated, but this approach incurs additional compute costs from the Cross Program Invocation.
+</Callout>
+
+<Callout variant="tip" title="Geyser gRPC for production">
+  For more robust event delivery, consider geyser gRPC services from
+  [Triton](https://docs.triton.one/project-yellowstone/dragons-mouth-grpc-subscriptions) or
+  [Helius](https://docs.helius.dev/data-streaming/geyser-yellowstone).
+</Callout>
+
+## `emit!(){:rs}`
+
+The `emit!(){:rs}` macro emits events through program logs. When called, it:
+
+1. Uses the [`sol_log_data(){:rs}`](https://github.com/anza-xyz/agave/blob/c2b350023ba849d1b33142592264aaa51fcb7f1e/sdk/program/src/log.rs#L115-L124) syscall to write the data to program logs.
+2. Encodes the event data as a base64 string prefixed with `Program data:`.
+
+To receive emitted events in a client application, use the `addEventListener(){:ts}` method on the `Program{:ts}` instance. It parses and decodes event data from the program logs automatically.
+
+Example usage:
+
+<Tabs items={["Program", "Client"]}>
+<Tab>
+
+```rust title="lib.rs" showLineNumbers=false
+use anchor_lang::prelude::*;
+
+declare_id!("8T7MsCZyzxboviPJg5Rc7d8iqEcDReYR2pkQKrmbg7dy");
+
+#[program]
+pub mod event {
+    use super::*;
+
+    pub fn emit_event(_ctx: Context<EmitEvent>, input: String) -> Result<()> {
+        emit!(CustomEvent { message: input });
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct EmitEvent {}
+
+#[event]
+pub struct CustomEvent {
+    pub message: String,
+}
+```
+
+</Tab>
+<Tab>
+
+```ts title="test.ts" showLineNumbers=false
+import * as anchor from '@anchor-lang/core'
+import { Program } from '@anchor-lang/core'
+import { Event } from '../target/types/event'
+
+describe('event', () => {
+  // Configure the client to use the local cluster.
+  anchor.setProvider(anchor.AnchorProvider.env())
+
+  const program = anchor.workspace.Event as Program<Event>
+
+  it('Emits custom event', async () => {
+    // Set up listener before sending transaction
+    const listenerId = program.addEventListener('customEvent', (event) => {
+      // Do something with the event data
+      console.log('Event Data:', event)
+    })
+
+    // Message to be emitted in the event
+    const message = 'Hello, Solana!'
+    // Send transaction
+    await program.methods.emitEvent(message).rpc()
+
+    // Remove listener
+    await program.removeEventListener(listenerId)
+  })
+})
+```
+
+</Tab>
+</Tabs>
+
+{/* cspell:disable */}
+
+The program logs below show the emitted event data, base64-encoded as `Zb1eU3aiYdwOAAAASGVsbG8sIFNvbGFuYSE=`:
+
+```text
+Log Messages:
+  Program 8T7MsCZyzxboviPJg5Rc7d8iqEcDReYR2pkQKrmbg7dy invoke [1]
+  Program log: Instruction: EmitEvent
+  Program data: Zb1eU3aiYdwOAAAASGVsbG8sIFNvbGFuYSE=
+  Program 8T7MsCZyzxboviPJg5Rc7d8iqEcDReYR2pkQKrmbg7dy consumed 1012 of 200000 compute units
+  Program 8T7MsCZyzxboviPJg5Rc7d8iqEcDReYR2pkQKrmbg7dy success
+```
+
+{/* cspell:enable */}
+
+<Callout variant="danger" title="RPC providers may truncate program logs">
+  Ensure the RPC provider you use does not truncate program logs from the transaction data. A silent
+  truncation will drop emitted events on the floor without surfacing an error to the listener.
+</Callout>
+
+## `emit_cpi!(){:rs}`
+
+The `emit_cpi!(){:rs}` macro emits events through Cross Program Invocations to the program itself. The event data is encoded and included in the CPI's instruction data instead of the program logs.
+
+To emit events through CPIs, enable the `event-cpi` feature in `Cargo.toml{:file}`:
+
+```toml title="Cargo.toml"
+[dependencies]
+anchor-lang = { version = "1.0.1", features = ["event-cpi"] }
+```
+
+Example usage:
+
+<Tabs items={["Program", "Client"]}>
+<Tab>
+
+```rust title="lib.rs" showLineNumbers=false
+use anchor_lang::prelude::*;
+
+declare_id!("2cDQ2LxKwQ8fnFUz4LLrZ157QzBnhPNeQrTSmWcpVin1");
+
+#[program]
+pub mod event_cpi {
+    use super::*;
+
+    pub fn emit_event(ctx: Context<EmitEvent>, input: String) -> Result<()> {
+        emit_cpi!(CustomEvent { message: input });
+        Ok(())
+    }
+}
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct EmitEvent {}
+
+#[event]
+pub struct CustomEvent {
+    pub message: String,
+}
+```
+
+</Tab>
+<Tab>
+
+```ts title="test.ts" showLineNumbers=false
+import * as anchor from '@anchor-lang/core'
+import { Program } from '@anchor-lang/core'
+import { EventCpi } from '../target/types/event_cpi'
+
+describe('event-cpi', () => {
+  // Configure the client to use the local cluster.
+  anchor.setProvider(anchor.AnchorProvider.env())
+  const program = anchor.workspace.EventCpi as Program<EventCpi>
+
+  it('Emits custom event', async () => {
+    const message = 'Hello, Solana!'
+    const transactionSignature = await program.methods.emitEvent(message).rpc()
+
+    // Wait for the transaction to be confirmed
+    await program.provider.connection.confirmTransaction(transactionSignature, 'confirmed')
+
+    // Fetch the transaction data
+    const transactionData = await program.provider.connection.getTransaction(transactionSignature, {
+      commitment: 'confirmed',
+    })
+
+    // Decode the event data from the CPI instruction data
+    const eventIx = transactionData.meta.innerInstructions[0].instructions[0]
+    const rawData = anchor.utils.bytes.bs58.decode(eventIx.data)
+    const base64Data = anchor.utils.bytes.base64.encode(rawData.subarray(8))
+    const event = program.coder.events.decode(base64Data)
+    console.log(event)
+  })
+})
+```
+
+</Tab>
+</Tabs>
+
+The `#[event_cpi]{:rs}` attribute must be added to the `#[derive(Accounts)]{:rs}` struct for any instruction that emits events with `emit_cpi!(){:rs}`. The attribute injects the additional accounts required for the self-CPI:
+
+```rust title="lib.rs" showLineNumbers=false
+#[event_cpi]
+#[derive(Accounts)]
+pub struct RequiredAccounts {
+  // --snip--
+}
+```
+
+To get the emitted event data in a client application, fetch the transaction by signature and parse the event data from the CPI instruction data:
+
+```ts title="test.ts" showLineNumbers=false
+// 1. Fetch the full transaction data using the transaction signature
+const transactionData = await program.provider.connection.getTransaction(transactionSignature, {
+  commitment: 'confirmed',
+})
+
+// 2. Extract the CPI (inner instruction) that contains the event data
+const eventIx = transactionData.meta.innerInstructions[0].instructions[0]
+
+// 3. Decode the event data
+const rawData = anchor.utils.bytes.bs58.decode(eventIx.data)
+const base64Data = anchor.utils.bytes.base64.encode(rawData.subarray(8))
+const event = program.coder.events.decode(base64Data)
+console.log(event)
+```
+
+The transaction below shows how event data appears in the transaction details. With `emit_cpi!(){:rs}`, the event data is encoded into the `data` field of an inner instruction (CPI). In the example, the encoded event data is `"data": "6AJcBqZP8afBKheoif1oA6UAiLAcqYr2RaR33pFnEY1taQp"` inside the `innerInstructions` array.
+
+{/* cspell:disable */}
+
+```json
+{
+  "blockTime": 1735854530,
+  "meta": {
+    "computeUnitsConsumed": 13018,
+    "err": null,
+    "fee": 5000,
+    "innerInstructions": [
+      {
+        "index": 0,
+        "instructions": [
+          {
+            "accounts": [1],
+            "data": "6AJcBqZP8afBKheoif1oA6UAiLAcqYr2RaR33pFnEY1taQp",
+            "programIdIndex": 2,
+            "stackHeight": 2
+          }
+        ]
+      }
+    ],
+    "loadedAddresses": {
+      "readonly": [],
+      "writable": []
+    },
+    "logMessages": [
+      "Program 2cDQ2LxKwQ8fnFUz4LLrZ157QzBnhPNeQrTSmWcpVin1 invoke [1]",
+      "Program log: Instruction: EmitEvent",
+      "Program 2cDQ2LxKwQ8fnFUz4LLrZ157QzBnhPNeQrTSmWcpVin1 invoke [2]",
+      "Program 2cDQ2LxKwQ8fnFUz4LLrZ157QzBnhPNeQrTSmWcpVin1 consumed 5000 of 192103 compute units",
+      "Program 2cDQ2LxKwQ8fnFUz4LLrZ157QzBnhPNeQrTSmWcpVin1 success",
+      "Program 2cDQ2LxKwQ8fnFUz4LLrZ157QzBnhPNeQrTSmWcpVin1 consumed 13018 of 200000 compute units",
+      "Program 2cDQ2LxKwQ8fnFUz4LLrZ157QzBnhPNeQrTSmWcpVin1 success"
+    ],
+    "postBalances": [499999999999995000, 0, 1141440],
+    "postTokenBalances": [],
+    "preBalances": [500000000000000000, 0, 1141440],
+    "preTokenBalances": [],
+    "rewards": [],
+    "status": {
+      "Ok": null
+    }
+  },
+  "slot": 3,
+  "transaction": {
+    "message": {
+      "header": {
+        "numReadonlySignedAccounts": 0,
+        "numReadonlyUnsignedAccounts": 2,
+        "numRequiredSignatures": 1
+      },
+      "accountKeys": [
+        "4kh6HxYZiAebF8HWLsUWod2EaQQ6iWHpHYCz8UcmFbM1",
+        "2brZf9PQqEvv17xtbj5WNhZJULgVZuLZT6FgH1Cqpro2",
+        "2cDQ2LxKwQ8fnFUz4LLrZ157QzBnhPNeQrTSmWcpVin1"
+      ],
+      "recentBlockhash": "2QtnU35RXTo7uuQEVARYJgWYRYtbqUxWQkK8WywUnVdY",
+      "instructions": [
+        {
+          "accounts": [1, 2],
+          "data": "3XZZ984toC4WXCLkxBsLimpEGgH75TKXRJnk",
+          "programIdIndex": 2,
+          "stackHeight": null
+        }
+      ],
+      "indexToProgramIds": {}
+    },
+    "signatures": [
+      "3gFbKahSSbitRSos4MH3cqeVv2FiTNaLCuWaLPo6R98FEbHnTshoYxopGcx74nFLqt1pbZK9i8dnr4NFXayrMndZ"
+    ]
+  }
+}
+```
+
+{/* cspell:enable */}
+
+<Callout variant="note">
+  Event data emitted through CPIs cannot currently be subscribed to directly. To access this data,
+  fetch the full transaction and manually decode the event from the CPI's instruction data.
+</Callout>

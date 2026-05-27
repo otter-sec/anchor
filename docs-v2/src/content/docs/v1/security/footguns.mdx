@@ -1,0 +1,18 @@
+---
+title: Footguns
+description: Common footguns in Anchor that can lead to security or correctness issues.
+---
+
+## Zeroed discriminators
+
+Anchor supports overriding discriminators with custom values for accounts, events, and instructions. All-zero discriminators are only supported on events and instructions. The following forms are rejected for accounts:
+
+```rust showLineNumbers=false
+#[account(discriminator = [0, 0, 0])]
+#[account(discriminator = 0)]
+#[account(discriminator = ZERO_CONSTANT)]
+```
+
+<Callout variant="danger" title="Why all-zero account discriminators are rejected">
+  An all-zero account discriminator is indistinguishable from a freshly allocated, uninitialized account. A program-owned account whose data is still zero (for example, an `AccountInfo{:rs}` that has been allocated but not yet written, or one prepared for `#[zero]{:rs}` initialization) would pass the discriminator check, exposing the program to takeover via IDL instructions and other security and usability issues.
+</Callout>

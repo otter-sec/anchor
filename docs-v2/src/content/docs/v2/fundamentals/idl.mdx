@@ -1,0 +1,191 @@
+---
+title: IDL
+description: Learn how Anchor emits IDL metadata for instructions, accounts, types, events, constants, and account resolution.
+---
+
+An Interface Description Language (IDL) file for an Anchor program is a standardized JSON file describing the program's instructions, accounts, types, events, constants, and errors. Client code generators consume it to produce typed bindings without reading the Rust source.
+
+<Callout variant="tip" title="Where to find the IDL">
+  The `$ <blue>anchor</blue> build` command writes the IDL to `target/idl/<program-name>.json{:file}` and the generated TypeScript type file to `target/types/<program-name>.ts{:file}`.
+</Callout>
+
+Anchor builds the IDL from the same Rust items used by the program. The emission path is trait-driven. Account wrappers and type wrappers expose metadata through `IdlAccountType{:rs}` and `IdlType{:rs}` under the `idl-build{:toml}` feature.
+
+`idl-build{:toml}` pulls in IDL assembly machinery and should not be shipped in production SBF binaries.
+
+## Program instructions
+
+The `instructions` array in the IDL maps directly to the public functions inside the `#[program]{:rs}` module. Each entry records the accounts and arguments the instruction requires.
+
+<Tabs items={['Program', 'IDL', 'Client']}>
+<Tab>
+
+The program exposes an `initialize(){:rs}` instruction with one argument and an `Initialize{:rs}` accounts struct:
+
+```rust showLineNumbers=false
+#[program]
+pub mod counter {
+    use super::*;
+
+    pub fn initialize(ctx: &mut Context<Initialize>, start: u64) -> Result<()> {
+        ctx.accounts.counter.count = start;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Initialize {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer)]
+    pub counter: Account<Counter>,
+    pub system_program: Program<System>,
+}
+```
+
+</Tab>
+<Tab>
+
+The IDL captures the instruction name, discriminator, account list, and argument list:
+
+```json showLineNumbers=false
+{
+  "name": "initialize",
+  "discriminator": [175, 175, 109, 31, 13, 152, 155, 237],
+  "accounts": [
+    { "name": "payer", "writable": true, "signer": true },
+    { "name": "counter", "writable": true },
+    { "name": "systemProgram", "address": "11111111111111111111111111111111" }
+  ],
+  "args": [{ "name": "start", "type": "u64" }]
+}
+```
+
+</Tab>
+<Tab>
+
+A generated client uses the IDL to build the transaction. The instruction name, args, and accounts in the builder mirror the IDL fields:
+
+```ts showLineNumbers=false
+const signature = await program.methods
+  .initialize(new BN(42))
+  .accounts({
+    payer: wallet.publicKey,
+    counter: counter.publicKey,
+  })
+  .signers([counter])
+  .rpc()
+```
+
+</Tab>
+</Tabs>
+
+## Program accounts
+
+The `accounts` array in the IDL maps to structs annotated with `#[account]{:rs}`. These structs define account data created and owned by the program.
+
+<Tabs items={['Program', 'IDL', 'Client']}>
+<Tab>
+
+The program defines a fixed-size `Counter{:rs}` account:
+
+```rust showLineNumbers=false
+#[account]
+pub struct Counter {
+    pub count: u64,
+    pub authority: Address,
+}
+```
+
+</Tab>
+<Tab>
+
+The IDL records the account name and discriminator under `accounts`, and its field layout under `types`:
+
+```json showLineNumbers=false
+{
+  "accounts": [
+    {
+      "name": "Counter",
+      "discriminator": [255, 176, 4, 245, 188, 253, 124, 25]
+    }
+  ],
+  "types": [
+    {
+      "name": "Counter",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "count", "type": "u64" },
+          { "name": "authority", "type": "pubkey" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+</Tab>
+<Tab>
+
+The TypeScript client can fetch the account by public key and decode it using the IDL:
+
+```ts showLineNumbers=false
+const counterAccount = await program.account.counter.fetch(counter)
+console.log(counterAccount.count.toString())
+```
+
+</Tab>
+</Tabs>
+
+## Discriminators
+
+Anchor assigns a discriminator to every instruction and every Anchor account type. These bytes act as runtime identifiers so the program can dispatch the right instruction handler and so deserialization can verify the right account type.
+
+By default, instruction discriminators are the first 8 bytes of `sha256("global:" + instruction_name){:rs}`. Account discriminators are the first 8 bytes of `sha256("account:" + struct_name){:rs}`.
+
+CU-sensitive programs can opt into compact one-byte instruction discriminators with `#[discrim = N]{:rs}`:
+
+```rust showLineNumbers=false
+#[program]
+pub mod vault {
+    use super::*;
+
+    #[discrim = 0]
+    pub fn deposit(ctx: &mut Context<Deposit>, amount: u64) -> Result<()> {
+        Ok(())
+    }
+}
+```
+
+You will not normally interact with discriminators directly. Anchor inserts them on the wire and verifies them on read. The discriminator fields in the generated JSON come from these rules.
+
+## Account wrappers and IDL
+
+Core wrappers such as `Signer{:rs}`, `Program<T>{:rs}`, `SystemAccount{:rs}`, `UncheckedAccount{:rs}`, and `Sysvar<T>{:rs}` surface account metadata through trait impls. SPL wrappers in `anchor-spl-v2` do the same from the downstream crate.
+
+Custom wrappers should implement the IDL traits so the generated account list remains meaningful to clients.
+
+## PDA seed metadata
+
+PDA seeds defined in `seeds{:rs}` constraints can be included in the IDL. This lets generated clients auto-resolve accounts when the seed list is inspectable.
+
+Array-form seeds get the richest output:
+
+```rust showLineNumbers=false
+#[account(seeds = [b"vault", authority.address().as_ref()], bump)]
+pub vault: Account<Vault>,
+```
+
+Opaque expression seeds still work at runtime, but the IDL cannot always describe how a client should reproduce them:
+
+```rust showLineNumbers=false
+#[account(seeds = Vault::seeds(authority.address()), bump)]
+pub vault: Account<Vault>,
+```
+
+Prefer array-form seeds for public instructions where generated clients should auto-derive PDAs.
+
+## TypeScript status
+
+The CLI builds IDL and TypeScript type files, but the TypeScript package is still alpha. Current scaffolds are pinned to `@anchor-lang/core` `^1.0.0` until a stable v2 package is published. Generated TypeScript client surfaces are active development, not a stable npm contract.

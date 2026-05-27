@@ -1,0 +1,44 @@
+---
+title: 0.32.1
+description: Anchor release notes for 0.32.1.
+---
+
+`0.32.1` patches a handful of `0.32.0` regressions, most notably a race condition during program deployment. The full list of changes lives in the [`CHANGELOG.md{:file}`](https://github.com/otter-sec/anchor/blob/v0.32.1/CHANGELOG.md#0320---2025-10-09).
+
+---
+
+## How to upgrade
+
+1. Update `anchor-cli`:
+
+   ```bash
+   <blue>avm</blue> install 0.32.1
+   ```
+
+2. Update Anchor crate(s) to `0.32.1`.
+
+3. Update TS package(s) to `0.32.1`.
+
+## Recommended Solana version
+
+The recommended Solana version is `2.3.0`. Install it with:
+
+```console
+$ <blue>sh</blue> <dim>-c</dim> "$(curl <dim>-sSfL</dim> https://release.anza.xyz/v2.3.0/install)"
+```
+
+## CLI
+
+### `<blue>anchor</blue> deploy` race condition
+
+`0.32.0` shipped automatic IDL upload on every deploy, but the IDL upload could race the program upload and run before the program account was fully available. `$ <blue>anchor</blue> deploy` now waits for the program to be fully available before uploading the IDL.
+
+## Lang
+
+### `realloc{:rs}` deprecation warning removed
+
+A leftover deprecation warning for `realloc{:rs}` was emitted on builds in `0.32.0`. The warning is removed in this release.
+
+---
+
+See the full list of notable changes in the [CHANGELOG](https://github.com/otter-sec/anchor/blob/v0.32.0/CHANGELOG.md#0320---2025-10-09).

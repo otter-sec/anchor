@@ -1,0 +1,304 @@
+---
+title: Mollusk
+description: Write tests for Solana programs in Rust using Mollusk.
+---
+
+[Mollusk](https://github.com/anza-xyz/mollusk) is a lightweight test harness for Solana programs. It provides a simple interface for testing Solana program executions in a minified Solana Virtual Machine (SVM) environment:
+
+```rust showLineNumbers=false
+mollusk.process_and_validate_instruction(
+    &instruction,   // <-- Instruction to test
+    &accounts,      // <-- Account states
+    &checks,        // <-- Checks to run on the instruction result
+);
+```
+
+It does not create any semblance of a validator runtime, but instead provisions a program execution pipeline directly from lower-level SVM components.
+
+The main processor, `process_instruction{:rs}`, creates minified instances of Agave's program cache, transaction context, and invoke context. It uses these components to directly execute the provided program's ELF using the BPF Loader.
+
+Because it does not use AccountsDB, Bank, or any other large Agave components, the harness is exceptionally fast, but it requires the user to provide an explicit list of accounts to use, since it has nowhere to load them from.
+
+The test environment can be further configured by adjusting the compute budget, feature set, or sysvars. These configurations are stored directly on the test harness (the `Mollusk{:rs}` struct), but can be manipulated through a handful of helpers.
+
+The harness exposes four main API methods:
+
+- `process_instruction{:rs}` processes an instruction and returns the result.
+- `process_and_validate_instruction{:rs}` processes an instruction and runs a series of checks on the result, panicking if any fail.
+- `process_instruction_chain{:rs}` processes a chain of instructions and returns the final result.
+- `process_and_validate_instruction_chain{:rs}` processes a chain of instructions and runs a series of checks on each result, panicking if any fail.
+
+## Single instructions
+
+`process_instruction{:rs}` processes a single instruction and returns the result. `process_and_validate_instruction{:rs}` does the same, then runs a series of checks against that result before returning it:
+
+```rust showLineNumbers=false
+use {
+    mollusk_svm::Mollusk,
+    solana_account::Account,
+    solana_sdk::{instruction::{AccountMeta, Instruction}, pubkey::Pubkey},
+};
+
+let program_id = Pubkey::new_unique();
+let key1 = Pubkey::new_unique();
+let key2 = Pubkey::new_unique();
+
+let instruction = Instruction::new_with_bytes(
+    program_id,
+    &[],
+    vec![
+        AccountMeta::new(key1, false),
+        AccountMeta::new_readonly(key2, false),
+    ],
+);
+
+let accounts = vec![
+    (key1, Account::default()),
+    (key2, Account::default()),
+];
+
+let mollusk = Mollusk::new(&program_id, "my_program");
+
+// Execute the instruction and get the result.
+let result = mollusk.process_instruction(&instruction, &accounts);
+```
+
+To apply checks via `process_and_validate_instruction{:rs}`, use the `Check{:rs}` enum, which provides a set of common checks:
+
+```rust showLineNumbers=false
+use {
+    mollusk_svm::{Mollusk, result::Check},
+    solana_account::Account,
+    solana_sdk::{
+        instruction::{AccountMeta, Instruction},
+        pubkey::Pubkey,
+        system_instruction,
+        system_program,
+    },
+};
+
+let sender = Pubkey::new_unique();
+let recipient = Pubkey::new_unique();
+
+let base_lamports = 100_000_000u64;
+let transfer_amount = 42_000u64;
+
+let instruction = system_instruction::transfer(&sender, &recipient, transfer_amount);
+let accounts = [
+    (
+        sender,
+        Account::new(base_lamports, 0, &system_program::id()),
+    ),
+    (
+        recipient,
+        Account::new(base_lamports, 0, &system_program::id()),
+    ),
+];
+let checks = vec![
+    Check::success(),
+    Check::compute_units(system_processor::DEFAULT_COMPUTE_UNITS),
+    Check::account(&sender)
+        .lamports(base_lamports - transfer_amount)
+        .build(),
+    Check::account(&recipient)
+        .lamports(base_lamports + transfer_amount)
+        .build(),
+];
+
+Mollusk::default().process_and_validate_instruction(
+    &instruction,
+    &accounts,
+    &checks,
+);
+```
+
+<Callout variant="note">
+  `Mollusk::default(){:rs}` creates a new `Mollusk{:rs}` instance without adding any provided BPF programs. It still contains a subset of the default builtin programs. For more builtin programs, add them yourself or use the `all-builtins` feature.
+</Callout>
+
+## Instruction chains
+
+`process_instruction_chain{:rs}` processes each instruction in a chain and returns the final result. `process_and_validate_instruction_chain{:rs}` does the same, then runs a series of checks on each intermediate result before returning the final one:
+
+```rust showLineNumbers=false
+use {
+    mollusk_svm::Mollusk,
+    solana_account::Account,
+    solana_sdk::{pubkey::Pubkey, system_instruction},
+};
+
+let mollusk = Mollusk::default();
+
+let alice = Pubkey::new_unique();
+let bob = Pubkey::new_unique();
+let carol = Pubkey::new_unique();
+let dave = Pubkey::new_unique();
+
+let starting_lamports = 500_000_000;
+
+let alice_to_bob = 100_000_000;
+let bob_to_carol = 50_000_000;
+let bob_to_dave = 50_000_000;
+
+mollusk.process_instruction_chain(
+    &[
+        system_instruction::transfer(&alice, &bob, alice_to_bob),
+        system_instruction::transfer(&bob, &carol, bob_to_carol),
+        system_instruction::transfer(&bob, &dave, bob_to_dave),
+    ],
+    &[
+        (alice, system_account_with_lamports(starting_lamports)),
+        (bob, system_account_with_lamports(starting_lamports)),
+        (carol, system_account_with_lamports(starting_lamports)),
+        (dave, system_account_with_lamports(starting_lamports)),
+    ],
+);
+```
+
+`process_and_validate_instruction_chain{:rs}` takes a slice of tuples, where each tuple pairs an instruction with a slice of checks. This applies specific checks to each instruction in the chain, and the method returns the result of the last instruction:
+
+```rust showLineNumbers=false
+use {
+    mollusk_svm::{Mollusk, result::Check},
+    solana_account::Account,
+    solana_sdk::{pubkey::Pubkey, system_instruction},
+};
+
+let mollusk = Mollusk::default();
+
+let alice = Pubkey::new_unique();
+let bob = Pubkey::new_unique();
+let carol = Pubkey::new_unique();
+let dave = Pubkey::new_unique();
+
+let starting_lamports = 500_000_000;
+
+let alice_to_bob = 100_000_000;
+let bob_to_carol = 50_000_000;
+let bob_to_dave = 50_000_000;
+
+mollusk.process_and_validate_instruction_chain(
+    &[
+        (
+            // 0: Alice to Bob
+            &system_instruction::transfer(&alice, &bob, alice_to_bob),
+            &[
+                Check::success(),
+                Check::account(&alice)
+                    .lamports(starting_lamports - alice_to_bob) // Alice pays
+                    .build(),
+                Check::account(&bob)
+                    .lamports(starting_lamports + alice_to_bob) // Bob receives
+                    .build(),
+                Check::account(&carol)
+                    .lamports(starting_lamports) // Unchanged
+                    .build(),
+                Check::account(&dave)
+                    .lamports(starting_lamports) // Unchanged
+                    .build(),
+            ],
+        ),
+        (
+            // 1: Bob to Carol
+            &system_instruction::transfer(&bob, &carol, bob_to_carol),
+            &[
+                Check::success(),
+                Check::account(&alice)
+                    .lamports(starting_lamports - alice_to_bob) // Unchanged
+                    .build(),
+                Check::account(&bob)
+                    .lamports(starting_lamports + alice_to_bob - bob_to_carol) // Bob pays
+                    .build(),
+                Check::account(&carol)
+                    .lamports(starting_lamports + bob_to_carol) // Carol receives
+                    .build(),
+                Check::account(&dave)
+                    .lamports(starting_lamports) // Unchanged
+                    .build(),
+            ],
+        ),
+        (
+            // 2: Bob to Dave
+            &system_instruction::transfer(&bob, &dave, bob_to_dave),
+            &[
+                Check::success(),
+                Check::account(&alice)
+                    .lamports(starting_lamports - alice_to_bob) // Unchanged
+                    .build(),
+                Check::account(&bob)
+                    .lamports(starting_lamports + alice_to_bob - bob_to_carol - bob_to_dave) // Bob pays
+                    .build(),
+                Check::account(&carol)
+                    .lamports(starting_lamports + bob_to_carol) // Unchanged
+                    .build(),
+                Check::account(&dave)
+                    .lamports(starting_lamports + bob_to_dave) // Dave receives
+                    .build(),
+            ],
+        ),
+    ],
+    &[
+        (alice, system_account_with_lamports(starting_lamports)),
+        (bob, system_account_with_lamports(starting_lamports)),
+        (carol, system_account_with_lamports(starting_lamports)),
+        (dave, system_account_with_lamports(starting_lamports)),
+    ],
+);
+```
+
+<Callout variant="important" title="Chains aren't transactions">
+  Instruction chains are not equivalent to Solana transactions. Mollusk does not impose
+  transaction-level constraints such as loaded account keys or size limits. Use chains for testing
+  program execution, not for modeling transaction semantics.
+</Callout>
+
+## Benchmarking compute units
+
+The Mollusk Compute Unit Bencher benchmarks the compute unit usage of Solana programs. It provides a simple API for writing benchmarks that can be re-run as the program changes.
+
+A markdown file is generated containing every compute unit benchmark. If a benchmark has a previous value, the delta is also recorded, making it easy to track the impact of program changes on compute unit usage:
+
+```rust showLineNumbers=false
+use {
+    mollusk_svm_bencher::MolluskComputeUnitBencher,
+    mollusk_svm::Mollusk,
+    /* ... */
+};
+
+// Optionally disable logging.
+solana_logger::setup_with("");
+
+/* Instruction & accounts setup ... */
+
+let mollusk = Mollusk::new(&program_id, "my_program");
+
+MolluskComputeUnitBencher::new(mollusk)
+    .bench(("bench0", &instruction0, &accounts0))
+    .bench(("bench1", &instruction1, &accounts1))
+    .bench(("bench2", &instruction2, &accounts2))
+    .bench(("bench3", &instruction3, &accounts3))
+    .must_pass(true)
+    .out_dir("../target/benches")
+    .execute();
+```
+
+Pass `must_pass(true){:rs}` to trigger a panic if any defined benchmark tests do not pass. `out_dir{:rs}` specifies the directory where the markdown file will be written.
+
+Invoke this benchmark test with `$ <blue>cargo</blue> bench`. You may need to add a bench entry to the project's `Cargo.toml{:file}`:
+
+```toml
+[[bench]]
+name = "compute_units"
+harness = false
+```
+
+The markdown file will contain entries according to the defined benchmarks:
+
+```markdown
+| Name   | CUs   | Delta  |
+| ------ | ----- | ------ |
+| bench0 | 450   | --     |
+| bench1 | 579   | -129   |
+| bench2 | 1,204 | +754   |
+| bench3 | 2,811 | +2,361 |
+```

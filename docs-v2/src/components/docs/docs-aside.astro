@@ -1,0 +1,84 @@
+---
+import WordmarkDark from '@/assets/wordmark-dark.svg'
+import WordmarkLight from '@/assets/wordmark-light.svg'
+import EditLink from '@/components/docs/edit-link.astro'
+import SearchTrigger from '@/components/docs/search-trigger.astro'
+import Sidebar from '@/components/docs/sidebar.astro'
+import VersionSwitcher from '@/components/docs/version-switcher.astro'
+import Icon from '@/components/icon.astro'
+import Link from '@/components/link.astro'
+import ThemeToggle from '@/components/theme-toggle.astro'
+import { SITE, SOCIAL_LINKS } from '@/consts'
+import { BASE_URL } from '@/lib/docs'
+import type { DocsVersionSwitchOption } from '@/lib/sidebar'
+import type { SidebarNode } from '@/types'
+
+interface Props {
+  tree: SidebarNode[]
+  versionTrees?: {
+    v1: SidebarNode[]
+    v2: SidebarNode[]
+  }
+  versionOptions?: DocsVersionSwitchOption[]
+}
+
+const { tree, versionTrees, versionOptions } = Astro.props
+const gitHubLink = SOCIAL_LINKS.find((link) => link.label === 'GitHub')
+---
+
+<aside class="hidden xl:block" aria-label="Site navigation">
+  <div
+    class="sticky top-(--docs-announcement-offset,0px) flex h-[calc(100dvh-var(--docs-announcement-offset,0px))] flex-col gap-4 pt-16 pr-2 pb-6 pl-6"
+  >
+    <Link href={BASE_URL} class="flex items-center no-underline" aria-label={SITE.title}>
+      <WordmarkLight class="block h-6 w-auto dark:hidden" aria-hidden="true" />
+      <WordmarkDark class="hidden h-6 w-auto dark:block" aria-hidden="true" />
+    </Link>
+
+    {versionOptions && <VersionSwitcher options={versionOptions} />}
+
+    <SearchTrigger />
+
+    <nav class="-mx-2 min-h-0 flex-1" aria-label="Documentation" data-sidebar-nav>
+      {
+        versionTrees ? (
+          <>
+            <div class="h-full" data-version-sidebar="v2">
+              <Sidebar tree={versionTrees.v2} class="h-full px-2" />
+            </div>
+            <div class="h-full" data-version-sidebar="v1" hidden>
+              <Sidebar tree={versionTrees.v1} class="h-full px-2" />
+            </div>
+          </>
+        ) : (
+          <Sidebar tree={tree} class="h-full px-2" />
+        )
+      }
+    </nav>
+
+    <div class="border-border/70 flex h-[3.75rem] items-center justify-between border-t">
+      <ThemeToggle transition:persist />
+      <div class="flex items-center gap-1">
+        {
+          gitHubLink && (
+            <Link
+              href={gitHubLink.href}
+              external
+              class="text-muted-foreground hover:bg-muted/50 hover:text-foreground inline-flex size-8 items-center justify-center rounded-md no-underline transition-colors"
+              aria-label="GitHub"
+            >
+              <Icon name="brand-github" class="size-4" />
+            </Link>
+          )
+        }
+        <EditLink id="docs-edit-link" href="#" hidden />
+      </div>
+    </div>
+  </div>
+</aside>
+
+<script>
+  import { mountDocsAside } from '@/lib/client/docs-aside'
+
+  mountDocsAside()
+</script>

@@ -1,0 +1,243 @@
+---
+title: Cross program invocation
+description: Learn how to implement Cross Program Invocations (CPIs) in Anchor programs to enable composability between different Solana programs.
+---
+
+import Code from '@/components/code.astro'
+import lib from './_cpi/lib.rs?raw'
+import libPda from './_cpi/lib_pda.rs?raw'
+
+A Cross Program Invocation (CPI) is one program calling an instruction on another program. This is how composability works on Solana: programs build on top of each other rather than reimplementing the same logic. The example below uses a SOL transfer to illustrate the mechanics, but the same pattern applies to any instruction on any program.
+
+## Cross program invocations
+
+The `lib.rs{:file}` file below defines a single `sol_transfer(){:rs}` instruction. When invoked, it issues a CPI to the System Program's `transfer(){:rs}` instruction:
+
+<Code code={lib} lang="rust" title="lib.rs" meta="{10,22}" />
+
+The `cpi.test.ts{:file}` file invokes `sol_transfer(){:rs}` and logs a link to the transaction details on SolanaFM:
+
+```ts title="cpi.test.ts" showLineNumbers=false
+it('SOL Transfer Anchor', async () => {
+  const transactionSignature = await program.methods
+    .solTransfer(new BN(transferAmount))
+    .accounts({
+      sender: sender.publicKey,
+      recipient: recipient.publicKey,
+    })
+    .rpc()
+
+  console.log(
+    `\nTransaction Signature:` +
+      `https://solana.fm/tx/${transactionSignature}?cluster=devnet-solana`,
+  )
+})
+```
+
+The transaction details show the Anchor program invoked first (instruction 1), which then invokes the System Program (instruction 1.1):
+
+![Transaction details](/docs/basics/cpi/transaction-details.png)
+
+### Example explanation
+
+A CPI is constructed the same way as any other Solana instruction. The caller must specify:
+
+1. The program ID of the program being called.
+2. The accounts required by the instruction.
+3. Any instruction data required as arguments.
+
+The System Program's `transfer(){:rs}` instruction requires a `from{:rs}` account that sends the SOL and a `to{:rs}` account that receives it. The `SolTransfer{:rs}` struct declares both accounts plus the System Program itself, since the CPI invokes that program:
+
+<Code code={lib} lang="rust" title="lib.rs" meta="collapse={1-26}" />
+
+The tabs below present three approaches to implementing the same CPI, each at a different level of abstraction:
+
+<Tabs groupId="language" items={['CpiContext{:rs}', 'invoke(){:rs}', 'Manual']}>
+<Tab>
+
+The first approach uses Anchor's [`CpiContext{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/context/struct.CpiContext.html), which bundles the `program_id{:rs}` and accounts required by the instruction. The `cpi_context{:rs}` is then passed to the `transfer(){:rs}` helper to invoke the instruction:
+
+<Code code={lib} lang="rust" title="lib.rs" meta="{15-22} collapse={1-9, 24-34}" />
+
+The `cpi_context{:rs}` variable specifies the program ID (System Program) and the accounts (sender and recipient) required by the `transfer(){:rs}` instruction. The `cpi_context{:rs}` and `amount{:rs}` are then passed into `transfer(){:rs}` to execute the CPI.
+
+</Tab>
+<Tab>
+
+The next approach uses `invoke(){:rs}` directly with `system_instruction::transfer(){:rs}`, the pattern typically seen in native Rust programs. The first approach is an abstraction over this one:
+
+```rust showLineNumbers=false {8-9,11}
+use anchor_lang::solana_program::{program::invoke, system_instruction};
+
+pub fn sol_transfer(ctx: Context<SolTransfer>, amount: u64) -> Result<()> {
+    let from_pubkey = ctx.accounts.sender.to_account_info();
+    let to_pubkey = ctx.accounts.recipient.to_account_info();
+    let program_id = ctx.accounts.system_program.to_account_info();
+
+    let instruction =
+        &system_instruction::transfer(&from_pubkey.key(), &to_pubkey.key(), amount);
+
+    invoke(instruction, &[from_pubkey, to_pubkey, program_id])?;
+    Ok(())
+}
+```
+
+</Tab>
+<Tab>
+
+The instruction can also be built manually and passed into `invoke(){:rs}`. This is useful when no helper crate exists for the target program. The caller must specify the `AccountMeta{:rs}` entries and construct the instruction data buffer:
+
+```rust showLineNumbers=false {21-25,28}
+pub fn sol_transfer(ctx: Context<SolTransfer>, amount: u64) -> Result<()> {
+    let from_pubkey = ctx.accounts.sender.to_account_info();
+    let to_pubkey = ctx.accounts.recipient.to_account_info();
+    let program_id = ctx.accounts.system_program.to_account_info();
+
+    // Prepare instruction AccountMetas
+    let account_metas = vec![
+        AccountMeta::new(from_pubkey.key(), true),
+        AccountMeta::new(to_pubkey.key(), false),
+    ];
+
+    // SOL transfer instruction discriminator
+    let instruction_discriminator: u32 = 2;
+
+    // Prepare instruction data
+    let mut instruction_data = Vec::with_capacity(4 + 8);
+    instruction_data.extend_from_slice(&instruction_discriminator.to_le_bytes());
+    instruction_data.extend_from_slice(&amount.to_le_bytes());
+
+    // Create instruction
+    let instruction = Instruction {
+        program_id: program_id.key(),
+        accounts: account_metas,
+        data: instruction_data,
+    };
+
+    // Invoke instruction
+    invoke(&instruction, &[from_pubkey, to_pubkey, program_id])?;
+    Ok(())
+}
+```
+
+When building an instruction in Rust, use the following syntax to specify the `AccountMeta{:rs}` for each account:
+
+```rust showLineNumbers=false
+AccountMeta::new(account1_pubkey, true),           // writable, signer
+AccountMeta::new(account2_pubkey, false),          // writable, not signer
+AccountMeta::new_readonly(account3_pubkey, false), // not writable, not signer
+AccountMeta::new_readonly(account4_pubkey, true),  // not writable, signer
+```
+
+</Tab>
+</Tabs>
+
+A reference program containing all three approaches is available on [Solana Playground](https://beta.solpg.io/github.com/ZYJLiu/doc-examples/tree/main/cpi).
+
+## Cross program invocations with PDA signers
+
+A program can sign a CPI for a Program Derived Address (PDA) derived from its own program ID. The example below transfers SOL from a PDA to a recipient by passing the PDA's seeds into the CPI.
+
+The `lib.rs{:file}` file declares a single `sol_transfer(){:rs}` instruction. The sender is a `pda_account{:rs}` derived from the seeds `b"pda"{:rs}` and the recipient's address:
+
+<Code code={libPda} lang="rust" title="lib.rs" meta="{10,17,26}" />
+
+The `cpi.test.ts{:file}` file derives the PDA on the client, funds it, then invokes `sol_transfer(){:rs}` to move SOL back to the wallet via a CPI signed by the program:
+
+```ts title="cpi.test.ts" showLineNumbers=false {1-4}
+const [PDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from('pda'), wallet.publicKey.toBuffer()],
+  program.programId,
+)
+
+it('Fund PDA with SOL', async () => {
+  const transferInstruction = SystemProgram.transfer({
+    fromPubkey: wallet.publicKey,
+    toPubkey: PDA,
+    lamports: transferAmount,
+  })
+
+  const transaction = new Transaction().add(transferInstruction)
+
+  const transactionSignature = await sendAndConfirmTransaction(
+    connection,
+    transaction,
+    [wallet.payer], // signer
+  )
+
+  console.log(
+    `\nTransaction Signature:` +
+      `https://solana.fm/tx/${transactionSignature}?cluster=devnet-solana`,
+  )
+})
+
+it('SOL Transfer with PDA signer', async () => {
+  const transactionSignature = await program.methods
+    .solTransfer(new BN(transferAmount))
+    .accounts({
+      pdaAccount: PDA,
+      recipient: wallet.publicKey,
+    })
+    .rpc()
+
+  console.log(
+    `\nTransaction Signature: https://solana.fm/tx/${transactionSignature}?cluster=devnet-solana`,
+  )
+})
+```
+
+The transaction details show the custom program invoked first (instruction 1), which then invokes the System Program (instruction 1.1):
+
+![Transaction details](/docs/basics/cpi/transaction-details-pda.png)
+
+### Example explanation
+
+The sender is a PDA the program signs for. The seeds for the `pda_account{:rs}` are the hardcoded string `b"pda"{:rs}` and the address of the `recipient{:rs}`, so each recipient gets a unique PDA:
+
+<Code code={libPda} lang="rust" title="lib.rs" meta="{37} collapse={1-32}" />
+
+The tabs below present two approaches to implementing the same PDA-signed CPI:
+
+<Tabs groupId="language" items={['CpiContext{:rs}', 'invoke_signed(){:rs}']}>
+<Tab>
+
+The first approach uses [`CpiContext{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/context/struct.CpiContext.html), then attaches the signer seeds via `with_signer(){:rs}`:
+
+<Code code={libPda} lang="rust" title="lib.rs" meta="{15-17,26,28} collapse={1-9, 30-44}" />
+
+The `signer_seeds{:rs}` slice contains the seeds plus the `bump_seed{:rs}`. The bump seed for a PDA validated by the `seeds{:rs}` constraint is available via `ctx.bumps{:rs}` followed by the field name.
+
+When the CPI executes, the Solana runtime validates that the supplied seeds and the caller program ID derive a valid PDA, then adds that PDA as a signer on the invocation. This is the mechanism programs use to sign for PDAs derived from their program ID.
+
+</Tab>
+<Tab>
+
+The first approach is a wrapper around `invoke_signed(){:rs}` paired with `system_instruction::transfer(){:rs}`. Calling `invoke_signed(){:rs}` directly produces an equivalent CPI:
+
+```rust showLineNumbers=false {11,16}
+use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
+
+pub fn sol_transfer(ctx: Context<SolTransfer>, amount: u64) -> Result<()> {
+    let from_pubkey = ctx.accounts.pda_account.to_account_info();
+    let to_pubkey = ctx.accounts.recipient.to_account_info();
+    let program_id = ctx.accounts.system_program.to_account_info();
+
+    let seed = to_pubkey.key();
+    let bump_seed = ctx.bumps.pda_account;
+
+    let signer_seeds: &[&[&[u8]]] = &[&[b"pda", seed.as_ref(), &[bump_seed]]];
+
+    let instruction =
+        &system_instruction::transfer(&from_pubkey.key(), &to_pubkey.key(), amount);
+
+    invoke_signed(instruction, &[from_pubkey, to_pubkey, program_id], signer_seeds)?;
+    Ok(())
+}
+```
+
+The `signer_seeds{:rs}` are passed into `invoke_signed(){:rs}` as the third argument.
+
+</Tab>
+</Tabs>
+
+A reference program containing both approaches is available on [Solana Playground](https://beta.solpg.io/github.com/ZYJLiu/doc-examples/tree/main/cpi-pda).

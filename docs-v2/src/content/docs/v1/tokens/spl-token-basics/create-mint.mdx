@@ -1,0 +1,172 @@
+---
+title: Create a token mint
+description: Create and initialize token mint accounts in Anchor programs using account constraints, with examples for both generated keypairs and program derived addresses.
+---
+
+import Code from '@/components/code.astro'
+import libKeypair from './_create-mint/lib_keypair.rs?raw'
+import libPda from './_create-mint/lib_pda.rs?raw'
+
+A mint account is the account type in Solana's [Token Program](https://github.com/solana-program/token) and [Token Extensions Program](https://github.com/solana-program/token-2022) that represents a token on the network and stores its global metadata. The address of the mint account acts as the token's unique identifier. For example, the USDC stablecoin's mint address is `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`, viewable on [Solana Explorer](https://explorer.solana.com/address/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v).
+
+## Mint account data
+
+Both the [Token Program](https://github.com/solana-program/token/blob/main/program/src/state.rs#L18-L32) and the [Token Extensions Program](https://github.com/solana-program/token-2022/blob/main/program/src/state.rs#L30-L43) share the same base layout for mint data:
+
+```rust showLineNumbers=false
+/// Mint data.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Mint {
+    /// Optional authority used to mint new tokens. The mint authority may only
+    /// be provided during mint creation. If no mint authority is present
+    /// then the mint has a fixed supply and no further tokens may be
+    /// minted.
+    pub mint_authority: COption<Pubkey>,
+    /// Total supply of tokens.
+    pub supply: u64,
+    /// Number of base 10 digits to the right of the decimal place.
+    pub decimals: u8,
+    /// Is `true` if this structure has been initialized
+    pub is_initialized: bool,
+    /// Optional authority to freeze token accounts.
+    pub freeze_authority: COption<Pubkey>,
+}
+```
+
+## Usage
+
+The `token_interface{:rs}` module from the [`anchor-spl`](https://docs.rs/anchor-spl/latest/anchor_spl/) crate provides types that work with both the Token Program and the Token Extensions Program. Declaring a mint with `InterfaceAccount<'info, Mint>{:rs}` and `Interface<'info, TokenInterface>{:rs}` lets the same program accept either token program at runtime:
+
+<Code code={libKeypair} lang="rust" title="lib.rs" meta="collapse={1-15}" />
+
+### Account types
+
+The [`InterfaceAccount{:rs}`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/accounts/interface_account.rs#L163-L169) wrapper accepts accounts owned by either token program. Anchor deserializes the account data into the `Mint{:rs}` struct regardless of which program created it.
+
+### Account constraints
+
+The following constraints, used in combination, create and initialize a new mint account:
+
+| Constraint | Description |
+| --- | --- |
+| `init{:rs}` | Creates the account via a CPI to the System Program, allocating space and transferring ownership to the appropriate token program. |
+| `payer{:rs}` | The account that pays the rent for the new account. |
+| `mint::decimals{:rs}` | The number of decimal places for the token. Setting `6{:rs}` means one token equals 1,000,000 base units. |
+| `mint::authority{:rs}` | The account permitted to mint new tokens. Required. |
+| `mint::freeze_authority{:rs}` | The account permitted to freeze token accounts. Optional. A frozen token account cannot be the source or destination of `transfer{:rs}`, `burn{:rs}`, or other token program instructions. |
+
+<Code code={libKeypair} lang="rust" title="lib.rs" meta="collapse={1-19, 27-30}" />
+
+Adding the `seeds{:rs}` and `bump{:rs}` constraints creates the mint at a Program Derived Address (PDA) instead. The mint address can then be derived from the same seeds at any time:
+
+<Code code={libPda} lang="rust" title="lib.rs" meta="collapse={1-19, 29-32}" />
+
+<Callout variant="note" title="Reusing the PDA as authority">
+  The same PDA can serve as both the mint address and the `mint::authority{:rs}`. When the program is the authority, it can sign CPIs to mint new tokens, all from a single deterministic address.
+</Callout>
+
+## Examples
+
+Two approaches create a mint account, both running entirely through account constraints. The first generates a keypair client-side and uses its public key as the mint address. The second derives the mint address from a Program Derived Address.
+
+### Create mint using keypair
+
+A new keypair is generated client-side and passed in as the mint address. Use this when a deterministic address is not required.
+
+<Tabs groupId="view" items={["Program", "Client"]}>
+<Tab>
+
+<Code code={libKeypair} lang="rust" title="lib.rs" meta="{20-26}" />
+
+</Tab>
+<Tab>
+
+```ts title="test.ts" showLineNumbers=false
+import * as anchor from '@anchor-lang/core'
+import { Program } from '@anchor-lang/core'
+import { TokenExample } from '../target/types/token_example'
+import { TOKEN_2022_PROGRAM_ID, getMint } from '@solana/spl-token'
+
+describe('token-example', () => {
+  anchor.setProvider(anchor.AnchorProvider.env())
+
+  const program = anchor.workspace.TokenExample as Program<TokenExample>
+  const mint = anchor.web3.Keypair.generate()
+
+  it('Is initialized!', async () => {
+    const tx = await program.methods
+      .createMint()
+      .accounts({
+        mint: mint.publicKey,
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .signers([mint])
+      .rpc({ commitment: 'confirmed' })
+    console.log('Your transaction signature', tx)
+
+    const mintAccount = await getMint(
+      program.provider.connection,
+      mint.publicKey,
+      'confirmed',
+      TOKEN_2022_PROGRAM_ID,
+    )
+
+    console.log('Mint Account', mintAccount)
+  })
+})
+```
+
+</Tab>
+</Tabs>
+
+### Create mint using PDA
+
+A PDA derived from program-defined seeds serves as the mint address. The same seeds reproduce the address from any client without storing it externally.
+
+<Tabs groupId="view" items={["Program", "Client"]}>
+<Tab>
+
+<Code code={libPda} lang="rust" title="lib.rs" meta="{20-28}" />
+
+</Tab>
+<Tab>
+
+```ts title="test.ts" showLineNumbers=false
+import * as anchor from '@anchor-lang/core'
+import { Program } from '@anchor-lang/core'
+import { TokenExample } from '../target/types/token_example'
+import { TOKEN_2022_PROGRAM_ID, getMint } from '@solana/spl-token'
+
+describe('token-example', () => {
+  anchor.setProvider(anchor.AnchorProvider.env())
+
+  const program = anchor.workspace.TokenExample as Program<TokenExample>
+  const [mint, bump] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('mint')],
+    program.programId,
+  )
+
+  it('Is initialized!', async () => {
+    const tx = await program.methods
+      .createMint()
+      .accounts({
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .rpc({ commitment: 'confirmed' })
+    console.log('Your transaction signature', tx)
+
+    const mintAccount = await getMint(
+      program.provider.connection,
+      mint,
+      'confirmed',
+      TOKEN_2022_PROGRAM_ID,
+    )
+
+    console.log('Mint Account', mintAccount)
+  })
+})
+```
+
+</Tab>
+</Tabs>

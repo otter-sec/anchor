@@ -1,0 +1,81 @@
+---
+title: Borsh accounts and realloc
+description: 'Variable-length account data, `InitSpace{:rs}`, realloc constraints, and borrow release.'
+---
+
+Use `BorshAccount<T>{:rs}` when account data is naturally variable-length. This is the account model for state that needs `Vec{:rs}`, `String{:rs}`, or enum payloads that cannot fit into a fixed Pod layout:
+
+```rust showLineNumbers=false
+#[account(borsh)]
+#[derive(InitSpace)]
+pub struct Profile {
+    pub owner: Address,
+    #[max_len(64)]
+    pub name: String,
+    #[max_len(16)]
+    pub friends: Vec<Address>,
+}
+```
+
+The `#[account(borsh)]{:rs}` attribute derives borsh serialization for the account type. `BorshAccount<T>{:rs}` deserializes on load and serializes on successful exit.
+
+## Sizing new accounts
+
+`#[derive(InitSpace)]{:rs}` computes the maximum serialized size from `#[max_len(...)]{:rs}` annotations:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct CreateProfile {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer, space = 8 + Profile::INIT_SPACE)]
+    pub profile: BorshAccount<Profile>,
+    pub system_program: Program<System>,
+}
+```
+
+The extra `8` is the Anchor discriminator.
+
+## Realloc
+
+The derive supports realloc constraints for accounts that need to grow or shrink. This example follows the v2 realloc fixture and keeps the size formula tied to one variable-length field:
+
+```rust showLineNumbers=false
+#[account(borsh)]
+pub struct DynData {
+    pub items: Vec<u8>,
+}
+
+#[derive(Accounts)]
+#[instruction(new_items: Vec<u8>)]
+pub struct Grow {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        mut,
+        realloc = 8 + 4 + new_items.len(),
+        realloc_payer = payer,
+        realloc_zero = false,
+    )]
+    pub data: BorshAccount<DynData>,
+    pub system_program: Program<System>,
+}
+```
+
+The `8` is the Anchor discriminator. The `4` is the borsh length prefix for `Vec<u8>{:rs}`.
+
+The `account-resize{:toml}` feature is on by default because realloc needs pinocchio's account-resize hook. Do not disable that feature while the program still uses realloc helpers.
+
+## CPI re-entry
+
+`BorshAccount<T>{:rs}` holds a borrow guard. If a CPI will mutate the same account, release the borrow before the CPI and reacquire it after:
+
+```rust showLineNumbers=false
+ctx.accounts.profile.release_borrow()?;
+other_program::cpi::update_profile(cpi_ctx)?;
+ctx.accounts.profile.reacquire_borrow_mut(ctx.program_id)?;
+```
+
+`release_borrow(){:rs}` commits in-memory changes first, so the CPI sees the latest state. `reacquire_borrow_mut(){:rs}` reruns owner, discriminator, and size checks before deserializing the post-CPI bytes.
+
+`Account<T>{:rs}` does not need this pattern because it reads zero-copy from the account buffer.

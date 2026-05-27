@@ -1,0 +1,336 @@
+---
+title: Anchor CLI
+description: CLI reference for project scaffolding, builds, tests, profiling, debugger, coverage, IDL, and workspace commands.
+---
+
+The Anchor CLI is the workspace toolchain. It scaffolds projects, builds programs, runs tests, generates IDLs, deploys, and drives the trace tooling.
+
+This alpha is installed from git:
+
+```console showLineNumbers=false
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor.git <dim>--branch</dim> anchor-next anchor-cli <dim>--locked</dim> <dim>--force</dim>
+```
+
+<Callout variant="warning" title="Overwrites `anchor` on PATH">
+  `$ <blue>cargo</blue> install` overwrites the `anchor` binary on your `PATH`, including one
+  managed by AVM. To keep another Anchor install available, run this binary from a source checkout.
+</Callout>
+
+Run `$ <blue>anchor</blue> <dim>--help</dim>` or `$ <blue>anchor</blue> <dim><command></dim> <dim>--help</dim>` for the exact flags supported by your checkout.
+
+## Common commands
+
+| Command | Purpose |
+| --- | --- |
+| `$ <blue>anchor</blue> init` | Create a new workspace. |
+| `$ <blue>anchor</blue> new` | Add a program to an existing workspace. |
+| `$ <blue>anchor</blue> build` | Build workspace programs and emit IDLs. |
+| `$ <blue>anchor</blue> test` | Build, deploy when needed, and run tests. |
+| `$ <blue>anchor</blue> test <dim>--profile</dim>` | Run tests with register tracing and flamegraphs. |
+| `$ <blue>anchor</blue> debugger` | Open the instruction-level debugger. |
+| `$ <blue>anchor</blue> coverage` | Generate LCOV from SBF register traces. |
+| `$ <blue>anchor</blue> idl` | Build, fetch, initialize, and manage IDLs. |
+| `$ <blue>anchor</blue> codama` | Convert IDLs to Codama and render client libraries. |
+| `$ <blue>anchor</blue> account` | Deserialize an account using an IDL type. |
+| `$ <blue>anchor</blue> keys` | Inspect and sync program keypairs. |
+| `$ <blue>anchor</blue> program` | Deploy and manage programs. |
+
+## `<blue>anchor</blue> init`
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> init counter <dim>--no-install</dim>
+```
+
+Initializes a new workspace. The default program template is the modular Rust template, and the default test template is LiteSVM.
+
+The generated workspace includes:
+
+<FileTree>
+  <Dir name="programs" comment="Solana program crates" />
+  <Dir name="migrations" comment="Deploy scripts" />
+  <Dir name="tests" comment="Workspace-level tests when selected" />
+  <File name="Anchor.toml" comment="Anchor workspace config" />
+  <File name="Cargo.toml" comment="Rust workspace config" />
+  <File name="package.json" comment="JavaScript dependencies when installed" />
+</FileTree>
+
+Useful flags:
+
+| Flag | Description |
+| --- | --- |
+| `<dim>--no-install</dim>` | Skip JavaScript dependency installation. |
+| `<dim>--no-git</dim>` | Skip git initialization. |
+| `<dim>--template</dim> <dim>multiple</dim>` | Use the modular Rust program layout. This is the default. |
+| `<dim>--template</dim> <dim>single</dim>` | Use a single `lib.rs{:file}` program layout. |
+| `<dim>--test-template</dim> <dim>litesvm</dim>` | Generate Rust LiteSVM tests. This is the default. |
+| `<dim>--test-template</dim> <dim>mollusk</dim>` | Generate Mollusk Rust tests. |
+| `<dim>--javascript</dim>` | Use JavaScript instead of TypeScript for JS templates. |
+| `<dim>--package-manager</dim> <dim>pnpm</dim>` | Choose a package manager instead of auto-detecting. |
+
+The LiteSVM template sets `skip_local_validator = true{:toml}` in `Anchor.toml{:file}` and adds this feature to the program crate:
+
+```toml showLineNumbers=false
+[features]
+profile = ["anchor-v2-testing/profile"]
+```
+
+That feature is what powers `$ <blue>anchor</blue> test <dim>--profile</dim>`, `$ <blue>anchor</blue> debugger`, and `$ <blue>anchor</blue> coverage`.
+
+## `<blue>anchor</blue> new`
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> new escrow
+```
+
+Creates a new program under `programs/{:dir}` in an existing workspace. It uses the modular template by default:
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> new escrow <dim>--template</dim> multiple
+$ <blue>anchor</blue> new prototype <dim>--template</dim> single
+```
+
+`$ <blue>anchor</blue> new` does not create the workspace-level test harness. Use `$ <blue>anchor</blue> init` when starting a new project from scratch.
+
+## `<blue>anchor</blue> build`
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> build
+```
+
+Builds the workspace programs through `$ <blue>cargo</blue> build-sbf`, writes deploy artifacts under `target/deploy/{:dir}`, and emits IDLs under `target/idl/{:dir}`.
+
+Useful flags:
+
+| Flag | Description |
+| --- | --- |
+| `<dim>--program-name</dim> <dim><name></dim>` | Build a single program. |
+| `<dim>--no-idl</dim>` | Build the SBF program without emitting IDL. |
+| `<dim>--idl</dim> <dim><dir></dim>` | Write IDL JSON to a custom directory. |
+| `<dim>--idl-ts</dim> <dim><dir></dim>` | Write TypeScript IDL types to a custom directory. |
+| `<dim>--ignore-keys</dim>` | Skip the program-keypair and `declare_id!{:rs}` mismatch check. |
+| `<dim>--verifiable</dim>` | Build in a deterministic Docker environment. |
+| `<dim>--no-docs</dim>` | Suppress doc strings in IDL output. |
+
+Forward arguments to `$ <blue>cargo</blue> build-sbf` after `<dim>--</dim>`:
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> build <dim>--</dim> <dim>--features</dim> my-feature
+```
+
+## `<blue>anchor</blue> test`
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> test
+```
+
+Builds the workspace, deploys programs when needed, and runs the configured test script.
+
+In LiteSVM workspaces, the scaffolded `skip_local_validator = true{:toml}` setting means `$ <blue>anchor</blue> test` runs Rust tests without starting a validator. If the setting is absent and the configured cluster is localnet, the CLI can still start a local validator unless `<dim>--skip-local-validator</dim>` is passed.
+
+Useful flags:
+
+| Flag                                          | Description                                  |
+| --------------------------------------------- | -------------------------------------------- |
+| `<dim>--program-name</dim> <dim><name></dim>` | Build and test one program.                  |
+| `<dim>--skip-build</dim>`                     | Reuse existing build artifacts.              |
+| `<dim>--skip-deploy</dim>`                    | Run tests against already deployed programs. |
+| `<dim>--skip-local-validator</dim>`           | Do not start a local validator.              |
+| `<dim>--no-idl</dim>`                         | Skip IDL generation.                         |
+| `<dim>--run</dim> <dim><path></dim>`          | Run tests under a specific path.             |
+| `<dim>--validator</dim> <dim>surfpool</dim>`  | Use Surfpool as the local network backend.   |
+| `<dim>--validator</dim> <dim>legacy</dim>`    | Use `$ <blue>solana-test-validator</blue>`.  |
+
+### Profiling
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> test <dim>--profile</dim>
+```
+
+Records per-test SBF register traces and renders flamegraph SVGs under `target/anchor-v2-profile/{:dir}`. This requires Rust tests that call `anchor_v2_testing::svm(){:rs}` and a crate feature that forwards to `anchor-v2-testing/profile`.
+
+## `<blue>anchor</blue> debugger`
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> debugger
+$ <blue>anchor</blue> debugger initialize
+$ <blue>anchor</blue> debugger <dim>--skip-run</dim>
+```
+
+Runs the same trace-producing path as `$ <blue>anchor</blue> test <dim>--profile</dim>`, then opens a TUI over captured instructions. The optional positional argument filters captured traces to tests whose name contains that substring.
+
+Useful flags:
+
+| Flag | Description |
+| --- | --- |
+| `<dim>--skip-run</dim>` | Open the TUI over existing traces in `target/anchor-v2-profile/{:dir}`. |
+| `<dim>--skip-build</dim>` | Skip `$ <blue>cargo</blue> build-sbf` when the deploy artifact is fresh. |
+| `<dim>--skip-lint</dim>` | Forwarded to the underlying test invocation. |
+| `<dim>--gdb</dim>` | Capture traces through the sbpf gdb-stub path. This is much slower. |
+
+The debugger only works with trace-producing Rust tests. If no traces are found, check that the tests call `anchor_v2_testing::svm(){:rs}` and that the program crate has `profile = ["anchor-v2-testing/profile"]{:toml}`.
+
+## `<blue>anchor</blue> coverage`
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> coverage
+```
+
+Builds programs with DWARF info, runs LiteSVM tests with register tracing, maps executed program counters back to Rust source lines, and writes LCOV.
+
+Useful flags:
+
+| Flag | Description |
+| --- | --- |
+| `<dim>--skip-run</dim>` | Generate coverage from existing traces. |
+| `<dim>--skip-build</dim>` | Skip `$ <blue>cargo</blue> build-sbf` when artifacts are fresh. |
+| `<dim>--output</dim> <dim><path></dim>` | Write LCOV somewhere other than `target/coverage/sbf.lcov{:file}`. |
+| `<dim>--trace-dir</dim> <dim><dir></dim>` | Read or write traces from a custom directory. |
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> coverage <dim>--output</dim> target/coverage/sbf.lcov
+$ <blue>anchor</blue> coverage <dim>--skip-run</dim> <dim>--trace-dir</dim> target/coverage/traces
+```
+
+## `<blue>anchor</blue> idl`
+
+The `idl` subcommand builds local IDL files and manages on-chain IDL metadata accounts.
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> idl build
+```
+
+Builds the IDL for the current program. Use `<dim>-o</dim>` to write JSON to a file and `<dim>-t</dim>` to write the generated TypeScript IDL type:
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> idl build <dim>--program-name</dim> counter <dim>-o</dim> target/idl/counter.json <dim>-t</dim> target/types/counter.ts
+```
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> idl init <dim>-f</dim> target/idl/counter.json <dim><program-id></dim>
+```
+
+Creates an on-chain IDL account for the given program and writes the IDL file into it.
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> idl fetch <dim>-o</dim> counter.json <dim><program-id></dim>
+```
+
+Fetches an on-chain IDL.
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> idl upgrade <dim>-f</dim> target/idl/counter.json <dim><program-id></dim>
+```
+
+Upgrades an existing on-chain IDL metadata account.
+
+Other useful IDL commands:
+
+| Command | Purpose |
+| --- | --- |
+| `$ <blue>anchor</blue> idl type <dim><path/to/idl.json></dim>` | Generate a TypeScript type from an IDL file. |
+| `$ <blue>anchor</blue> idl convert <dim><legacy-idl.json></dim>` | Convert a legacy IDL to the newer IDL spec. |
+| `$ <blue>anchor</blue> idl create-buffer <dim>-f</dim> <dim><path/to/idl.json></dim>` | Create a buffer metadata account. |
+| `$ <blue>anchor</blue> idl set-buffer-authority <dim><buffer></dim> <dim>-n</dim> <dim><new-authority></dim>` | Set a new authority on a buffer account. |
+| `$ <blue>anchor</blue> idl write-buffer <dim><program-id></dim> <dim>--buffer</dim> <dim><buffer></dim>` | Write metadata from a buffer account. |
+| `$ <blue>anchor</blue> idl close <dim><program-id></dim>` | Close a metadata account and recover rent. |
+
+Use on-chain IDLs carefully while this version is alpha because IDL shapes may change between commits.
+
+## `<blue>anchor</blue> codama`
+
+The `codama` subcommand converts an Anchor IDL to a Codama IDL tree and renders client libraries through the `@codama/cli` toolchain. It is the path for generating cross-language clients from a single program description.
+
+### Convert
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> codama convert target/idl/counter.json <dim>-o</dim> target/codama-counter.json
+```
+
+`convert{:bash}` translates an Anchor IDL JSON file into a Codama IDL JSON tree rooted at a `rootNode`. The conversion runs in-process and mirrors the reference TypeScript implementation in `@codama/nodes-from-anchor`, so the output is stable against the JavaScript toolchain.
+
+### Generate
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> codama generate <dim>-l</dim> js,rust <dim>-p</dim> clients target/idl/counter.json
+```
+
+`generate{:bash}` runs the same conversion in-process, then hands the result to `@codama/cli` (run via `npx --yes codama` by default) to render clients in one or more languages. Each language is written under `<path>/<language>/{:dir}` and uses the matching `@codama/renderers-*` package:
+
+| Language | Renderer package           |
+| -------- | -------------------------- |
+| `js`     | `@codama/renderers-js`     |
+| `js-umi` | `@codama/renderers-js-umi` |
+| `rust`   | `@codama/renderers-rust`   |
+| `go`     | `@codama/renderers-go`     |
+
+### Flags
+
+| Flag | Description |
+| --- | --- |
+| `<dim>-l</dim> <dim><language></dim>` | Languages to generate. Repeat or comma-separate: `<dim>-l</dim> <dim>js,go</dim> <dim>-l</dim> <dim>rust</dim>`. |
+| `<dim>-p</dim> <dim><path></dim>` | Base output directory. Default: `clients{:dir}`. |
+| `<dim>-o</dim> <dim><file></dim>` | (Convert only) Write Codama IDL JSON to a file instead of stdout. |
+
+<Callout variant="note" title="Operational notes">
+  `generate{:bash}` shells out to `npx{:bash}`, so the host needs a Node.js toolchain on `PATH`. The Codama IDL is versioned independently from the Anchor IDL, so rendered clients depend on the `@codama/nodes` version stamped into `rootNode.version`.
+</Callout>
+
+## `<blue>anchor</blue> account`
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> account <dim><program-name></dim>.<dim><AccountTypeName></dim> <dim><account-pubkey></dim>
+$ <blue>anchor</blue> account <dim><program-name></dim>.<dim><AccountTypeName></dim> <dim><account-pubkey></dim> <dim>--idl</dim> <dim><path/to/idl.json></dim>
+```
+
+Fetches an account and deserializes it to JSON using an IDL type. Not every account wrapper is a borsh account with an Anchor discriminator. SPL accounts and Pod-backed zero-copy accounts have different layouts.
+
+## Workspace utilities
+
+### `<blue>anchor</blue> keys`
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> keys list
+$ <blue>anchor</blue> keys sync
+```
+
+Lists program keypairs and syncs each program's `declare_id!(){:rs}` value with the keypair file.
+
+### `<blue>anchor</blue> cluster`
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> cluster list
+```
+
+Lists configured cluster endpoints.
+
+### `<blue>anchor</blue> run`
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> run <dim><script-name></dim>
+```
+
+Runs a script declared in the workspace's `Anchor.toml{:file}`.
+
+### `<blue>anchor</blue> shell`
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> shell
+```
+
+Starts a Node.js shell with an Anchor client configured from the local workspace. This workflow is most useful for IDL inspection and client experiments while TypeScript package support is alpha.
+
+### `<blue>anchor</blue> clean`
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> clean
+```
+
+Removes generated artifacts except program keypairs.
+
+### `<blue>anchor</blue> verify`
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> verify <dim><program-id></dim>
+```
+
+Verifies that on-chain bytecode matches a locally compiled artifact. Use `$ <blue>anchor</blue> build <dim>--verifiable</dim>` for deterministic builds.

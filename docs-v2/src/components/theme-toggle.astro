@@ -1,0 +1,44 @@
+---
+import Icon from '@/components/icon.astro'
+import { Button } from '@/components/ui/button'
+---
+
+<Button
+  data-theme-toggle
+  variant="ghost"
+  size="icon"
+  title="Toggle theme"
+  className="-my-2 -me-2 size-8"
+>
+  <Icon name="sun" class="size-4 dark:hidden" />
+  <Icon name="moon" class="absolute hidden size-4 dark:block" />
+  <span class="sr-only">Toggle theme</span>
+</Button>
+
+<script is:inline data-astro-rerun>
+  ;(() => {
+    const storedTheme = (() => {
+      try {
+        return window.localStorage.getItem('theme') ?? ''
+      } catch {
+        return ''
+      }
+    })()
+
+    const theme = (() => {
+      if (['dark', 'light'].includes(storedTheme)) return storedTheme
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    })()
+
+    document.documentElement.setAttribute('data-theme', theme)
+    try {
+      window.localStorage.setItem('theme', theme)
+    } catch {}
+  })()
+</script>
+
+<script>
+  import { mountThemeToggle } from '@/lib/client/theme-toggle'
+
+  mountThemeToggle()
+</script>

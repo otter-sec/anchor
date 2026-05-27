@@ -1,0 +1,27 @@
+---
+title: Secure by default
+description: Safety defaults that turn common bugs into compile errors or validation failures.
+---
+
+Anchor tries to make the safe path the ordinary path. Some checks still happen at runtime, but several common bug classes become compile-time errors or explicit opt-ins.
+
+This page maps the defaults a normal v2 program inherits. It does not replace an audit, but it should clarify which problems Anchor catches before your handler logic runs.
+
+The main defaults are:
+
+- `Account<T>{:rs}` requires `T: Pod{:rs}` and a no-padding layout. If a field would make zero-copy unsound, the program fails to compile instead of silently reading ambiguous bytes.
+- duplicate mutable aliases are rejected during account validation. This protects handlers from accidentally receiving the same account in two mutable fields.
+- `CpiHandle<'a>{:rs}` ties CPI account handles to Rust borrows of the typed wrappers they came from. That lets Anchor use pinocchio's unchecked CPI path while preventing ordinary typed aliasing at compile time.
+
+Use `BorshAccount<T>{:rs}` for data that cannot be Pod.
+
+The duplicate-account escape hatch is named `unsafe(dup){:rs}` on purpose. Use it only when the handler is written to avoid conflicting mutable references.
+
+`UncheckedAccount{:rs}` still does no validation. Pair it with `address{:rs}`, `owner{:rs}`, `constraint{:rs}`, or handler-side checks before trusting the account.
+
+```rust showLineNumbers=false
+#[account(address = config.authority)]
+pub authority: UncheckedAccount,
+```
+
+This version is not audited. Treat these defaults as a better baseline, not as a substitute for review, fuzzing, and production-specific threat modeling.

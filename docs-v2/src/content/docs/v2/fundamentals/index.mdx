@@ -1,0 +1,38 @@
+---
+title: Fundamentals
+description: Handlers, accounts, validation, PDAs, IDL, and CPI in Anchor programs.
+autoCards: false
+---
+
+Every Anchor program touches `#[program]{:rs}`, `Context<T>{:rs}`, `#[derive(Accounts)]{:rs}`, PDA validation, IDL emission, and CPI.
+
+If you are building your first program, read the pages in the order shown. Program structure covers where code goes. Accounts, context, and validation cover what happens before a handler runs. PDAs cover derived addresses. The IDL is what clients see. CPI is how one program calls another.
+
+<CardGrid>
+
+<Card title="Program structure" href="/docs/v2/fundamentals/program-structure/">
+How handlers, discriminators, `#![no_std]{:rs}`, and generated modules fit together.
+</Card>
+
+<Card title="Accounts and context" href="/docs/v2/fundamentals/accounts-and-context/">
+How `Context<T>{:rs}`, typed bumps, remaining accounts, and lifetime-free wrappers work.
+</Card>
+
+<Card title="Account validation" href="/docs/v2/fundamentals/account-validation/">
+The `#[derive(Accounts)]{:rs}` validation pass, constraints, duplicate mutable protection, and `unsafe(dup){:rs}`.
+</Card>
+
+<Card title="PDAs and resolution" href="/docs/v2/fundamentals/pdas-and-resolution/">
+Seeds, bumps, macro-time PDA optimization, generated `Resolved{:rs}` structs, and IDL seed limits.
+</Card>
+
+<Card title="IDL" href="/docs/v2/fundamentals/idl/">
+  How Anchor emits accounts, types, instructions, constants, events, docs, and account-resolution
+  metadata.
+</Card>
+
+<Card title="CPI" href="/docs/v2/fundamentals/cpi/">
+`CpiContext{:rs}`, `CpiHandle{:rs}`, generated CPI wrappers, and unchecked pinocchio CPI safety.
+</Card>
+
+</CardGrid>

@@ -1,0 +1,141 @@
+---
+title: Extensions
+description: Enable token extensions to add optional features to token mints and accounts using the Token Extensions Program (Token 2022) in an Anchor program.
+---
+
+## What are token extensions?
+
+The [Token Extensions Program (Token 2022)](https://github.com/solana-program/token-2022) provides additional features through instructions referred to as extensions. Extensions are optional functionality added to a token mint or token account. The implementation lives in the program's [`extension{:rs}`](https://github.com/solana-program/token-2022/tree/main/program/src/extension) module.
+
+Each extension adds specific state that is usually initialized during mint or token account creation. Multiple extensions can be enabled simultaneously on the same account, but most extensions cannot be added after an account is initialized, so all desired extensions must be selected during the initial account creation.
+
+The exceptions, which require the account to be initialized before they are added, are:
+
+- `cpi-guard`
+- `memo-transfer`
+- `token-group`
+- `token-member`
+- `token-metadata`
+
+<Callout variant="note">
+  Some extensions are incompatible with each other and cannot be enabled simultaneously on the same
+  token mint or token account. For example, `NonTransferable{:rs}` cannot be combined with
+  `TransferFeeConfig{:rs}`, since they have conflicting behaviors.
+</Callout>
+
+The Token Extensions Program defines an [`ExtensionType{:rs}`](https://github.com/solana-program/token-2022/blob/main/program/src/extension/mod.rs#L1054-L1139) enum that specifies all available extensions. Each variant represents a different extension with unique functionality:
+
+```rust title="extension/mod.rs" showLineNumbers=false
+/// Extensions that can be applied to mints or accounts.  Mint extensions must
+/// only be applied to mint accounts, and account extensions must only be
+/// applied to token holding accounts.
+#[repr(u16)]
+#[cfg_attr(feature = "serde-traits", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-traits", serde(rename_all = "camelCase"))]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromPrimitive, IntoPrimitive)]
+pub enum ExtensionType {
+    /// Used as padding if the account size would otherwise be 355, same as a
+    /// multisig
+    Uninitialized,
+    /// Includes transfer fee rate info and accompanying authorities to withdraw
+    /// and set the fee
+    TransferFeeConfig,
+    /// Includes withheld transfer fees
+    TransferFeeAmount,
+    /// Includes an optional mint close authority
+    MintCloseAuthority,
+    /// Auditor configuration for confidential transfers
+    ConfidentialTransferMint,
+    /// State for confidential transfers
+    ConfidentialTransferAccount,
+    /// Specifies the default Account::state for new Accounts
+    DefaultAccountState,
+    /// Indicates that the Account owner authority cannot be changed
+    ImmutableOwner,
+    /// Require inbound transfers to have memo
+    MemoTransfer,
+    /// Indicates that the tokens from this mint can't be transferred
+    NonTransferable,
+    /// Tokens accrue interest over time,
+    InterestBearingConfig,
+    /// Locks privileged token operations from happening via CPI
+    CpiGuard,
+    /// Includes an optional permanent delegate
+    PermanentDelegate,
+    /// Indicates that the tokens in this account belong to a non-transferable
+    /// mint
+    NonTransferableAccount,
+    /// Mint requires a CPI to a program implementing the "transfer hook"
+    /// interface
+    TransferHook,
+    /// Indicates that the tokens in this account belong to a mint with a
+    /// transfer hook
+    TransferHookAccount,
+    /// Includes encrypted withheld fees and the encryption public that they are
+    /// encrypted under
+    ConfidentialTransferFeeConfig,
+    /// Includes confidential withheld transfer fees
+    ConfidentialTransferFeeAmount,
+    /// Mint contains a pointer to another account (or the same account) that
+    /// holds metadata
+    MetadataPointer,
+    /// Mint contains token-metadata
+    TokenMetadata,
+    /// Mint contains a pointer to another account (or the same account) that
+    /// holds group configurations
+    GroupPointer,
+    /// Mint contains token group configurations
+    TokenGroup,
+    /// Mint contains a pointer to another account (or the same account) that
+    /// holds group member configurations
+    GroupMemberPointer,
+    /// Mint contains token group member configurations
+    TokenGroupMember,
+    /// Mint allowing the minting and burning of confidential tokens
+    ConfidentialMintBurn,
+    /// Tokens whose UI amount is scaled by a given amount
+    ScaledUiAmount,
+    /// Tokens where minting / burning / transferring can be paused
+    Pausable,
+    /// Indicates that the account belongs to a pausable mint
+    PausableAccount,
+
+    /// Test variable-length mint extension
+    #[cfg(test)]
+    VariableLenMintTest = u16::MAX - 2,
+    /// Padding extension used to make an account exactly Multisig::LEN, used
+    /// for testing
+    #[cfg(test)]
+    AccountPaddingTest,
+    /// Padding extension used to make a mint exactly Multisig::LEN, used for
+    /// testing
+    #[cfg(test)]
+    MintPaddingTest,
+}
+```
+
+Each extension adds specialized functionality by including additional state that must be initialized when creating a mint or token account. All extension specific state is stored in the in the [`tlv_data`](https://github.com/solana-program/token-2022/blob/main/program/src/extension/mod.rs#L541-L549) field, which follows the base account data type. The `tlv_data` (containing extension state) must be further deserialized according to the specific extension types enabled for that account:
+
+```rust showLineNumbers=false
+/// Encapsulates immutable base state data (mint or account) with possible
+/// extensions, where the base state is Pod for zero-copy serde.
+#[derive(Debug, PartialEq)]
+pub struct PodStateWithExtensions<'data, S: BaseState + Pod> {
+    /// Unpacked base data
+    pub base: &'data S,
+    /// Slice of data containing all TLV data, deserialized on demand
+    tlv_data: &'data [u8],
+}
+```
+
+## Examples
+
+The `anchor-spl` crate provides a [`token_2022_extensions`](https://github.com/otter-sec/anchor/tree/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/spl/src/token_2022_extensions) module that contains helper functions and types for working with token extension instructions.
+
+You can find examples for how to work with Token Extensions in an Anchor program in this [program examples repository](https://github.com/solana-developers/program-examples/tree/main/tokens/token-2022).
+
+<Callout variant="note">
+  Note that while the anchor-spl crate provides helper functions for working with Token Extensions,
+  not all extension instructions have been fully implemented yet. You may need to manually implement
+  CPI calls for some extension instructions.
+</Callout>

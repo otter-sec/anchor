@@ -1,0 +1,296 @@
+---
+title: Solana Playground
+description: Learn how to build your first Solana program using the Anchor framework directly in your browser.
+---
+
+In this section, we'll build, deploy, and test a simple Solana program using the Anchor framework. By the end, you'll have deployed your first program to the Solana blockchain!
+
+Solana Playground (Solpg) is a browser-based development environment that lets you develop, deploy, and test Solana programs without installing anything locally.
+
+## Getting started
+
+Open a new tab in your web browser and navigate to https://beta.solpg.io/.
+
+<Steps>
+
+<Step>
+### Create Playground wallet
+
+If you're new to Solana Playground, the first step is to create your Playground wallet. This wallet lets you interact with the Solana network right from your browser.
+
+Click the "Not connected" button at the bottom left of the screen.
+
+![Not Connected](/docs/quickstart/pg-not-connected.png)
+
+You'll see an option to save your wallet's keypair. Optionally save it for backup, then click "Continue".
+
+![Create Playground Wallet](/docs/quickstart/pg-create-wallet.png)
+
+You should now see your wallet's address, SOL balance, and connected cluster (Devnet by default) at the bottom of the window.
+
+![Connected](/docs/quickstart/pg-connected.png)
+
+<Callout>
+  Your Playground wallet is saved in your browser's local storage. Clearing your browser cache will
+  remove it.
+</Callout>
+
+Some useful terms:
+
+<Callout variant="definition" title="Wallet address">
+  A public key that serves as your unique identity on the Solana blockchain. Just like an email
+  address is used to receive emails, your wallet address is used to receive SOL.
+</Callout>
+
+<Callout variant="definition" title="Connection cluster">
+  A network of Solana nodes (computers running the Solana validator client). Devnet is the cluster
+  used for developer testing.
+</Callout>
+
+</Step>
+<Step>
+
+### Get Devnet SOL
+
+Before we start building, we need some devnet SOL. SOL is required to create accounts on the network and to pay transaction fees.
+
+In the Playground terminal, run `$ <blue>solana</blue> airdrop 5`. If the airdrop command doesn't work (due to rate limits), use the [Web Faucet](https://faucet.solana.com/). Enter your wallet address (found at the bottom of the Playground screen), select an amount, and click "Confirm Airdrop".
+
+![Faucet Airdrop](/docs/quickstart/faucet-airdrop.gif)
+
+</Step>
+
+<Step>
+
+### Create Anchor project
+
+Open https://beta.solpg.io in a new browser tab. Click "Create a new project", enter a project name, select Anchor as the framework, then click "Create".
+
+![New Project](/docs/quickstart/pg-new-project.gif)
+
+You'll see a new project with the program code in `src/lib.rs{:file}`:
+
+```rust title="lib.rs"
+use anchor_lang::prelude::*;
+
+// This is your program's public key and it will update
+// automatically when you build the project.
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+mod hello_anchor {
+    use super::*;
+    pub fn initialize(ctx: Context<Initialize>, data: u64) -> Result<()> {
+        ctx.accounts.new_account.data = data;
+        msg!("Changed data to: {}!", data); // Message will show up in the tx logs
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    // We must specify the space in order to initialize an account.
+    // First 8 bytes are default account discriminator,
+    // next 8 bytes come from NewAccount.data being type u64.
+    // (u64 = 64 bits unsigned integer = 8 bytes)
+    #[account(init, payer = signer, space = 8 + 8)]
+    pub new_account: Account<'info, NewAccount>,
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[account]
+pub struct NewAccount {
+    data: u64
+}
+```
+
+<Callout variant="explanation" title="Code explanation" defaultOpen={false}>
+
+- `declare_id!(){:rs}` specifies the on-chain address of your program. It will be automatically updated when you build.
+
+  ```rust startLineNumber={5}
+  declare_id!("11111111111111111111111111111111");
+  ```
+
+- `#[program]{:rs}` annotates a module containing the program's instruction handlers.
+
+  ```rust startLineNumber={7}
+  #[program]
+  mod hello_anchor {
+      use super::*;
+      pub fn initialize(ctx: Context<Initialize>, data: u64) -> Result<()> {
+          ctx.accounts.new_account.data = data;
+          msg!("Changed data to: {}!", data);
+          Ok(())
+      }
+  }
+  ```
+
+  The `initialize(){:rs}` instruction takes a `Context<Initialize>{:rs}` (the required accounts) and a `data: u64{:rs}` parameter. It stores the value and logs it.
+
+- `#[derive(Accounts)]{:rs}` annotates a struct that declares the accounts required by an instruction. Field types and constraints let Anchor auto-generate security checks.
+
+  ```rust startLineNumber={16}
+  #[derive(Accounts)]
+  pub struct Initialize<'info> {
+      #[account(init, payer = signer, space = 8 + 8)]
+      pub new_account: Account<'info, NewAccount>,
+      #[account(mut)]
+      pub signer: Signer<'info>,
+      pub system_program: Program<'info, System>,
+  }
+  ```
+
+- `#[account]{:rs}` annotates a struct that defines the data layout of an account owned by this program.
+
+  ```rust startLineNumber={30}
+  #[account]
+  pub struct NewAccount {
+    data: u64
+  }
+  ```
+
+</Callout>
+
+</Step>
+<Step>
+### Build and deploy program
+
+To build the program, run `$ <blue>build</blue>` in the terminal:
+
+```console title="Terminal"
+$ <blue>build</blue>
+<bold><blue>Building...</blue></bold>
+<bold><green>Build successful.</green></bold> Completed in 1.46s.
+```
+
+Notice that the address in `declare_id!(){:rs}` has been updated. This is your program's on-chain address.
+
+Once built, run `$ <blue>deploy</blue>` to deploy to the network (devnet by default). Make sure you have enough SOL first:
+
+```console title="Terminal"
+$ <blue>deploy</blue>
+<bold><blue>Deploying...</blue></bold> This could take a while depending on the program size and network conditions.
+<bold><yellow>Warning</yellow></bold>: 8 transactions not confirmed, retrying...
+<bold><green>Deployment successful.</green></bold> Completed in 18s.
+```
+
+You can also use the `Build` and `Deploy` buttons on the left-side panel.
+
+![Build and Deploy](/docs/quickstart/pg-build-deploy.png)
+
+</Step>
+<Step>
+### Test program
+
+The starter code includes a test file at `tests/anchor.test.ts{:file}` that shows how to invoke the `initialize(){:ts}` instruction from the client:
+
+```ts title="anchor.test.ts"
+// No imports needed: web3, anchor, pg and more are globally available
+
+describe('Test', () => {
+  it('initialize', async () => {
+    // Generate keypair for the new account
+    const newAccountKp = new web3.Keypair()
+
+    // Send transaction
+    const data = new BN(42)
+    const txHash = await pg.program.methods
+      .initialize(data)
+      .accounts({
+        newAccount: newAccountKp.publicKey,
+        signer: pg.wallet.publicKey,
+        systemProgram: web3.SystemProgram.programId,
+      })
+      .signers([newAccountKp])
+      .rpc()
+    console.log(`Use 'solana confirm -v ${txHash}' to see the logs`)
+
+    // Confirm transaction
+    await pg.connection.confirmTransaction(txHash)
+
+    // Fetch the created account
+    const newAccount = await pg.program.account.newAccount.fetch(newAccountKp.publicKey)
+
+    console.log('On-chain data is:', newAccount.data.toString())
+
+    // Check whether the data on-chain is equal to local 'data'
+    assert(data.eq(newAccount.data))
+  })
+})
+```
+
+Run the tests with `$ <blue>test</blue>`:
+
+```console title="Terminal"
+$ <blue>test</blue>
+<bold><blue>Running tests...</blue></bold>
+  <bold>anchor.test.ts:</bold>
+  Test
+    Use 'solana confirm -v h6JV2E4HKiFMHLVQaFDRma9h8K3RBHKTb7vMiT8cLBsVQoyBnZmF6wD5cSrEG1ai6Bu7x7ibJakAyqXE45BJti' to see the logs
+    On-chain data is: 42
+    <green>✓</green> initialize <dim>(2139ms)</dim>
+  <bold><green>1 passing</green></bold> <dim>(2s)</dim>
+```
+
+You can also click the `Test` button on the left-side panel.
+
+![Run Test](/docs/quickstart/pg-test.png)
+
+To view the transaction logs, run `$ <blue>solana</blue> confirm <dim>-v</dim>` with the transaction hash from the test output:
+
+```console title="Terminal" collapse={8-37}
+$ <blue>solana</blue> confirm <dim>-v</dim> h6JV2E4HKiFMHLVQaFDRma9h8K3RBHKTb7vMiT8cLBsVQoyBnZmF6wD5cSrEG1ai6Bu7x7ibJakAyqXE45BJti
+<bold><magenta>RPC URL:</magenta></bold> https://api.devnet.solana.com
+<bold><magenta>Default Signer:</magenta></bold> Playground Wallet
+<bold><magenta>Commitment:</magenta></bold> confirmed
+
+<bold><magenta>Transaction executed in slot 457828860:</magenta></bold>
+  <bold>Block Time:</bold> 2026-04-24T13:51:45-07:00
+  <bold>Version:</bold> legacy
+  <bold>Recent Blockhash:</bold> FEfP1gMjVdNrLiHoxc67C2cXBsGF3cy9s8QPmEhjb7Q4
+  <bold>Signature 0:</bold> h6JV2E4HKiFMHLVQaFDRma9h8K3RBHKTb7vMiT8cLBsVQoyBnZmF6wD5cSrEG1ai6Bu7x7ibJakAyqEXE45BJti
+  <bold>Signature 1:</bold> 5TWWTnvJaiaooPR7zgACSUjxuZ6kz8eDnBjCd1AyVBMSWa9mvm3HedsN54Tu9iLJasbN4GpFcfSXqgrCri2cqRRc
+  <bold>Account 0:</bold> srw- DY6arEvmJEfVXERsZ6LusRpjz5y5bqwQJRVcyE1zChBB <dim>(fee payer)</dim>
+  <bold>Account 1:</bold> srw- 2vWvBBYP5PLczTuTm7nN7mhUEM45kxex9ASjXqrEh9Dh
+  <bold>Account 2:</bold> -r-- 11111111111111111111111111111111
+  <bold>Account 3:</bold> -r-x 3uCJdLdxY9fThNZ9U3oaBmhzxnEvZaRUiRYTJHZVxM4f
+  Instruction 0
+    Program:   3uCJdLdxY9fThNZ9U3oaBmhzxnEvZaRUiRYTJHZVxM4f <dim>(3)</dim>
+    Account 0: 2vWvBBYP5PLczTuTm7nN7mhUEM45kxex9ASjXqrEh9Dh <dim>(1)</dim>
+    Account 1: DY6arEvmJEfVXERsZ6LusRpjz5y5bqwQJRVcyE1zChBB <dim>(0)</dim>
+    Account 2: 11111111111111111111111111111111 <dim>(2)</dim>
+    Data: [175, 175, 109, 31, 13, 152, 155, 237, 42, 0, 0, 0, 0, 0, 0, 0]
+  <bold>Status:</bold> Ok
+    Fee: ◎0.00001
+    Account 0 balance: ◎2.09821932 -> ◎2.09720708
+    Account 1 balance: ◎0 -> ◎0.00100224
+    Account 2 balance: ◎0.000000001
+    Account 3 balance: ◎0.00139896
+  <bold>Log Messages:</bold>
+    Program 3uCJdLdxY9fThNZ9U3oaBmhzxnEvZaRUiRYTJHZVxM4f invoke [1]
+    Program log: Instruction: Initialize
+    Program 11111111111111111111111111111111 invoke [2]
+    Program 11111111111111111111111111111111 success
+    Program log: Changed data to: 42!
+    Program 3uCJdLdxY9fThNZ9U3oaBmhzxnEvZaRUiRYTJHZVxM4f consumed 6266 of 200000 compute units
+    Program 3uCJdLdxY9fThNZ9U3oaBmhzxnEvZaRUiRYTJHZVxM4f success
+
+Finalized
+```
+
+</Step>
+<Step>
+### Close program
+
+You can close the program to reclaim the SOL allocated to it. To close a program, run:
+
+```console title="Terminal"
+$ <blue>solana</blue> program close <dim><program-id></dim>
+Closed Program Id <dim><program-id></dim>, 2.89823448 SOL reclaimed
+```
+
+</Step>
+</Steps>

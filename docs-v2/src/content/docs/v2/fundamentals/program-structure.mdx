@@ -1,0 +1,212 @@
+---
+title: Program structure
+description: 'Learn about the structure of Anchor programs, including `declare_id!(){:rs}`, `#[program]{:rs}`, `#[derive(Accounts)]{:rs}`, and `#[account]{:rs}`.'
+---
+
+The Anchor framework uses Rust macros to reduce boilerplate and enforce the checks every Solana program needs. Four macros do most of the work.
+
+- `declare_id!(){:rs}` sets the program's on-chain address.
+- `#[program]{:rs}` annotates the module containing the program's instruction handlers.
+- `#[derive(Accounts)]{:rs}` declares the accounts an instruction requires.
+- `#[account]{:rs}` defines a custom account data type owned by the program.
+
+The default scaffold splits these pieces across a few files:
+
+<FileTree>
+  <Dir name="programs">
+    <Dir name="counter">
+      <Dir name="src">
+        <Dir name="instructions" comment="One file per instruction">
+          <File name="initialize.rs" />
+        </Dir>
+        <File name="constants.rs" />
+        <File name="error.rs" />
+        <File name="instructions.rs" comment="Re-exports instruction modules" />
+        <File name="lib.rs" comment="Declares the program module" highlight />
+        <File name="state.rs" comment="Program-owned account data" />
+      </Dir>
+    </Dir>
+  </Dir>
+</FileTree>
+
+For a small program, the pieces read more clearly as a single file. The example below exposes one `initialize(){:rs}` instruction that creates a counter account and stores an authority in it.
+
+```rust title="programs/counter/src/lib.rs" showLineNumbers=false
+use anchor_lang_v2::prelude::*;
+
+declare_id!("3ynNB373Q3VAzKp7m4x238po36hjAGFXFJB4ybN2iTyg");
+
+#[program]
+pub mod counter {
+    use super::*;
+
+    pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {
+        ctx.accounts.counter.count = 0;
+        ctx.accounts.counter.authority = *ctx.accounts.payer.address();
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Initialize {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer)]
+    pub counter: Account<Counter>,
+    pub system_program: Program<System>,
+}
+
+#[account]
+pub struct Counter {
+    pub count: u64,
+    pub authority: Address,
+}
+```
+
+From those ordinary Rust items, the framework produces the Solana entrypoint, account parser, IDL metadata, and client-facing instruction builders.
+
+## `declare_id!(){:rs}`
+
+The `declare_id!(){:rs}` macro embeds the program's on-chain address, known as the program ID, into the compiled binary.
+
+```rust showLineNumbers=false
+declare_id!("3ynNB373Q3VAzKp7m4x238po36hjAGFXFJB4ybN2iTyg");
+```
+
+By default, the program ID is the public key of the keypair at `target/deploy/<program_name>-keypair.json{:file}`. To rewrite the `declare_id!(){:rs}` string to match the on-disk keypair, run:
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> keys sync
+```
+
+<Callout variant="tip" title="When to run `$ anchor keys sync`">
+  Run `$ <blue>anchor</blue> keys sync` after cloning a repository or regenerating a program
+  keypair. Syncing prevents a mismatch between the declared ID and the program keypair used during
+  deployment.
+</Callout>
+
+## `#[program]{:rs}`
+
+The `#[program]{:rs}` attribute annotates the module that contains the program's instruction handlers. Every public function inside this module becomes an instruction callable from clients.
+
+```rust showLineNumbers=false
+#[program]
+pub mod counter {
+    use super::*;
+
+    pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {
+        ctx.accounts.counter.count = 0;
+        ctx.accounts.counter.authority = *ctx.accounts.payer.address();
+        Ok(())
+    }
+}
+```
+
+The first parameter of every instruction handler is a `Context<T>{:rs}`, where `T{:rs}` is a struct that implements account loading and validation. Any additional parameters become instruction arguments supplied by the client.
+
+```rust showLineNumbers=false
+pub fn set_count(ctx: &mut Context<SetCount>, count: u64) -> Result<()> {
+    ctx.accounts.counter.count = count;
+    Ok(())
+}
+```
+
+`#[program]{:rs}` also generates the instruction dispatcher. By default, each handler gets the first 8 bytes of `sha256("global:" + handler_name){:rs}` as its discriminator. CU-sensitive programs can use compact one-byte discriminators:
+
+```rust showLineNumbers=false
+#[program]
+pub mod vault {
+    use super::*;
+
+    #[discrim = 0]
+    pub fn deposit(ctx: &mut Context<Deposit>, amount: u64) -> Result<()> {
+        Ok(())
+    }
+
+    #[discrim = 1]
+    pub fn withdraw(ctx: &mut Context<Withdraw>, amount: u64) -> Result<()> {
+        Ok(())
+    }
+}
+```
+
+If one handler in the module uses `#[discrim = N]{:rs}`, every handler in that module must declare a unique byte discriminator.
+
+## `Context<T>{:rs}`
+
+`Context<T>{:rs}` exposes everything the handler needs from the runtime beyond its own instruction arguments.
+
+| Field or method                 | What it contains                                     |
+| ------------------------------- | ---------------------------------------------------- |
+| `ctx.program_id{:rs}`           | The program id passed to the entrypoint.             |
+| `ctx.accounts{:rs}`             | The validated `T{:rs}` accounts struct.              |
+| `ctx.bumps{:rs}`                | A typed bumps struct generated from PDA fields.      |
+| `ctx.remaining_accounts(){:rs}` | Lazily materialized extra `AccountView{:rs}` values. |
+
+Access each account through `ctx.accounts.<field_name>{:rs}`. The field has already been loaded and validated before the handler starts.
+
+## `#[derive(Accounts)]{:rs}`
+
+The `#[derive(Accounts)]{:rs}` macro generates account loading and validation for an instruction.
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct Initialize {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer)]
+    pub counter: Account<Counter>,
+    pub system_program: Program<System>,
+}
+```
+
+Each field maps to one account the instruction requires. Field names are arbitrary, but they should describe the role the account plays in the instruction.
+
+Account validation is the first line of defense against malicious input. Anchor enforces two complementary mechanisms that are usually used together.
+
+- [Account constraints](/docs/v2/reference/account-constraints/) declared in the `#[account(...)]{:rs}` attribute enforce runtime conditions on each account. Common constraints include `init{:rs}`, `mut{:rs}`, `seeds{:rs}`, `bump{:rs}`, and `constraint{:rs}`.
+- [Account types](/docs/v2/programs/account-types/) specified in the field's type enforce static expectations about what kind of account the client must pass. Examples include `Account<T>{:rs}`, `BorshAccount<T>{:rs}`, `Signer{:rs}`, `Program<T>{:rs}`, and `UncheckedAccount{:rs}`.
+
+Once validation succeeds, the handler accesses accounts through `ctx.accounts.<field_name>{:rs}`.
+
+## `#[account]{:rs}`
+
+The `#[account]{:rs}` attribute turns a plain struct into an Anchor-managed account type.
+
+```rust showLineNumbers=false
+#[account]
+pub struct Counter {
+    pub count: u64,
+    pub authority: Address,
+}
+```
+
+In v2, the default account form is fixed-size and zero-copy. `#[account]{:rs}` gives `Counter{:rs}` a stable `#[repr(C)]{:rs}` layout, derives the required Pod traits, adds an Anchor discriminator, and implements ownership metadata for the declaring program.
+
+For a normal program-owned account, the on-chain layout is:
+
+```text showLineNumbers=false
+[8-byte discriminator][repr(C) Counter]
+```
+
+Use `Account<T>{:rs}` for fixed-size Pod-backed state. Use `BorshAccount<T>{:rs}` when the account needs variable-length fields such as `Vec{:rs}`, `String{:rs}`, or payload enums.
+
+<Callout variant="important" title="Choosing the account model">
+  `Account<T>{:rs}` is zero-copy and Pod-backed by default. For variable-length data, mark the type with `#[account(borsh)]{:rs}` and use `BorshAccount<T>{:rs}` in the accounts struct.
+</Callout>
+
+## Generated modules
+
+The program macro emits generated surfaces that clients and tests rely on:
+
+- `program::instruction::*{:rs}` structs that implement `InstructionData{:rs}`
+- `program::accounts::*{:rs}` structs that implement `ToAccountMetas{:rs}`
+- typed `Bumps{:rs}` for each accounts struct
+- IDL print hooks behind `idl-build{:toml}`
+- `program::cpi::*{:rs}` wrappers behind the `cpi{:toml}` feature
+
+These modules are compile-time output from the macros, not source files checked into the program. Tests and CPI callers can still import them as normal Rust modules because the macro expands them into the crate.
+
+## `#![no_std]{:rs}` by default
+
+`anchor-lang-v2` is `#![no_std]{:rs}`. The default `alloc{:toml}` feature is on, so user programs can still use `Vec{:rs}`, `String{:rs}`, and any generated macro code that needs allocation. Disabling `alloc{:toml}` is possible, but most programs should keep the default feature set.

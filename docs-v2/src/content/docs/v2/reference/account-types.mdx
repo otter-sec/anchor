@@ -1,0 +1,20 @@
+---
+title: Account types
+description: Quick reference for Anchor account wrappers.
+---
+
+| Wrapper | Validates | Data model |
+| --- | --- | --- |
+| `Account<T>{:rs}` | owner, discriminator, minimum data length | zero-copy Pod data |
+| `BorshAccount<T>{:rs}` | owner, discriminator, minimum data length | borsh deserialize on load, serialize on exit |
+| `Slab<H, Item>{:rs}` | owner, discriminator, tail layout | zero-copy header plus item tail |
+| `Option<A>{:rs}` | absent sentinel or inner wrapper | optional account slot |
+| `Nested<T>{:rs}` | inner accounts struct | inline account composition |
+| `Box<A>{:rs}` | inner wrapper | heap-boxed wrapper |
+| `Signer{:rs}` | `is_signer{:rs}` | no account data |
+| `Program<T>{:rs}` | `T::id(){:rs}`, plus executable under `guardrails{:toml}` | no account data |
+| `SystemAccount{:rs}` | system owner | no typed data |
+| `UncheckedAccount{:rs}` | nothing | raw account view |
+| `Sysvar<T>{:rs}` | sysvar id | syscall-loaded sysvar value |
+
+Use [Program account types](/docs/v2/programs/account-types/) for examples and guidance.

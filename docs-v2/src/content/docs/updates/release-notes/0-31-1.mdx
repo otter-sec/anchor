@@ -1,0 +1,60 @@
+---
+title: 0.31.1
+description: Anchor release notes for 0.31.1.
+---
+
+`0.31.1` is a patch release that fixes `proc-macro2`-related IDL build errors (see [`proc-macro2` build fix](#proc-macro2-build-fix)). Future Anchor releases will be published under the `solanafoundation` GitHub organization.
+
+---
+
+## How to upgrade
+
+1. Update `anchor-cli`:
+
+   ```bash
+   $ <blue>avm</blue> install 0.31.1
+   ```
+
+2. Update Anchor crate(s) to `0.31.1`.
+
+3. Update TS package(s) to `0.31.1`.
+
+## Recommended Solana version
+
+The recommended Solana version is `2.1.0`, the same as [v0.31.0's Recommended Solana Version](./0-31-0#recommended-solana-version).
+
+## Docker
+
+Docker images have moved to [`solanafoundation/anchor`](https://hub.docker.com/r/solanafoundation/anchor) on Docker Hub. All future images will be published under that namespace.
+
+## IDL
+
+### `proc-macro2` build fix
+
+`proc-macro2 1.0.95` removed the `source_file(){:rs}` method on `Span{:rs}` to track an upstream nightly change ([rust-lang/rust#139671](https://github.com/rust-lang/rust/pull/139671)). The removal surfaced as a build error in earlier Anchor versions:
+
+```text
+error[E0599]: no method named `source_file` found for struct `proc_macro2::Span` in the current scope
+```
+
+The IDL build now compiles against `proc-macro2 >= 1.0.95`.
+
+## TypeScript
+
+### Account resolver no longer requires wallet
+
+Signer resolution previously required a `wallet{:ts}` field on the `Provider{:ts}` implementor, failing with:
+
+```text
+This function requires the `Provider` interface implementor to have a `wallet` field.
+```
+
+The resolver now only requires `Provider.publicKey{:ts}`.
+
+### Multiple constant generics
+
+Multiple constant generics on a type no longer trigger parsing errors.
+
+---
+
+See the full list of notable changes in the [CHANGELOG](https://github.com/otter-sec/anchor/blob/v0.31.1/CHANGELOG.md#0311---2025-04-19).

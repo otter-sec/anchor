@@ -1,0 +1,169 @@
+---
+title: Custom errors
+description: Learn how to implement custom error handling in Anchor programs.
+---
+
+import Code from '@/components/code.astro'
+import lib from './_errors/lib.rs?raw'
+import client from './_errors/test.ts?raw'
+import errorResponse from './_errors/error-response.txt?raw'
+
+All instruction handlers in Anchor programs return a custom `Result<T>{:rs}` type that allows handling successful execution with `Ok(T){:rs}` and error cases with `Err(Error){:rs}`:
+
+```rust showLineNumbers=false
+pub fn custom_instruction(ctx: Context<CustomInstruction>) -> Result<()> {
+    // --snip--
+    Ok(())
+}
+```
+
+The `Result<T>{:rs}` type in Anchor programs is a type alias that wraps the standard Rust `Result<T, E>{:rs}`. `T{:rs}` represents the successful return type, while `E{:rs}` is Anchor's custom `Error{:rs}` type:
+
+```rust showLineNumbers=false
+pub type Result<T> = std::result::Result<T, error::Error>;
+```
+
+## Anchor error
+
+When an error occurs in an Anchor program, it returns a custom [`Error{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/error/enum.Error.html) type defined as:
+
+```rust showLineNumbers=false
+#[derive(Debug, PartialEq, Eq)]
+pub enum Error {
+    AnchorError(Box<AnchorError>),
+    ProgramError(Box<ProgramErrorWithOrigin>),
+}
+```
+
+The `Error{:rs}` type has two variants.
+
+`ProgramErrorWithOrigin{:rs}` wraps a standard Solana `ProgramError{:rs}` from the `solana_program` crate:
+
+```rust showLineNumbers=false
+#[derive(Debug)]
+pub struct ProgramErrorWithOrigin {
+    pub program_error: ProgramError,
+    pub error_origin: Option<ErrorOrigin>,
+    pub compared_values: Option<ComparedValues>,
+}
+```
+
+`AnchorError{:rs}` represents errors defined by the Anchor framework:
+
+```rust showLineNumbers=false
+#[derive(Debug)]
+pub struct AnchorError {
+    pub error_name: String,
+    pub error_code_number: u32,
+    pub error_msg: String,
+    pub error_origin: Option<ErrorOrigin>,
+    pub compared_values: Option<ComparedValues>,
+}
+```
+
+An `AnchorError{:rs}` falls into one of two categories. Internal Anchor errors are built into the framework and defined in the `ErrorCode{:rs}` enum. Custom program errors are program-specific errors that developers define for their own validation logic.
+
+The `error_code_number{:rs}` from an `AnchorError{:rs}` follows this numbering scheme:
+
+| Error code | Description                           |
+| ---------- | ------------------------------------- |
+| >= 100     | Instruction error codes               |
+| >= 1000    | IDL error codes                       |
+| >= 2000    | Constraint error codes                |
+| >= 3000    | Account error codes                   |
+| >= 4100    | Misc error codes                      |
+| = 5000     | Deprecated error code                 |
+| >= 6000    | Starting point for custom user errors |
+
+## Usage
+
+Anchor provides a convenient way to define custom errors through the `#[error_code]{:rs}` attribute. When an enum is annotated with `#[error_code]{:rs}`, Anchor assigns each variant an error code starting from 6000, generates the error-handling boilerplate, and enables custom error messages via the `#[msg(...)]{:rs}` attribute:
+
+```rust showLineNumbers=false
+#[error_code]
+pub enum MyError {
+    #[msg("My custom error message")]
+    MyCustomError,
+    #[msg("My second custom error message")]
+    MySecondCustomError,
+}
+```
+
+### `err!(){:rs}`
+
+To throw an error, use the [`err!(){:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/macro.err.html) macro. Under the hood, `err!(){:rs}` uses the `error!(){:rs}` macro to construct an `AnchorError{:rs}`:
+
+```rust title="lib.rs" {5} showLineNumbers=false
+#[program]
+mod hello_anchor {
+    use super::*;
+    pub fn set_data(ctx: Context<SetData>, data: MyAccount) -> Result<()> {
+        if data.data >= 100 {
+            return err!(MyError::DataTooLarge);
+        }
+        ctx.accounts.my_account.set_inner(data);
+        Ok(())
+    }
+}
+
+#[error_code]
+pub enum MyError {
+    #[msg("MyAccount may only hold data below 100")]
+    DataTooLarge
+}
+```
+
+### `require!(){:rs}`
+
+The [`require!(){:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/macro.require.html) macro provides a more concise way to handle error conditions. It combines a condition check with returning an error if the condition is false:
+
+```rust title="lib.rs" {5} showLineNumbers=false
+#[program]
+mod hello_anchor {
+    use super::*;
+    pub fn set_data(ctx: Context<SetData>, data: MyAccount) -> Result<()> {
+        require!(data.data < 100, MyError::DataTooLarge);
+        ctx.accounts.my_account.set_inner(data);
+        Ok(())
+    }
+}
+
+#[error_code]
+pub enum MyError {
+    #[msg("MyAccount may only hold data below 100")]
+    DataTooLarge
+}
+```
+
+Anchor provides several `require{:rs}` macros for different validation needs:
+
+- `require!(){:rs}` ensures a condition is true, otherwise returns the given error.
+- `require_eq!(){:rs}` ensures two non-pubkey values are equal.
+- `require_neq!(){:rs}` ensures two non-pubkey values are not equal.
+- `require_keys_eq!(){:rs}` ensures two pubkeys are equal.
+- `require_keys_neq!(){:rs}` ensures two pubkeys are not equal.
+- `require_gt!(){:rs}` ensures the first non-pubkey value is greater than the second.
+- `require_gte!(){:rs}` ensures the first non-pubkey value is greater than or equal to the second.
+
+## Example
+
+The program below validates that an input amount falls within an acceptable range. It defines two custom error variants with messages and uses `require!(){:rs}` to enforce the bounds:
+
+<Tabs items={['Program', 'Client']}>
+<Tab>
+
+<Code code={lib} lang="rust" title="lib.rs" meta="{10-11,21-25}" />
+
+</Tab>
+<Tab>
+
+<Code code={client} lang="ts" title="test.ts" />
+
+</Tab>
+</Tabs>
+
+When a program error occurs, Anchor's TypeScript client SDK returns a detailed [error response](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/error.ts#L51-L71) containing information about the error:
+
+<Code code={errorResponse} lang="text" />
+
+For a more comprehensive example, see the [errors test program](https://github.com/otter-sec/anchor/blob/master/tests/errors/programs/errors/src/lib.rs) in the Anchor repository.

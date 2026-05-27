@@ -1,0 +1,308 @@
+---
+title: Mint tokens
+description: Learn how to mint tokens in Solana programs using Anchor. Covers creating new tokens via cross program invocations (CPI) to the Token Program with code examples.
+---
+
+## How to mint tokens
+
+Minting tokens creates new units of a token by invoking the [`mint_to(){:rs}`](https://github.com/solana-program/token/blob/main/program/src/instruction.rs#L1087-L1114) instruction on a token program. Only the address specified as the mint authority on the [mint account](/docs/v1/tokens/spl-token-basics/create-mint/) can mint new tokens, and the instruction also requires a [token account](/docs/v1/tokens/spl-token-basics/create-token-account/) for that mint as the destination.
+
+<Callout variant="note">
+  The [Token
+  Program](https://github.com/solana-program/token/blob/main/program/src/processor.rs#L523-L585) and
+  [Token Extension
+  Program](https://github.com/solana-program/token-2022/blob/main/program/src/processor.rs#L962-L1048)
+  share similar implementations to achieve the same functionality.
+</Callout>
+
+## Examples
+
+To mint tokens through an Anchor program, make a [cross program invocation](/docs/v1/fundamentals/cpi/) (CPI) to the `mint_to{:rs}` instruction on either the Token Program or Token Extension Program. The program acts as an intermediary, passing along the required accounts, instruction data, and signatures to the token program.
+
+### Mint tokens via CPI
+
+Use the `token_interface::mint_to(){:rs}` function to make a CPI to either the Token Program or Token Extension Program. The function takes a `MintTo{:rs}` struct specifying the `mint{:rs}`, `to{:rs}` (destination token account), and `authority{:rs}` (mint authority) accounts, along with the `amount{:rs}` of tokens to mint in base units adjusted by decimals (e.g. with 2 decimals, an amount of 100 equals 1 token).
+
+The mint authority passed to the instruction must match the `mint_authority{:rs}` stored on the mint account, and must sign the transaction:
+
+```rust title="lib.rs" showLineNumbers=false
+use anchor_lang::prelude::*;
+use anchor_spl::token_interface::{self, Mint, MintTo, TokenAccount, TokenInterface};
+
+declare_id!("3pX5NKLru1UBDVckynWQxsgnJeUN3N1viy36Gk9TSn8d");
+
+#[program]
+pub mod token_example {
+    use super::*;
+
+    pub fn mint_tokens(ctx: Context<MintTokens>, amount: u64) -> Result<()> {
+        let cpi_accounts = MintTo {
+            mint: ctx.accounts.mint.to_account_info(),
+            to: ctx.accounts.token_account.to_account_info(),
+            authority: ctx.accounts.signer.to_account_info(),
+        };
+        let cpi_program_id = ctx.accounts.token_program.key();
+        let cpi_context = CpiContext::new(cpi_program_id, cpi_accounts);
+        token_interface::mint_to(cpi_context, amount)?;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct MintTokens<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    #[account(mut)]
+    pub mint: InterfaceAccount<'info, Mint>,
+    #[account(mut)]
+    pub token_account: InterfaceAccount<'info, TokenAccount>,
+    pub token_program: Interface<'info, TokenInterface>,
+}
+```
+
+At minimum, the following accounts are required:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct MintTokens<'info> {
+    // The mint authority
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    // The mint account
+    #[account(mut)]
+    pub mint: InterfaceAccount<'info, Mint>,
+    // The destination token account
+    #[account(mut)]
+    pub token_account: InterfaceAccount<'info, TokenAccount>,
+    // The token program
+    pub token_program: Interface<'info, TokenInterface>,
+}
+```
+
+Within the instruction logic, populate the `MintTo{:rs}` struct with the required accounts and pass it to `token_interface::mint_to(){:rs}` through a `CpiContext{:rs}`:
+
+```rust showLineNumbers=false
+pub fn mint_tokens(ctx: Context<MintTokens>, amount: u64) -> Result<()> {
+    // Create the MintTo struct with the accounts required for the CPI
+    let cpi_accounts = MintTo {
+        mint: ctx.accounts.mint.to_account_info(),
+        to: ctx.accounts.token_account.to_account_info(),
+        authority: ctx.accounts.signer.to_account_info(),
+    };
+
+    // The program being invoked in the CPI
+    let cpi_program_id = ctx.accounts.token_program.key();
+
+    // Combine the accounts and program into a "CpiContext"
+    let cpi_context = CpiContext::new(cpi_program_id, cpi_accounts);
+
+    // Make CPI to mint_to instruction on the token program
+    token_interface::mint_to(cpi_context, amount)?;
+    Ok(())
+}
+```
+
+### Mint tokens with PDA mint authority via CPI
+
+A mint account can use a Program Derived Address (PDA) as its mint authority, allowing the program itself to mint tokens by "signing" the CPI with the PDA's seeds. This pattern fits cases where the program, rather than an external wallet, controls minting.
+
+<Tabs items={["Program", "Client"]}>
+<Tab>
+
+```rust title="lib.rs" showLineNumbers=false
+use anchor_lang::prelude::*;
+use anchor_spl::{
+    associated_token::AssociatedToken,
+    token_interface::{self, Mint, MintTo, TokenAccount, TokenInterface},
+};
+
+declare_id!("3pX5NKLru1UBDVckynWQxsgnJeUN3N1viy36Gk9TSn8d");
+
+#[program]
+pub mod token_example {
+    use super::*;
+
+    pub fn create_mint(ctx: Context<CreateMint>) -> Result<()> {
+        msg!("Created Mint Account: {:?}", ctx.accounts.mint.key());
+        Ok(())
+    }
+
+    pub fn mint_tokens(ctx: Context<MintTokens>, amount: u64) -> Result<()> {
+        let signer_seeds: &[&[&[u8]]] = &[&[b"mint", &[ctx.bumps.mint]]];
+
+        let cpi_accounts = MintTo {
+            mint: ctx.accounts.mint.to_account_info(),
+            to: ctx.accounts.token_account.to_account_info(),
+            authority: ctx.accounts.mint.to_account_info(),
+        };
+        let cpi_program_id = ctx.accounts.token_program.key();
+        let cpi_context = CpiContext::new(cpi_program_id, cpi_accounts).with_signer(signer_seeds);
+        token_interface::mint_to(cpi_context, amount)?;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct CreateMint<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    #[account(
+        init,
+        payer = signer,
+        mint::decimals = 6,
+        mint::authority = mint,
+        mint::freeze_authority = mint,
+        seeds = [b"mint"],
+        bump
+    )]
+    pub mint: InterfaceAccount<'info, Mint>,
+    pub token_program: Interface<'info, TokenInterface>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct MintTokens<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    #[account(
+        init_if_needed,
+        payer = signer,
+        associated_token::mint = mint,
+        associated_token::authority = signer,
+        associated_token::token_program = token_program,
+    )]
+    pub token_account: InterfaceAccount<'info, TokenAccount>,
+    #[account(
+        mut,
+        seeds = [b"mint"],
+        bump
+    )]
+    pub mint: InterfaceAccount<'info, Mint>,
+    pub token_program: Interface<'info, TokenInterface>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+```
+
+</Tab>
+<Tab>
+
+```ts title="test.ts" showLineNumbers=false
+import * as anchor from '@anchor-lang/core'
+import { Program } from '@anchor-lang/core'
+import { TokenExample } from '../target/types/token_example'
+import {
+  TOKEN_2022_PROGRAM_ID,
+  getAssociatedTokenAddress,
+  getMint,
+  getAccount,
+} from '@solana/spl-token'
+
+describe('token-example', () => {
+  anchor.setProvider(anchor.AnchorProvider.env())
+
+  const program = anchor.workspace.TokenExample as Program<TokenExample>
+  const [mint, mintBump] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('mint')],
+    program.programId,
+  )
+
+  const [token, tokenBump] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('token')],
+    program.programId,
+  )
+
+  it('Is initialized!', async () => {
+    const tx = await program.methods
+      .createMint()
+      .accounts({
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .rpc({ commitment: 'confirmed' })
+    console.log('Your transaction signature', tx)
+
+    const mintAccount = await getMint(
+      program.provider.connection,
+      mint,
+      'confirmed',
+      TOKEN_2022_PROGRAM_ID,
+    )
+
+    console.log('Mint Account', mintAccount)
+  })
+
+  it('Mint Tokens', async () => {
+    const tx = await program.methods
+      .mintTokens(new anchor.BN(100))
+      .accounts({
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .rpc({ commitment: 'confirmed' })
+
+    console.log('Your transaction signature', tx)
+
+    const associatedTokenAccount = await getAssociatedTokenAddress(
+      mint,
+      program.provider.publicKey,
+      false,
+      TOKEN_2022_PROGRAM_ID,
+    )
+
+    const tokenAccount = await getAccount(
+      program.provider.connection,
+      associatedTokenAccount,
+      'confirmed',
+      TOKEN_2022_PROGRAM_ID,
+    )
+
+    console.log('Token Account', tokenAccount)
+  })
+})
+```
+
+</Tab>
+</Tabs>
+
+The mint authority is set to a PDA derived from the seed `b"mint"{:rs}`, so the program itself controls minting through this PDA:
+
+```rust showLineNumbers=false "pub mint" "= mint"
+#[derive(Accounts)]
+pub struct CreateMint<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    #[account(
+        init,
+        payer = signer,
+        mint::decimals = 6,
+        mint::authority = mint,
+        mint::freeze_authority = mint,
+        seeds = [b"mint"],
+        bump
+    )]
+    pub mint: InterfaceAccount<'info, Mint>,
+    pub token_program: Interface<'info, TokenInterface>,
+    pub system_program: Program<'info, System>,
+}
+```
+
+The program signs the CPI by reconstructing the PDA's seeds (with the bump from `ctx.bumps{:rs}`) and passing them to `with_signer(){:rs}` on the `CpiContext{:rs}`:
+
+```rust showLineNumbers=false {2,10-11} "signer_seeds"
+pub fn mint_tokens(ctx: Context<MintTokens>, amount: u64) -> Result<()> {
+    let signer_seeds: &[&[&[u8]]] = &[&[b"mint", &[ctx.bumps.mint]]];
+
+    let cpi_accounts = MintTo {
+        mint: ctx.accounts.mint.to_account_info(),
+        to: ctx.accounts.token_account.to_account_info(),
+        authority: ctx.accounts.mint.to_account_info(),
+    };
+    let cpi_program = ctx.accounts.token_program.key();
+    let cpi_context = CpiContext::new(cpi_program, cpi_accounts).with_signer(signer_seeds);
+    token_interface::mint_to(cpi_context, amount)?;
+    Ok(())
+}
+```
+
+<Callout variant="note">
+  The same PDA serves as both the mint address and the mint authority.
+</Callout>

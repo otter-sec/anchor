@@ -1,0 +1,606 @@
+{
+  "baseline": {},
+  "baseline_programs": {},
+  "results": [
+    {
+      "commit": "current",
+      "programs": {
+        "hello_world": {
+          "binary_size_bytes": 124800,
+          "compute_units": {
+            "init": 5855
+          }
+        },
+        "hello_world_pinocchio": {
+          "binary_size_bytes": 8168,
+          "compute_units": {
+            "init": 1686
+          }
+        },
+        "hello_world_quasar": {
+          "binary_size_bytes": 6960,
+          "compute_units": {
+            "init": 1412
+          }
+        },
+        "hello_world_steel": {
+          "binary_size_bytes": 77600,
+          "compute_units": {
+            "init": 4867
+          }
+        },
+        "hello_world_v2": {
+          "binary_size_bytes": 6496,
+          "compute_units": {
+            "init": 1395
+          }
+        },
+        "multisig_v1": {
+          "binary_size_bytes": 170096,
+          "compute_units": {
+            "create": 12031,
+            "deposit": 4872,
+            "execute_transfer": 7446,
+            "set_label": 4324
+          }
+        },
+        "multisig_v2": {
+          "binary_size_bytes": 31224,
+          "compute_units": {
+            "create": 3039,
+            "deposit": 1627,
+            "execute_transfer": 2182,
+            "set_label": 475
+          }
+        },
+        "nested_v1": {
+          "binary_size_bytes": 157336,
+          "compute_units": {
+            "increment": 4751,
+            "initialize": 19842,
+            "reset": 4752
+          }
+        },
+        "nested_v2": {
+          "binary_size_bytes": 13264,
+          "compute_units": {
+            "increment": 477,
+            "initialize": 2872,
+            "reset": 476
+          }
+        },
+        "prop_amm_v1": {
+          "binary_size_bytes": 140456,
+          "compute_units": {
+            "initialize": 4314,
+            "rotate_authority": 1340,
+            "update": 1310
+          }
+        },
+        "prop_amm_v2": {
+          "binary_size_bytes": 8344,
+          "compute_units": {
+            "initialize": 1379,
+            "rotate_authority": 91,
+            "update": 26
+          }
+        },
+        "vault_pinocchio": {
+          "binary_size_bytes": 5072,
+          "compute_units": {
+            "deposit": 1229,
+            "withdraw": 57
+          }
+        },
+        "vault_quasar": {
+          "binary_size_bytes": 6080,
+          "compute_units": {
+            "deposit": 1889,
+            "withdraw": 396
+          }
+        },
+        "vault_steel": {
+          "binary_size_bytes": 65160,
+          "compute_units": {
+            "deposit": 2452,
+            "withdraw": 530
+          }
+        },
+        "vault_v1": {
+          "binary_size_bytes": 107544,
+          "compute_units": {
+            "deposit": 5707,
+            "withdraw": 2478
+          }
+        },
+        "vault_v2": {
+          "binary_size_bytes": 5424,
+          "compute_units": {
+            "deposit": 1905,
+            "withdraw": 393
+          }
+        }
+      }
+    },
+    {
+      "commit": "2e135c69743b54245a5ddebe6b3f840d53a3032a",
+      "programs": {
+        "hello_world": {
+          "binary_size_bytes": 124624,
+          "compute_units": {
+            "init": 5855
+          }
+        },
+        "hello_world_pinocchio": {
+          "binary_size_bytes": 8040,
+          "compute_units": {
+            "init": 1680
+          }
+        },
+        "hello_world_quasar": {
+          "binary_size_bytes": 6960,
+          "compute_units": {
+            "init": 1412
+          }
+        },
+        "hello_world_steel": {
+          "binary_size_bytes": 77600,
+          "compute_units": {
+            "init": 4867
+          }
+        },
+        "hello_world_v2": {
+          "binary_size_bytes": 6440,
+          "compute_units": {
+            "init": 1381
+          }
+        },
+        "multisig_v1": {
+          "binary_size_bytes": 169920,
+          "compute_units": {
+            "create": 12031,
+            "deposit": 4872,
+            "execute_transfer": 7446,
+            "set_label": 4324
+          }
+        },
+        "multisig_v2": {
+          "binary_size_bytes": 30976,
+          "compute_units": {
+            "create": 3016,
+            "deposit": 1613,
+            "execute_transfer": 2170,
+            "set_label": 469
+          }
+        },
+        "nested_v1": {
+          "binary_size_bytes": 157160,
+          "compute_units": {
+            "increment": 4751,
+            "initialize": 19842,
+            "reset": 4752
+          }
+        },
+        "nested_v2": {
+          "binary_size_bytes": 12424,
+          "compute_units": {
+            "increment": 474,
+            "initialize": 2716,
+            "reset": 473
+          }
+        },
+        "prop_amm_v1": {
+          "binary_size_bytes": 140280,
+          "compute_units": {
+            "initialize": 4314,
+            "rotate_authority": 1340,
+            "update": 1310
+          }
+        },
+        "prop_amm_v2": {
+          "binary_size_bytes": 8592,
+          "compute_units": {
+            "initialize": 1375,
+            "rotate_authority": 84,
+            "update": 26
+          }
+        },
+        "vault_pinocchio": {
+          "binary_size_bytes": 5072,
+          "compute_units": {
+            "deposit": 1229,
+            "withdraw": 57
+          }
+        },
+        "vault_quasar": {
+          "binary_size_bytes": 6080,
+          "compute_units": {
+            "deposit": 1889,
+            "withdraw": 396
+          }
+        },
+        "vault_steel": {
+          "binary_size_bytes": 65160,
+          "compute_units": {
+            "deposit": 2452,
+            "withdraw": 530
+          }
+        },
+        "vault_v1": {
+          "binary_size_bytes": 107368,
+          "compute_units": {
+            "deposit": 5707,
+            "withdraw": 2478
+          }
+        },
+        "vault_v2": {
+          "binary_size_bytes": 5384,
+          "compute_units": {
+            "deposit": 1899,
+            "withdraw": 389
+          }
+        }
+      }
+    },
+    {
+      "commit": "2e135c69743b54245a5ddebe6b3f840d53a3032a",
+      "programs": {
+        "hello_world": {
+          "binary_size_bytes": 124624,
+          "compute_units": {
+            "init": 5855
+          }
+        },
+        "hello_world_pinocchio": {
+          "binary_size_bytes": 8040,
+          "compute_units": {
+            "init": 1680
+          }
+        },
+        "hello_world_quasar": {
+          "binary_size_bytes": 6960,
+          "compute_units": {
+            "init": 1412
+          }
+        },
+        "hello_world_steel": {
+          "binary_size_bytes": 77600,
+          "compute_units": {
+            "init": 4867
+          }
+        },
+        "hello_world_v2": {
+          "binary_size_bytes": 6464,
+          "compute_units": {
+            "init": 1382
+          }
+        },
+        "multisig_v1": {
+          "binary_size_bytes": 169920,
+          "compute_units": {
+            "create": 12031,
+            "deposit": 4872,
+            "execute_transfer": 7446,
+            "set_label": 4324
+          }
+        },
+        "multisig_v2": {
+          "binary_size_bytes": 31072,
+          "compute_units": {
+            "create": 3020,
+            "deposit": 1613,
+            "execute_transfer": 2172,
+            "set_label": 475
+          }
+        },
+        "nested_v1": {
+          "binary_size_bytes": 157160,
+          "compute_units": {
+            "increment": 4751,
+            "initialize": 19842,
+            "reset": 4752
+          }
+        },
+        "nested_v2": {
+          "binary_size_bytes": 12576,
+          "compute_units": {
+            "increment": 472,
+            "initialize": 2743,
+            "reset": 471
+          }
+        },
+        "prop_amm_v1": {
+          "binary_size_bytes": 140280,
+          "compute_units": {
+            "initialize": 4314,
+            "rotate_authority": 1340,
+            "update": 1310
+          }
+        },
+        "prop_amm_v2": {
+          "binary_size_bytes": 8496,
+          "compute_units": {
+            "initialize": 1375,
+            "rotate_authority": 83,
+            "update": 26
+          }
+        },
+        "vault_pinocchio": {
+          "binary_size_bytes": 5072,
+          "compute_units": {
+            "deposit": 1229,
+            "withdraw": 57
+          }
+        },
+        "vault_quasar": {
+          "binary_size_bytes": 6080,
+          "compute_units": {
+            "deposit": 1889,
+            "withdraw": 396
+          }
+        },
+        "vault_steel": {
+          "binary_size_bytes": 65160,
+          "compute_units": {
+            "deposit": 2452,
+            "withdraw": 530
+          }
+        },
+        "vault_v1": {
+          "binary_size_bytes": 107368,
+          "compute_units": {
+            "deposit": 5707,
+            "withdraw": 2478
+          }
+        },
+        "vault_v2": {
+          "binary_size_bytes": 5376,
+          "compute_units": {
+            "deposit": 1900,
+            "withdraw": 390
+          }
+        }
+      }
+    },
+    {
+      "commit": "2e135c69743b54245a5ddebe6b3f840d53a3032a",
+      "programs": {
+        "hello_world": {
+          "binary_size_bytes": 124624,
+          "compute_units": {
+            "init": 5855
+          }
+        },
+        "hello_world_pinocchio": {
+          "binary_size_bytes": 8040,
+          "compute_units": {
+            "init": 1680
+          }
+        },
+        "hello_world_quasar": {
+          "binary_size_bytes": 6960,
+          "compute_units": {
+            "init": 1412
+          }
+        },
+        "hello_world_steel": {
+          "binary_size_bytes": 77600,
+          "compute_units": {
+            "init": 4867
+          }
+        },
+        "hello_world_v2": {
+          "binary_size_bytes": 6464,
+          "compute_units": {
+            "init": 1382
+          }
+        },
+        "multisig_v1": {
+          "binary_size_bytes": 169920,
+          "compute_units": {
+            "create": 12031,
+            "deposit": 4872,
+            "execute_transfer": 7446,
+            "set_label": 4324
+          }
+        },
+        "multisig_v2": {
+          "binary_size_bytes": 30920,
+          "compute_units": {
+            "create": 2363,
+            "deposit": 1613,
+            "execute_transfer": 2171,
+            "set_label": 475
+          }
+        },
+        "nested_v1": {
+          "binary_size_bytes": 157160,
+          "compute_units": {
+            "increment": 4751,
+            "initialize": 19842,
+            "reset": 4752
+          }
+        },
+        "nested_v2": {
+          "binary_size_bytes": 12576,
+          "compute_units": {
+            "increment": 472,
+            "initialize": 2743,
+            "reset": 471
+          }
+        },
+        "prop_amm_v1": {
+          "binary_size_bytes": 140280,
+          "compute_units": {
+            "initialize": 4314,
+            "rotate_authority": 1340,
+            "update": 1310
+          }
+        },
+        "prop_amm_v2": {
+          "binary_size_bytes": 8496,
+          "compute_units": {
+            "initialize": 1375,
+            "rotate_authority": 83,
+            "update": 26
+          }
+        },
+        "vault_pinocchio": {
+          "binary_size_bytes": 5072,
+          "compute_units": {
+            "deposit": 1229,
+            "withdraw": 57
+          }
+        },
+        "vault_quasar": {
+          "binary_size_bytes": 6080,
+          "compute_units": {
+            "deposit": 1889,
+            "withdraw": 396
+          }
+        },
+        "vault_steel": {
+          "binary_size_bytes": 65160,
+          "compute_units": {
+            "deposit": 2452,
+            "withdraw": 530
+          }
+        },
+        "vault_v1": {
+          "binary_size_bytes": 107368,
+          "compute_units": {
+            "deposit": 5707,
+            "withdraw": 2478
+          }
+        },
+        "vault_v2": {
+          "binary_size_bytes": 5376,
+          "compute_units": {
+            "deposit": 1900,
+            "withdraw": 390
+          }
+        }
+      }
+    },
+    {
+      "commit": "2e135c69743b54245a5ddebe6b3f840d53a3032a",
+      "programs": {
+        "hello_world": {
+          "binary_size_bytes": 124624,
+          "compute_units": {
+            "init": 5855
+          }
+        },
+        "hello_world_pinocchio": {
+          "binary_size_bytes": 8040,
+          "compute_units": {
+            "init": 1680
+          }
+        },
+        "hello_world_quasar": {
+          "binary_size_bytes": 7416,
+          "compute_units": {
+            "init": 1731
+          }
+        },
+        "hello_world_steel": {
+          "binary_size_bytes": 77600,
+          "compute_units": {
+            "init": 4867
+          }
+        },
+        "hello_world_v2": {
+          "binary_size_bytes": 7064,
+          "compute_units": {
+            "init": 1382
+          }
+        },
+        "multisig_v1": {
+          "binary_size_bytes": 169920,
+          "compute_units": {
+            "create": 12031,
+            "deposit": 4872,
+            "execute_transfer": 7446,
+            "set_label": 4324
+          }
+        },
+        "multisig_v2": {
+          "binary_size_bytes": 31744,
+          "compute_units": {
+            "create": 2362,
+            "deposit": 1623,
+            "execute_transfer": 2164,
+            "set_label": 476
+          }
+        },
+        "nested_v1": {
+          "binary_size_bytes": 157160,
+          "compute_units": {
+            "increment": 4751,
+            "initialize": 19842,
+            "reset": 4752
+          }
+        },
+        "nested_v2": {
+          "binary_size_bytes": 13360,
+          "compute_units": {
+            "increment": 476,
+            "initialize": 2745,
+            "reset": 475
+          }
+        },
+        "prop_amm_v1": {
+          "binary_size_bytes": 140280,
+          "compute_units": {
+            "initialize": 4314,
+            "rotate_authority": 1340,
+            "update": 1310
+          }
+        },
+        "prop_amm_v2": {
+          "binary_size_bytes": 9360,
+          "compute_units": {
+            "initialize": 1382,
+            "rotate_authority": 89,
+            "update": 26
+          }
+        },
+        "vault_pinocchio": {
+          "binary_size_bytes": 5072,
+          "compute_units": {
+            "deposit": 1229,
+            "withdraw": 57
+          }
+        },
+        "vault_quasar": {
+          "binary_size_bytes": 6024,
+          "compute_units": {
+            "deposit": 1889,
+            "withdraw": 396
+          }
+        },
+        "vault_steel": {
+          "binary_size_bytes": 65160,
+          "compute_units": {
+            "deposit": 2452,
+            "withdraw": 530
+          }
+        },
+        "vault_v1": {
+          "binary_size_bytes": 107368,
+          "compute_units": {
+            "deposit": 5707,
+            "withdraw": 2478
+          }
+        },
+        "vault_v2": {
+          "binary_size_bytes": 6000,
+          "compute_units": {
+            "deposit": 1910,
+            "withdraw": 403
+          }
+        }
+      }
+    }
+  ]
+}

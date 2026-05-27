@@ -1,0 +1,110 @@
+---
+title: Rust to JS type conversion
+description: Reference for how Anchor converts between Rust and TypeScript types in generated clients.
+---
+
+Anchor's generated TypeScript clients map Rust types in the [program IDL](/docs/v1/fundamentals/idl/) to JavaScript values using the rules below. Instruction arguments and account fields follow the same mapping.
+
+## Primitive types
+
+### Booleans
+
+| Rust        | TypeScript     | Example     |
+| ----------- | -------------- | ----------- |
+| `bool{:rs}` | `boolean{:ts}` | `true{:ts}` |
+
+### Numbers
+
+| Rust | TypeScript | Example |
+| --- | --- | --- |
+| `u8{:rs}` / `u16{:rs}` / `u32{:rs}` / `i8{:rs}` / `i16{:rs}` / `i32{:rs}` | `number{:ts}` | `99{:ts}` |
+| `u64{:rs}` / `u128{:rs}` / `i64{:rs}` / `i128{:rs}` | `anchor.BN{:ts}` | `new anchor.BN(99){:ts}` |
+| `f32{:rs}` / `f64{:rs}` | `number{:ts}` | `1.0{:ts}` |
+
+Integers up to 32 bits fit in a JavaScript `number{:ts}`. Wider integers exceed `Number.MAX_SAFE_INTEGER{:ts}`, so Anchor represents them with [`BN{:ts}`](https://github.com/indutny/bn.js) to preserve precision.
+
+### Strings
+
+| Rust          | TypeScript    | Example        |
+| ------------- | ------------- | -------------- |
+| `String{:rs}` | `string{:ts}` | `"hello"{:ts}` |
+
+## Collections
+
+### Arrays and vectors
+
+| Rust                        | TypeScript      | Example          |
+| --------------------------- | --------------- | ---------------- |
+| `[T; N]{:rs}` (fixed array) | `Array<T>{:ts}` | `[1, 2, 3]{:ts}` |
+| `Vec<T>{:rs}` (vector)      | `Array<T>{:ts}` | `[1, 2, 3]{:ts}` |
+
+### Optional values
+
+| Rust | TypeScript | Example |
+| --- | --- | --- |
+| `Option<T>{:rs}` | `T \| null \| undefined{:ts}` | `null{:ts}` for `None{:rs}`, `42{:ts}` for `Some(42){:rs}` |
+
+## Complex types
+
+### Structs
+
+A Rust struct becomes a TypeScript object type with the same field names:
+
+<Tabs groupId="language" items={['Rust', 'TypeScript']}>
+<Tab>
+
+```rust showLineNumbers=false
+struct MyStruct {
+    val: u16,
+}
+```
+
+</Tab>
+<Tab>
+
+```ts showLineNumbers=false
+type MyStruct = {
+  val: number
+}
+
+const instance = { val: 99 }
+```
+
+</Tab>
+</Tabs>
+
+### Enums
+
+A Rust enum becomes an object with a single key matching the active variant. Unit variants carry an empty object, named variants carry an object of fields, and tuple variants carry an array of positional values:
+
+<Tabs groupId="language" items={['Rust', 'TypeScript']}>
+<Tab>
+
+```rust showLineNumbers=false
+enum MyEnum {
+    One,
+    Two { val: u32 },
+    Three(u8, i16),
+}
+```
+
+</Tab>
+<Tab>
+
+```ts showLineNumbers=false
+// Unit variant
+const one = { one: {} }
+
+// Named variant
+const two = {
+  two: { val: 99 },
+}
+
+// Tuple variant
+const three = {
+  three: [12, -34],
+}
+```
+
+</Tab>
+</Tabs>

@@ -1,0 +1,84 @@
+---
+title: Account constraints
+description: Built-in and namespaced account constraints.
+---
+
+Account constraints are declared on fields inside a `#[derive(Accounts)]{:rs}` struct. They run before the handler and cover account-metadata checks, PDA derivation, account creation and resizing, account closing, and extension-specific checks.
+
+| Constraint | Notes |
+| --- | --- |
+| `mut{:rs}` | Requires writable account metadata and loads the wrapper mutably. |
+| `signer{:rs}` | Requires `is_signer{:rs}`. Prefer `Signer{:rs}` for ordinary signers. |
+| `init{:rs}` | Creates and initializes the account. Requires `payer{:rs}`. |
+| `init_if_needed{:rs}` | Creates on the absent branch, otherwise validates existing data. |
+| `payer = field{:rs}` | Pays rent for init paths. |
+| `space = expr{:rs}` | Allocation size for init. |
+| `seeds = [...]{:rs}` | PDA seeds. Array form gives the best IDL metadata. |
+| `bump{:rs}` | Finds and records the canonical bump. |
+| `bump = expr{:rs}` | Verifies with an explicit bump. |
+| `seeds::program = expr{:rs}` | Derives against another program id. |
+| `address = expr{:rs}` | Checks the account address against an expression. Accepts any `T: Into<Address>{:rs}` on the right. |
+| `owner = expr{:rs}` | Checks the owner address. |
+| `executable{:rs}` | Requires the account's executable flag. |
+| `constraint = expr{:rs}` | Runs a custom boolean expression. Repeatable. |
+| `constraint(expr [@ err]){:rs}` | Parenthesized form of `constraint{:rs}`. Repeatable. |
+| `has_one = field{:rs}` | Deprecated relation check. Prefer `address = parent.field{:rs}` on the sibling account. |
+| `zeroed{:rs}` | Initializes an allocated account whose discriminator is still all zero bytes. |
+| `close = dest{:rs}` | Closes account on successful exit. |
+| `realloc = expr{:rs}` | Resizes account data when enabled. |
+| `realloc_payer = field{:rs}` | Pays for realloc growth. |
+| `realloc_zero = bool{:rs}` | Controls zeroing for new bytes. |
+| `unsafe(dup){:rs}` | Opts out of duplicate mutable account rejection for this field. |
+
+Prefer `address = parent.field{:rs}` when a sibling account must match an address stored in another account.
+
+## Namespaced constraints
+
+Namespaced constraints are implemented by marker types that satisfy `AccountConstraint<A>{:rs}`:
+
+```rust showLineNumbers=false
+#[account(token::mint = mint, token::authority = owner)]
+pub vault: Account<TokenAccount>,
+```
+
+The derive routes each marker through lifecycle hooks:
+
+| Syntax | Hook |
+| --- | --- |
+| `ns::key = value{:rs}` | `check{:rs}` |
+| `init, ns::key = value{:rs}` | `init{:rs}` during creation for runtime-only markers. Built-in namespace markers are handled by init params. |
+| `init_if_needed, ns::key = value{:rs}` | `init{:rs}` then `check{:rs}` on create, `check{:rs}` on existing |
+| `update(ns::key = value){:rs}` | `update{:rs}` |
+| any successful path | `exit{:rs}` during account exit |
+
+The `anchor-spl-v2` crate uses this extension point for `token::*{:rs}` and `mint::*{:rs}` constraints.
+
+## Custom constraints
+
+`constraint{:rs}` runs an arbitrary boolean expression and accepts either the equals form or a parenthesized form. Both spellings can appear multiple times in one `#[account(...)]{:rs}`, and the checks fire in source order:
+
+```rust showLineNumbers=false
+#[account(
+    mut,
+    constraint = pool.is_open,
+    constraint(amount > 0 @ MyError::AmountTooSmall),
+    constraint(pool.cap >= pool.total + amount),
+)]
+pub pool: Account<Pool>,
+```
+
+A bare failure raises `ErrorCode::ConstraintRaw{:rs}`. Append `@ err{:rs}` to use a custom error. `constraint(a, b){:rs}` is a parse error rather than two checks: chain checks by writing separate entries.
+
+## `address{:rs}` expressions
+
+The right-hand side of `address = expr{:rs}` is converted through `Into<Address>{:rs}`, so wrappers, byte arrays, and references all flow through the same constraint:
+
+```rust showLineNumbers=false
+#[account(address = pool.authority)]
+pub authority: UncheckedAccount,
+
+#[account(address = MY_AUTHORITY_BYTES)]
+pub admin: UncheckedAccount,
+```
+
+Use this when an account address comes from a sibling account's field, a constant, or a domain-specific newtype that implements `Into<Address>{:rs}`.

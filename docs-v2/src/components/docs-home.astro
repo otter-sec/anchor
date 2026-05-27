@@ -1,0 +1,295 @@
+---
+import Icon from './icon.astro'
+import Link from './link.astro'
+import PerformanceBenchmarks from './performance-benchmarks'
+import { withBase } from '@/lib/docs'
+
+const docsHref = (path: string) => withBase(path)
+const landingAsset = (file: string) => withBase(`/landing/${file}`)
+---
+
+<div
+  class="not-prose relative min-h-[min(calc(100svh-var(--docs-announcement-offset,0px)-18rem-3.5rem),30rem)] w-full max-w-[calc(100vw-2rem)] pt-8 pb-20 sm:min-h-[min(calc(100svh-var(--docs-announcement-offset,0px)-22rem-3.5rem),32rem)] sm:max-w-2xl xl:min-h-[min(calc(100svh-var(--docs-announcement-offset,0px)-25rem),34rem)]"
+>
+  <h1 class="mt-0 text-3xl leading-tighter font-medium text-balance sm:text-4xl">
+    Anchor v2 is the new foundation for Solana programs.
+  </h1>
+  <p class="text-muted-foreground mt-3 text-lg text-pretty">
+    Anchor v2 gives you a Rust framework for writing Solana programs, checking accounts safely,
+    generating IDLs and client code, and testing everything from one workspace.
+  </p>
+  <div class="mt-6 flex flex-wrap gap-3">
+    <Link
+      href={docsHref('/v2/get-started/first-program/')}
+      class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-10 items-center justify-center gap-2 rounded-md px-5 text-sm font-medium transition-colors"
+    >
+      Start with v2
+      <Icon name="arrow-right" class="size-4" aria-hidden="true" />
+    </Link>
+    <Link
+      href={docsHref('/v1/')}
+      class="border-border/80 bg-background hover:bg-muted inline-flex h-10 items-center justify-center gap-2 rounded-md border-2 px-5 text-sm font-medium transition-colors"
+    >
+      Use v1 docs
+      <Icon name="book" class="size-4" aria-hidden="true" />
+    </Link>
+  </div>
+  <a
+    href="#anchor-features"
+    data-scroll-cue
+    class="text-muted-foreground hover:text-foreground absolute bottom-8 left-0 inline-flex items-center gap-2 text-sm font-medium transition-all duration-300"
+  >
+    Scroll for more
+    <Icon name="chevron-down" class="size-4" aria-hidden="true" />
+  </a>
+</div>
+
+<div
+  id="anchor-features"
+  class="not-prose w-full max-w-[calc(100vw-2rem)] scroll-mt-[calc(var(--docs-announcement-offset,0px)+5rem)] sm:max-w-2xl"
+>
+  <h2 class="text-foreground m-0 text-2xl leading-[1.1] font-medium text-balance">
+    One framework, one program loop
+  </h2>
+  <p class="text-muted-foreground mt-2 mb-0 text-base leading-[1.45] text-pretty">
+    Write programs with the workflow you know, backed by a leaner runtime, clearer account types,
+    generated IDLs, and first-class tests.
+  </p>
+</div>
+
+<div
+  data-bento-scroll-frame
+  class="not-prose relative -mx-2 mt-5 before:pointer-events-none before:absolute before:top-0 before:bottom-3 before:left-0 before:z-10 before:w-11 before:bg-gradient-to-r before:from-background before:to-transparent before:opacity-0 before:transition-opacity after:pointer-events-none after:absolute after:top-0 after:right-0 after:bottom-3 after:z-10 after:w-11 after:bg-gradient-to-l after:from-background after:to-transparent after:opacity-0 after:transition-opacity data-[left-fade=true]:before:opacity-100 data-[right-fade=true]:after:opacity-100 xl:before:hidden xl:after:hidden"
+>
+  <section
+    data-bento-scroll
+    class="flex snap-x snap-mandatory overflow-x-auto scroll-px-2 pb-3 [scrollbar-width:none] xl:grid xl:snap-none xl:grid-cols-3 xl:overflow-visible xl:pb-0 [&::-webkit-scrollbar]:hidden"
+    aria-label="Anchor features"
+  >
+    <div
+      class="aspect-square w-[22rem] max-w-[calc(100vw-2rem)] shrink-0 snap-start p-2 xl:col-span-2 xl:w-auto xl:max-w-none xl:aspect-2/1 xl:shrink"
+    >
+      <div
+        class="border-border/80 relative flex size-full flex-col overflow-hidden rounded-[1.35rem] border-2 p-5 pb-0 sm:p-6 sm:pb-0 xl:pb-6"
+      >
+        <div class="relative z-10 max-w-[17rem]">
+          <h2 class="text-foreground m-0 text-2xl leading-[1.1] font-medium text-balance">
+            Account validation
+          </h2>
+          <p class="text-muted-foreground mt-2 mb-0 text-base leading-[1.35] text-pretty">
+            Define account requirements declaratively and reject bad inputs before handlers run.
+          </p>
+        </div>
+        <img
+          src={landingAsset('account-validation.svg')}
+          alt=""
+          class="mx-auto mt-auto w-full translate-y-5 dark:hidden xl:absolute xl:right-6 xl:bottom-3 xl:mx-0 xl:mt-0 xl:w-[54%] xl:translate-y-0"
+          loading="lazy"
+        />
+        <img
+          src={landingAsset('account-validation-dark.svg')}
+          alt=""
+          class="mx-auto mt-auto hidden w-full translate-y-5 dark:block xl:absolute xl:right-6 xl:bottom-3 xl:mx-0 xl:mt-0 xl:w-[54%] xl:translate-y-0"
+          loading="lazy"
+        />
+      </div>
+    </div>
+
+    <div
+      class="aspect-square w-[22rem] max-w-[calc(100vw-2rem)] shrink-0 snap-start p-2 xl:w-auto xl:max-w-none xl:shrink"
+    >
+      <div
+        class="border-border/80 flex size-full flex-col overflow-hidden rounded-[1.35rem] border-2 p-5 sm:p-6"
+      >
+        <img
+          src={landingAsset('idl.svg')}
+          alt=""
+          class="mx-auto w-full max-w-none dark:hidden"
+          loading="lazy"
+        />
+        <img
+          src={landingAsset('idl-dark.svg')}
+          alt=""
+          class="mx-auto hidden w-full max-w-none dark:block"
+          loading="lazy"
+        />
+        <div class="mt-auto">
+          <h2 class="text-foreground m-0 text-2xl leading-[1.1] font-medium text-balance">
+            IDLs and generated clients
+          </h2>
+          <p class="text-muted-foreground mt-2 mb-0 text-base leading-[1.35] text-pretty">
+            Describe your program once and generate typed client surfaces.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="aspect-square w-[22rem] max-w-[calc(100vw-2rem)] shrink-0 snap-start p-2 xl:w-auto xl:max-w-none xl:shrink"
+    >
+      <div
+        class="border-border/80 flex size-full flex-col overflow-hidden rounded-[1.35rem] border-2 p-5 pb-0 sm:p-6 sm:pb-0"
+      >
+        <h2 class="text-foreground m-0 text-2xl leading-[1.1] font-medium text-balance">
+          A complete workspace loop
+        </h2>
+        <p class="text-muted-foreground mt-2 mb-0 text-base leading-[1.35] text-pretty">
+          Scaffold programs, build artifacts, run tests, and deploy from one CLI.
+        </p>
+        <img
+          src={landingAsset('workspace-loop.svg')}
+          alt=""
+          class="mx-auto mt-auto w-full translate-y-5 dark:hidden"
+          loading="lazy"
+        />
+        <img
+          src={landingAsset('workspace-loop-dark.svg')}
+          alt=""
+          class="mx-auto mt-auto hidden w-full translate-y-5 dark:block"
+          loading="lazy"
+        />
+      </div>
+    </div>
+
+    <div
+      class="aspect-square w-[22rem] max-w-[calc(100vw-2rem)] shrink-0 snap-start p-2 xl:col-span-2 xl:w-auto xl:max-w-none xl:aspect-2/1 xl:shrink"
+    >
+      <div
+        class="border-border/80 grid size-full min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)_auto] gap-4 overflow-hidden rounded-[1.35rem] border-2 p-5 xl:grid-cols-[auto_minmax(0,1fr)] xl:grid-rows-none xl:gap-6 xl:p-6"
+      >
+        <img
+          src={landingAsset('composable-solana-programs-mobile.svg')}
+          alt=""
+          class="mx-auto h-full min-h-0 w-full max-w-full self-center object-contain dark:hidden xl:hidden!"
+          loading="lazy"
+        />
+        <img
+          src={landingAsset('composable-solana-programs-mobile-dark.svg')}
+          alt=""
+          class="mx-auto hidden h-full min-h-0 w-full max-w-full self-center object-contain dark:block xl:hidden!"
+          loading="lazy"
+        />
+        <img
+          src={landingAsset('composable-solana-programs.svg')}
+          alt=""
+          class="mx-auto hidden dark:hidden xl:block xl:h-full xl:min-h-0 xl:w-auto xl:max-w-full xl:self-stretch xl:object-contain xl:translate-y-0"
+          loading="lazy"
+        />
+        <img
+          src={landingAsset('composable-solana-programs-dark.svg')}
+          alt=""
+          class="mx-auto hidden dark:xl:block xl:h-full xl:min-h-0 xl:w-auto xl:max-w-full xl:self-stretch xl:object-contain xl:translate-y-0"
+          loading="lazy"
+        />
+        <div class="max-w-md self-start">
+          <h2 class="text-foreground m-0 text-2xl leading-[1.1] font-medium text-balance">
+            Composable Solana programs
+          </h2>
+          <p class="text-muted-foreground mt-2 mb-0 text-base leading-[1.35] text-pretty">
+            CPI helpers, SPL integrations, and generated account metadata make programs easier to
+            connect.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<PerformanceBenchmarks client:load />
+
+<section
+  id="start-where-you-are"
+  class="not-prose mt-24 scroll-mt-[calc(var(--docs-announcement-offset,0px)+5rem)]"
+  aria-labelledby="start-where-you-are-title"
+>
+  <div class="w-full max-w-[calc(100vw-2rem)] sm:max-w-2xl">
+    <h2
+      id="start-where-you-are-title"
+      class="text-foreground m-0 text-2xl leading-[1.1] font-medium text-balance"
+    >
+      Start where you are
+    </h2>
+    <p class="text-muted-foreground mt-2 mb-0 text-base leading-[1.45] text-pretty">
+      Whether you are learning Anchor, moving a v1 program, or deciding if v2 is ready, start from
+      the path closest to your code.
+    </p>
+  </div>
+
+  <div class="mt-5 grid gap-3 md:grid-cols-3">
+    <Link
+      href={docsHref('/v2/get-started/first-program/')}
+      class="border-border/80 bg-background hover:border-border hover:bg-muted/30 group flex min-h-44 flex-col rounded-[1.35rem] border-2 p-5 transition-colors"
+    >
+      <Icon name="code" class="text-muted-foreground size-5" aria-hidden="true" />
+      <h3 class="text-foreground mt-5 mb-0 text-xl leading-[1.1] font-medium text-balance">
+        New to Anchor?
+      </h3>
+      <p class="text-muted-foreground mt-2 mb-0 text-sm leading-[1.4] text-pretty">
+        Start with a small program and learn the shape of an Anchor workspace.
+      </p>
+      <span class="text-foreground mt-auto inline-flex items-center gap-2 pt-6 text-sm font-medium">
+        First program
+        <Icon
+          name="arrow-right"
+          class="size-4 transition-transform group-hover:translate-x-0.5"
+          aria-hidden="true"
+        />
+      </span>
+    </Link>
+
+    <Link
+      href={docsHref('/v2/get-started/migrating-from-v1/')}
+      class="border-border/80 bg-background hover:border-border hover:bg-muted/30 group flex min-h-44 flex-col rounded-[1.35rem] border-2 p-5 transition-colors"
+    >
+      <Icon name="rotate" class="text-muted-foreground size-5" aria-hidden="true" />
+      <h3 class="text-foreground mt-5 mb-0 text-xl leading-[1.1] font-medium text-balance">
+        Migrating from v1?
+      </h3>
+      <p class="text-muted-foreground mt-2 mb-0 text-sm leading-[1.4] text-pretty">
+        See what changed before you start moving an existing program.
+      </p>
+      <span class="text-foreground mt-auto inline-flex items-center gap-2 pt-6 text-sm font-medium">
+        Migration guide
+        <Icon
+          name="arrow-right"
+          class="size-4 transition-transform group-hover:translate-x-0.5"
+          aria-hidden="true"
+        />
+      </span>
+    </Link>
+
+    <div
+      class="border-border/80 bg-background flex min-h-44 flex-col rounded-[1.35rem] border-2 p-5"
+    >
+      <Icon name="barbell" class="text-muted-foreground size-5" aria-hidden="true" />
+      <h3 class="text-foreground mt-5 mb-0 text-xl leading-[1.1] font-medium text-balance">
+        Evaluating v2?
+      </h3>
+      <p class="text-muted-foreground mt-2 mb-0 text-sm leading-[1.4] text-pretty">
+        Check what is still alpha, then look at the numbers behind the claims.
+      </p>
+      <div class="mt-auto flex flex-wrap gap-2 pt-6">
+        <Link
+          href={docsHref('/v2/reference/alpha-limitations/')}
+          class="border-border/80 hover:border-border hover:bg-muted/30 inline-flex h-9 items-center gap-2 rounded-md border-2 px-3 text-sm font-medium transition-colors"
+        >
+          Alpha limits
+          <Icon name="arrow-right" class="size-4" aria-hidden="true" />
+        </Link>
+        <Link
+          href={docsHref('/v2/reference/examples-and-benchmarks/')}
+          class="border-border/80 hover:border-border hover:bg-muted/30 inline-flex h-9 items-center gap-2 rounded-md border-2 px-3 text-sm font-medium transition-colors"
+        >
+          Benchmarks
+          <Icon name="arrow-right" class="size-4" aria-hidden="true" />
+        </Link>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  import { mountLandingPage } from '@/lib/client/landing'
+
+  mountLandingPage()
+</script>

@@ -1,0 +1,171 @@
+---
+title: Mint tokens
+description: Mint SPL tokens through CPI helpers and PDA signer seeds.
+---
+
+Minting creates new units of a token by invoking the Token Program's `MintTo{:rs}` instruction. The mint authority stored on the mint account must authorize the CPI, and the destination must be a token account for that mint.
+
+Minting uses typed CPI account structs. The account values passed into CPI structs are `CpiHandle<'a>{:rs}` values from `cpi_handle(){:rs}` or `cpi_handle_mut(){:rs}`. The helpers come from `anchor_spl_v2::token::cpi{:rs}`.
+
+## How minting works
+
+The token program checks three things before increasing supply:
+
+| Check                                 | Why it matters                                      |
+| ------------------------------------- | --------------------------------------------------- |
+| Mint account is writable              | Mint supply changes.                                |
+| Destination token account is writable | Destination balance changes.                        |
+| Authority matches the mint authority  | Only the configured authority can create new units. |
+
+`amount{:rs}` is always in base units. For a mint with `6{:rs}` decimals, `1_000_000{:rs}` represents one whole token.
+
+## Imports
+
+Import the CPI module with the mint and token account wrappers:
+
+```rust showLineNumbers=false
+use {
+    anchor_lang_v2::prelude::*,
+    anchor_spl_v2::{
+        mint::Mint,
+        token::{self, cpi as token_cpi, TokenAccount},
+    },
+};
+```
+
+## CPI patterns
+
+<Tabs items={['Signer authority', 'PDA authority']}>
+<Tab>
+
+At minimum, the instruction needs a writable mint, a writable destination token account, the mint authority, and the token program:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct MintTokens {
+    #[account(mut, mint::authority = authority)]
+    pub mint: Account<Mint>,
+    #[account(mut, token::mint = mint)]
+    pub token_account: Account<TokenAccount>,
+    pub authority: Signer,
+    pub token_program: Program<Token>,
+}
+```
+
+The handler builds `token_cpi::accounts::MintTo{:rs}` and invokes the helper:
+
+```rust showLineNumbers=false
+pub fn mint_tokens(ctx: &mut Context<MintTokens>, amount: u64) -> Result<()> {
+    let accounts = token_cpi::accounts::MintTo {
+        mint: ctx.accounts.mint.cpi_handle_mut(),
+        to: ctx.accounts.token_account.cpi_handle_mut(),
+        authority: ctx.accounts.authority.cpi_handle(),
+    };
+    let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts);
+    token_cpi::mint_to(cpi, amount)
+}
+```
+
+The `mint::authority = authority{:rs}` constraint is not required for correctness because the Token Program checks it during CPI. It is still useful because the Anchor validation path fails earlier and returns a clearer account-validation error.
+
+</Tab>
+<Tab>
+
+When the mint authority is a PDA, the program authorizes the CPI by reconstructing the PDA seeds and attaching them with `with_signer(){:rs}`.
+
+The account validation describes the mint and the authority PDA separately:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct MintTokens {
+    #[account(mut, mint::authority = mint_authority)]
+    pub mint: Account<Mint>,
+    #[account(mut, token::mint = mint)]
+    pub token_account: Account<TokenAccount>,
+    #[account(seeds = [b"mint-authority"], bump)]
+    pub mint_authority: UncheckedAccount,
+    pub token_program: Program<Token>,
+}
+```
+
+The CPI passes the writable mint, writable destination, and read-only authority as separate handles:
+
+```rust showLineNumbers=false
+pub fn mint_tokens(ctx: &mut Context<MintTokens>, amount: u64) -> Result<()> {
+    let signer_seeds: &[&[&[u8]]] = &[&[b"mint-authority", &[ctx.bumps.mint_authority]]];
+    let accounts = token_cpi::accounts::MintTo {
+        mint: ctx.accounts.mint.cpi_handle_mut(),
+        to: ctx.accounts.token_account.cpi_handle_mut(),
+        authority: ctx.accounts.mint_authority.cpi_handle(),
+    };
+    let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts)
+        .with_signer(signer_seeds);
+    token_cpi::mint_to(cpi, amount)
+}
+```
+
+This is the standard pattern for program-controlled supply. A design can use the mint PDA itself as the mint authority, but a separate authority PDA is easier to explain and avoids borrowing the same account as both writable mint and authority in examples.
+
+</Tab>
+</Tabs>
+
+## Checked minting
+
+Use `mint_to_checked{:rs}` when the caller should also provide the expected decimals:
+
+```rust showLineNumbers=false
+pub fn mint_tokens_checked(
+    ctx: &mut Context<MintTokens>,
+    amount: u64,
+    decimals: u8,
+) -> Result<()> {
+    let accounts = token_cpi::accounts::MintToChecked {
+        mint: ctx.accounts.mint.cpi_handle_mut(),
+        to: ctx.accounts.token_account.cpi_handle_mut(),
+        authority: ctx.accounts.authority.cpi_handle(),
+    };
+    let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts);
+    token_cpi::mint_to_checked(cpi, amount, decimals)
+}
+```
+
+This is a good public-instruction default because it forces the caller and program to agree on the mint's decimal configuration.
+
+## Destination checks
+
+Validate the destination account before the CPI:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct MintToVault {
+    pub authority: Signer,
+    #[account(mut, mint::authority = authority)]
+    pub mint: Account<Mint>,
+    #[account(
+        mut,
+        token::mint = mint,
+        token::authority = vault_authority,
+    )]
+    pub vault: Account<TokenAccount>,
+    pub vault_authority: UncheckedAccount,
+    pub token_program: Program<Token>,
+}
+```
+
+`token::mint = mint{:rs}` prevents minting into a token account for a different mint. `token::authority = vault_authority{:rs}` is useful when the destination must be a specific vault or program-controlled token account.
+
+## Client and test checks
+
+Rust tests should verify both supply and destination balance after the instruction. The SPL wrappers expose accessors for this:
+
+```rust showLineNumbers=false
+let mint = svm.get_account(&mint_address).expect("mint");
+let mint_state: &anchor_spl_v2::mint::Mint = bytemuck::from_bytes(&mint.data);
+assert_eq!(mint_state.supply(), amount);
+```
+
+For Token-2022 or interface-account flows, use `InterfaceAccount<Mint>{:rs}` and `InterfaceAccount<TokenAccount>{:rs}` in the program accounts, then choose the token program explicitly with `mint::token_program{:rs}` or `token::token_program{:rs}`. The legacy `token_cpi::mint_to{:rs}` helper shown here targets the legacy Token Program surface.
+
+<Callout variant="note" title="Why `cpi_handle_mut(){:rs}` matters">
+  CPI helpers use `CpiHandle<'a>{:rs}` instead of raw account views. A writable token or mint account should be passed with `cpi_handle_mut(){:rs}`, while read-only authority accounts use `cpi_handle(){:rs}`.
+</Callout>

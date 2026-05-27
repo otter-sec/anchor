@@ -1,0 +1,127 @@
+---
+title: Feature flags
+description: 'Reference for the `alloc{:toml}`, `guardrails{:toml}`, `account-resize{:toml}`, `const-rent{:toml}`, `compat{:toml}`, and `event-cpi{:toml}` feature flags on `anchor-lang-v2`.'
+---
+
+`anchor-lang-v2` ships seven feature flags, three of which are on by default and the other four opt-in. Most programs never need to touch them, but tuning the set is useful for trimming binary size and CU cost in production builds.
+
+| Feature | Default | Effect |
+| --- | --- | --- |
+| `alloc{:toml}` | on | Pulls in `extern crate alloc{:rs}` for `Vec{:rs}`, `String{:rs}`, `BTreeMap{:rs}`. |
+| `guardrails{:toml}` | on | Runtime safety checks on dispatch and `load_mut{:rs}`. |
+| `account-resize{:toml}` | on | Enables `realloc_account{:rs}` and pinocchio's resize hook. |
+| `const-rent{:toml}` | off | Folds the rent formula to a compile-time constant. |
+| `compat{:toml}` | off | Exposes v1-shaped helpers such as `debug!{:rs}`, `error!{:rs}`, and `pubkey!{:rs}`. |
+| `event-cpi{:toml}` | off | Enables the `#[event_cpi]{:rs}` accounts attribute and the `emit_cpi!{:rs}` macro. |
+| `testing{:toml}` | off | Enables `anchor_lang_v2::testing{:rs}` with mock account scaffolding. |
+
+## `alloc{:toml}` (default)
+
+The `alloc{:toml}` feature enables `extern crate alloc{:rs}` and re-exports the `alloc{:rs}` crate under `anchor_lang_v2::__alloc{:rs}`. Generated macro code reaches `Vec{:rs}`, `String{:rs}`, and other heap-allocated types through that re-export, so user crates do not have to import `alloc{:rs}` themselves.
+
+<Callout variant="note" title="When to disable">
+  Only embedded targets without a heap have a reason to turn `alloc{:toml}` off. The ergonomic cost is significant. Most realistic user code that touches `Vec{:rs}` or `String{:rs}` will not compile without it.
+</Callout>
+
+## `guardrails{:toml}` (default)
+
+The `guardrails{:toml}` feature enables a small set of runtime checks that catch caller bugs the borrow checker cannot see statically:
+
+- `check_program_id{:rs}` on dispatch rejects misrouted instructions
+- `is_writable{:rs}` enforcement in data-account `load_mut{:rs}` paths returns an error when the account is not marked `mut{:rs}`
+- executable checks on `Program<T>{:rs}` reject non-program accounts before CPI
+
+Disabling the feature drops those guardrail-only emits, which saves roughly 300 bytes of binary and 1 to 2 CU per account:
+
+```toml title="Cargo.toml" showLineNumbers=false
+[dependencies]
+anchor-lang-v2 = { git = "...", branch = "anchor-next", default-features = false, features = ["alloc", "account-resize"] }
+```
+
+<Callout variant="warning" title="Don't disable lightly">
+  The runtime safety net is what catches accidental misuse during development. Only turn `guardrails{:toml}` off in production after the program has been thoroughly tested.
+</Callout>
+
+## `account-resize{:toml}` (default)
+
+The `account-resize{:toml}` feature enables `realloc_account{:rs}` and adds a pinocchio entrypoint hook. The hook writes `data_len{:rs}` into `RuntimeAccount.padding{:rs}` for every non-duplicate account, which is what lets `AccountView::resize(){:rs}` enforce the `MAX_PERMITTED_DATA_INCREASE{:rs}` cap.
+
+Disabling the feature saves roughly 300 bytes of binary and 2 CU per account, but only when the program never calls `realloc_account{:rs}` in the first place.
+
+<Callout variant="danger" title="Don't disable while call sites exist">
+  If `realloc_account{:rs}` could run without the resize hook, it would corrupt the stored `original_data_len{:rs}`. The function is feature-gated so this fails at compile time instead. Disable `account-resize{:rs}` only after removing every realloc path.
+</Callout>
+
+## `const-rent{:toml}` (off)
+
+The `const-rent{:toml}` feature folds `rent_exempt_lamports{:rs}` to a compile-time constant by combining pinocchio's `DEFAULT_LAMPORTS_PER_BYTE{:rs}` and `ACCOUNT_STORAGE_OVERHEAD{:rs}`. With the constant in place, `create_account{:rs}` skips the `Rent::get(){:rs}` sysvar call entirely. The savings come out to roughly 90 CU per `create_account{:rs}` CPI.
+
+<Callout variant="warning" title="Rent-formula drift">
+  If Solana changes the rent formula in the future (for example, through a SIMD like SIMD-0194), programs built with `const-rent{:toml}` will compute stale values until they are rebuilt. The feature is off by default so programs pick up runtime formula changes transparently.
+</Callout>
+
+<Callout variant="tip" title="When to enable">
+  Reach for `const-rent{:toml}` when 90 CU per `create_account{:rs}` matters more than rent-formula drift safety, and when the program is rebuilt and redeployed often enough that refreshing the constant is part of the normal release cycle.
+</Callout>
+
+## `compat{:toml}` (off)
+
+The `compat{:toml}` feature exposes a small set of v1-shaped helpers for programs in the middle of porting. The most useful is `debug!(msg){:rs}`, a logging macro shaped like `msg!{:rs}` that accepts any Rust format string by routing through `alloc::format!{:rs}`. That covers `{:?}{:rs}`, `{:x}{:rs}`, and dynamic width specifiers, none of which native `msg!{:rs}` supports.
+
+The remaining helpers re-expose v1 names so existing call sites compile without rewrites:
+
+| Helper | Form |
+| --- | --- |
+| `error!{:rs}`, `err!{:rs}`, `pubkey!{:rs}` | Macros |
+| `Pubkey{:rs}` | Type alias for `Address{:rs}` |
+| `AccountViewCompat{:rs}` | Extension trait on pinocchio's `AccountView{:rs}` |
+
+<Callout variant="warning" title="`debug!{:rs}` cost">
+  `debug!{:rs}` is meaningfully more expensive than the native `msg!{:rs}` because of the heap allocation and fmt-trait dispatch. The feature is off by default to keep production binaries from accidentally shipping the heavier path.
+</Callout>
+
+## `event-cpi{:toml}` (off)
+
+The `event-cpi{:toml}` feature wires the self-CPI event emit pattern through Anchor's derives. When enabled, it adds the `#[event_cpi]{:rs}` accounts attribute and the `emit_cpi!{:rs}` macro.
+
+The `#[program]{:rs}` dispatcher then reserves an 8-byte tag at the top of instruction data. Indexers that cannot read transaction logs can recover emitted events from instruction history through that tag.
+
+<Callout variant="note" title="Why off by default">
+  The dispatcher would pay the 8-byte tag check on every instruction. Programs that do not use event CPIs avoid that cost by keeping `event-cpi{:toml}` off.
+</Callout>
+
+See [Events](/docs/v2/programs/events/) for the call shape.
+
+## `testing{:toml}` (off)
+
+The `testing{:toml}` feature exposes the `anchor_lang_v2::testing{:rs}` module, which provides stack-backed mock pinocchio types (such as `AccountView{:rs}` and the SBF input buffer) that the `lang-v2/tests/{:dir}` integration tests and Miri witnesses depend on. Enabling `testing{:toml}` also turns on `const-rent{:toml}` so host-side tests can exercise rent-dependent helpers without needing SVM sysvar support:
+
+```console showLineNumbers=false
+$ <blue>cargo</blue> test <dim>-p</dim> anchor-lang-v2 <dim>--features</dim> testing
+```
+
+<Callout variant="note" title="Why off by default">
+  Production BPF binaries should never ship the test scaffold, so `testing{:toml}` stays opt-in.
+</Callout>
+
+## Recipe: minimal binary, prod profile
+
+```toml title="Cargo.toml" showLineNumbers=false
+[dependencies]
+anchor-lang-v2 = { git = "...", branch = "anchor-next", default-features = false, features = ["alloc"] }
+```
+
+This profile drops both `guardrails{:toml}` and `account-resize{:toml}` for the smallest possible binary.
+
+<Callout variant="danger" title="Verify before shipping">
+  Only adopt this profile once the program has been thoroughly tested and you have verified that no instruction calls `realloc_account{:rs}`. The `guardrails{:toml}` net catches caller bugs the borrow checker cannot see statically. Ship without it only after fuzzing and review have closed those holes.
+</Callout>
+
+## Recipe: maximum CU savings
+
+```toml title="Cargo.toml" showLineNumbers=false
+[dependencies]
+anchor-lang-v2 = { git = "...", branch = "anchor-next", default-features = false, features = ["alloc", "const-rent"] }
+```
+
+This profile adds rent-formula constant folding on top of the minimal recipe. Rebuild and redeploy whenever Solana changes the rent formula so the constants stay in sync.

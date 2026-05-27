@@ -1,0 +1,207 @@
+---
+title: Program derived address
+description: Learn how to use Program Derived Addresses (PDAs) in Anchor programs to create deterministic account addresses.
+---
+
+import Code from '@/components/code.astro'
+import lib from './_pda/lib.rs?raw'
+import idl from './_pda/idl.json?raw'
+import client from './_pda/test.ts?raw'
+import logs from './_pda/logs.txt?raw'
+
+<Callout variant="definition" title="Program Derived Address">
+  A Program Derived Address (PDA) is a Solana account address derived deterministically from a list of seeds and a program ID. PDAs are off the Ed25519 curve so they have no associated private key, which is what allows the owning program to sign for them through `invoke_signed{:rs}` rather than a user-provided keypair.
+</Callout>
+
+Program Derived Addresses give programs a way to create accounts whose addresses are predictable from program-defined inputs.
+
+## Anchor PDA constraints
+
+PDA derivation in Anchor is expressed through account constraints. These constraints serve as security checks that ensure the correct address is derived.
+
+The `seeds{:rs}` constraint takes an array of optional seeds used to derive the PDA, which can be static values or dynamic references to account data. The `bump{:rs}` constraint provides the bump seed that pushes the address off the Ed25519 curve so it's a valid PDA. The optional `seeds::program{:rs}` constraint specifies the program ID used for derivation and is only needed when deriving a PDA for a program other than the current one.
+
+<Callout variant="note">
+  The `seeds{:rs}` and `bump{:rs}` constraints are required to be used together.
+</Callout>
+
+### Usage examples
+
+<Tabs items={['seeds{:rs}', 'bump{:rs}', 'seeds::program{:rs}', 'init{:rs}']}>
+<Tab>
+
+The `seeds{:rs}` constraint specifies the optional values used to derive the PDA.
+
+#### No optional seeds
+
+Use an empty array `[]{:rs}` to define a PDA without optional seeds:
+
+```rust showLineNumbers=false {4}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    #[account(
+        seeds = [],
+        bump,
+    )]
+    pub pda_account: SystemAccount<'info>,
+}
+```
+
+#### Single static seed
+
+Pass a single byte literal to derive a PDA from a fixed value:
+
+```rust showLineNumbers=false {4}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    #[account(
+        seeds = [b"hello_world"],
+        bump,
+    )]
+    pub pda_account: SystemAccount<'info>,
+}
+```
+
+#### Multiple seeds and account references
+
+The `seeds{:rs}` constraint accepts multiple values and can reference other account addresses or account data:
+
+```rust showLineNumbers=false {5}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    pub signer: Signer<'info>,
+    #[account(
+        seeds = [b"hello_world", signer.key().as_ref()],
+        bump,
+    )]
+    pub pda_account: SystemAccount<'info>,
+}
+```
+
+The example above uses both a static seed (`b"hello_world"{:rs}`) and a dynamic seed (the signer's public key).
+
+</Tab>
+<Tab>
+
+The `bump{:rs}` constraint specifies the bump seed used to derive the PDA.
+
+#### Automatic bump calculation
+
+When `bump{:rs}` is used without a value, the bump is automatically calculated each time the instruction is invoked:
+
+```rust showLineNumbers=false {5}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    #[account(
+        seeds = [b"hello_world"],
+        bump,
+    )]
+    pub pda_account: SystemAccount<'info>,
+}
+```
+
+#### Specify bump value
+
+The bump value can be provided explicitly, which is useful for optimizing compute unit usage. This assumes that the PDA account has been created and the bump seed is stored as a field on an existing account:
+
+```rust showLineNumbers=false {5}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    #[account(
+        seeds = [b"hello_world"],
+        bump = pda_account.bump_seed,
+    )]
+    pub pda_account: Account<'info, CustomAccount>,
+}
+
+#[account]
+pub struct CustomAccount {
+    pub bump_seed: u8,
+}
+```
+
+By storing the bump value in the account's data, the program doesn't need to recalculate it, saving compute units. The saved bump value can live on the account itself or on another account.
+
+</Tab>
+<Tab>
+
+The `seeds::program{:rs}` constraint specifies the program ID used to derive the PDA. Use it when an instruction needs to interact with PDA accounts created by another program:
+
+```rust showLineNumbers=false {6}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    #[account(
+        seeds = [b"hello_world"],
+        bump,
+        seeds::program = other_program.key(),
+    )]
+    pub pda_account: SystemAccount<'info>,
+    pub other_program: Program<'info, OtherProgram>,
+}
+```
+
+</Tab>
+<Tab>
+
+The `init{:rs}` constraint is commonly used with `seeds{:rs}` and `bump{:rs}` to create a new account whose address is a PDA. Under the hood, `init{:rs}` invokes the System Program to create the account:
+
+```rust showLineNumbers=false {5-7}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    #[account(
+        init,
+        payer = signer,
+        space = 8 + 1,
+        seeds = [b"hello_world", signer.key().as_ref()],
+        bump,
+    )]
+    pub pda_account: Account<'info, CustomAccount>,
+    pub system_program: Program<'info, System>,
+}
+
+#[account]
+pub struct CustomAccount {
+    pub bump_seed: u8,
+}
+```
+
+<Callout variant="note">
+  The `init{:rs}` constraint must be used with `payer{:rs}` and `space{:rs}`. The `payer{:rs}` specifies the account that will pay for the account creation. The `space{:rs}` specifies the bytes to allocate for the account (including the 8-byte discriminator).
+</Callout>
+
+</Tab>
+</Tabs>
+
+## PDA seeds in the IDL
+
+PDA seeds defined in the `seeds{:rs}` constraint are included in the program's IDL file. This allows the Anchor client to automatically resolve account addresses using these seeds when constructing instructions.
+
+<Tabs items={['Program', 'IDL', 'Client']}>
+<Tab>
+
+The program below defines a `pda_account{:rs}` using a static seed (`b"hello_world"{:rs}`) and the signer's public key as a dynamic seed:
+
+<Code code={lib} lang="rust" title="lib.rs" meta="{18}" />
+
+</Tab>
+<Tab>
+
+The IDL records the PDA seeds declared on the account. The static seed `b"hello_world"{:rs}` is converted to byte values, and the dynamic seed is included as a reference to the signer account:
+
+<Code code={idl} lang="json" title="idl.json" meta="{16-17,20-21} collapse={3-8}" />
+
+</Tab>
+<Tab>
+
+The Anchor client uses the IDL to automatically resolve the PDA address. The provider wallet acts as the signer, and its public key becomes the dynamic seed for derivation, so the client can call the instruction without explicitly deriving the PDA:
+
+<Code code={client} lang="ts" title="test.ts" meta="{13}" />
+
+When the instruction is invoked, the PDA is printed to program logs:
+
+<Code code={logs} lang="text" meta="{3}" />
+
+</Tab>
+</Tabs>

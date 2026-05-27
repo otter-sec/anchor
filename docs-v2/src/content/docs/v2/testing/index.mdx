@@ -1,0 +1,25 @@
+---
+title: Testing and debugging
+description: Test programs with LiteSVM, profile them, debug SBF traces, and generate coverage.
+autoCards: false
+---
+
+The default v2 test loop is Rust-first. Instead of starting a local validator and driving it from TypeScript, the scaffolded test loads the compiled SBF program into LiteSVM inside the Rust test process.
+
+`anchor-v2-testing` wraps LiteSVM, `$ <blue>anchor</blue> test <dim>--profile</dim>` renders flamegraphs, `$ <blue>anchor</blue> debugger` opens an instruction stepper, and `$ <blue>anchor</blue> coverage` emits LCOV from the same register traces. One test harness covers normal tests, performance work, debugging, and coverage.
+
+<CardGrid>
+
+<Card title="LiteSVM" href="/docs/v2/testing/litesvm/">
+Use `anchor_v2_testing::svm(){:rs}` in Rust integration tests.
+</Card>
+
+<Card title="Profiling and debugger" href="/docs/v2/testing/profiling-and-debugger/">
+  Record per-test SBF traces, render flamegraphs, and step through instructions in the TUI.
+</Card>
+
+<Card title="Coverage" href="/docs/v2/testing/coverage/">
+  Generate source-level LCOV from SBF register traces.
+</Card>
+
+</CardGrid>

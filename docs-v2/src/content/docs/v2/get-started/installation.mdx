@@ -1,0 +1,87 @@
+---
+title: Installation
+description: Install the Anchor CLI and depend on the alpha crates from the anchor-next branch.
+---
+
+Anchor v2 installs from source while the alpha is branch-only. The normal Solana program toolchain is a prerequisite, so make sure Rust, Cargo, and the Solana CLI are already on your `PATH`:
+
+```console showLineNumbers=false
+$ rustc <dim>--version</dim>
+$ cargo <dim>--version</dim>
+$ solana <dim>--version</dim>
+```
+
+If you are setting up a machine from scratch, install Rust with [rustup](https://www.rust-lang.org/tools/install) and install the Solana CLI from the [Agave install docs](https://docs.anza.xyz/cli/install). On Windows, run the Solana and Anchor commands inside WSL rather than PowerShell.
+
+The v2 alpha crates have not been published to `crates.io` yet, so install the CLI directly from the [`anchor-next`](https://github.com/otter-sec/anchor/tree/anchor-next) branch:
+
+```console showLineNumbers=false
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor.git <dim>--branch</dim> anchor-next anchor-cli <dim>--locked</dim> <dim>--force</dim>
+```
+
+<Callout variant="warning" title="Overwrites the anchor binary">
+  `$ <blue>cargo</blue> install` overwrites the `anchor` binary on your `PATH`. To keep another
+  Anchor install available, run this binary from a source checkout instead of putting it first on
+  `PATH`.
+</Callout>
+
+AVM tracks published Anchor releases. Until v2 has published releases, use `$ <blue>cargo</blue> install <dim>--git</dim> ... <dim>--branch</dim> anchor-next` for the CLI you use with these docs.
+
+On macOS, the final link can fail with an error like `ld: could not parse bitcode object file ... Unknown attribute kind`. If that happens, disable LTO for this install:
+
+```console showLineNumbers=false
+$ CARGO_PROFILE_RELEASE_LTO=off <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor.git <dim>--branch</dim> anchor-next anchor-cli <dim>--locked</dim> <dim>--force</dim>
+```
+
+## Local checkout
+
+A local checkout is useful for inspecting internals, patching the CLI, or running the debugger against the checked-in bench programs:
+
+<Steps>
+<Step title="Clone the repository">
+
+```console showLineNumbers=false
+$ <blue>git</blue> clone https://github.com/otter-sec/anchor.git
+$ <blue>cd</blue> anchor
+$ <blue>git</blue> checkout anchor-next
+```
+
+</Step>
+<Step title="Install the CLI from source">
+
+```console showLineNumbers=false
+$ <blue>cargo</blue> install <dim>--path</dim> cli <dim>--force</dim>
+```
+
+Prepend `CARGO_PROFILE_RELEASE_LTO=off` on macOS if you hit the LTO error above.
+
+</Step>
+</Steps>
+
+## Program dependencies
+
+New workspaces created by `$ <blue>anchor</blue> init` already include the git dependency for `anchor-lang-v2`. Add `anchor-spl-v2` when the program uses SPL token helpers or Token-2022 interfaces:
+
+```toml title="Cargo.toml" showLineNumbers=false
+[dependencies]
+anchor-lang-v2 = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }
+anchor-spl-v2 = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }
+```
+
+Add these to the program crate at `programs/<program-name>/Cargo.toml{:file}`, not the workspace root `Cargo.toml{:file}`.
+
+The default `anchor-lang-v2` feature set is `alloc{:toml}`, `guardrails{:toml}`, and `account-resize{:toml}`. Optional features include `const-rent{:toml}`, `compat{:toml}`, and `testing{:toml}`. See [Feature flags](/docs/v2/reference/feature-flags/) for the tradeoffs.
+
+## Test dependencies
+
+The default scaffold uses Rust tests with `anchor-v2-testing`. Add the dev dependency to the same `programs/<program-name>/Cargo.toml{:file}`:
+
+```toml title="Cargo.toml" showLineNumbers=false
+[dev-dependencies]
+anchor-v2-testing = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }
+
+[features]
+profile = ["anchor-v2-testing/profile"]
+```
+
+That `profile{:toml}` feature is what `$ <blue>anchor</blue> test <dim>--profile</dim>`, `$ <blue>anchor</blue> debugger`, and `$ <blue>anchor</blue> coverage` use to record SBF register traces.

@@ -1,0 +1,41 @@
+---
+import SidebarItem from '@/components/docs/sidebar-item.astro'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import type { SidebarNode } from '@/types'
+
+interface Props {
+  tree: SidebarNode[]
+  class?: string
+}
+
+const { tree, class: className } = Astro.props
+---
+
+<nav aria-label="Documentation" class={className} data-sidebar-root>
+  <ScrollArea client:idle className="h-full">
+    <ul class="flex flex-col gap-0.5">
+      {
+        tree.map((node) => (
+          <li>
+            <SidebarItem node={node} />
+          </li>
+        ))
+      }
+    </ul>
+  </ScrollArea>
+</nav>
+
+<style is:global>
+  [data-sidebar-root][data-sidebar-settling='true'],
+  [data-sidebar-root][data-sidebar-settling='true'] * {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+    transition-property: none !important;
+  }
+</style>
+
+<script>
+  import { mountDocsSidebar } from '@/lib/client/sidebar'
+
+  mountDocsSidebar()
+</script>

@@ -1,0 +1,5 @@
+Program BZLiJ62bzRryYp9mRobz47uA66WDgtfTXhhgM25tJyx5 invoke [1]
+Program log: Instruction: TestInstruction
+Program log: PDA: 3Hikt5mpKaSS4UNA5Du1TZJ8tp4o8VC8YWW6X9vtfVnJ
+Program BZLiJ62bzRryYp9mRobz47uA66WDgtfTXhhgM25tJyx5 consumed 18505 of 200000 compute units
+Program BZLiJ62bzRryYp9mRobz47uA66WDgtfTXhhgM25tJyx5 success

@@ -1,0 +1,215 @@
+---
+title: Create a token account
+description: Create and initialize SPL token accounts with token constraints and ATA address checks.
+---
+
+A token account stores one authority's balance for one mint. Each token account records a mint, an authority, an amount, and optional delegate, wrapped-SOL, and close-authority state.
+
+Anchor models the legacy SPL Token account as `Account<TokenAccount>{:rs}` from `anchor_spl_v2::token{:rs}`. Like `Account<Mint>{:rs}`, it is zero-copy over the Token Program layout and starts at byte offset `0` instead of using an Anchor discriminator.
+
+## Token account data
+
+The base token account layout is 165 bytes:
+
+```rust showLineNumbers=false
+pub struct TokenAccount {
+    mint: Address,
+    owner: Address,
+    amount: [u8; 8],
+    delegate_flag: [u8; 4],
+    delegate: Address,
+    state: u8,
+    is_native_flag: [u8; 4],
+    native_amount: [u8; 8],
+    delegated_amount: [u8; 8],
+    close_authority_flag: [u8; 4],
+    close_authority: Address,
+}
+```
+
+The fields are private. Read them with accessors such as `mint(){:rs}`, `owner(){:rs}`, `amount(){:rs}`, `delegate(){:rs}`, `delegated_amount(){:rs}`, `is_initialized(){:rs}`, `is_frozen(){:rs}`, and `close_authority(){:rs}`.
+
+<Callout variant="notation" title='Two meanings of "owner"'>
+  A token account's `owner(){:rs}` is the token authority that can transfer or burn tokens. It is not the Solana account owner. The Solana account owner is the program that owns the data, which is the Token Program for `Account<TokenAccount>{:rs}`.
+</Callout>
+
+## Account kinds
+
+There are three common ways to choose the token-account address:
+
+| Kind | Address | Common use |
+| --- | --- | --- |
+| Keypair token account | A normal generated keypair address | Simple tests or one-off accounts. |
+| Associated token account | PDA derived by the Associated Token Program | Canonical wallet account for a mint. |
+| Program PDA token account | PDA derived by your program | Vaults and program-controlled balances. |
+
+Anchor has high-level init support for keypair accounts and your program's PDAs through `token::*{:rs}` constraints. For associated token accounts, the current surface exposes address derivation and validation helpers. High-level `associated_token::*{:rs}` init constraints are still in progress.
+
+## Imports
+
+Import the mint and token account wrappers together:
+
+```rust showLineNumbers=false
+use {
+    anchor_lang_v2::prelude::*,
+    anchor_spl_v2::{
+        mint::Mint,
+        token::{self, TokenAccount},
+    },
+};
+```
+
+## Account patterns
+
+<Tabs items={['Keypair account', 'Associated token account', 'PDA token account']}>
+<Tab>
+
+Use `token::mint{:rs}` and `token::authority{:rs}` constraints to initialize a token account:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct CreateTokenAccount {
+    #[account(mut)]
+    pub payer: Signer,
+    pub mint: Account<Mint>,
+    pub authority: UncheckedAccount,
+    #[account(
+        init,
+        payer = payer,
+        token::mint = mint,
+        token::authority = authority,
+    )]
+    pub token_account: Account<TokenAccount>,
+    pub token_program: Program<Token>,
+    pub system_program: Program<System>,
+}
+```
+
+The generated validation path creates the account with the Token Program as owner and invokes `InitializeAccount3{:rs}` before entering the handler. The handler can stay empty when all it needs to do is create the account:
+
+```rust showLineNumbers=false
+pub fn create_token_account(_ctx: &mut Context<CreateTokenAccount>) -> Result<()> {
+    Ok(())
+}
+```
+
+</Tab>
+<Tab>
+
+An associated token account is a token account at the canonical PDA derived from the wallet, token program, and mint under the Associated Token Program.
+
+Anchor currently exposes `get_associated_token_address{:rs}` for deriving and checking that address:
+
+```rust showLineNumbers=false
+use anchor_spl_v2::associated_token::get_associated_token_address;
+
+#[derive(Accounts)]
+pub struct UseAssociatedTokenAccount {
+    pub authority: Signer,
+    pub mint: Account<Mint>,
+    #[account(
+        mut,
+        token::mint = mint,
+        token::authority = authority,
+        address = get_associated_token_address(
+            authority.address(),
+            mint.account().address(),
+            &Token::id(),
+        ),
+    )]
+    pub token_account: Account<TokenAccount>,
+}
+```
+
+Use this when the associated token account is created elsewhere, or when your instruction only needs to verify that the supplied account is the canonical ATA.
+
+<Callout variant="note" title="Creating ATAs during alpha">
+  The ATA address belongs to the Associated Token Program's PDA space, so a normal `init{:rs}` constraint from your program cannot sign for that address. Until the `associated_token::*{:rs}` init constraints are available, create ATAs outside this instruction or through a lower-level CPI to the Associated Token Program, then validate the resulting address with `get_associated_token_address{:rs}`.
+</Callout>
+
+</Tab>
+<Tab>
+
+A token account can also be a PDA controlled by your program:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct CreateVaultTokenAccount {
+    #[account(mut)]
+    pub payer: Signer,
+    pub mint: Account<Mint>,
+    #[account(seeds = [b"vault-authority", mint.address().as_ref()], bump)]
+    pub vault_authority: UncheckedAccount,
+    #[account(
+        init,
+        payer = payer,
+        seeds = [b"vault-token", mint.address().as_ref()],
+        bump,
+        token::mint = mint,
+        token::authority = vault_authority,
+    )]
+    pub token_account: Account<TokenAccount>,
+    pub token_program: Program<Token>,
+    pub system_program: Program<System>,
+}
+```
+
+Later CPI calls can transfer or burn from the token account by signing with the `vault_authority{:rs}` PDA seeds. A program can also use the same PDA for the token account address and its authority, but a separate authority PDA is easier to read and avoids duplicate-account edge cases in examples.
+
+</Tab>
+</Tabs>
+
+## Interface accounts
+
+`Account<TokenAccount>{:rs}` accepts legacy Token Program accounts with the exact 165-byte base layout. Use `InterfaceAccount<TokenAccount>{:rs}` when a read or validation path should accept Token-2022 accounts with TLV extension data after the base state:
+
+```rust showLineNumbers=false
+use anchor_spl_v2::token_interface::InterfaceAccount;
+
+#[derive(Accounts)]
+pub struct UseEitherTokenProgram {
+    pub mint: InterfaceAccount<Mint>,
+    #[account(
+        token::mint = mint,
+        token::authority = authority,
+    )]
+    pub token_account: InterfaceAccount<TokenAccount>,
+    pub authority: Signer,
+}
+```
+
+For high-level initialization through an interface account, include `token::token_program = token_program{:rs}` and use `Program<Token>{:rs}` for the current legacy Token Program path. Token-2022 account creation and extension setup should use lower-level Token-2022 APIs, then validate the resulting account through `InterfaceAccount<TokenAccount>{:rs}`.
+
+## Account constraints
+
+Use these constraints together for a new legacy SPL Token account:
+
+| Constraint | Description |
+| --- | --- |
+| `init{:rs}` | Creates the account through the System Program and initializes it as a token account. |
+| `init_if_needed{:rs}` | Creates only when absent, then validates the existing account on later calls. |
+| `payer = payer{:rs}` | Pays rent for the new token account. |
+| `token::mint = mint{:rs}` | Sets or validates the mint associated with the token account. |
+| `token::authority = authority{:rs}` | Sets or validates the token authority. |
+
+After initialization, the same constraints validate existing accounts:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct UseTokenAccount {
+    pub mint: Account<Mint>,
+    pub authority: Signer,
+    #[account(
+        mut,
+        token::mint = mint,
+        token::authority = authority,
+    )]
+    pub token_account: Account<TokenAccount>,
+}
+```
+
+Use `init_if_needed{:rs}` only when the instruction is designed to be idempotent. The existing-account branch still checks `token::mint{:rs}` and `token::authority{:rs}`, so a caller cannot pass a token account for a different mint or authority.
+
+## Client and test checks
+
+In Rust tests, derive the expected ATA or PDA explicitly and pass that address to the generated instruction helper. For PDA token accounts, keep the seed list in one place in the program and the test. Array-form seeds also help IDL clients understand the derivation.

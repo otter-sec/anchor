@@ -1,0 +1,67 @@
+---
+import { renderDescription } from '@/lib/render-description'
+import { cn } from '@/lib/utils'
+
+interface Props {
+  auth: string
+  gate?: string
+  permissions?: string
+  captcha?: string
+  rateLimit?: string
+  class?: string
+}
+
+const {
+  auth,
+  gate = '-',
+  permissions = '-',
+  captcha = '-',
+  rateLimit = '-',
+  class: className,
+} = Astro.props
+
+function isEmptyValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase()
+  return normalized === '' || normalized === '-' || normalized === 'none'
+}
+
+const items = await Promise.all(
+  [
+    { label: 'Auth', value: auth, emptyValue: 'None' },
+    { label: 'Gate', value: gate, emptyValue: 'None' },
+    { label: 'Permissions', value: permissions, emptyValue: 'No extra permissions' },
+    { label: 'Captcha', value: captcha, emptyValue: 'No captcha' },
+    { label: 'Rate limit', value: rateLimit, emptyValue: 'No rate limit' },
+  ].map(async (item) => {
+    const isEmpty = isEmptyValue(item.value)
+    return {
+      ...item,
+      isEmpty,
+      rendered: await renderDescription(isEmpty ? item.emptyValue : item.value),
+    }
+  }),
+)
+---
+
+<dl
+  class={cn(
+    'not-prose my-6 grid grid-cols-[repeat(auto-fit,minmax(min(12rem,100%),1fr))] gap-x-6 gap-y-4 border-y-2 py-4',
+    className,
+  )}
+>
+  {
+    items.map((item) => (
+      <div class="min-w-0">
+        <dt class="text-foreground text-xs leading-none font-medium">{item.label}</dt>
+        <dd
+          class={cn(
+            'mt-1.5 text-sm leading-snug wrap-break-word',
+            item.isEmpty ? 'text-muted-foreground/40' : 'text-foreground/80',
+          )}
+          data-doc-description
+          set:html={item.rendered.html}
+        />
+      </div>
+    ))
+  }
+</dl>

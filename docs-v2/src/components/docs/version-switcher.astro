@@ -1,0 +1,45 @@
+---
+import SidebarBadge from '@/components/docs/sidebar-badge.astro'
+import Link from '@/components/link.astro'
+import { cn, trimTrailingSlash } from '@/lib/utils'
+import { getDocsVersionSwitchOptions, type DocsVersionSwitchOption } from '@/lib/sidebar'
+
+interface Props {
+  options?: DocsVersionSwitchOption[]
+}
+
+const { options: providedOptions } = Astro.props
+const options = providedOptions ?? (await getDocsVersionSwitchOptions(Astro.url.pathname))
+const currentPath = trimTrailingSlash(Astro.url.pathname)
+---
+
+<nav
+  aria-label="Documentation version"
+  class="border-border/80 bg-muted/30 grid grid-cols-2 gap-1 rounded-md border p-1"
+>
+  {
+    options.map((option) => (
+      <Link
+        href={option.href}
+        aria-current={
+          option.active && trimTrailingSlash(option.href) === currentPath ? 'page' : undefined
+        }
+        data-version-option={option.version}
+        data-active={option.active ? 'true' : undefined}
+        class={cn(
+          'text-muted-foreground hover:bg-muted/60 hover:text-foreground flex min-h-8 items-center justify-center gap-1.5 rounded-sm px-2 text-sm font-medium no-underline transition-colors',
+          'data-[active=true]:bg-background data-[active=true]:text-foreground data-[active=true]:shadow-xs data-[active=true]:hover:bg-background data-[active=true]:hover:text-foreground',
+        )}
+      >
+        <span>{option.label}</span>
+        {option.badge && <SidebarBadge badge={option.badge} />}
+      </Link>
+    ))
+  }
+</nav>
+
+<script>
+  import { mountVersionSwitcher } from '@/lib/client/version-switcher'
+
+  mountVersionSwitcher()
+</script>

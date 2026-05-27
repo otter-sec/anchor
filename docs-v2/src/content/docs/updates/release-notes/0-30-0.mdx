@@ -1,0 +1,290 @@
+---
+title: 0.30.0
+description: Anchor release notes for 0.30.0.
+---
+
+These notes cover the main changes in `0.30.0`. The complete list of notable changes lives in the [`CHANGELOG.md{:file}`](https://github.com/otter-sec/anchor/blob/v0.30.0/CHANGELOG.md#0300---2024-04-15).
+
+---
+
+## How to upgrade
+
+1. Update `avm`:
+
+   ```bash
+   $ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor <dim>--tag</dim> v0.30.0 avm <dim>--locked</dim>
+   ```
+
+2. Update `anchor-cli`:
+
+   ```bash
+   $ <blue>avm</blue> install latest
+   ```
+
+3. Update Anchor crate(s) to `0.30.0`. Optionally, run `$ <blue>cargo</blue> update` to update other dependencies to the latest compatible versions.
+
+4. Update TS package(s) to `0.30.0`.
+
+## Recommended Solana version
+
+This release supports any Solana version above `1.16`, with `1.18.8` recommended. Upgrade Solana tools with:
+
+```console
+$ <blue>solana-install</blue> init 1.18.8
+```
+
+## IDL
+
+The IDL type specification and generation have been rewritten. See [PR #2824](https://github.com/otter-sec/anchor/pull/2824) for the design discussion.
+
+### `idl-build` feature
+
+`idl-build` feature is now required in your program's `Cargo.toml{:file}` definition in order for the IDL generation to work.
+
+Without this feature, `$ <blue>anchor</blue> build` outputs:
+
+```console
+$ <blue>anchor</blue> build
+Error: `idl-build` feature is missing. To solve, add
+
+[features]
+idl-build = ["anchor-lang/idl-build"]
+
+in `<PATH_TO_CARGO_TOML>`.
+```
+
+Every crate used to generate type definitions for the IDL must be listed in the `idl-build` feature, for example `anchor-spl/idl-build` or `some-program/idl-build`.
+
+## Lang
+
+### Dependency free program declaration
+
+Depending on multiple crates that pull in different Anchor versions has long been painful. The new `declare_program!(){:rs}` macro generates a program client directly from an IDL, removing the runtime version coupling:
+
+```rust showLineNumbers=false
+declare_program!(program_name);
+```
+
+`program_name` matches a file in the workspace's `idls{:dir}` directory, so the example above expects `idls/program_name.json{:file}` to exist. The generated client supports both on-chain CPI and off-chain RPC usage, sidestepping [dependency hell](https://en.wikipedia.org/wiki/Dependency_hell). See the [on-chain CPI example](https://github.com/otter-sec/anchor/blob/v0.30.0/tests/declare-program/programs/declare-program/src/lib.rs) and the [macro documentation](https://docs.rs/anchor-lang/0.30.0/anchor_lang/macro.declare_program.html) for full details.
+
+### Token extensions
+
+#### Constraints
+
+New account constraints cover the [Token Extensions (Token 2022)](https://solana.com/solutions/token-extensions) program. Each field is referenced under the `extensions` prefix and joined with `::`, for example `extensions::group_pointer::authority = <EXPR>{:rs}`.
+
+| Extension              | Fields                          |
+| ---------------------- | ------------------------------- |
+| `group_pointer`        | `authority`, `group_address`    |
+| `group_member_pointer` | `authority`, `member_address`   |
+| `metadata_pointer`     | `authority`, `metadata_address` |
+| `close_authority`      | `authority`                     |
+| `permanent_delegate`   | `delegate`                      |
+| `transfer_hook`        | `authority`, `program_id`       |
+
+Each constraint works with or without the `init` constraint. The [token-extensions integration test](https://github.com/otter-sec/anchor/blob/v0.30.0/tests/spl/token-extensions/programs/token-extensions/src/instructions.rs) shows the full set in use.
+
+#### CPI wrappers
+
+`anchor-spl` now ships CPI wrappers for the Token Extensions program under `anchor_spl::token_2022_extensions{:rs}`.
+
+### `#[interface]` attribute
+
+Transfer hooks can now be wired up with the new `#[interface]{:rs}` attribute, which replaces Anchor's default instruction discriminator with the interface instruction's discriminator. Two values are currently supported: `spl_transfer_hook_interface::initialize_extra_account_meta_list{:rs}` and `spl_transfer_hook_interface::execute{:rs}`:
+
+```rust showLineNumbers=false
+mod my_hook_program {
+    #[interface(spl_transfer_hook_interface::initialize_extra_account_meta_list)]
+    pub fn initialize(ctx: Context<Initialize>, metas: Vec<AnchorExtraAccountMeta>) -> Result<()> {
+        /* ... */
+    }
+
+    #[interface(spl_transfer_hook_interface::execute)]
+    pub fn execute(ctx: Context<Execute>, amount: u64) -> Result<()> {
+        /* ... */
+    }
+}
+```
+
+### Optional bumps
+
+Bumps for unspecified optional accounts no longer default to `u8::MAX{:rs}`. The optional bump type is now `Option<u8>{:rs}`, and missing entries are `None{:rs}`.
+
+### Less heap allocations
+
+Borsh's [`try_to_vec`](https://github.com/near/borsh-rs/blob/79097e3c71ae469a101b4828457792bcf8be7f5f/borsh/src/ser/mod.rs#L47-L51), which Anchor uses for events, CPI, and return data, allocates [1024 bytes](https://github.com/near/borsh-rs/blob/79097e3c71ae469a101b4828457792bcf8be7f5f/borsh/src/ser/mod.rs#L19) per call regardless of payload size. The default has been lowered to 256 bytes. The new `InstructionData::write_to(){:rs}` method also writes into an existing allocation, avoiding the fresh allocation `InstructionData::data(){:rs}` creates.
+
+## CLI
+
+### Priority fees in CLI
+
+Landing transactions on mainnet-beta increasingly requires priority fees. IDL commands now accept a `<dim>--priority-fee</dim>` argument:
+
+```console
+$ <blue>anchor</blue> idl erase-authority <dim>--program-id</dim> <dim><PROGRAM_ID></dim> <dim>--priority-fee</dim> 9000
+```
+
+Without an explicit value, the median fee of the last 150 confirmed slots is used.
+
+### `<dim>--no-idl</dim>` flag on builds
+
+IDL generation requires a full program build. When the program's public API hasn't changed, the `<dim>--no-idl</dim>` flag skips IDL regeneration:
+
+```console
+$ <blue>anchor</blue> build <dim>--no-idl</dim>
+```
+
+### IDL buffer is closed after `idl upgrade`
+
+After an IDL upgrade, the buffer account is closed and its lamports returned to the IDL authority.
+
+### Pass deploy arguments to `solana-cli`
+
+Arguments after `--` are forwarded from `$ <blue>anchor</blue> deploy` to `$ <blue>solana</blue> program deploy`:
+
+```console
+$ <blue>anchor</blue> deploy <dim>--</dim> <dim>--final</dim>
+```
+
+### Verifiable deployments
+
+Like verifiable builds, deployments can now use the verifiable build artifact instead of the default build:
+
+```console
+$ <blue>anchor</blue> deploy <dim>--verifiable</dim>
+```
+
+### Accept package name as program name
+
+The `<dim>--program-name</dim>` (`<dim>-p</dim>`) argument now accepts a program's package name in addition to its snake_case lib name:
+
+```console
+$ <blue>anchor</blue> build <dim>-p</dim> my-program
+```
+
+### Deactivate test-validator features
+
+Test-validator features can now be deactivated from `Anchor.toml{:file}`:
+
+```toml
+[test.validator]
+deactivate_feature = ["GDH5TVdbTPUpRnXaRyQqiKUa7uZAbZ28Q2N9bhbKoMLm", "zkiTNuzBKxrCLMKehzuQeKZyLtX2yvFcEKMML8nExU8"]
+```
+
+### Crate and package compatibility
+
+Mismatched versions of `anchor-cli`, `anchor-lang`, and `@otter-sec/anchor` can lead to unexpected behavior. This release prints a warning when the three don't agree.
+
+### Explicit `overflow-checks` flag
+
+Cargo's [`overflow-checks`](https://doc.rust-lang.org/cargo/reference/profiles.html#overflow-checks) is implicitly off by default. Workspaces scaffolded by `$ <blue>anchor</blue> init` enabled it, but Anchor never enforced the setting on existing workspaces. As of this release, `overflow-checks` in the workspace `Cargo.toml{:file}` must be set explicitly to either `true` or `false`.
+
+### Wildcard pattern in `Anchor.toml{:file}`
+
+`workspace.members` and `workspace.exclude` now support a simple trailing wildcard:
+
+```toml
+[workspace]
+members = ["programs/*"]
+```
+
+More complex glob patterns are not yet supported.
+
+### `cargo build-sbf` is now the default
+
+Previously `$ <blue>anchor</blue> build` invoked `$ <blue>cargo</blue> build-bpf`. Because `build-bpf` is deprecated, `$ <blue>anchor</blue> build` now defaults to `$ <blue>cargo</blue> build-sbf`. The old behavior is still available with:
+
+```console
+$ <blue>anchor</blue> build <dim>--arch</dim> bpf
+```
+
+### Run multiple commands in scripts
+
+Scripts in `Anchor.toml{:file}` now support multiple commands chained with `&&`:
+
+```toml
+[scripts]
+test-all = "cargo test && yarn run ts-mocha tests/**/*.ts"
+```
+
+Run the script with:
+
+```console
+$ <blue>anchor</blue> run test-all
+```
+
+### Test only a specified program
+
+A single program in a multi-program workspace can be tested with `<dim>--program-name</dim>` (`<dim>-p</dim>`):
+
+```console
+$ <blue>anchor</blue> test <dim>--program-name</dim> example
+```
+
+### Rust test template
+
+Initialize a workspace with a Rust test template instead of the default TypeScript:
+
+```console
+$ <blue>anchor</blue> init <dim>--test-template</dim> rust
+```
+
+## TypeScript
+
+### Account resolution
+
+Account resolution lets clients fill in accounts automatically rather than passing every one explicitly. The TS library's resolution logic has been overhauled. Most of those changes are internal, but the user-facing surface around `.accounts(){:ts}` has changed.
+
+Previously, all accounts on the builder were typed as partial, with no way to know which ones the IDL could resolve. The transaction builder now exposes three methods:
+
+- `.accounts(){:ts}` is fully type-safe against the IDL's resolution fields, so only the accounts that can't be resolved need to be passed.
+- `.accountsPartial(){:ts}` preserves the old behavior, accepting any account including resolvable ones.
+- `.accountsStrict(){:ts}` opts out of resolution entirely and requires every account to be passed manually (unchanged from before).
+
+Existing `.accounts(){:ts}` calls may stop type-checking. Either rename them to `.accountsPartial(){:ts}` to keep the old behavior, or drop the accounts the IDL can resolve:
+
+```ts title="example.ts" showLineNumbers=false del={1-8} add={9}
+await program.methods
+  .init()
+  .accounts({
+    pda: ...,
+    signer: ...,
+    systemProgram: ...,
+  })
+  .rpc()
+await program.methods.init().rpc()
+```
+
+### Magic account names
+
+The TS library no longer autofills common program and sysvar accounts based on field names like `systemProgram`. The IDL's new `address` field resolves programs and sysvars directly, removing the need for the name-based magic.
+
+### Case conversion
+
+The TS library's internals were riddled with case-conversion logic before string comparisons, forcing libraries built on Anchor to do the same. The IDL and the TS library now both use consistent camelCase throughout.
+
+### No more program id
+
+The `programId{:ts}` parameter of `Program{:ts}` has been removed. The new IDL stores the program id in its `address` field:
+
+```ts showLineNumbers=false del={1} add={2}
+new Program(idl, programId)
+new Program(idl)
+```
+
+### Optional provider options
+
+The `opts{:ts}` parameter of `AnchorProvider{:ts}` is now optional:
+
+```ts showLineNumbers=false del={1} add={2}
+new AnchorProvider(connection, wallet, {})
+new AnchorProvider(connection, wallet)
+```
+
+### Type changes
+
+Too many type changes to enumerate here, especially around the IDL. See [`idl.ts{:file}`](https://github.com/otter-sec/anchor/blob/v0.30.0/ts/packages/anchor/src/idl.ts) for the new types.
+
+---
+
+See the full list of notable changes in the [CHANGELOG](https://github.com/otter-sec/anchor/blob/v0.30.0/CHANGELOG.md#0300---2024-04-15).

@@ -1,0 +1,25 @@
+---
+
+---
+
+<div role="tabpanel" class="prose max-w-none" data-tab-panel>
+  <slot />
+</div>
+
+<style>
+  @layer components {
+    [data-tab-panel] > :global(*:first-child) {
+      margin-top: 0 !important;
+    }
+    [data-tab-panel] > :global(*:last-child),
+    [data-tab-panel] > :global(*:last-child) > :global(*:last-child),
+    [data-tab-panel] > :global(*:last-child) > :global(*:last-child) > :global(*:last-child),
+    [data-tab-panel]
+      > :global(*:last-child)
+      > :global(*:last-child)
+      > :global(*:last-child)
+      > :global(*:last-child) {
+      margin-bottom: 0 !important;
+    }
+  }
+</style>

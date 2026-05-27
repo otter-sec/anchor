@@ -1,0 +1,166 @@
+---
+title: PDAs and resolution
+description: Learn how to use Program Derived Addresses, PDA constraints, generated bumps, resolved accounts, and IDL seed metadata.
+---
+
+<Callout variant="definition" title="Program Derived Address">
+  A Program Derived Address (PDA) is a Solana account address derived deterministically from a list
+  of seeds and a program ID. PDAs are off the Ed25519 curve, so they have no associated private key.
+  The owning program can sign for them through CPI signer seeds.
+</Callout>
+
+Program Derived Addresses give programs a way to create accounts whose addresses are predictable from program-defined inputs. Anchor expresses PDA derivation through account constraints.
+
+## Anchor PDA constraints
+
+The `seeds{:rs}` constraint lists the values used to derive the PDA. Seeds can be static byte strings, account addresses, account data, or instruction arguments. The `bump{:rs}` constraint finds the bump seed that pushes the address off the Ed25519 curve.
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct Initialize {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer, seeds = [b"counter", payer.address().as_ref()], bump)]
+    pub counter: Account<Counter>,
+    pub system_program: Program<System>,
+}
+```
+
+<Callout variant="note">
+  The `seeds{:rs}` and `bump{:rs}` constraints are used together for normal PDA validation.
+</Callout>
+
+The generated bumps struct stores the canonical bump as a typed field:
+
+```rust showLineNumbers=false
+ctx.accounts.counter.bump = ctx.bumps.counter;
+```
+
+## Seed examples
+
+Use an empty array to define a PDA without optional seeds:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct ReadGlobal {
+    #[account(seeds = [], bump)]
+    pub global: Account<Global>,
+}
+```
+
+Pass a single byte literal to derive a PDA from a fixed value:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct ReadConfig {
+    #[account(seeds = [b"config"], bump)]
+    pub config: Account<Config>,
+}
+```
+
+Use multiple seeds when the PDA should depend on a user, mint, market, or instruction-specific value:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct ReadProfile {
+    pub user: Signer,
+    #[account(seeds = [b"profile", user.address().as_ref()], bump)]
+    pub profile: Account<Profile>,
+}
+```
+
+The example above uses both a static seed (`b"profile"{:rs}`) and a dynamic seed (the user's address).
+
+If all seeds are byte literals, Anchor can run PDA discovery at macro expansion time and bake the result into generated code:
+
+```rust showLineNumbers=false
+#[account(seeds = [b"global-config"], bump)]
+pub config: Account<Config>,
+```
+
+Seeds that depend on runtime accounts or instruction arguments still use the runtime path.
+
+## Explicit bumps
+
+When `bump{:rs}` is used without a value, Anchor finds the canonical bump during validation. That is the simplest form and is the right default while creating an account.
+
+```rust showLineNumbers=false
+#[account(seeds = [b"counter", payer.address().as_ref()], bump)]
+pub counter: Account<Counter>,
+```
+
+An account can also store its bump and use that value later:
+
+```rust showLineNumbers=false
+#[account(seeds = [b"counter"], bump = counter.bump)]
+pub counter: Account<Counter>,
+```
+
+By storing the bump value in account data, the program avoids a runtime search when reloading the account.
+
+## PDA creation
+
+The `init{:rs}` constraint is commonly used with `seeds{:rs}` and `bump{:rs}` to create a new account whose address is a PDA. Under the hood, `init{:rs}` invokes the System Program to create the account.
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct CreateProfile {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer, seeds = [b"profile", payer.address().as_ref()], bump)]
+    pub profile: Account<Profile>,
+    pub system_program: Program<System>,
+}
+```
+
+`payer{:rs}` specifies who funds the account creation. For fixed-size `Account<T>{:rs}` data, v2 can derive the allocation size from the account wrapper's `Space{:rs}` implementation.
+
+## `seeds::program{:rs}`
+
+The `seeds::program{:rs}` constraint derives a PDA against another program ID. Use it when an instruction needs to validate PDA accounts created by another program.
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct ReadExternal {
+    #[account(
+        seeds = [b"external"],
+        bump,
+        seeds::program = other_program.address(),
+    )]
+    pub external: UncheckedAccount,
+    pub other_program: Program<OtherProgram>,
+}
+```
+
+## Resolved account structs
+
+For client and test code, `#[derive(Accounts)]{:rs}` emits account-meta builders. Full structs include every account. Resolved structs include only fields the caller must provide while PDAs and well-known programs are derived or filled in.
+
+```rust showLineNumbers=false
+let metas = multisig_v2::accounts::CreateResolved {
+    creator: creator.pubkey(),
+}
+.to_account_metas(None);
+```
+
+If `Create{:rs}` contains a `config{:rs}` PDA derived from `creator{:rs}` and a `system_program{:rs}`, the resolved form supplies only `creator{:rs}`. The builder derives `config{:rs}` and inserts the System Program account in the right position.
+
+## PDA seeds in the IDL
+
+Anchor emits PDA metadata into the IDL when it can inspect the seed list. Array-form seeds get the richest output:
+
+```rust showLineNumbers=false
+#[account(seeds = [b"profile", user.address().as_ref(), slug.as_ref()], bump)]
+pub profile: Account<Profile>,
+```
+
+For array-form seeds, the macro can classify literals as const seeds, sibling accounts as account seeds, and instruction args as arg seeds. Const-evaluable expressions such as constant paths are rendered through the IDL build helper when they implement `AsRef<[u8]>{:rs}`.
+
+Opaque expression seeds are valid for runtime validation, but client-side auto-derivation has less information:
+
+```rust showLineNumbers=false
+#[account(seeds = Profile::seeds(user.address()), bump)]
+pub profile: Account<Profile>,
+```
+
+Use array-form seeds for accounts that generated clients should auto-resolve. Use expression-form seeds when the runtime abstraction matters more than generated client metadata.

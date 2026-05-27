@@ -1,0 +1,27 @@
+---
+import Badge from '@/components/mdx/badge.astro'
+import type { SidebarBadge } from '@/types'
+
+interface Props {
+  badge: SidebarBadge
+}
+
+const { badge } = Astro.props
+
+const shorthandMap: Record<
+  string,
+  { text: string; variant: 'default' | 'note' | 'tip' | 'caution' | 'danger' }
+> = {
+  new: { text: 'New', variant: 'tip' },
+  beta: { text: 'Beta', variant: 'note' },
+  deprecated: { text: 'Deprecated', variant: 'danger' },
+  soon: { text: 'Soon', variant: 'caution' },
+}
+
+const resolved =
+  typeof badge === 'string'
+    ? shorthandMap[badge]
+    : { text: badge.text, variant: badge.variant ?? 'default' }
+---
+
+{resolved && <Badge variant={resolved.variant}>{resolved.text}</Badge>}

@@ -1,0 +1,308 @@
+---
+title: TypeScript
+description: Learn how to use Anchor's TypeScript client library to interact with Solana programs.
+---
+
+import Code from '@/components/code.astro'
+import methodsChain from './_typescript/methods_chain.ts?raw'
+import lib from './_typescript/lib.rs?raw'
+import exampleJson from './_typescript/example.json?raw'
+import exampleTs from './_typescript/example.ts?raw'
+import exampleClient from './_typescript/example_client.ts?raw'
+
+Anchor provides a TypeScript client library, [`@anchor-lang/core`](https://github.com/otter-sec/anchor/tree/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor), that simplifies interacting with Solana programs from JavaScript or TypeScript clients.
+
+<Callout variant="important" title="`@solana/web3.js` v1 only">
+  `@anchor-lang/core` is only compatible with the legacy version (v1) of `@solana/web3.js` and
+  `@solana/spl-token`. It is not compatible with the new (v2) version of `@solana/web3.js`.
+</Callout>
+
+## Client program
+
+Interacting with an Anchor program through `@anchor-lang/core` requires a [`Program{:ts}`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/index.ts#L58) instance built from the program's [IDL file](/docs/v1/fundamentals/idl/).
+
+A `Program{:ts}` is constructed from the IDL and an `AnchorProvider{:ts}`, which bundles a `Connection{:ts}` to a Solana cluster (localhost, devnet, mainnet) with an optional default `Wallet{:ts}` used to pay for and sign transactions.
+
+<Tabs items={['Frontend/Node', 'Test File']}>
+<Tab>
+
+A frontend integration with the [Solana wallet adapter](https://github.com/anza-xyz/wallet-adapter) wires the `AnchorProvider{:ts}` and `Program{:ts}` together:
+
+```ts title="example.ts" showLineNumbers=false {9-10,12-14}
+import { Program, AnchorProvider, setProvider } from '@anchor-lang/core'
+import { useAnchorWallet, useConnection } from '@solana/wallet-adapter-react'
+import type { HelloAnchor } from './idlType'
+import idl from './idl.json'
+
+const { connection } = useConnection()
+const wallet = useAnchorWallet()
+
+const provider = new AnchorProvider(connection, wallet, {})
+setProvider(provider)
+
+export const program = new Program(idl as HelloAnchor, {
+  connection,
+})
+```
+
+The snippet imports two files Anchor generates at `anchor build`: `idl.json{:file}` (written to `/target/idl/<program-name>.json{:file}`) and `idlType.ts{:file}` (the corresponding TypeScript type definition, written to `/target/types/<program-name>.ts{:file}`).
+
+A `Program{:ts}` can also be created from the IDL and a `Connection{:ts}` alone. There is no default `Wallet{:ts}`, so the instance can fetch accounts and build instructions without a connected wallet:
+
+```ts title="example.ts" showLineNumbers=false {8-10}
+import { clusterApiUrl, Connection, PublicKey } from '@solana/web3.js'
+import { Program } from '@anchor-lang/core'
+import type { HelloAnchor } from './idlType'
+import idl from './idl.json'
+
+const connection = new Connection(clusterApiUrl('devnet'), 'confirmed')
+
+export const program = new Program(idl as HelloAnchor, {
+  connection,
+})
+```
+
+</Tab>
+<Tab>
+
+A new Anchor project ships with a default test file that already includes a `Program{:ts}` instance. Applications outside the Anchor workspace, such as React or Node.js apps, must construct the `Program{:ts}` manually:
+
+```ts title="hello_anchor.ts" showLineNumbers=false {9}
+import * as anchor from '@anchor-lang/core'
+import { Program } from '@anchor-lang/core'
+import { HelloAnchor } from '../target/types/hello_anchor'
+
+describe('hello_anchor', () => {
+  // Configure the client to use the local cluster.
+  anchor.setProvider(anchor.AnchorProvider.env())
+
+  const program = anchor.workspace.HelloAnchor as Program<HelloAnchor>
+
+  it('Is initialized!', async () => {
+    // Add your test here.
+    const tx = await program.methods.initialize().rpc()
+    console.log('Your transaction signature', tx)
+  })
+})
+```
+
+</Tab>
+</Tabs>
+
+## Invoke instructions
+
+Once the `Program{:ts}` is set up, Anchor's [`MethodsBuilder{:ts}`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/program/namespace/methods.ts#L155) builds and sends instructions. The builder supports building individual instructions, building transactions, and building and sending transactions in one call.
+
+The basic chain looks like this:
+
+<Tabs items={['.methods{:ts}', '.instructionName(){:ts}', '.accounts(){:ts}', '.signers([]){:ts}']}>
+<Tab>
+
+`program.methods{:ts}` is the builder API for creating instruction calls from the program's IDL:
+
+<Code code={methodsChain} lang="ts" meta="{1} showLineNumbers=false" />
+
+</Tab>
+<Tab>
+
+After `.methods`, name an instruction from the IDL and pass any required arguments as comma-separated values:
+
+<Code code={methodsChain} lang="ts" meta="{2} showLineNumbers=false" />
+
+</Tab>
+<Tab>
+
+`.accounts(){:ts}` takes the addresses of the accounts the instruction requires, as specified in the IDL:
+
+<Code code={methodsChain} lang="ts" meta="{3} showLineNumbers=false" />
+
+Some account addresses do not need to be supplied explicitly because Anchor resolves them from the IDL. These typically include common accounts such as the System Program, and accounts whose address is a Program Derived Address (PDA).
+
+</Tab>
+<Tab>
+
+`.signers([]){:ts}` optionally takes an array of keypairs that must sign the instruction in addition to the provider wallet. This is most often used when creating a new account whose address is the public key of a freshly generated keypair:
+
+<Code code={methodsChain} lang="ts" meta="{4} showLineNumbers=false" />
+
+<Callout variant="note">
+  `.signers([]){:ts}` should only be used with `.rpc(){:ts}`. When using `.transaction(){:ts}` or `.instruction(){:ts}`, signers should be added to the transaction before sending.
+</Callout>
+
+</Tab>
+</Tabs>
+
+Anchor offers three terminal methods for completing the builder chain:
+
+<Tabs items={['.rpc(){:ts}', '.transaction(){:ts}', '.instruction(){:ts}']}>
+<Tab>
+
+`.rpc(){:ts}` sends a signed transaction with the specified instruction and returns a `TransactionSignature{:ts}`. The `Wallet{:ts}` from the `Provider{:ts}` is automatically included as a signer:
+
+```ts showLineNumbers=false {12}
+// Generate keypair for the new account
+const newAccountKp = new Keypair()
+
+const data = new BN(42)
+const transactionSignature = await program.methods
+  .initialize(data)
+  .accounts({
+    newAccount: newAccountKp.publicKey,
+    signer: wallet.publicKey,
+    systemProgram: SystemProgram.programId,
+  })
+  .signers([newAccountKp])
+  .rpc()
+```
+
+</Tab>
+<Tab>
+
+`.transaction(){:ts}` builds a `Transaction{:ts}` containing the specified instruction without sending it:
+
+```ts showLineNumbers=false {11}
+// Generate keypair for the new account
+const newAccountKp = new Keypair()
+
+const data = new BN(42)
+const transaction = await program.methods
+  .initialize(data)
+  .accounts({
+    newAccount: newAccountKp.publicKey,
+    signer: wallet.publicKey,
+    systemProgram: SystemProgram.programId,
+  })
+  .transaction()
+
+const transactionSignature = await connection.sendTransaction(transaction, [
+  wallet.payer,
+  newAccountKp,
+])
+```
+
+</Tab>
+<Tab>
+
+`.instruction(){:ts}` builds a `TransactionInstruction{:ts}`, useful when manually composing a transaction from multiple instructions:
+
+```ts showLineNumbers=false {11}
+// Generate keypair for the new account
+const newAccountKp = new Keypair()
+
+const data = new BN(42)
+const instruction = await program.methods
+  .initialize(data)
+  .accounts({
+    newAccount: newAccountKp.publicKey,
+    signer: wallet.publicKey,
+    systemProgram: SystemProgram.programId,
+  })
+  .instruction()
+
+const transaction = new Transaction().add(instruction)
+
+const transactionSignature = await connection.sendTransaction(transaction, [
+  wallet.payer,
+  newAccountKp,
+])
+```
+
+</Tab>
+</Tabs>
+
+## Fetch accounts
+
+The `Program{:ts}` client also fetches and deserializes accounts created by the program. Use `program.account{:ts}` followed by the name of the account type defined in the IDL.
+
+<Tabs items={['.all(){:ts}', 'memcmp{:ts}', '.fetch(){:ts}', '.fetchMultiple(){:ts}']}>
+<Tab>
+
+`program.account.newAccount.all(){:ts}` fetches every existing account of a given type:
+
+```ts showLineNumbers=false
+const accounts = await program.account.newAccount.all()
+```
+
+</Tab>
+<Tab>
+
+`memcmp{:ts}` (memory compare) filters for account data that matches a specific value at a specific offset. Using `memcmp{:ts}` requires knowing the byte layout of the account's data field.
+
+The first 8 bytes of any Anchor account are reserved for the discriminator, so offsets into the account's own fields start at 8:
+
+```ts showLineNumbers=false {3-6}
+const accounts = await program.account.newAccount.all([
+  {
+    memcmp: {
+      offset: 8,
+      bytes: '',
+    },
+  },
+])
+```
+
+</Tab>
+<Tab>
+
+`program.account.newAccount.fetch(){:ts}` fetches and deserializes a single account by address:
+
+```ts showLineNumbers=false
+const account = await program.account.newAccount.fetch(ACCOUNT_ADDRESS)
+```
+
+</Tab>
+<Tab>
+
+`program.account.newAccount.fetchMultiple(){:ts}` fetches and deserializes multiple accounts at once, taking an array of addresses:
+
+```ts showLineNumbers=false
+const accounts = await program.account.newAccount.fetchMultiple([
+  ACCOUNT_ADDRESS_ONE,
+  ACCOUNT_ADDRESS_TWO,
+])
+```
+
+</Tab>
+</Tabs>
+
+## Example
+
+The example below uses `@anchor-lang/core` to interact with a simple Anchor program. The program exposes an `initialize{:rs}` instruction that creates and initializes a counter account, and an `increment{:rs}` instruction that increments the stored value.
+
+<Code code={lib} lang="rust" title="lib.rs" />
+
+A typical folder layout for a TypeScript client that interacts with the program looks like this:
+
+<FileTree>
+  <Dir name="ts" open={true}>
+    <Dir name="idl" open={true}>
+      <File name="example.json" />
+      <File name="example.ts" />
+    </Dir>
+    <File name="example.ts" />
+    <File name="package.json" />
+  </Dir>
+</FileTree>
+
+The `/idl{:dir}` directory contains the IDL itself in `example.json{:file}` and a generated TypeScript type definition in `example.ts{:file}`. Both files are reproduced below for reference:
+
+<Tabs items={['example.json', 'example.ts']}>
+<Tab>
+
+<Code code={exampleJson} lang="json" />
+
+</Tab>
+<Tab>
+
+<Code code={exampleTs} lang="ts" />
+
+</Tab>
+</Tabs>
+
+<Callout variant="note">
+  Running `$ <blue>anchor</blue> build` in an Anchor project regenerates both files automatically: the IDL file at `target/idl/<program-name>.json{:file}` (e.g., `target/idl/example.json{:file}`) and the TypeScript type definitions at `target/types/<program-name>.ts{:file}` (e.g., `target/types/example.ts{:file}`).
+</Callout>
+
+The script that drives the program follows:
+
+<Code code={exampleClient} lang="ts" title="example.ts" />

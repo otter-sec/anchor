@@ -1,0 +1,245 @@
+---
+title: '`Anchor.toml{:toml}` configuration'
+description: "Reference for the fields available in an Anchor workspace's `Anchor.toml{:toml}` file."
+---
+
+`Anchor.toml{:file}` is the workspace configuration file used by the Anchor CLI. The CLI discovers it by walking up from the current directory, and reads it for program paths, the active provider, scripts, test infrastructure, and toolchain settings.
+
+The scaffold from `$ <blue>anchor</blue> init` is the best starting point:
+
+```toml title="Anchor.toml" showLineNumbers=false
+[toolchain]
+package_manager = "yarn"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+counter = "..."
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "cargo test"
+
+skip_local_validator = true
+```
+
+## `[provider]{:toml}`
+
+The provider sets the default cluster and wallet for CLI commands:
+
+```toml showLineNumbers=false
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+```
+
+`cluster` can be a named cluster such as `localnet`, `devnet`, `testnet`, or `mainnet`, or a custom URL. `wallet` is the keypair used for commands that need a signer.
+
+You can override either value on a command with global flags:
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> build <dim>--provider.cluster</dim> devnet <dim>--provider.wallet</dim> ~/.config/solana/devnet.json
+```
+
+## `[programs.<cluster>]{:toml}`
+
+Program sections map program names to declared program IDs for a cluster:
+
+```toml showLineNumbers=false
+[programs.localnet]
+counter = "Counter111111111111111111111111111111111111"
+
+[programs.devnet]
+counter = "DevCounter11111111111111111111111111111111"
+```
+
+The program name should match the Rust crate name after Anchor normalizes it to snake case. Commands such as `$ <blue>anchor</blue> keys list`, `$ <blue>anchor</blue> keys sync`, `$ <blue>anchor</blue> build`, `$ <blue>anchor</blue> program deploy`, and `$ <blue>anchor</blue> test` use this map to connect source crates, keypair files, IDLs, and deployed program addresses.
+
+The CLI also accepts object-form program entries when a command needs a custom deployment path or IDL path:
+
+```toml showLineNumbers=false
+[programs.localnet]
+counter = { address = "Counter111111111111111111111111111111111111", path = "target/deploy/counter.so", idl = "target/idl/counter.json" }
+```
+
+## `[scripts]{:toml}`
+
+Scripts are named shell commands. Run a script with `$ <blue>anchor</blue> run <dim><script-name></dim>`:
+
+```toml showLineNumbers=false
+[scripts]
+test = "cargo test"
+lint = "cargo clippy --workspace --all-targets"
+```
+
+`$ <blue>anchor</blue> test` runs the `test` script after the build and deployment setup. The generated LiteSVM workspace uses `$ <blue>cargo</blue> test` because the tests run in process rather than through an RPC validator.
+
+## `skip_local_validator{:toml}`
+
+Set `skip_local_validator = true{:toml}` when the test harness does not need a local RPC validator:
+
+```toml showLineNumbers=false
+skip_local_validator = true
+```
+
+The LiteSVM scaffold sets this because the test VM runs inside the Rust process. Use the same setting for other in-process Rust harnesses that do not need an RPC validator. If the flag is absent and the provider cluster is localnet, `$ <blue>anchor</blue> test` can start a local validator before running the test script.
+
+## `[features]{:toml}`
+
+Workspace features configure CLI behavior:
+
+```toml showLineNumbers=false
+[features]
+resolution = true
+skip-lint = false
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `resolution{:toml}` | `true{:toml}` | Emit and use IDL account-resolution metadata where available. |
+| `skip-lint{:toml}` | `false{:toml}` | Skip safety-comment lint checks during IDL generation. |
+
+## `[workspace]{:toml}`
+
+The workspace section controls which Rust program crates the CLI builds and where generated TypeScript IDL types are copied:
+
+```toml showLineNumbers=false
+[workspace]
+members = ["programs/*"]
+exclude = ["programs/experimental"]
+types = "app/src/idl"
+```
+
+| Field | Meaning |
+| --- | --- |
+| `members{:toml}` | Program manifest paths relative to `Anchor.toml{:file}`. When omitted, the CLI looks under `programs/*{:dir}`. |
+| `exclude{:toml}` | Paths to skip after resolving `members{:toml}`. |
+| `types{:toml}` | Directory where generated TypeScript IDL type files are copied. |
+
+## `[toolchain]{:toml}`
+
+Toolchain settings choose versions and JavaScript package tooling:
+
+```toml showLineNumbers=false
+[toolchain]
+anchor_version = "1.0.1"
+solana_version = "3.1.10"
+package_manager = "pnpm"
+```
+
+`package_manager` accepts `npm`, `yarn`, `pnpm`, or `bun`. When the field is omitted, Anchor resolves an available package manager from the local environment.
+
+`anchor_version` is used by workflows that delegate version management to AVM. Git-installed alpha builds are usually run directly from the checkout or from the installed `anchor` binary on `PATH`.
+
+## `[hooks]{:toml}`
+
+Hooks run shell commands before or after major CLI stages:
+
+```toml showLineNumbers=false
+[hooks]
+pre-build = "cargo fmt --check"
+post-build = "cargo clippy --workspace --all-targets"
+pre-test = ["cargo test --workspace --no-run", "cargo nextest list"]
+post-test = "echo done"
+```
+
+Supported hook names are `pre-build`, `post-build`, `pre-test`, `post-test`, `pre-deploy`, and `post-deploy`. Snake-case aliases such as `pre_build` also parse. A hook can be a single command string or a list of command strings. Nonzero exit codes stop the CLI command.
+
+## `[test]{:toml}`
+
+The test section configures validator-backed test runs:
+
+```toml showLineNumbers=false
+[test]
+startup_wait = 10000
+shutdown_wait = 2000
+upgradeable = true
+```
+
+| Field | Meaning |
+| --- | --- |
+| `startup_wait{:toml}` | Milliseconds to wait for the validator to start. |
+| `shutdown_wait{:toml}` | Milliseconds to wait during validator shutdown. |
+| `upgradeable{:toml}` | Deploy the program under test as upgradeable, with the provider wallet as initial upgrade authority. |
+
+`[[test.genesis]]` preloads programs at genesis:
+
+```toml showLineNumbers=false
+[[test.genesis]]
+address = "Dex111111111111111111111111111111111111111"
+program = "fixtures/dex.so"
+upgradeable = true
+```
+
+## `[test.validator]{:toml}`
+
+`[test.validator]` forwards settings to `$ <blue>solana-test-validator</blue>` for validator-backed tests:
+
+```toml showLineNumbers=false
+[test.validator]
+url = "https://api.mainnet-beta.solana.com"
+warp_slot = 100
+slots_per_epoch = "32"
+rpc_port = 8899
+ledger = "test-ledger"
+limit_ledger_size = "10000"
+```
+
+Common nested entries include cloned accounts, account JSON files, account directories, and deactivated features:
+
+```toml showLineNumbers=false
+[[test.validator.clone]]
+address = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
+
+[[test.validator.account]]
+address = "Ev8WSPQsGb4wfjybqff5eZNcS3n6HaMsBkMk9suAiuM"
+filename = "fixtures/account.json"
+
+[[test.validator.account_dir]]
+directory = "fixtures/accounts"
+
+[test.validator]
+deactivate_feature = [
+  "Feat111111111111111111111111111111111111111",
+]
+```
+
+Use `$ <blue>solana-test-validator</blue> <dim>--help</dim>` for the full set of validator flags. The fields in `Anchor.toml{:file}` intentionally mirror those options where practical.
+
+## `[surfpool]{:toml}`
+
+Surfpool is the default local network backend for supported CLI flows. Configure it with `[surfpool]`:
+
+```toml showLineNumbers=false
+[surfpool]
+startup_wait = 5000
+shutdown_wait = 2000
+rpc_port = 8899
+ws_port = 8900
+host = "127.0.0.1"
+online = true
+datasource_rpc_url = "https://api.mainnet-beta.solana.com"
+```
+
+Additional Surfpool fields include `airdrop_addresses`, `manifest_file_path`, `runbooks`, `slot_time`, `log_level`, and `block_production_mode`.
+
+## `Test.toml{:toml}`
+
+Large workspaces can put suite-specific test config in `Test.toml{:file}` files. The CLI discovers them under the workspace and merges them with optional base files:
+
+```toml title="tests/token/Test.toml" showLineNumbers=false
+extends = ["../Test.base.toml"]
+
+[scripts]
+test = "cargo test -p token-tests"
+
+[test]
+startup_wait = 15000
+```
+
+`Test.toml{:file}` supports the same `test` and `scripts` shapes used by `Anchor.toml{:file}`. Relative paths inside test validator config are resolved from the `Test.toml{:file}` file that declares them.

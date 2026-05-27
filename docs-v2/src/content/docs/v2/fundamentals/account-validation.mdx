@@ -1,0 +1,83 @@
+---
+title: Account validation
+description: 'How `#[derive(Accounts)]{:rs}` loads accounts, runs constraints, and rejects duplicate mutable aliases.'
+---
+
+`#[derive(Accounts)]{:rs}` is where Anchor validation happens. It describes the accounts an instruction expects and the checks Anchor should run before the handler starts.
+
+It is also what keeps handler code small. Instead of opening `AccountInfo{:rs}` values by hand and checking owners, signers, PDAs, and account data manually, you write those requirements on fields:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct Create {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer, seeds = [b"config", payer.address().as_ref()], bump)]
+    pub config: Account<Config>,
+    pub system_program: Program<System>,
+}
+```
+
+For each accounts struct, the macro emits:
+
+- a `TryAccounts{:rs}` impl that walks account views and loads wrappers
+- typed bumps
+- a `MUT_MASK{:rs}` for duplicate mutable account detection
+- account-meta builders for clients and tests
+- IDL account metadata under `idl-build{:toml}`
+
+Field order matters. Clients build the instruction in the order declared, and Anchor validates fields in that same order, stores PDA bumps in `ctx.bumps{:rs}`, then calls the handler with the loaded account struct. If a constraint expression references a sibling field, put that sibling earlier in the struct so it is already loaded.
+
+## Built-in constraints
+
+Common constraints include:
+
+| Constraint | Effect |
+| --- | --- |
+| `mut{:rs}` | Requires the account to be writable before loading it mutably. |
+| `signer{:rs}` | Requires `is_signer{:rs}`. Usually prefer the `Signer{:rs}` wrapper. |
+| `init{:rs}` | Creates and initializes the account. Requires `payer{:rs}`. |
+| `init_if_needed{:rs}` | Creates only when the account is absent. |
+| `payer = account{:rs}` | Funds `init{:rs}` or `init_if_needed{:rs}`. |
+| `space = expr{:rs}` | Size to allocate for account creation. |
+| `seeds = [...]{:rs}`, `bump{:rs}` | Verifies a PDA and records the bump. |
+| `bump = expr{:rs}` | Verifies with an explicit stored bump. |
+| `address = expr{:rs}` | Requires the account address to equal an expression. |
+| `owner = expr{:rs}` | Requires the account owner to equal an expression. |
+| `close = dest{:rs}` | Transfers lamports and zeros data on successful exit. |
+| `realloc = expr{:rs}` | Resizes account data when `account-resize{:toml}` is enabled. |
+
+`has_one{:rs}` is still accepted but deprecated. Put `address = parent.field{:rs}` on the sibling account instead.
+
+## Custom constraints
+
+Namespaced constraints are dispatched through `AccountConstraint<A>{:rs}`. A downstream crate can implement a marker such as `token::mint{:rs}` or `my_ns::min_value{:rs}` without changing the core derive.
+
+The lifecycle has four hooks:
+
+| Hook          | When it runs                                    |
+| ------------- | ----------------------------------------------- |
+| `init{:rs}`   | After account creation.                         |
+| `check{:rs}`  | During normal validation.                       |
+| `update{:rs}` | Inside an `update(...){:rs}` constraint clause. |
+| `exit{:rs}`   | During successful account exit.                 |
+
+See [Extensibility](/docs/v2/programs/extensibility/) and [Account constraints](/docs/v2/reference/account-constraints/) for the trait shape.
+
+## Duplicate mutable protection
+
+Anchor rejects duplicate mutable account aliases by default. The derive generates a 256-bit mutable-field mask and combines it with a runtime bitvec as accounts are loaded. If two mutable fields point at the same address, validation returns `ConstraintDuplicateMutableAccount{:rs}`.
+
+Opt out with `unsafe(dup){:rs}` only when the handler is written so it never holds conflicting mutable references:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct TouchTwice {
+    #[account(mut, unsafe(dup))]
+    pub first: Account<Data>,
+    #[account(mut, unsafe(dup))]
+    pub second: Account<Data>,
+}
+```
+
+The opt-out must be deliberate because aliasing mutable account data is a common source of handler bugs.

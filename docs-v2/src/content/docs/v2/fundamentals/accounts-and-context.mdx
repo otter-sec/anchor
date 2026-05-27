@@ -1,0 +1,79 @@
+---
+title: Accounts and context
+description: '`Context<T>{:rs}`, typed bumps, remaining accounts, and account wrapper access.'
+---
+
+Handlers do not receive raw Solana accounts directly. Anchor first loads the account list into the struct named in `Context<T>{:rs}`. If validation succeeds, the handler receives that typed context and can use fields by name.
+
+Every handler receives a mutable context:
+
+```rust showLineNumbers=false
+pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {
+    ctx.accounts.counter.bump = ctx.bumps.counter;
+    Ok(())
+}
+```
+
+The mutable reference lets validation hooks and account-exit logic share state with the handler. Account wrappers load from pinocchio account views that are scoped at the handler boundary.
+
+In the example above, `Initialize{:rs}` is the `#[derive(Accounts)]{:rs}` struct for the instruction. `ctx.accounts.counter{:rs}` is already loaded as an `Account<Counter>{:rs}`, so the handler can update `count{:rs}` without manually checking the owner, discriminator, or writable bit.
+
+## Context fields
+
+`Context<T>{:rs}` gives the handler:
+
+| Field or method                 | What it contains                                     |
+| ------------------------------- | ---------------------------------------------------- |
+| `ctx.program_id{:rs}`           | The program id passed to the entrypoint.             |
+| `ctx.accounts{:rs}`             | The validated `T{:rs}` accounts struct.              |
+| `ctx.bumps{:rs}`                | A typed bumps struct generated from PDA fields.      |
+| `ctx.remaining_accounts(){:rs}` | Lazily materialized extra `AccountView{:rs}` values. |
+
+PDA bumps are generated as typed fields:
+
+```rust showLineNumbers=false
+let bump = ctx.bumps.vault;
+```
+
+Optional accounts produce optional bumps:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct MaybeProfile {
+    pub user: Signer,
+    #[account(seeds = [b"profile", user.address().as_ref()], bump)]
+    pub profile: Option<Account<Profile>>,
+}
+
+pub fn handle(ctx: &mut Context<MaybeProfile>) -> Result<()> {
+    if let Some(bump) = ctx.bumps.profile {
+        msg!("profile present");
+    }
+    Ok(())
+}
+```
+
+## Remaining accounts
+
+`ctx.remaining_accounts(){:rs}` returns a `Vec<AccountView>{:rs}`. It walks the cursor only on first access and caches the result for later calls in the same instruction.
+
+Use remaining accounts for variable-length account lists, such as multisig signers. Prefer declared fields whenever the list length is fixed, because declared fields get generated IDL metadata, account resolution, and duplicate-mut checks.
+
+Remaining accounts are intentionally less structured. Reach for them when the number of accounts is part of the instruction data or when the list is truly open-ended. If a client can know the account at build time, make it a named field instead.
+
+## Address access
+
+Most wrappers expose `address(){:rs}` directly:
+
+```rust showLineNumbers=false
+let signer = ctx.accounts.authority.address();
+```
+
+For raw pinocchio views, use `account().address(){:rs}`:
+
+```rust showLineNumbers=false
+let account = ctx.accounts.data.account();
+let address = account.address();
+```
+
+Use wrapper accessors when possible so code stays tied to the validated account type.

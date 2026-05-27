@@ -1,0 +1,104 @@
+---
+title: Pod types
+description: The alignment-1 integer wrappers, `PodVec<T, MAX>{:rs}`, and the `#[pod_wrapper]{:rs}` macro for safe enum-to-Pod conversion.
+---
+
+<Callout variant="definition" title="Pod">
+  Pod (plain old data) means the type is fixed-size, has `#[repr(C)]{:rs}` layout, and contains no padding holes. `Account<T>{:rs}` requires `T: Pod{:rs}` so it can pointer-cast directly from the account's raw bytes without a deserialize step.
+</Callout>
+
+To make `T: Pod{:rs}` easy to satisfy, Anchor ships a small set of alignment-1 wrappers that let most user data lay out cleanly without any manual padding.
+
+## Integer wrappers
+
+The unsigned wrappers are `PodU16{:rs}`, `PodU32{:rs}`, `PodU64{:rs}`, and `PodU128{:rs}`. The signed wrappers are `PodI16{:rs}`, `PodI32{:rs}`, `PodI64{:rs}`, and `PodI128{:rs}`. Each stores an integer as `[u8; N]{:rs}` with native little-endian encoding.
+
+Alignment 1 means no padding around the field, so wide integer fields sit flush against their neighbors in a `#[repr(C)]{:rs}` struct.
+
+`PodU8{:rs}` and `PodI8{:rs}` are type aliases for native `u8{:rs}` and `i8{:rs}`. The primitives are already alignment 1, so no wrapper is needed:
+
+```rust title="lib.rs" showLineNumbers=false
+#[account]
+pub struct Position {
+    pub owner: Address,
+    pub size: PodU64,
+    pub entry_price: PodI128,
+    pub leverage: PodU16,
+}
+```
+
+Methods on each wrapper:
+
+- `.get(){:rs}` reads the wrapped integer
+- `From<native>{:rs}` constructs from a native integer
+- `.checked_add{:rs}`, `.checked_sub{:rs}`, `.checked_mul{:rs}`, `.checked_div{:rs}` return `Option<Self>{:rs}`
+- `.saturating_add{:rs}`, `.saturating_sub{:rs}`, etc. saturate at the type's bounds
+- `.is_zero(){:rs}` short-circuit zero check
+- `.neg(){:rs}` on signed types
+
+## `PodBool{:rs}`
+
+`PodBool{:rs}` is a single-byte boolean wrapper where any non-zero byte counts as `true{:rs}` and a zero byte counts as `false{:rs}`. Use it for flag fields in zero-copy structs to side-step the `bool{:rs}` validity-bit pitfall, where Rust treats it as undefined behavior to read a `bool{:rs}` whose underlying byte is anything other than `0` or `1{:rs}`:
+
+```rust title="lib.rs" showLineNumbers=false
+#[account]
+pub struct Listing {
+    pub seller: Address,
+    pub active: PodBool,
+    pub closed: PodBool,
+    pub _pad: [u8; 6],
+}
+```
+
+## `PodVec<T, MAX>{:rs}`
+
+`PodVec<T, MAX>{:rs}` is a fixed-capacity vector with a `u16{:rs}` length prefix, stored inline in the account rather than behind a heap pointer. The on-disk layout is `[len:u16][T; MAX]{:rs}` with no padding.
+
+`T{:rs}` must itself be alignment-1 so the surrounding `#[account]{:rs}` struct can be `Pod{:rs}`. `MAX{:rs}` is baked into the type so the compiler knows the exact size at every call site:
+
+```rust title="lib.rs" showLineNumbers=false
+#[account]
+pub struct MultisigConfig {
+    pub creator: Address,
+    pub threshold: u8,
+    pub bump: u8,
+    pub label: PodVec<u8, 32>,
+    pub signers: PodVec<Address, 10>,
+}
+```
+
+Methods fall into four groups:
+
+| Group | Methods | Behavior |
+| --- | --- | --- |
+| Panicking mutators | `.push{:rs}`, `.extend_from_slice{:rs}`, `.set_from_slice{:rs}` | Panic on overflow. |
+| Fallible mutators | `.try_push{:rs}`, `.try_extend_from_slice{:rs}` | Return `Result<(), CapacityError>{:rs}`. |
+| Indexing accessors | `.as_slice{:rs}`, `.iter{:rs}`, `.get{:rs}`, `.pop{:rs}` | Panic when the stored length prefix exceeds `MAX{:rs}`. Pair with `.try_as_slice{:rs}`, `.try_get{:rs}`, `.try_pop{:rs}`. |
+| Length-only helpers | `.len{:rs}`, `.is_empty{:rs}`, `.capacity{:rs}`, `.clear{:rs}`, `.truncate{:rs}` | Never index into `data{:rs}`. Always safe. |
+
+The indexing-accessor panic can fire when a `PodVec{:rs}` is cast from attacker-controlled bytes whose length prefix exceeds `MAX{:rs}`. Either use the fallible variants at the call site or call `.validate(){:rs}` once at load time to reject bad bytes up front.
+
+Reach for `PodVec{:rs}` when the upper bound is small and known ahead of time. For genuinely open-ended data, use `BorshAccount<T>{:rs}` with a regular `Vec<T>{:rs}` instead.
+
+## `#[pod_wrapper]{:rs}` for enums
+
+Plain Rust enums are not `Pod{:rs}` because the discriminant has bit patterns that the type system considers invalid. The `#[pod_wrapper]{:rs}` attribute solves this by deriving a transparent `u8{:rs}`-backed wrapper that validates the discriminant against the declared variants whenever the value is compared or converted:
+
+```rust title="lib.rs" showLineNumbers=false
+#[pod_wrapper]
+#[repr(u8)]
+pub enum OrderSide {
+    Bid = 0,
+    Ask = 1,
+}
+
+#[account]
+pub struct Order {
+    pub price: PodU64,
+    pub side: PodOrderSide,
+}
+```
+
+`PodOrderSide{:rs}` is the generated wrapper. The operations `=={:rs}`, `!={:rs}`, and `.into(){:rs}` each validate the underlying byte against the declared variants. A stale or corrupted byte panics rather than returning an invalid value, which catches account-data tampering at the wrapper boundary before an invalid discriminant can reach program logic.
+
+When unvalidated access is the right choice, the raw `.0{:rs}` field is still available. Useful for migrating an older variant set without panicking on values that pre-date the current declaration.

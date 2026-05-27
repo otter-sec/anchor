@@ -1,0 +1,35 @@
+---
+title: Clients and IDL
+description: Build instructions from generated Rust account structs and the alpha IDL/TypeScript surface.
+autoCards: false
+---
+
+A client is the code that builds instructions for your program. It picks an instruction, serializes its arguments, orders the accounts, then signs and sends the transaction to a cluster or test VM.
+
+Anchor clients are built around the IDL and the generated helper structs that the program crate emits. The Rust path is the most complete in alpha because it has typed instruction structs, account-meta builders, resolved account helpers, and LiteSVM test integration.
+
+TypeScript support exists through the current IDL and the `@anchor-lang/core` scaffold. The stable v2 npm surface is not published yet, so use TypeScript for integration and inspection while the package settles, and rely on Rust tests for exact instruction construction.
+
+For a new v2 program, start with Rust tests. Once the transaction shape is proven there, use the generated IDL and TypeScript type output for app integration.
+
+<CardGrid>
+
+<Card title="Rust" href="/docs/v2/clients/rust/">
+Use `InstructionData{:rs}`, `ToAccountMetas{:rs}`, full accounts structs, and `Resolved{:rs}` helpers in tests and Rust clients.
+</Card>
+
+<Card title="TypeScript" href="/docs/v2/clients/typescript/">
+  Understand the current TypeScript package status and how to use generated IDLs.
+</Card>
+
+</CardGrid>
+
+## What to use today
+
+| Task | Recommended path |
+| --- | --- |
+| Integration tests | Rust tests with `anchor-v2-testing` and `anchor_v2_testing::svm(){:rs}`. |
+| Instruction construction | Generated `program::instruction::*{:rs}` and `program::accounts::*{:rs}` modules. |
+| PDA derivation | Generated `find_<account>_address(){:rs}` helpers or `Resolved{:rs}` account structs. |
+| Profiling and debugger | Rust tests that call `anchor_v2_testing::svm(){:rs}`. |
+| TypeScript integration | Generated IDL and TypeScript IDL type output, with alpha package caveats. |

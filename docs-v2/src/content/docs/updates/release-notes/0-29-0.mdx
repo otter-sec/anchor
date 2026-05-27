@@ -1,0 +1,284 @@
+---
+title: 0.29.0
+description: Anchor release notes for 0.29.0.
+---
+
+Anchor keeps a [`CHANGELOG.md{:file}`](https://github.com/otter-sec/anchor/blob/master/CHANGELOG.md), but parsing what changed, why it matters, and how to migrate isn't always obvious from the entries. The release notes provide an actionable, digestible view of each release.
+
+---
+
+## How to update
+
+1. Update `avm`:
+
+   ```bash
+   $ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor <dim>--tag</dim> v0.29.0 avm <dim>--locked</dim>
+   ```
+
+2. Update `anchor-cli`:
+
+   ```bash
+   $ <blue>avm</blue> install latest
+   ```
+
+3. Update Anchor crate(s) to `0.29.0`. Optionally run `$ <blue>cargo</blue> update` to refresh other dependencies to the latest compatible versions.
+
+4. Update TS package(s) to `0.29.0`.
+
+## Solana `1.14` is no longer supported
+
+The minimum supported Solana version is now `1.16.0`. All clusters, including mainnet-beta, are running `^1.16`, and a [compatibility issue](https://github.com/solana-labs/solana/issues/31960) between `1.14` and `1.16` makes staying on the older version impractical. If you are still on `1.14`, upgrade with:
+
+```console
+$ <blue>solana-install</blue> init 1.17.0
+```
+
+## Override toolchain for the workspace
+
+`Anchor.toml{:file}` has a new section called `[toolchain]` that allows overriding the current toolchain versions inside the workspace:
+
+```toml
+[toolchain]
+anchor_version = "0.29.0" # `anchor-cli` version to use
+solana_version = "1.17.0" # Solana version to use
+```
+
+Both fields are optional. `anchor_version` requires [`avm`](https://github.com/otter-sec/anchor/tree/master/avm) to be installed. Before this release, the `anchor_version` and `solana_version` keys in `Anchor.toml{:file}` only affected Docker verifiable builds. Every command now honors the `[toolchain]` section.
+
+## Install CLI from commit with `avm`
+
+Installing the CLI from a specific commit was historically possible directly through cargo:
+
+```console
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor <dim>--rev</dim> 6cf200493a307c01487c7b492b4893e0d6f6cb23 anchor-cli <dim>--locked</dim>
+```
+
+That approach overrides the `anchor` binary outside of `avm`'s control. As of this release, `avm` natively supports installing and switching between commits.
+
+Pass a `<dim><version></dim>`-`<dim><commit></dim>` pair, a full commit hash, or a short prefix to `$ <blue>avm</blue> install`:
+
+```console
+$ <blue>avm</blue> install 0.28.0-6cf200493a307c01487c7b492b4893e0d6f6cb23
+$ <blue>avm</blue> install 6cf200493a307c01487c7b492b4893e0d6f6cb23
+$ <blue>avm</blue> install 6cf200
+```
+
+Activate it with `$ <blue>avm</blue> use`:
+
+```console
+$ <blue>avm</blue> use 0.28.0-6cf200493a307c01487c7b492b4893e0d6f6cb23
+```
+
+The same identifier also works as the `toolchain.anchor_version` value in `Anchor.toml{:file}`:
+
+```toml
+[toolchain]
+anchor_version = "0.28.0-6cf200493a307c01487c7b492b4893e0d6f6cb23"
+```
+
+## Multiple files template
+
+Programs scaffolded by `$ <blue>anchor</blue> init` and `$ <blue>anchor</blue> new` previously shipped as a single `lib.rs{:file}`. A new template emits the common multi-file layout:
+
+<FileTree>
+  <File name="constants.rs" />
+  <File name="error.rs" />
+  <Dir name="instructions">
+    <File name="initialize.rs" />
+    <File name="mod.rs" />
+  </Dir>
+  <File name="lib.rs" />
+  <Dir name="state">
+    <File name="mod.rs" />
+  </Dir>
+</FileTree>
+
+Initialize a workspace with this layout:
+
+```console
+$ <blue>anchor</blue> init <dim><NAME></dim> <dim>--template</dim> multiple
+```
+
+Or add a new program with the same layout to an existing workspace:
+
+```console
+$ <blue>anchor</blue> new <dim><NAME></dim> <dim>--template</dim> multiple
+```
+
+## Upgradeable programs in tests
+
+Upgradeability for programs run under `$ <blue>anchor</blue> test` is now configurable in `Anchor.toml{:file}`. The workspace-wide flag covers every test program:
+
+```toml
+[test]
+upgradeable = true
+```
+
+A `[[test.genesis]]` entry overrides the flag for an individual program:
+
+```toml
+[[test.genesis]]
+address = "22Y43yTVxuUkoRKdm9thyRhQ3SdgQS7c7kB6UNCiaczD"
+program = "swap.so"
+upgradeable = true
+```
+
+## Lamport utilities
+
+Transferring lamports from a PDA used to require awkward type juggling. The new `sub_lamports(){:rs}` and `add_lamports(){:rs}` helpers replace the borrow dance:
+
+```rust showLineNumbers=false del={1-2} add={3-4}
+**ctx.accounts.from.to_account_info().try_borrow_mut_lamports()? -= amount;
+**ctx.accounts.to.to_account_info().try_borrow_mut_lamports()? += amount;
+ctx.accounts.from.sub_lamports(amount)?;
+ctx.accounts.to.add_lamports(amount)?;
+```
+
+`get_lamports(){:rs}` similarly replaces the read-side dance:
+
+```rust showLineNumbers=false del={1} add={2}
+let lamports = ctx.accounts.my_account.to_account_info().lamports();
+let lamports = ctx.accounts.my_account.get_lamports();
+```
+
+These helpers are also more efficient than the manual form. `to_account_info(){:rs}` clones the underlying data internally, while the new methods take a reference to it.
+
+## Type-safe context bumps
+
+Before this release, `ctx.bumps{:rs}` was a `BTreeMap<String, u8>{:rs}`, which gave no type safety for the account-name keys:
+
+```rust showLineNumbers=false
+let bump = *ctx.bumps.get("my_account").unwrap();
+```
+
+It is now an auto-generated struct that holds each bump as a named field, enabling completion and rejecting typos at compile time:
+
+```rust showLineNumbers=false
+let bump = ctx.bumps.my_account;
+```
+
+The struct form is also faster than `BTreeMap{:rs}`, which is heap-allocated and occasionally has to resize.
+
+## `idl-build` feature
+
+IDLs can now be generated via compilation rather than parsing. Enable it by adding the `idl-build` feature to the program's `Cargo.toml{:file}`:
+
+```toml
+[features]
+idl-build = ["anchor-lang/idl-build"]
+```
+
+The IDL will be built automatically when you run `$ <blue>anchor</blue> build` but if you'd like to only generate the IDL, run `$ <blue>anchor</blue> idl build`.
+
+Every crate involved in IDL generation must be added to the `idl-build` feature list:
+
+```toml
+[features]
+idl-build = [
+    "anchor-lang/idl-build",
+    "anchor-spl/idl-build",
+    "another-program/idl-build"
+]
+```
+
+Compile-time checks are supported, as are external types from other Anchor programs (provided the external crate also exposes an `idl-build` feature, like `another-program/idl-build` above). Two crates can use the same type name (for example `some_module::MyType{:rs}` and `another_module::MyType{:rs}`) without collision. Generation is noticeably slower than the default parsing-based method due to Rust compile times. Most of the pipeline works well, but rough edges remain. If you run into one, please [open an issue](https://github.com/otter-sec/anchor/issues).
+
+## Type aliases
+
+Anchor IDL now supports type aliases:
+
+```rust showLineNumbers=false
+pub type U8Array = [u8; 8];
+
+#[program]
+pub mod my_program {
+    use super::*;
+
+    pub fn type_alias(ctx: Context<TypeAlias>, u8_array: U8Array) -> Result<()> {
+        msg!("{:?}", u8_array);
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct TypeAlias {}
+```
+
+Generates the following IDL:
+
+```json
+{
+  "version": "0.1.0",
+  "name": "my_program",
+  "instructions": [
+    {
+      "name": "typeAlias",
+      "accounts": [],
+      "args": [
+        {
+          "name": "u8Array",
+          "type": {
+            "defined": "U8Array"
+          }
+        }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "U8Array",
+      "type": {
+        "kind": "alias",
+        "value": {
+          "array": ["u8", 8]
+        }
+      }
+    }
+  ]
+}
+```
+
+This example currently works only with the default parsing-based IDL generator. Type aliases over built-in Rust types are not yet handled correctly by `idl-build` ([#2640](https://github.com/otter-sec/anchor/issues/2640)).
+
+## Export `mpl-token-metadata`
+
+`anchor-spl` with the `metadata` feature now re-exports the `mpl-token-metadata` crate. Drop the direct dependency to avoid version conflicts:
+
+```toml title="Cargo.toml" del={3}
+[dependencies]
+anchor-spl = { version = "0.29.0", features = ["metadata"] }
+mpl-token-metadata = "1.13.1"
+```
+
+The crate is reachable through `anchor_spl::metadata{:rs}`:
+
+```rust showLineNumbers=false
+use anchor_spl::metadata::mpl_token_metadata;
+```
+
+## TypeScript SDK improvements
+
+`Program.addEventListener{:ts}` is now strongly typed. Event names and the event passed to the callback both carry their proper types instead of `any{:ts}`.
+
+`anchor.workspace{:ts}` lazy-loads programs on demand, so programs that aren't used in the test suite no longer get loaded or trigger errors.
+
+JavaScript convention uses camelCase for property names, but programs were previously accessed via PascalCase (e.g. `anchor.workspace.MyProgram{:ts}`), which is unintuitive. Both variations now work:
+
+```ts showLineNumbers=false
+const camel = anchor.workspace.myProgram
+const pascal = anchor.workspace.MyProgram
+```
+
+The `assert` and `base64-js` dependencies have been removed.
+
+## New Docker image
+
+The previous image, [`projectserum/build`](https://hub.docker.com/r/projectserum/build), has been deprecated. The new image is [`backpackapp/build`](https://hub.docker.com/r/backpackapp/build), which you can pull with `$ <blue>docker</blue> pull backpackapp/build:v0.29.0`. `$ <blue>anchor</blue> build <dim>--verifiable</dim>` works against the new image.
+
+## Enhanced performance
+
+`0.29.0` improves performance across the board, most notably reducing [binary size](https://github.com/otter-sec/anchor/blob/master/bench/BINARY_SIZE.md#0290) by roughly 36% relative to `0.28.0`. Similar wins are tracked for [compute units](https://github.com/otter-sec/anchor/blob/master/bench/COMPUTE_UNITS.md#0290) and [stack memory](https://github.com/otter-sec/anchor/blob/master/bench/STACK_MEMORY.md#0290). Exact numbers vary between programs, but the overall direction is consistent.
+
+---
+
+See the full list of changes in the [CHANGELOG](https://github.com/otter-sec/anchor/blob/master/CHANGELOG.md#0290---2023-10-16).

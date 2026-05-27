@@ -1,0 +1,76 @@
+---
+title: Account data model
+description: 'How Anchor stores account data and why `Account<T>{:rs}` is zero-copy by default.'
+---
+
+Solana accounts are byte arrays with an owner. Anchor's account wrappers decide how those bytes are checked and interpreted before your handler uses them.
+
+`Account<T>{:rs}` is the default wrapper for fixed-size program state. It is zero-copy, so it views account bytes as `T{:rs}` instead of deserializing into an owned value.
+
+For a normal program-owned account, the on-chain layout is:
+
+```text showLineNumbers=false
+[8-byte discriminator][repr(C) T]
+```
+
+Loading `Account<T>{:rs}` validates the owner, discriminator, and minimum data length, then casts the raw account bytes into `T{:rs}`. Exit is a no-op because mutations already happened in the account buffer.
+
+The main decision is whether the account has a fixed layout. Fixed-size structs use `Account<T>{:rs}`. Accounts with `Vec{:rs}`, `String{:rs}`, or other variable-length payloads use `BorshAccount<T>{:rs}`.
+
+## Fixed-size state
+
+Use `Account<T>{:rs}` for fixed-size state:
+
+```rust showLineNumbers=false
+#[account]
+pub struct Position {
+    pub owner: Address,
+    pub size: PodU64,
+    pub open: PodBool,
+}
+
+#[derive(Accounts)]
+pub struct Update {
+    #[account(mut)]
+    pub position: Account<Position>,
+}
+```
+
+`#[account]{:rs}` enforces the pieces zero-copy needs:
+
+- `#[repr(C)]{:rs}` layout
+- `T: bytemuck::Pod{:rs}`
+- no padding holes
+- an Anchor discriminator
+- an `Owner{:rs}` impl for the declaring program
+
+The no-padding assertion is intentionally strict. Padding bytes are untyped state, so the macro turns that whole class of bug into a compile error.
+
+## Variable-length state
+
+Use `BorshAccount<T>{:rs}` when the data cannot be a fixed-size Pod type:
+
+```rust showLineNumbers=false
+#[account(borsh)]
+pub struct Profile {
+    pub owner: Address,
+    pub name: String,
+    pub friends: Vec<Address>,
+}
+```
+
+`BorshAccount<T>{:rs}` deserializes on load, keeps a borrow guard, and serializes on successful exit. That costs more than zero-copy, but it is the right model for `Vec{:rs}`, `String{:rs}`, and payload enums.
+
+## Dynamic tails
+
+`Slab<H, Item>{:rs}` is the built-in zero-copy dynamic-tail primitive. It stores a fixed header plus a length-prefixed tail of Pod items:
+
+```text showLineNumbers=false
+[disc:8][H][len:u32][tail padding][Item; capacity]
+```
+
+`Account<T>{:rs}` is implemented as a specialization of `Slab<T, HeaderOnly>{:rs}`.
+
+## External accounts
+
+SPL token state is not Anchor-discriminated. `anchor-spl-v2` models those accounts with `SlabSchema{:rs}` implementations whose data starts at offset `0`, so `Account<Mint>{:rs}` and `Account<TokenAccount>{:rs}` can zero-copy over SPL-owned account data.
