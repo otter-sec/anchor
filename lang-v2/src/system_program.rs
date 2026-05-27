@@ -54,8 +54,7 @@ fn checked_seed(seed: &str) -> Result<&[u8], ProgramError> {
 #[inline]
 fn invoke<'a, T: ToCpiAccounts<'a>>(ctx: &CpiContext<'a, T>, data: &[u8]) -> ProgramResult {
     check_system_program(ctx.program)?;
-    ctx.invoke(data);
-    Ok(())
+    ctx.invoke(data)
 }
 
 pub fn advance_nonce_account<'a>(ctx: CpiContext<'a, AdvanceNonceAccount<'a>>) -> ProgramResult {

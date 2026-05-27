@@ -34,7 +34,20 @@ pub mod caller {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
-        callee::cpi::set_data(cpi_ctx, value);
+        callee::cpi::set_data(cpi_ctx, value)?;
+        Ok(())
+    }
+
+    pub fn proxy_set_data_readonly_handle(
+        ctx: &mut Context<ProxySetData>,
+        value: u64,
+    ) -> Result<()> {
+        let cpi_accounts = callee::cpi::accounts::SetData {
+            data: ctx.accounts.callee_data.cpi_handle(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        callee::cpi::set_data(cpi_ctx, value)?;
         Ok(())
     }
 
@@ -46,7 +59,7 @@ pub mod caller {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
-        callee::cpi::noop(cpi_ctx);
+        callee::cpi::noop(cpi_ctx)?;
         Ok(())
     }
 
@@ -59,7 +72,7 @@ pub mod caller {
             ctx.accounts.callee_program.address(),
             callee::cpi::accounts::Empty::new(),
         );
-        callee::cpi::empty(cpi_ctx);
+        callee::cpi::empty(cpi_ctx)?;
         Ok(())
     }
 
@@ -74,7 +87,7 @@ pub mod caller {
             spectator: ctx.accounts.spectator.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
-        callee::cpi::touch(cpi_ctx, delta);
+        callee::cpi::touch(cpi_ctx, delta)?;
         Ok(())
     }
 }

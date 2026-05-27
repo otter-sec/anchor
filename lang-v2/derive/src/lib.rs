@@ -1109,6 +1109,33 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 }
             })
             .collect();
+        let cpi_validate_steps: Vec<_> = fields
+            .iter()
+            .map(|f| {
+                let n = &f.name;
+                if parse::is_nested_type(&f.ty) {
+                    return quote! {
+                        anchor_lang_v2::ToCpiAccounts::validate_cpi_accounts(&self.#n)?;
+                    };
+                }
+                let writable = f.idl_writable;
+                if f.is_optional {
+                    quote! {
+                        if let ::core::option::Option::Some(__account) = &self.#n {
+                            if #writable && !__account.is_writable() {
+                                return Err(anchor_lang_v2::Error::InvalidArgument);
+                            }
+                        }
+                    }
+                } else {
+                    quote! {
+                        if #writable && !self.#n.is_writable() {
+                            return Err(anchor_lang_v2::Error::InvalidArgument);
+                        }
+                    }
+                }
+            })
+            .collect();
         // An empty Accounts struct would otherwise emit `pub struct Foo<'a> {}`,
         // which fails E0392 because nothing on `Self` references `'a`. Anchor
         // the lifetime via a `PhantomData<&'a ()>` field — kept hidden — and
@@ -1162,6 +1189,10 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                         let mut __handles = alloc::vec::Vec::new();
                         #(#cpi_handle_steps)*
                         __handles
+                    }
+                    fn validate_cpi_accounts(&self) -> anchor_lang_v2::Result<()> {
+                        #(#cpi_validate_steps)*
+                        Ok(())
                     }
                 }
             }
@@ -3657,7 +3688,7 @@ fn process_handler(
                 },
             )
         } else {
-            (quote! {}, quote! {})
+            (quote! { -> anchor_lang_v2::Result<()> }, quote! { Ok(()) })
         };
         quote! {
             pub fn #fn_name #lt_decl(
@@ -3671,7 +3702,7 @@ fn process_handler(
                     super::instruction::#ix_struct_name #ix_lt_use_local
                     as anchor_lang_v2::InstructionData
                 >::data(&__ix);
-                __ctx.invoke(&__data);
+                __ctx.invoke(&__data)?;
                 #ret_value
             }
         }
@@ -4877,7 +4908,7 @@ pub fn emit_cpi(input: TokenStream) -> TokenStream {
                 ctx.program_id,
                 __AnchorEventCpiAccounts { event_authority: __event_authority },
                 __event_authority_signers,
-            ).invoke(&__ix_data);
+            ).invoke(&__ix_data)?;
         }
     })
 }

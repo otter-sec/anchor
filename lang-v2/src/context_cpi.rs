@@ -74,7 +74,9 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
     /// Invoke the CPI with the given instruction data. Collects accounts
     /// from [`ToCpiAccounts`], appends remaining accounts, and calls
     /// `invoke_signed_unchecked`.
-    pub fn invoke(&self, data: &[u8]) {
+    pub fn invoke(&self, data: &[u8]) -> ProgramResult {
+        self.accounts.validate_cpi_accounts()?;
+
         let mut instruction_accounts = self.accounts.to_instruction_accounts();
         let mut handles = self.accounts.to_cpi_handles();
 
@@ -93,6 +95,7 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
             data,
             accounts: &instruction_accounts,
         };
+        validate_instruction_handles(&instruction_accounts, &handles)?;
 
         // Convert signer seeds to pinocchio Signers.
         // SAFETY: pinocchio::cpi::Seed is repr(C) { *const u8, u64, PhantomData }
@@ -138,6 +141,7 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
                 &signers,
             );
         }
+        Ok(())
     }
 
     /// Invoke a fully built instruction using this context's CPI handles.
@@ -159,6 +163,28 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
         // remains set while the wrapper is alive.
         unsafe { crate::program::invoke_signed_unchecked(&ix, &handles, self.signer_seeds) }
     }
+}
+
+fn validate_instruction_handles(
+    instruction_accounts: &[InstructionAccount<'_>],
+    handles: &[CpiHandle<'_>],
+) -> ProgramResult {
+    let mut account_index = 0;
+    for handle in handles {
+        while account_index < instruction_accounts.len()
+            && !address_eq(instruction_accounts[account_index].address, handle.address())
+        {
+            account_index += 1;
+        }
+        if account_index == instruction_accounts.len() {
+            return Err(ProgramError::NotEnoughAccountKeys);
+        }
+        if instruction_accounts[account_index].is_writable && !handle.is_writable() {
+            return Err(ProgramError::InvalidArgument);
+        }
+        account_index += 1;
+    }
+    Ok(())
 }
 
 #[inline(always)]
@@ -184,7 +210,13 @@ pub fn invoke_signed_fixed<'a, const N: usize>(
     instruction_accounts: &[InstructionAccount<'a>; N],
     handles: &[CpiHandle<'a>; N],
     signer_seeds: &'a [&'a [&'a [u8]]],
-) {
+) -> ProgramResult {
+    for (account, handle) in instruction_accounts.iter().zip(handles.iter()) {
+        if account.is_writable && !handle.is_writable() {
+            return Err(ProgramError::InvalidArgument);
+        }
+    }
+
     let instruction = InstructionView {
         program_id: program,
         data,
@@ -222,4 +254,5 @@ pub fn invoke_signed_fixed<'a, const N: usize>(
             }
         }
     }
+    Ok(())
 }

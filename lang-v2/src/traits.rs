@@ -82,6 +82,12 @@ pub trait ToCpiAccounts<'a> {
 
     /// Collect all CPI handles for the invocation.
     fn to_cpi_handles(&self) -> alloc::vec::Vec<CpiHandle<'a>>;
+
+    /// Validate that the provided CPI handles satisfy the generated account
+    /// metadata. Implemented by generated CPI account structs.
+    fn validate_cpi_accounts(&self) -> ProgramResult {
+        Ok(())
+    }
 }
 
 pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
@@ -277,13 +283,10 @@ impl ToCpiHandle for CpiHandle<'_> {
 impl ToCpiHandleMut for CpiHandle<'_> {
     #[inline(always)]
     fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError> {
-        if !self.account_view().is_writable() {
+        if !self.is_writable() {
             return Err(ProgramError::InvalidArgument);
         }
-        Ok(CpiHandle {
-            view: self.account_view(),
-            writable: true,
-        })
+        Ok(*self)
     }
 }
 

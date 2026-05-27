@@ -218,6 +218,37 @@ fn test_cpi_set_data_rejects_wrong_authority() {
     assert_eq!(stored, 77, "value should be unchanged after failed CPI");
 }
 
+#[test]
+fn test_cpi_rejects_readonly_handle_for_writable_account() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("authority");
+    svm.airdrop(&authority.pubkey(), 1_000_000_000).unwrap();
+    let data_pda = init_data_account(&mut svm, &payer, &authority);
+
+    let proxy_data = caller::instruction::ProxySetDataReadonlyHandle { value: 999 }.data();
+    let proxy_metas = vec![
+        AccountMeta::new(data_pda, false),
+        AccountMeta::new_readonly(authority.pubkey(), true),
+        AccountMeta::new_readonly(callee_id(), false),
+    ];
+    let result = call_raw(
+        &mut svm,
+        caller_id(),
+        proxy_data,
+        proxy_metas,
+        &payer,
+        &[&authority],
+    );
+    assert!(
+        result.is_err(),
+        "writable CPI account built from cpi_handle() should fail validation"
+    );
+
+    let account = svm.get_account(&data_pda).unwrap();
+    let stored = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
+    assert_eq!(stored, 0, "value should be unchanged after rejected CPI");
+}
+
 /// Drives the no-extra-args branch of the cpi-wrapper codegen
 /// (`callee::cpi::noop`). Also confirms that the `cpi::accounts::SetData`
 /// re-export is reachable through more than one wrapper — i.e. the

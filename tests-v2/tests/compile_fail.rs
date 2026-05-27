@@ -219,10 +219,10 @@ pub fn build_cpi<'a>(
     program: &'a Address,
     authority: CpiHandle<'a>,
     data: CpiHandle<'a>,
-) {
+) -> anchor_lang_v2::Result<()> {
     let accounts = declared::cpi::accounts::Invoke { authority, data };
     let ctx = CpiContext::new(program, accounts);
-    declared::cpi::invoke(ctx, 5);
+    declared::cpi::invoke(ctx, 5)
 }
 "#,
         &["cpi"],

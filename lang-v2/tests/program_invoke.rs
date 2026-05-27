@@ -58,6 +58,20 @@ fn account_view_converts_to_cpi_handles() {
 }
 
 #[test]
+fn readonly_cpi_handle_cannot_be_upgraded_to_writable() {
+    let buffer = account_view([1; 32], true);
+    let view = unsafe { buffer.view() };
+    let mut readonly = CpiHandle::readonly(&view);
+
+    let err = match readonly.try_to_cpi_handle_mut() {
+        Ok(_) => panic!("read-only CPI handle unexpectedly upgraded to writable"),
+        Err(err) => err,
+    };
+
+    assert_eq!(err, ProgramError::InvalidArgument);
+}
+
+#[test]
 fn checked_invoke_rejects_missing_handle() {
     let ix = instruction(Address::new_from_array([1; 32]), false);
 
