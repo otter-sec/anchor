@@ -62,6 +62,9 @@ solana-transaction = "3.0.1"
 
 # Non solana crates
 cargo_toml = "0.22.3"
+# Solana crates currently use 0.12, make sure to bump this to 0.13
+# when they do to avoid duplicate deps
+reqwest = { version = "0.12.28", default-features = false }
 syn = "2"
 
 [profile.release]
