@@ -9,6 +9,7 @@ use {
         address::Address,
     },
     solana_program_error::ProgramError,
+    solana_program_memory::sol_memset,
 };
 
 /// Discriminator length in bytes. All `#[account]` types use an 8-byte
@@ -23,7 +24,9 @@ pub(crate) const DISC_LEN: usize = 8;
 /// bounds the impl satisfies.
 ///
 /// Both methods operate on a slice cursor (`&mut &[u8]` / `&mut &mut [u8]`)
-/// so length-prefixed encodings can advance the cursor as they consume bytes.
+/// and must advance it by the bytes they consume. `SerializedAccount` uses
+/// that cursor position to scrub stale bytes when a value serializes shorter
+/// than it did at load time.
 pub trait AnchorAccountSerialize<T> {
     /// Serialize `value` into the buffer past the discriminator.
     fn serialize(value: &T, buf: &mut &mut [u8]) -> Result<(), ProgramError>;
@@ -55,6 +58,7 @@ where
     view: AccountView,
     data: T,
     borrow: SerializedAccountBorrow,
+    serialized_len: usize,
     serialize_on_exit: bool,
     _serializer: PhantomData<S>,
 }
@@ -98,7 +102,12 @@ where
     /// this, `exit()` becomes a no-op until `reacquire_borrow_mut()` is
     /// called. Immutable / already-released borrows skip the commit.
     pub fn release_borrow(&mut self) -> Result<(), ProgramError> {
-        Self::serialize_current_owner(&self.data, &mut self.borrow, self.serialize_on_exit)?;
+        Self::serialize_current_owner(
+            &self.data,
+            &mut self.borrow,
+            &mut self.serialized_len,
+            self.serialize_on_exit,
+        )?;
         self.borrow = SerializedAccountBorrow::Released;
         Ok(())
     }
@@ -110,13 +119,23 @@ where
     fn serialize_current_owner(
         data: &T,
         borrow: &mut SerializedAccountBorrow,
+        serialized_len: &mut usize,
         serialize_on_exit: bool,
     ) -> Result<(), ProgramError> {
         if !serialize_on_exit {
             return Ok(());
         }
         if let SerializedAccountBorrow::Mutable { ref mut guard } = borrow {
-            S::serialize(data, &mut &mut guard[DISC_LEN..])?;
+            let payload_len = guard.len() - DISC_LEN;
+            let mut payload = &mut guard[DISC_LEN..];
+            S::serialize(data, &mut payload)?;
+
+            let new_serialized_len = payload_len - payload.len();
+            let zero_len = serialized_len
+                .saturating_sub(new_serialized_len)
+                .min(payload.len());
+            unsafe { sol_memset(&mut payload[..zero_len], 0, zero_len) };
+            *serialized_len = new_serialized_len;
         }
         Ok(())
     }
@@ -152,7 +171,9 @@ where
             T::DISCRIMINATOR,
             ProgramError::InvalidAccountData
         );
-        self.data = S::deserialize(&mut &data_ref[DISC_LEN..])?;
+        let (data, serialized_len) = Self::deserialize_payload_with_len(&data_ref[DISC_LEN..])?;
+        self.data = data;
+        self.serialized_len = serialized_len;
         self.serialize_on_exit = Self::should_serialize_for_program(&self.view, program_id);
         let guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
         self.borrow = SerializedAccountBorrow::Mutable { guard };
@@ -186,11 +207,18 @@ where
         Ok(())
     }
 
+    fn deserialize_payload_with_len(payload: &[u8]) -> Result<(T, usize), ProgramError> {
+        let payload_len = payload.len();
+        let mut cursor = payload;
+        let data = S::deserialize(&mut cursor)?;
+        Ok((data, payload_len - cursor.len()))
+    }
+
     fn validate_and_load(
         view: AccountView,
         data: &[u8],
         program_id: &Address,
-    ) -> Result<T, ProgramError> {
+    ) -> Result<(T, usize), ProgramError> {
         // Hot path: a single owner check. The "uninitialized placeholder"
         // disambiguation lives in `cold_owner_error` (slab.rs) — see
         // the comment there for why this is safe.
@@ -206,7 +234,7 @@ where
             T::DISCRIMINATOR,
             ProgramError::InvalidAccountData
         );
-        S::deserialize(&mut &data[DISC_LEN..])
+        Self::deserialize_payload_with_len(&data[DISC_LEN..])
     }
 }
 
@@ -220,7 +248,7 @@ where
 
     fn load(view: AccountView, program_id: &Address) -> Result<Self, ProgramError> {
         let data_ref = view.try_borrow()?;
-        let data = Self::validate_and_load(view, &data_ref, program_id)?;
+        let (data, serialized_len) = Self::validate_and_load(view, &data_ref, program_id)?;
         // SAFETY: AccountView's raw pointer is valid for the entire instruction
         // lifetime (Solana runtime guarantee). We hold the Ref to prevent
         // subsequent mutable borrows on the same account (duplicate detection).
@@ -229,6 +257,7 @@ where
             view,
             data,
             borrow: SerializedAccountBorrow::Immutable { _guard: guard },
+            serialized_len,
             serialize_on_exit: Self::should_serialize_for_program(&view, program_id),
             _serializer: PhantomData,
         })
@@ -249,7 +278,7 @@ where
         }
         let mut view_mut = view;
         let data_ref = view_mut.try_borrow_mut()?;
-        let data = Self::validate_and_load(view, &data_ref, program_id)?;
+        let (data, serialized_len) = Self::validate_and_load(view, &data_ref, program_id)?;
         // SAFETY: Same as load(). RefMut provides exclusive access and prevents
         // any other borrow on the same account.
         let guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
@@ -257,6 +286,7 @@ where
             view,
             data,
             borrow: SerializedAccountBorrow::Mutable { guard },
+            serialized_len,
             serialize_on_exit: Self::should_serialize_for_program(&view, program_id),
             _serializer: PhantomData,
         })
@@ -323,7 +353,12 @@ where
             self.borrow = SerializedAccountBorrow::Released;
             self.reacquire_guard_only()?;
         }
-        Self::serialize_current_owner(&self.data, &mut self.borrow, self.serialize_on_exit)?;
+        Self::serialize_current_owner(
+            &self.data,
+            &mut self.borrow,
+            &mut self.serialized_len,
+            self.serialize_on_exit,
+        )?;
         Ok(())
     }
 }
@@ -482,11 +517,12 @@ where
             Some(dst) => *dst = *disc,
             None => return Err(ProgramError::AccountDataTooSmall),
         }
-        let data = S::deserialize(&mut &guard[DISC_LEN..])?;
+        let (data, serialized_len) = Self::deserialize_payload_with_len(&guard[DISC_LEN..])?;
         Ok(Self {
             view: *account,
             data,
             borrow: SerializedAccountBorrow::Mutable { guard },
+            serialized_len,
             serialize_on_exit: true,
             _serializer: PhantomData,
         })

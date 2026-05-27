@@ -60,12 +60,31 @@ impl Discriminator for ForeignCounter {
     const DISCRIMINATOR: &'static [u8] = &[0x23, 0xaa, 0x41, 0x17, 0x83, 0x62, 0xdd, 0x09];
 }
 
+#[derive(SchemaRead, SchemaWrite, Default, Clone, PartialEq, Debug)]
+struct ShrinkableBytes {
+    items: Vec<u8>,
+}
+
+impl Owner for ShrinkableBytes {
+    fn owner(program_id: &Address) -> Address {
+        *program_id
+    }
+}
+
+impl Discriminator for ShrinkableBytes {
+    const DISCRIMINATOR: &'static [u8] = &[0x5f, 0x81, 0x5c, 0x91, 0xb1, 0x7a, 0x4d, 0xa0];
+}
+
 fn counter_disc() -> [u8; 8] {
     [0xff, 0xb0, 0x04, 0xf5, 0xbc, 0xfd, 0x7c, 0x19]
 }
 
 fn foreign_counter_disc() -> [u8; 8] {
     [0x23, 0xaa, 0x41, 0x17, 0x83, 0x62, 0xdd, 0x09]
+}
+
+fn shrinkable_bytes_disc() -> [u8; 8] {
+    [0x5f, 0x81, 0x5c, 0x91, 0xb1, 0x7a, 0x4d, 0xa0]
 }
 
 fn setup_counter_buf(buf: &mut AccountBuffer<256>, initial_value: u64) {
@@ -86,6 +105,20 @@ fn setup_foreign_counter_buf(buf: &mut AccountBuffer<256>, initial_value: u64) {
     let mut data = [0u8; 16];
     data[..8].copy_from_slice(&foreign_counter_disc());
     data[8..16].copy_from_slice(&initial_value.to_le_bytes());
+    buf.write_data(&data);
+    buf.set_lamports(1_000_000_000);
+}
+
+fn setup_shrinkable_bytes_buf(buf: &mut AccountBuffer<256>, items: &[u8], reserved_tail: &[u8]) {
+    let serialized_len = 4 + items.len();
+    let data_len = 8 + serialized_len + reserved_tail.len();
+    buf.init([0xAA; 32], PROGRAM_ID, data_len, false, true, false);
+
+    let mut data = Vec::with_capacity(data_len);
+    data.extend_from_slice(&shrinkable_bytes_disc());
+    data.extend_from_slice(&(items.len() as u32).to_le_bytes());
+    data.extend_from_slice(items);
+    data.extend_from_slice(reserved_tail);
     buf.write_data(&data);
     buf.set_lamports(1_000_000_000);
 }
@@ -394,6 +427,53 @@ fn release_borrow_commits_in_memory_changes_to_buffer() {
         u64::from_le_bytes(bytes.try_into().unwrap()),
         100,
         "release_borrow must serialize self.data so a subsequent CPI sees the in-memory mutations"
+    );
+}
+
+#[test]
+fn exit_zeroes_bytes_between_new_and_old_serialized_lengths() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_shrinkable_bytes_buf(&mut buf, &[1, 2, 3], &[0xAA, 0xBB]);
+    let program_id = Address::new_from_array(PROGRAM_ID);
+
+    {
+        let view = unsafe { buf.view() };
+        let mut acct =
+            unsafe { BorshAccount::<ShrinkableBytes>::load_mut(view, &program_id) }.unwrap();
+        acct.items = vec![1, 2];
+        acct.exit().unwrap();
+    }
+
+    let data = read_data_bytes(&buf, 0, 17);
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&shrinkable_bytes_disc());
+    expected.extend_from_slice(&2u32.to_le_bytes());
+    expected.extend_from_slice(&[1, 2, 0, 0xAA, 0xBB]);
+    assert_eq!(
+        data, expected,
+        "exit must zero the old serialized tail without clearing reserved account capacity"
+    );
+}
+
+#[test]
+fn release_borrow_zeroes_bytes_between_new_and_old_serialized_lengths() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_shrinkable_bytes_buf(&mut buf, &[1, 2, 3], &[0xAA, 0xBB]);
+    let program_id = Address::new_from_array(PROGRAM_ID);
+
+    let view = unsafe { buf.view() };
+    let mut acct = unsafe { BorshAccount::<ShrinkableBytes>::load_mut(view, &program_id) }.unwrap();
+    acct.items.clear();
+    acct.release_borrow().unwrap();
+
+    let data = read_data_bytes(&buf, 0, 17);
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&shrinkable_bytes_disc());
+    expected.extend_from_slice(&0u32.to_le_bytes());
+    expected.extend_from_slice(&[0, 0, 0, 0xAA, 0xBB]);
+    assert_eq!(
+        data, expected,
+        "release_borrow must commit a shrink with zero padding before any CPI observes the bytes"
     );
 }
 

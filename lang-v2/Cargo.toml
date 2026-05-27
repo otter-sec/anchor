@@ -57,6 +57,7 @@ solana-address = { version = "2.0", features = ["bytemuck", "syscalls", "curve25
 solana-instruction = { version = "3", default-features = false }
 solana-program-error = "3.0"
 solana-msg = { version = "3.1", default-features = false, features = ["alloc"] }
+solana-program-memory.workspace = true
 solana-program-log = { version = "1.1", features = ["macro"], optional = true }
 solana-sha256-hasher = { version = "3.1", features = ["sha2"] }
 solana-system-interface = { version = "2.0", features = ["bincode"] }

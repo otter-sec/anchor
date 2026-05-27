@@ -71,11 +71,7 @@ impl Discriminator for Stats {
     const DISCRIMINATOR: &'static [u8] = &STATS_DISC;
 }
 
-/// User-defined codec. Fixed 8-byte LE layout, no length prefix. Does not
-/// advance the cursor — `SerializedAccount` only ever calls these methods
-/// once per load/exit over the full post-discriminator region, so the
-/// cursor-advance contract of the trait is not exercised here. A composing
-/// codec would advance `*buf = &buf[consumed..]`.
+/// User-defined codec. Fixed 8-byte LE layout, no length prefix.
 struct LeCodec;
 
 impl AnchorAccountSerialize<Stats> for LeCodec {
@@ -83,8 +79,11 @@ impl AnchorAccountSerialize<Stats> for LeCodec {
         if buf.len() < 8 {
             return Err(ProgramError::InvalidAccountData);
         }
-        buf[..4].copy_from_slice(&value.count.to_le_bytes());
-        buf[4..8].copy_from_slice(&value.flags.to_le_bytes());
+        let tmp = core::mem::take(buf);
+        let (payload, rest) = tmp.split_at_mut(8);
+        payload[..4].copy_from_slice(&value.count.to_le_bytes());
+        payload[4..8].copy_from_slice(&value.flags.to_le_bytes());
+        *buf = rest;
         Ok(())
     }
 
@@ -92,9 +91,11 @@ impl AnchorAccountSerialize<Stats> for LeCodec {
         if buf.len() < 8 {
             return Err(ProgramError::InvalidAccountData);
         }
+        let (payload, rest) = buf.split_at(8);
+        *buf = rest;
         Ok(Stats {
-            count: u32::from_le_bytes(buf[..4].try_into().unwrap()),
-            flags: u32::from_le_bytes(buf[4..8].try_into().unwrap()),
+            count: u32::from_le_bytes(payload[..4].try_into().unwrap()),
+            flags: u32::from_le_bytes(payload[4..8].try_into().unwrap()),
         })
     }
 }
@@ -229,7 +230,7 @@ fn le_codec_load_rejects_wrong_owner() {
 
 #[test]
 fn le_codec_load_rejects_short_data() {
-    let mut buf = AccountBuffer::<256>::new();
+    let buf = AccountBuffer::<256>::new();
     // Disc-length only, no payload.
     buf.init([0xAA; 32], PROGRAM_ID, 8, false, true, false);
     buf.write_data(&STATS_DISC);
@@ -338,12 +339,21 @@ where
         if buf.len() < bytes.len() {
             return Err(ProgramError::AccountDataTooSmall);
         }
-        buf[..bytes.len()].copy_from_slice(&bytes);
+        let tmp = core::mem::take(buf);
+        let (payload, rest) = tmp.split_at_mut(bytes.len());
+        payload.copy_from_slice(&bytes);
+        *buf = rest;
         Ok(())
     }
 
     fn deserialize(buf: &mut &[u8]) -> Result<T, ProgramError> {
-        wincode::deserialize(*buf).map_err(|_| ProgramError::InvalidAccountData)
+        let value: T = wincode::deserialize(*buf).map_err(|_| ProgramError::InvalidAccountData)?;
+        let bytes = wincode::serialize(&value).map_err(|_| ProgramError::InvalidAccountData)?;
+        if buf.len() < bytes.len() {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        *buf = &buf[bytes.len()..];
+        Ok(value)
     }
 }
 
