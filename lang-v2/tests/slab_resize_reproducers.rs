@@ -384,3 +384,25 @@ fn top_up_is_noop_when_account_already_has_enough_lamports() {
     assert_eq!(slab.view().lamports(), required + 123);
     assert_eq!(payer_view.lamports(), 999);
 }
+
+#[test]
+fn top_up_transfers_deficit_from_payer() {
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 1);
+    let program_id = Address::new_from_array(PROGRAM_ID);
+
+    let required = expected_min_lamports(ITEMS_OFFSET + 4 * ITEM_SIZE).unwrap();
+    buf.set_lamports(required - 200);
+
+    let payer = AccountBuffer::<128>::new();
+    payer.init([0xCC; 32], PROGRAM_ID, 0, true, true, false);
+    payer.set_lamports(999);
+
+    let view = unsafe { buf.view() };
+    let mut slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let payer_view = unsafe { payer.view() };
+
+    slab.top_up(&payer_view).unwrap();
+
+    assert_eq!(slab.view().lamports(), required);
+    assert_eq!(payer_view.lamports(), 799);
+}

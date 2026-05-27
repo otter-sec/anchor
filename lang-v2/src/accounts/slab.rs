@@ -319,12 +319,7 @@ where
             return Ok(());
         }
         let deficit = required - current;
-        pinocchio_system::instructions::Transfer {
-            from: payer,
-            to: &self.view,
-            lamports: deficit,
-        }
-        .invoke()
+        crate::cpi::transfer_lamports_unchecked(payer, &self.view, deficit)
     }
 
     /// Move excess lamports (current - min_lamports) from the account to
