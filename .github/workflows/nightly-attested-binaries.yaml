@@ -17,15 +17,14 @@ concurrency:
   group: nightly-attested-binaries
   cancel-in-progress: false
 
-permissions:
-  contents: read
-  id-token: write
-  attestations: write
-
 jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
 
     strategy:
       fail-fast: false
@@ -48,6 +47,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: master
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
@@ -158,6 +158,8 @@ jobs:
     name: Upload to cloud bucket
     runs-on: ubuntu-latest
     needs: build
+    permissions:
+      id-token: write
 
     steps:
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
@@ -295,21 +297,21 @@ jobs:
           fs.writeFileSync(path.join(uploadRoot, "latest-prefix.txt"), `${latestPrefix}\n`);
           NODE
 
-      ## Setting up teleport for the AWS login.     
+      ## Setting up teleport for the AWS login.
       - name: Set up Teleport
-        uses: teleport-actions/setup@v1
+        uses: teleport-actions/setup@b638ff596557cc3959eb6b5287d5e58e0c8ac6a6 # v1
         with:
           version: ${{ env.TELEPORT_VERSION }}
           enterprise: true
 
       - name: Create tbot-config.yaml file
         run: |
-          cat <<'EOF' > ${{ runner.temp }}/tbot-config.yaml
+          cat <<EOF > "${RUNNER_TEMP}/tbot-config.yaml"
           version: v2
-          proxy_server: ${{ env.TELEPORT_PROXY }}
+          proxy_server: ${TELEPORT_PROXY}
           onboarding:
             join_method: github
-            token: ${{ env.TELEPORT_BOT_TOKEN_NAME }}
+            token: ${TELEPORT_BOT_TOKEN_NAME}
             certificate-ttl: 15m
           oneshot: true
           storage:
@@ -320,22 +322,24 @@ jobs:
               allow_reissue: true
               destination:
                 type: directory
-                path: ${{ runner.temp }}/aws-integration/machine-id
+                path: ${RUNNER_TEMP}/aws-integration/machine-id
           EOF
 
       # Perform authentication using Teleport Machine ID for AWS integration
       - name: Execute Teleport Machine ID Auth
         run: |
-          tbot start -c ${{ runner.temp }}/tbot-config.yaml --oneshot
-          tsh -i ${{ runner.temp }}/aws-integration/machine-id/identity --proxy ${{ env.TELEPORT_PROXY }} login
+          tbot start -c "${RUNNER_TEMP}/tbot-config.yaml" --oneshot
+          tsh -i "${RUNNER_TEMP}/aws-integration/machine-id/identity" --proxy "${TELEPORT_PROXY}" login
       - name: Upload binaries to cloud bucket
+        env:
+          S3_BUCKET: ${{ vars.RELEASES_S3_BUCKET }}
         run: |
           set -euo pipefail
 
           tsh apps login aws-integration-ops-prod
           tsh aws sts get-caller-identity
 
-          bucket="${{ vars.RELEASES_S3_BUCKET }}"
+          bucket="${S3_BUCKET}"
           build_prefix=$(cat s3-upload/build-prefix.txt)
           latest_prefix=$(cat s3-upload/latest-prefix.txt)
 

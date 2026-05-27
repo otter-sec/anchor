@@ -13,6 +13,9 @@ on:
     paths-ignore:
       - "docs/**"
 
+permissions:
+  contents: read
+
 jobs:
   tests:
     name: Reusable

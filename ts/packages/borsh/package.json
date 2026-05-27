@@ -24,11 +24,11 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "bn.js": "^5.1.2",
+    "bn.js": "^5.2.3",
     "buffer-layout": "^1.2.0"
   },
   "peerDependencies": {
-    "@solana/web3.js": "^1.69.0"
+    "@solana/web3.js": "^1.69.1"
   },
   "files": [
     "dist"

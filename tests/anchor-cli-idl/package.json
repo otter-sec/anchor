@@ -17,6 +17,6 @@
     "test": "./test.sh"
   },
   "dependencies": {
-    "mocha": "9.2.2"
+    "mocha": "10.8.2"
   }
 }

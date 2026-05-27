@@ -35,9 +35,6 @@ solana-rpc-client-api.workspace = true
 solana-signature.workspace = true
 solana-signer.workspace = true
 solana-transaction.workspace = true
-# FIXME: This should not be released, it is a temporary workaround for
-# https://github.com/anza-xyz/solana-sdk/issues/733.
-solana-zero-copy = "<1.1.0"
 thiserror = "1"
 tokio = { version = "1", features = ["rt", "sync"] }
 url = "2"
