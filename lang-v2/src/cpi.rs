@@ -8,6 +8,9 @@ use {
     solana_program_error::{ProgramError, ProgramResult},
 };
 
+const MAX_PDA_SEEDS: usize = solana_address::MAX_SEEDS;
+const MAX_PDA_SEED_LEN: usize = solana_address::MAX_SEED_LEN;
+
 /// Largest `space` that won't overflow `u64` in the const rent formula.
 /// In practice unreachable (Solana caps accounts at 10 MiB).
 #[cfg(feature = "const-rent")]
@@ -22,6 +25,25 @@ const SYSTEM_TRANSFER_VARIANT: u8 = 2;
 // `SYSTEM_TRANSFER_VARIANT` (both sides of its byte-equality reference
 // the same constant).
 const _: () = assert!(SYSTEM_TRANSFER_VARIANT == 2);
+
+#[inline(always)]
+fn validate_pda_create_seeds(seeds: &[&[u8]]) -> Result<(), ProgramError> {
+    if seeds.len() > MAX_PDA_SEEDS {
+        return Err(ProgramError::InvalidSeeds);
+    }
+    if seeds.iter().any(|seed| seed.len() > MAX_PDA_SEED_LEN) {
+        return Err(ProgramError::InvalidSeeds);
+    }
+    Ok(())
+}
+
+#[inline(always)]
+fn validate_pda_find_seeds(seeds: &[&[u8]]) -> Result<(), ProgramError> {
+    if seeds.len() >= MAX_PDA_SEEDS {
+        return Err(ProgramError::InvalidSeeds);
+    }
+    validate_pda_create_seeds(seeds)
+}
 
 /// Encode a System program `Transfer` instruction body.
 ///
@@ -179,9 +201,7 @@ pub fn try_find_program_address(
     seeds: &[&[u8]],
     program_id: &Address,
 ) -> Result<(Address, u8), ProgramError> {
-    if seeds.len() > 16 {
-        return Err(ProgramError::InvalidSeeds);
-    }
+    validate_pda_find_seeds(seeds)?;
 
     #[cfg(target_os = "solana")]
     {
@@ -204,9 +224,7 @@ pub fn find_and_verify_program_address(
     program_id: &Address,
     expected: &Address,
 ) -> Result<u8, ProgramError> {
-    if seeds.len() > 16 {
-        return Err(ProgramError::InvalidSeeds);
-    }
+    validate_pda_find_seeds(seeds)?;
 
     #[cfg(target_os = "solana")]
     {
@@ -241,6 +259,8 @@ pub fn create_program_address(
     seeds: &[&[u8]],
     program_id: &Address,
 ) -> Result<Address, ProgramError> {
+    validate_pda_create_seeds(seeds)?;
+
     #[cfg(target_os = "solana")]
     {
         let computed = hash_pda_seeds(seeds, program_id)?;
@@ -265,6 +285,8 @@ pub fn verify_program_address(
     program_id: &Address,
     expected: &Address,
 ) -> Result<(), ProgramError> {
+    validate_pda_create_seeds(seeds)?;
+
     #[cfg(target_os = "solana")]
     {
         let computed = hash_pda_seeds(seeds, program_id)?;
@@ -300,9 +322,7 @@ pub fn find_and_verify_program_address_skip_curve(
     program_id: &Address,
     expected: &Address,
 ) -> Result<u8, ProgramError> {
-    if seeds.len() > 16 {
-        return Err(ProgramError::InvalidSeeds);
-    }
+    validate_pda_find_seeds(seeds)?;
 
     #[cfg(target_os = "solana")]
     {
@@ -388,10 +408,6 @@ fn check_off_curve(addr: &Address) -> Result<(), ProgramError> {
 fn hash_pda_seeds(seeds: &[&[u8]], program_id: &Address) -> Result<Address, ProgramError> {
     use solana_define_syscall::definitions::sol_sha256;
     const PDA_MARKER: &[u8; 21] = b"ProgramDerivedAddress";
-
-    if seeds.len() > 17 {
-        return Err(ProgramError::InvalidSeeds);
-    }
 
     let n = seeds.len();
     let mut slices = core::mem::MaybeUninit::<[&[u8]; 19]>::uninit();
@@ -610,6 +626,44 @@ mod const_rent_tests {
             rent_exempt_lamports(0).unwrap(),
             ACCOUNT_STORAGE_OVERHEAD * DEFAULT_LAMPORTS_PER_BYTE,
         );
+    }
+}
+
+#[cfg(test)]
+mod pda_seed_limit_tests {
+    use super::*;
+
+    const EMPTY: &[u8] = &[];
+
+    #[test]
+    fn find_rejects_seed_count_that_leaves_no_bump_slot() {
+        let program_id = Address::new_from_array([1; 32]);
+        let seeds = [EMPTY; MAX_PDA_SEEDS];
+
+        let err = try_find_program_address(&seeds, &program_id).unwrap_err();
+
+        assert_eq!(err, ProgramError::InvalidSeeds);
+    }
+
+    #[test]
+    fn find_rejects_oversized_seed() {
+        let program_id = Address::new_from_array([1; 32]);
+        let long = [0u8; MAX_PDA_SEED_LEN + 1];
+        let seeds = [long.as_slice()];
+
+        let err = try_find_program_address(&seeds, &program_id).unwrap_err();
+
+        assert_eq!(err, ProgramError::InvalidSeeds);
+    }
+
+    #[test]
+    fn create_rejects_too_many_full_seeds() {
+        let program_id = Address::new_from_array([1; 32]);
+        let seeds = [EMPTY; MAX_PDA_SEEDS + 1];
+
+        let err = create_program_address(&seeds, &program_id).unwrap_err();
+
+        assert_eq!(err, ProgramError::InvalidSeeds);
     }
 }
 

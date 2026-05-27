@@ -17,6 +17,8 @@ use {
 };
 
 const PDA_MARKER: &[u8; 21] = b"ProgramDerivedAddress";
+const MAX_PDA_SEEDS: usize = 16;
+const MAX_PDA_SEED_LEN: usize = 32;
 
 thread_local! {
     /// `None`   = not yet attempted.
@@ -145,6 +147,10 @@ pub(crate) fn seeds_as_byte_literals(seeds: &[&syn::Expr]) -> Option<Vec<Vec<u8>
 pub(crate) fn precompute_pda(seeds: &[&[u8]], program_id: &[u8; 32]) -> Option<(u8, [u8; 32])> {
     use curve25519_dalek::edwards::CompressedEdwardsY;
 
+    if seeds.len() >= MAX_PDA_SEEDS || seeds.iter().any(|seed| seed.len() > MAX_PDA_SEED_LEN) {
+        return None;
+    }
+
     let mut bump: i32 = u8::MAX as i32;
     while bump >= 0 {
         let mut hasher = Sha256::new();
@@ -190,6 +196,23 @@ mod tests {
         assert_eq!(bump, 253);
         // PDA must be a non-zero 32-byte hash.
         assert!(pda.iter().any(|b| *b != 0));
+    }
+
+    #[test]
+    fn precompute_pda_rejects_seed_count_that_leaves_no_bump_slot() {
+        let program_id = [7u8; 32];
+        let seeds = [&[][..]; MAX_PDA_SEEDS];
+
+        assert!(precompute_pda(&seeds, &program_id).is_none());
+    }
+
+    #[test]
+    fn precompute_pda_rejects_oversized_seed() {
+        let program_id = [7u8; 32];
+        let long = [0u8; MAX_PDA_SEED_LEN + 1];
+        let seeds = [long.as_slice()];
+
+        assert!(precompute_pda(&seeds, &program_id).is_none());
     }
 
     #[test]
