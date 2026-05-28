@@ -315,7 +315,12 @@ fn idl_set_buffer(
         if print_only {
             print_idl_instruction("SetBuffer", &ix, &idl_address)?;
         } else {
-            let instructions = prepend_compute_unit_ix(vec![ix], &client, priority_fee);
+            let instructions = prepend_compute_unit_ix(
+                vec![ix],
+                &client,
+                priority_fee,
+                &[buffer, idl_address, idl_authority],
+            );
 
             let mut latest_hash = client.get_latest_blockhash()?;
             for retries in 0..20 {
@@ -455,7 +460,8 @@ fn idl_set_authority(
         if print_only {
             print_idl_instruction("SetAuthority", &ix, &idl_address)?;
         } else {
-            let instructions = prepend_compute_unit_ix(vec![ix], &client, priority_fee);
+            let instructions =
+                prepend_compute_unit_ix(vec![ix], &client, priority_fee, &[idl_address]);
             let latest_hash = client.get_latest_blockhash()?;
             let tx = Transaction::new_signed_with_payer(
                 &instructions,
@@ -526,7 +532,12 @@ fn idl_close_account(
     if print_only {
         print_idl_instruction("Close", &ix, &idl_address)?;
     } else {
-        let instructions = prepend_compute_unit_ix(vec![ix], &client, priority_fee);
+        let instructions = prepend_compute_unit_ix(
+            vec![ix],
+            &client,
+            priority_fee,
+            &[idl_address, keypair.pubkey()],
+        );
         let latest_hash = client.get_latest_blockhash()?;
         let tx = Transaction::new_signed_with_payer(
             &instructions,
@@ -582,7 +593,7 @@ fn idl_write(
             accounts,
             data,
         };
-        let instructions = prepend_compute_unit_ix(vec![ix], &client, priority_fee);
+        let instructions = prepend_compute_unit_ix(vec![ix], &client, priority_fee, &[idl_address]);
 
         let mut latest_hash = client.get_latest_blockhash()?;
         for retries in 0..20 {
@@ -661,7 +672,7 @@ fn create_idl_account(
                 data,
             });
         }
-        instructions = prepend_compute_unit_ix(instructions, &client, priority_fee);
+        instructions = prepend_compute_unit_ix(instructions, &client, priority_fee, &[idl_address]);
 
         let mut latest_hash = client.get_latest_blockhash()?;
         for retries in 0..20 {
@@ -741,6 +752,7 @@ fn create_idl_buffer(
         vec![create_account_ix, create_buffer_ix],
         &client,
         priority_fee,
+        &[buffer.pubkey()],
     );
 
     let mut latest_hash = client.get_latest_blockhash()?;
