@@ -2595,6 +2595,14 @@ fn build_cwd_verifiable(
                 .with_extension("ts");
             fs::write(&ts_file, idl_ts(&idl)?)?;
 
+            // Generate error constants file if errors exist
+            let types_dir = if cfg.workspace.types.is_empty() {
+                None
+            } else {
+                Some(workspace_dir.join(&cfg.workspace.types))
+            };
+            write_error_constants_file(&idl, &target_dir.join("types"), types_dir)?;
+
             // Copy out the TypeScript type.
             if !&cfg.workspace.types.is_empty() {
                 fs::copy(
@@ -2906,6 +2914,14 @@ fn _build_rust_cwd(
         }
         // Write out the TypeScript type.
         fs::write(&ts_out, idl_ts(&idl)?)?;
+
+        // Generate error constants file if errors exist
+        let types_dir = if cfg.workspace.types.is_empty() {
+            None
+        } else {
+            Some(cfg_parent.join(&cfg.workspace.types))
+        };
+        write_error_constants_file(&idl, ts_out.parent().unwrap(), types_dir)?;
 
         // Copy out the TypeScript type.
         if !&cfg.workspace.types.is_empty() {
@@ -3310,7 +3326,11 @@ fn idl_build(
     write_idl(&idl, out)?;
 
     if let Some(path) = out_ts {
+        let ts_out_dir = PathBuf::from(&path);
         fs::write(path, idl_ts(&idl)?)?;
+        // Generate error constants file if errors exist
+        let ts_out_parent = ts_out_dir.parent().unwrap_or_else(|| Path::new("."));
+        write_error_constants_file(&idl, ts_out_parent, None)?;
     }
 
     Ok(())
@@ -3617,6 +3637,51 @@ fn camel_case_idl_identifier(value: &mut JsonValue) {
 
 fn is_idl_identifier_key(key: &str) -> bool {
     matches!(key, "name" | "path" | "account" | "relations" | "generic")
+}
+
+fn idl_ts_errors(idl: &Idl) -> Option<String> {
+    if idl.errors.is_empty() {
+        return None;
+    }
+
+    let idl_name = &idl.metadata.name;
+    let type_name = idl_name.to_pascal_case();
+    let error_code_name = format!("{type_name}ErrorCode");
+
+    let error_entries: Vec<String> = idl
+        .errors
+        .iter()
+        .map(|error| format!("  {}: {}", error.name, error.code))
+        .collect();
+
+    Some(format!(
+        r#"
+export const {error_code_name} = {{
+{errors}
+}};
+
+export type {type_name}ErrorName = keyof typeof {error_code_name};
+"#,
+        errors = error_entries.join(",\n")
+    ))
+}
+
+fn write_error_constants_file(
+    idl: &Idl,
+    ts_out_dir: &Path,
+    cfg_types_dir: Option<PathBuf>,
+) -> Result<()> {
+    if let Some(error_constants) = idl_ts_errors(idl) {
+        let error_file_name = format!("{}_errors.ts", &idl.metadata.name);
+        let error_out = ts_out_dir.join(&error_file_name);
+        fs::write(&error_out, error_constants)?;
+
+        // Copy out the error constants file to workspace types directory if configured
+        if let Some(types_dir) = cfg_types_dir {
+            fs::copy(&error_out, types_dir.join(&error_file_name))?;
+        }
+    }
+    Ok(())
 }
 
 fn write_idl(idl: &Idl, out: OutFile) -> Result<()> {
@@ -7088,8 +7153,8 @@ mod tests {
     use {
         super::*,
         anchor_lang_idl::types::{
-            IdlGenericArg, IdlInstructionAccount, IdlInstructionAccountItem, IdlPda, IdlSeed,
-            IdlSeedAccount, IdlTypeDef, IdlTypeDefGeneric,
+            IdlErrorCode, IdlGenericArg, IdlInstructionAccount, IdlInstructionAccountItem,
+            IdlMetadata, IdlPda, IdlSeed, IdlSeedAccount, IdlTypeDef, IdlTypeDefGeneric,
         },
         std::collections::{HashMap, HashSet},
         tempfile::tempdir,
@@ -7485,7 +7550,7 @@ mod tests {
     fn idl_ts_preserves_literal_values() {
         let idl = Idl {
             address: "11111111111111111111111111111111".to_string(),
-            metadata: anchor_lang_idl::types::IdlMetadata {
+            metadata: IdlMetadata {
                 name: "test_program".to_string(),
                 version: "0.1.0".to_string(),
                 spec: "0.1.0".to_string(),
@@ -7528,7 +7593,7 @@ mod tests {
                 discriminator: vec![8, 7, 6, 5, 4, 3, 2, 1],
             }],
             events: Vec::new(),
-            errors: vec![anchor_lang_idl::types::IdlErrorCode {
+            errors: vec![IdlErrorCode {
                 code: 6000,
                 name: "Unauthorized".to_string(),
                 msg: Some("Unauthorized".to_string()),
@@ -7815,5 +7880,134 @@ mod tests {
 
         assert_eq!(generated_accounts.len(), 2);
         assert_ne!(generated_accounts[0].pubkey, generated_accounts[1].pubkey);
+    }
+
+    #[test]
+    fn test_idl_ts_with_no_errors() {
+        let idl = Idl {
+            address: "11111111111111111111111111111111".to_string(),
+            metadata: IdlMetadata {
+                name: "test_program".to_string(),
+                version: "0.1.0".to_string(),
+                spec: "0.1.0".to_string(),
+                description: None,
+                repository: None,
+                dependencies: vec![],
+                contact: None,
+                deployments: None,
+            },
+            docs: vec![],
+            instructions: vec![],
+            accounts: vec![],
+            events: vec![],
+            errors: vec![],
+            types: vec![],
+            constants: vec![],
+        };
+
+        let result = idl_ts_errors(&idl);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_idl_ts_with_errors() {
+        let idl = Idl {
+            address: "11111111111111111111111111111111".to_string(),
+            metadata: IdlMetadata {
+                name: "test_program".to_string(),
+                version: "0.1.0".to_string(),
+                spec: "0.1.0".to_string(),
+                description: None,
+                repository: None,
+                dependencies: vec![],
+                contact: None,
+                deployments: None,
+            },
+            docs: vec![],
+            instructions: vec![],
+            accounts: vec![],
+            events: vec![],
+            errors: vec![
+                IdlErrorCode {
+                    code: 6000,
+                    name: "CustomError".to_string(),
+                    msg: Some("This is a custom error".to_string()),
+                },
+                IdlErrorCode {
+                    code: 6001,
+                    name: "AnotherError".to_string(),
+                    msg: None,
+                },
+            ],
+            types: vec![],
+            constants: vec![],
+        };
+
+        let result = idl_ts_errors(&idl).unwrap();
+
+        assert!(result.contains("export const TestProgramErrorCode = {"));
+        assert!(result.contains("CustomError: 6000"));
+        assert!(result.contains("AnotherError: 6001"));
+        assert!(result
+            .contains("export type TestProgramErrorName = keyof typeof TestProgramErrorCode;"));
+    }
+
+    #[test]
+    fn test_idl_ts_error_name_formatting() {
+        let idl = Idl {
+            address: "11111111111111111111111111111111".to_string(),
+            metadata: IdlMetadata {
+                name: "test_program".to_string(),
+                version: "0.1.0".to_string(),
+                spec: "0.1.0".to_string(),
+                description: None,
+                repository: None,
+                dependencies: vec![],
+                contact: None,
+                deployments: None,
+            },
+            docs: vec![],
+            instructions: vec![],
+            accounts: vec![],
+            events: vec![],
+            errors: vec![
+                IdlErrorCode {
+                    code: 6000,
+                    name: "snake_case_error".to_string(),
+                    msg: None,
+                },
+                IdlErrorCode {
+                    code: 6001,
+                    name: "SCREAMING_SNAKE_CASE".to_string(),
+                    msg: None,
+                },
+                // `JSONError` and `JsonError` PascalCase to the same key.
+                // They must stay distinct: emitting raw names avoids both the
+                // duplicate-key TS1117 error and a mismatch with the on-chain
+                // `errorCode.code` value.
+                IdlErrorCode {
+                    code: 6002,
+                    name: "JSONError".to_string(),
+                    msg: None,
+                },
+                IdlErrorCode {
+                    code: 6003,
+                    name: "JsonError".to_string(),
+                    msg: None,
+                },
+            ],
+            types: vec![],
+            constants: vec![],
+        };
+
+        let result = idl_ts_errors(&idl).unwrap();
+
+        assert!(result.contains("export const TestProgramErrorCode = {"));
+        assert!(result.contains("  snake_case_error: 6000"));
+        assert!(result.contains("  SCREAMING_SNAKE_CASE: 6001"));
+        assert!(result.contains("  JSONError: 6002"));
+        assert!(result.contains("  JsonError: 6003"));
+        assert!(result
+            .contains("export type TestProgramErrorName = keyof typeof TestProgramErrorCode;"));
     }
 }
