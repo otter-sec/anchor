@@ -272,6 +272,35 @@ pub struct Bad {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn pda_init_payer_must_be_system_account() {
+    compile_fail_case(
+        "pda_init_payer_must_be_system_account",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+#[account]
+pub struct Data {
+    pub value: u64,
+}
+
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(mut, seeds = [b"payer"], bump)]
+    pub payer: UncheckedAccount,
+    #[account(init, payer = payer, space = 8 + core::mem::size_of::<Data>())]
+    pub data: Account<Data>,
+    pub system_program: Program<System>,
+}
+"#,
+        &["PDA init payers must be declared as `SystemAccount`"],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn init_owner_override_rejects_typed_accounts() {
     fn case(name: &str, account_attr: &str, field_ty: &str) {
         let source = format!(

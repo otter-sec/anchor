@@ -70,8 +70,16 @@ where
         _owner: &Address,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
+        payer_signer_seeds: Option<&[&[u8]]>,
     ) -> Result<Self, ProgramError> {
-        H::create_and_initialize(payer, account, space, params, signer_seeds)?;
+        H::create_and_initialize(
+            payer,
+            account,
+            space,
+            params,
+            signer_seeds,
+            payer_signer_seeds,
+        )?;
         // SAFETY: `create_and_initialize` just created this account; no other
         // mutable reference to its data can exist yet.
         unsafe { <Self as AnchorAccount>::load_mut_after_init(*account) }

@@ -139,16 +139,18 @@ pub type BorshConfig = wincode::config::Configuration<
 /// is gated on the **end-user crate's** local `idl-build` feature, so
 /// non-IDL builds pay nothing.
 pub use anchor_derive_accounts_v2::IdlType;
+// ---------------------------------------------------------------------------
+// Client-side types — for building instructions off-chain (tests, CPI, SDK)
+// ---------------------------------------------------------------------------
+pub use anchor_derive_accounts_v2::{emit_cpi, event_cpi};
+#[doc(hidden)]
+pub use cpi::create_account_with_signers;
 /// **Opaque / unstable.** Re-exported so derive-emitted code in user
 /// crates can name the trait. Do not implement this trait by hand or call
 /// its associated items — they are implementation details of the IDL
 /// build pipeline and will change without notice. See [`idl_build`] for
 /// the trait definition.
 pub use idl_build::IdlAccountType;
-// ---------------------------------------------------------------------------
-// Client-side types — for building instructions off-chain (tests, CPI, SDK)
-// ---------------------------------------------------------------------------
-pub use anchor_derive_accounts_v2::{emit_cpi, event_cpi};
 /// Metadata for a single account in a transaction instruction.
 ///
 /// Re-exported from `solana-instruction` so tests and CPI builders can pass
@@ -202,10 +204,9 @@ pub mod solana_program {
         pub use solana_instruction::*;
     }
 
-    pub use solana_system_interface::instruction as system_instruction;
-
     #[cfg(feature = "compat")]
     pub use crate::pubkey;
+    pub use solana_system_interface::instruction as system_instruction;
 
     #[cfg(feature = "compat")]
     pub mod pubkey {

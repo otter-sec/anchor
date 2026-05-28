@@ -35,6 +35,7 @@ members = [
     "tests-v2/programs/init-space-usability",
     "tests-v2/programs/ix-macro",
     "tests-v2/programs/optional-accounts",
+    "tests-v2/programs/pda-payer",
     "tests-v2/programs/program-interface",
     "tests-v2/programs/seeds",
     "tests-v2/programs/space-annotation",

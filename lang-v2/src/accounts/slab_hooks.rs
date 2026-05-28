@@ -39,7 +39,10 @@ impl<T: Owner + Discriminator> SlabSchema for T {
 
     #[inline(always)]
     fn validate(view: &AccountView, data: &[u8]) -> Result<(), ProgramError> {
-        require!(view.owned_by(&T::OWNER), super::slab::cold_owner_error(view));
+        require!(
+            view.owned_by(&T::OWNER),
+            super::slab::cold_owner_error(view)
+        );
         let disc = T::DISCRIMINATOR;
         if data.len() < Self::MIN_DATA_LEN {
             return Err(ProgramError::AccountDataTooSmall);
@@ -64,6 +67,7 @@ pub trait SlabInit {
         space: usize,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
+        payer_signer_seeds: Option<&[&[u8]]>,
     ) -> Result<(), ProgramError>;
 }
 
@@ -77,12 +81,17 @@ impl<T: Owner + Discriminator> SlabInit for T {
         space: usize,
         _params: &(),
         signer_seeds: Option<&[&[u8]]>,
+        payer_signer_seeds: Option<&[&[u8]]>,
     ) -> Result<(), ProgramError> {
         let disc = T::DISCRIMINATOR;
-        match signer_seeds {
-            Some(seeds) => crate::create_account_signed(payer, account, space, &T::OWNER, seeds)?,
-            None => crate::create_account(payer, account, space, &T::OWNER)?,
-        }
+        crate::create_account_with_signers(
+            payer,
+            account,
+            space,
+            &T::OWNER,
+            signer_seeds,
+            payer_signer_seeds,
+        )?;
         let mut account_view = *account;
         let data = unsafe { account_view.borrow_unchecked_mut() };
         if data.len() < disc.len() {

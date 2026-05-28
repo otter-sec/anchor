@@ -153,7 +153,8 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
                 if !matches!(kind, CpiFieldKind::Readonly | CpiFieldKind::Writable) {
                     return syn::Error::new_spanned(
                         field,
-                        "#[account_meta(duplicate_readonly)] requires a direct CpiHandle or CpiHandleMut field",
+                        "#[account_meta(duplicate_readonly)] requires a direct CpiHandle or \
+                         CpiHandleMut field",
                     )
                     .to_compile_error();
                 }
@@ -282,7 +283,8 @@ fn accounts_program_id_expr(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 else {
                     return Err(syn::Error::new_spanned(
                         attr,
-                        "expected #[accounts_program_id(expr)] or #[accounts_program_id = \"expr\"]",
+                        "expected #[accounts_program_id(expr)] or #[accounts_program_id = \
+                         \"expr\"]",
                     ));
                 };
                 let expr: Expr = lit.parse()?;
@@ -452,7 +454,8 @@ fn direct_cpi_field_kind(ty: &Type) -> syn::Result<(CpiFieldKind, syn::Lifetime)
     let Some((ident, lifetime)) = path_type_ident_and_lifetime(ty) else {
         return Err(syn::Error::new_spanned(
             ty,
-            "expected CpiHandle<'a>, CpiHandleMut<'a>, Option<CpiHandle<'a>>, or Option<CpiHandleMut<'a>>",
+            "expected CpiHandle<'a>, CpiHandleMut<'a>, Option<CpiHandle<'a>>, or \
+             Option<CpiHandleMut<'a>>",
         ));
     };
     match ident.to_string().as_str() {
@@ -760,7 +763,8 @@ fn parse_accounts_program_id_attr(attrs: &[syn::Attribute]) -> syn::Result<Expr>
                 else {
                     return Err(syn::Error::new_spanned(
                         attr,
-                        "expected #[accounts_program_id(expr)] or #[accounts_program_id = \"expr\"]",
+                        "expected #[accounts_program_id(expr)] or #[accounts_program_id = \
+                         \"expr\"]",
                     ));
                 };
                 lit.parse()?
@@ -841,12 +845,35 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .zip(offset_exprs.iter().cloned())
         .collect();
 
+    let field_summaries: Vec<parse::FieldSummary> = match named_fields
+        .named
+        .iter()
+        .map(|field| {
+            Ok(parse::FieldSummary {
+                name: field.ident.clone().expect("named field"),
+                ty: field.ty.clone(),
+                attrs: parse::parse_account_attrs(&field.attrs)?,
+            })
+        })
+        .collect::<syn::Result<_>>()
+    {
+        Ok(fields) => fields,
+        Err(err) => return err.to_compile_error(),
+    };
+
     let fields: Vec<parse::AccountField> = match named_fields
         .named
         .iter()
         .zip(offset_exprs)
         .map(|(f, offset)| {
-            parse::parse_field(f, &raw_field_names, &field_offsets, offset, &ix_arg_names)
+            parse::parse_field(
+                f,
+                &raw_field_names,
+                &field_offsets,
+                offset,
+                &ix_arg_names,
+                &field_summaries,
+            )
         })
         .collect::<syn::Result<_>>()
     {
@@ -2240,7 +2267,8 @@ fn parse_program_config_tokens(attr: TokenStream2) -> syn::Result<ProgramConfig>
             other => {
                 return Err(syn::Error::new(
                     other.span(),
-                    "unsupported `#[program]` argument; expected `interface` or `program_id = <expr>`",
+                    "unsupported `#[program]` argument; expected `interface` or `program_id = \
+                     <expr>`",
                 ));
             }
         }
@@ -2907,7 +2935,10 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
             _ => {
                 return Err(syn::Error::new(
                     ident.span(),
-                    format!("declare_program! only supports struct, enum, and type alias IDL types for now, got `{kind}`"),
+                    format!(
+                        "declare_program! only supports struct, enum, and type alias IDL types \
+                         for now, got `{kind}`"
+                    ),
                 ));
             }
         }
@@ -4234,7 +4265,8 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
             if d.bytes.len() != 1 {
                 return syn::Error::new(
                     d.span,
-                    "executable `#[program]` custom discriminators must be one byte; use `#[program(interface, ...)]` for arbitrary IDL discriminator bytes",
+                    "executable `#[program]` custom discriminators must be one byte; use \
+                     `#[program(interface, ...)]` for arbitrary IDL discriminator bytes",
                 )
                 .to_compile_error();
             }
@@ -5621,13 +5653,16 @@ fn extract_context_accounts_ident(arg: &FnArg) -> syn::Result<Ident> {
                         if args.args.len() != 1 {
                             return Err(syn::Error::new(
                                 args.span(),
-                                "Anchor v2 handlers take `ctx: &mut Context<Accounts>`. The v1 multi-lifetime form `Context<'_, '_, 'info, 'info, Accounts<'info>>` is not supported; use `ctx: &mut Context<Buy>`.",
+                                "Anchor v2 handlers take `ctx: &mut Context<Accounts>`. The v1 \
+                                 multi-lifetime form `Context<'_, '_, 'info, 'info, \
+                                 Accounts<'info>>` is not supported; use `ctx: &mut Context<Buy>`.",
                             ));
                         }
                     }
                     return Err(syn::Error::new(
                         ty.span(),
-                        "handler context must be passed by mutable reference: use `ctx: &mut Context<T>`",
+                        "handler context must be passed by mutable reference: use `ctx: &mut \
+                         Context<T>`",
                     ));
                 }
             }
@@ -5672,7 +5707,8 @@ fn extract_context_accounts_ident(arg: &FnArg) -> syn::Result<Ident> {
     if args.args.len() != 1 {
         return Err(syn::Error::new(
             args.span(),
-            "Anchor v2 `Context` takes exactly one accounts type. Use `ctx: &mut Context<Buy>` instead of the v1 form `Context<'_, '_, 'info, 'info, Buy<'info>>`.",
+            "Anchor v2 `Context` takes exactly one accounts type. Use `ctx: &mut Context<Buy>` \
+             instead of the v1 form `Context<'_, '_, 'info, 'info, Buy<'info>>`.",
         ));
     }
 
@@ -5694,7 +5730,8 @@ fn extract_context_accounts_ident(arg: &FnArg) -> syn::Result<Ident> {
     if !matches!(accounts_segment.arguments, syn::PathArguments::None) {
         return Err(syn::Error::new(
             accounts_segment.arguments.span(),
-            "Anchor v2 account structs in handler contexts do not take `'info`; use `Context<Buy>` instead of `Context<Buy<'info>>`.",
+            "Anchor v2 account structs in handler contexts do not take `'info`; use \
+             `Context<Buy>` instead of `Context<Buy<'info>>`.",
         ));
     }
 

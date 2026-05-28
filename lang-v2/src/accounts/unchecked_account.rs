@@ -43,11 +43,16 @@ impl AccountInitialize for UncheckedAccount {
         owner: &Address,
         _params: &(),
         signer_seeds: Option<&[&[u8]]>,
+        payer_signer_seeds: Option<&[&[u8]]>,
     ) -> Result<Self, ProgramError> {
-        match signer_seeds {
-            Some(seeds) => crate::create_account_signed(payer, account, space, owner, seeds)?,
-            None => crate::create_account(payer, account, space, owner)?,
-        }
+        crate::create_account_with_signers(
+            payer,
+            account,
+            space,
+            owner,
+            signer_seeds,
+            payer_signer_seeds,
+        )?;
         Self::load(*account)
     }
 }

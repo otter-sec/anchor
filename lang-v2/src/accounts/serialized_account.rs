@@ -101,11 +101,7 @@ where
     /// this, `exit()` becomes a no-op until `reacquire_borrow_mut()` is
     /// called. Immutable / already-released borrows skip the commit.
     pub fn release_borrow(&mut self) -> Result<(), ProgramError> {
-        Self::serialize_mutable_borrow(
-            &self.data,
-            &mut self.borrow,
-            &mut self.serialized_len,
-        )?;
+        Self::serialize_mutable_borrow(&self.data, &mut self.borrow, &mut self.serialized_len)?;
         self.borrow = SerializedAccountBorrow::Released;
         Ok(())
     }
@@ -200,14 +196,14 @@ where
         Ok((data, payload_len - cursor.len()))
     }
 
-    fn validate_and_load(
-        view: AccountView,
-        data: &[u8],
-    ) -> Result<(T, usize), ProgramError> {
+    fn validate_and_load(view: AccountView, data: &[u8]) -> Result<(T, usize), ProgramError> {
         // Hot path: a single owner check. The "uninitialized placeholder"
         // disambiguation lives in `cold_owner_error` (slab.rs) — see
         // the comment there for why this is safe.
-        require!(view.owned_by(&T::OWNER), super::slab::cold_owner_error(&view));
+        require!(
+            view.owned_by(&T::OWNER),
+            super::slab::cold_owner_error(&view)
+        );
         if data.len() < DISC_LEN {
             return Err(ProgramError::AccountDataTooSmall);
         }
@@ -333,11 +329,7 @@ where
             self.borrow = SerializedAccountBorrow::Released;
             self.reacquire_guard_only()?;
         }
-        Self::serialize_mutable_borrow(
-            &self.data,
-            &mut self.borrow,
-            &mut self.serialized_len,
-        )?;
+        Self::serialize_mutable_borrow(&self.data, &mut self.borrow, &mut self.serialized_len)?;
         Ok(())
     }
 }
@@ -485,14 +477,19 @@ where
         _owner: &Address,
         _params: &(),
         signer_seeds: Option<&[&[u8]]>,
+        payer_signer_seeds: Option<&[&[u8]]>,
     ) -> Result<Self, ProgramError> {
         let disc: &[u8; 8] = T::DISCRIMINATOR
             .try_into()
             .map_err(|_| ProgramError::InvalidAccountData)?;
-        match signer_seeds {
-            Some(seeds) => crate::create_account_signed(payer, account, space, &T::OWNER, seeds)?,
-            None => crate::create_account(payer, account, space, &T::OWNER)?,
-        }
+        crate::create_account_with_signers(
+            payer,
+            account,
+            space,
+            &T::OWNER,
+            signer_seeds,
+            payer_signer_seeds,
+        )?;
         let mut view_mut = *account;
         let data_ref = view_mut.try_borrow_mut()?;
         let mut guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };

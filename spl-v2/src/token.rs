@@ -3,6 +3,11 @@
 //! Layout mirrors `pinocchio-token` — all fields are alignment-1 to support
 //! zerocopy mapping from the account data buffer.
 
+pub use {
+    crate::mint::Mint,
+    anchor_lang_v2::programs::Token,
+    spl_token_interface::{self as spl_token, ID},
+};
 use {
     anchor_lang_v2::{
         accounts::{Account, Program, SlabInit, SlabSchema},
@@ -13,12 +18,6 @@ use {
     solana_address::Address,
     solana_program_error::ProgramError,
     spl_token_2022_interface as spl_token_2022,
-};
-
-pub use {
-    crate::mint::Mint,
-    anchor_lang_v2::programs::Token,
-    spl_token_interface::{self as spl_token, ID},
 };
 
 pub(crate) const COPTION_NONE: [u8; 4] = [0, 0, 0, 0];
@@ -63,14 +62,17 @@ pub(crate) fn create_token_account(
     account: &AccountView,
     space: usize,
     signer_seeds: Option<&[&[u8]]>,
+    payer_signer_seeds: Option<&[&[u8]]>,
 ) -> Result<(), ProgramError> {
     let token_program_id = Token::id();
-    match signer_seeds {
-        Some(seeds) => {
-            anchor_lang_v2::create_account_signed(payer, account, space, &token_program_id, seeds)
-        }
-        None => anchor_lang_v2::create_account(payer, account, space, &token_program_id),
-    }
+    anchor_lang_v2::create_account_with_signers(
+        payer,
+        account,
+        space,
+        &token_program_id,
+        signer_seeds,
+        payer_signer_seeds,
+    )
 }
 
 /// SPL Token account data, zerocopy-mapped (165 bytes).
@@ -148,11 +150,18 @@ impl SlabInit for TokenAccount {
         _space: usize,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
+        payer_signer_seeds: Option<&[&[u8]]>,
     ) -> Result<(), ProgramError> {
         let mint = params.mint.ok_or(ProgramError::InvalidArgument)?;
         let authority = params.authority.ok_or(ProgramError::InvalidArgument)?;
 
-        create_token_account(payer, account, core::mem::size_of::<Self>(), signer_seeds)?;
+        create_token_account(
+            payer,
+            account,
+            core::mem::size_of::<Self>(),
+            signer_seeds,
+            payer_signer_seeds,
+        )?;
 
         pinocchio_token::instructions::InitializeAccount3 {
             account,
@@ -300,15 +309,17 @@ pub mod accounts {
     };
 }
 
-pub use crate::token_shared::{
-    approve, approve_checked, burn, burn_checked, close_account, freeze_account,
-    initialize_account, initialize_account3, initialize_mint, initialize_mint2, mint_to,
-    mint_to_checked, revoke, sync_native, thaw_account, transfer, transfer_checked,
-};
-pub use accounts::{
-    Approve, ApproveChecked, Burn, BurnChecked, CloseAccount, FreezeAccount, InitializeAccount,
-    InitializeAccount3, InitializeMint, InitializeMint2, MintTo, MintToChecked, Revoke,
-    SetAuthority, SyncNative, ThawAccount, Transfer, TransferChecked,
+pub use {
+    crate::token_shared::{
+        approve, approve_checked, burn, burn_checked, close_account, freeze_account,
+        initialize_account, initialize_account3, initialize_mint, initialize_mint2, mint_to,
+        mint_to_checked, revoke, sync_native, thaw_account, transfer, transfer_checked,
+    },
+    accounts::{
+        Approve, ApproveChecked, Burn, BurnChecked, CloseAccount, FreezeAccount, InitializeAccount,
+        InitializeAccount3, InitializeMint, InitializeMint2, MintTo, MintToChecked, Revoke,
+        SetAuthority, SyncNative, ThawAccount, Transfer, TransferChecked,
+    },
 };
 
 #[inline]

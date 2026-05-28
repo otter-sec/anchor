@@ -19,6 +19,10 @@
 //! }
 //! ```
 
+pub use crate::{
+    token_2022::{PermanentDelegateInitialize, *},
+    token_2022_extensions::*,
+};
 use {
     anchor_lang_v2::{
         accounts::{InterfaceAccount, SlabInit, SlabSchema},
@@ -35,10 +39,6 @@ use {
         pod::{PodAccount, PodMint},
     },
 };
-
-pub use crate::token_2022::PermanentDelegateInitialize;
-pub use crate::token_2022::*;
-pub use crate::token_2022_extensions::*;
 
 // ---------------------------------------------------------------------------
 // Interface<T> — transparent wrapper that changes validation to accept both
@@ -224,6 +224,7 @@ impl SlabInit for Interface<crate::TokenAccount> {
         _space: usize,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
+        payer_signer_seeds: Option<&[&[u8]]>,
     ) -> Result<(), ProgramError> {
         let mint = params.mint.ok_or(ProgramError::InvalidArgument)?;
         let authority = params.authority.ok_or(ProgramError::InvalidArgument)?;
@@ -232,12 +233,14 @@ impl SlabInit for Interface<crate::TokenAccount> {
         crate::token_shared::validate_token_interface_program(program_id)?;
 
         let space = core::mem::size_of::<crate::TokenAccount>();
-        match signer_seeds {
-            Some(seeds) => {
-                anchor_lang_v2::create_account_signed(payer, account, space, program_id, seeds)
-            }
-            None => anchor_lang_v2::create_account(payer, account, space, program_id),
-        }?;
+        anchor_lang_v2::create_account_with_signers(
+            payer,
+            account,
+            space,
+            program_id,
+            signer_seeds,
+            payer_signer_seeds,
+        )?;
 
         pinocchio_token_2022::instructions::InitializeAccount3 {
             account,
@@ -272,6 +275,7 @@ impl SlabInit for Interface<crate::Mint> {
         _space: usize,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
+        payer_signer_seeds: Option<&[&[u8]]>,
     ) -> Result<(), ProgramError> {
         let decimals = params.decimals.ok_or(ProgramError::InvalidArgument)?;
         let authority = params.authority.ok_or(ProgramError::InvalidArgument)?;
@@ -280,12 +284,14 @@ impl SlabInit for Interface<crate::Mint> {
         crate::token_shared::validate_token_interface_program(program_id)?;
 
         let space = core::mem::size_of::<crate::Mint>();
-        match signer_seeds {
-            Some(seeds) => {
-                anchor_lang_v2::create_account_signed(payer, account, space, program_id, seeds)
-            }
-            None => anchor_lang_v2::create_account(payer, account, space, program_id),
-        }?;
+        anchor_lang_v2::create_account_with_signers(
+            payer,
+            account,
+            space,
+            program_id,
+            signer_seeds,
+            payer_signer_seeds,
+        )?;
 
         pinocchio_token_2022::instructions::InitializeMint2 {
             mint: account,

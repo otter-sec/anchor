@@ -410,11 +410,28 @@ fn hash_pda_seeds(seeds: &[&[u8]], program_id: &Address) -> Result<Address, Prog
 
 /// Create a new account via system program CPI (no PDA signing).
 #[inline(always)]
-pub fn create_account(
+fn signer_from_seeds<'a>(seeds: &'a [&'a [u8]]) -> pinocchio::cpi::Signer<'a, 'a> {
+    // SAFETY: Seed is repr(C) { *const u8, u64, PhantomData } = 16 bytes,
+    // identical to &[u8] on SBF (*const u8, u64) = 16 bytes.
+    // PhantomData is zero-sized. Static assertions verify at compile time.
+    const _: () =
+        assert!(core::mem::size_of::<&[u8]>() == core::mem::size_of::<pinocchio::cpi::Seed>());
+    const _: () =
+        assert!(core::mem::align_of::<&[u8]>() == core::mem::align_of::<pinocchio::cpi::Seed>());
+    let signer_seeds: &[pinocchio::cpi::Seed] = unsafe {
+        core::slice::from_raw_parts(seeds.as_ptr() as *const pinocchio::cpi::Seed, seeds.len())
+    };
+    pinocchio::cpi::Signer::from(signer_seeds)
+}
+
+#[doc(hidden)]
+pub fn create_account_with_signers(
     payer: &AccountView,
     target: &AccountView,
     space: usize,
     owner: &Address,
+    target_signer_seeds: Option<&[&[u8]]>,
+    payer_signer_seeds: Option<&[&[u8]]>,
 ) -> Result<(), ProgramError> {
     require!(
         !pinocchio::address::address_eq(payer.address(), target.address()),
@@ -425,18 +442,53 @@ pub fn create_account(
     let current = target.lamports();
 
     if current == 0 {
-        pinocchio_system::instructions::CreateAccount {
+        let create = pinocchio_system::instructions::CreateAccount {
             from: payer,
             to: target,
             lamports: required,
             space: space as u64,
             owner,
+        };
+        match (payer_signer_seeds, target_signer_seeds) {
+            (None, None) => create.invoke()?,
+            (Some(payer_seeds), None) => {
+                let payer_signer = signer_from_seeds(payer_seeds);
+                create.invoke_signed(&[payer_signer])?;
+            }
+            (None, Some(target_seeds)) => {
+                let target_signer = signer_from_seeds(target_seeds);
+                create.invoke_signed(&[target_signer])?;
+            }
+            (Some(payer_seeds), Some(target_seeds)) => {
+                let payer_signer = signer_from_seeds(payer_seeds);
+                let target_signer = signer_from_seeds(target_seeds);
+                create.invoke_signed(&[payer_signer, target_signer])?;
+            }
         }
-        .invoke()?;
     } else {
-        create_prefunded(payer, target, space, owner, required, current, &[])?;
+        create_prefunded(
+            payer,
+            target,
+            space,
+            owner,
+            required,
+            current,
+            target_signer_seeds,
+            payer_signer_seeds,
+        )?;
     }
     Ok(())
+}
+
+/// Create a new account via system program CPI (no PDA signing).
+#[inline(always)]
+pub fn create_account(
+    payer: &AccountView,
+    target: &AccountView,
+    space: usize,
+    owner: &Address,
+) -> Result<(), ProgramError> {
+    create_account_with_signers(payer, target, space, owner, None, None)
 }
 
 /// Create a new PDA account via system program CPI with signer seeds.
@@ -450,39 +502,7 @@ pub fn create_account_signed(
     owner: &Address,
     seeds: &[&[u8]],
 ) -> Result<(), ProgramError> {
-    require!(
-        !pinocchio::address::address_eq(payer.address(), target.address()),
-        ProgramError::InvalidArgument
-    );
-
-    let required = rent_exempt_lamports(space)?;
-    let current = target.lamports();
-
-    // SAFETY: Seed is repr(C) { *const u8, u64, PhantomData } = 16 bytes,
-    // identical to &[u8] on SBF (*const u8, u64) = 16 bytes.
-    // PhantomData is zero-sized. Static assertions verify at compile time.
-    const _: () =
-        assert!(core::mem::size_of::<&[u8]>() == core::mem::size_of::<pinocchio::cpi::Seed>());
-    const _: () =
-        assert!(core::mem::align_of::<&[u8]>() == core::mem::align_of::<pinocchio::cpi::Seed>());
-    let signer_seeds: &[pinocchio::cpi::Seed] = unsafe {
-        core::slice::from_raw_parts(seeds.as_ptr() as *const pinocchio::cpi::Seed, seeds.len())
-    };
-    let signer = pinocchio::cpi::Signer::from(signer_seeds);
-
-    if current == 0 {
-        pinocchio_system::instructions::CreateAccount {
-            from: payer,
-            to: target,
-            lamports: required,
-            space: space as u64,
-            owner,
-        }
-        .invoke_signed(&[signer])?;
-    } else {
-        create_prefunded(payer, target, space, owner, required, current, &[signer])?;
-    }
-    Ok(())
+    create_account_with_signers(payer, target, space, owner, Some(seeds), None)
 }
 
 /// Rare-path fallback for when the target account already holds lamports
@@ -495,27 +515,45 @@ fn create_prefunded(
     owner: &Address,
     required: u64,
     current: u64,
-    signers: &[pinocchio::cpi::Signer],
+    target_signer_seeds: Option<&[&[u8]]>,
+    payer_signer_seeds: Option<&[&[u8]]>,
 ) -> Result<(), ProgramError> {
     let top_up = required.saturating_sub(current);
     if top_up > 0 {
-        pinocchio_system::instructions::Transfer {
+        let transfer = pinocchio_system::instructions::Transfer {
             from: payer,
             to: target,
             lamports: top_up,
+        };
+        match payer_signer_seeds {
+            Some(seeds) => {
+                let payer_signer = signer_from_seeds(seeds);
+                transfer.invoke_signed(&[payer_signer])?;
+            }
+            None => transfer.invoke()?,
         }
-        .invoke()?;
     }
-    pinocchio_system::instructions::Allocate {
+
+    let allocate = pinocchio_system::instructions::Allocate {
         account: target,
         space: space as u64,
-    }
-    .invoke_signed(signers)?;
-    pinocchio_system::instructions::Assign {
+    };
+    let assign = pinocchio_system::instructions::Assign {
         account: target,
         owner,
+    };
+    match target_signer_seeds {
+        Some(seeds) => {
+            let target_signer = signer_from_seeds(seeds);
+            allocate.invoke_signed(&[target_signer])?;
+            let target_signer = signer_from_seeds(seeds);
+            assign.invoke_signed(&[target_signer])?;
+        }
+        None => {
+            allocate.invoke()?;
+            assign.invoke()?;
+        }
     }
-    .invoke_signed(signers)?;
     Ok(())
 }
 

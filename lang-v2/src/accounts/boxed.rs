@@ -105,8 +105,18 @@ impl<T: AccountInitialize> AccountInitialize for Box<T> {
         owner: &Address,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
+        payer_signer_seeds: Option<&[&[u8]]>,
     ) -> Result<Self, ProgramError> {
-        T::create_and_initialize(payer, account, space, owner, params, signer_seeds).map(Box::new)
+        T::create_and_initialize(
+            payer,
+            account,
+            space,
+            owner,
+            params,
+            signer_seeds,
+            payer_signer_seeds,
+        )
+        .map(Box::new)
     }
 }
 

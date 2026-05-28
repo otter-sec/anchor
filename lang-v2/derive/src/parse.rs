@@ -1,8 +1,9 @@
 use {
     proc_macro2::TokenStream as TokenStream2,
     quote::{quote, quote_spanned},
-    syn::spanned::Spanned,
-    syn::{ext::IdentExt, parse::ParseStream, Attribute, Expr, Ident, Token, Type},
+    syn::{
+        ext::IdentExt, parse::ParseStream, spanned::Spanned, Attribute, Expr, Ident, Token, Type,
+    },
 };
 
 /// snake_case → PascalCase + `Constraint` suffix, for looking up the
@@ -26,6 +27,7 @@ fn constraint_key_ident(key: &str) -> String {
 }
 
 /// A namespaced constraint like `token::mint = expr`.
+#[derive(Clone)]
 pub struct NamespacedConstraint {
     /// e.g. "token"
     pub namespace: String,
@@ -45,6 +47,7 @@ pub struct NamespacedConstraint {
     pub is_update: bool,
 }
 
+#[derive(Clone)]
 pub struct AccountAttrs {
     pub is_mut: bool,
     pub is_signer: bool,
@@ -372,8 +375,8 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
         if let Some(Some(ref bump_expr)) = result.bump {
             return Err(syn::Error::new(
                 syn::spanned::Spanned::span(bump_expr),
-                "`bump = <expr>` is not allowed with `init`: account creation \
-                 must use the canonical bump (write `bump` without a value)",
+                "`bump = <expr>` is not allowed with `init`: account creation must use the \
+                 canonical bump (write `bump` without a value)",
             ));
         }
     }
@@ -386,8 +389,8 @@ fn reject_obvious_non_bool_constraint(expr: &Expr) -> syn::Result<()> {
         if !matches!(expr_lit.lit, syn::Lit::Bool(_)) {
             return Err(syn::Error::new_spanned(
                 expr,
-                "`constraint` expects a boolean expression; non-boolean literals like strings \
-                 and numbers are rejected",
+                "`constraint` expects a boolean expression; non-boolean literals like strings and \
+                 numbers are rejected",
             ));
         }
     }
@@ -708,6 +711,13 @@ pub struct AccountField {
     pub idl_field_ty: Option<syn::Type>,
 }
 
+#[derive(Clone)]
+pub struct FieldSummary {
+    pub name: Ident,
+    pub ty: Type,
+    pub attrs: AccountAttrs,
+}
+
 /// Turn the RHS of `#[account(address = <expr>)]` into the string form the
 /// IDL emits. Whitespace from `quote!`'s token reassembly is stripped so
 /// `crate :: ID` → `crate::ID`, `data . authority` → `data.authority`, and
@@ -961,13 +971,125 @@ fn emit_seeds_check(
 /// Emit the shared init body used by both `#[account(init)]` and
 /// `#[account(init_if_needed)]`: seeds check, param assignments,
 /// `create_and_initialize`, and `load_mut_after_init`.
+fn emit_payer_signer_seeds_binding(
+    payer: &Ident,
+    field_names: &[String],
+    field_summaries: &[FieldSummary],
+) -> syn::Result<TokenStream2> {
+    let Some(payer_field) = field_summaries.iter().find(|field| field.name == *payer) else {
+        return Err(syn::Error::new(
+            payer.span(),
+            "the payer specified for an init constraint does not exist",
+        ));
+    };
+
+    let Some(seeds_expr) = payer_field.attrs.seeds.as_ref() else {
+        return Ok(quote! { let __payer_signer_seeds: Option<&[&[u8]]> = None; });
+    };
+
+    if extract_option_inner(&payer_field.ty).is_some() {
+        return Err(syn::Error::new(
+            payer_field.name.span(),
+            "optional accounts cannot be used as init payers",
+        ));
+    }
+
+    if field_ty_str(&payer_field.ty) != "SystemAccount" {
+        return Err(syn::Error::new(
+            payer_field.name.span(),
+            "PDA init payers must be declared as `SystemAccount`",
+        ));
+    }
+
+    if payer_field.attrs.seeds_program.is_some() {
+        return Err(syn::Error::new(
+            payer_field.name.span(),
+            "PDA init payers cannot use `seeds::program`",
+        ));
+    }
+
+    let bump_field = &payer_field.name;
+    if let Expr::Array(arr) = seeds_expr {
+        let seed_elems: Vec<&Expr> = arr.elems.iter().collect();
+        let (seed_bindings, seed_refs) = materialize_seed_refs(&seed_elems, field_names);
+        if let Some(Some(ref bump_expr)) = payer_field.attrs.bump {
+            return Ok(quote! {
+                #(#seed_bindings)*
+                let __payer_bump: u8 = #bump_expr;
+                anchor_lang_v2::verify_program_address(
+                    &[#(#seed_refs),* , &[__payer_bump]],
+                    __program_id,
+                    __payer.address(),
+                )?;
+                __bumps.#bump_field = __payer_bump;
+                let __payer_bump_seed = [__payer_bump];
+                let __payer_signer_seeds: Option<&[&[u8]]> =
+                    Some(&[#(#seed_refs),* , __payer_bump_seed.as_ref()]);
+            });
+        }
+
+        return Ok(quote! {
+            #(#seed_bindings)*
+            let __payer_bump =
+                anchor_lang_v2::find_and_verify_program_address(
+                    &[#(#seed_refs),*], __program_id, __payer.address(),
+                ).map_err(|_| anchor_lang_v2::ErrorCode::ConstraintSeeds)?;
+            __bumps.#bump_field = __payer_bump;
+            let __payer_bump_seed = [__payer_bump];
+            let __payer_signer_seeds: Option<&[&[u8]]> =
+                Some(&[#(#seed_refs),* , __payer_bump_seed.as_ref()]);
+        });
+    }
+
+    if let Some(Some(ref bump_expr)) = payer_field.attrs.bump {
+        return Ok(quote! {
+            let __payer_seed_expr_val = #seeds_expr;
+            let __payer_seed_ref: &[&[u8]] = __payer_seed_expr_val.as_ref();
+            if __payer_seed_ref.len() > 16 {
+                return Err(anchor_lang_v2::ErrorCode::ConstraintSeeds.into());
+            }
+            let __payer_bump: u8 = #bump_expr;
+            let __payer_bump_bytes = [__payer_bump];
+            let mut __payer_seed_buf: [&[u8]; 17] = [&[]; 17];
+            let __payer_seed_count = __payer_seed_ref.len();
+            __payer_seed_buf[..__payer_seed_count].copy_from_slice(__payer_seed_ref);
+            __payer_seed_buf[__payer_seed_count] = &__payer_bump_bytes;
+            anchor_lang_v2::verify_program_address(
+                &__payer_seed_buf[..__payer_seed_count + 1],
+                __program_id,
+                __payer.address(),
+            )?;
+            __bumps.#bump_field = __payer_bump;
+            let __payer_signer_seeds: Option<&[&[u8]]> =
+                Some(&__payer_seed_buf[..__payer_seed_count + 1]);
+        });
+    }
+
+    Ok(quote! {
+        let __payer_seed_expr_val = #seeds_expr;
+        let __payer_seed_ref: &[&[u8]] = __payer_seed_expr_val.as_ref();
+        let __payer_bump =
+            anchor_lang_v2::find_and_verify_program_address(
+                __payer_seed_ref, __program_id, __payer.address(),
+            ).map_err(|_| anchor_lang_v2::ErrorCode::ConstraintSeeds)?;
+        __bumps.#bump_field = __payer_bump;
+        let mut __payer_seed_buf: [&[u8]; 17] = [&[]; 17];
+        let __payer_seed_count = __payer_seed_ref.len();
+        __payer_seed_buf[..__payer_seed_count].copy_from_slice(__payer_seed_ref);
+        __payer_seed_buf[__payer_seed_count] = &[__payer_bump];
+        let __payer_signer_seeds: Option<&[&[u8]]> =
+            Some(&__payer_seed_buf[..__payer_seed_count + 1]);
+    })
+}
+
 fn emit_init_body(
     field_name: &Ident,
     field_ty: &Type,
     attrs: &AccountAttrs,
     field_names: &[String],
+    field_summaries: &[FieldSummary],
     is_optional: bool,
-) -> TokenStream2 {
+) -> syn::Result<TokenStream2> {
     let payer = attrs.payer.as_ref().expect("init requires payer");
     // Fall back to `<T as Space>::INIT_SPACE` when `space` is omitted.
     // SPL types (Mint, TokenAccount) impl Space = size_of<Self>() so
@@ -1009,6 +1131,8 @@ fn emit_init_body(
             }
         })
         .collect();
+
+    let payer_signer_seeds = emit_payer_signer_seeds_binding(payer, field_names, field_summaries)?;
 
     let seeds_arg = if let Some(ref seeds_expr) = attrs.seeds {
         let using_our_program_id = attrs.seeds_program.is_none();
@@ -1055,8 +1179,9 @@ fn emit_init_body(
         quote! { let __seeds: Option<&[&[u8]]> = None; }
     };
 
-    quote! {
+    Ok(quote! {
         let __payer = #payer.account();
+        #payer_signer_seeds
         #seeds_arg
         #owner_check
         let __owner = #owner;
@@ -1067,9 +1192,9 @@ fn emit_init_body(
             __p
         };
         <#field_ty as anchor_lang_v2::AccountInitialize>::create_and_initialize(
-            __payer, &__target, #space, &__owner, &__init_params, __seeds,
+            __payer, &__target, #space, &__owner, &__init_params, __seeds, __payer_signer_seeds,
         )?
-    }
+    })
 }
 
 fn emit_associated_token_init_body(
@@ -1155,6 +1280,7 @@ pub fn parse_field(
     field_offsets: &[(String, TokenStream2)],
     offset_expr: proc_macro2::TokenStream,
     ix_arg_names: &[String],
+    field_summaries: &[FieldSummary],
 ) -> syn::Result<AccountField> {
     let field_name = field.ident.as_ref().expect("named field");
     let field_ty = &field.ty;
@@ -1251,8 +1377,8 @@ pub fn parse_field(
         {
             return Err(syn::Error::new(
                 field_name.span(),
-                "`#[account(...)]` attributes are not supported on `Nested<T>` fields; \
-                 put constraints on the fields inside the nested `Accounts` struct",
+                "`#[account(...)]` attributes are not supported on `Nested<T>` fields; put \
+                 constraints on the fields inside the nested `Accounts` struct",
             ));
         }
 
@@ -1326,7 +1452,14 @@ pub fn parse_field(
             let init_body = if let Some(ref at) = associated_token {
                 emit_associated_token_init_body(inner_ty, &attrs, at, field_offsets, true)?
             } else {
-                emit_init_body(field_name, inner_ty, &attrs, field_names, true)
+                emit_init_body(
+                    field_name,
+                    inner_ty,
+                    &attrs,
+                    field_names,
+                    field_summaries,
+                    true,
+                )?
             };
             let init_body_with_constraints =
                 wrap_init_body_with_constraints(inner_ty, &attrs, &init_body);
@@ -1335,7 +1468,14 @@ pub fn parse_field(
             let init_body = if let Some(ref at) = associated_token {
                 emit_associated_token_init_body(inner_ty, &attrs, at, field_offsets, true)?
             } else {
-                emit_init_body(field_name, inner_ty, &attrs, field_names, true)
+                emit_init_body(
+                    field_name,
+                    inner_ty,
+                    &attrs,
+                    field_names,
+                    field_summaries,
+                    true,
+                )?
             };
             let init_body_with_constraints =
                 wrap_init_body_with_constraints(inner_ty, &attrs, &init_body);
@@ -1420,7 +1560,14 @@ pub fn parse_field(
         let init_body = if let Some(ref at) = associated_token {
             emit_associated_token_init_body(field_ty, &attrs, at, field_offsets, false)?
         } else {
-            emit_init_body(field_name, field_ty, &attrs, field_names, false)
+            emit_init_body(
+                field_name,
+                field_ty,
+                &attrs,
+                field_names,
+                field_summaries,
+                false,
+            )?
         };
         let init_body_with_constraints =
             wrap_init_body_with_constraints(field_ty, &attrs, &init_body);
@@ -1435,7 +1582,14 @@ pub fn parse_field(
         let init_body = if let Some(ref at) = associated_token {
             emit_associated_token_init_body(field_ty, &attrs, at, field_offsets, false)?
         } else {
-            emit_init_body(field_name, field_ty, &attrs, field_names, false)
+            emit_init_body(
+                field_name,
+                field_ty,
+                &attrs,
+                field_names,
+                field_summaries,
+                false,
+            )?
         };
         let init_body_with_constraints =
             wrap_init_body_with_constraints(field_ty, &attrs, &init_body);

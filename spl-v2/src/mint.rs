@@ -103,11 +103,18 @@ impl SlabInit for Mint {
         _space: usize,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
+        payer_signer_seeds: Option<&[&[u8]]>,
     ) -> Result<(), ProgramError> {
         let decimals = params.decimals.ok_or(ProgramError::InvalidArgument)?;
         let authority = params.authority.ok_or(ProgramError::InvalidArgument)?;
 
-        create_token_account(payer, account, core::mem::size_of::<Self>(), signer_seeds)?;
+        create_token_account(
+            payer,
+            account,
+            core::mem::size_of::<Self>(),
+            signer_seeds,
+            payer_signer_seeds,
+        )?;
 
         pinocchio_token::instructions::InitializeMint2 {
             mint: account,

@@ -1,12 +1,11 @@
+#[cfg(feature = "compat")]
+use pinocchio::account::{Ref, RefMut};
 use {
     crate::require,
     core::ops::Deref,
     pinocchio::{account::AccountView, address::Address, instruction::InstructionAccount},
     solana_program_error::{ProgramError, ProgramResult},
 };
-
-#[cfg(feature = "compat")]
-use pinocchio::account::{Ref, RefMut};
 
 /// Zero-cost CPI handle that borrows an anchor account at the Rust level.
 ///
@@ -541,6 +540,7 @@ pub trait AccountInitialize: Sized {
         owner: &Address,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
+        payer_signer_seeds: Option<&[&[u8]]>,
     ) -> Result<Self, ProgramError>;
 }
 
