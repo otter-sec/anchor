@@ -102,7 +102,14 @@ use {
         response::{Response as RpcResponse, RpcLogsResponse},
     },
     solana_signature::Signature,
-    std::{iter::Map, marker::PhantomData, ops::Deref, pin::Pin, sync::Arc, vec::IntoIter},
+    std::{
+        iter::Map,
+        marker::PhantomData,
+        ops::Deref,
+        pin::Pin,
+        sync::{Arc, LazyLock},
+        vec::IntoIter,
+    },
     thiserror::Error,
     tokio::{
         runtime::Handle,
@@ -423,8 +430,10 @@ pub fn handle_program_log<T: anchor_lang::Event + anchor_lang::AnchorDeserialize
 }
 
 pub fn handle_system_log(this_program_str: &str, log: &str) -> (Option<String>, bool) {
-    let invoke_re = Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[([\d]+)\]$").unwrap();
-    if let Some(invoke_match) = invoke_re.captures(log) {
+    static INVOKE_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[([\d]+)\]$").unwrap()
+    });
+    if let Some(invoke_match) = INVOKE_RE.captures(log) {
         if invoke_match.get(1).unwrap().as_str() == this_program_str {
             return (Some(this_program_str.to_string()), false);
 
@@ -438,8 +447,9 @@ pub fn handle_system_log(this_program_str: &str, log: &str) -> (Option<String>, 
     if log.starts_with(&format!("Program {this_program_str} log:")) {
         (Some(this_program_str.to_string()), false)
     } else {
-        let re = Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) success$").unwrap();
-        if re.is_match(log) {
+        static SUCESS_RE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) success$").unwrap());
+        if SUCESS_RE.is_match(log) {
             (None, true)
         } else {
             (None, false)
@@ -455,9 +465,10 @@ impl Execution {
     pub fn new(logs: &mut &[String]) -> Result<Self, ClientError> {
         let l = &logs[0];
         *logs = &logs[1..];
-
-        let re = Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[[\d]+\]$").unwrap();
-        let c = re
+        static RE: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[[\d]+\]$").unwrap()
+        });
+        let c = RE
             .captures(l)
             .ok_or_else(|| ClientError::LogParseError(l.to_string()))?;
         let program = c
@@ -812,7 +823,9 @@ fn parse_logs_response<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
         if let Ok(mut execution) = Execution::new(&mut logs) {
             // Create a new peekable iterator so that we can peek at the next log whilst iterating
             let mut logs_iter = logs.iter().peekable();
-            let regex = Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[(\d+)\]$").unwrap();
+            static RE: LazyLock<Regex> = LazyLock::new(|| {
+                Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[(\d+)\]$").unwrap()
+            });
 
             while let Some(l) = logs_iter.next() {
                 // Parse the log.
@@ -850,7 +863,7 @@ fn parse_logs_response<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
                     // `"Program log: ...invoke [1]"`), which then fail the strict
                     // `^Program <pubkey> invoke [N]$` regex and panic on unwrap.
                     if let Some(&next_log) = logs_iter.peek() {
-                        if let Some(caps) = regex.captures(next_log) {
+                        if let Some(caps) = RE.captures(next_log) {
                             if &caps[2] == "1" {
                                 execution.push(caps[1].to_string());
                             }
