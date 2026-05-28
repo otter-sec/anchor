@@ -17,6 +17,18 @@ popd
 # Run anchor test
 anchor test --skip-lint
 
+# Verify workspace.idl copies the generated JSON files out of `target/idl`.
+for idl in target/idl/*.json; do
+    filename=$(basename "$idl")
+    diff -u "$idl" "workspace-idls/$filename"
+done
+
+# Verify workspace.types copies the generated TypeScript files out of `target/types`.
+for types in target/types/*.ts; do
+    filename=$(basename "$types")
+    diff -u "$types" "workspace-types/$filename"
+done
+
 # Generate IDLs
 ./generate.sh $tmp_dir
 

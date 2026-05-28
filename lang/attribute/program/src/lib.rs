@@ -69,7 +69,7 @@ pub fn program(
 ///
 /// A full on-chain CPI usage example can be found [here].
 ///
-/// [here]: https://github.com/solana-foundation/anchor/tree/v1.0.2/tests/declare-program
+/// [here]: https://github.com/otter-sec/anchor/tree/v1.0.2/tests/declare-program
 #[proc_macro]
 pub fn declare_program(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     parse_macro_input!(input as DeclareProgram)

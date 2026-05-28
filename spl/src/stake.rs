@@ -13,8 +13,14 @@ use {
     std::ops::Deref,
 };
 
-// CPI functions
+// CPI Functions
 
+/// Authorizes a new authority for a stake account.
+///
+/// # Parameters
+/// - `ctx`: Context containing accounts required for the operation.
+/// - `stake_authorize`: The type of authorization (Staker or Withdrawer).
+/// - `custodian`: Optional custodian account.
 pub fn authorize<'info>(
     ctx: CpiContext<'_, '_, '_, 'info, Authorize<'info>>,
     stake_authorize: StakeAuthorize,
@@ -39,6 +45,12 @@ pub fn authorize<'info>(
         .map_err(Into::into)
 }
 
+/// Withdraws lamports from a stake account.
+///
+/// # Parameters
+/// - `ctx`: Context containing accounts required for the operation.
+/// - `amount`: The amount to withdraw in lamports.
+/// - `custodian`: Optional custodian account.
 pub fn withdraw<'info>(
     ctx: CpiContext<'_, '_, '_, 'info, Withdraw<'info>>,
     amount: u64,
@@ -65,6 +77,10 @@ pub fn withdraw<'info>(
         .map_err(Into::into)
 }
 
+/// Deactivates a stake account.
+///
+/// # Parameters
+/// - `ctx`: Context containing accounts required for the operation.
 pub fn deactivate_stake<'info>(
     ctx: CpiContext<'_, '_, '_, 'info, DeactivateStake<'info>>,
 ) -> Result<()> {
@@ -126,6 +142,7 @@ pub struct DeactivateStake<'info> {
 
 // State
 
+/// A wrapper around the Solana StakeState to enable Anchor deserialization.
 #[derive(Clone)]
 pub struct StakeAccount(StakeStateV2);
 
@@ -155,6 +172,7 @@ impl Deref for StakeAccount {
     }
 }
 
+/// A wrapper around the Solana Stake program ID.
 #[derive(Clone)]
 pub struct Stake;
 

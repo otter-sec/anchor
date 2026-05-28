@@ -1,0 +1,308 @@
+#!/bin/sh
+set -eu
+
+MANIFEST_URL="${AVM_NIGHTLY_MANIFEST_URL:-https://anchor-releases.s3-eu-west-1.amazonaws.com/nightly/latest/manifest.json}"
+BASE_URL="${AVM_NIGHTLY_BASE_URL:-https://anchor-releases.s3-eu-west-1.amazonaws.com/}"
+TARGET="${AVM_INSTALL_TARGET:-}"
+NO_PATH_LINKS="${AVM_INSTALL_NO_PATH_LINKS:-0}"
+
+usage() {
+    cat <<'USAGE'
+Install the latest Anchor nightly AVM binary.
+
+Usage:
+  curl -sSfL https://raw.githubusercontent.com/solana-foundation/anchor/master/avm/install | sh
+  sh avm/install [--target <triple>] [--manifest-url <url>] [--no-path-links]
+
+Environment:
+  AVM_HOME                    Install root. Defaults to $HOME/.avm.
+  AVM_INSTALL_TARGET          Override the detected Rust target triple.
+  AVM_INSTALL_NO_PATH_LINKS   Set to 1 to skip ~/.cargo/bin symlinks.
+  AVM_NIGHTLY_MANIFEST_URL    Override the nightly manifest URL.
+  AVM_NIGHTLY_BASE_URL        Override the artifact base URL.
+USAGE
+}
+
+say() {
+    printf '%s\n' "$*"
+}
+
+err() {
+    printf 'avm install: %s\n' "$*" >&2
+}
+
+fail() {
+    err "$*"
+    exit 1
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --target)
+            [ "$#" -ge 2 ] || fail "missing value for --target"
+            TARGET="$2"
+            shift 2
+            ;;
+        --manifest-url)
+            [ "$#" -ge 2 ] || fail "missing value for --manifest-url"
+            MANIFEST_URL="$2"
+            shift 2
+            ;;
+        --no-path-links)
+            NO_PATH_LINKS=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            fail "unknown argument: $1"
+            ;;
+    esac
+done
+
+case "$BASE_URL" in
+    */) ;;
+    *) BASE_URL="$BASE_URL/" ;;
+esac
+
+if [ -z "${AVM_HOME:-}" ]; then
+    [ -n "${HOME:-}" ] || fail "HOME is not set; set AVM_HOME explicitly"
+    AVM_HOME="$HOME/.avm"
+fi
+
+BIN_DIR="$AVM_HOME/bin"
+NIGHTLY_FILE="$AVM_HOME/.nightly"
+NIGHTLY_CACHE_FILE="$AVM_HOME/.nightly-check"
+NIGHTLY_ERROR_CACHE_FILE="$AVM_HOME/.nightly-check-error"
+
+detect_target() {
+    if [ -n "$TARGET" ]; then
+        printf '%s\n' "$TARGET"
+        return
+    fi
+
+    os="$(uname -s)"
+    arch="$(uname -m)"
+
+    case "$os:$arch" in
+        Linux:x86_64|Linux:amd64)
+            printf '%s\n' "x86_64-unknown-linux-gnu"
+            ;;
+        Linux:aarch64|Linux:arm64)
+            printf '%s\n' "aarch64-unknown-linux-gnu"
+            ;;
+        Darwin:x86_64)
+            printf '%s\n' "x86_64-apple-darwin"
+            ;;
+        Darwin:arm64)
+            printf '%s\n' "aarch64-apple-darwin"
+            ;;
+        *)
+            fail "unsupported platform $os/$arch; pass --target explicitly"
+            ;;
+    esac
+}
+
+download() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$1" -o "$2"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$2" "$1"
+    else
+        fail "curl or wget is required"
+    fi
+}
+
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}' | tr 'A-F' 'a-f'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}' | tr 'A-F' 'a-f'
+    else
+        fail "sha256sum or shasum is required"
+    fi
+}
+
+extract_artifact() {
+    if command -v python3 >/dev/null 2>&1; then
+        python3 - "$MANIFEST_FILE" "$HOST_TARGET" "$1" <<'PY'
+import json
+import sys
+
+manifest_path, target, tool = sys.argv[1:]
+with open(manifest_path, "r", encoding="utf-8") as fh:
+    manifest = json.load(fh)
+
+for artifact in manifest.get("artifacts", []):
+    if artifact.get("tool") == tool and artifact.get("target") == target:
+        print(
+            "\t".join(
+                [
+                    manifest["version"],
+                    artifact["file"],
+                    artifact["s3_key"],
+                    artifact["sha256"],
+                ]
+            )
+        )
+        sys.exit(0)
+
+sys.stderr.write(f"manifest does not include {tool} for {target}\n")
+sys.exit(1)
+PY
+    elif command -v jq >/dev/null 2>&1; then
+        jq -r --arg target "$HOST_TARGET" --arg tool "$1" '
+          .version as $version
+          | .artifacts[]
+          | select(.tool == $tool and .target == $target)
+          | [$version, .file, .s3_key, .sha256]
+          | @tsv
+        ' "$MANIFEST_FILE" | awk 'NF { print; found=1 } END { exit found ? 0 : 1 }'
+    else
+        fail "python3 or jq is required to parse the nightly manifest"
+    fi
+}
+
+field() {
+    printf '%s\n' "$1" | awk -F '	' -v n="$2" '{print $n}'
+}
+
+install_binary() {
+    src="$1"
+    dest="$2"
+    tmp="$dest.tmp.$$"
+    cp "$src" "$tmp"
+    chmod 755 "$tmp"
+    mv "$tmp" "$dest"
+}
+
+link_or_copy() {
+    src="$1"
+    dest="$2"
+    rm -f "$dest"
+    if ln -s "$src" "$dest" 2>/dev/null; then
+        return
+    fi
+    cp "$src" "$dest"
+    chmod 755 "$dest"
+}
+
+path_contains() {
+    case ":${PATH:-}:" in
+        *":$1:"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+backup_stable_avm() {
+    backup="$BIN_DIR/avm-stable"
+
+    [ ! -f "$NIGHTLY_FILE" ] || return 0
+    [ ! -e "$backup" ] || return 0
+
+    if [ -f "$BIN_DIR/avm" ]; then
+        install_binary "$BIN_DIR/avm" "$backup"
+        return 0
+    fi
+
+    if existing_avm="$(command -v avm 2>/dev/null)"; then
+        [ -n "$existing_avm" ] || return 0
+        install_binary "$existing_avm" "$backup"
+    fi
+}
+
+install_artifact() {
+    tool="$1"
+    line="$2"
+    dest="$3"
+
+    file="$(field "$line" 2)"
+    s3_key="$(field "$line" 3)"
+    expected_sha="$(field "$line" 4 | tr 'A-F' 'a-f')"
+    archive="$TMP_DIR/$(basename "$file")"
+    extract_dir="$TMP_DIR/$tool"
+    url="$BASE_URL$s3_key"
+
+    mkdir -p "$extract_dir"
+    say "Downloading $tool from $url"
+    download "$url" "$archive"
+
+    actual_sha="$(sha256_file "$archive")"
+    [ "$actual_sha" = "$expected_sha" ] || fail "checksum mismatch for $tool: expected $expected_sha, got $actual_sha"
+
+    tar -xzf "$archive" -C "$extract_dir"
+    if [ -f "$extract_dir/$tool" ]; then
+        extracted="$extract_dir/$tool"
+    elif [ -f "$extract_dir/$tool.exe" ]; then
+        extracted="$extract_dir/$tool.exe"
+    else
+        fail "$file did not contain a $tool binary"
+    fi
+
+    install_binary "$extracted" "$dest"
+}
+
+install_path_links() {
+    [ "$NO_PATH_LINKS" != "1" ] || return 0
+
+    if [ -n "${CARGO_HOME:-}" ]; then
+        cargo_bin="$CARGO_HOME/bin"
+    elif [ -n "${HOME:-}" ]; then
+        cargo_bin="$HOME/.cargo/bin"
+    else
+        return 0
+    fi
+
+    [ -d "$cargo_bin" ] || return 0
+
+    if ! ln -sfn "$BIN_DIR/avm" "$cargo_bin/avm" 2>/dev/null; then
+        err "could not link $cargo_bin/avm; use $BIN_DIR/avm directly"
+    fi
+    if ! ln -sfn "$BIN_DIR/anchor" "$cargo_bin/anchor" 2>/dev/null; then
+        err "could not link $cargo_bin/anchor; use $BIN_DIR/anchor directly"
+    fi
+}
+
+TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t avm-install)"
+cleanup() {
+    rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT HUP INT TERM
+
+HOST_TARGET="$(detect_target)"
+MANIFEST_FILE="$TMP_DIR/manifest.json"
+
+mkdir -p "$BIN_DIR"
+
+say "Fetching Anchor nightly manifest"
+download "$MANIFEST_URL" "$MANIFEST_FILE"
+
+avm_line="$(extract_artifact avm)"
+anchor_line="$(extract_artifact anchor)"
+nightly_version="$(field "$avm_line" 1)"
+
+anchor_version="$(field "$anchor_line" 1)"
+[ "$nightly_version" = "$anchor_version" ] || fail "manifest has mismatched avm and anchor versions"
+
+backup_stable_avm
+install_artifact avm "$avm_line" "$BIN_DIR/avm-nightly"
+install_artifact anchor "$anchor_line" "$BIN_DIR/anchor-nightly"
+install_binary "$BIN_DIR/avm-nightly" "$BIN_DIR/avm"
+link_or_copy "$BIN_DIR/avm" "$BIN_DIR/anchor"
+
+printf 'enabled\n' > "$NIGHTLY_FILE"
+printf '%s\n%s\n' "$(date +%s)" "$nightly_version" > "$NIGHTLY_CACHE_FILE"
+rm -f "$NIGHTLY_ERROR_CACHE_FILE"
+
+install_path_links
+
+say "Installed Anchor nightly $nightly_version"
+say "AVM: $BIN_DIR/avm"
+say "Anchor: $BIN_DIR/anchor"
+
+if ! path_contains "$BIN_DIR"; then
+    say "Add this to your shell profile if avm is not already on PATH:"
+    say "  export PATH=\"$BIN_DIR:\$PATH\""
+fi

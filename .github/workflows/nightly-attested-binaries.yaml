@@ -1,0 +1,348 @@
+name: Nightly Attested Binaries
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ vars.RELEASES_S3_REGION }}
+  ## temporary workaround until our teleport cluster is upgraded to v18.1.7.
+  AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+  TELEPORT_VERSION: 18.1.5
+  TELEPORT_PROXY: ${{ vars.TELEPORT_PROXY }}
+  TELEPORT_BOT_TOKEN_NAME: ${{ vars.TELEPORT_BOT_TOKEN_NAME }}
+
+concurrency:
+  group: nightly-attested-binaries
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+
+          - target: x86_64-apple-darwin
+            os: macos-latest
+
+          - target: aarch64-apple-darwin
+            os: macos-latest
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: master
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev
+
+      # FIXME: The global system LLVM on GitHub is very outdated, and LTO causes link errors.
+      - name: Build nightly binaries (macOS)
+        if: runner.os == 'macOS'
+        env:
+          CARGO_PROFILE_RELEASE_LTO: "off"
+          RUSTFLAGS: -C embed-bitcode=no
+        run: cargo build --package anchor-cli --package avm --release --locked --target ${{ matrix.target }}
+
+      - name: Build nightly binaries
+        if: runner.os != 'macOS'
+        run: cargo build --package anchor-cli --package avm --release --locked --target ${{ matrix.target }}
+
+      - name: Prepare artifacts
+        id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          target="${{ matrix.target }}"
+          date_compact=$(date -u +%Y%m%d)
+          date_iso=$(date -u +%Y-%m-%d)
+          short_sha=$(git rev-parse --short HEAD)
+          git_sha=$(git rev-parse HEAD)
+          version="nightly-${date_compact}-${short_sha}"
+          dist="dist/${target}"
+
+          sha256_file() {
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$1" | awk '{ print $1 }'
+            else
+              shasum -a 256 "$1" | awk '{ print $1 }'
+            fi
+          }
+
+          file_size() {
+            if stat -c%s "$1" >/dev/null 2>&1; then
+              stat -c%s "$1"
+            else
+              stat -f%z "$1"
+            fi
+          }
+
+          mkdir -p "$dist"
+          artifact_entries=""
+
+          for tool in anchor avm; do
+            archive="${tool}-${version}-${target}.tar.gz"
+            archive_path="${dist}/${archive}"
+
+            tar -C "target/${target}/release" -czf "$archive_path" "$tool"
+
+            archive_sha=$(sha256_file "$archive_path")
+            archive_size=$(file_size "$archive_path")
+            printf '%s  %s\n' "$archive_sha" "$archive" > "${archive_path}.sha256"
+
+            if [[ -n "$artifact_entries" ]]; then
+              artifact_entries="${artifact_entries},"
+            fi
+            artifact_entries="${artifact_entries}
+            {
+              \"tool\": \"${tool}\",
+              \"target\": \"${target}\",
+              \"file\": \"${archive}\",
+              \"sha256\": \"${archive_sha}\",
+              \"size\": ${archive_size}
+            }"
+          done
+
+          cat > "${dist}/manifest-${target}.json" <<EOF
+          {
+            "channel": "nightly",
+            "date": "${date_iso}",
+            "version": "${version}",
+            "git_sha": "${git_sha}",
+            "git_short_sha": "${short_sha}",
+            "github_run_id": "${GITHUB_RUN_ID}",
+            "target": "${target}",
+            "artifacts": [${artifact_entries}
+            ]
+          }
+          EOF
+
+          echo "dist=$dist" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: ${{ steps.prepare.outputs.dist }}/*.tar.gz
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: anchor-nightly-${{ steps.prepare.outputs.version }}-${{ matrix.target }}
+          path: ${{ steps.prepare.outputs.dist }}
+          retention-days: 14
+
+  upload-to-cloud-bucket:
+    name: Upload to cloud bucket
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: anchor-nightly-*
+          path: dist-nightly
+
+      - name: Prepare cloud upload layout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const crypto = require("crypto");
+          const fs = require("fs");
+          const path = require("path");
+
+          const inputRoot = "dist-nightly";
+          const uploadRoot = "s3-upload";
+
+          function walk(dir) {
+            return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+              const entryPath = path.join(dir, entry.name);
+              return entry.isDirectory() ? walk(entryPath) : [entryPath];
+            });
+          }
+
+          function sha256(filePath) {
+            return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+          }
+
+          function copyFile(src, dest) {
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.copyFileSync(src, dest);
+          }
+
+          const manifests = walk(inputRoot)
+            .filter((file) => path.basename(file).startsWith("manifest-") && file.endsWith(".json"))
+            .sort()
+            .map((file) => ({ file, data: JSON.parse(fs.readFileSync(file, "utf8")) }));
+
+          if (manifests.length === 0) {
+            throw new Error("No target manifests found in downloaded artifacts");
+          }
+
+          const { channel, date, version, git_sha, git_short_sha, github_run_id } = manifests[0].data;
+          const [year, month, day] = date.split("-");
+          const buildPrefix = `${channel}/builds/${year}/${month}/${day}/${git_sha}/${github_run_id}`;
+          const latestPrefix = `${channel}/latest`;
+          const buildDir = path.join(uploadRoot, buildPrefix);
+          const latestDir = path.join(uploadRoot, latestPrefix);
+
+          const buildArtifacts = [];
+          const latestArtifacts = [];
+          const checksumLines = [];
+
+          for (const { file: manifestFile, data: manifest } of manifests) {
+            const sourceDir = path.dirname(manifestFile);
+            const target = manifest.target;
+
+            for (const artifact of manifest.artifacts) {
+              const sourceArchive = path.join(sourceDir, artifact.file);
+              const tool = artifact.tool;
+              const archiveSha = sha256(sourceArchive);
+              const archiveSize = fs.statSync(sourceArchive).size;
+              const buildKey = `${buildPrefix}/${target}/${artifact.file}`;
+              const latestKey = `${latestPrefix}/${target}/${tool}.tar.gz`;
+
+              if (archiveSha !== artifact.sha256) {
+                throw new Error(`Checksum mismatch for ${sourceArchive}`);
+              }
+
+              copyFile(sourceArchive, path.join(buildDir, target, artifact.file));
+              fs.writeFileSync(
+                path.join(buildDir, target, `${artifact.file}.sha256`),
+                `${archiveSha}  ${artifact.file}\n`
+              );
+
+              copyFile(sourceArchive, path.join(latestDir, target, `${tool}.tar.gz`));
+              fs.writeFileSync(
+                path.join(latestDir, target, `${tool}.tar.gz.sha256`),
+                `${archiveSha}  ${tool}.tar.gz\n`
+              );
+
+              checksumLines.push(`${archiveSha}  ${target}/${artifact.file}`);
+
+              buildArtifacts.push({
+                tool,
+                target,
+                file: artifact.file,
+                s3_key: buildKey,
+                sha256: archiveSha,
+                size: archiveSize,
+              });
+
+              latestArtifacts.push({
+                tool,
+                target,
+                file: `${tool}.tar.gz`,
+                s3_key: latestKey,
+                sha256: archiveSha,
+                size: archiveSize,
+              });
+            }
+          }
+
+          checksumLines.sort();
+
+          const buildManifest = {
+            channel,
+            date,
+            version,
+            git_sha,
+            git_short_sha,
+            github_run_id,
+            artifacts: buildArtifacts,
+          };
+
+          const latestManifest = {
+            channel,
+            date,
+            version,
+            git_sha,
+            git_short_sha,
+            github_run_id,
+            artifacts: latestArtifacts,
+          };
+
+          fs.mkdirSync(buildDir, { recursive: true });
+          fs.mkdirSync(latestDir, { recursive: true });
+          fs.writeFileSync(path.join(buildDir, "manifest.json"), `${JSON.stringify(buildManifest, null, 2)}\n`);
+          fs.writeFileSync(path.join(buildDir, "checksums.txt"), `${checksumLines.join("\n")}\n`);
+          fs.writeFileSync(path.join(latestDir, "manifest.json"), `${JSON.stringify(latestManifest, null, 2)}\n`);
+          fs.writeFileSync(path.join(uploadRoot, "build-prefix.txt"), `${buildPrefix}\n`);
+          fs.writeFileSync(path.join(uploadRoot, "latest-prefix.txt"), `${latestPrefix}\n`);
+          NODE
+
+      ## Setting up teleport for the AWS login.
+      - name: Set up Teleport
+        uses: teleport-actions/setup@b638ff596557cc3959eb6b5287d5e58e0c8ac6a6 # v1
+        with:
+          version: ${{ env.TELEPORT_VERSION }}
+          enterprise: true
+
+      - name: Create tbot-config.yaml file
+        run: |
+          cat <<EOF > "${RUNNER_TEMP}/tbot-config.yaml"
+          version: v2
+          proxy_server: ${TELEPORT_PROXY}
+          onboarding:
+            join_method: github
+            token: ${TELEPORT_BOT_TOKEN_NAME}
+            certificate-ttl: 15m
+          oneshot: true
+          storage:
+            type: memory
+          outputs:
+            - type: identity
+              ssh_config: off
+              allow_reissue: true
+              destination:
+                type: directory
+                path: ${RUNNER_TEMP}/aws-integration/machine-id
+          EOF
+
+      # Perform authentication using Teleport Machine ID for AWS integration
+      - name: Execute Teleport Machine ID Auth
+        run: |
+          tbot start -c "${RUNNER_TEMP}/tbot-config.yaml" --oneshot
+          tsh -i "${RUNNER_TEMP}/aws-integration/machine-id/identity" --proxy "${TELEPORT_PROXY}" login
+      - name: Upload binaries to cloud bucket
+        env:
+          S3_BUCKET: ${{ vars.RELEASES_S3_BUCKET }}
+        run: |
+          set -euo pipefail
+
+          tsh apps login aws-integration-ops-prod
+          tsh aws sts get-caller-identity
+
+          bucket="${S3_BUCKET}"
+          build_prefix=$(cat s3-upload/build-prefix.txt)
+          latest_prefix=$(cat s3-upload/latest-prefix.txt)
+
+          tsh aws s3 sync "s3-upload/${build_prefix}/" "s3://${bucket}/${build_prefix}/"
+          tsh aws s3 sync "s3-upload/${latest_prefix}/" "s3://${bucket}/${latest_prefix}/" --delete
+          tsh aws s3 ls "s3://${bucket}/${build_prefix}/"

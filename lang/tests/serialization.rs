@@ -37,7 +37,7 @@ fn test_instruction_data() {
 
 #[cfg(not(feature = "lazy-account"))]
 #[test]
-/// Test for <https://github.com/solana-foundation/anchor/issues/4377>;
+/// Test for <https://github.com/otter-sec/anchor/issues/4377>;
 /// ensure that user-provided `borsh` attributes are applied.
 fn test_borsh_attributes() {
     #[derive(AnchorSerialize, AnchorDeserialize)]
