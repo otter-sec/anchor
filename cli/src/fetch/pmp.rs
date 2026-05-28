@@ -472,13 +472,13 @@ fn reconstruct_prior_writes(
         tuning.max_signatures,
     )
     .map_err(|err| PmpFetchError::invalid_transaction(err.to_string()))?
-            .into_iter()
-            .map(|status| {
-                let signature = Signature::from_str(&status.signature)
-                    .map_err(|err| PmpFetchError::invalid_transaction(err.to_string()))?;
-                Ok((status.slot, signature))
-            })
-            .collect::<std::result::Result<Vec<_>, PmpFetchError>>()?;
+    .into_iter()
+    .map(|status| {
+        let signature = Signature::from_str(&status.signature)
+            .map_err(|err| PmpFetchError::invalid_transaction(err.to_string()))?;
+        Ok((status.slot, signature))
+    })
+    .collect::<std::result::Result<Vec<_>, PmpFetchError>>()?;
 
     // Signature pagination is newest-first; replay must be oldest-first so later writes win.
     eligible.reverse();

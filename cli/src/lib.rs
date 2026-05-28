@@ -57,11 +57,11 @@ mod account;
 mod checks;
 pub mod codama;
 pub mod config;
-pub mod fetch;
 #[cfg(not(windows))]
 pub mod coverage;
 #[cfg(not(windows))]
 pub mod debugger;
+pub mod fetch;
 #[cfg(not(windows))]
 mod flamegraph;
 mod keygen;
