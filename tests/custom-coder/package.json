@@ -17,7 +17,7 @@
     "test": "anchor test --skip-lint"
   },
   "dependencies": {
-    "mocha": "^10.0.0",
+    "mocha": "^10.8.2",
     "ts-mocha": "^10.0.0"
   }
 }

@@ -98,7 +98,7 @@ impl CrateContext {
         Please add a `/// CHECK:` doc comment explaining why no checks through types are necessary.
         Alternatively, for reasons like quick prototyping, you may disable the safety checks
         by using the `skip-lint` option.
-        See https://www.anchor-lang.com/docs/basics/program-structure#account-validation for more information.
+        See https://www.anchor-lang.com/docs/references/account-types#uncheckedaccountinfo for more information.
                     "#,
                         canonical.display(),
                         span.start().line,

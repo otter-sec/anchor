@@ -25,6 +25,7 @@ SUBCOMMANDS:
     cluster    Cluster commands
     deploy     Deploys each program in the workspace
     expand     Expands the macros of a program or the workspace
+    fuzz       Coverage-guided fuzzing for Solana programs (powered by Crucible)
     help       Prints this message or the help of the given subcommand(s)
     idl        Commands for interacting with interface definitions
     init       Initializes a workspace
@@ -145,9 +146,16 @@ If run with the `--program-name` option, expand only the given program.
 ## Idl
 
 The `idl` subcommand provides commands for interacting with interface definition
-files. It's recommended to use these commands to store an IDL on chain, at a
-deterministic address, as a function of nothing but the program's ID. This
-allows us to generate clients for a program using nothing but the program ID.
+files. Anchor uses the [Program Metadata](https://github.com/solana-program/program-metadata)
+system to store IDLs on-chain at a deterministic address derived from the
+program's ID. This allows clients to be generated for a program using nothing
+but the program ID.
+
+<Callout type="info">
+IDL management uses the `@solana-program/program-metadata`
+package instead of legacy IDL instructions. This results in smaller program
+binaries and a more standardized approach to on-chain metadata.
+</Callout>
 
 ### Idl Build
 
@@ -163,10 +171,16 @@ Generates the IDL for the program using the compilation method.
 anchor idl init -f <target/idl/program.json> [program-id]
 ```
 
-Creates an idl account, writing the given `<target/idl/program.json>` file into
-a program owned account. By default, the size of the account is double the size
-of the IDL, allowing room for growth in case the idl needs to be upgraded in the
-future.
+Creates a metadata account containing the IDL for the given program. The IDL
+file is written to an account derived from the program ID.
+
+```shell
+anchor idl init -f <target/idl/program.json> <program-id> --non-canonical
+```
+
+Use the `--non-canonical` flag to create a third-party (non-canonical) metadata
+account. This is useful when you want to store metadata for a program you don't
+own.
 
 The `program-id` argument is optional — when omitted, `idl.address` is used.
 
@@ -183,23 +197,11 @@ Fetches an IDL from the configured blockchain. For example, make sure your
 anchor idl fetch GrAkKfEpTKQuVHG2Y97Y2FF4i7y7Q5AHLK94JBy7Y5yv
 ```
 
-### Idl Authority
+Use the `--non-canonical` flag to fetch third-party metadata:
 
 ```shell
-anchor idl authority <program-id>
+anchor idl fetch <program-id> --non-canonical
 ```
-
-Outputs the IDL account's authority. This is the wallet that has the ability to
-update the IDL.
-
-### Idl Erase Authority
-
-```shell
-anchor idl erase-authority -p <program-id>
-```
-
-Erases the IDL account's authority so that upgrades can no longer occur. The
-configured wallet must be the current authority.
 
 ### Idl Upgrade
 
@@ -208,15 +210,57 @@ anchor idl upgrade -f <target/idl/program.json>
 ```
 
 Upgrades the IDL file on chain to the new `target/idl/program.json` idl. The
-configured wallet must be the current authority. The `program-id` argument is 
+configured wallet must be the current authority. The `program-id` argument is
 optional — when omitted, `idl.address` is used.
 
+### Idl Close
+
 ```shell
-anchor idl set-authority -n <new-authority> -p <program-id>
+anchor idl close <program-id>
 ```
 
-Sets a new authority on the IDL account. Both the `new-authority` and
-`program-id` must be encoded in base 58.
+Closes the metadata account and recovers the rent. By default, closes the "idl"
+seed account. Use `--seed` to specify a different seed:
+
+```shell
+anchor idl close <program-id> --seed <custom-seed>
+```
+
+### Idl Create Buffer
+
+```shell
+anchor idl create-buffer -f <filepath>
+```
+
+Creates a buffer account for metadata. This is useful for large IDLs that need
+to be written across multiple transactions.
+
+### Idl Set Buffer Authority
+
+```shell
+anchor idl set-buffer-authority <buffer> -n <new-authority>
+```
+
+Sets a new authority on a buffer account.
+
+### Idl Write Buffer
+
+```shell
+anchor idl write-buffer <program-id> -b <buffer>
+```
+
+Writes metadata to the program using a pre-created buffer account. Use
+`--seed` to specify the metadata seed (defaults to "idl"):
+
+```shell
+anchor idl write-buffer <program-id> -b <buffer> --seed <seed>
+```
+
+Use `--close-buffer` to automatically close the buffer account after writing:
+
+```shell
+anchor idl write-buffer <program-id> -b <buffer> --close-buffer
+```
 
 ## Codama
 

@@ -74,12 +74,6 @@ fn id_to_tokens(
         }
 
         #event_authority_and_bump
-
-        #[cfg(test)]
-        #[test]
-        fn test_id() {
-            assert!(check_id(&id()));
-        }
     });
 }
 

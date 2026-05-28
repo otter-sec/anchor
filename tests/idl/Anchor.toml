@@ -14,5 +14,9 @@ numbers_123 = { address = "Numbers111111111111111111111111111111111111", idl = "
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
+[workspace]
+idls = "workspace-idls"
+types = "workspace-types"
+
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

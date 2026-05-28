@@ -15,10 +15,19 @@ Key Benefits of the IDL:
 - Standardization: Provides a consistent format for describing the program's
   instructions and accounts
 - Client Generation: Used to generate client code to interact with the program
+- On-chain Storage: IDLs can be stored on-chain using
+  [Program Metadata](https://github.com/solana-program/program-metadata),
+  allowing clients to fetch and use the IDL directly from the blockchain
 
 <Callout type="info">
 The `anchor build` command generates an IDL file located at
 `/target/idl/<program-name>.json`.
+</Callout>
+
+<Callout type="info">
+On-chain IDL storage uses the Program Metadata system. This reduces program
+binary sizes and provides a standardized approach to on-chain metadata. Use
+`anchor idl init` to upload your IDL to the blockchain.
 </Callout>
 
 The code snippets in the sections below highlight how the program, IDL, and

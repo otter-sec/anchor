@@ -1,9 +1,13 @@
 use {
-    anyhow::{anyhow, Error, Result},
-    avm::InstallTarget,
+    anyhow::{anyhow, Context, Error, Result},
+    avm::{InstallTarget, Resolution},
     clap::{CommandFactory, Parser, Subcommand},
     semver::Version,
-    std::ffi::OsStr,
+    std::{
+        ffi::OsStr,
+        io::IsTerminal,
+        path::{Path, PathBuf},
+    },
 };
 
 #[derive(Parser)]
@@ -65,10 +69,72 @@ pub enum Commands {
         /// Build and install from the latest commit on the master branch
         bleeding_edge: bool,
     },
+    #[clap(about = "Enable or disable the Anchor nightly channel")]
+    Nightly {
+        #[clap(long)]
+        /// Disable the nightly channel and restore normal version resolution
+        disable: bool,
+    },
     #[clap(about = "Generate shell completions for AVM")]
     Completions {
         #[clap(value_enum)]
         shell: clap_complete::Shell,
+    },
+    #[clap(about = "Resolve or install the Solana CLI for the current project")]
+    Solana {
+        #[clap(subcommand)]
+        command: SolanaCommand,
+    },
+    #[clap(about = "Inspect or manage the Solana platform-tools toolchain")]
+    PlatformTools {
+        #[clap(subcommand)]
+        command: PlatformToolsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SolanaCommand {
+    /// Resolve which Solana CLI version this project should use.
+    ///
+    /// Project Solana pins win. If the project does not pin Solana directly,
+    /// AVM resolves the Anchor version and maps it to Anchor's recommended
+    /// Solana CLI version.
+    Resolve,
+    /// Install and activate a Solana CLI version. With no argument, installs
+    /// the project-resolved version.
+    Install {
+        /// Solana CLI version, e.g. `3.1.10`.
+        version: Option<String>,
+        /// Run the installer even if the requested version is already active.
+        #[clap(long)]
+        force: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PlatformToolsCommand {
+    /// Resolve which platform-tools version this project should use.
+    ///
+    /// Walks up from the current directory looking at `[toolchain] solana_version`
+    /// in `Anchor.toml` and the `solana-program` dep in `Cargo.toml`, then maps
+    /// the resolved Solana version to a platform-tools version via the static map
+    /// derived from `cargo-build-sbf`'s `DEFAULT_PLATFORM_TOOLS_VERSION`.
+    Resolve,
+    /// Install a platform-tools version. With no argument, installs the
+    /// project-resolved version.
+    Install {
+        /// Platform-tools version, e.g. `v1.54` (the leading `v` is optional).
+        version: Option<String>,
+        /// Re-download and replace an existing install.
+        #[clap(long)]
+        force: bool,
+    },
+    /// List installed platform-tools versions under `$AVM_HOME/platform-tools`.
+    List,
+    /// Remove an installed platform-tools version.
+    Uninstall {
+        /// Platform-tools version to remove, e.g. `v1.54`.
+        version: String,
     },
 }
 
@@ -119,7 +185,7 @@ fn resolve_use_version(version: Option<String>) -> Result<Option<Version>> {
 pub fn entry(opts: Cli) -> Result<()> {
     if !matches!(
         opts.command,
-        Commands::SelfUpdate { .. } | Commands::Completions { .. }
+        Commands::SelfUpdate { .. } | Commands::Nightly { .. } | Commands::Completions { .. }
     ) {
         avm::check_avm_version_and_warn();
     }
@@ -154,28 +220,123 @@ pub fn entry(opts: Cli) -> Result<()> {
             pre_release,
             bleeding_edge,
         } => avm::self_update(pre_release, bleeding_edge),
+        Commands::Nightly { disable } => {
+            if disable {
+                avm::disable_nightly()
+            } else {
+                avm::enable_nightly()
+            }
+        }
         Commands::Completions { shell } => {
             clap_complete::generate(shell, &mut Cli::command(), "avm", &mut std::io::stdout());
             Ok(())
         }
+        Commands::Solana { command } => match command {
+            SolanaCommand::Resolve => {
+                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                let res = avm::resolve_solana_cli(&cwd)?.ok_or_else(|| {
+                    anyhow!(
+                        "Solana version not set. Pin `[toolchain] solana_version` in \
+                         `Anchor.toml`, declare `solana-program` in your program's `Cargo.toml`, \
+                         or pin an Anchor version AVM can map."
+                    )
+                })?;
+                println!("solana {} ({})", res.version, res.source.describe());
+                Ok(())
+            }
+            SolanaCommand::Install { version, force } => {
+                let version = match version {
+                    Some(v) => Version::parse(&v)
+                        .map_err(|e| anyhow!("Invalid Solana version `{v}`: {e}"))?,
+                    None => {
+                        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                        let res = avm::resolve_solana_cli(&cwd)?.ok_or_else(|| {
+                            anyhow!(
+                                "Solana version not set. Pin `[toolchain] solana_version` in \
+                                 `Anchor.toml`, declare `solana-program` in your program's \
+                                 `Cargo.toml`, or pin an Anchor version AVM can map."
+                            )
+                        })?;
+                        println!(
+                            "Installing project-resolved Solana {} ({})",
+                            res.version,
+                            res.source.describe()
+                        );
+                        res.version
+                    }
+                };
+                avm::solana::install_solana_cli(&version, force)
+            }
+        },
+        Commands::PlatformTools { command } => match command {
+            PlatformToolsCommand::Resolve => {
+                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                let res = avm::resolve_platform_tools(&cwd)?;
+                println!(
+                    "platform-tools {} (rustc {}, {})",
+                    res.version,
+                    res.rustc,
+                    res.source.describe()
+                );
+                Ok(())
+            }
+            PlatformToolsCommand::Install { version, force } => {
+                let version = match version {
+                    Some(v) => v,
+                    None => {
+                        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                        let res = avm::resolve_platform_tools(&cwd)?;
+                        println!(
+                            "Installing project-resolved version {} (rustc {}, {})",
+                            res.version,
+                            res.rustc,
+                            res.source.describe()
+                        );
+                        res.version
+                    }
+                };
+                avm::platform_tools::install_platform_tools(&version, force)
+            }
+            PlatformToolsCommand::List => {
+                let installed = avm::platform_tools::read_installed_platform_tools()?;
+                if installed.is_empty() {
+                    println!("(no platform-tools installed)");
+                } else {
+                    for v in installed {
+                        println!("{v}");
+                    }
+                }
+                Ok(())
+            }
+            PlatformToolsCommand::Uninstall { version } => {
+                avm::platform_tools::uninstall_platform_tools(&version)
+            }
+        },
     }
 }
 
 fn anchor_proxy() -> Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<String>>();
 
-    let version = avm::current_version()
-        .map_err(|_e| anyhow::anyhow!("Anchor version not set. Please run `avm use latest`."))?;
-
-    let binary_path = avm::version_binary_path(&version);
-    if !binary_path.exists() {
-        anyhow::bail!(
-            "anchor-cli {} not installed. Please run `avm use {}`.",
-            version,
-            version
-        );
+    if avm::ensure_nightly_active()?.is_some() {
+        return spawn_anchor(avm::nightly_anchor_binary_path(), args);
     }
 
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let resolution = avm::resolve_anchor_version(&cwd)?.ok_or_else(|| {
+        anyhow!(
+            "Anchor version not set. Pin `[toolchain] anchor_version` in `Anchor.toml`, declare \
+             `anchor-lang` in your program's `Cargo.toml`, or run `avm use <version>`."
+        )
+    })?;
+
+    let binary_path = ensure_resolved_binary(&resolution)?;
+    ensure_resolved_solana(&cwd, &resolution)?;
+
+    spawn_anchor(binary_path, args)
+}
+
+fn spawn_anchor(binary_path: PathBuf, args: Vec<String>) -> Result<()> {
     let exit = std::process::Command::new(binary_path)
         .args(args)
         .env(
@@ -186,6 +347,10 @@ fn anchor_proxy() -> Result<()> {
                 std::env::var("PATH").unwrap_or_default()
             ),
         )
+        // Signal to the spawned anchor-cli that AVM has already resolved the
+        // toolchain version, so it must not re-exec via `[toolchain] anchor_version`.
+        .env("AVM_ACTIVE", "1")
+        .env("CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS", "fallback")
         .spawn()?
         .wait_with_output()
         .expect("Failed to run anchor-cli");
@@ -195,6 +360,66 @@ fn anchor_proxy() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Ensure the Solana CLI requested by the same project context is active
+/// before spawning the resolved Anchor binary.
+fn ensure_resolved_solana(cwd: &Path, resolution: &Resolution) -> Result<()> {
+    let Some(solana) = avm::solana::resolve_solana_cli_for_anchor_resolution(cwd, resolution)?
+    else {
+        return Ok(());
+    };
+
+    avm::solana::ensure_solana_cli(&solana.version).with_context(|| {
+        format!(
+            "setting up Solana {} resolved from {}",
+            solana.version,
+            solana.source.describe()
+        )
+    })
+}
+
+/// Ensure the binary for `resolution.version` exists on disk, prompting the user
+/// to auto-install on a TTY and bailing with a clear hint otherwise.
+fn ensure_resolved_binary(resolution: &Resolution) -> Result<PathBuf> {
+    let version = &resolution.version;
+    let binary_path = avm::version_binary_path(version);
+    if binary_path.exists() {
+        return Ok(binary_path);
+    }
+
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "anchor-cli {version} (resolved from {}) is not installed.\nRun `avm install \
+             {version}` to install it.",
+            resolution.source.describe()
+        );
+    }
+
+    eprintln!(
+        "anchor-cli {version} (resolved from {}) is not installed.",
+        resolution.source.describe()
+    );
+    eprint!("Install now? [y/N] ");
+    std::io::Write::flush(&mut std::io::stderr()).ok();
+
+    let mut line = String::new();
+    std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut line)
+        .context("reading confirmation from stdin")?;
+    match line.trim() {
+        "y" | "Y" | "yes" => {}
+        _ => anyhow::bail!("Installation declined."),
+    }
+
+    avm::install_version(InstallTarget::Version(version.clone()), false, false, false)?;
+
+    if !binary_path.exists() {
+        anyhow::bail!(
+            "anchor-cli {version} install reported success but binary is still missing at {}",
+            binary_path.display()
+        );
+    }
+    Ok(binary_path)
 }
 
 fn main() -> Result<()> {

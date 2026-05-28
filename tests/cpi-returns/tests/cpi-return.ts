@@ -219,7 +219,7 @@ describe("CPI return", () => {
     );
   });
 
-  it("cant call view on mutable instruction", async () => {
+  it("can't call view on mutable instruction", async () => {
     assert.equal(calleeProgram.views.initialize, undefined);
     try {
       await calleeProgram.methods

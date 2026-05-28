@@ -1,0 +1,16 @@
+overrides:
+  '@babel/plugin-transform-modules-systemjs@>=7.12.0 <=7.29.3': '>=7.29.4'
+  altcha-lib@<1.4.1: '>=1.4.1'
+  brace-expansion@>=2.0.0 <2.0.3: '>=2.0.3'
+  brace-expansion@>=2.0.0 <=2.0.1: '>=2.0.2'
+  form-data@>=4.0.0 <4.0.4: '>=4.0.4'
+  glob@>=10.2.0 <10.5.0: '>=10.5.0'
+  image-size@>=1.1.0 <1.2.1: '>=1.2.1'
+  js-yaml: 4.1.1
+  mdast-util-to-hast@>=13.0.0 <13.2.1: '>=13.2.1'
+  minimatch@>=9.0.0 <9.0.6: '>=9.0.6'
+  minimatch@>=9.0.0 <9.0.7: '>=9.0.7'
+  picomatch@<2.3.2: '>=2.3.2'
+  postcss@<8.5.10: '>=8.5.10'
+  svgo@>=3.0.0 <3.3.3: '>=3.3.3'
+  yaml@>=2.0.0 <2.8.3: '>=2.8.3'

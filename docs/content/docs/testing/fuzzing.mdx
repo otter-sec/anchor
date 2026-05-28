@@ -1,0 +1,113 @@
+---
+title: Fuzzing
+description: Coverage-guided fuzzing for Solana programs using Crucible.
+---
+
+## Overview
+
+`anchor fuzz` provides coverage-guided fuzzing for Solana programs via [Crucible](https://github.com/asymmetric-research/crucible). It generates random action sequences against your program, checking invariants after each action to find bugs that unit tests miss.
+
+Features include stateful invariant testing, multi-core parallel fuzzing, crash minimization, and LCOV coverage output.
+
+For full documentation and API reference, see the [Crucible repo](https://github.com/asymmetric-research/crucible).
+
+## Quick Start
+
+### Initialize a harness
+
+```sh
+anchor fuzz init <program_name>
+```
+
+This creates a standalone fuzz workspace in `fuzz/<program_name>/` with the following structure:
+
+```
+fuzz/<program_name>/
+├── Cargo.toml
+├── rust-toolchain.toml
+├── idls/<program_name>.json
+└── src/main.rs
+```
+
+### Run a fuzz test
+
+```sh
+anchor fuzz run <program_name> <test_name> --release
+```
+
+### Common options
+
+```sh
+# Multi-core fuzzing (4 workers)
+anchor fuzz run <program_name> <test_name> --release --cores 4
+
+# Stateful fuzzing (state coverage + better performance but higher memory usage)
+anchor fuzz run <program_name> <test_name> --release --stateful --cores 4
+
+# Stop after 60 seconds
+anchor fuzz run <program_name> <test_name> --release --timeout 60
+
+# Replay a crash
+anchor fuzz run <program_name> <test_name> --release --replay ./crashes/<test_name>/<crash_id>
+```
+
+### View and minimize crashes
+
+```sh
+# List crashes
+anchor fuzz show <program_name>
+
+# View crash metadata
+anchor fuzz show <program_name> <crash_file>
+
+# Minimize a crash to smallest reproducing sequence
+anchor fuzz tmin <program_name> <test_name> <crash_file> --release
+```
+
+## Writing a Harness
+
+A fuzz harness defines a fixture with actions (state transitions) and invariants (properties that must always hold).
+
+```rust
+use crucible_fuzzer::prelude::*;
+
+#[derive(Clone)]
+struct MyFixture {
+    ctx: TestContext,
+    admin: Rc<Keypair>,
+}
+
+#[fuzz_fixture]
+impl MyFixture {
+    pub fn setup() -> Self {
+        // Initialize accounts, deploy program
+    }
+
+    pub fn action_deposit(&mut self, #[range(0..3)] user: usize, amount: u64) {
+        // Actions prefixed with action_ are auto-discovered
+    }
+
+    pub fn action_withdraw(&mut self, #[range(0..3)] user: usize, amount: u64) {
+        // Each action is a state transition the fuzzer can choose
+    }
+}
+
+#[invariant_test]
+fn check_invariants(fixture: &mut MyFixture) {
+    // Runs after each action — assert properties that must always hold
+    assert!(fixture.total_deposited() >= fixture.total_withdrawn());
+}
+```
+
+## CLI Reference
+
+| Command | Description |
+|---------|-------------|
+| `anchor fuzz init <program>` | Create fuzz harness template |
+| `anchor fuzz run <program> <test>` | Run a fuzz test |
+| `anchor fuzz list [program]` | List available fuzz tests |
+| `anchor fuzz show <program> [crash]` | View/replay crashes |
+| `anchor fuzz cmin <program> <test> <corpus>` | Minimize corpus |
+| `anchor fuzz tmin <program> <test> <crash>` | Minimize crash |
+
+For the full CLI reference and advanced usage, see the [Crucible documentation](https://github.com/asymmetric-research/crucible).

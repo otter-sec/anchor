@@ -119,6 +119,12 @@ pub mod external {
         Ok(())
     }
 
+    // Regression test for `declare_program!` codegen with numeric suffixes.
+    // https://github.com/otter-sec/anchor/issues/4281
+    pub fn initialize_with_token_2022(_ctx: Context<TestCompilation>) -> Result<()> {
+        Ok(())
+    }
+
     // Test optional accounts parsing
     pub fn update_with_optional(ctx: Context<UpdateWithOptional>, value: u32) -> Result<()> {
         ctx.accounts.my_account.field = value;

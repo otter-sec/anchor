@@ -4,6 +4,7 @@ use {
         IdlInstructionAccounts, IdlRepr, IdlSerialization, IdlType, IdlTypeDef, IdlTypeDefGeneric,
         IdlTypeDefTy,
     },
+    heck::{CamelCase, SnakeCase},
     proc_macro2::Literal,
     quote::{format_ident, quote},
 };
@@ -31,7 +32,7 @@ pub fn gen_accounts_common(idl: &Idl, prefix: &str) -> proc_macro2::TokenStream 
     let re_exports = idl
         .instructions
         .iter()
-        .map(|ix| format_ident!("__{}_accounts_{}", prefix, ix.name))
+        .map(|ix| format_ident!("{}", gen_accounts_mod_name(prefix, &ix.name)))
         .map(|ident| quote! { pub use super::internal::#ident::*; });
 
     quote! {
@@ -39,6 +40,14 @@ pub fn gen_accounts_common(idl: &Idl, prefix: &str) -> proc_macro2::TokenStream 
             #(#re_exports)*
         }
     }
+}
+
+fn gen_accounts_mod_name(prefix: &str, name: &str) -> String {
+    format!(
+        "__{}_accounts_{}",
+        prefix,
+        name.to_camel_case().to_snake_case()
+    )
 }
 
 pub fn convert_idl_type_to_syn_type(ty: &IdlType) -> syn::Type {
@@ -1091,6 +1100,18 @@ mod tests {
         let result = gen_discriminator(&disc);
         let expected = quote! { [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8] };
         assert_eq!(result.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn test_gen_accounts_mod_name_matches_generated_accounts() {
+        assert_eq!(
+            gen_accounts_mod_name("cpi_client", "initialize_with_token_2022"),
+            "__cpi_client_accounts_initialize_with_token2022"
+        );
+        assert_eq!(
+            gen_accounts_mod_name("client", "initialize_with_token_2022"),
+            "__client_accounts_initialize_with_token2022"
+        );
     }
 
     #[test]

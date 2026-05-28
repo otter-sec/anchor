@@ -1,10 +1,10 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as toml from "toml";
-import camelcase from "camelcase";
 import { execSync } from "child_process";
 import { Program } from "./program/index.js";
 import { isBrowser } from "./utils/common.js";
+import { toCamelCase } from "./utils/case.js";
 import { Idl } from "./idl.js";
 
 let cargoTargetDirectoryCache: string | undefined;
@@ -37,7 +37,7 @@ export function resolveIdlFileName(
   );
 
   const fileName = jsonFiles.find(
-    (name: string) => camelcase(path.parse(name).name) === programName
+    (name: string) => toCamelCase(path.parse(name).name) === programName
   );
 
   if (!fileName) {
@@ -102,7 +102,7 @@ const workspace = new Proxy(
       // Converting `programName` to camelCase enables the ability to use any
       // of the following to access the workspace program:
       // `workspace.myProgram`, `workspace.MyProgram`, `workspace["my-program"]`...
-      programName = camelcase(programName);
+      programName = toCamelCase(programName);
 
       // Return early if the program is in cache
       if (workspaceCache[programName]) return workspaceCache[programName];
@@ -114,7 +114,7 @@ const workspace = new Proxy(
       let programEntry;
       if (programs) {
         programEntry = Object.entries(programs).find(
-          ([key]) => camelcase(key) === programName
+          ([key]) => toCamelCase(key) === programName
         )?.[1];
       }
 

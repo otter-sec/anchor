@@ -53,10 +53,8 @@ const provider = new AnchorProvider(connection, wallet, {});
 setProvider(provider);
 
 // [!code word:Program]
-// [!code highlight:3]
-export const program = new Program(idl as HelloAnchor, {
-  connection,
-});
+// [!code highlight]
+export const program = new Program(idl as HelloAnchor, provider);
 ```
 
 In the code snippet above:
@@ -66,10 +64,15 @@ In the code snippet above:
 - `idlType.ts` is the IDL type (for use with TypeScript), found at
   `/target/types/<program-name>.ts` in an Anchor project.
 
-Alternatively, you can create an `Program` instance using only the IDL and the
+The `Program` instance is created with both the IDL and the `provider`, which
+enables signing and sending transactions. This allows you to call `.rpc()`
+methods on program instructions.
+
+Alternatively, you can create a `Program` instance using only the IDL and the
 `Connection` to a Solana cluster. This means there is no default `Wallet`, but
 allows you to use the `Program` to fetch accounts or build instructions without
-a connected wallet.
+a connected wallet. Note that this read-only configuration does not support
+signing or sending transactions.
 
 ```ts
 import { clusterApiUrl, Connection, PublicKey } from "@solana/web3.js";
