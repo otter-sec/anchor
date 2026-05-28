@@ -13,11 +13,70 @@ import { IdlError } from "../../error.js";
 
 type PartialField = { name?: string } & Pick<IdlField, "type">;
 
+const MAX_LAZY_LAYOUT_RECURSION_DEPTH = 256;
+
+class LazyDefinedLayout extends Layout {
+  private static recursionDepth = 0;
+  private resolvedLayout?: Layout;
+
+  constructor(private readonly buildLayout: () => Layout, property?: string) {
+    super(-1, property);
+  }
+
+  private get layout(): Layout {
+    if (!this.resolvedLayout) {
+      this.resolvedLayout = this.buildLayout();
+    }
+    return this.resolvedLayout;
+  }
+
+  private withRecursionGuard<T>(cb: () => T): T {
+    if (LazyDefinedLayout.recursionDepth >= MAX_LAZY_LAYOUT_RECURSION_DEPTH) {
+      throw new IdlError(
+        `Recursive IDL layout exceeded maximum depth: ${this.property}`
+      );
+    }
+
+    LazyDefinedLayout.recursionDepth += 1;
+    try {
+      return cb();
+    } finally {
+      LazyDefinedLayout.recursionDepth -= 1;
+    }
+  }
+
+  decode(b: Buffer, offset?: number) {
+    return this.withRecursionGuard(() => this.layout.decode(b, offset));
+  }
+
+  encode(src: unknown, b: Buffer, offset?: number): number {
+    return this.withRecursionGuard(() => this.layout.encode(src, b, offset));
+  }
+
+  getSpan(b: Buffer, offset?: number): number {
+    return this.withRecursionGuard(() => this.layout.getSpan(b, offset));
+  }
+
+  replicate(name: string): this {
+    return new LazyDefinedLayout(this.buildLayout, name) as this;
+  }
+}
+
 export class IdlCoder {
   public static fieldLayout(
     field: PartialField,
     types: IdlTypeDef[] = [],
     genericArgs?: IdlGenericArg[] | null
+  ): Layout {
+    return IdlCoder.fieldLayoutWithContext(field, types, genericArgs);
+  }
+
+  private static fieldLayoutWithContext(
+    field: PartialField,
+    types: IdlTypeDef[] = [],
+    genericArgs?: IdlGenericArg[] | null,
+    definedTypeStack: string[] = [],
+    allowRecursive = false
   ): Layout {
     const fieldName = field.name;
     switch (field.type) {
@@ -78,17 +137,25 @@ export class IdlCoder {
       default: {
         if ("option" in field.type) {
           return borsh.option(
-            IdlCoder.fieldLayout(
+            IdlCoder.fieldLayoutWithContext(
               { type: field.type.option },
               types,
-              genericArgs
+              genericArgs,
+              definedTypeStack,
+              true
             ),
             fieldName
           );
         }
         if ("vec" in field.type) {
           return borsh.vec(
-            IdlCoder.fieldLayout({ type: field.type.vec }, types, genericArgs),
+            IdlCoder.fieldLayoutWithContext(
+              { type: field.type.vec },
+              types,
+              genericArgs,
+              definedTypeStack,
+              true
+            ),
             fieldName
           );
         }
@@ -97,7 +164,13 @@ export class IdlCoder {
           len = IdlCoder.resolveArrayLen(len, genericArgs);
 
           return borsh.array(
-            IdlCoder.fieldLayout({ type }, types, genericArgs),
+            IdlCoder.fieldLayoutWithContext(
+              { type },
+              types,
+              genericArgs,
+              definedTypeStack,
+              allowRecursive
+            ),
             len,
             fieldName
           );
@@ -113,11 +186,31 @@ export class IdlCoder {
             throw new IdlError(`Type not found: ${field.name}`);
           }
 
-          return IdlCoder.typeDefLayout({
+          const fieldGenericArgs = genericArgs ?? field.type.defined.generics;
+          const layout = () =>
+            IdlCoder.typeDefLayoutWithContext({
+              typeDef,
+              types,
+              genericArgs: fieldGenericArgs,
+              name: fieldName,
+            });
+
+          if (definedTypeStack.includes(definedName)) {
+            if (!allowRecursive) {
+              throw new IdlError(
+                `Recursive type must be wrapped in an option or vector: ${definedName}`
+              );
+            }
+
+            return new LazyDefinedLayout(layout, fieldName);
+          }
+
+          return IdlCoder.typeDefLayoutWithContext({
             typeDef,
             types,
-            genericArgs: genericArgs ?? field.type.defined.generics,
+            genericArgs: fieldGenericArgs,
             name: fieldName,
+            definedTypeStack: [...definedTypeStack, definedName],
           });
         }
         if ("generic" in field.type) {
@@ -126,9 +219,12 @@ export class IdlCoder {
             throw new IdlError(`Invalid generic field: ${field.name}`);
           }
 
-          return IdlCoder.fieldLayout(
+          return IdlCoder.fieldLayoutWithContext(
             { ...field, type: genericArg.type },
-            types
+            types,
+            undefined,
+            definedTypeStack,
+            allowRecursive
           );
         }
 
@@ -153,6 +249,29 @@ export class IdlCoder {
     genericArgs?: IdlGenericArg[] | null;
     name?: string;
   }): Layout {
+    return IdlCoder.typeDefLayoutWithContext({
+      typeDef,
+      types,
+      name,
+      genericArgs,
+    });
+  }
+
+  private static typeDefLayoutWithContext({
+    typeDef,
+    types,
+    name,
+    genericArgs,
+    definedTypeStack,
+  }: {
+    typeDef: IdlTypeDef;
+    types: IdlTypeDef[];
+    genericArgs?: IdlGenericArg[] | null;
+    name?: string;
+    definedTypeStack?: string[];
+  }): Layout {
+    const typeStack = definedTypeStack ?? [typeDef.name];
+
     switch (typeDef.type.kind) {
       case "struct": {
         const fieldLayouts = handleDefinedFields(
@@ -167,7 +286,12 @@ export class IdlCoder {
                     genericArgs,
                   })
                 : genericArgs;
-              return IdlCoder.fieldLayout(f, types, genArgs);
+              return IdlCoder.fieldLayoutWithContext(
+                f,
+                types,
+                genArgs,
+                typeStack
+              );
             }),
           (fields) =>
             fields.map((f, i) => {
@@ -178,10 +302,11 @@ export class IdlCoder {
                     genericArgs,
                   })
                 : genericArgs;
-              return IdlCoder.fieldLayout(
+              return IdlCoder.fieldLayoutWithContext(
                 { name: i.toString(), type: f },
                 types,
-                genArgs
+                genArgs,
+                typeStack
               );
             })
         );
@@ -203,7 +328,12 @@ export class IdlCoder {
                       genericArgs,
                     })
                   : genericArgs;
-                return IdlCoder.fieldLayout(f, types, genArgs);
+                return IdlCoder.fieldLayoutWithContext(
+                  f,
+                  types,
+                  genArgs,
+                  typeStack
+                );
               }),
             (fields) =>
               fields.map((f, i) => {
@@ -214,10 +344,11 @@ export class IdlCoder {
                       genericArgs,
                     })
                   : genericArgs;
-                return IdlCoder.fieldLayout(
+                return IdlCoder.fieldLayoutWithContext(
                   { name: i.toString(), type: f },
                   types,
-                  genArgs
+                  genArgs,
+                  typeStack
                 );
               })
           );
@@ -235,7 +366,12 @@ export class IdlCoder {
       }
 
       case "type": {
-        return IdlCoder.fieldLayout({ type: typeDef.type.alias, name }, types);
+        return IdlCoder.fieldLayoutWithContext(
+          { type: typeDef.type.alias, name },
+          types,
+          genericArgs,
+          typeStack
+        );
       }
     }
   }
@@ -247,6 +383,15 @@ export class IdlCoder {
     ty: IdlType,
     idl: Idl,
     genericArgs?: IdlGenericArg[] | null
+  ): number {
+    return IdlCoder.typeSizeWithContext(ty, idl, genericArgs);
+  }
+
+  private static typeSizeWithContext(
+    ty: IdlType,
+    idl: Idl,
+    genericArgs?: IdlGenericArg[] | null,
+    definedTypeStack: string[] = []
   ): number {
     switch (ty) {
       case "bool":
@@ -287,25 +432,62 @@ export class IdlCoder {
         return 32;
       default:
         if ("option" in ty) {
-          return 1 + IdlCoder.typeSize(ty.option, idl, genericArgs);
+          return (
+            1 +
+            IdlCoder.typeSizeWithContext(
+              ty.option,
+              idl,
+              genericArgs,
+              definedTypeStack
+            )
+          );
         }
         if ("coption" in ty) {
-          return 4 + IdlCoder.typeSize(ty.coption, idl, genericArgs);
+          return (
+            4 +
+            IdlCoder.typeSizeWithContext(
+              ty.coption,
+              idl,
+              genericArgs,
+              definedTypeStack
+            )
+          );
         }
         if ("vec" in ty) {
+          IdlCoder.assertNonRecursiveType(
+            ty.vec,
+            idl,
+            genericArgs,
+            definedTypeStack
+          );
           return 1;
         }
         if ("array" in ty) {
           let [type, len] = ty.array;
           len = IdlCoder.resolveArrayLen(len, genericArgs);
-          return IdlCoder.typeSize(type, idl, genericArgs) * len;
+          return (
+            IdlCoder.typeSizeWithContext(
+              type,
+              idl,
+              genericArgs,
+              definedTypeStack
+            ) * len
+          );
         }
         if ("defined" in ty) {
-          const typeDef = idl.types?.find((t) => t.name === ty.defined.name);
+          const typeName = ty.defined.name;
+          if (definedTypeStack.includes(typeName)) {
+            throw new IdlError(
+              `Recursive types do not have a static size: ${typeName}`
+            );
+          }
+
+          const typeDef = idl.types?.find((t) => t.name === typeName);
           if (!typeDef) {
             throw new IdlError(`Type not found: ${JSON.stringify(ty)}`);
           }
 
+          const typeStack = [...definedTypeStack, typeName];
           const typeSize = (type: IdlType) => {
             const genArgs = genericArgs ?? ty.defined.generics;
             const args = genArgs
@@ -316,7 +498,7 @@ export class IdlCoder {
                 })
               : genArgs;
 
-            return IdlCoder.typeSize(type, idl, args);
+            return IdlCoder.typeSizeWithContext(type, idl, args, typeStack);
           };
 
           switch (typeDef.type.kind) {
@@ -343,7 +525,12 @@ export class IdlCoder {
             }
 
             case "type": {
-              return IdlCoder.typeSize(typeDef.type.alias, idl, genericArgs);
+              return IdlCoder.typeSizeWithContext(
+                typeDef.type.alias,
+                idl,
+                genericArgs,
+                typeStack
+              );
             }
           }
         }
@@ -353,10 +540,122 @@ export class IdlCoder {
             throw new IdlError(`Invalid generic: ${ty.generic}`);
           }
 
-          return IdlCoder.typeSize(genericArg.type, idl, genericArgs);
+          return IdlCoder.typeSizeWithContext(
+            genericArg.type,
+            idl,
+            genericArgs,
+            definedTypeStack
+          );
         }
 
         throw new Error(`Invalid type ${JSON.stringify(ty)}`);
+    }
+  }
+
+  private static assertNonRecursiveType(
+    ty: IdlType,
+    idl: Idl,
+    genericArgs?: IdlGenericArg[] | null,
+    definedTypeStack: string[] = []
+  ): void {
+    if (typeof ty === "string") return;
+
+    if ("option" in ty) {
+      return IdlCoder.assertNonRecursiveType(
+        ty.option,
+        idl,
+        genericArgs,
+        definedTypeStack
+      );
+    }
+    if ("coption" in ty) {
+      return IdlCoder.assertNonRecursiveType(
+        ty.coption,
+        idl,
+        genericArgs,
+        definedTypeStack
+      );
+    }
+    if ("vec" in ty) {
+      return IdlCoder.assertNonRecursiveType(
+        ty.vec,
+        idl,
+        genericArgs,
+        definedTypeStack
+      );
+    }
+    if ("array" in ty) {
+      return IdlCoder.assertNonRecursiveType(
+        ty.array[0],
+        idl,
+        genericArgs,
+        definedTypeStack
+      );
+    }
+    if ("generic" in ty) {
+      const genericArg = genericArgs?.at(0);
+      if (genericArg?.kind !== "type") {
+        return;
+      }
+
+      return IdlCoder.assertNonRecursiveType(
+        genericArg.type,
+        idl,
+        genericArgs,
+        definedTypeStack
+      );
+    }
+    if ("defined" in ty) {
+      const typeName = ty.defined.name;
+      if (definedTypeStack.includes(typeName)) {
+        throw new IdlError(
+          `Recursive types do not have a static size: ${typeName}`
+        );
+      }
+
+      const typeDef = idl.types?.find((t) => t.name === typeName);
+      if (!typeDef) {
+        throw new IdlError(`Type not found: ${JSON.stringify(ty)}`);
+      }
+
+      const typeStack = [...definedTypeStack, typeName];
+      const checkType = (type: IdlType) => {
+        const genArgs = genericArgs ?? ty.defined.generics;
+        const args = genArgs
+          ? IdlCoder.resolveGenericArgs({
+              type,
+              typeDef,
+              genericArgs: genArgs,
+            })
+          : genArgs;
+
+        return IdlCoder.assertNonRecursiveType(type, idl, args, typeStack);
+      };
+
+      switch (typeDef.type.kind) {
+        case "struct": {
+          return handleDefinedFields(
+            typeDef.type.fields,
+            () => undefined,
+            (fields) => fields.forEach((f) => checkType(f.type)),
+            (fields) => fields.forEach((f) => checkType(f))
+          );
+        }
+        case "enum": {
+          typeDef.type.variants.forEach((variant) =>
+            handleDefinedFields(
+              variant.fields,
+              () => undefined,
+              (fields) => fields.forEach((f) => checkType(f.type)),
+              (fields) => fields.forEach((f) => checkType(f))
+            )
+          );
+          return;
+        }
+        case "type": {
+          return checkType(typeDef.type.alias);
+        }
+      }
     }
   }
 

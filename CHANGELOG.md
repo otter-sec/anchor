@@ -24,9 +24,11 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Derive `Clone`, `Debug`, `Copy`, and `Default` on generated client / CPI account structs and instruction args where the field types allow it ([#4085](https://github.com/solana-foundation/anchor/pull/4085)).
 - lang: Add `AccountLoader::new_unchecked` for constructing an `AccountLoader` without performing owner or discriminator checks ([#4162](https://github.com/solana-foundation/anchor/pull/4162)).
 - cli/idl: Add `fetch-historical` support to recover historical IDLs with the Anchor CLI ([#3992](https://github.com/solana-foundation/anchor/pull/3992)).
+- cli: `anchor init` refuses to create a new Anchor workspace inside an existing Cargo workspace to avoid broken nested layouts ([#4576](https://github.com/solana-foundation/anchor/pull/4576)).
 
 ### Fixes
 
+- ts: Guard recursive IDL layouts against stack overflows while preserving supported recursive types ([#4604](https://github.com/solana-foundation/anchor/pull/4604)).
 - idl: Bump version to 0.1.3 ([#4453](https://github.com/solana-foundation/anchor/pull/4453)).
 - lang: Migrate `anchor-syn` from syn 1.x to syn 2.0, allowing use of modern Rust syntax ([#4523](https://github.com/solana-foundation/anchor/issues/4523)).
 - lang: Avoid fatal errors in IDL building when modern Rust syntax is in use ([#4520](https://github.com/solana-foundation/anchor/pull/4520)).
@@ -38,6 +40,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Support module constants in `max_len` attribute ([#3879](https://github.com/solana-foundation/anchor/pull/3879)).
 - spl: Deprecate broken `cpi_guard_enable/disable` functions ([#4465](https://github.com/solana-foundation/anchor/pull/4465)).
 - cli: Bump `cargo_toml` to allow parsing `resolver = "3"` ([#4515](https://github.com/solana-foundation/anchor/pull/4515)).
+- ts: Align TS `camelCase` conversion with Rust `heck` for digit-letter identifiers so generated client names match Rust identifiers ([#4571](https://github.com/solana-foundation/anchor/pull/4571)).
 
 ### Breaking
 

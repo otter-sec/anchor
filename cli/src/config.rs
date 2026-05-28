@@ -249,12 +249,31 @@ impl WithPath<Config> {
         let programs = self.read_all_programs()?;
         let programs = match name {
             Some(name) => vec![programs
-                .into_iter()
+                .iter()
                 .find(|program| {
-                    name == program.lib_name
-                        || name == program.path.file_name().unwrap().to_str().unwrap()
+                    program.lib_name == name
+                        || program
+                            .path
+                            .file_name()
+                            .and_then(|f| f.to_str())
+                            .map(|f| f == name)
+                            .unwrap_or(false)
                 })
-                .ok_or_else(|| anyhow!("Program {name} not found"))?],
+                .cloned()
+                .ok_or_else(|| {
+                    let mut available_programs: Vec<String> =
+                        programs.iter().map(|p| p.lib_name.clone()).collect();
+                    available_programs.sort();
+
+                    if available_programs.is_empty() {
+                        anyhow!("Program '{name}' not found. No programs available in workspace.")
+                    } else {
+                        anyhow!(
+                            "Program '{name}' not found.\n\nAvailable programs:\n  {}",
+                            available_programs.join("\n  ")
+                        )
+                    }
+                })?],
             None => programs,
         };
 
