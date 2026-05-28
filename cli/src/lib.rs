@@ -4084,6 +4084,7 @@ fn debugger_anchor_workspace(
             true,
             false,
             Vec::new(),
+            None, // script_name — debugger drives test execution itself
             ValidatorType::Surfpool,
             true,
             gdb,
