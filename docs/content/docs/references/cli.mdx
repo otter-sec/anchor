@@ -25,6 +25,7 @@ SUBCOMMANDS:
     cluster    Cluster commands
     deploy     Deploys each program in the workspace
     expand     Expands the macros of a program or the workspace
+    fuzz       Coverage-guided fuzzing for Solana programs (powered by Crucible)
     help       Prints this message or the help of the given subcommand(s)
     idl        Commands for interacting with interface definitions
     init       Initializes a workspace
@@ -145,9 +146,16 @@ If run with the `--program-name` option, expand only the given program.
 ## Idl
 
 The `idl` subcommand provides commands for interacting with interface definition
-files. It's recommended to use these commands to store an IDL on chain, at a
-deterministic address, as a function of nothing but the program's ID. This
-allows us to generate clients for a program using nothing but the program ID.
+files. Anchor uses the [Program Metadata](https://github.com/solana-program/program-metadata)
+system to store IDLs on-chain at a deterministic address derived from the
+program's ID. This allows clients to be generated for a program using nothing
+but the program ID.
+
+<Callout type="info">
+IDL management uses the `@solana-program/program-metadata`
+package instead of legacy IDL instructions. This results in smaller program
+binaries and a more standardized approach to on-chain metadata.
+</Callout>
 
 ### Idl Build
 
@@ -163,10 +171,16 @@ Generates the IDL for the program using the compilation method.
 anchor idl init -f <target/idl/program.json> [program-id]
 ```
 
-Creates an idl account, writing the given `<target/idl/program.json>` file into
-a program owned account. By default, the size of the account is double the size
-of the IDL, allowing room for growth in case the idl needs to be upgraded in the
-future.
+Creates a metadata account containing the IDL for the given program. The IDL
+file is written to an account derived from the program ID.
+
+```shell
+anchor idl init -f <target/idl/program.json> <program-id> --non-canonical
+```
+
+Use the `--non-canonical` flag to create a third-party (non-canonical) metadata
+account. This is useful when you want to store metadata for a program you don't
+own.
 
 The `program-id` argument is optional — when omitted, `idl.address` is used.
 
@@ -183,23 +197,11 @@ Fetches an IDL from the configured blockchain. For example, make sure your
 anchor idl fetch GrAkKfEpTKQuVHG2Y97Y2FF4i7y7Q5AHLK94JBy7Y5yv
 ```
 
-### Idl Authority
+Use the `--non-canonical` flag to fetch third-party metadata:
 
 ```shell
-anchor idl authority <program-id>
+anchor idl fetch <program-id> --non-canonical
 ```
-
-Outputs the IDL account's authority. This is the wallet that has the ability to
-update the IDL.
-
-### Idl Erase Authority
-
-```shell
-anchor idl erase-authority -p <program-id>
-```
-
-Erases the IDL account's authority so that upgrades can no longer occur. The
-configured wallet must be the current authority.
 
 ### Idl Upgrade
 
@@ -208,15 +210,72 @@ anchor idl upgrade -f <target/idl/program.json>
 ```
 
 Upgrades the IDL file on chain to the new `target/idl/program.json` idl. The
-configured wallet must be the current authority. The `program-id` argument is 
+configured wallet must be the current authority. The `program-id` argument is
 optional — when omitted, `idl.address` is used.
 
+### Idl Close
+
 ```shell
-anchor idl set-authority -n <new-authority> -p <program-id>
+anchor idl close <program-id>
 ```
 
-Sets a new authority on the IDL account. Both the `new-authority` and
-`program-id` must be encoded in base 58.
+Closes the metadata account and recovers the rent. By default, closes the "idl"
+seed account. Use `--seed` to specify a different seed:
+
+```shell
+anchor idl close <program-id> --seed <custom-seed>
+```
+
+### Idl Create Buffer
+
+```shell
+anchor idl create-buffer -f <filepath>
+```
+
+Creates a buffer account for metadata. This is useful for large IDLs that need
+to be written across multiple transactions.
+
+### Idl Set Buffer Authority
+
+```shell
+anchor idl set-buffer-authority <buffer> -n <new-authority>
+```
+
+Sets a new authority on a buffer account.
+
+### Idl Write Buffer
+
+```shell
+anchor idl write-buffer <program-id> -b <buffer>
+```
+
+Writes metadata to the program using a pre-created buffer account. Use
+`--seed` to specify the metadata seed (defaults to "idl"):
+
+```shell
+anchor idl write-buffer <program-id> -b <buffer> --seed <seed>
+```
+
+Use `--close-buffer` to automatically close the buffer account after writing:
+
+```shell
+anchor idl write-buffer <program-id> -b <buffer> --close-buffer
+```
+
+## Codama
+
+```shell
+anchor codama convert <target/idl/program.json> --out <codama-idl.json>
+anchor codama generate -l rust,js -p clients <target/idl/program.json>
+```
+
+`anchor codama convert` converts an Anchor IDL into a Codama IDL. `anchor
+codama generate` converts the IDL and invokes the Codama renderer packages for
+the requested languages. The supported language values are `js`, `js-umi`,
+`rust`, and `go`.
+
+Codama client generation can also run automatically after `anchor build` when
+`[clients] auto = true` is set in `Anchor.toml`.
 
 ## Init
 
@@ -248,6 +307,17 @@ anchor init --template single     # Single lib.rs file (for prototyping)
 The modular template organizes code into separate files for instructions, state,
 constants, and errors, making it easier to navigate and maintain as your program
 grows.
+
+**Anchor Version:**
+
+```shell
+anchor init --anchor-version v1  # Default: Anchor v1 Rust templates
+anchor init --anchor-version v2  # Anchor v2 Rust templates
+```
+
+The selected Anchor version controls the generated Rust program and Rust test
+template dependencies. V2 templates use the `anchor-next` git dependencies until
+the v2 crates are published.
 
 ## Keys
 
@@ -310,6 +380,13 @@ anchor new --template multiple <program-name>  # Default: Modular (recommended)
 anchor new --template single <program-name>    # Single file (for prototyping)
 ```
 
+You can also select the Anchor Rust template version:
+
+```shell
+anchor new --anchor-version v1 <program-name>  # Default: Anchor v1 Rust templates
+anchor new --anchor-version v2 <program-name>  # Anchor v2 Rust templates
+```
+
 ## Shell
 
 ```shell
@@ -344,6 +421,29 @@ If you'd prefer to run the program against your local validator use
 
 When running tests we stream program logs to
 `.anchor/program-logs/<address>.<program-name>.log`
+
+Use `--profile` with Rust/LiteSVM-style tests that enable the generated
+`profile` feature to collect SBF register traces and render flamegraph SVGs
+under `target/anchor-v2-profile/`.
+
+## Debugger
+
+```shell
+anchor debugger [test-name] [--skip-run] [--skip-build] [--gdb]
+```
+
+Runs tests with profiling enabled and opens an instruction-level TUI over the
+captured SBF traces. `--skip-run` reuses existing traces, and `--gdb` uses the
+sbpf gdb-stub trace path.
+
+## Coverage
+
+```shell
+anchor coverage [--skip-run] [--skip-build] [--output target/coverage/sbf.lcov]
+```
+
+Generates LCOV source coverage from SBF register traces. By default traces are
+collected under `target/coverage/traces`.
 
 ## Upgrade
 

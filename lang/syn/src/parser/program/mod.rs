@@ -53,5 +53,10 @@ fn ctx_accounts_ident(path_ty: &syn::PatType) -> ParseResult<proc_macro2::Ident>
             ))
         }
     };
-    Ok(path.segments[0].ident.clone())
+    Ok(path
+        .segments
+        .first()
+        .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?
+        .ident
+        .clone())
 }

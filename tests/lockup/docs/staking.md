@@ -6,7 +6,7 @@ WARNING: All code related to staking is unaudited. Use at your own risk.
 
 The **Registry** program provides an on-chain mechanism for a group of stakers to
 
-* Share rewards proprtionally amongst a staking pool
+* Share rewards proportionally amongst a staking pool
 * Govern on chain protocols with stake weighted voting
 * Stake and earn locked tokens
 

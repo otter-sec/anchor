@@ -873,7 +873,7 @@ pub mod auction_house {
             &token_mint.key(),
         )?;
 
-        // make sure you cant get rugged
+        // make sure you can't get rugged
         if buyer_rec_acct.delegate.is_some() {
             return err!(ErrorCode::BuyerATACannotHaveDelegate);
         }

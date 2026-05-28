@@ -32,20 +32,20 @@ If you do not receive a response in the advisory, send an email to anchor-securi
 In case an incident is discovered or reported, the following process will be followed to contain, respond and remediate:
 
 ### 1. Accept the new report
-In response a newly reported security problem, a member of the `solana-foundation/admins` group will accept the report to turn it into a draft advisory. The `solana-foundation/anchor-security-incident-response` group should be added to the draft security advisory, and create a private fork of the repository (grey button towards the bottom of the page) if necessary.
+In response a newly reported security problem, a member of the `otter-sec/admins` group will accept the report to turn it into a draft advisory. The `otter-sec/anchor-security-incident-response` group should be added to the draft security advisory, and create a private fork of the repository (grey button towards the bottom of the page) if necessary.
 
 If the advisory is the result of an audit finding, follow the same process as above but add the auditor's github user(s) and begin the title with "[Audit]".
 
-If the report is out of scope, a member of the `solana-foundation/admins` group will comment as such and then close the report.
+If the report is out of scope, a member of the `otter-sec/admins` group will comment as such and then close the report.
 
 ### 2. Triage
-Within the draft security advisory, discuss and determine the severity of the issue. If necessary, members of the `solana-foundation/anchor-security-incident-response` group may add other github users to the advisory to assist. If it is determined that this is not a critical Anchor issue then the advisory should be closed and if more follow-up is required a normal Anchor public github issue should be created.
+Within the draft security advisory, discuss and determine the severity of the issue. If necessary, members of the `otter-sec/anchor-security-incident-response` group may add other github users to the advisory to assist. If it is determined that this is not a critical Anchor issue then the advisory should be closed and if more follow-up is required a normal Anchor public github issue should be created.
 
 ### 3. Prepare Fixes
 For the affected branches, typically all three (edge, beta and stable), prepare a fix for the issue and push them to the corresponding branch in the private repository associated with the draft security advisory. There is no CI available in the private repository so you must build from source and manually verify fixes. Code review from the reporter is ideal, as well as from multiple members of the core development team.
 
 ### 4. Notify Security Group
-Once an ETA is available for the fix, a member of the `solana-foundation/anchor-security-incident-response` group should notify major affected parties. The teams are all over the world and it's critical to provide actionable information at the right time. Don't be the person that wakes everybody up at 2am when a fix won't be available for hours.
+Once an ETA is available for the fix, a member of the `otter-sec/anchor-security-incident-response` group should notify major affected parties. The teams are all over the world and it's critical to provide actionable information at the right time. Don't be the person that wakes everybody up at 2am when a fix won't be available for hours.
 
 ### 5. Ship the patch
 Once the fix is accepted it may be distributed directly to developers as a patch, depending on the vulnerability.

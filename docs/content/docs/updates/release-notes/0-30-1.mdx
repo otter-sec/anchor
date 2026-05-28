@@ -120,13 +120,13 @@ In this release, you can now override the nightly version with
 
 There was a compile error during generation with recursive external type
 resolution, which is now fixed. See
-[this](https://github.com/solana-foundation/anchor/pull/2946) if you'd like to see the
+[this](https://github.com/otter-sec/anchor/pull/2946) if you'd like to see the
 problem in more detail.
 
 ### New spec crate
 
 Making changes to the IDL crate, e.g. adding features such as the
-[`convert`](https://github.com/solana-foundation/anchor/pull/2986) feature, would
+[`convert`](https://github.com/otter-sec/anchor/pull/2986) feature, would
 require bumping the version to get the changes even if the spec itself doesn't
 change.
 
@@ -218,7 +218,7 @@ The latter option is preferred as it's less error-prone. If you have dependency
 issues while upgrading, simply remove them when generating the IDL since the IDL
 generation only cares about the signatures, and all program logic, including all
 dependencies (except Anchor), can be removed when generating the IDL.
-[Here](https://github.com/solana-foundation/anchor/blob/cc43e67399ad50cf7d33466f7bcd7e6dcee88ae2/ts/packages/spl-token/program/lib.rs)
+[Here](https://github.com/otter-sec/anchor/blob/cc43e67399ad50cf7d33466f7bcd7e6dcee88ae2/ts/packages/spl-token/program/lib.rs)
 is an example program that you can generate an IDL from.
 
 In short, IDLs should be preferably generated with v0.30 rather than the
@@ -348,4 +348,4 @@ Anchor errors have been separated into a new package
 ---
 
 See the full list of notable changes in the
-[CHANGELOG](https://github.com/solana-foundation/anchor/blob/v0.30.1/CHANGELOG.md#0301---2024-06-20).
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/v0.30.1/CHANGELOG.md#0301---2024-06-20).

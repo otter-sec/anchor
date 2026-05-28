@@ -83,7 +83,7 @@ pub fn parse(program_mod: &syn::ItemMod) -> ParseResult<(Vec<Ix>, Option<Fallbac
 fn parse_overrides(attrs: &[syn::Attribute]) -> ParseResult<Option<Overrides>> {
     attrs
         .iter()
-        .find(|attr| match attr.path.segments.last() {
+        .find(|attr| match attr.path().segments.last() {
             Some(seg) => seg.ident == "instruction",
             _ => false,
         })
@@ -168,7 +168,7 @@ fn parse_cfg(method: &syn::ItemFn) -> Vec<Attribute> {
     method
         .attrs
         .iter()
-        .filter_map(|attr| match attr.path.is_ident("cfg") {
+        .filter_map(|attr| match attr.path().is_ident("cfg") {
             true => Some(attr.to_owned()),
             false => None,
         })

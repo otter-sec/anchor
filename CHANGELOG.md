@@ -20,9 +20,14 @@ The minor version will be incremented upon a breaking change and the patch versi
 - spl: Add pausable mint extension support ([#4092](https://github.com/solana-foundation/anchor/pull/4092)).
 - cli: Resolve the target directory via `cargo metadata` to support target directory overrides ([#3817](https://github.com/solana-foundation/anchor/pull/3817)).
 - spl: Added `token_metadata_remove_key` to support removing keys from token metadata extension ([#3717](https://github.com/solana-foundation/anchor/pull/3717)).
+- cli: Allow configuring IDL JSON location in workspace config ([#4483](https://github.com/solana-foundation/anchor/pull/4483)).
+- lang: Derive `Clone`, `Debug`, `Copy`, and `Default` on generated client / CPI account structs and instruction args where the field types allow it ([#4085](https://github.com/solana-foundation/anchor/pull/4085)).
+- lang: Add `AccountLoader::new_unchecked` for constructing an `AccountLoader` without performing owner or discriminator checks ([#4162](https://github.com/solana-foundation/anchor/pull/4162)).
 
 ### Fixes
 
+- idl: Bump version to 0.1.3 ([#4453](https://github.com/solana-foundation/anchor/pull/4453)).
+- lang: Migrate `anchor-syn` from syn 1.x to syn 2.0, allowing use of modern Rust syntax ([#4523](https://github.com/solana-foundation/anchor/issues/4523)).
 - lang: Avoid fatal errors in IDL building when modern Rust syntax is in use ([#4520](https://github.com/solana-foundation/anchor/pull/4520)).
 - client: Avoid panic in `parse_logs_response` when a program-emitted log line ends with `invoke [1]` ([#4461](https://github.com/solana-foundation/anchor/issues/4461)).
 - cli: Correctly honor `--skip-seed-phrase-validation` in `keygen recover` ([#4417](https://github.com/solana-foundation/anchor/pull/4417)).

@@ -23,32 +23,54 @@ pub fn check_overflow(cargo_toml_path: impl AsRef<Path>) -> Result<bool> {
         ))
 }
 
+/// Per-manifest detection of which Anchor generation a program targets.
+/// Returns `(lang_crate, spl_crate)` — `("anchor-lang", "anchor-spl")` for v1,
+/// `("anchor-lang-v2", "anchor-spl-v2")` for v2, `None` if neither lang crate
+/// is depended on. Callers use this to surface generation-appropriate crate
+/// names in diagnostics instead of hardcoding the v1 names.
+fn anchor_crate_names(manifest: &cargo_toml::Manifest) -> Option<(&'static str, &'static str)> {
+    if manifest.dependencies.contains_key("anchor-lang-v2") {
+        Some(("anchor-lang-v2", "anchor-spl-v2"))
+    } else if manifest.dependencies.contains_key("anchor-lang") {
+        Some(("anchor-lang", "anchor-spl"))
+    } else {
+        None
+    }
+}
+
 /// Check whether there is a mismatch between the current CLI version and:
 ///
-/// - `anchor-lang` crate version
+/// - `anchor-lang` / `anchor-lang-v2` crate version
 /// - `@anchor-lang/core` package version
 ///
 /// This function logs warnings in the case of a mismatch.
 pub fn check_anchor_version(cfg: &WithPath<Config>) -> Result<()> {
     let cli_version = Version::parse(VERSION)?;
 
-    // Check lang crate
-    let mismatched_lang_version = cfg
+    // Check lang crate. Probes both v1 and v2 dep names independently so a
+    // mid-migration workspace that contains programs of both generations
+    // still gets one warning per mismatched generation.
+    let manifests: Vec<cargo_toml::Manifest> = cfg
         .get_rust_program_list()?
         .into_iter()
         .map(|path| path.join("Cargo.toml"))
-        .map(cargo_toml::Manifest::from_path)
-        .filter_map(|man| man.ok())
-        .filter_map(|man| man.dependencies.get("anchor-lang").map(|d| d.to_owned()))
-        .filter_map(|dep| Version::parse(dep.req()).ok())
-        .find(|ver| ver != &cli_version); // Only log the warning once
+        .filter_map(|path| cargo_toml::Manifest::from_path(path).ok())
+        .collect();
 
-    if let Some(ver) = mismatched_lang_version {
-        eprintln!(
-            "WARNING: `anchor-lang` version({ver}) and the current CLI version({cli_version}) \
-             don't match.\n\n\tThis can lead to unwanted behavior. To use the same CLI version, \
-             add:\n\n\t[toolchain]\n\tanchor_version = \"{ver}\"\n\n\tto Anchor.toml\n"
-        );
+    for dep_name in ["anchor-lang", "anchor-lang-v2"] {
+        let mismatched = manifests
+            .iter()
+            .filter_map(|m| m.dependencies.get(dep_name))
+            .filter_map(|dep| Version::parse(dep.req()).ok())
+            .find(|ver| ver != &cli_version);
+        if let Some(ver) = mismatched {
+            eprintln!(
+                "WARNING: `{dep_name}` version({ver}) and the current CLI version({cli_version}) \
+                 don't match.\n\n\tThis can lead to unwanted behavior. To use the same CLI \
+                 version, add:\n\n\t[toolchain]\n\tanchor_version = \"{ver}\"\n\n\tto \
+                 Anchor.toml\n"
+            );
+        }
     }
 
     // Check TS package
@@ -65,7 +87,16 @@ pub fn check_anchor_version(cfg: &WithPath<Config>) -> Result<()> {
         .filter(|ver| !ver.matches(&cli_version));
 
     if let Some(ver) = mismatched_ts_version {
-        let update_cmd = match cfg.toolchain.package_manager.clone().unwrap_or_default() {
+        // Cosmetic hint only. Prefer what Anchor.toml says the project uses;
+        // otherwise default the suggestion to `npm` since it ships with Node.
+        // Not using `resolve_package_manager` here — probing PATH for a
+        // warning message would be overkill.
+        let update_cmd = match cfg
+            .toolchain
+            .package_manager
+            .clone()
+            .unwrap_or(PackageManager::NPM)
+        {
             PackageManager::NPM => "npm update",
             PackageManager::Yarn => "yarn upgrade",
             PackageManager::PNPM => "pnpm update",
@@ -145,27 +176,30 @@ pub fn check_idl_build_feature() -> Result<()> {
     let manifest_path = Path::new("Cargo.toml").canonicalize()?;
     let manifest = Manifest::from_path(&manifest_path)?;
 
+    // Pick crate names based on the generation this program targets. If
+    // neither `anchor-lang` nor `anchor-lang-v2` is a dep, fall back to v1
+    // names — that branch's suggestion is harmless (the program has bigger
+    // problems than `idl-build` wiring) and keeps the diagnostic flow simple.
+    let (lang_crate, spl_crate) =
+        anchor_crate_names(&manifest).unwrap_or(("anchor-lang", "anchor-spl"));
+
     // Check whether the manifest has `idl-build` feature
     let has_idl_build_feature = manifest
         .features
         .iter()
         .any(|(feature, _)| feature == "idl-build");
     if !has_idl_build_feature {
-        let anchor_spl_idl_build = if manifest
-            .dependencies
-            .iter()
-            .any(|dep| dep.0 == "anchor-spl")
-        {
-            r#", "anchor-spl/idl-build""#
+        let anchor_spl_idl_build = if manifest.dependencies.contains_key(spl_crate) {
+            format!(r#", "{spl_crate}/idl-build""#)
         } else {
-            ""
+            String::new()
         };
 
         return Err(anyhow!(
             r#"`idl-build` feature is missing. To solve, add
 
 [features]
-idl-build = ["anchor-lang/idl-build"{anchor_spl_idl_build}]
+idl-build = ["{lang_crate}/idl-build"{anchor_spl_idl_build}]
 
 in `{manifest_path:?}`."#
         ));
@@ -185,19 +219,20 @@ in `{manifest_path:?}`."#
             )
         });
 
-    // Check `anchor-spl`'s `idl-build` feature
+    // Check that the SPL crate's `idl-build` feature is in the feature list.
+    let spl_feature = format!("{spl_crate}/idl-build");
     manifest
         .dependencies
-        .get("anchor-spl")
+        .get(spl_crate)
         .and_then(|_| manifest.features.get("idl-build"))
-        .map(|feature_list| !feature_list.contains(&"anchor-spl/idl-build".into()))
+        .map(|feature_list| !feature_list.contains(&spl_feature))
         .unwrap_or_default()
         .then(|| {
             eprintln!(
-                "WARNING: `idl-build` feature of `anchor-spl` is not enabled. This is likely to \
-                 result in cryptic compile errors.\n\n\tTo solve, add `anchor-spl/idl-build` to \
-                 the `idl-build` feature list:\n\n\t[features]\n\tidl-build = \
-                 [\"anchor-spl/idl-build\", ...]\n"
+                "WARNING: `idl-build` feature of `{spl_crate}` is not enabled. This is likely to \
+                 result in cryptic compile errors.\n\n\tTo solve, add `{spl_feature}` to the \
+                 `idl-build` feature list:\n\n\t[features]\n\tidl-build = [\"{spl_feature}\", \
+                 ...]\n"
             )
         });
 

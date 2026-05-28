@@ -2,6 +2,8 @@ use anchor_lang::prelude::*;
 
 declare_id!("Generics111111111111111111111111111111111111");
 
+mod helper;
+
 #[program]
 pub mod generics {
     use super::*;

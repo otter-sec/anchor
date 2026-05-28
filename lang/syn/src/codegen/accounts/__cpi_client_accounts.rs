@@ -197,6 +197,7 @@ pub fn generate(
             #(#re_exports)*
 
             #struct_doc
+            #[derive(Debug, Clone)]
             pub struct #name #generics {
                 #(#account_struct_fields),*
             }

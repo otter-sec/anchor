@@ -218,30 +218,44 @@ export class AnchorProvider implements Provider {
     if (opts === undefined) {
       opts = this.opts;
     }
-    const recentBlockhash = (
-      await this.connection.getLatestBlockhash(opts.preflightCommitment)
-    ).blockhash;
-
-    let txs = txWithSigners.map((r) => {
-      if (isVersionedTransaction(r.tx)) {
-        let tx: VersionedTransaction = r.tx;
-        if (r.signers) {
-          tx.sign(r.signers);
-        }
-        return tx;
-      } else {
-        let tx: Transaction = r.tx;
-        let signers = r.signers ?? [];
-
-        tx.feePayer = tx.feePayer ?? this.wallet.publicKey;
-        tx.recentBlockhash = recentBlockhash;
-
-        signers.forEach((kp) => {
-          tx.partialSign(kp);
-        });
-        return tx;
+    // Lazily fetch one blockhash while preserving caller-provided values.
+    let blockhashPromise: Promise<string> | undefined;
+    const ensureBlockhash = () => {
+      if (!blockhashPromise) {
+        blockhashPromise = this.connection
+          .getLatestBlockhash(opts!.preflightCommitment)
+          .then((b) => b.blockhash);
       }
-    });
+      return blockhashPromise;
+    };
+
+    let txs = await Promise.all(
+      txWithSigners.map(async (r) => {
+        if (isVersionedTransaction(r.tx)) {
+          let tx: VersionedTransaction = r.tx;
+          if (r.signers) {
+            tx.sign(r.signers);
+          }
+          return tx;
+        } else {
+          let tx: Transaction = r.tx;
+          let signers = r.signers ?? [];
+
+          tx.feePayer = tx.feePayer ?? this.wallet.publicKey;
+          if (
+            !tx.recentBlockhash ||
+            tx.recentBlockhash === "11111111111111111111111111111111"
+          ) {
+            tx.recentBlockhash = await ensureBlockhash();
+          }
+
+          signers.forEach((kp) => {
+            tx.partialSign(kp);
+          });
+          return tx;
+        }
+      })
+    );
 
     const signedTxs = await this.wallet.signAllTransactions(txs);
 
@@ -304,12 +318,6 @@ export class AnchorProvider implements Provider {
     commitment?: Commitment,
     includeAccounts?: boolean | PublicKey[]
   ): Promise<SuccessfulTxSimulationResponse> {
-    let recentBlockhash = (
-      await this.connection.getLatestBlockhash(
-        commitment ?? this.connection.commitment
-      )
-    ).blockhash;
-
     let result: RpcResponseAndContext<SimulatedTransactionResponse>;
     if (isVersionedTransaction(tx)) {
       if (signers && signers.length > 0) {
@@ -322,7 +330,17 @@ export class AnchorProvider implements Provider {
       result = await this.connection.simulateTransaction(tx, { commitment });
     } else {
       tx.feePayer = tx.feePayer || this.wallet.publicKey;
-      tx.recentBlockhash = recentBlockhash;
+      // Preserve caller-provided blockhash (e.g. durable nonces) — see #3375.
+      if (
+        !tx.recentBlockhash ||
+        tx.recentBlockhash === "11111111111111111111111111111111"
+      ) {
+        tx.recentBlockhash = (
+          await this.connection.getLatestBlockhash(
+            commitment ?? this.connection.commitment
+          )
+        ).blockhash;
+      }
 
       if (signers && signers.length > 0) {
         tx = await this.wallet.signTransaction(tx);

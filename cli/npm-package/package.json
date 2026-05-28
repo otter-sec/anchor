@@ -2,13 +2,13 @@
   "name": "@anchor-lang/cli",
   "version": "1.0.2",
   "description": "Anchor CLI tool",
-  "homepage": "https://github.com/solana-foundation/anchor#readme",
+  "homepage": "https://github.com/otter-sec/anchor#readme",
   "bugs": {
-    "url": "https://github.com/solana-foundation/anchor/issues"
+    "url": "https://github.com/otter-sec/anchor/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/solana-foundation/anchor.git"
+    "url": "https://github.com/otter-sec/anchor.git"
   },
   "license": "(MIT OR Apache-2.0)",
   "bin": {
