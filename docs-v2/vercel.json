@@ -1,0 +1,12 @@
+{
+  "installCommand": "bun install --frozen-lockfile",
+  "buildCommand": "bun run build",
+  "outputDirectory": "dist",
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/docs/",
+      "permanent": false
+    }
+  ]
+}
