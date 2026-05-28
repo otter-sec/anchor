@@ -20,6 +20,70 @@ pub fn parse(program_mod: syn::ItemMod) -> ParseResult<Program> {
     })
 }
 
+/// Whether a function in a program is an ix handler, a fallback fn or unrecognized
+enum FunctionType {
+    /// Regular instruction handler - takes a `Context<Account>` and other arguments
+    IxHandler,
+    /// Fallback method - takes `(&Pubkey, &[AccountInfo], &[u8])`
+    Fallback,
+    /// Invalid method type, raises an error
+    Error(ParseError),
+}
+
+/// Identify a function type via the parameters
+fn function_type(method: &syn::ItemFn) -> FunctionType {
+    let inputs = method
+        .sig
+        .inputs
+        .iter()
+        .map(|arg| {
+            let syn::FnArg::Typed(arg) = arg else {
+                return Err(ParseError::new(
+                    arg.span(),
+                    "handlers may not take receivers",
+                ));
+            };
+            Ok(arg)
+        })
+        .collect::<ParseResult<Vec<_>>>();
+
+    let inputs = match inputs {
+        Ok(i) => i,
+        Err(e) => {
+            return FunctionType::Error(e);
+        }
+    };
+
+    fn named_args(args: &[&syn::PatType]) -> bool {
+        args.iter()
+            .all(|arg| matches!(&*arg.pat, syn::Pat::Ident(_)))
+    }
+
+    fn valid_handler(context: &syn::Type) -> bool {
+        let syn::Type::Path(context) = context else {
+            return false;
+        };
+        let Some(segment) = context.path.segments.last() else {
+            return false;
+        };
+        matches!(segment,
+            syn::PathSegment {
+                ident,
+                arguments: syn::PathArguments::AngleBracketed(_),
+            } if ident == "Context"
+        )
+    }
+
+    match inputs.as_slice() {
+        [context, ..] if valid_handler(&context.ty) => FunctionType::IxHandler,
+        [_, _, _] if named_args(&inputs) => FunctionType::Fallback,
+        _ => FunctionType::Error(ParseError::new(
+            method.span(),
+            "handlers must take a `Context<...>` argument",
+        )),
+    }
+}
+
 fn ctx_accounts_ident(path_ty: &syn::PatType) -> ParseResult<proc_macro2::Ident> {
     let p = match &*path_ty.ty {
         syn::Type::Path(p) => &p.path,
@@ -50,7 +114,7 @@ fn ctx_accounts_ident(path_ty: &syn::PatType) -> ParseResult<proc_macro2::Ident>
             return Err(ParseError::new(
                 generic_ty.span(),
                 "expected Accounts struct type",
-            ))
+            ));
         }
     };
     Ok(path

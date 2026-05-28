@@ -249,12 +249,31 @@ impl WithPath<Config> {
         let programs = self.read_all_programs()?;
         let programs = match name {
             Some(name) => vec![programs
-                .into_iter()
+                .iter()
                 .find(|program| {
-                    name == program.lib_name
-                        || name == program.path.file_name().unwrap().to_str().unwrap()
+                    program.lib_name == name
+                        || program
+                            .path
+                            .file_name()
+                            .and_then(|f| f.to_str())
+                            .map(|f| f == name)
+                            .unwrap_or(false)
                 })
-                .ok_or_else(|| anyhow!("Program {name} not found"))?],
+                .cloned()
+                .ok_or_else(|| {
+                    let mut available_programs: Vec<String> =
+                        programs.iter().map(|p| p.lib_name.clone()).collect();
+                    available_programs.sort();
+
+                    if available_programs.is_empty() {
+                        anyhow!("Program '{name}' not found. No programs available in workspace.")
+                    } else {
+                        anyhow!(
+                            "Program '{name}' not found.\n\nAvailable programs:\n  {}",
+                            available_programs.join("\n  ")
+                        )
+                    }
+                })?],
             None => programs,
         };
 
@@ -607,6 +626,8 @@ pub struct WorkspaceConfig {
     pub members: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub idls: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub types: String,
 }
@@ -1170,9 +1191,6 @@ impl _TestToml {
                 }
             }
             if let Some(validator) = &mut test.validator {
-                if let Some(ledger_dir) = &mut validator.ledger {
-                    *ledger_dir = canonicalize_filepath_from_origin(&ledger_dir, &path)?;
-                }
                 if let Some(accounts) = &mut validator.account {
                     for entry in accounts {
                         entry.filename = canonicalize_filepath_from_origin(&entry.filename, &path)?;
@@ -2022,5 +2040,38 @@ directory = "accounts"
             validator.account_dir.unwrap()[0].directory,
             accounts_dir.canonicalize().unwrap().display().to_string()
         );
+    }
+
+    #[test]
+    fn test_toml_keeps_ledger_path_relative() {
+        let dir = tempfile::tempdir().unwrap();
+        let suite_dir = dir.path().join("tests").join("suite");
+        fs::create_dir_all(&suite_dir).unwrap();
+
+        let test_toml = suite_dir.join("Test.toml");
+        fs::write(
+            &test_toml,
+            r#"
+[scripts]
+test = "true"
+
+[test.validator]
+ledger = "ledgers/local"
+"#,
+        )
+        .unwrap();
+
+        let parsed = TestToml::from_path(test_toml).unwrap();
+        let validator = parsed.test.unwrap().validator.unwrap();
+
+        assert_eq!(validator.ledger, "ledgers/local");
+
+        fs::create_dir_all(suite_dir.join("ledgers").join("local")).unwrap();
+
+        let test_toml = suite_dir.join("Test.toml");
+        let parsed = TestToml::from_path(test_toml).unwrap();
+        let validator = parsed.test.unwrap().validator.unwrap();
+
+        assert_eq!(validator.ledger, "ledgers/local");
     }
 }

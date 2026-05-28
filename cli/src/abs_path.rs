@@ -66,6 +66,7 @@ impl_nop! {
     anchor_client::Cluster,
 
     // Third-party types
+    crucible_fuzz_cli::Cli,
     clap_complete::Shell,
     solana_commitment_config::CommitmentLevel,
     solana_pubkey::Pubkey,

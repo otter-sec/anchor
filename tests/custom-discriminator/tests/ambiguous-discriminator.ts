@@ -13,7 +13,9 @@ describe("ambiguous-discriminator", () => {
     }
 
     const output = result.output.toString();
-    if (!output.includes("Error: Program ambiguous-discriminator not found")) {
+    if (
+      !output.includes("Error: Program 'ambiguous-discriminator' not found")
+    ) {
       throw new Error(
         `Ambiguous discriminators did not return the expected error: "${output}"`
       );
