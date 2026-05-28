@@ -23,6 +23,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - cli: Allow configuring IDL JSON location in workspace config ([#4483](https://github.com/solana-foundation/anchor/pull/4483)).
 - lang: Derive `Clone`, `Debug`, `Copy`, and `Default` on generated client / CPI account structs and instruction args where the field types allow it ([#4085](https://github.com/solana-foundation/anchor/pull/4085)).
 - lang: Add `AccountLoader::new_unchecked` for constructing an `AccountLoader` without performing owner or discriminator checks ([#4162](https://github.com/solana-foundation/anchor/pull/4162)).
+- cli: Support multiple named scripts in `Anchor.toml` and run them via `anchor test --script <name>` / `anchor run <name>` ([#3999](https://github.com/solana-foundation/anchor/pull/3999)).
 
 ### Fixes
 
