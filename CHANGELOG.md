@@ -186,7 +186,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 - spl: Update SPL dependencies to latest compatible versions ([#3860](https://github.com/solana-foundation/anchor/pull/3860)).
 - cli: Replace `anchor verify` to use `solana-verify` under the hood, adding automatic installation via AVM, local path support, and future-proof argument passing ([#3768](https://github.com/solana-foundation/anchor/pull/3768)).
-- cli: Upload IDL by default with an option to skip ([#3863](https://github.com/solana-foundation/anchor/pull/3863)).
+- cli: Upload IDL by default with an option to skip ((#3863)[https://github.com/solana-foundation/anchor/pull/3863]).
 - lang: remove Solang ([#3824](https://github.com/solana-foundation/anchor/pull/3824)).
 - cli: remove `anchor publish` command ([#3795](https://github.com/solana-foundation/anchor/pull/3795)).
 
@@ -478,7 +478,7 @@ See the [Anchor 0.30 release notes](https://www.anchor-lang.com/release-notes/0.
 - spl: Fix not being able to deserialize newer token 2022 extensions ([#2876](https://github.com/solana-foundation/anchor/pull/2876)).
 - client: Fix erroneous Cluster websocket ports ([#2690](https://github.com/solana-foundation/anchor/pull/2690)).
 - spl: Remove `solana-program` dependency ([#2900](https://github.com/solana-foundation/anchor/pull/2900)).
-- spl: Make `TokenAccount` and `Mint` `Copy` ([#2904](https://github.com/solana-foundation/anchor/pull/2904)).
+- spl: Make `TokenAccount` and ` Mint` `Copy` ([#2904](https://github.com/solana-foundation/anchor/pull/2904)).
 - ts: Add missing errors ([#2906](https://github.com/solana-foundation/anchor/pull/2906)).
 
 ### Breaking
@@ -823,9 +823,9 @@ See the [Anchor 0.29 release notes](https://www.anchor-lang.com/release-notes/0.
 - lang: Require doc comments when using AccountInfo or UncheckedAccount types ([#1452](https://github.com/solana-foundation/anchor/pull/1452)).
 - lang: add [`error!`](https://docs.rs/anchor-lang/latest/anchor_lang/prelude/macro.error.html) and [`err!`](https://docs.rs/anchor-lang/latest/anchor_lang/prelude/macro.err.html) macro and `Result` type ([#1462](https://github.com/solana-foundation/anchor/pull/1462)).
   This change will break most programs. Do the following to upgrade:
-  _change all `ProgramResult`'s to `Result<()>`
+  _ change all `ProgramResult`'s to `Result<()>`
   _ change `#[error]` to `#[error_code]`
-  _change all `Err(MyError::SomeError.into())` to `Err(error!(MyError::SomeError))` and all `Err(ProgramError::SomeProgramError)` to `Err(ProgramError::SomeProgramError.into())` or `Err(Error::from(ProgramError::SomeProgramError).with_source(source!()))` to provide file and line source of the error (`with_source` is most useful with `ProgramError`s. `error!` already adds source information for custom and anchor internal errors).
+  _ change all `Err(MyError::SomeError.into())` to `Err(error!(MyError::SomeError))` and all `Err(ProgramError::SomeProgramError)` to `Err(ProgramError::SomeProgramError.into())` or `Err(Error::from(ProgramError::SomeProgramError).with_source(source!()))` to provide file and line source of the error (`with_source` is most useful with `ProgramError`s. `error!` already adds source information for custom and anchor internal errors).
   _ change all `solana_program::program::invoke()` to `solana_program::program::invoke().map_err(Into::into)` and `solana_program::program::invoke_signed()` to `solana_program::program::invoke_signed().map_err(Into::into)`
 
 ## [0.21.0] - 2022-02-07
