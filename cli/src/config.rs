@@ -641,7 +641,7 @@ impl Config {
             .anchor_version
             .as_deref()
             .unwrap_or(crate::DOCKER_BUILDER_VERSION);
-        format!("solanafoundation/anchor:v{version}")
+        format!("quay.io/ottersec/anchor:v{version}")
     }
 
     pub fn discover(cfg_override: &ConfigOverride) -> Result<Option<WithPath<Config>>> {
