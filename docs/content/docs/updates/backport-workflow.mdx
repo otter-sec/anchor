@@ -3,7 +3,7 @@ title: Backport Workflow
 description: Anchor - Lightweight Backport Workflow Guide
 ---
 
-A backport is the process of taking a change made on `main` (or a newer branch)
+A backport is the process of taking a change made on `master` (or a newer branch)
 and applying it to older, still-supported release branches. This allows
 maintaining multiple release versions in parallel for users who cannot
 immediately upgrade to the latest release.
@@ -21,7 +21,7 @@ Backport the following types of changes:
 
 **Not backported:** experimental features, breaking changes, or large refactors.
 
-All changes should first be merged to `main` before being backported.
+All changes should first be merged to `master` before being backported.
 
 ---
 
@@ -29,7 +29,7 @@ All changes should first be merged to `main` before being backported.
 
 ### 1. Identify and Label
 
-All pull requests to `main` should be labeled during review to indicate whether
+All pull requests to `master` should be labeled during review to indicate whether
 they are backportable.
 
 **Labeling Convention:**
@@ -98,6 +98,10 @@ Backports accumulate on release branches and are included in patch releases
 
 Update the CHANGELOG and communicate which versions received which fixes.
 
+After shipping a backported release, merge any release-specific documentation and
+CHANGELOG updates back into `master` so the primary branch continues to reflect
+the latest published patch releases.
+
 ---
 
 ## Examples
@@ -106,7 +110,7 @@ Update the CHANGELOG and communicate which versions received which fixes.
 
 A security vulnerability is discovered in account validation:
 
-1. **Fix developed**: PR #1234 opened on `main`
+1. **Fix developed**: PR #1234 opened on `master`
 2. **Merged**: PR merged with commit `abc123`
 3. **Labeled**: Maintainer adds `backport-0.30` and `backport-0.29`
 4. **Bot action**: Automated backport PRs created for both versions
@@ -119,7 +123,7 @@ A security vulnerability is discovered in account validation:
 Bug fix in IDL generation needs backporting to v0.30.x:
 
 ```bash
-# Original PR #5678 merged to main with commit def456
+# Original PR #5678 merged to master with commit def456
 git fetch origin
 git checkout -b backport-5678-to-v0.30.x origin/v0.30.x
 git cherry-pick def456
