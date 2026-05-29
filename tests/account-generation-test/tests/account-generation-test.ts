@@ -17,6 +17,10 @@ describe("account-generation-test", () => {
   const FUNDED_ACCOUNT_2 = new PublicKey(
     "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
   );
+  const NEW_FUNDED_ACCOUNT_TARGETS = [
+    15_000_000_000_000,
+    20_000_000_000_000,
+  ];
 
   it("Funded accounts should have correct lamports", async () => {
     const account1Info = await provider.connection.getAccountInfo(
@@ -75,7 +79,7 @@ describe("account-generation-test", () => {
     );
   });
 
-  it("Generated 'new' account should exist and be funded", async () => {
+  const loadGeneratedFundedAccounts = async () => {
     const fs = require("fs");
     const path = require("path");
     const accountsDir = path.join(
@@ -102,27 +106,46 @@ describe("account-generation-test", () => {
       })
       .sort((a: { mtime: number }, b: { mtime: number }) => b.mtime - a.mtime);
 
-    assert.isTrue(
-      keypairFilesWithTimes.length > 0,
-      "Should have at least one generated keypair file for 'new' address"
-    );
+    const generatedAccounts: Array<{ pubkey: PublicKey; lamports: number }> =
+      [];
+    for (const entry of keypairFilesWithTimes.slice(
+      0,
+      NEW_FUNDED_ACCOUNT_TARGETS.length
+    )) {
+      const pubkey = new PublicKey(entry.name.replace(".keypair.json", ""));
+      const accountInfo = await provider.connection.getAccountInfo(pubkey);
+      assert.isNotNull(accountInfo, `Generated account ${pubkey} should exist`);
+      generatedAccounts.push({
+        pubkey,
+        lamports: accountInfo!.lamports,
+      });
+    }
 
-    const keypairFile = keypairFilesWithTimes[0].name;
-    const keypairPath = path.join(accountsDir, keypairFile);
-    const keypairData = JSON.parse(fs.readFileSync(keypairPath, "utf8"));
-    const pubkeyStr = keypairFile.replace(".keypair.json", "");
-    const generatedPubkey = new PublicKey(pubkeyStr);
+    return generatedAccounts;
+  };
 
-    const accountInfo = await provider.connection.getAccountInfo(
-      generatedPubkey
+  it("Generated 'new' accounts should exist and keep distinct funding targets", async () => {
+    const generatedAccounts = await loadGeneratedFundedAccounts();
+    const sortedLamports = generatedAccounts
+      .map((account) => account.lamports)
+      .sort((a, b) => a - b);
+
+    assert.equal(
+      generatedAccounts.length,
+      NEW_FUNDED_ACCOUNT_TARGETS.length,
+      "Should have one generated keypair per 'new' funded account"
     );
-    assert.isNotNull(accountInfo, "Generated account should exist");
-    assert.isTrue(
-      accountInfo!.lamports >= 5_000_000_000,
-      `Generated account should have at least 5 SOL (has ${
-        accountInfo!.lamports
-      } lamports). Note: Surfpool uses default airdrop amounts.`
+    assert.equal(
+      new Set(generatedAccounts.map((account) => account.pubkey.toBase58())).size,
+      NEW_FUNDED_ACCOUNT_TARGETS.length,
+      "Each generated funded account should resolve to a distinct pubkey"
     );
+    NEW_FUNDED_ACCOUNT_TARGETS.forEach((targetLamports, index) => {
+      assert.isTrue(
+        sortedLamports[index] >= targetLamports,
+        `Generated account ${index} should have at least ${targetLamports} lamports (has ${sortedLamports[index]})`
+      );
+    });
   });
 
   const loadAllMints = async () => {

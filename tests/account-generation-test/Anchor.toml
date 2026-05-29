@@ -23,7 +23,11 @@ address = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
 
 [[test.validator.fund_accounts]]
 address = "new"  # Generate a random keypair
-lamports = 5000000000  # 5 SOL
+lamports = 15000000000000  # Above Surfpool's default airdrop to catch duplicate-resolution bugs
+
+[[test.validator.fund_accounts]]
+address = "new"  # Generate a second random keypair
+lamports = 20000000000000
 
 [[test.validator.mints]]
 address = "new"
