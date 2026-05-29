@@ -18,6 +18,8 @@ describe("account-generation-test", () => {
     "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
   );
   const NEW_FUNDED_ACCOUNT_TARGETS = [15_000_000_000_000, 20_000_000_000_000];
+  const EXPECTED_MINT_COUNT = 3;
+  const EXPECTED_TOKEN_ACCOUNT_COUNT = 3;
 
   it("Funded accounts should have correct lamports", async () => {
     const account1Info = await provider.connection.getAccountInfo(
@@ -26,10 +28,10 @@ describe("account-generation-test", () => {
     assert.isNotNull(account1Info, "Funded account 1 should exist");
 
     assert.isTrue(
-      account1Info!.lamports >= 2000000000,
-      `Account 1 should have at least 2 SOL (has ${
+      account1Info!.lamports === 2000000000,
+      `Account 1 should have exactly 2 SOL (has ${
         account1Info!.lamports
-      } lamports). Note: Surfpool uses default airdrop amounts.`
+      } lamports)`
     );
 
     const account2Info = await provider.connection.getAccountInfo(
@@ -38,10 +40,10 @@ describe("account-generation-test", () => {
     assert.isNotNull(account2Info, "Funded account 2 should exist");
 
     assert.isTrue(
-      account2Info!.lamports >= 1000000000,
-      `Account 2 should have at least 1 SOL (has ${
+      account2Info!.lamports === 1000000000,
+      `Account 2 should have exactly 1 SOL (has ${
         account2Info!.lamports
-      } lamports). Note: Surfpool uses default airdrop amounts.`
+      } lamports)`
     );
   });
 
@@ -139,9 +141,10 @@ describe("account-generation-test", () => {
       "Each generated funded account should resolve to a distinct pubkey"
     );
     NEW_FUNDED_ACCOUNT_TARGETS.forEach((targetLamports, index) => {
-      assert.isTrue(
-        sortedLamports[index] >= targetLamports,
-        `Generated account ${index} should have at least ${targetLamports} lamports (has ${sortedLamports[index]})`
+      assert.equal(
+        sortedLamports[index],
+        targetLamports,
+        `Generated account ${index} should have exactly ${targetLamports} lamports`
       );
     });
   });
@@ -193,12 +196,11 @@ describe("account-generation-test", () => {
 
   it("Generated mint should exist and be initialized", async () => {
     const mints = await loadAllMints();
-    if (mints.length === 0) {
-      console.log(
-        "Note: Mint not found on-chain. This is expected for Surfpool validator. Use --validator legacy for mint creation."
-      );
-      return;
-    }
+    assert.isAtLeast(
+      mints.length,
+      EXPECTED_MINT_COUNT,
+      "Generated mints should be loaded on-chain"
+    );
     assert.equal(
       mints[0].owner.toBase58(),
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -212,12 +214,11 @@ describe("account-generation-test", () => {
 
   it("Generated token account should exist and be initialized", async () => {
     const all = await loadAllTokenAccounts();
-    if (all.length === 0) {
-      console.log(
-        "Note: Token account not found on-chain. This is expected for Surfpool validator. Use --validator legacy for token account creation."
-      );
-      return;
-    }
+    assert.isAtLeast(
+      all.length,
+      EXPECTED_TOKEN_ACCOUNT_COUNT,
+      "Generated token accounts should be loaded on-chain"
+    );
     assert.isTrue(
       all[0].raw.length >= 165,
       `Token account data should be at least 165 bytes (has ${all[0].raw.length})`
@@ -230,7 +231,7 @@ describe("account-generation-test", () => {
     );
     const accountInfo = await provider.connection.getAccountInfo(pubkey);
     assert.isNotNull(accountInfo);
-    assert.isTrue(accountInfo!.lamports >= 2_000_000_000);
+    assert.equal(accountInfo!.lamports, 2_000_000_000);
   });
 
   it("Should fund account with specific address without lamports (defaults to 1 SOL)", async () => {
@@ -239,7 +240,7 @@ describe("account-generation-test", () => {
     );
     const accountInfo = await provider.connection.getAccountInfo(pubkey);
     assert.isNotNull(accountInfo);
-    assert.isTrue(accountInfo!.lamports >= 1_000_000_000);
+    assert.equal(accountInfo!.lamports, 1_000_000_000);
   });
 
   it("Should create multiple mints with different configurations", async () => {
@@ -258,7 +259,6 @@ describe("account-generation-test", () => {
 
   it("Should create mint with mint_authority and freeze_authority", async () => {
     const mints = await loadAllMints();
-    if (mints.length === 0) return;
     const match = mints.find(
       (m) => m.mintAuthorityIsSome && m.freezeAuthorityIsSome
     );
@@ -274,7 +274,6 @@ describe("account-generation-test", () => {
 
   it("Should create mint without supply (defaults to 0)", async () => {
     const mints = await loadAllMints();
-    if (mints.length === 0) return;
     const match = mints.find((m) => m.supply === 0n);
     assert.isDefined(match, "expected a mint with supply = 0");
     assert.equal(match!.decimals, 8);
@@ -312,7 +311,6 @@ describe("account-generation-test", () => {
 
   it("Should create token account with mint=new owner=new", async () => {
     const all = await loadAllTokenAccounts();
-    if (all.length === 0) return;
     const match = all.find((ta) => ta.amount === 500000000n);
     assert.isDefined(match, "expected a token_account with amount=500000000");
     assert.isTrue(match!.raw.length >= 165);
@@ -320,7 +318,6 @@ describe("account-generation-test", () => {
 
   it("Should create token account with mint=new owner=specific", async () => {
     const all = await loadAllTokenAccounts();
-    if (all.length === 0) return;
     const match = all.find(
       (ta) =>
         ta.owner.toBase58() === "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
@@ -331,7 +328,6 @@ describe("account-generation-test", () => {
 
   it("Should create token account with mint=new owner=new address=new", async () => {
     const all = await loadAllTokenAccounts();
-    if (all.length === 0) return;
     const match = all.find((ta) => ta.amount === 250000000n);
     assert.isDefined(match, "expected a token_account with amount=250000000");
   });
@@ -353,7 +349,6 @@ describe("account-generation-test", () => {
   it("Should use most recent mint when mint=new", async () => {
     const mints = await loadAllMints();
     const tokenAccounts = await loadAllTokenAccounts();
-    if (mints.length === 0 || tokenAccounts.length === 0) return;
     const lastMint = mints.find((m) => m.decimals === 8 && m.supply === 0n);
     assert.isDefined(
       lastMint,
@@ -406,7 +401,11 @@ describe("account-generation-test", () => {
 
   it("Should handle multiple token accounts referencing same mint", async () => {
     const tokenAccounts = await loadAllTokenAccounts();
-    if (tokenAccounts.length < 2) return;
+    assert.isAtLeast(
+      tokenAccounts.length,
+      2,
+      "expected multiple token accounts to be loaded on-chain"
+    );
     const uniqueMints = new Set(
       tokenAccounts.map((ta) => new PublicKey(ta.raw.slice(0, 32)).toBase58())
     );
@@ -440,7 +439,11 @@ describe("account-generation-test", () => {
 
   it("Should verify mint supply matches configuration", async () => {
     const mints = await loadAllMints();
-    if (mints.length === 0) return;
+    assert.isAtLeast(
+      mints.length,
+      EXPECTED_MINT_COUNT,
+      "Generated mints should be loaded on-chain"
+    );
     const match = mints.find((m) => m.supply === 1_000_000_000n);
     assert.isDefined(match, "expected a mint with supply=1_000_000_000");
     assert.equal(match!.decimals, 9);
@@ -448,7 +451,11 @@ describe("account-generation-test", () => {
 
   it("Should verify mint decimals match configuration", async () => {
     const mints = await loadAllMints();
-    if (mints.length === 0) return;
+    assert.isAtLeast(
+      mints.length,
+      EXPECTED_MINT_COUNT,
+      "Generated mints should be loaded on-chain"
+    );
     const match = mints.find((m) => m.decimals === 6);
     assert.isDefined(match, "expected a mint with decimals=6");
     assert.equal(match!.supply.toString(), "500000000");
