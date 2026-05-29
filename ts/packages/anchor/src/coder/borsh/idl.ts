@@ -246,7 +246,7 @@ export class IdlCoder {
             { ...field, type: genericArg.type },
             types,
             null,
-            serialization
+            serialization,
             definedTypeStack,
             allowRecursive
           );
@@ -398,7 +398,7 @@ export class IdlCoder {
           { type: typeDef.type.alias, name },
           types,
           null,
-          typeDef.serialization
+          typeDef.serialization,
           typeStack
         );
       }

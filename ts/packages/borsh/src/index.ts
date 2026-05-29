@@ -1,8 +1,6 @@
 import {
   blob,
   Layout as LayoutCls,
-  offset,
-  seq,
   struct,
   u16,
   u32,
@@ -517,27 +515,93 @@ export function vec<T>(
   return new VecLayout(elementLayout, property);
 }
 
+class VecWithLengthLayout<T> extends LayoutCls<T[]> {
+  elementLayout: Layout<T>;
+  lengthLayout: Layout<number>;
+  lengthSpan: number;
+  lengthMax: number;
+  lengthType: "u8" | "u16" | "u32";
+
+  constructor(
+    elementLayout: Layout<T>,
+    lengthType: "u8" | "u16" | "u32",
+    property?: string
+  ) {
+    super(-1, property);
+    this.elementLayout = elementLayout;
+    this.lengthType = lengthType;
+    if (lengthType === "u8") {
+      this.lengthLayout = u8();
+      this.lengthSpan = 1;
+      this.lengthMax = 0xff;
+    } else if (lengthType === "u16") {
+      this.lengthLayout = u16();
+      this.lengthSpan = 2;
+      this.lengthMax = 0xffff;
+    } else {
+      this.lengthLayout = u32();
+      this.lengthSpan = U32_SPAN;
+      this.lengthMax = MAX_U32;
+    }
+  }
+
+  encode(src: T[], b: Buffer, offset = 0): number {
+    if (
+      !Number.isSafeInteger(src.length) ||
+      src.length < 0 ||
+      src.length > this.lengthMax
+    ) {
+      throw new RangeError(
+        `Invalid vec${formatProperty(
+          this.property
+        )}: length ${src.length} is outside the supported ${this.lengthType} range`
+      );
+    }
+    let cursor = offset;
+    cursor += this.lengthLayout.encode(src.length, b, cursor);
+    for (const value of src) {
+      cursor += this.elementLayout.encode(value, b, cursor);
+    }
+    return cursor - offset;
+  }
+
+  decode(b: Buffer, offset = 0): T[] {
+    assertReadableBytes(b, offset, this.lengthSpan, "vec", this.property);
+    const count = this.lengthLayout.decode(b, offset);
+    const dataOffset = offset + this.lengthSpan;
+    return decodeCollectionValues(
+      count,
+      this.elementLayout,
+      b,
+      dataOffset,
+      "vec",
+      this.property
+    ).values;
+  }
+
+  getSpan(b: Buffer, offset = 0): number {
+    assertReadableBytes(b, offset, this.lengthSpan, "vec", this.property);
+    const count = this.lengthLayout.decode(b, offset);
+    return (
+      this.lengthSpan +
+      measureCollectionSpan(
+        count,
+        this.elementLayout,
+        b,
+        offset + this.lengthSpan,
+        "vec",
+        this.property
+      )
+    );
+  }
+}
+
 export function vecWithLength<T>(
   elementLayout: Layout<T>,
   lengthType: "u8" | "u16" | "u32" = "u32",
   property?: string
 ): Layout<T[]> {
-  const length =
-    lengthType === "u8"
-      ? u8("length")
-      : lengthType === "u16"
-        ? u16("length")
-        : u32("length");
-  const layout: Layout<{ values: T[] }> = struct([
-    length,
-    seq(elementLayout, offset(length, -length.span), "values"),
-  ]);
-  return new WrappedLayout(
-    layout,
-    ({ values }) => values,
-    (values) => ({ values }),
-    property
-  );
+  return new VecWithLengthLayout(elementLayout, lengthType, property);
 }
 
 export function tagged<T>(
