@@ -17,10 +17,7 @@ describe("account-generation-test", () => {
   const FUNDED_ACCOUNT_2 = new PublicKey(
     "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
   );
-  const NEW_FUNDED_ACCOUNT_TARGETS = [
-    15_000_000_000_000,
-    20_000_000_000_000,
-  ];
+  const NEW_FUNDED_ACCOUNT_TARGETS = [15_000_000_000_000, 20_000_000_000_000];
 
   it("Funded accounts should have correct lamports", async () => {
     const account1Info = await provider.connection.getAccountInfo(
@@ -136,7 +133,8 @@ describe("account-generation-test", () => {
       "Should have one generated keypair per 'new' funded account"
     );
     assert.equal(
-      new Set(generatedAccounts.map((account) => account.pubkey.toBase58())).size,
+      new Set(generatedAccounts.map((account) => account.pubkey.toBase58()))
+        .size,
       NEW_FUNDED_ACCOUNT_TARGETS.length,
       "Each generated funded account should resolve to a distinct pubkey"
     );
