@@ -4747,28 +4747,11 @@ fn is_new_address(address: &str) -> bool {
     address.eq_ignore_ascii_case("new")
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum GeneratedAccountKind {
-    FundedAccount,
-    Mint,
-    TokenAccount,
-}
-
 #[derive(Debug, Clone)]
 struct GeneratedAccount {
     pubkey: Pubkey,
     file_path: PathBuf,
-    kind: GeneratedAccountKind,
     surfpool_snapshot_value: JsonValue,
-}
-
-/// Returns the pubkeys for generated funded accounts.
-fn funded_generated_pubkeys(
-    generated_accounts: &[GeneratedAccount],
-) -> impl Iterator<Item = Pubkey> + '_ {
-    generated_accounts.iter().filter_map(|acct| {
-        matches!(acct.kind, GeneratedAccountKind::FundedAccount).then_some(acct.pubkey)
-    })
 }
 
 /// Resolves a config-relative path against the workspace root.
@@ -4936,7 +4919,6 @@ fn materialize_validator_accounts(
             out.push(GeneratedAccount {
                 pubkey,
                 file_path,
-                kind: GeneratedAccountKind::Mint,
                 surfpool_snapshot_value: json!({
                     "lamports": rent_exempt_minimum(82),
                     "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -5032,7 +5014,6 @@ fn materialize_validator_accounts(
             out.push(GeneratedAccount {
                 pubkey: token_account_pubkey,
                 file_path,
-                kind: GeneratedAccountKind::TokenAccount,
                 surfpool_snapshot_value: json!({
                     "lamports": rent_exempt_minimum(165),
                     "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -5076,7 +5057,6 @@ fn materialize_validator_accounts(
             out.push(GeneratedAccount {
                 pubkey,
                 file_path,
-                kind: GeneratedAccountKind::FundedAccount,
                 surfpool_snapshot_value: json!({
                     "lamports": lamports,
                     "owner": "11111111111111111111111111111111",
@@ -7800,10 +7780,11 @@ mod tests {
         let generated_accounts = generated_validator_accounts(&cfg, &test_validator).unwrap();
 
         assert_eq!(generated_accounts.len(), 1);
-        assert!(matches!(
-            generated_accounts[0].kind,
-            GeneratedAccountKind::TokenAccount
-        ));
+        assert!(generated_accounts[0]
+            .file_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(".json")));
     }
 
     #[test]
@@ -7831,9 +7812,8 @@ mod tests {
         });
 
         let generated_accounts = generated_validator_accounts(&cfg, &test_validator).unwrap();
-        let funded_pubkeys = funded_generated_pubkeys(&generated_accounts).collect::<Vec<_>>();
 
-        assert_eq!(funded_pubkeys.len(), 2);
-        assert_ne!(funded_pubkeys[0], funded_pubkeys[1]);
+        assert_eq!(generated_accounts.len(), 2);
+        assert_ne!(generated_accounts[0].pubkey, generated_accounts[1].pubkey);
     }
 }
