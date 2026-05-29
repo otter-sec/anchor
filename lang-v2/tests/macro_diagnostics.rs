@@ -301,6 +301,35 @@ pub struct Bad {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn optional_pda_init_payer_is_rejected() {
+    compile_fail_case(
+        "optional_pda_init_payer_is_rejected",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+#[account]
+pub struct Data {
+    pub value: u64,
+}
+
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(mut, seeds = [b"payer"], bump)]
+    pub payer: Option<SystemAccount>,
+    #[account(init, payer = payer, space = 8 + core::mem::size_of::<Data>())]
+    pub data: Account<Data>,
+    pub system_program: Program<System>,
+}
+"#,
+        &["optional accounts cannot be used as init payers"],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn init_owner_override_rejects_typed_accounts() {
     fn case(name: &str, account_attr: &str, field_ty: &str) {
         let source = format!(

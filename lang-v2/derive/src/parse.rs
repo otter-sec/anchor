@@ -1012,9 +1012,13 @@ fn emit_payer_signer_seeds_binding(
     if let Expr::Array(arr) = seeds_expr {
         let seed_elems: Vec<&Expr> = arr.elems.iter().collect();
         let (seed_bindings, seed_refs) = materialize_seed_refs(&seed_elems, field_names);
+        let seed_count = seed_refs.len();
         if let Some(Some(ref bump_expr)) = payer_field.attrs.bump {
             return Ok(quote! {
                 #(#seed_bindings)*
+                if #seed_count > anchor_lang_v2::MAX_PAYER_SEEDS {
+                    return Err(anchor_lang_v2::ErrorCode::ConstraintSeeds.into());
+                }
                 let __payer_bump: u8 = #bump_expr;
                 anchor_lang_v2::verify_program_address(
                     &[#(#seed_refs),* , &[__payer_bump]],
@@ -1030,6 +1034,9 @@ fn emit_payer_signer_seeds_binding(
 
         return Ok(quote! {
             #(#seed_bindings)*
+            if #seed_count > anchor_lang_v2::MAX_PAYER_SEEDS {
+                return Err(anchor_lang_v2::ErrorCode::ConstraintSeeds.into());
+            }
             let __payer_bump =
                 anchor_lang_v2::find_and_verify_program_address(
                     &[#(#seed_refs),*], __program_id, __payer.address(),
@@ -1045,12 +1052,13 @@ fn emit_payer_signer_seeds_binding(
         return Ok(quote! {
             let __payer_seed_expr_val = #seeds_expr;
             let __payer_seed_ref: &[&[u8]] = __payer_seed_expr_val.as_ref();
-            if __payer_seed_ref.len() > 16 {
+            if __payer_seed_ref.len() > anchor_lang_v2::MAX_PAYER_SEEDS {
                 return Err(anchor_lang_v2::ErrorCode::ConstraintSeeds.into());
             }
             let __payer_bump: u8 = #bump_expr;
             let __payer_bump_bytes = [__payer_bump];
-            let mut __payer_seed_buf: [&[u8]; 17] = [&[]; 17];
+            let mut __payer_seed_buf: [&[u8]; anchor_lang_v2::MAX_PAYER_SEEDS_WITH_BUMP] =
+                [&[]; anchor_lang_v2::MAX_PAYER_SEEDS_WITH_BUMP];
             let __payer_seed_count = __payer_seed_ref.len();
             __payer_seed_buf[..__payer_seed_count].copy_from_slice(__payer_seed_ref);
             __payer_seed_buf[__payer_seed_count] = &__payer_bump_bytes;
@@ -1073,7 +1081,8 @@ fn emit_payer_signer_seeds_binding(
                 __payer_seed_ref, __program_id, __payer.address(),
             ).map_err(|_| anchor_lang_v2::ErrorCode::ConstraintSeeds)?;
         __bumps.#bump_field = __payer_bump;
-        let mut __payer_seed_buf: [&[u8]; 17] = [&[]; 17];
+        let mut __payer_seed_buf: [&[u8]; anchor_lang_v2::MAX_PAYER_SEEDS_WITH_BUMP] =
+            [&[]; anchor_lang_v2::MAX_PAYER_SEEDS_WITH_BUMP];
         let __payer_seed_count = __payer_seed_ref.len();
         __payer_seed_buf[..__payer_seed_count].copy_from_slice(__payer_seed_ref);
         __payer_seed_buf[__payer_seed_count] = &[__payer_bump];

@@ -60,6 +60,15 @@ fn account_value(svm: &LiteSVM, address: &Pubkey) -> u64 {
     u64::from_le_bytes(account.data[8..16].try_into().unwrap())
 }
 
+#[track_caller]
+fn assert_error_contains(err: &anyhow::Error, needle: &str) {
+    let rendered = format!("{err:?}");
+    assert!(
+        rendered.contains(needle),
+        "expected error containing {needle:?}, got: {rendered}",
+    );
+}
+
 #[test]
 fn seeded_system_account_can_pay_for_fresh_target() {
     let (mut svm, payer) = setup();
@@ -126,5 +135,83 @@ fn seeded_system_account_can_pay_for_pda_target() {
         payer_after.lamports + created.lamports,
         FUNDED_PDA_LAMPORTS,
         "rent should move from the PDA payer into the PDA target"
+    );
+}
+
+#[test]
+fn seeded_system_account_can_pay_for_boxed_target() {
+    let (mut svm, payer) = setup();
+    let funded_pda = payer_pda();
+    let new_account = Keypair::new();
+
+    let metas = vec![
+        AccountMeta::new(funded_pda, false),
+        AccountMeta::new(new_account.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![2],
+        metas,
+        &payer,
+        &[&new_account],
+    )
+    .expect("boxed-target init should succeed");
+
+    let created = svm
+        .get_account(&new_account.pubkey())
+        .expect("boxed target account exists");
+    let payer_after = svm.get_account(&funded_pda).expect("payer PDA exists");
+
+    assert_eq!(created.owner, program_id());
+    assert_eq!(account_value(&svm, &new_account.pubkey()), 99);
+    assert!(
+        payer_after.lamports < FUNDED_PDA_LAMPORTS,
+        "payer PDA should fund the boxed target"
+    );
+    assert_eq!(
+        payer_after.lamports + created.lamports,
+        FUNDED_PDA_LAMPORTS,
+        "rent should move from the PDA payer into the boxed target"
+    );
+}
+
+#[test]
+fn payer_with_more_than_max_seeds_is_rejected() {
+    let (mut svm, payer) = setup();
+    let candidate_payer = payer_pda();
+    let new_account = Keypair::new();
+    let payer_before = svm
+        .get_account(&candidate_payer)
+        .expect("candidate payer exists")
+        .lamports;
+
+    let metas = vec![
+        AccountMeta::new(candidate_payer, false),
+        AccountMeta::new(new_account.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    let err = send_instruction(
+        &mut svm,
+        program_id(),
+        vec![3],
+        metas,
+        &payer,
+        &[&new_account],
+    )
+    .expect_err("payer with more than 16 seeds must fail");
+
+    assert_error_contains(&err, "InvalidSeeds");
+    assert!(
+        svm.get_account(&new_account.pubkey()).is_none(),
+        "failed init must not create the target account"
+    );
+    assert_eq!(
+        svm.get_account(&candidate_payer)
+            .expect("candidate payer still exists")
+            .lamports,
+        payer_before,
+        "failed init must not debit the candidate payer"
     );
 }

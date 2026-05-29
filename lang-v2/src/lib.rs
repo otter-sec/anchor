@@ -118,6 +118,11 @@ pub use wincode;
 /// is safe.
 pub const BORSH_CONFIG: BorshConfig = wincode::config::Configuration::new();
 
+/// Solana allows at most 16 seeds when deriving a PDA.
+pub const MAX_PAYER_SEEDS: usize = 16;
+/// PDA payers append the canonical bump as a final signer seed.
+pub const MAX_PAYER_SEEDS_WITH_BUMP: usize = MAX_PAYER_SEEDS + 1;
+
 /// Concrete type of [`BORSH_CONFIG`]. Spelled out so downstream callers can
 /// name it in trait bounds (e.g. `T: wincode::SchemaRead<'de, BorshConfig>`).
 pub type BorshConfig = wincode::config::Configuration<
