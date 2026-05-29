@@ -38,6 +38,7 @@ TESTS_V2_COVERAGE_TESTS := \
 	init_space_usability \
 	ix_macro \
 	optional_accounts \
+	pda_payer \
 	program_interface \
 	seeds \
 	spl \

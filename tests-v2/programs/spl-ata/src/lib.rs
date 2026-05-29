@@ -148,6 +148,11 @@ pub mod spl_ata_test {
         Ok(())
     }
 
+    #[discrim = 16]
+    pub fn init_ata_with_pda_payer(_ctx: &mut Context<InitAtaWithPdaPayer>) -> Result<()> {
+        Ok(())
+    }
+
     #[discrim = 14]
     pub fn init_strict_ata_with_token_program(
         _ctx: &mut Context<InitStrictAtaWithTokenProgram>,
@@ -198,6 +203,24 @@ pub struct InitAta {
     #[account(
         init,
         payer = payer,
+        associated_token::mint = mint,
+        associated_token::authority = authority,
+    )]
+    pub token_account: Account<TokenAccount>,
+    pub token_program: Program<Token>,
+    pub associated_token_program: Program<AssociatedToken>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct InitAtaWithPdaPayer {
+    #[account(mut, seeds = [b"payer"], bump)]
+    pub pda_payer: SystemAccount,
+    pub mint: Account<Mint>,
+    pub authority: UncheckedAccount,
+    #[account(
+        init,
+        payer = pda_payer,
         associated_token::mint = mint,
         associated_token::authority = authority,
     )]

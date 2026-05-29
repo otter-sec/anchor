@@ -1202,6 +1202,8 @@ fn emit_associated_token_init_body(
     attrs: &AccountAttrs,
     associated_token: &AssociatedTokenInit,
     field_offsets: &[(String, TokenStream2)],
+    field_names: &[String],
+    field_summaries: &[FieldSummary],
     _is_optional: bool,
 ) -> syn::Result<TokenStream2> {
     let payer = attrs.payer.as_ref().expect("init requires payer");
@@ -1215,12 +1217,15 @@ fn emit_associated_token_init_body(
     let system_program_offset = field_offset_expr(field_offsets, &system_program)?;
     let associated_token_program_offset =
         field_offset_expr(field_offsets, &associated_token_program)?;
+    let payer_signer_seeds = emit_payer_signer_seeds_binding(payer, field_names, field_summaries)?;
 
     Ok(quote! {
         {
-            let mut __payer =
+            let mut __payer_account =
                 <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
                     ::load(__views[#payer_offset])?;
+            let __payer = __payer_account.account();
+            #payer_signer_seeds
             let mut __associated_token =
                 <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
                     ::load(__target)?;
@@ -1252,17 +1257,31 @@ fn emit_associated_token_init_body(
             ) {
                 return Err(anchor_lang_v2::ErrorCode::ConstraintAddress.into());
             }
-            anchor_spl_v2::associated_token::create(anchor_lang_v2::CpiContext::new(
-                __associated_token_program.account().address(),
-                anchor_spl_v2::associated_token::Create {
-                    payer: __payer.cpi_handle_mut(),
-                    associated_token: __associated_token.cpi_handle_mut(),
-                    authority: __authority.cpi_handle(),
-                    mint: __mint.cpi_handle(),
-                    system_program: __system_program.cpi_handle(),
-                    token_program: __token_program.cpi_handle(),
-                },
-            ))?;
+            let __create_accounts = anchor_spl_v2::associated_token::Create {
+                payer: __payer_account.cpi_handle_mut(),
+                associated_token: __associated_token.cpi_handle_mut(),
+                authority: __authority.cpi_handle(),
+                mint: __mint.cpi_handle(),
+                system_program: __system_program.cpi_handle(),
+                token_program: __token_program.cpi_handle(),
+            };
+            match __payer_signer_seeds {
+                Some(__payer_signer) => {
+                    anchor_spl_v2::associated_token::create(
+                        anchor_lang_v2::CpiContext::new_with_signer(
+                            __associated_token_program.account().address(),
+                            __create_accounts,
+                            &[__payer_signer],
+                        ),
+                    )?;
+                }
+                None => {
+                    anchor_spl_v2::associated_token::create(anchor_lang_v2::CpiContext::new(
+                        __associated_token_program.account().address(),
+                        __create_accounts,
+                    ))?;
+                }
+            }
 
             // SAFETY: this field has just been initialized by the associated
             // token program, and duplicate mutable accounts are rejected by
@@ -1450,7 +1469,15 @@ pub fn parse_field(
         let inner_action = if attrs.is_init {
             // Init body emitted against inner_ty so the trait call lands on T.
             let init_body = if let Some(ref at) = associated_token {
-                emit_associated_token_init_body(inner_ty, &attrs, at, field_offsets, true)?
+                emit_associated_token_init_body(
+                    inner_ty,
+                    &attrs,
+                    at,
+                    field_offsets,
+                    field_names,
+                    field_summaries,
+                    true,
+                )?
             } else {
                 emit_init_body(
                     field_name,
@@ -1466,7 +1493,15 @@ pub fn parse_field(
             quote! { Some({ #init_body_with_constraints }) }
         } else if attrs.is_init_if_needed {
             let init_body = if let Some(ref at) = associated_token {
-                emit_associated_token_init_body(inner_ty, &attrs, at, field_offsets, true)?
+                emit_associated_token_init_body(
+                    inner_ty,
+                    &attrs,
+                    at,
+                    field_offsets,
+                    field_names,
+                    field_summaries,
+                    true,
+                )?
             } else {
                 emit_init_body(
                     field_name,
@@ -1558,7 +1593,15 @@ pub fn parse_field(
         }
     } else if attrs.is_init {
         let init_body = if let Some(ref at) = associated_token {
-            emit_associated_token_init_body(field_ty, &attrs, at, field_offsets, false)?
+            emit_associated_token_init_body(
+                field_ty,
+                &attrs,
+                at,
+                field_offsets,
+                field_names,
+                field_summaries,
+                false,
+            )?
         } else {
             emit_init_body(
                 field_name,
@@ -1580,7 +1623,15 @@ pub fn parse_field(
         quote! {}
     } else if attrs.is_init_if_needed {
         let init_body = if let Some(ref at) = associated_token {
-            emit_associated_token_init_body(field_ty, &attrs, at, field_offsets, false)?
+            emit_associated_token_init_body(
+                field_ty,
+                &attrs,
+                at,
+                field_offsets,
+                field_names,
+                field_summaries,
+                false,
+            )?
         } else {
             emit_init_body(
                 field_name,
@@ -2291,7 +2342,7 @@ mod tests {
                 pub inner: Nested<Inner>
             })
             .unwrap();
-        let err = match parse_field(&field, &[], &[], quote::quote!(0usize), &[]) {
+        let err = match parse_field(&field, &[], &[], quote::quote!(0usize), &[], &[]) {
             Ok(_) => panic!("account attrs on Nested<T> must be rejected"),
             Err(err) => err,
         };
@@ -2317,7 +2368,7 @@ mod tests {
                 pub my_acc: Account<MyAcc>
             })
             .unwrap();
-        let parsed = parse_field(&field, &[], &[], quote::quote!(0usize), &[]).unwrap();
+        let parsed = parse_field(&field, &[], &[], quote::quote!(0usize), &[], &[]).unwrap();
         let joined = parsed
             .constraints
             .iter()

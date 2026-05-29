@@ -4,8 +4,7 @@
 //! the validation failures can mutate around.
 
 use {
-    anchor_lang_v2::solana_program::instruction::AccountMeta,
-    anchor_lang_v2::ToAccountMetas,
+    anchor_lang_v2::{solana_program::instruction::AccountMeta, ToAccountMetas},
     litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_pubkey::Pubkey,
@@ -13,6 +12,8 @@ use {
     spl_token::{solana_program::program_pack::Pack, state::Account as SplTokenAccount},
     tests_v2::{build_program, keypair_for, send_instruction},
 };
+
+const FUNDED_PDA_LAMPORTS: u64 = 1_000_000_000;
 
 fn program_id() -> Pubkey {
     "AtA1111111111111111111111111111111111111111"
@@ -46,6 +47,10 @@ fn associated_token_address(owner: &Pubkey, mint: &Pubkey, token_program: &Pubke
     .0
 }
 
+fn payer_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"payer"], &program_id()).0
+}
+
 fn setup() -> (LiteSVM, Keypair) {
     let test_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let deploy_dir = test_dir.join("target/deploy");
@@ -61,6 +66,20 @@ fn setup() -> (LiteSVM, Keypair) {
     let payer = keypair_for("spl-ata-payer");
     svm.airdrop(&payer.pubkey(), 10_000_000_000).unwrap();
     (svm, payer)
+}
+
+fn seed_system_account(svm: &mut LiteSVM, address: Pubkey, lamports: u64, data_len: usize) {
+    svm.set_account(
+        address,
+        solana_account::Account {
+            lamports,
+            data: vec![0u8; data_len],
+            owner: solana_sdk_ids::system_program::ID,
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .unwrap();
 }
 
 fn init_mint(svm: &mut LiteSVM, payer: &Keypair, mint: &Keypair, authority: &Pubkey) {
@@ -117,6 +136,26 @@ fn send_init_ata(
         token_program_id(),
         ata_program_id(),
     )
+}
+
+fn send_init_ata_with_pda_payer(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    pda_payer: Pubkey,
+    mint: Pubkey,
+    owner: Pubkey,
+    ata: Pubkey,
+) -> anyhow::Result<()> {
+    let metas = vec![
+        AccountMeta::new(pda_payer, false),
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(owner, false),
+        AccountMeta::new(ata, false),
+        AccountMeta::new_readonly(token_program_id(), false),
+        AccountMeta::new_readonly(ata_program_id(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), vec![16], metas, payer, &[]).map(|_| ())
 }
 
 fn send_init_ata_with_programs(
@@ -421,6 +460,37 @@ fn init_rejects_non_canonical_ata_address() {
 
     assert!(send_init_ata(&mut svm, &payer, mint.pubkey(), owner.pubkey(), wrong_ata).is_err());
     assert!(svm.get_account(&wrong_ata).is_none());
+}
+
+#[test]
+fn init_supports_seeded_system_account_payer() {
+    let (mut svm, payer) = setup();
+    let funded_pda = payer_pda();
+    let mint_authority = keypair_for("spl-ata-pda-payer-mint-authority");
+    let owner = keypair_for("spl-ata-pda-payer-owner");
+    let mint = Keypair::new();
+    let ata = associated_token_address(&owner.pubkey(), &mint.pubkey(), &token_program_id());
+    init_mint(&mut svm, &payer, &mint, &mint_authority.pubkey());
+    seed_system_account(&mut svm, funded_pda, FUNDED_PDA_LAMPORTS, 0);
+
+    send_init_ata_with_pda_payer(
+        &mut svm,
+        &payer,
+        funded_pda,
+        mint.pubkey(),
+        owner.pubkey(),
+        ata,
+    )
+    .expect("ATA init should accept a seeded system-account payer PDA");
+
+    assert_token_account_state(&svm, ata, mint.pubkey(), owner.pubkey(), token_program_id());
+    let ata_account = svm.get_account(&ata).expect("ATA exists");
+    let payer_after = svm.get_account(&funded_pda).expect("payer PDA exists");
+    assert!(payer_after.lamports < FUNDED_PDA_LAMPORTS);
+    assert_eq!(
+        payer_after.lamports + ata_account.lamports,
+        FUNDED_PDA_LAMPORTS
+    );
 }
 
 #[test]
