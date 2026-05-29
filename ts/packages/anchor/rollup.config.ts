@@ -36,7 +36,6 @@ export default {
     "bn.js",
     "bs58",
     "buffer",
-    "camelcase",
     "eventemitter3",
     "@noble/hashes/sha256",
     "@noble/hashes/utils",

@@ -61,6 +61,7 @@ pub mod config;
 pub mod coverage;
 #[cfg(not(windows))]
 pub mod debugger;
+pub mod fetch;
 #[cfg(not(windows))]
 mod flamegraph;
 mod keygen;
@@ -856,7 +857,46 @@ pub enum IdlCommand {
         #[clap(long)]
         non_canonical: bool,
     },
-    /// Convert IDLs between the legacy (pre Anchor 0.30) and current spec
+    /// Fetches historical IDL versions for the given program from a cluster.
+    ///
+    /// With no filters, fetches all historical versions.
+    FetchHistorical {
+        program_id: Pubkey,
+        /// Fetch authority-scoped PMP metadata account history for this authority
+        #[clap(long)]
+        authority: Option<Pubkey>,
+        /// Fetch IDL at specific slot
+        #[clap(long, conflicts_with_all = ["before", "after"])]
+        slot: Option<u64>,
+        /// Fetch IDL before this date (YYYY-MM-DD)
+        #[clap(long)]
+        before: Option<String>,
+        /// Fetch IDL after this date (YYYY-MM-DD)
+        #[clap(long)]
+        after: Option<String>,
+        /// Output directory for fetched versions (defaults to the current directory)
+        #[clap(long)]
+        out_dir: Option<PathBuf>,
+        /// Max parallel RPC workers for transaction fetches.
+        #[clap(long)]
+        rpc_workers: Option<usize>,
+        /// Force sequential transaction fetches (equivalent to --rpc-workers 1).
+        #[clap(long, conflicts_with = "rpc_workers")]
+        no_parallel: bool,
+        /// Max retry attempts per transaction on 429/timeout errors.
+        #[clap(long, default_value_t = 5)]
+        rpc_max_retries: u32,
+        /// Base backoff in milliseconds between retries (doubled each attempt).
+        #[clap(long, default_value_t = 500)]
+        rpc_retry_backoff_ms: u64,
+        /// Hard cap on signatures fetched per history source.
+        #[clap(long, default_value_t = 1000)]
+        max_signatures: usize,
+        /// Print diagnostic progress messages.
+        #[clap(long)]
+        verbose: bool,
+    },
+    /// Convert legacy IDLs (pre Anchor 0.30) to the new IDL spec
     Convert {
         /// Path to the IDL file
         path: PathBuf,
@@ -1563,6 +1603,22 @@ fn process_command(opts: Opts) -> Result<()> {
     }
 }
 
+/// Cargo does not support nested workspaces. If `start` lives inside a
+/// directory tree containing any `Cargo.toml`, refuse to create a new
+/// Anchor workspace here and point at `anchor new`, which is the
+/// supported flow for adding a program to an existing project.
+fn reject_if_inside_cargo_project(start: PathBuf) -> Result<()> {
+    if let Some(parent) = Manifest::discover_from_path(start)? {
+        return Err(anyhow!(
+            "Cannot run `anchor init` inside an existing Cargo project at `{}`.\nTo add a new \
+             program to the existing project, run `anchor new <name>` from the workspace root. To \
+             create a fresh Anchor workspace, run `anchor init` outside any Cargo project tree.",
+            parent.path().display()
+        ));
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn init(
     cfg_override: &ConfigOverride,
@@ -1577,8 +1633,11 @@ fn init(
     force: bool,
     install_agent_skills: bool,
 ) -> Result<()> {
-    if !force && Config::discover(cfg_override)?.is_some() {
-        return Err(anyhow!("Workspace already initialized"));
+    if !force {
+        if Config::discover(cfg_override)?.is_some() {
+            return Err(anyhow!("Workspace already initialized"));
+        }
+        reject_if_inside_cargo_project(std::env::current_dir()?)?;
     }
 
     // We need to format different cases for the dir and the name
@@ -3030,6 +3089,36 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             out,
             non_canonical,
         } => idl_fetch(cfg_override, address, out, non_canonical),
+        IdlCommand::FetchHistorical {
+            program_id: address,
+            authority,
+            slot,
+            before,
+            after,
+            out_dir,
+            rpc_workers,
+            no_parallel,
+            rpc_max_retries,
+            rpc_retry_backoff_ms,
+            max_signatures,
+            verbose,
+        } => fetch::idl_fetch_historical(
+            cfg_override,
+            address,
+            authority,
+            slot,
+            before,
+            after,
+            out_dir,
+            fetch::FetchTuning {
+                workers: rpc_workers,
+                no_parallel,
+                max_retries: rpc_max_retries,
+                retry_backoff_ms: rpc_retry_backoff_ms,
+                max_signatures,
+                verbose,
+            },
+        ),
         IdlCommand::Convert {
             path,
             out,
@@ -3527,29 +3616,46 @@ fn account(
 
     let idl = idl_filepath.map_or_else(
         || {
-            Config::discover(cfg_override)?
-                .ok_or_else(|| {
-                    anyhow!(
-                        "The 'anchor account' command requires an Anchor workspace with \
-                         Anchor.toml for IDL type generation."
-                    )
-                })?
+            let config = Config::discover(cfg_override)?.ok_or_else(|| {
+                anyhow!(
+                    "The 'anchor account' command requires an Anchor workspace with Anchor.toml \
+                     for IDL type generation."
+                )
+            })?;
+            let programs = config
                 .read_all_programs()
-                .expect("Workspace must contain atleast one program.")
-                .into_iter()
+                .expect("Workspace must contain atleast one program.");
+
+            let program = programs
+                .iter()
                 .find(|p| p.lib_name == *program_name)
-                .ok_or_else(|| anyhow!("Program {program_name} not found in workspace."))
-                .map(|p| p.idl)?
                 .ok_or_else(|| {
-                    anyhow!(
-                        "IDL not found. Please build the program atleast once to generate the IDL."
-                    )
-                })
+                    let mut available_programs: Vec<String> =
+                        programs.iter().map(|p| p.lib_name.clone()).collect();
+                    available_programs.sort();
+
+                    if available_programs.is_empty() {
+                        anyhow!(
+                            "Program '{program_name}' not found in workspace. No programs \
+                             available."
+                        )
+                    } else {
+                        anyhow!(
+                            "Program '{program_name}' not found in workspace.\n\nAvailable \
+                             programs:\n  {}",
+                            available_programs.join("\n  ")
+                        )
+                    }
+                })?;
+
+            program.idl.clone().ok_or_else(|| {
+                anyhow!("IDL not found. Please build the program atleast once to generate the IDL.")
+            })
         },
         |idl_path| {
             let idl = fs::read(idl_path)?;
             let idl = convert_idl(&idl)?;
-            if idl.metadata.name != program_name {
+            if idl.metadata.name != *program_name {
                 return Err(anyhow!("IDL does not match program {program_name}."));
             }
 
@@ -3568,9 +3674,26 @@ fn account(
     let disc_len = idl
         .accounts
         .iter()
-        .find(|acc| acc.name == account_type_name)
+        .find(|acc| acc.name == *account_type_name)
         .map(|acc| acc.discriminator.len())
-        .ok_or_else(|| anyhow!("Account `{account_type_name}` not found in IDL"))?;
+        .ok_or_else(|| {
+            let mut available_accounts: Vec<String> =
+                idl.accounts.iter().map(|acc| acc.name.clone()).collect();
+            available_accounts.sort();
+
+            if available_accounts.is_empty() {
+                anyhow!(
+                    "Account '{account_type_name}' not found in IDL. No accounts available in \
+                     program '{program_name}'."
+                )
+            } else {
+                anyhow!(
+                    "Account '{account_type_name}' not found in IDL.\n\nAvailable accounts in \
+                     program '{program_name}':\n  {}",
+                    available_accounts.join("\n  ")
+                )
+            }
+        })?;
     let mut data_view = &data[disc_len..];
 
     let deserialized_json =
@@ -5525,7 +5648,7 @@ fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -
     // Get cluster URL and wallet path
     let (cluster_url, wallet_path) = get_cluster_and_wallet(cfg_override)?;
 
-    // Create RPC client
+    // Create RPC client with confirmed commitment
     let client = RpcClient::new_with_commitment(cluster_url, CommitmentConfig::confirmed());
 
     // Determine recipient
@@ -5544,26 +5667,29 @@ fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -
         .get_balance_with_commitment(&recipient_pubkey, CommitmentConfig::confirmed())?
         .value;
 
-    // Request airdrop
+    // Get recent blockhash for airdrop
+    let recent_blockhash = client
+        .get_latest_blockhash()
+        .map_err(|e| anyhow!("Failed to get recent blockhash: {}", e))?;
+
+    // Request airdrop with blockhash
     println!("Requesting airdrop of {} SOL...", amount);
     let signature = client
-        .request_airdrop(&recipient_pubkey, lamports)
+        .request_airdrop_with_blockhash(&recipient_pubkey, lamports, &recent_blockhash)
         .map_err(|e| anyhow!("Airdrop request failed: {}", e))?;
 
     println!("Signature: {}", signature);
-    println!("Waiting for confirmation...");
 
-    // Wait for confirmation
-    let confirmed = client
-        .confirm_transaction(&signature)
+    // Wait for confirmation with the same blockhash used for the airdrop
+    client
+        .confirm_transaction_with_spinner(&signature, &recent_blockhash, client.commitment())
         .map_err(|e| anyhow!("Transaction confirmation failed: {}", e))?;
-    if !confirmed {
-        return Err(anyhow!("Transaction was not confirmed"));
-    }
+
+    println!("Airdrop confirmed!");
 
     // Get and display the new balance
     let balance = wait_for_airdrop_balance(&client, &recipient_pubkey, starting_balance, lamports)?;
-    println!("{}", format_sol(balance));
+    println!("Balance: {}", format_sol(balance));
 
     Ok(())
 }
@@ -5762,11 +5888,19 @@ fn shell(cfg_override: &ConfigOverride) -> Result<()> {
 fn run(cfg_override: &ConfigOverride, script: String, script_args: Vec<String>) -> Result<()> {
     with_workspace(cfg_override, |cfg| -> Result<()> {
         let url = cluster_url(cfg, &cfg.test_validator, &cfg.surfpool_config);
-        let script = cfg
-            .scripts
-            .get(&script)
-            .ok_or_else(|| anyhow!("Unable to find script"))?;
-        let script_with_args = format!("{script} {}", script_args.join(" "));
+        let script_cmd = cfg.scripts.get(&script).ok_or_else(|| {
+            let mut available_scripts: Vec<String> = cfg.scripts.keys().cloned().collect();
+            available_scripts.sort();
+            if available_scripts.is_empty() {
+                anyhow!("Script '{script}' not found. No scripts defined in Anchor.toml.")
+            } else {
+                anyhow!(
+                    "Script '{script}' not found.\n\nAvailable scripts:\n  {}",
+                    available_scripts.join("\n  ")
+                )
+            }
+        })?;
+        let script_with_args = format!("{script_cmd} {}", script_args.join(" "));
         let exit = std::process::Command::new("bash")
             .arg("-c")
             .arg(&script_with_args)
@@ -6580,7 +6714,7 @@ mod tests {
             ProgramTemplate::default(),
             AnchorVersion::default(),
             TestTemplate::default(),
-            false,
+            true,
             true,
         )
         .unwrap();
@@ -6603,7 +6737,7 @@ mod tests {
             ProgramTemplate::default(),
             AnchorVersion::default(),
             TestTemplate::default(),
-            false,
+            true,
             true,
         )
         .unwrap();
@@ -6626,7 +6760,7 @@ mod tests {
             ProgramTemplate::default(),
             AnchorVersion::default(),
             TestTemplate::default(),
-            false,
+            true,
             true,
         )
         .unwrap();

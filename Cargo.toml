@@ -55,6 +55,7 @@ solana-signature = "3.3.0"
 solana-signer = "3.0.0"
 solana-stake-interface = "2.0.2"
 solana-system-interface = "2.0.0"
+solana-transaction-status-client-types = "3.0.0"
 # FIXME: solana-sysvar 3.1.x contains breaking changes to sysvar retrieval
 solana-sysvar = "3.1.1"
 solana-sysvar-id = "3.1.0"

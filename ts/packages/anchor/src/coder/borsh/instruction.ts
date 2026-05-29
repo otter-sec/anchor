@@ -25,7 +25,7 @@ export class BorshInstructionCoder implements InstructionCoder {
   // Instruction args layout. Maps namespaced method
   private ixLayouts: Map<
     string,
-    { discriminator: IdlDiscriminator; layout: Layout }
+    { discriminator: IdlDiscriminator; layout: Layout; args: IdlField[] }
   >;
 
   public constructor(private idl: Idl) {
@@ -35,7 +35,10 @@ export class BorshInstructionCoder implements InstructionCoder {
         IdlCoder.fieldLayout(arg, idl.types)
       );
       const layout = borsh.struct(fieldLayouts, name);
-      return [name, { discriminator: ix.discriminator, layout }] as const;
+      return [
+        name,
+        { discriminator: ix.discriminator, layout, args: ix.args },
+      ] as const;
     });
     this.ixLayouts = new Map(ixLayouts);
   }
@@ -48,6 +51,32 @@ export class BorshInstructionCoder implements InstructionCoder {
     const encoder = this.ixLayouts.get(ixName);
     if (!encoder) {
       throw new Error(`Unknown method: ${ixName}`);
+    }
+
+    // Validate arg shape so silent zero-encoding of typos / wrong-shape
+    // payloads can't slip through. The borsh struct encoder happily writes
+    // default-valued bytes for every `undefined` field it sees, which masks
+    // mistakes like `encode("foo", 1000)` instead of `encode("foo", { x: 1000 })`
+    // or a misspelled field name.
+    if (encoder.args.length > 0) {
+      if (ix === null || typeof ix !== "object" || Array.isArray(ix)) {
+        const expected = encoder.args.map((a) => a.name).join(", ");
+        throw new Error(
+          `Invalid arguments for instruction "${ixName}": expected an object with fields { ${expected} }, got ${
+            ix === null ? "null" : Array.isArray(ix) ? "array" : typeof ix
+          }.`
+        );
+      }
+      const missing = encoder.args
+        .map((a) => a.name)
+        .filter((name) => !ix.hasOwnProperty(name));
+      if (missing.length > 0) {
+        throw new Error(
+          `Invalid arguments for instruction "${ixName}": missing field${
+            missing.length > 1 ? "s" : ""
+          } ${missing.map((m) => `\`${m}\``).join(", ")}.`
+        );
+      }
     }
 
     const len = encoder.layout.encode(ix, buffer);

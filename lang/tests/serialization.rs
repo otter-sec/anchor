@@ -35,6 +35,95 @@ fn test_instruction_data() {
     );
 }
 
+#[test]
+fn test_recursive_enum_serialization() {
+    #[derive(Debug, PartialEq, Eq, AnchorSerialize, AnchorDeserialize)]
+    enum RecursiveNode {
+        Leaf,
+        Branch { children: Vec<RecursiveNode> },
+    }
+
+    let node = RecursiveNode::Branch {
+        children: vec![
+            RecursiveNode::Leaf,
+            RecursiveNode::Branch {
+                children: vec![RecursiveNode::Leaf],
+            },
+        ],
+    };
+    let data = borsh::to_vec(&node).unwrap();
+
+    assert_eq!(RecursiveNode::try_from_slice(&data).unwrap(), node);
+}
+
+#[test]
+fn test_mutually_recursive_enum_serialization() {
+    #[derive(Debug, PartialEq, Eq, AnchorSerialize, AnchorDeserialize)]
+    enum A {
+        Leaf,
+        Branch { children: Vec<B> },
+    }
+
+    #[derive(Debug, PartialEq, Eq, AnchorSerialize, AnchorDeserialize)]
+    enum B {
+        Leaf,
+        Branch { children: Vec<A> },
+    }
+
+    let a = A::Branch {
+        children: vec![
+            B::Leaf,
+            B::Branch {
+                children: vec![A::Leaf],
+            },
+        ],
+    };
+    let data = borsh::to_vec(&a).unwrap();
+
+    assert_eq!(A::try_from_slice(&data).unwrap(), a);
+}
+
+#[test]
+fn test_option_recursive_enum_serialization() {
+    #[derive(Clone, Debug, PartialEq, Eq, AnchorSerialize, AnchorDeserialize)]
+    enum OptionalNode {
+        Leaf,
+        Branch { child: Option<Box<OptionalNode>> },
+    }
+
+    let node = OptionalNode::Branch {
+        child: Some(Box::new(OptionalNode::Branch {
+            child: Some(Box::new(OptionalNode::Leaf)),
+        })),
+    };
+    let data = borsh::to_vec(&node).unwrap();
+
+    assert_eq!(OptionalNode::try_from_slice(&data).unwrap(), node);
+}
+
+#[test]
+fn test_type_alias_recursive_edge_serialization() {
+    type AliasChildren = Vec<AliasNode>;
+
+    #[derive(Debug, PartialEq, Eq, AnchorSerialize, AnchorDeserialize)]
+    enum AliasNode {
+        Leaf,
+        Branch { children: AliasChildren },
+    }
+
+    let node = AliasNode::Branch {
+        children: vec![
+            AliasNode::Leaf,
+            AliasNode::Branch {
+                children: vec![AliasNode::Leaf],
+            },
+        ],
+    };
+    let data = borsh::to_vec(&node).unwrap();
+
+    assert_eq!(AliasNode::try_from_slice(&data).unwrap(), node);
+}
+
 #[cfg(not(feature = "lazy-account"))]
 #[test]
 /// Test for <https://github.com/otter-sec/anchor/issues/4377>;
