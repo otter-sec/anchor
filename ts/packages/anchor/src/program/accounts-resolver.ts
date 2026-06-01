@@ -317,7 +317,9 @@ export class AccountsResolver<IDL extends Idl> {
           // another seed to be resolved *and* the accounts for resolution are
           // out of order. In this case, skip the accounts that throw in order
           // to resolve those accounts later.
-          await this.resolvePda(account, path, name);
+          if (await this.resolvePda(account, path, name)) {
+            continue;
+          }
           await this.resolveRelation(account, path, name);
         }
       }
@@ -330,14 +332,14 @@ export class AccountsResolver<IDL extends Idl> {
     account: IdlInstructionAccount,
     path: string[],
     name: string
-  ): Promise<void> {
-    if (!account.pda) return;
+  ): Promise<boolean> {
+    if (!account.pda) return false;
     try {
       const seeds = await Promise.all(
         account.pda.seeds.map((seed) => this.toBuffer(seed, path))
       );
       if (seeds.some((seed) => !seed)) {
-        return;
+        return true;
       }
 
       const programId = await this.parseProgramId(account, path);
@@ -348,6 +350,7 @@ export class AccountsResolver<IDL extends Idl> {
 
       this.set([...path, name], pubkey);
     } catch {}
+    return false;
   }
 
   private async resolveRelation(
