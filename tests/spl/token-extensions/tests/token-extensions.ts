@@ -5,6 +5,7 @@ import { PublicKey, Keypair } from "@solana/web3.js";
 import { TokenExtensions } from "../target/types/token_extensions";
 import { ASSOCIATED_PROGRAM_ID } from "@anchor-lang/core/dist/cjs/utils/token";
 import {
+  createAccount,
   createInitializeMintInstruction,
   createMint,
   ExtensionType,
@@ -12,6 +13,7 @@ import {
   getMint,
   getMintLen,
   NATIVE_MINT_2022,
+  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 
 const TOKEN_2022_PROGRAM_ID = new anchor.web3.PublicKey(
@@ -146,7 +148,7 @@ describe("token extensions", () => {
       .rpc();
   });
 
-  it("token account extension constraints test", async () => {
+  it("token account immutable owner constraint passes", async () => {
     await program.methods
       .checkTokenAccountExtensionsConstraints()
       .accountsStrict({
@@ -374,7 +376,7 @@ describe("token extensions", () => {
       .rpc();
   });
 
-  it("missing token account extension constraints test", async () => {
+  it("immutable owner constraint fails when a token-2022 account lacks the extension", async () => {
     try {
       await program.methods
         .checkMissingTokenAccountExtensionsConstraints()
@@ -392,6 +394,49 @@ describe("token extensions", () => {
         (err as AnchorError).error.errorCode.code,
         "ConstraintTokenAccountImmutableOwnerExtension"
       );
+      assert.equal((err as AnchorError).error.errorCode.number, 2045);
+    }
+  });
+
+  it("immutable owner constraint fails on legacy SPL token accounts", async () => {
+    const legacyMint = await createMint(
+      provider.connection,
+      payer,
+      payer.publicKey,
+      null,
+      0,
+      undefined,
+      undefined,
+      TOKEN_PROGRAM_ID
+    );
+    const legacyTokenAccount = await createAccount(
+      provider.connection,
+      payer,
+      legacyMint,
+      payer.publicKey,
+      undefined,
+      undefined,
+      TOKEN_PROGRAM_ID
+    );
+
+    try {
+      await program.methods
+        .checkMissingTokenAccountExtensionsConstraints()
+        .accountsStrict({
+          authority: payer.publicKey,
+          mint: legacyMint,
+          mintTokenAccount: legacyTokenAccount,
+        })
+        .signers([payer])
+        .rpc();
+      assert.fail("expected ConstraintTokenAccountImmutableOwnerExtension");
+    } catch (err) {
+      assert.ok(err instanceof AnchorError);
+      assert.equal(
+        (err as AnchorError).error.errorCode.code,
+        "ConstraintTokenAccountImmutableOwnerExtension"
+      );
+      assert.equal((err as AnchorError).error.errorCode.number, 2045);
     }
   });
 });

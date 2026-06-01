@@ -200,9 +200,6 @@ pub enum ErrorCode {
     /// 2042 - Account must be migrated before exiting
     #[msg("Account must be migrated before exiting")]
     AccountNotMigrated,
-    /// 2043 - An immutable owner extension constraint was violated
-    #[msg("An immutable owner extension constraint was violated")]
-    ConstraintTokenAccountImmutableOwnerExtension,
 
     /// 2043 - A pausable extension constraint was violated
     #[msg("A pausable extension constraint was violated")]
@@ -210,6 +207,9 @@ pub enum ErrorCode {
     /// 2044 - A pausable extension authority constraint was violated
     #[msg("A pausable extension authority constraint was violated")]
     ConstraintMintPausableAuthority,
+    /// 2045 - An immutable owner extension constraint was violated
+    #[msg("An immutable owner extension constraint was violated")]
+    ConstraintTokenAccountImmutableOwnerExtension = 2045,
 
     // Require
     /// 2500 - A require expression was violated

@@ -695,9 +695,15 @@ fn generate_constraint_init_group(
                             for e in extensions {
                                 match e {
                                     ::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::ImmutableOwner => {
-                                        ::anchor_spl::token_interface::immutable_owner_initialize(anchor_lang::context::CpiContext::new(#token_program.key(), ::anchor_spl::token_interface::ImmutableOwnerInitialize {                                            token_program_id: #token_program.to_account_info(),
+                                        let cpi_accounts = ::anchor_spl::token_interface::ImmutableOwnerInitialize {
+                                            token_program_id: #token_program.to_account_info(),
                                             token_account: #field.to_account_info(),
-                                        }))?;
+                                        };
+                                        let cpi_ctx = anchor_lang::context::CpiContext::new(
+                                            #token_program.key(),
+                                            cpi_accounts,
+                                        );
+                                        ::anchor_spl::token_interface::immutable_owner_initialize(cpi_ctx)?;
                                     },
                                     // All extensions specified by the user should be implemented.
                                     // If this line runs, it means there is a bug in the codegen.
@@ -1776,7 +1782,7 @@ fn generate_get_token_account_space(
                 if let Some(additional_extensions) = #additional_extensions {
                     required_extensions.extend_from_slice(additional_extensions);
                 }
-                ExtensionType::try_calculate_account_len::<Account>(&mint_extensions)?
+                ExtensionType::try_calculate_account_len::<Account>(&required_extensions)?
             } else {
                 ::anchor_spl::token::TokenAccount::LEN
             }

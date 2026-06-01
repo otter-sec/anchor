@@ -420,6 +420,7 @@ pub fn cpi_initialize_non_transferable_mint_handler(
     token_2022::initialize_non_transferable_mint(cpi_ctx)
 }
 
+#[derive(Accounts)]
 #[instruction()]
 pub struct CheckMissingTokenAccountExtensionConstraints<'info> {
     pub authority: Signer<'info>,
