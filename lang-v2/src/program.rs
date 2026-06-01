@@ -41,9 +41,9 @@ pub fn invoke_signed<'a, 'seeds>(
     validate_handles(instruction, account_handles)?;
     validate_handle_borrows(instruction, account_handles)?;
 
-    // SAFETY: Validation above proves every instruction account has a matching
-    // handle, writable metas use writable handles, and AccountView borrow state
-    // permits the CPI.
+    // SAFETY: Validation above proves every non-sentinel instruction account
+    // has a matching handle, writable metas use writable handles, and
+    // AccountView borrow state permits the CPI.
     unsafe { invoke_signed_unchecked(instruction, account_handles, signer_seeds) }
 }
 
@@ -75,10 +75,7 @@ pub unsafe fn invoke_signed_unchecked<'a, 'seeds>(
     account_handles: &[CpiHandle<'a>],
     signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
 ) -> ProgramResult {
-    require!(
-        account_handles.len() >= instruction.accounts.len(),
-        ProgramError::NotEnoughAccountKeys
-    );
+    let cpi_account_count = required_cpi_account_count(instruction, account_handles.len())?;
 
     let instruction_accounts = instruction_accounts(instruction);
     let instruction_view = InstructionView {
@@ -97,7 +94,7 @@ pub unsafe fn invoke_signed_unchecked<'a, 'seeds>(
             &instruction_view,
             from_raw_parts(
                 cpi_accounts.as_ptr() as *const CpiAccount,
-                instruction.accounts.len(),
+                cpi_account_count,
             ),
             &signers,
         );
@@ -110,12 +107,16 @@ pub(crate) fn validate_handles(
     instruction: &Instruction,
     account_handles: &[CpiHandle<'_>],
 ) -> ProgramResult {
-    require!(
-        account_handles.len() >= instruction.accounts.len(),
-        ProgramError::NotEnoughAccountKeys
-    );
+    let mut handle_index = 0;
 
-    for (meta, handle) in instruction.accounts.iter().zip(account_handles) {
+    for meta in &instruction.accounts {
+        if is_optional_account_sentinel(instruction, meta) {
+            continue;
+        }
+
+        let Some(handle) = account_handles.get(handle_index) else {
+            return Err(ProgramError::NotEnoughAccountKeys);
+        };
         require!(
             address_eq(&meta.pubkey, handle.address()),
             ProgramError::InvalidArgument
@@ -124,6 +125,8 @@ pub(crate) fn validate_handles(
         if meta.is_writable {
             require!(handle.is_writable(), ProgramError::InvalidArgument);
         }
+
+        handle_index += 1;
     }
 
     Ok(())
@@ -133,15 +136,49 @@ fn validate_handle_borrows(
     instruction: &Instruction,
     account_handles: &[CpiHandle<'_>],
 ) -> ProgramResult {
-    for (meta, handle) in instruction.accounts.iter().zip(account_handles) {
+    let mut handle_index = 0;
+
+    for meta in &instruction.accounts {
+        if is_optional_account_sentinel(instruction, meta) {
+            continue;
+        }
+
+        let Some(handle) = account_handles.get(handle_index) else {
+            return Err(ProgramError::NotEnoughAccountKeys);
+        };
+
         if meta.is_writable {
             handle.account_view().check_borrow_mut()?;
         } else {
             handle.account_view().check_borrow()?;
         }
+
+        handle_index += 1;
     }
 
     Ok(())
+}
+
+fn required_cpi_account_count(
+    instruction: &Instruction,
+    handle_count: usize,
+) -> Result<usize, ProgramError> {
+    let count = instruction
+        .accounts
+        .iter()
+        .filter(|meta| !is_optional_account_sentinel(instruction, meta))
+        .count();
+
+    require!(handle_count >= count, ProgramError::NotEnoughAccountKeys);
+
+    Ok(count)
+}
+
+fn is_optional_account_sentinel(
+    instruction: &Instruction,
+    meta: &solana_instruction::AccountMeta,
+) -> bool {
+    !meta.is_writable && !meta.is_signer && address_eq(&meta.pubkey, &instruction.program_id)
 }
 
 fn instruction_accounts(instruction: &Instruction) -> Vec<InstructionAccount<'_>> {
