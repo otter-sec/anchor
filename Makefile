@@ -76,6 +76,12 @@ coverage-v2-sbf: build-anchor-debug
 		--output $(PWD)/$(COVERAGE_DIR)/sbf.lcov \
 		-- $(TESTS_V2_COVERAGE_ARGS)
 
+.PHONY: coverage-v2-sbf-prune
+coverage-v2-sbf-prune:
+	@echo "==> Pruning SBF coverage scratch artifacts"
+	rm -rf $(COVERAGE_DIR)/traces target/deploy target/sbpf-solana-solana
+	find tests-v2/programs -type d -name target -prune -print0 | xargs -0 rm -rf
+
 # Always invoke cargo (it handles incremental) so the anchor binary picks up
 # any changes to coverage.rs / source_resolver / etc.
 .PHONY: build-anchor-debug

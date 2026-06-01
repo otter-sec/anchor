@@ -81,6 +81,8 @@ jobs:
       # boundary visible in the Actions UI.
       - name: v2 SBF runtime coverage
         run: make coverage-v2-sbf
+      - name: Prune v2 SBF coverage scratch
+        run: make coverage-v2-sbf-prune
       - name: v2 host coverage setup
         run: make coverage-v2-host-clean
       - name: v2 host coverage for anchor-lang-v2
@@ -88,6 +90,8 @@ jobs:
       - name: v2 host coverage for anchor-spl-v2
         run: make coverage-v2-host-spl
       - name: v2 host coverage for tests-v2
+        env:
+          CARGO_BUILD_JOBS: "1"
         run: make coverage-v2-host-tests
       - name: v2 host coverage for idl-build fixtures
         run: make coverage-v2-host-idl-build
