@@ -142,6 +142,9 @@ fn slab_realloc_clamps_tail_len_to_resized_capacity() {
 
     assert_eq!(slab.capacity(), 1);
     assert_eq!(slab.len(), 1);
+
+    drop(slab);
+
     assert_eq!(CounterLedger::load(view).unwrap().len(), 1);
 }
 

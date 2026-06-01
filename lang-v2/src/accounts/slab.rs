@@ -148,6 +148,20 @@ where
     _tail: PhantomData<T>,
 }
 
+impl<H, T> Drop for Slab<H, T>
+where
+    H: Pod + Zeroable + SlabSchema,
+{
+    fn drop(&mut self) {
+        let borrow_state = unsafe { &mut (*self.view.account_ptr().cast_mut()).borrow_state };
+        if self.is_mutable {
+            *borrow_state = NOT_BORROWED;
+        } else if *borrow_state != 0 && *borrow_state != NOT_BORROWED {
+            *borrow_state += 1;
+        }
+    }
+}
+
 /// Marker type for the header-only form of [`Slab`]. Does **not** implement
 /// `Pod`, so the tail-only `impl` block (gated on `T: Pod`) never matches —
 /// calling `.push()` / `.len()` / `.as_slice()` etc. on an `Account<T>` =
@@ -251,9 +265,15 @@ where
     #[inline(always)]
     fn from_ref(view: AccountView) -> Result<Self, ProgramError> {
         Self::assert_header_alignment();
+        let borrow_state = unsafe { (*view.account_ptr()).borrow_state };
+        // 0 is the mutable-borrow sentinel; 1 has no shared-borrow slot left
+        // for Slab to register below.
+        if borrow_state < 2 {
+            return Err(ProgramError::AccountBorrowFailed);
+        }
         // SAFETY: AccountView's data pointer is valid for the instruction lifetime
-        // (Solana runtime guarantee). Duplicate mutable accounts are rejected at
-        // deserialization, so no aliasing can occur.
+        // (Solana runtime guarantee). The borrow-state check above rejects a live
+        // mutable borrow before creating the shared view.
         let data = unsafe { view.borrow_unchecked() };
         H::validate(&view, data)?;
         if data.len() < Self::ITEMS_OFFSET {
@@ -265,7 +285,7 @@ where
         // cannot obtain a mutable borrow via try_borrow_mut(). Additional
         // immutable borrows are still allowed (safe — they alias &H, not &mut H,
         // and DerefMut panics on a read-only Slab).
-        unsafe { (*view.account_ptr().cast_mut()).borrow_state = NOT_BORROWED - 1 };
+        unsafe { (*view.account_ptr().cast_mut()).borrow_state = borrow_state - 1 };
         Ok(Self {
             view,
             header_ptr,
@@ -1012,6 +1032,44 @@ mod tests {
         );
 
         drop(acct);
+    }
+
+    #[test]
+    fn mut_load_releases_borrow_state_on_drop() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, true);
+        let view = unsafe { buf.view() };
+
+        {
+            // SAFETY: this is the only live wrapper over `view`'s data.
+            let mut acct = unsafe { CounterAccount::load_mut(view).unwrap() };
+            acct.value = 99;
+        }
+
+        let mut view_copy = view;
+        assert!(
+            view_copy.try_borrow_mut().is_ok(),
+            "dropping a mutable Slab must release the manual borrow marker"
+        );
+    }
+
+    #[test]
+    fn mut_load_blocks_safe_read_only_reload_on_copy() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, true);
+        let view = unsafe { buf.view() };
+
+        // SAFETY: this is the only live wrapper over `view`'s data.
+        let mut acct = unsafe { CounterAccount::load_mut(view).unwrap() };
+        acct.value = 99;
+
+        let view_copy = view;
+        assert_eq!(
+            CounterAccount::load(view_copy).err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "safe read-only Slab load must not alias a live mutable Slab"
+        );
+        assert_eq!(acct.value, 99);
     }
 }
 
