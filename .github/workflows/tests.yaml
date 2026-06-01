@@ -13,12 +13,15 @@ on:
 
 env:
   SOLANA_VERSION: "3.1.10"
+  SBF_TOOLS_VERSION: "v1.52"
 
 jobs:
   test-v2:
     name: v2 Tests
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup/
@@ -27,17 +30,13 @@ jobs:
       # once for the whole job is cheaper than splitting the matrix.
       - uses: ./.github/actions/setup-solana/
 
-      # Split caches: the cargo home (registry/git/installed binaries)
-      # only churns on dep additions, whereas ./target/ churns on any
-      # source change. Keeping them separate means a pure-source PR still
-      # gets a clean registry restore, and restore-keys prefix fallbacks
-      # let Cargo.lock-changing PRs pick up a partial target/ from a
-      # prior run and only rebuild the diff instead of the world.
+      # Cache dependency downloads, but do not cache target directories here:
+      # coverage and debugger runs leave multi-GB artifacts behind, and saving
+      # or restoring those archives costs more than it buys in this job.
       - uses: actions/cache@v4
         name: Cache Cargo home
         with:
           path: |
-            ~/.cargo/bin/
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
@@ -45,39 +44,22 @@ jobs:
           restore-keys: |
             cargo-home-${{ runner.os }}-v2-
 
-      - uses: actions/cache@v4
-        name: Cache cargo target
-        with:
-          path: ./target/
-          # Per-ref primary key so concurrent branches don't clobber each
-          # other's incremental state; restore chain falls back first to
-          # the lockfile-matched cache from any ref, then to any v2 cache.
-          key: cargo-target-${{ runner.os }}-v2-${{ hashFiles('**/Cargo.lock') }}-${{ github.ref_name }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-v2-${{ hashFiles('**/Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-v2-
-
-      # `bench/` is its own cargo workspace, so its build artifacts live
-      # in `bench/target/` (separate tree from `./target/` above). The
-      # `anchor debugger` smoke step below triggers `cargo build-sbf` +
-      # `cargo test --features profile` for each anchor-v2 program —
-      # all of which write here. Keyed on `bench/Cargo.lock` since that
-      # is the lockfile that gates bench-workspace dep resolution.
-      - uses: actions/cache@v4
-        name: Cache bench cargo target
-        with:
-          path: ./bench/target/
-          key: cargo-target-bench-${{ runner.os }}-v2-${{ hashFiles('bench/Cargo.lock') }}-${{ github.ref_name }}
-          restore-keys: |
-            cargo-target-bench-${{ runner.os }}-v2-${{ hashFiles('bench/Cargo.lock') }}-
-            cargo-target-bench-${{ runner.os }}-v2-
-
       # Install platform-tools up front so the concurrent `cargo build-sbf`
       # invocations fired by parallel test threads don't race on the
-      # one-time extract-then-rename of `~/.cache/solana/v1.52/platform-tools`
-      # (surfaces in CI as `Unable to rename: No such file or directory`).
-      # Version must match `tests-v2/src/lib.rs::build_program`.
-      - run: cargo build-sbf --tools-version v1.52 --install-only
+      # one-time extract-then-rename of the platform-tools directory (surfaces
+      # in CI as `Unable to rename: No such file or directory`).
+      # SBF_TOOLS_VERSION must match `tests-v2/src/lib.rs::build_program`.
+      #
+      # Cache the platform-tools directory separately from the Solana tool
+      # suite cache. The Solana cache is keyed by CLI version and may already
+      # be a hit before this directory exists, so it will not save platform
+      # tools that `cargo build-sbf --install-only` downloads later in the job.
+      - uses: actions/cache@v4
+        name: Cache SBF platform tools
+        with:
+          path: ~/.cache/solana/${{ env.SBF_TOOLS_VERSION }}/platform-tools
+          key: solana-platform-tools-${{ runner.os }}-${{ env.SBF_TOOLS_VERSION }}
+      - run: cargo build-sbf --tools-version "$SBF_TOOLS_VERSION" --install-only
 
       # Tools for `make coverage-v2`:
       #   - lcov for merging sbf.lcov + host.lcov and generating the report.
@@ -86,22 +68,33 @@ jobs:
       # The three direct `cargo test -p anchor-{lang,spl}-v2` / `-p tests-v2`
       # invocations that used to live here (including `anchor-lang-v2`'s
       # `--features testing` flag for the Miri-witnesses scaffold) are
-      # subsumed by the `make coverage-v2` call below — the Makefile's
-      # host-coverage step runs the same packages under instrumentation.
-      - run: sudo apt-get install -y lcov
+      # subsumed by the coverage-v2 steps below — the Makefile's host
+      # coverage targets run the same packages under instrumentation.
+      - name: Install lcov
+        run: sudo apt-get install -y --no-install-recommends lcov
       - name: Install cargo-llvm-cov
-        run: |
-          if ! command -v cargo-llvm-cov >/dev/null; then
-            cargo install cargo-llvm-cov --locked
-          fi
+        uses: taiki-e/install-action@cargo-llvm-cov
 
-      # `make coverage-v2` runs the same v2 test suites we used to invoke
-      # directly (`cargo test -p anchor-lang-v2 -p anchor-spl-v2 -p tests-v2`)
-      # but under llvm-cov instrumentation, and additionally runs SBF
-      # trace-based coverage via `anchor coverage`. Test pass/fail signal
-      # is preserved — a failing test exits the make invocation non-zero.
-      # The combined LCOV is shipped to Codecov in the step below.
-      - run: make coverage-v2
+      # Run the v2 test suite with coverage enabled, split across the same SBF
+      # and host-side coverage boundaries used by `make coverage-v2`. Each
+      # step still fails on test failure while keeping the slowest package
+      # boundary visible in the Actions UI.
+      - name: v2 SBF runtime coverage
+        run: make coverage-v2-sbf
+      - name: v2 host coverage setup
+        run: make coverage-v2-host-clean
+      - name: v2 host coverage for anchor-lang-v2
+        run: make coverage-v2-host-lang
+      - name: v2 host coverage for anchor-spl-v2
+        run: make coverage-v2-host-spl
+      - name: v2 host coverage for tests-v2
+        run: make coverage-v2-host-tests
+      - name: v2 host coverage for idl-build fixtures
+        run: make coverage-v2-host-idl-build
+      - name: Generate v2 coverage report
+        run: |
+          make coverage-v2-host-report
+          make coverage-v2-report
 
       # Upload to Codecov. The action handles comment posting on PRs via
       # the Codecov GitHub App — including fork PRs, where the token

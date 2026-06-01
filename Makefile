@@ -48,7 +48,10 @@ TESTS_V2_COVERAGE_TESTS := \
 TESTS_V2_COVERAGE_ARGS := $(foreach test,$(TESTS_V2_COVERAGE_TESTS),--test $(test))
 
 .PHONY: coverage-v2
-coverage-v2: coverage-v2-sbf coverage-v2-host coverage-v2-merge coverage-v2-html
+coverage-v2:
+	$(MAKE) coverage-v2-sbf
+	$(MAKE) coverage-v2-host
+	$(MAKE) coverage-v2-report
 	@echo ""
 	@echo "Coverage report: $(COVERAGE_HTML)/index.html"
 
@@ -86,12 +89,24 @@ build-anchor-debug:
 # profile flag diff would force a full SBF rebuild).
 .PHONY: coverage-v2-host
 coverage-v2-host:
+	$(MAKE) coverage-v2-host-clean
+	$(MAKE) coverage-v2-host-lang
+	$(MAKE) coverage-v2-host-spl
+	$(MAKE) coverage-v2-host-tests
+	$(MAKE) coverage-v2-host-idl-build
+	$(MAKE) coverage-v2-host-report
+
+.PHONY: coverage-v2-host-clean
+coverage-v2-host-clean:
 	@echo "==> Host-side coverage (derive macros + test harness)"
 	@command -v cargo-llvm-cov >/dev/null || { \
 		echo "cargo-llvm-cov not installed. Run: cargo install cargo-llvm-cov"; \
 		exit 1; \
 	}
 	cargo llvm-cov clean --workspace
+
+.PHONY: coverage-v2-host-lang
+coverage-v2-host-lang:
 	# First pass: `anchor-lang-v2` with its `testing` feature enabled — the
 	# Miri-witnesses integration tests need the `anchor_lang_v2::testing`
 	# scaffold. Split into its own invocation because `testing` is a
@@ -99,15 +114,24 @@ coverage-v2-host:
 	# fail when `anchor-spl-v2` / `tests-v2` don't define it.
 	CARGO_PROFILE_RELEASE_DEBUG=2 \
 	cargo llvm-cov --no-report -p anchor-lang-v2 --features testing
+
+.PHONY: coverage-v2-host-spl
+coverage-v2-host-spl:
 	# Second pass: `anchor-spl-v2` under default features.
 	CARGO_PROFILE_RELEASE_DEBUG=2 \
 	cargo llvm-cov --no-report -p anchor-spl-v2
+
+.PHONY: coverage-v2-host-tests
+coverage-v2-host-tests:
 	# Third pass: the tests-v2 runtime/e2e suite under default features.
 	# Keep compile_fail.rs out of the coverage path: it exercises diagnostics
 	# by repeatedly compiling throwaway fixtures, which is slow and does not
 	# execute framework runtime paths for source coverage.
 	CARGO_PROFILE_RELEASE_DEBUG=2 \
 	cargo llvm-cov --no-report -p tests-v2 $(TESTS_V2_COVERAGE_ARGS)
+
+.PHONY: coverage-v2-host-idl-build
+coverage-v2-host-idl-build:
 	# Fourth pass: the test programs that declare a local `idl-build` feature,
 	# run with `--features idl-build` so the IDL-emission code paths fire —
 	# derive-emitted `IdlAccountType` impls, `__idl_accounts()` /
@@ -121,6 +145,13 @@ coverage-v2-host:
 	CARGO_PROFILE_RELEASE_DEBUG=2 \
 	cargo llvm-cov --no-report --features idl-build \
 		-p constraints -p derives-test -p accounts-test -p spl-test
+
+.PHONY: coverage-v2-host-report
+coverage-v2-host-report:
+	@command -v cargo-llvm-cov >/dev/null || { \
+		echo "cargo-llvm-cov not installed. Run: cargo install cargo-llvm-cov"; \
+		exit 1; \
+	}
 	cargo llvm-cov report \
 		--lcov \
 		--output-path $(COVERAGE_DIR)/host.lcov \
@@ -149,9 +180,21 @@ coverage-v2-host:
 # over-reaching.
 .PHONY: coverage-v2-merge
 coverage-v2-merge: build-anchor-debug $(COVERAGE_DIR)/sbf.lcov $(COVERAGE_DIR)/host.lcov
+	$(MAKE) coverage-v2-merge-existing
+
+.PHONY: coverage-v2-merge-existing
+coverage-v2-merge-existing: build-anchor-debug
 	@echo "==> Merging coverage"
 	@command -v lcov >/dev/null || { \
 		echo "lcov not installed. Run: brew install lcov  (or apt install lcov)"; \
+		exit 1; \
+	}
+	@test -s $(COVERAGE_DIR)/sbf.lcov || { \
+		echo "Missing $(COVERAGE_DIR)/sbf.lcov. Run: make coverage-v2-sbf"; \
+		exit 1; \
+	}
+	@test -s $(COVERAGE_DIR)/host.lcov || { \
+		echo "Missing $(COVERAGE_DIR)/host.lcov. Run: make coverage-v2-host"; \
 		exit 1; \
 	}
 	$(PWD)/target/debug/anchor coverage-filter-host \
@@ -204,9 +247,17 @@ $(COVERAGE_DIR)/host.lcov: coverage-v2-host
 # run don't leak into the tree.
 .PHONY: coverage-v2-html
 coverage-v2-html: $(COVERAGE_DIR)/combined.lcov
+	$(MAKE) coverage-v2-html-existing
+
+.PHONY: coverage-v2-html-existing
+coverage-v2-html-existing:
 	@echo "==> Generating HTML report"
 	@command -v genhtml >/dev/null || { \
 		echo "genhtml not installed (ships with lcov)."; \
+		exit 1; \
+	}
+	@test -s $(COVERAGE_DIR)/combined.lcov || { \
+		echo "Missing $(COVERAGE_DIR)/combined.lcov. Run: make coverage-v2-merge"; \
 		exit 1; \
 	}
 	rm -rf $(COVERAGE_HTML)
@@ -228,6 +279,11 @@ coverage-v2-html: $(COVERAGE_DIR)/combined.lcov
 		--quiet
 
 $(COVERAGE_DIR)/combined.lcov: coverage-v2-merge
+
+.PHONY: coverage-v2-report
+coverage-v2-report:
+	$(MAKE) coverage-v2-merge-existing
+	$(MAKE) coverage-v2-html-existing
 
 .PHONY: coverage-v2-clean
 coverage-v2-clean:
