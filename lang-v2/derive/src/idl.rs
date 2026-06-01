@@ -591,12 +591,16 @@ fn docs_value(docs: &[String]) -> Value {
 // ---------------------------------------------------------------------------
 
 /// Classified seed expression. Only explicitly recognized shapes carry
-/// structured IDL metadata; unsupported expressions are emitted as opaque
-/// `{"kind":"expr"}` placeholders.
+/// structured IDL metadata; unsupported regular seed expressions are emitted
+/// as opaque `{"kind":"expr"}` placeholders. Program seed expressions can use
+/// the runtime variant because `seeds::program` must evaluate to address bytes.
 #[derive(Clone)]
 pub enum SeedJson {
     /// Pre-serialized JSON object — known at macro time.
     Static(String),
+    /// Token expression evaluating to `alloc::string::String` at IDL-build
+    /// time.
+    Runtime(TokenStream2),
 }
 
 impl SeedJson {
@@ -606,6 +610,7 @@ impl SeedJson {
             SeedJson::Static(s) => quote! {
                 anchor_lang_v2::__alloc::string::String::from(#s)
             },
+            SeedJson::Runtime(ts) => ts,
         }
     }
 }
@@ -633,6 +638,23 @@ impl SeedJson {
 /// expression; this only avoids over-promising IDL/client metadata.
 pub fn classify_seed(expr: &Expr, field_names: &[String], ix_arg_names: &[String]) -> SeedJson {
     classify_seed_inner(expr, field_names, ix_arg_names)
+}
+
+/// Classify `seeds::program = <expr>` into an IDL seed. Unlike arbitrary PDA
+/// seed expressions, this expression is semantically a program id, so opaque
+/// expressions are evaluated during IDL build and emitted as const bytes.
+pub fn classify_program_seed(
+    expr: &Expr,
+    field_names: &[String],
+    ix_arg_names: &[String],
+) -> SeedJson {
+    let seed = classify_seed_inner(expr, field_names, ix_arg_names);
+    match seed {
+        SeedJson::Static(ref s) if s == r#"{"kind":"expr"}"# => SeedJson::Runtime(quote! {
+            anchor_lang_v2::idl_build::__idl_const_seed_json(#expr)
+        }),
+        _ => seed,
+    }
 }
 
 fn static_seed(value: Value) -> SeedJson {
@@ -838,6 +860,16 @@ mod tests {
     fn expect_static(seed: SeedJson) -> String {
         match seed {
             SeedJson::Static(s) => s,
+            SeedJson::Runtime(ts) => {
+                panic!("expected Static seed, got Runtime: {}", ts);
+            }
+        }
+    }
+
+    fn expect_runtime(seed: SeedJson) -> String {
+        match seed {
+            SeedJson::Static(s) => panic!("expected Runtime seed, got Static: {s}"),
+            SeedJson::Runtime(ts) => ts.to_string(),
         }
     }
 
@@ -989,6 +1021,19 @@ mod tests {
     fn marker_id_call_is_opaque_expr() {
         let s = expect_static(classify(syn::parse_quote!(System::id()), &[], &[]));
         assert_eq!(s, r#"{"kind":"expr"}"#);
+    }
+
+    #[test]
+    fn program_marker_id_call_flows_through_runtime_const_seed() {
+        let fields = Vec::new();
+        let args = Vec::new();
+        let ts = expect_runtime(classify_program_seed(
+            &syn::parse_quote!(System::id()),
+            &fields,
+            &args,
+        ));
+        assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
+        assert!(ts.contains("System :: id"), "got: {ts}");
     }
 
     #[test]

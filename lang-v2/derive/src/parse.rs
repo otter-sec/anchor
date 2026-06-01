@@ -1222,7 +1222,7 @@ pub fn parse_field(
             program: attrs
                 .seeds_program
                 .as_ref()
-                .map(|p| crate::idl::classify_seed(p, field_names, ix_arg_names)),
+                .map(|p| crate::idl::classify_program_seed(p, field_names, ix_arg_names)),
         }
     });
     let idl_field_ty: Option<syn::Type> = {

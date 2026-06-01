@@ -2,6 +2,9 @@ use anchor_lang_v2::prelude::*;
 
 declare_id!("BF748KR4UhPq7xbhFQYd7yFKmh5UYdqed9GbD6oZvEyu");
 
+pub const OTHER_PROGRAM: Address =
+    anchor_lang_v2::address!("Gue5TpR6sstSyGhSvmVeH2TeKqBYYqmXpRCacB9jAk8u");
+
 #[account]
 pub struct Vault {
     pub value: u64,
@@ -55,6 +58,11 @@ pub mod client_builders {
         }
         Ok(())
     }
+
+    #[discrim = 5]
+    pub fn check_external_pda(_ctx: &mut Context<CheckExternalPda>) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -90,4 +98,10 @@ pub struct OptionalBuilderCase {
     #[account(mut)]
     pub user_state: Option<Account<UserState>>,
     pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct CheckExternalPda {
+    #[account(seeds = [b"external"], bump, seeds::program = OTHER_PROGRAM)]
+    pub external_pda: UncheckedAccount,
 }

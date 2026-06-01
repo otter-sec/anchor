@@ -184,3 +184,25 @@ where
         T::__register_idl_deps(accounts, types);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Runtime seed-const JSON emission
+// ---------------------------------------------------------------------------
+//
+// Used by the `Accounts` derive for opaque `seeds::program = ...`
+// expressions. The expression is evaluated inside `__idl_accounts()` and
+// emitted as the IDL's `{"kind":"const","value":[...]}` shape.
+pub fn __idl_const_seed_json(value: impl AsRef<[u8]>) -> alloc::string::String {
+    let bytes = value.as_ref();
+    let mut s = alloc::string::String::from(r#"{"kind":"const","value":["#);
+    let mut first = true;
+    for b in bytes {
+        if !first {
+            s.push(',');
+        }
+        first = false;
+        s.push_str(&alloc::format!("{b}"));
+    }
+    s.push_str("]}");
+    s
+}

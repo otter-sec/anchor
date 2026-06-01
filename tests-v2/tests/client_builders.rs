@@ -16,6 +16,12 @@ fn program_id() -> Pubkey {
         .unwrap()
 }
 
+fn other_program() -> Pubkey {
+    "Gue5TpR6sstSyGhSvmVeH2TeKqBYYqmXpRCacB9jAk8u"
+        .parse()
+        .unwrap()
+}
+
 fn setup() -> (LiteSVM, Keypair, Keypair) {
     let test_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let deploy_dir = test_dir.join("target/deploy");
@@ -55,6 +61,10 @@ fn vault_value(svm: &LiteSVM, vault: Pubkey) -> u64 {
     u64::from_le_bytes(account.data[8..16].try_into().unwrap())
 }
 
+fn external_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"external"], &other_program()).0
+}
+
 #[test]
 fn resolved_builder_derives_pda_program_id_and_sends_instruction() {
     let (mut svm, payer, authority) = setup();
@@ -84,6 +94,21 @@ fn resolved_builder_derives_pda_program_id_and_sends_instruction() {
     let account = svm.get_account(&vault).expect("vault created");
     assert_eq!(account.owner, program_id());
     assert_eq!(account.data[48], bump);
+}
+
+#[test]
+fn seeds_program_override_drives_client_pda_derivation() {
+    let (mut svm, payer, _) = setup();
+    let (external_pda, _) = accounts::CheckExternalPda::find_external_pda_address();
+    let local_pda = Pubkey::find_program_address(&[b"external"], &program_id()).0;
+
+    assert_eq!(external_pda, self::external_pda());
+    assert_ne!(external_pda, local_pda);
+
+    let ix = instruction::CheckExternalPda {}.to_instruction(accounts::CheckExternalPdaResolved {});
+    assert_eq!(ix.accounts[0].pubkey, external_pda);
+
+    send_ix(&mut svm, ix, &payer, &[]).expect("external PDA derived with seeds::program");
 }
 
 #[test]

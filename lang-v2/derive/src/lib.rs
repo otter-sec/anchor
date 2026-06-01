@@ -1163,6 +1163,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         Program(proc_macro2::TokenStream),
         Pda {
             seed_exprs: Vec<proc_macro2::TokenStream>,
+            program_ref: proc_macro2::TokenStream,
             deps: Vec<String>,
         },
     }
@@ -1203,34 +1204,61 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 // seeds (e.g. `seeds = my_fn()`) are opaque to the
                 // macro and fall through to FieldKind::Required.
                 if let syn::Expr::Array(arr) = seeds_expr {
-                    if attrs.seeds_program.is_none() {
-                        let mut seed_exprs = Vec::new();
-                        let mut deps = Vec::new();
-                        let mut all_derivable = true;
+                    let mut seed_exprs = Vec::new();
+                    let mut deps = Vec::new();
+                    let mut all_derivable = true;
 
-                        for seed in &arr.elems {
-                            if let Some(bytes) = pda::seed_as_const_bytes(seed) {
-                                let lits: Vec<_> = bytes.iter().map(|b| quote! { #b }).collect();
-                                seed_exprs.push(quote! { &[#(#lits),*] as &[u8] });
-                            } else if let Some(ref root) = idl::receiver_root_ident_str(seed) {
-                                if raw_field_names.contains(root) {
-                                    let ident =
-                                        syn::Ident::new(root, proc_macro2::Span::call_site());
-                                    seed_exprs.push(quote! { #ident.as_ref() });
-                                    deps.push(root.clone());
-                                } else {
-                                    all_derivable = false;
-                                    break;
-                                }
+                    for seed in &arr.elems {
+                        if let Some(bytes) = pda::seed_as_const_bytes(seed) {
+                            let lits: Vec<_> = bytes.iter().map(|b| quote! { #b }).collect();
+                            seed_exprs.push(quote! { &[#(#lits),*] as &[u8] });
+                        } else if let Some(ref root) = idl::receiver_root_ident_str(seed) {
+                            if raw_field_names.contains(root) {
+                                let ident = syn::Ident::new(root, proc_macro2::Span::call_site());
+                                seed_exprs.push(quote! { #ident.as_ref() });
+                                deps.push(root.clone());
                             } else {
                                 all_derivable = false;
                                 break;
                             }
+                        } else {
+                            all_derivable = false;
+                            break;
                         }
+                    }
 
-                        if all_derivable {
-                            return (f, FieldKind::Pda { seed_exprs, deps });
+                    let program_ref = match &attrs.seeds_program {
+                        Some(program) => {
+                            if let Some(ref root) = idl::receiver_root_ident_str(program) {
+                                if raw_field_names.contains(root) {
+                                    let ident =
+                                        syn::Ident::new(root, proc_macro2::Span::call_site());
+                                    if !deps.contains(root) {
+                                        deps.push(root.clone());
+                                    }
+                                    quote! { &#ident }
+                                } else if ix_arg_names.contains(root) {
+                                    all_derivable = false;
+                                    quote! {}
+                                } else {
+                                    quote! { &#program }
+                                }
+                            } else {
+                                quote! { &#program }
+                            }
                         }
+                        None => quote! { &#accounts_program_id },
+                    };
+
+                    if all_derivable {
+                        return (
+                            f,
+                            FieldKind::Pda {
+                                seed_exprs,
+                                program_ref,
+                                deps,
+                            },
+                        );
                     }
                 }
             }
@@ -1321,12 +1349,16 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                     };
                     Some(quote! { let #ident = #init; })
                 }
-                FieldKind::Pda { seed_exprs, .. } => {
+                FieldKind::Pda {
+                    seed_exprs,
+                    program_ref,
+                    ..
+                } => {
                     if f.is_optional {
                         Some(quote! {
                             let #ident = {
                                 let (__addr, _) = anchor_lang_v2::find_program_address(
-                                    &[#(#seed_exprs),*], &#accounts_program_id,
+                                    &[#(#seed_exprs),*], #program_ref,
                                 );
                                 Some(__addr)
                             };
@@ -1334,7 +1366,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                     } else {
                         Some(quote! {
                             let (#ident, _) = anchor_lang_v2::find_program_address(
-                                &[#(#seed_exprs),*], &#accounts_program_id,
+                                &[#(#seed_exprs),*], #program_ref,
                             );
                         })
                     }
@@ -1443,11 +1475,31 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 }
             }
 
+            let program_ref = match &attrs.seeds_program {
+                Some(program) => {
+                    if let Some(ref root_name) = idl::receiver_root_ident_str(program) {
+                        if raw_field_names.contains(root_name) || ix_arg_names.contains(root_name) {
+                            let param_ident =
+                                syn::Ident::new(root_name, proc_macro2::Span::call_site());
+                            if seen_params.insert(root_name.clone()) {
+                                params.push(quote! { #param_ident: &anchor_lang_v2::Address });
+                            }
+                            quote! { #param_ident }
+                        } else {
+                            quote! { &#program }
+                        }
+                    } else {
+                        quote! { &#program }
+                    }
+                }
+                None => quote! { &#accounts_program_id },
+            };
+
             Some(quote! {
                 pub fn #fn_name(#(#params),*) -> (anchor_lang_v2::Address, u8) {
                     anchor_lang_v2::find_program_address(
                         &[#(#seed_exprs),*],
-                        &#accounts_program_id,
+                        #program_ref,
                     )
                 }
             })
