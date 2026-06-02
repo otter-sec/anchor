@@ -186,6 +186,27 @@ pub mod idl {
     pub fn test_compilation(_ctx: Context<TestCompilation>) -> Result<()> {
         Ok(())
     }
+
+    // These two handlers compile-test BOTH affected pattern shapes:
+    //   * `Context { .. }:` — `Pat::Struct` destructure
+    //   * `_:`              — `Pat::Wild` (bare wildcard, NOT `_ctx`)
+    //
+    // The `idl.ts` integration test asserts both names appear in the
+    // generated IDL's `instructions` list. If the parser ever regresses to
+    // rejecting these patterns, the IDL will be missing the entries and
+    // the TS test fails.
+    pub fn destructured_context(
+        Context { .. }: Context<DestructuredContext>,
+        value: u64,
+    ) -> Result<()> {
+        let _ = value;
+        Ok(())
+    }
+
+    pub fn wildcard_context(_: Context<WildcardContext>, value: u64) -> Result<()> {
+        let _ = value;
+        Ok(())
+    }
 }
 
 /// IDL test for the issue explained in https://github.com/otter-sec/anchor/issues/3358
@@ -576,3 +597,10 @@ pub enum ErrorCode {
     ErrorWithoutMsg,
     WithDiscrim = 500,
 }
+
+// Empty Accounts contexts paired with the destructure / wildcard
+#[derive(Accounts)]
+pub struct DestructuredContext {}
+
+#[derive(Accounts)]
+pub struct WildcardContext {}
