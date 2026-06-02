@@ -19,7 +19,7 @@ use {
 ///
 /// The type has a `programdata_address` function that will return `Option::Some`
 /// if the program is owned by the [`BPFUpgradeableLoader`](https://docs.rs/solana-program/latest/solana_program/bpf_loader_upgradeable/index.html)
-/// which will contain the `programdata_address` property of the `Program` variant of the [`UpgradeableLoaderState`](https://docs.rs/solana-loader-v3-interface/latest/solana_loader_v3_interface/state/enum.UpgradeableLoaderState.html) enum.
+/// which will contain the `programdata_address` property of the `Program` variant of the [`UpgradeableLoaderState`](https://docs.rs/solana-loader-v3-interface/6.1.0/solana_loader_v3_interface/state/enum.UpgradeableLoaderState.html) enum.
 ///
 /// # Table of Contents
 /// - [Basic Functionality](#basic-functionality)
@@ -147,12 +147,10 @@ impl<'a, T> Program<'a, T> {
 
 impl<'a, T: Id> TryFrom<&'a AccountInfo<'a>> for Program<'a, T> {
     type Error = Error;
-    /// Deserializes the given `info` into a `Program`.
+    /// Deserializes the given `info` into a `Program`, checking the pubkey matches
+    /// [`T::id`];
     fn try_from(info: &'a AccountInfo<'a>) -> Result<Self> {
-        // Special handling for unit type () - only check executable, not program ID
-        let is_unit_type = T::id() == Pubkey::default();
-
-        if !is_unit_type && info.key != &T::id() {
+        if info.key != &T::id() {
             return Err(Error::from(ErrorCode::InvalidProgramId).with_pubkeys((*info.key, T::id())));
         }
         if !info.executable {
@@ -162,7 +160,38 @@ impl<'a, T: Id> TryFrom<&'a AccountInfo<'a>> for Program<'a, T> {
     }
 }
 
+/// `Progam<'info>` with no type parameter (or `Program<'info, ()>`) is a special shorthand for
+/// 'any program account'.
+impl<'a> TryFrom<&'a AccountInfo<'a>> for Program<'a, ()> {
+    type Error = Error;
+    /// Deserializes the given `info` into a `Program` without checking the pubkey.
+    fn try_from(info: &'a AccountInfo<'a>) -> Result<Self> {
+        if !info.executable {
+            return Err(ErrorCode::InvalidProgramExecutable.into());
+        }
+        Ok(Program::new(info))
+    }
+}
+
 impl<'info, B, T: Id> Accounts<'info, B> for Program<'info, T> {
+    #[inline(never)]
+    fn try_accounts(
+        _program_id: &Pubkey,
+        accounts: &mut &'info [AccountInfo<'info>],
+        _ix_data: &[u8],
+        _bumps: &mut B,
+        _reallocs: &mut BTreeSet<Pubkey>,
+    ) -> Result<Self> {
+        if accounts.is_empty() {
+            return Err(ErrorCode::AccountNotEnoughKeys.into());
+        }
+        let account = &accounts[0];
+        *accounts = &accounts[1..];
+        Program::try_from(account)
+    }
+}
+
+impl<'info, B> Accounts<'info, B> for Program<'info, ()> {
     #[inline(never)]
     fn try_accounts(
         _program_id: &Pubkey,
@@ -219,12 +248,76 @@ impl<T: AccountDeserialize> Key for Program<'_, T> {
     }
 }
 
-// Implement Id trait for unit type to support Program<'info> without type parameter
-impl crate::Id for () {
-    fn id() -> Pubkey {
-        // For generic programs, this should never be called since they don't validate specific program IDs.
-        // However, we need to implement it to satisfy the trait bounds.
-        // Using a special marker value that indicates "any program"
-        Pubkey::default()
+#[cfg(test)]
+mod tests {
+    use {super::*, crate::system_program::System};
+
+    fn account_info<'a>(
+        key: &'a Pubkey,
+        owner: &'a Pubkey,
+        lamports: &'a mut u64,
+        data: &'a mut [u8],
+        executable: bool,
+    ) -> AccountInfo<'a> {
+        AccountInfo::new(key, false, false, lamports, data, owner, executable)
+    }
+
+    #[test]
+    fn program_system_rejects_non_system_account() {
+        let wrong_key = Pubkey::new_from_array([7u8; 32]);
+        let owner = Pubkey::default();
+        let mut lamports = 0u64;
+        let mut data = [];
+        let info = account_info(&wrong_key, &owner, &mut lamports, &mut data, true);
+
+        let err = Program::<System>::try_from(&info).expect_err("non-system key must be rejected");
+        match err {
+            Error::AnchorError(e) => {
+                assert_eq!(e.error_code_number, ErrorCode::InvalidProgramId as u32)
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn program_system_accepts_system_account() {
+        let key = System::id();
+        let owner = Pubkey::default();
+        let mut lamports = 0u64;
+        let mut data = [];
+        let info = account_info(&key, &owner, &mut lamports, &mut data, true);
+
+        Program::<System>::try_from(&info).expect("system program account must be accepted");
+    }
+
+    #[test]
+    fn program_system_rejects_non_executable_system_account() {
+        let key = System::id();
+        let owner = Pubkey::default();
+        let mut lamports = 0u64;
+        let mut data = [];
+        let info = account_info(&key, &owner, &mut lamports, &mut data, false);
+
+        let err = Program::<System>::try_from(&info)
+            .expect_err("non-executable account must be rejected");
+        match err {
+            Error::AnchorError(e) => assert_eq!(
+                e.error_code_number,
+                ErrorCode::InvalidProgramExecutable as u32,
+            ),
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+    }
+
+    // The `Program<'info, ()>` shorthand should still accept any executable account.
+    #[test]
+    fn program_unit_accepts_arbitrary_executable() {
+        let key = Pubkey::new_from_array([7u8; 32]);
+        let owner = Pubkey::default();
+        let mut lamports = 0u64;
+        let mut data = [];
+        let info = account_info(&key, &owner, &mut lamports, &mut data, true);
+
+        Program::<()>::try_from(&info).expect("any executable account must be accepted");
     }
 }

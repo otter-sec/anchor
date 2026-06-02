@@ -1,0 +1,69 @@
+---
+title: 1.0.1
+description: Anchor - Release Notes 1.0.1
+---
+
+`1.0.1` is a patch release that fixes a bug in the `AnchorSerialize` and
+`AnchorDeserialize` derive macros. See the full 
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.0.1/CHANGELOG.md#101---2026-04-16).
+
+---
+
+## How to upgrade
+
+### Updating a single project anchor dependencies (up from v1.0.0) via
+
+```
+cargo update anchor-derive-serde
+```
+
+### Using AVM (recommended)
+
+```sh
+avm install 1.0.1
+```
+
+### Without AVM
+
+```sh
+cargo install --git https://github.com/otter-sec/anchor --tag v1.0.1 anchor-cli --locked
+```
+
+### Common steps
+
+1. Update Anchor crate(s) to `1.0.1`.
+
+2. Update TS package(s) to `1.0.1`.
+
+## Recommended Solana Version
+
+The recommended Solana version is `3.1.10`, unchanged from `1.0.0`.
+
+---
+
+## Lang
+
+### Fix user-provided `borsh` attributes in derives
+
+Structs and enums that carry custom `#[borsh(...)]` attributes — such as
+`#[borsh(skip)]` or `#[borsh(use_discriminant = true)]` — now work correctly
+with `#[derive(AnchorSerialize, AnchorDeserialize)]`.
+
+Previously, the generated derive code tried to emit its own item-level
+`#[borsh]` attribute alongside any user-supplied one. Because only a single
+item-level `#[borsh]` attribute is allowed, this caused a compile error. The
+macros now extract user-provided `#[borsh]` attributes and merge them with the
+generated ones, so both coexist correctly.
+
+The `#[borsh]` attribute is currently not supported when the `lazy-account` 
+feature is enabled. The only exception being `#[borsh(use_discriminant = false)]`.
+
+```rust
+// This now compiles without errors
+#[derive(AnchorSerialize, AnchorDeserialize)]
+#[borsh(use_discriminant = true)]
+pub enum MyEnum {
+    A = 0,
+    B = 5,
+}
+```

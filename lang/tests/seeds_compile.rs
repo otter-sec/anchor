@@ -51,6 +51,38 @@ pub struct ExprSeeds<'info> {
     user: Signer<'info>,
 }
 
+#[derive(Accounts)]
+pub struct InitExprSeeds<'info> {
+    // Test init + seeds generated with a runtime slice
+    #[account(
+        init,
+        payer = user,
+        space = 8,
+        seeds = pda_seeds(user.key()),
+        bump
+    )]
+    pda: Account<'info, Dummy>,
+    #[account(mut)]
+    user: Signer<'info>,
+    system_program: Program<'info, System>,
+}
+
+#[cfg(feature = "init-if-needed")]
+#[derive(Accounts)]
+pub struct InitIfNeededExprSeeds<'info> {
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = 8,
+        seeds = pda_seeds(user.key()),
+        bump
+    )]
+    pda: Account<'info, Dummy>,
+    #[account(mut)]
+    user: Signer<'info>,
+    system_program: Program<'info, System>,
+}
+
 /// Dummy account so the structs derive cleanly
 #[account]
 pub struct Dummy {}

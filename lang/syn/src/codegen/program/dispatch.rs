@@ -62,6 +62,11 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
             }
         });
 
+    let legacy_idl_dispatch = match &program.program_args {
+        Some(args) if args.legacy_idl => generate_legacy_idl_dispatch(),
+        _ => proc_macro2::TokenStream::new(),
+    };
+
     quote! {
         /// Performs method dispatch.
         ///
@@ -80,8 +85,7 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
         ) -> anchor_lang::Result<()> {
             #(#global_ixs)*
 
-            // Legacy IDL instructions have been removed in favor of Program Metadata
-            // No IDL instructions are injected into programs anymore
+            #legacy_idl_dispatch
 
             // Dispatch Event CPI instruction
             if data.starts_with(anchor_lang::event::EVENT_IX_TAG_LE) {
@@ -89,6 +93,22 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
             }
 
             #fallback_fn
+        }
+    }
+}
+
+fn generate_legacy_idl_dispatch() -> proc_macro2::TokenStream {
+    quote! {
+
+        ::anchor_lang::idl::deprecated_legacy_idl_usage();
+
+        // dispatch legacy IDL instructions when requested by `#[program(legacy_idl)]`
+        if data.starts_with(anchor_lang::idl::IDL_IX_TAG_LE) {
+            return __private::__idl::__idl_dispatch(
+                program_id,
+                accounts,
+                &data[anchor_lang::idl::IDL_IX_TAG_LE.len()..],
+            );
         }
     }
 }

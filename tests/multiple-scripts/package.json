@@ -1,0 +1,9 @@
+{
+    "name": "multiple-scripts-example",
+    "version": "0.1.0",
+    "description": "Example demonstrating multiple test scripts with anchor test --script",
+    "scripts": {
+        "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
+        "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
+    }
+}

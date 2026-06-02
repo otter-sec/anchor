@@ -3,7 +3,7 @@ name = "anchor-spl"
 version.workspace = true
 publish = true
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/solana-foundation/anchor"
+repository = "https://github.com/otter-sec/anchor"
 edition = "2021"
 license = "Apache-2.0"
 description = "CPI clients for SPL programs"
@@ -33,7 +33,7 @@ token_2022_extensions = [
 ]
 
 [dependencies]
-anchor-lang = { path = "../lang", version = "1.0.1", features = ["derive"] }
+anchor-lang = { path = "../lang", version = "1.0.2", features = ["derive"] }
 borsh = { version = "1.5.7", optional = true }
 mpl-token-metadata = { version = "=5.1.2-alpha.2", optional = true }
 solana-stake-interface = { workspace = true, features = ["borsh"], optional = true }

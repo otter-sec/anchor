@@ -24,9 +24,20 @@ describe("basic-4", () => {
     await program.methods
       .initialize()
       .accounts({
-        counter: counterPubkey,
+        // counter: counterPubkey,
+        /* 
+        A accounts whose seeds are fully declared in the IDL 
+        (e.g. counter has pda.seeds = [{ kind: "const", value: [...] }])
+        client derives the address at call time, no need to pass it.
+        */
         authority: provider.wallet.publicKey,
-        systemProgram: anchor.web3.SystemProgram.programId,
+        // systemProgram: anchor.web3.SystemProgram.programId,
+        /*
+         Known system programs whose address is fixed in the IDL
+          (e.g. systemProgram → "11111111111111111111111111111111",
+         tokenProgram  → resolved from the token interface constraint) client fills these in automatically.
+
+        */
       })
       .rpc();
 
@@ -40,7 +51,6 @@ describe("basic-4", () => {
     await program.methods
       .increment()
       .accounts({
-        counter: counterPubkey,
         authority: provider.wallet.publicKey,
       })
       .rpc();

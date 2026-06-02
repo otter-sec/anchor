@@ -7,6 +7,9 @@ on:
     paths-ignore:
       - "docs/**"
 
+permissions:
+  contents: read
+
 jobs:
   no-caching-tests:
     name: Reusable
@@ -17,4 +20,4 @@ jobs:
       node_version: 20.18.0
       cargo_profile: release
       anchor_binary_name: anchor-binary-no-caching
-      surfpool_cli_version: 1.1.1
+      surfpool_cli_version: 1.2.0

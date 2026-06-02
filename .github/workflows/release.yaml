@@ -30,6 +30,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Force fetch upstream tags
         run: git fetch --tags --force
@@ -45,6 +46,7 @@ jobs:
         id: verify
         env:
           RELEASE_MANAGERS: ${{ vars.RELEASE_MANAGERS }}
+          VERSION_TAG: ${{ steps.info.outputs.version_tag }}
         run: |
           if [ -z "${RELEASE_MANAGERS}" ]; then
             echo "RELEASE_MANAGERS variable is not set"
@@ -57,14 +59,14 @@ jobs:
             curl -fsSL "https://github.com/${u}.gpg" | gpg --batch --import >/dev/null
           done
 
-          echo "Verifying the tag: ${{ steps.info.outputs.version_tag }}"
-          if ! git verify-tag -v "${{ steps.info.outputs.version_tag }}" 2>&1; then
+          echo "Verifying the tag: ${VERSION_TAG}"
+          if ! git verify-tag -v "${VERSION_TAG}" 2>&1; then
             echo "❌ Tag verification failed!"
             echo "passed=false" >> $GITHUB_OUTPUT
             exit 1
           fi
           # Run it again to capture the output
-          git verify-tag -v "${{ steps.info.outputs.version_tag }}" 2>&1 | tee /tmp/verify-output.txt;
+          git verify-tag -v "${VERSION_TAG}" 2>&1 | tee /tmp/verify-output.txt;
 
           # SSH verification output typically includes the key fingerprint
           # Use GNU grep with Perl regex for cleaner extraction (Linux environment)
@@ -91,13 +93,17 @@ jobs:
           echo "key_id=$KEY_SHA256" >> $GITHUB_OUTPUT
 
       - name: Summary
+        env:
+          VERSION: ${{ steps.info.outputs.version }}
+          SHA: ${{ steps.info.outputs.sha }}
+          KEY_ID: ${{ steps.verify.outputs.key_id }}
         run: |
           echo "## Tag Verification Summary 🔐" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag:** ${{ steps.info.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** ${{ steps.info.outputs.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** ${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${SHA}" >> $GITHUB_STEP_SUMMARY
           echo "- **Signature:** ✅ Verified" >> $GITHUB_STEP_SUMMARY
-          echo "- **Signed by:** ${{ steps.verify.outputs.key_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Signed by:** ${KEY_ID}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Proceeding with release build..." >> $GITHUB_STEP_SUMMARY
 
@@ -106,21 +112,27 @@ jobs:
     needs: verify-tag
     if: ${{ needs.verify-tag.outputs.verification_passed == 'true' }}
     uses: ./.github/workflows/publish-crates.yaml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     with:
       dry_run: false
-    secrets: inherit
 
   publish-npmjs:
     name: Publish npmjs packages
     needs: verify-tag
     if: ${{ needs.verify-tag.outputs.verification_passed == 'true' }}
     uses: ./.github/workflows/publish-npmjs.yaml
+    permissions:
+      contents: read
+      id-token: write
     with:
       dry_run: false
-    secrets: inherit
 
-  publish-dockerhub:
-    name: Publish Docker image to Dockerhub
+  publish-container-image:
+    name: Publish Docker image to Container Registry
     runs-on: ubuntu-latest
     needs: [verify-tag, publish-crates]
     if: ${{ needs.verify-tag.outputs.verification_passed == 'true' }}
@@ -132,15 +144,33 @@ jobs:
     environment:
       name: release
     env:
-      IMAGE_NAME: solanafoundation/anchor
+      IMAGE_NAME: quay.io/ottersec/anchor
+      ROBOT_ACCOUNT: ottersec+anchor_releases_github
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
-      - name: Login to Docker Hub
+      - name: Exchange GitHub OIDC token for Quay robot token
+        run: |
+          set -euo pipefail
+          OIDC_TOKEN=$(curl --silent --fail \
+            --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=quay.io" | jq -r '.value')
+          [ -n "${OIDC_TOKEN}" ] || { echo "Failed to obtain OIDC token" >&2; exit 1; }
+          QUAY_TOKEN=$(curl --silent --fail \
+            --user "${ROBOT_ACCOUNT}:${OIDC_TOKEN}" \
+            "https://quay.io/oauth2/federation/robot/token" | jq -r '.token')
+          [ -n "${QUAY_TOKEN}" ] || { echo "Failed to exchange token with Quay" >&2; exit 1; }
+          echo "::add-mask::${QUAY_TOKEN}"
+          echo "QUAY_TOKEN=${QUAY_TOKEN}" >> "${GITHUB_ENV}"
+
+      - name: Login to Quay.io
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: quay.io
+          username: ${{ env.ROBOT_ACCOUNT }}
+          password: ${{ env.QUAY_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
@@ -174,13 +204,17 @@ jobs:
         with:
           subject-name: ${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: false # provenance: mode=max above already pushes it to Dockerhub
+          push-to-registry: false # provenance: mode=max above already pushes it to Quay.io
 
   build-cli:
     name: Build binaries
     needs: verify-tag
     if: ${{ needs.verify-tag.outputs.verification_passed == 'true' }}
     uses: ./.github/workflows/build-cli.yaml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     with:
       dry_run: false
       dist: dist-${{ github.ref_name }}
@@ -189,9 +223,13 @@ jobs:
     name: Upload binaries to release
     runs-on: ubuntu-latest
     needs: [verify-tag, build-cli]
+    permissions:
+      contents: write
     if: ${{ needs.verify-tag.outputs.verification_passed == 'true' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
@@ -215,7 +253,20 @@ jobs:
             exit 0
           fi
 
-          GH_TOKEN=${{ secrets.GITHUB_TOKEN }} gh release create $GITHUB_REF_NAME $DIST/*/* --title "$GITHUB_REF_NAME" "${publish_args[@]}"
+          # TODO: if we end up publishing pre-releases as well, we will need to update the parsing below
+          RELEASE_URL=$(echo $GITHUB_REF_NAME | sed 's/\./-/g' | sed 's/^v//')
+          RELEASE_CHANGELOG="$(echo $GITHUB_REF_NAME | sed 's/\.//g' | sed 's/^v//')---$(date '+%Y-%m-%d')"
+          GH_TOKEN=${{ secrets.GITHUB_TOKEN }} gh release create $GITHUB_REF_NAME $DIST/*/* \
+            --title "$GITHUB_REF_NAME" \
+            --notes "$(cat <<EOF
+          The $GITHUB_REF_NAME release is here.
+
+          Check out the release notes from [Anchor website](https://www.anchor-lang.com/docs/updates/release-notes/${RELEASE_URL}) or [GitHub](https://github.com/solana-foundation/anchor/blob/${GITHUB_REF_NAME}/docs/content/docs/updates/release-notes/${RELEASE_URL}.mdx).
+
+          For a list of notable changes with their associated PRs, see the [CHANGELOG](https://github.com/solana-foundation/anchor/blob/${GITHUB_REF_NAME}/CHANGELOG.md#${RELEASE_CHANGELOG}).
+          EOF
+          )" \
+            "${publish_args[@]}"
 
   publish-cli:
     name: Publish CLI onto npmjs
@@ -229,6 +280,8 @@ jobs:
       name: release
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
         with:

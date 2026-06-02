@@ -10,7 +10,7 @@ name = "init_if_needed"
 
 [features]
 no-entrypoint = []
-no-idl = []
+
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
 default = []

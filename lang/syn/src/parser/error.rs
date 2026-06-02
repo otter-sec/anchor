@@ -42,9 +42,7 @@ pub fn parse(error_enum: &mut syn::ItemEnum, args: Option<ErrorArgs>) -> Result<
             last_discriminant = id + 1;
 
             // Remove any non-doc attributes on the error variant.
-            variant
-                .attrs
-                .retain(|attr| attr.path.segments[0].ident == "doc");
+            variant.attrs.retain(|attr| attr.path().is_ident("doc"));
 
             Ok(ErrorCode { id, ident, msg })
         })
@@ -62,7 +60,7 @@ fn parse_error_attribute(variant: &syn::Variant) -> Result<Option<String>, syn::
     let attrs = variant
         .attrs
         .iter()
-        .filter(|attr| attr.path.segments[0].ident != "doc")
+        .filter(|attr| !attr.path().is_ident("doc"))
         .collect::<Vec<_>>();
     match attrs.len() {
         0 => Ok(None),
@@ -72,24 +70,19 @@ fn parse_error_attribute(variant: &syn::Variant) -> Result<Option<String>, syn::
                 reason = "inside match arm where attrs.len() == 1"
             )]
             let attr = &attrs[0];
-            let attr_str = attr.path.segments[0].ident.to_string();
-            if attr_str != "msg" {
+            if !attr.path().is_ident("msg") {
                 return Err(syn::Error::new(
                     attr.span(),
                     "use `#[msg(\"...\")]` to specify error strings",
                 ));
             }
 
-            let mut tts = attr.tokens.clone().into_iter();
-            let g_stream = match tts.next() {
-                Some(proc_macro2::TokenTree::Group(g)) => g.stream(),
-                Some(tt) => {
-                    return Err(syn::Error::new(tt.span(), "expected `#[msg(\"message\")]`"))
-                }
-                None => {
+            let g_stream = match &attr.meta {
+                syn::Meta::List(list) => list.tokens.clone(),
+                _ => {
                     return Err(syn::Error::new(
                         attr.span(),
-                        "`#[msg]` requires a message argument, e.g. `#[msg(\"My error\")]`",
+                        "expected `#[msg(\"message\")]`",
                     ))
                 }
             };

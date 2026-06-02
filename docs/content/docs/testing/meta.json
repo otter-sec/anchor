@@ -1,4 +1,4 @@
 {
   "title": "Testing Libraries",
-  "pages": ["litesvm", "mollusk"]
+  "pages": ["litesvm", "mollusk", "fuzzing"]
 }

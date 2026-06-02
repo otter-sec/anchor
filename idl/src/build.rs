@@ -144,14 +144,14 @@ fn build(
     no_docs: bool,
     cargo_args: &[String],
 ) -> Result<Idl> {
-    let toolchain = std::env::var("RUSTUP_TOOLCHAIN")
-        .map(|toolchain| format!("+{toolchain}"))
-        .unwrap_or_else(|_| "+stable".to_string());
+    let mut cmd = Command::new("cargo");
+    if let Ok(toolchain) = std::env::var("RUSTUP_TOOLCHAIN") {
+        install_toolchain_if_needed(&toolchain)?;
+        cmd.arg("+{toolchain}");
+    }
 
-    install_toolchain_if_needed(&toolchain)?;
-    let output = Command::new("cargo")
+    let output = cmd
         .args([
-            &toolchain,
             "test",
             "__anchor_private_print_idl",
             "--features",

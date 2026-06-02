@@ -3,7 +3,7 @@ name = "anchor-attribute-account"
 version.workspace = true
 publish = true
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/solana-foundation/anchor"
+repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
 description = "Anchor attribute macro for defining an account"
 edition = "2021"
@@ -25,7 +25,7 @@ lazy-account = []
 event-cpi = []
 
 [dependencies]
-anchor-syn = { path = "../../syn", version = "1.0.1", features = ["hash"] }
+anchor-syn = { path = "../../syn", version = "1.0.2", features = ["hash"] }
 proc-macro2 = "1"
 quote = "1"
-syn = { version = "1", features = ["full"] }
+syn = { workspace = true, features = ["full"] }

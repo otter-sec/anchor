@@ -457,6 +457,80 @@ pub fn ui_amount_to_amount<'info>(
         .map_err(Into::into)
 }
 
+pub fn reallocate<'info>(
+    ctx: CpiContext<'_, '_, '_, 'info, Reallocate<'info>>,
+    extension_types: &[spl_token_2022::extension::ExtensionType],
+) -> Result<()> {
+    let ix = spl_token_2022::instruction::reallocate(
+        &ctx.program_id,
+        ctx.accounts.account.key,
+        ctx.accounts.payer.key,
+        ctx.accounts.authority.key,
+        &[],
+        extension_types,
+    )?;
+    anchor_lang::solana_program::program::invoke_signed(
+        &ix,
+        &[
+            ctx.accounts.account,
+            ctx.accounts.payer,
+            ctx.accounts.system_program,
+            ctx.accounts.authority,
+        ],
+        ctx.signer_seeds,
+    )
+    .map_err(Into::into)
+}
+
+pub fn withdraw_excess_lamports<'info>(
+    ctx: CpiContext<'_, '_, '_, 'info, WithdrawExcessLamports<'info>>,
+) -> Result<()> {
+    let ix = spl_token_2022::instruction::withdraw_excess_lamports(
+        &ctx.program_id,
+        ctx.accounts.source.key,
+        ctx.accounts.destination.key,
+        ctx.accounts.authority.key,
+        &[],
+    )?;
+    anchor_lang::solana_program::program::invoke_signed(
+        &ix,
+        &[
+            ctx.accounts.source,
+            ctx.accounts.destination,
+            ctx.accounts.authority,
+        ],
+        ctx.signer_seeds,
+    )
+    .map_err(Into::into)
+}
+
+pub fn create_native_mint<'info>(
+    ctx: CpiContext<'_, '_, '_, 'info, CreateNativeMint<'info>>,
+) -> Result<()> {
+    let ix =
+        spl_token_2022::instruction::create_native_mint(&ctx.program_id, ctx.accounts.payer.key)?;
+    anchor_lang::solana_program::program::invoke_signed(
+        &ix,
+        &[
+            ctx.accounts.payer,
+            ctx.accounts.native_mint,
+            ctx.accounts.system_program,
+        ],
+        ctx.signer_seeds,
+    )
+    .map_err(Into::into)
+}
+
+pub fn initialize_non_transferable_mint<'info>(
+    ctx: CpiContext<'_, '_, '_, 'info, InitializeNonTransferableMint<'info>>,
+) -> Result<()> {
+    let ix = spl_token_2022::instruction::initialize_non_transferable_mint(
+        &ctx.program_id,
+        ctx.accounts.mint.key,
+    )?;
+    anchor_lang::solana_program::program::invoke(&ix, &[ctx.accounts.mint]).map_err(Into::into)
+}
+
 #[derive(Accounts)]
 pub struct Transfer<'info> {
     pub from: AccountInfo<'info>,
@@ -602,6 +676,33 @@ pub struct AmountToUiAmount<'info> {
 #[derive(Accounts)]
 pub struct UiAmountToAmount<'info> {
     pub account: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct Reallocate<'info> {
+    pub account: AccountInfo<'info>,
+    pub payer: AccountInfo<'info>,
+    pub system_program: AccountInfo<'info>,
+    pub authority: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawExcessLamports<'info> {
+    pub source: AccountInfo<'info>,
+    pub destination: AccountInfo<'info>,
+    pub authority: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct CreateNativeMint<'info> {
+    pub payer: AccountInfo<'info>,
+    pub native_mint: AccountInfo<'info>,
+    pub system_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeNonTransferableMint<'info> {
+    pub mint: AccountInfo<'info>,
 }
 
 #[derive(Clone)]

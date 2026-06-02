@@ -17,20 +17,15 @@ describe("basic-5", () => {
 
   it("basic-5: Robot actions!", async () => {
     // Create instruction: set up the Solana accounts to be used
-    const createInstruction = await program.methods
-      .create()
-      .accounts({
-        actionState,
-        user,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .instruction();
+
+    /* Accounts are auto-resolved: actionState from IDL seeds, user from
+     provider wallet, systemProgram from its fixed IDL address. */
+    const createInstruction = await program.methods.create().instruction();
     // Walk instruction: Invoke the Robot to walk
     const walkInstruction = await program.methods
       .walk()
       .accounts({
         actionState,
-        user,
       })
       .instruction();
     // Run instruction: Invoke the Robot to run
@@ -38,7 +33,6 @@ describe("basic-5", () => {
       .run()
       .accounts({
         actionState,
-        user,
       })
       .instruction();
     // Jump instruction: Invoke the Robot to jump
@@ -46,7 +40,6 @@ describe("basic-5", () => {
       .jump()
       .accounts({
         actionState,
-        user,
       })
       .instruction();
     // Reset instruction: Reset actions of the Robot
@@ -54,7 +47,6 @@ describe("basic-5", () => {
       .reset()
       .accounts({
         actionState,
-        user,
       })
       .instruction();
 

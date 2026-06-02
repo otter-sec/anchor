@@ -11,23 +11,64 @@ use {
 };
 
 pub fn parse(accounts_struct: &syn::ItemStruct) -> ParseResult<AccountsStruct> {
-    let instruction_api: Option<Punctuated<Expr, Comma>> = accounts_struct
+    let instruction_api: Option<Punctuated<syn::FnArg, Comma>> = accounts_struct
         .attrs
         .iter()
         .find(|a| {
-            a.path
+            a.path()
                 .get_ident()
                 .is_some_and(|ident| ident == "instruction")
         })
-        .map(|ix_attr| ix_attr.parse_args_with(Punctuated::<Expr, Comma>::parse_terminated))
+        .map(|ix_attr| ix_attr.parse_args_with(Punctuated::<syn::FnArg, Comma>::parse_terminated))
         .transpose()?;
+
+    if let Some(ref api) = instruction_api {
+        for arg in api.iter() {
+            match arg {
+                syn::FnArg::Receiver(r) => {
+                    return Err(ParseError::new(
+                        r.self_token.span,
+                        "#[instruction] args cannot use `self`",
+                    ));
+                }
+                syn::FnArg::Typed(pat_type) => match pat_type.pat.as_ref() {
+                    syn::Pat::Ident(pat_ident) => {
+                        if let Some(by_ref) = &pat_ident.by_ref {
+                            return Err(ParseError::new_spanned(
+                                by_ref,
+                                "#[instruction] arg names cannot use `ref`",
+                            ));
+                        }
+                        if let Some(mutability) = &pat_ident.mutability {
+                            return Err(ParseError::new_spanned(
+                                mutability,
+                                "#[instruction] arg names cannot use `mut`",
+                            ));
+                        }
+                        if let Some((_, subpat)) = &pat_ident.subpat {
+                            return Err(ParseError::new_spanned(
+                                subpat,
+                                "#[instruction] arg names cannot use subpatterns",
+                            ));
+                        }
+                    }
+                    _ => {
+                        return Err(ParseError::new_spanned(
+                            &pat_type.pat,
+                            "#[instruction] arg names must be plain identifiers, e.g. `data: u64`",
+                        ));
+                    }
+                },
+            }
+        }
+    }
 
     #[cfg(feature = "event-cpi")]
     let accounts_struct = {
         let is_event_cpi = accounts_struct
             .attrs
             .iter()
-            .filter_map(|attr| attr.path.get_ident())
+            .filter_map(|attr| attr.path().get_ident())
             .any(|ident| *ident == "event_cpi");
         if is_event_cpi {
             event_cpi::add_event_cpi_accounts(accounts_struct)?
@@ -433,7 +474,11 @@ fn parse_ty(f: &syn::Field) -> ParseResult<(Ty, bool)> {
 }
 
 fn option_to_inner_path(path: &Path) -> ParseResult<Path> {
-    let segment_0 = path.segments[0].clone();
+    let segment_0 = path
+        .segments
+        .first()
+        .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?
+        .clone();
     match segment_0.arguments {
         syn::PathArguments::AngleBracketed(args) => {
             if args.args.len() != 1 {
@@ -442,10 +487,14 @@ fn option_to_inner_path(path: &Path) -> ParseResult<Path> {
                     "can only have one argument in option",
                 ));
             }
-            match &args.args[0] {
+            let arg_0 = args
+                .args
+                .first()
+                .ok_or_else(|| ParseError::new(args.args.span(), "expected type argument"))?;
+            match arg_0 {
                 syn::GenericArgument::Type(syn::Type::Path(ty_path)) => Ok(ty_path.path.clone()),
                 _ => Err(ParseError::new(
-                    args.args[1].span(),
+                    arg_0.span(),
                     "first bracket argument must be a lifetime",
                 )),
             }
@@ -490,7 +539,10 @@ fn ident_string(f: &syn::Field) -> ParseResult<(String, bool, Path)> {
         ));
     }
 
-    let segments = &path.segments[0];
+    let segments = path
+        .segments
+        .first()
+        .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?;
     Ok((segments.ident.to_string(), optional, path))
 }
 
@@ -519,7 +571,10 @@ fn parse_lazy_account_ty(path: &syn::Path) -> ParseResult<LazyAccountTy> {
 
 fn parse_migration_ty(path: &syn::Path) -> ParseResult<MigrationTy> {
     // Migration<'info, From, To>
-    let segments = &path.segments[0];
+    let segments = path
+        .segments
+        .first()
+        .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?;
     match &segments.arguments {
         syn::PathArguments::AngleBracketed(args) => {
             // Expected: <'info, From, To> - 3 args
@@ -530,23 +585,21 @@ fn parse_migration_ty(path: &syn::Path) -> ParseResult<MigrationTy> {
                 ));
             }
             // First arg is lifetime, second is From, third is To
-            let from_type_path = match &args.args[1] {
+            let from_arg = args
+                .args
+                .get(1)
+                .ok_or_else(|| ParseError::new(args.args.span(), "expected From type argument"))?;
+            let from_type_path = match from_arg {
                 syn::GenericArgument::Type(syn::Type::Path(ty_path)) => ty_path.clone(),
-                _ => {
-                    return Err(ParseError::new(
-                        args.args[1].span(),
-                        "From type must be a path",
-                    ));
-                }
+                _ => return Err(ParseError::new(from_arg.span(), "From type must be a path")),
             };
-            let to_type_path = match &args.args[2] {
+            let to_arg = args
+                .args
+                .get(2)
+                .ok_or_else(|| ParseError::new(args.args.span(), "expected To type argument"))?;
+            let to_type_path = match to_arg {
                 syn::GenericArgument::Type(syn::Type::Path(ty_path)) => ty_path.clone(),
-                _ => {
-                    return Err(ParseError::new(
-                        args.args[2].span(),
-                        "To type must be a path",
-                    ));
-                }
+                _ => return Err(ParseError::new(to_arg.span(), "To type must be a path")),
             };
             Ok(MigrationTy {
                 from_type_path,
@@ -583,7 +636,10 @@ fn parse_interface_ty(path: &syn::Path) -> ParseResult<InterfaceTy> {
 
 // Special parsing function for Program that handles both Program<'info> and Program<'info, T>
 fn parse_program_account(path: &syn::Path) -> ParseResult<syn::TypePath> {
-    let segments = &path.segments[0];
+    let segments = path
+        .segments
+        .first()
+        .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?;
     match &segments.arguments {
         syn::PathArguments::AngleBracketed(args) => {
             match args.args.len() {
@@ -608,13 +664,18 @@ fn parse_program_account(path: &syn::Path) -> ParseResult<syn::TypePath> {
                     })
                 }
                 // Program<'info, T> - lifetime and type
-                2 => match &args.args[1] {
-                    syn::GenericArgument::Type(syn::Type::Path(ty_path)) => Ok(ty_path.clone()),
-                    _ => Err(ParseError::new(
-                        args.args[1].span(),
-                        "second bracket argument must be a type",
-                    )),
-                },
+                2 => {
+                    let second_arg = args.args.get(1).ok_or_else(|| {
+                        ParseError::new(args.args.span(), "expected type argument")
+                    })?;
+                    match second_arg {
+                        syn::GenericArgument::Type(syn::Type::Path(ty_path)) => Ok(ty_path.clone()),
+                        _ => Err(ParseError::new(
+                            second_arg.span(),
+                            "second bracket argument must be a type",
+                        )),
+                    }
+                }
                 _ => Err(ParseError::new(
                     args.args.span(),
                     "Program must have either just a lifetime (Program<'info>) or a lifetime and \
@@ -633,7 +694,10 @@ fn parse_program_account(path: &syn::Path) -> ParseResult<syn::TypePath> {
 fn parse_account(mut path: &syn::Path) -> ParseResult<syn::TypePath> {
     let path_str = parser::tts_to_string(path).replace(' ', "");
     if path_str.starts_with("Box<Account<") || path_str.starts_with("Box<InterfaceAccount<") {
-        let segments = &path.segments[0];
+        let segments = path
+            .segments
+            .first()
+            .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?;
         match &segments.arguments {
             syn::PathArguments::AngleBracketed(args) => {
                 // Expected: <'info, MyType>.
@@ -643,13 +707,17 @@ fn parse_account(mut path: &syn::Path) -> ParseResult<syn::TypePath> {
                         "bracket arguments must be the lifetime and type",
                     ));
                 }
-                match &args.args[0] {
+                let first_arg = args
+                    .args
+                    .first()
+                    .ok_or_else(|| ParseError::new(args.args.span(), "expected type argument"))?;
+                match first_arg {
                     syn::GenericArgument::Type(syn::Type::Path(ty_path)) => {
                         path = &ty_path.path;
                     }
                     _ => {
                         return Err(ParseError::new(
-                            args.args[1].span(),
+                            first_arg.span(),
                             "first bracket argument must be a lifetime",
                         ))
                     }
@@ -664,7 +732,10 @@ fn parse_account(mut path: &syn::Path) -> ParseResult<syn::TypePath> {
         }
     }
 
-    let segments = &path.segments[0];
+    let segments = path
+        .segments
+        .first()
+        .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?;
     match &segments.arguments {
         syn::PathArguments::AngleBracketed(args) => {
             // Expected: <'info, MyType>.
@@ -674,10 +745,14 @@ fn parse_account(mut path: &syn::Path) -> ParseResult<syn::TypePath> {
                     "bracket arguments must be the lifetime and type",
                 ));
             }
-            match &args.args[1] {
+            let second_arg = args
+                .args
+                .get(1)
+                .ok_or_else(|| ParseError::new(args.args.span(), "expected type argument"))?;
+            match second_arg {
                 syn::GenericArgument::Type(syn::Type::Path(ty_path)) => Ok(ty_path.clone()),
                 _ => Err(ParseError::new(
-                    args.args[1].span(),
+                    second_arg.span(),
                     "first bracket argument must be a lifetime",
                 )),
             }
@@ -690,7 +765,10 @@ fn parse_account(mut path: &syn::Path) -> ParseResult<syn::TypePath> {
 }
 
 fn parse_sysvar(path: &syn::Path) -> ParseResult<SysvarTy> {
-    let segments = &path.segments[0];
+    let segments = path
+        .segments
+        .first()
+        .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?;
     let account_ident = match &segments.arguments {
         syn::PathArguments::AngleBracketed(args) => {
             // Expected: <'info, MyType>.
@@ -700,7 +778,11 @@ fn parse_sysvar(path: &syn::Path) -> ParseResult<SysvarTy> {
                     "bracket arguments must be the lifetime and type",
                 ));
             }
-            match &args.args[1] {
+            let second_arg = args
+                .args
+                .get(1)
+                .ok_or_else(|| ParseError::new(args.args.span(), "expected type argument"))?;
+            match second_arg {
                 syn::GenericArgument::Type(syn::Type::Path(ty_path)) => {
                     // TODO: allow segmented paths.
                     if ty_path.path.segments.len() != 1 {
@@ -709,12 +791,14 @@ fn parse_sysvar(path: &syn::Path) -> ParseResult<SysvarTy> {
                             "segmented paths are not currently allowed",
                         ));
                     }
-                    let path_segment = &ty_path.path.segments[0];
+                    let path_segment = ty_path.path.segments.first().ok_or_else(|| {
+                        ParseError::new(ty_path.path.span(), "expected a path segment")
+                    })?;
                     path_segment.ident.clone()
                 }
                 _ => {
                     return Err(ParseError::new(
-                        args.args[1].span(),
+                        second_arg.span(),
                         "first bracket argument must be a lifetime",
                     ))
                 }

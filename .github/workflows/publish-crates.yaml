@@ -17,6 +17,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
@@ -30,7 +32,18 @@ jobs:
           set -xeuo pipefail
 
           echo "Publishing crates as a dry-run"
-          cargo release publish --workspace --allow-branch "*" --no-confirm
+          out_file=$(mktemp)
+          if cargo release publish --workspace --allow-branch "*" --no-confirm 2>&1 | tee "$out_file"; then
+            exit 0
+          fi
+          # cargo-release 1.1.1 exits non-zero with "no packages selected" when every
+          # workspace crate is skipped due to a previous publish. Treat that as success.
+          if grep -q "no packages selected" "$out_file" \
+             && grep -q "disabled due to previous publish" "$out_file"; then
+            echo "All crates already published at current versions; nothing to do."
+            exit 0
+          fi
+          exit 1
 
   publish-crates:
     name: Publish crates
@@ -45,6 +58,8 @@ jobs:
       name: release
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
@@ -64,7 +79,18 @@ jobs:
           set -xeuo pipefail
 
           echo "Publishing crates"
-          cargo release publish --workspace --allow-branch "*" --no-confirm --execute
+          out_file=$(mktemp)
+          if cargo release publish --workspace --allow-branch "*" --no-confirm --execute 2>&1 | tee "$out_file"; then
+            exit 0
+          fi
+          # cargo-release 1.1.1 exits non-zero with "no packages selected" when every
+          # workspace crate is skipped due to a previous publish. Treat that as success.
+          if grep -q "no packages selected" "$out_file" \
+             && grep -q "disabled due to previous publish" "$out_file"; then
+            echo "All crates already published at current versions; nothing to do."
+            exit 0
+          fi
+          exit 1
 
       - name: Check for crate artifacts
         id: crate-artifacts

@@ -60,6 +60,31 @@ describe("custom_program", () => {
     }
   });
 
+  it("Should reject a non-system executable account for Program<System>", async () => {
+    try {
+      await program.methods
+        .testProgramValidation()
+        .accounts({
+          genericProgram: new anchor.web3.PublicKey(CUSTOM_PROGRAM_ID),
+          systemProgram: new anchor.web3.PublicKey(CUSTOM_PROGRAM_ID),
+          customProgramInput: program.programId,
+          customProgramAddress: new anchor.web3.PublicKey(
+            CUSTOM_PROGRAM_ADDRESS
+          ),
+        })
+        .rpc();
+      assert.ok(false, "expected InvalidProgramId");
+    } catch (_err) {
+      assert.isTrue(_err instanceof AnchorError);
+      const err: AnchorError = _err;
+      assert.strictEqual(err.error.errorCode.number, 3008);
+      assert.strictEqual(
+        err.error.errorMessage,
+        "Program ID was not as expected"
+      );
+    }
+  });
+
   it("Should fail test program address mismatch", async () => {
     try {
       await program.methods

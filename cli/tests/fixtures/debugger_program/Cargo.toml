@@ -1,0 +1,25 @@
+[package]
+name = "debugger-fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "debugger_fixture"
+
+[dependencies]
+pinocchio = { version = "0.11", default-features = false }
+solana-program-error = "3.0"
+
+[lints.rust.unexpected_cfgs]
+level = "allow"
+
+[workspace]
+
+[profile.release]
+debug = "full"
+overflow-checks = false
+opt-level = 1
+codegen-units = 1
+lto = false

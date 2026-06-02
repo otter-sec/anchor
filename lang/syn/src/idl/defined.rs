@@ -308,13 +308,23 @@ fn get_attr_str(name: impl AsRef<str>, attrs: &[syn::Attribute]) -> Option<Strin
     attrs
         .iter()
         .filter(|attr| {
-            attr.path
+            attr.path()
                 .segments
                 .first()
                 .filter(|seg| seg.ident == name)
                 .is_some()
         })
-        .map(|attr| attr.tokens.to_string())
+        .filter_map(|attr| match &attr.meta {
+            syn::Meta::List(list) => {
+                let (open, close) = match list.delimiter {
+                    syn::MacroDelimiter::Paren(_) => ("(", ")"),
+                    syn::MacroDelimiter::Bracket(_) => ("[", "]"),
+                    syn::MacroDelimiter::Brace(_) => ("{", "}"),
+                };
+                Some(format!("{open}{}{close}", list.tokens))
+            }
+            _ => None,
+        })
         .reduce(|acc, cur| {
             format!(
                 "{} , {}",
@@ -509,34 +519,40 @@ pub fn gen_idl_type(
                     type_aliases: HashMap<String, String>,
                 }
 
-                static CRATE_DATA_CACHE: OnceLock<
-                    std::result::Result<CachedCrateData, anyhow::Error>,
-                > = OnceLock::new();
+                static CRATE_DATA_CACHE: OnceLock<std::result::Result<CachedCrateData, String>> =
+                    OnceLock::new();
 
                 // If no path was found, just return an empty path and let the find_path function handle it
                 let source_path = proc_macro2::Span::call_site()
                     .local_file()
                     .unwrap_or_default();
 
-                if let Ok(lib_path) = find_path("lib.rs", &source_path) {
+                'cache: {
+                    let Ok(lib_path) = find_path("lib.rs", &source_path) else {
+                        break 'cache;
+                    };
                     let name = path.path.segments.last().unwrap().ident.to_string();
 
                     let cache = CRATE_DATA_CACHE.get_or_init(|| {
-                        CrateContext::parse(&lib_path).map(|ctx| {
-                            let defined_names: HashSet<String> = ctx
-                                .structs()
-                                .map(|s| s.ident.to_string())
-                                .chain(ctx.enums().map(|e| e.ident.to_string()))
-                                .collect();
-                            let type_aliases: HashMap<String, String> = ctx
-                                .type_aliases()
-                                .map(|ty| (ty.ident.to_string(), ty.to_token_stream().to_string()))
-                                .collect();
-                            CachedCrateData {
-                                defined_names,
-                                type_aliases,
-                            }
-                        })
+                        CrateContext::parse(&lib_path)
+                            .map_err(|e| e.to_string())
+                            .map(|ctx| {
+                                let defined_names: HashSet<String> = ctx
+                                    .structs()
+                                    .map(|s| s.ident.to_string())
+                                    .chain(ctx.enums().map(|e| e.ident.to_string()))
+                                    .collect();
+                                let mut type_aliases: HashMap<String, String> = HashMap::new();
+                                for ty in ctx.type_aliases() {
+                                    type_aliases
+                                        .entry(ty.ident.to_string())
+                                        .or_insert_with(|| ty.to_token_stream().to_string());
+                                }
+                                CachedCrateData {
+                                    defined_names,
+                                    type_aliases,
+                                }
+                            })
                     });
 
                     let cache = match cache {
@@ -641,7 +657,7 @@ pub fn gen_idl_type(
                             //
                             // As a workaround, we're manually checking to see if it *looks* like a
                             // constant identifier to fix the issue mentioned in
-                            // https://github.com/solana-foundation/anchor/issues/3520
+                            // https://github.com/otter-sec/anchor/issues/3520
                             syn::GenericArgument::Type(syn::Type::Path(p))
                                 if p.path
                                     .segments

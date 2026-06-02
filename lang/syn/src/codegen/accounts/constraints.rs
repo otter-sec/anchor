@@ -276,6 +276,9 @@ pub fn generate_constraint_zeroed(
     quote! {
         let #field: #ty_decl = {
             let mut __data: &[u8] = &#field.try_borrow_data()?;
+            if __data.len() < #discriminator.len() {
+                return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::AccountDidNotDeserialize).with_account_name(#name_str));
+            }
             let __disc = &__data[..#discriminator.len()];
             let __has_disc = __disc.iter().any(|b| *b != 0);
             if __has_disc {
@@ -591,8 +594,9 @@ fn generate_constraint_init_group(
                         __bumps.#field = #bump_tok;
 
                         // Build signer seeds at runtime = seeds + bump
+                        let __bump_bytes: [u8; 1] = [__bump];
                         let mut __signer_seeds_vec: ::std::vec::Vec<&[u8]> = __seeds_slice.to_vec();
-                        __signer_seeds_vec.push(&[__bump][..]);
+                        __signer_seeds_vec.push(&__bump_bytes[..]);
                         let __signer_seeds = __signer_seeds_vec;
 
                         if #field.key() != __pda_address {

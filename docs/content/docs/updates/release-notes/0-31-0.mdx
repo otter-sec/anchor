@@ -7,7 +7,7 @@ The last major release before v1 is finally here.
 
 As always, there are a great number of changes, but we'll only be covering the
 most important ones here. For a list of all notable changes, see the
-[CHANGELOG](https://github.com/solana-foundation/anchor/blob/v0.31.0/CHANGELOG.md#0310---2025-03-08).
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/v0.31.0/CHANGELOG.md#0310---2025-03-08).
 
 ---
 
@@ -16,7 +16,7 @@ most important ones here. For a list of all notable changes, see the
 1. Install the latest version of `avm`:
 
    ```sh
-   cargo install --git https://github.com/solana-foundation/anchor avm --force
+   cargo install --git https://github.com/otter-sec/anchor avm --force
    ```
 
    This will allow installing Anchor CLI without having to compile from source,
@@ -215,9 +215,9 @@ Undefined behavior is particularly challenging to debug because things may
 appear to work as expected during tests, but a different input to the same test
 might overwrite an account's data with unintended bytes. There are endless
 scenarios that could go wrong here, and some examples include
-[#2955](https://github.com/solana-foundation/anchor/issues/2955),
-[#3113](https://github.com/solana-foundation/anchor/issues/3113), and
-[#3196](https://github.com/solana-foundation/anchor/issues/3196).
+[#2955](https://github.com/otter-sec/anchor/issues/2955),
+[#3113](https://github.com/otter-sec/anchor/issues/3113), and
+[#3196](https://github.com/otter-sec/anchor/issues/3196).
 
 There isn't much we can do for problems 1 and 3, but the problem 2 is resolved
 with Solana v2 (`platform-tools v1.42`), meaning you'll reliably get warnings
@@ -228,7 +228,7 @@ to be the `init` constraint. Each `init` constraint expands to a lengthy code
 inside `try_accounts`, resulting in excessive stack usage when multiple `init`
 constraints are used. This problem was fixed by moving the `init` code inside a
 closure and immediately calling it in order to create and use a different stack
-frame ([#2939](https://github.com/solana-foundation/anchor/pull/2939)).
+frame ([#2939](https://github.com/otter-sec/anchor/pull/2939)).
 
 Related to this topic, there is
 [SIMD-0166](https://github.com/solana-foundation/solana-improvement-documents/pull/166),
@@ -236,7 +236,7 @@ a proposal to introduce dynamic stack frames.
 
 In short, you'll have fewer problems related to stack memory when using Anchor
 v0.31 and Solana v2. If you're still running into problems, please create an
-issue in [solana-foundation/anchor](https://github.com/solana-foundation/anchor/issues/3097).
+issue in [otter-sec/anchor](https://github.com/otter-sec/anchor/issues/3097).
 
 ### Custom discriminators
 
@@ -264,7 +264,7 @@ attribute macros:
 All constant expressions are supported.
 
 See
-[example](https://github.com/solana-foundation/anchor/blob/v0.31.0/tests/custom-discriminator/programs/custom-discriminator/src/lib.rs).
+[example](https://github.com/otter-sec/anchor/blob/v0.31.0/tests/custom-discriminator/programs/custom-discriminator/src/lib.rs).
 
 It's important that the discriminator is always unique for the type you're
 implementing it for. While the discriminator can be at any length (including
@@ -369,13 +369,13 @@ The following issues related to
 [`declare_program!`](/docs/features/declare-program) have been fixed:
 
 - Being unable to use constant bytes
-  ([#3287](https://github.com/solana-foundation/anchor/pull/3287))
+  ([#3287](https://github.com/otter-sec/anchor/pull/3287))
 - Missing docs from the generated constants
-  ([#3311](https://github.com/solana-foundation/anchor/pull/3311))
+  ([#3311](https://github.com/otter-sec/anchor/pull/3311))
 - Compilation errors related to incorrectly adding `derive`s and `repr`s to type
-  aliases ([#3504](https://github.com/solana-foundation/anchor/pull/3504))
+  aliases ([#3504](https://github.com/otter-sec/anchor/pull/3504))
 - Being unable to use `data` as an instruction parameter
-  ([#3574](https://github.com/solana-foundation/anchor/pull/3574))
+  ([#3574](https://github.com/otter-sec/anchor/pull/3574))
 
 ## SPL
 
@@ -420,7 +420,7 @@ pub struct MyIx {
 
 This is now fixed and no longer results in build errors.
 
-See [solana-foundation/anchor#3216](https://github.com/solana-foundation/anchor/pull/3216) for
+See [otter-sec/anchor#3216](https://github.com/otter-sec/anchor/pull/3216) for
 more information.
 
 ### `Program` accounts with full paths
@@ -437,7 +437,7 @@ pub struct FullPath<'info> {
 ### `IdlBuilder`
 
 Building the IDL via the
-[`build_idl`](https://github.com/solana-foundation/anchor/blob/v0.31.0/idl/src/build.rs#L119)
+[`build_idl`](https://github.com/otter-sec/anchor/blob/v0.31.0/idl/src/build.rs#L119)
 function made it impossible to extend its functionality e.g. add new parameters
 without a breaking change. To solve this problem, there is a new way to build
 IDLs programmatically:
@@ -455,17 +455,17 @@ for more information.
 The following issues with the IDL generation have been fixed:
 
 - A bug where using tuple parameters in instructions would result in an
-  incorrect IDL ([#3294](https://github.com/solana-foundation/anchor/pull/3294))
+  incorrect IDL ([#3294](https://github.com/otter-sec/anchor/pull/3294))
 - A bug where doc comments could trigger false-positives during module paths
-  conversion ([#3359](https://github.com/solana-foundation/anchor/pull/3359))
+  conversion ([#3359](https://github.com/otter-sec/anchor/pull/3359))
 - A bug where the generated IDL only has partial resolution information
-  ([#3474](https://github.com/solana-foundation/anchor/pull/3474))
+  ([#3474](https://github.com/otter-sec/anchor/pull/3474))
 - Being unable to use constant identifiers as generic arguments
-  ([#3522](https://github.com/solana-foundation/anchor/pull/3522))
+  ([#3522](https://github.com/otter-sec/anchor/pull/3522))
 - Being unable to pass in a `Pubkey` constant to `seeds::program`
-  ([#3559](https://github.com/solana-foundation/anchor/pull/3559))
+  ([#3559](https://github.com/otter-sec/anchor/pull/3559))
 - Being unable to pass in an account or an argument to `seeds::program`
-  ([#3570](https://github.com/solana-foundation/anchor/pull/3570))
+  ([#3570](https://github.com/otter-sec/anchor/pull/3570))
 
 ## TypeScript
 
@@ -543,7 +543,7 @@ Testing programs with numbers in their name using `anchor.workspace` now works
 for all cases.
 
 For more details about the problem and its solution, see
-[#3450](https://github.com/solana-foundation/anchor/pull/3450).
+[#3450](https://github.com/otter-sec/anchor/pull/3450).
 
 ## Rust Client
 
@@ -552,7 +552,7 @@ For more details about the problem and its solution, see
 There was a problem that made it impossible to use `tokio` with
 [`anchor-client`](https://docs.rs/anchor-client/0.31.0/anchor_client/index.html).
 This problem is now fixed, and you can use `tokio` (with `async` feature). See
-[`tokio` example](https://github.com/solana-foundation/anchor/blob/v0.31.0/client/example/src/nonblocking.rs#L65-L99).
+[`tokio` example](https://github.com/otter-sec/anchor/blob/v0.31.0/client/example/src/nonblocking.rs#L65-L99).
 
 ### Mock client
 
@@ -567,4 +567,4 @@ anchor-client = { version = "0.31.0", features = ["mock"] }
 ---
 
 See the full list of notable changes in the
-[CHANGELOG](https://github.com/solana-foundation/anchor/blob/v0.31.0/CHANGELOG.md#0310---2025-03-08).
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/v0.31.0/CHANGELOG.md#0310---2025-03-08).

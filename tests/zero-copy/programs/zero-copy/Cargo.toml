@@ -10,7 +10,7 @@ name = "zero_copy"
 
 [features]
 no-entrypoint = []
-no-idl = []
+
 cpi = ["no-entrypoint"]
 default = []
 test-sbf = []

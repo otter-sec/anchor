@@ -12,7 +12,7 @@ name = "lazy_account"
 default = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
-no-idl = []
+
 idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
