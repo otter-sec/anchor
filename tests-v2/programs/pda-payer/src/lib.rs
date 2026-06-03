@@ -8,6 +8,10 @@ pub struct MyData {
     pub value: u64,
 }
 
+fn payer_seeds() -> [&'static [u8]; 1] {
+    [b"payer"]
+}
+
 #[program]
 pub mod pda_payer_test {
     use super::*;
@@ -35,6 +39,12 @@ pub mod pda_payer_test {
         ctx: &mut Context<InitWithTooManyPayerSeeds>,
     ) -> Result<()> {
         ctx.accounts.new_account.value = 11;
+        Ok(())
+    }
+
+    #[discrim = 4]
+    pub fn init_with_opaque_payer_seeds(ctx: &mut Context<OpaquePayerSeeds>) -> Result<()> {
+        ctx.accounts.new_account.value = 123;
         Ok(())
     }
 }
@@ -97,6 +107,15 @@ pub struct InitWithTooManyPayerSeeds {
         ],
         bump
     )]
+    pub pda_payer: SystemAccount,
+    #[account(init, payer = pda_payer, space = 8 + core::mem::size_of::<MyData>())]
+    pub new_account: Account<MyData>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct OpaquePayerSeeds {
+    #[account(mut, seeds = payer_seeds(), bump)]
     pub pda_payer: SystemAccount,
     #[account(init, payer = pda_payer, space = 8 + core::mem::size_of::<MyData>())]
     pub new_account: Account<MyData>,

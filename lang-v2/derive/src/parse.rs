@@ -1081,11 +1081,12 @@ fn emit_payer_signer_seeds_binding(
                 __payer_seed_ref, __program_id, __payer.address(),
             ).map_err(|_| anchor_lang_v2::ErrorCode::ConstraintSeeds)?;
         __bumps.#bump_field = __payer_bump;
+        let __payer_bump_bytes = [__payer_bump];
         let mut __payer_seed_buf: [&[u8]; anchor_lang_v2::MAX_PAYER_SEEDS_WITH_BUMP] =
             [&[]; anchor_lang_v2::MAX_PAYER_SEEDS_WITH_BUMP];
         let __payer_seed_count = __payer_seed_ref.len();
         __payer_seed_buf[..__payer_seed_count].copy_from_slice(__payer_seed_ref);
-        __payer_seed_buf[__payer_seed_count] = &[__payer_bump];
+        __payer_seed_buf[__payer_seed_count] = &__payer_bump_bytes;
         let __payer_signer_seeds: Option<&[&[u8]]> =
             Some(&__payer_seed_buf[..__payer_seed_count + 1]);
     })

@@ -215,3 +215,42 @@ fn payer_with_more_than_max_seeds_is_rejected() {
         "failed init must not debit the candidate payer"
     );
 }
+
+#[test]
+fn seeded_system_account_can_pay_for_target_with_opaque_payer_seeds() {
+    let (mut svm, payer) = setup();
+    let funded_pda = payer_pda();
+    let new_account = Keypair::new();
+
+    let metas = vec![
+        AccountMeta::new(funded_pda, false),
+        AccountMeta::new(new_account.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![4],
+        metas,
+        &payer,
+        &[&new_account],
+    )
+    .expect("opaque-payer-seeds init should succeed");
+
+    let created = svm
+        .get_account(&new_account.pubkey())
+        .expect("opaque-seeds target account exists");
+    let payer_after = svm.get_account(&funded_pda).expect("payer PDA exists");
+
+    assert_eq!(created.owner, program_id());
+    assert_eq!(account_value(&svm, &new_account.pubkey()), 123);
+    assert!(
+        payer_after.lamports < FUNDED_PDA_LAMPORTS,
+        "payer PDA should fund the opaque-seeds target"
+    );
+    assert_eq!(
+        payer_after.lamports + created.lamports,
+        FUNDED_PDA_LAMPORTS,
+        "rent should move from the PDA payer into the opaque-seeds target"
+    );
+}
