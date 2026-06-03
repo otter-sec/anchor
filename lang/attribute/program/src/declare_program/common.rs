@@ -613,6 +613,7 @@ mod tests {
                         anchor_lang_idl::types::IdlEnumVariant {
                             name: "Variant1".to_string(),
                             fields: None,
+                            discriminant: None,
                         },
                         anchor_lang_idl::types::IdlEnumVariant {
                             name: "Variant2".to_string(),
@@ -620,6 +621,7 @@ mod tests {
                                 "value",
                                 IdlType::U32,
                             )])),
+                            discriminant: None,
                         },
                     ],
                 },

@@ -561,15 +561,27 @@ export interface EnumLayout<T> extends Layout<T> {
   registry: Record<string, Layout<any>>;
 }
 
+export type RustEnumVariantLayout =
+  | Layout<any>
+  | {
+      layout: Layout<any>;
+      discriminant?: number;
+    };
+
 export function rustEnum<T>(
-  variants: Layout<any>[],
+  variants: RustEnumVariantLayout[],
   property?: string,
   discriminant?: Layout<any>
 ): EnumLayout<T> {
   const unionLayout = union(discriminant ?? u8(), property);
-  variants.forEach((variant, index) =>
-    unionLayout.addVariant(index, variant, variant.property)
-  );
+  variants.forEach((variant, index) => {
+    const layout = "layout" in variant ? variant.layout : variant;
+    const variantDiscriminant =
+      "layout" in variant && variant.discriminant !== undefined
+        ? variant.discriminant
+        : index;
+    unionLayout.addVariant(variantDiscriminant, layout, layout.property);
+  });
   return unionLayout;
 }
 

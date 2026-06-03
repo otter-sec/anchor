@@ -353,7 +353,10 @@ export class IdlCoder {
               })
           );
 
-          return borsh.struct(fieldLayouts, variant.name);
+          return {
+            layout: borsh.struct(fieldLayouts, variant.name),
+            discriminant: variant.discriminant,
+          };
         });
 
         if (name !== undefined) {

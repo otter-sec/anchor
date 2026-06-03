@@ -247,6 +247,8 @@ pub struct IdlEnumVariant {
     pub name: String,
     #[serde(skip_serializing_if = "is_default")]
     pub fields: Option<IdlDefinedFields>,
+    #[serde(skip_serializing_if = "is_default")]
+    pub discriminant: Option<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

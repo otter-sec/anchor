@@ -189,6 +189,7 @@ export type IdlTypeDefTyType = {
 export type IdlEnumVariant = {
   name: string;
   fields?: IdlDefinedFields;
+  discriminant?: number;
 };
 
 export type IdlDefinedFields = IdlDefinedFieldsNamed | IdlDefinedFieldsTuple;

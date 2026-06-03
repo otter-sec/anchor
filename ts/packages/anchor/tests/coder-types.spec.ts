@@ -111,6 +111,53 @@ describe("coder.types", () => {
     assert.deepEqual(coder.types.decode("MintInfo", encoded), mintInfo);
   });
 
+  test("Can encode and decode enums with explicit discriminants from IDL", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "explicit_enum",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [
+        {
+          name: "initialize",
+          accounts: [],
+          args: [],
+          discriminator: [],
+        },
+      ],
+      types: [
+        {
+          name: "Animal",
+          type: {
+            kind: "enum",
+            variants: [
+              {
+                name: "cat",
+                discriminant: 0,
+              },
+              {
+                name: "dog",
+                discriminant: 1,
+              },
+              {
+                name: "mouse",
+                discriminant: 5,
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const coder = new BorshCoder(idl);
+    const encoded = coder.types.encode("Animal", { mouse: {} });
+
+    assert.deepEqual(Array.from(encoded), [5]);
+    assert.deepEqual(coder.types.decode("Animal", encoded), { mouse: {} });
+  });
+
   test("Can encode and decode 256-bit integers", () => {
     const idl: Idl = {
       address: "Test111111111111111111111111111111111111111",
