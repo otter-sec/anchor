@@ -1356,7 +1356,7 @@ pub struct AccountDirEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FundedAccount {
-    // Base58 pubkey string of the account to fund
+    // Base58 pubkey string of the account to fund, or "new" to generate a random keypair
     pub address: String,
     // Amount of lamports to fund the account with (default: 1 SOL = 1_000_000_000 lamports)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1576,6 +1576,17 @@ pub fn get_default_ledger_path() -> PathBuf {
 
 const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1";
 
+fn is_generated_address(address: &str) -> bool {
+    address.eq_ignore_ascii_case("new")
+}
+
+fn explicit_token_account_address(address: Option<&str>) -> Option<&str> {
+    match address {
+        Some(address) if !is_generated_address(address) => Some(address),
+        _ => None,
+    }
+}
+
 impl Merge for _Validator {
     fn merge(&mut self, other: Self) {
         // Instantiating a new Self object here ensures that
@@ -1624,10 +1635,11 @@ impl Merge for _Validator {
                     None => Some(entries),
                     Some(other_entries) => {
                         for other_entry in other_entries {
-                            match entries
-                                .iter()
-                                .position(|my_entry| *my_entry.address == other_entry.address)
-                            {
+                            match entries.iter().position(|my_entry| {
+                                !is_generated_address(&my_entry.address)
+                                    && !is_generated_address(&other_entry.address)
+                                    && *my_entry.address == other_entry.address
+                            }) {
                                 None => entries.push(other_entry),
                                 Some(i) => entries[i] = other_entry,
                             };
@@ -1642,10 +1654,11 @@ impl Merge for _Validator {
                     None => Some(entries),
                     Some(other_entries) => {
                         for other_entry in other_entries {
-                            match entries
-                                .iter()
-                                .position(|my_entry| *my_entry.address == other_entry.address)
-                            {
+                            match entries.iter().position(|my_entry| {
+                                !is_generated_address(&my_entry.address)
+                                    && !is_generated_address(&other_entry.address)
+                                    && *my_entry.address == other_entry.address
+                            }) {
                                 None => entries.push(other_entry),
                                 Some(i) => entries[i] = other_entry,
                             };
@@ -1659,12 +1672,17 @@ impl Merge for _Validator {
                 Some(mut entries) => match other.token_accounts {
                     None => Some(entries),
                     Some(other_entries) => {
-                        // For token accounts, we merge by mint+owner combination
+                        // Generated token accounts do not have a stable merge key.
+                        // Only explicitly addressed accounts override inherited entries.
                         for other_entry in other_entries {
                             match entries.iter().position(|my_entry| {
-                                *my_entry.mint == other_entry.mint
-                                    && *my_entry.owner == other_entry.owner
-                                    && my_entry.address == other_entry.address
+                                explicit_token_account_address(my_entry.address.as_deref())
+                                    .zip(explicit_token_account_address(
+                                        other_entry.address.as_deref(),
+                                    ))
+                                    .is_some_and(|(my_address, other_address)| {
+                                        my_address == other_address
+                                    })
                             }) {
                                 None => entries.push(other_entry),
                                 Some(i) => entries[i] = other_entry,
@@ -2013,6 +2031,79 @@ mod tests {
             .unwrap();
         assert_eq!(fund_accounts.len(), 1);
         assert_eq!(fund_accounts[0].lamports, None);
+    }
+
+    #[test]
+    fn test_toml_extends_preserves_generated_validator_accounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let suite_dir = dir.path().join("tests").join("suite");
+        fs::create_dir_all(&suite_dir).unwrap();
+
+        let base_toml = suite_dir.join("Base.toml");
+        fs::write(
+            &base_toml,
+            r#"
+[scripts]
+test = "true"
+
+[[test.validator.fund_accounts]]
+address = "new"
+lamports = 1
+
+[[test.validator.mints]]
+address = "new"
+decimals = 6
+
+[[test.validator.token_accounts]]
+mint = "new"
+owner = "new"
+amount = 1
+"#,
+        )
+        .unwrap();
+
+        let test_toml = suite_dir.join("Test.toml");
+        fs::write(
+            &test_toml,
+            r#"
+extends = ["Base.toml"]
+
+[scripts]
+test = "true"
+
+[[test.validator.fund_accounts]]
+address = "new"
+lamports = 2
+
+[[test.validator.mints]]
+address = "new"
+decimals = 9
+
+[[test.validator.token_accounts]]
+mint = "new"
+owner = "new"
+amount = 2
+"#,
+        )
+        .unwrap();
+
+        let parsed = TestToml::from_path(test_toml).unwrap();
+        let validator = parsed.test.unwrap().validator.unwrap();
+
+        let fund_accounts = validator.fund_accounts.unwrap();
+        assert_eq!(fund_accounts.len(), 2);
+        assert_eq!(fund_accounts[0].lamports, Some(1));
+        assert_eq!(fund_accounts[1].lamports, Some(2));
+
+        let mints = validator.mints.unwrap();
+        assert_eq!(mints.len(), 2);
+        assert_eq!(mints[0].decimals, 6);
+        assert_eq!(mints[1].decimals, 9);
+
+        let token_accounts = validator.token_accounts.unwrap();
+        assert_eq!(token_accounts.len(), 2);
+        assert_eq!(token_accounts[0].amount, 1);
+        assert_eq!(token_accounts[1].amount, 2);
     }
 
     #[test]
