@@ -9,8 +9,8 @@ use {
         punctuated::Punctuated,
         spanned::Spanned,
         token::Comma,
-        Attribute, DeriveInput, Expr, Field, Fields, GenericArgument, PathArguments, Token, Type,
-        TypeArray,
+        Attribute, DeriveInput, Expr, ExprLit, Field, Fields, GenericArgument, Lit, PathArguments,
+        Token, Type, TypeArray,
     },
 };
 
@@ -206,13 +206,19 @@ fn parse_len_arg(item: ParseStream) -> Result<VecDeque<TokenStream2>, syn::Error
 
     // Push them in reverse because get_next_arg() pops from the back
     for expr in exprs.into_iter().rev() {
-        if !matches!(expr, Expr::Path(_) | Expr::Lit(_)) {
-            return Err(syn::Error::new(
-                expr.span(),
-                "max_len only accepts identifiers, literals, or paths",
-            ));
+        match expr {
+            Expr::Path(path) => result.push_back(quote!((#path as usize))),
+            Expr::Lit(ExprLit {
+                lit: Lit::Int(lit_int),
+                ..
+            }) => result.push_back(quote!(#lit_int)),
+            other => {
+                return Err(syn::Error::new(
+                    other.span(),
+                    "max_len only accepts integer literals, identifiers, or paths",
+                ))
+            }
         }
-        result.push_back(quote!((#expr as usize)));
     }
 
     Ok(result)
@@ -234,5 +240,31 @@ fn get_next_arg(ident: &Ident, args: &mut Option<VecDeque<TokenStream2>>) -> Tok
         }
     } else {
         quote_spanned!(ident.span() => compile_error!("Expected max_len attribute."))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, syn::parse::Parser};
+
+    #[test]
+    fn parse_len_arg_accepts_int_literals_and_paths() {
+        let mut args = parse_len_arg.parse_str("10, module::MAX_LEN").unwrap();
+
+        assert_eq!(args.pop_back().unwrap().to_string(), "10");
+        assert_eq!(
+            args.pop_back().unwrap().to_string(),
+            "(module :: MAX_LEN as usize)"
+        );
+    }
+
+    #[test]
+    fn parse_len_arg_rejects_non_integer_literals() {
+        let err = parse_len_arg.parse_str("1.5").unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "max_len only accepts integer literals, identifiers, or paths"
+        );
     }
 }
