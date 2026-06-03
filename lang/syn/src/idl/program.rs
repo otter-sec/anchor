@@ -16,7 +16,22 @@ use {
 
 /// Generate the IDL build print function for the program module.
 pub fn gen_idl_print_fn_program(program: &Program) -> TokenStream {
-    check_safety_comments().unwrap_or_else(|e| panic!("Safety checks failed: {e}"));
+    // Check safety comments and emit compile errors spanned at the offending field if needed.
+    let safety_check_tokens = match check_safety_comments() {
+        Ok(tokens) => tokens,
+        Err(e) => {
+            // Use the span of the first instruction if available, otherwise use the program module span
+            let error_span = program
+                .ixs
+                .first()
+                .map(|ix| ix.raw_method.span())
+                .unwrap_or_else(|| program.program_mod.span());
+            return syn::Error::new(error_span, e.to_string()).to_compile_error();
+        }
+    };
+    if !safety_check_tokens.is_empty() {
+        return safety_check_tokens;
+    }
 
     let idl = get_idl_module_path();
     let no_docs = get_no_docs();
@@ -152,12 +167,13 @@ pub fn gen_idl_print_fn_program(program: &Program) -> TokenStream {
 }
 
 /// Check safety comments.
-fn check_safety_comments() -> Result<()> {
+/// Returns an empty TokenStream if OK, or a TokenStream with compile_error! if there are violations.
+fn check_safety_comments() -> Result<TokenStream> {
     let skip_lint = option_env!("ANCHOR_IDL_BUILD_SKIP_LINT")
         .map(|val| val == "TRUE")
         .unwrap_or_default();
     if skip_lint {
-        return Ok(());
+        return Ok(TokenStream::new());
     }
 
     let program_path = get_program_path();
@@ -175,7 +191,7 @@ fn check_safety_comments() -> Result<()> {
         //
         // Given this feature is not a critical one, and it works by default with `anchor build`,
         // we can fail silently in the case of an error rather than panicking.
-        return Ok(());
+        return Ok(TokenStream::new());
     }
 
     program_path

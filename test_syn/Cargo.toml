@@ -1,0 +1,9 @@
+[package]
+name = "test_syn"
+edition = "2024"
+version.workspace = true
+
+[dependencies]
+anchor-syn = { version = "1.0.2", path = "../lang/syn" }
+proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
+syn = { workspace = true, features = ["full"] }

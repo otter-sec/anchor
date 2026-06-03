@@ -1,8 +1,7 @@
 use {
-    crate::{codegen::program::common::*, parser, Program},
-    heck::CamelCase,
-    quote::{quote, quote_spanned, ToTokens},
-    syn::Type,
+    crate::{codegen::program::common::*, Program},
+    quote::{quote, ToTokens},
+    syn::{spanned::Spanned, Type},
 };
 
 /// Returns true for primitives, common std types, and types wrapped in Option/Vec.
@@ -73,24 +72,16 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
         .map(|ix| {
             let name = &ix.raw_method.sig.ident.to_string();
             let ix_cfgs = &ix.cfgs;
-            let Ok(ix_name_camel) = syn::parse_str::<syn::Ident>(&name.to_camel_case()) else {
-                return quote_spanned! { ix.raw_method.sig.ident.span()=>
-                    compile_error!("failed to parse ix method name after conversion to camelCase");
-                };
-            };
+            let ix_span = ix.raw_method.span();
+            let ix_name_camel = generate_ix_variant_name_spanned(name, ix_span);
             let raw_args: Vec<proc_macro2::TokenStream> = ix
                 .args
                 .iter()
                 .map(|arg| {
-                    #[allow(
-                        clippy::unwrap_used,
-                        reason = "\"pub \" prepended to a valid field token string is always \
-                                  valid Rust"
-                    )]
-                    let ts = format!("pub {}", parser::tts_to_string(&arg.raw_arg))
-                        .parse()
-                        .unwrap();
-                    ts
+                    let raw_arg = &arg.raw_arg;
+                    quote! {
+                        pub #raw_arg
+                    }
                 })
                 .collect();
 

@@ -4,6 +4,7 @@ use {
         AccountField, AccountsStruct, Ty,
     },
     quote::{quote, quote_spanned},
+    syn::spanned::Spanned,
 };
 
 // Generates the `Accounts` trait implementation.
@@ -171,7 +172,8 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                             &format!("__anchor_validate_ix_arg_type_{}", idx),
                             proc_macro2::Span::call_site(),
                         );
-                        quote! {
+                        let ty_span = ty.span();
+                        quote_spanned! { ty_span =>
                             #[doc(hidden)]
                             #[inline(always)]
                             pub fn #method_name<__T>(_arg: &__T)

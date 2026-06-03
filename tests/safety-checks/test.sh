@@ -1,37 +1,60 @@
 #!/bin/bash
+set -e
 
-echo "Building programs"
+echo "Safety Checks Test Suite"
 
 #
-# Build the UncheckedAccount variant.
+# UncheckedAccount with duplicate field names
 #
-pushd programs/unchecked-account/
-output=$(anchor build --ignore-keys 2>&1 > /dev/null)
-if ! [[ $output =~ "Struct field \"unchecked\" is unsafe" ]]; then
-   echo "Error: expected /// CHECK error"
+
+echo "[TEST 1] UncheckedAccount - Duplicate field names with struct context tracking"
+pushd programs/unchecked-account/ > /dev/null
+output=$(anchor build 2>&1 || true)
+if [[ $output =~ "Struct \"FuncTwo\" field \"unchecked\" is unsafe" ]]; then
+   echo "✓ PASS: Error message includes struct name (FuncTwo)"
+else
+   echo "✗ FAIL: Error message should include 'Struct \"FuncTwo\" field \"unchecked\" is unsafe'"
+   echo "Actual output:"
+   echo "$output"
    exit 1
 fi
-popd
+popd > /dev/null
+echo ""
 
 #
-# Build the AccountInfo variant.
+# AccountInfo field safety check
 #
-pushd programs/account-info/
-output=$(anchor build --ignore-keys 2>&1 > /dev/null)
-if ! [[ $output =~ "Struct field \"unchecked\" is unsafe" ]]; then
-   echo "Error: expected /// CHECK error"
+
+echo "[TEST 2] AccountInfo - Struct name validation"
+pushd programs/account-info/ > /dev/null
+output=$(anchor build 2>&1 || true)
+if [[ $output =~ "Struct \"Initialize\" field \"unchecked\" is unsafe" ]]; then
+   echo "✓ PASS: Error message includes struct name (Initialize)"
+else
+   echo "✗ FAIL: Error message should include 'Struct \"Initialize\" field \"unchecked\" is unsafe'"
+   echo "Actual output:"
+   echo "$output"
    exit 1
 fi
-popd
+popd > /dev/null
+echo ""
 
 #
-# Build the control variant.
+# Non-Account structs should be ignored
 #
-pushd programs/ignore-non-accounts/
-if ! anchor build --ignore-keys ; then
-   echo "Error: anchor build failed when it shouldn't have"
+
+echo "[TEST 3] Non-Account structs - Safety checks should be ignored"
+pushd programs/ignore-non-accounts/ > /dev/null
+if anchor build > /dev/null 2>&1 ; then
+   echo "✓ PASS: Build succeeded (non-account structs properly ignored)"
+else
+   echo "✗ FAIL: Build should succeed for non-account structs"
    exit 1
 fi
-popd
+popd > /dev/null
+echo ""
 
-echo "Success. As expected, all builds failed that were supposed to fail."
+echo "All Tests Passed"
+echo "✓ Struct names correctly included in error messages"
+echo "✓ Duplicate field names are properly distinguished"
+echo "✓ Non-account structs do not trigger false positives"

@@ -1,4 +1,9 @@
-use {crate::IxArg, anyhow::Result, heck::CamelCase, quote::quote};
+use {
+    crate::IxArg,
+    anyhow::Result,
+    heck::CamelCase,
+    quote::{quote, quote_spanned},
+};
 
 // Namespace for calculating instruction sighash signatures for any instruction
 // not affecting program state.
@@ -28,7 +33,7 @@ pub fn gen_discriminator(namespace: &str, name: impl ToString) -> proc_macro2::T
 
 pub fn generate_ix_variant(name: &str, args: &[IxArg]) -> Result<proc_macro2::TokenStream> {
     let ix_arg_names: Vec<&syn::Ident> = args.iter().map(|arg| &arg.name).collect();
-    let ix_name_camel = generate_ix_variant_name(name)?;
+    let ix_name_camel = generate_ix_variant_name(name);
 
     let variant = if args.is_empty() {
         quote! {
@@ -44,6 +49,32 @@ pub fn generate_ix_variant(name: &str, args: &[IxArg]) -> Result<proc_macro2::To
     Ok(variant)
 }
 
-pub fn generate_ix_variant_name(name: &str) -> Result<syn::Ident> {
-    Ok(syn::parse_str(&name.to_camel_case())?)
+pub fn generate_ix_variant_spanned(
+    name: &str,
+    args: &[IxArg],
+    span: proc_macro2::Span,
+) -> proc_macro2::TokenStream {
+    let ix_arg_names: Vec<&syn::Ident> = args.iter().map(|arg| &arg.name).collect();
+    let ix_name_camel = generate_ix_variant_name_spanned(name, span);
+
+    if args.is_empty() {
+        quote_spanned! { span =>
+            #ix_name_camel
+        }
+    } else {
+        quote_spanned! { span =>
+            #ix_name_camel {
+                #(#ix_arg_names),*
+            }
+        }
+    }
+}
+
+pub fn generate_ix_variant_name(name: &str) -> syn::Ident {
+    generate_ix_variant_name_spanned(name, proc_macro2::Span::call_site())
+}
+
+pub fn generate_ix_variant_name_spanned(name: &str, span: proc_macro2::Span) -> syn::Ident {
+    let n = name.to_camel_case();
+    syn::Ident::new(&n, span)
 }

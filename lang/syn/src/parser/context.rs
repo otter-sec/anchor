@@ -1,11 +1,14 @@
 use {
-    anyhow::{anyhow, Result},
+    anyhow::Result,
+    proc_macro2::TokenStream,
+    quote::quote_spanned,
     std::{
         collections::BTreeMap,
         path::{Path, PathBuf},
     },
     syn::{
         parse::{Error as ParseError, Result as ParseResult},
+        spanned::Spanned,
         Ident, ImplItem, ImplItemConst, Type, TypePath,
     },
 };
@@ -57,12 +60,13 @@ impl CrateContext {
         ModuleContext { detail }
     }
 
-    // Perform Anchor safety checks on the parsed create
-    pub fn safety_checks(&self) -> Result<()> {
+    // Perform Anchor safety checks on the parsed crate
+    // Returns a TokenStream with compile_error! if there are issues, or empty TokenStream if OK.
+    pub fn safety_checks(&self) -> Result<TokenStream> {
         // Check all structs for unsafe field types, i.e. AccountInfo and UncheckedAccount.
         for ctx in self.modules.values() {
-            for unsafe_field in ctx.unsafe_struct_fields() {
-                // Check if unsafe field type has been documented with a /// SAFETY: doc string.
+            for (struct_name, unsafe_field) in ctx.unsafe_struct_fields_with_struct_name() {
+                // Check if unsafe field type has been documented with a /// CHECK: doc string.
                 let is_documented = unsafe_field.attrs.iter().any(|attr| {
                     if let syn::Meta::NameValue(syn::MetaNameValue {
                         value:
@@ -84,31 +88,28 @@ impl CrateContext {
                         reason = "unsafe fields always have idents (named fields only)"
                     )]
                     let ident = unsafe_field.ident.as_ref().unwrap();
-                    let span = ident.span();
-                    // Error if undocumented.
-                    #[allow(
-                        clippy::unwrap_used,
-                        reason = "file paths are always valid during compilation"
-                    )]
-                    let canonical = ctx.file.canonicalize().unwrap();
-                    return Err(anyhow!(
-                        r#"
-        {}:{}:{}
-        Struct field "{}" is unsafe, but is not documented.
-        Please add a `/// CHECK:` doc comment explaining why no checks through types are necessary.
-        Alternatively, for reasons like quick prototyping, you may disable the safety checks
-        by using the `skip-lint` option.
-        See https://www.anchor-lang.com/docs/references/account-types#uncheckedaccountinfo for more information.
-                    "#,
-                        canonical.display(),
-                        span.start().line,
-                        span.start().column,
-                        ident
-                    ));
+                    let field_name = ident.to_string();
+                    let field_span = unsafe_field.span();
+
+                    let error_msg = format!(
+                        "Struct \"{}\" field \"{}\" is unsafe, but is not documented. \
+                         Please add a `/// CHECK:` doc comment explaining why no checks \
+                         through types are necessary. \
+                         Alternatively, for reasons like quick prototyping, you may disable \
+                         the safety checks by using the `skip-lint` option. \
+                         See https://www.anchor-lang.com/docs/the-accounts-struct#safety-checks \
+                         for more information.",
+                        struct_name,
+                        field_name
+                    );
+
+                    return Ok(quote_spanned! { field_span =>
+                        compile_error!(#error_msg);
+                    });
                 };
             }
         }
-        Ok(())
+        Ok(TokenStream::new())
     }
 }
 
@@ -255,7 +256,7 @@ impl ParsedModule {
         })
     }
 
-    fn unsafe_struct_fields(&self) -> impl Iterator<Item = &syn::Field> {
+    fn unsafe_struct_fields_with_struct_name(&self) -> impl Iterator<Item = (String, &syn::Field)> {
         let accounts_filter = |item_struct: &&syn::ItemStruct| {
             item_struct.attrs.iter().any(|attr| {
                 attr.path().is_ident("derive")
@@ -273,14 +274,18 @@ impl ParsedModule {
 
         self.structs()
             .filter(accounts_filter)
-            .flat_map(|s| &s.fields)
-            .filter(|f| match &f.ty {
+            .flat_map(|s| {
+                let struct_name = s.ident.to_string();
+                s.fields.iter().map(move |f| (struct_name.clone(), f))
+            })
+            .filter(|(_, f)| match &f.ty {
                 syn::Type::Path(syn::TypePath {
                     path: syn::Path { segments, .. },
                     ..
                 }) => {
-                    segments.len() == 1 && segments[0].ident == "UncheckedAccount"
-                        || segments[0].ident == "AccountInfo"
+                    segments.len() == 1
+                        && (segments[0].ident == "UncheckedAccount"
+                            || segments[0].ident == "AccountInfo")
                 }
                 _ => false,
             })

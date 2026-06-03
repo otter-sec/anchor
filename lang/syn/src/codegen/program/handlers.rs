@@ -1,6 +1,7 @@
 use {
     crate::{codegen::program::common::*, Program},
-    quote::{quote, ToTokens},
+    quote::{quote, quote_spanned, ToTokens},
+    syn::spanned::Spanned,
 };
 
 // Generate non-inlined wrappers for each instruction handler, since Solana's
@@ -26,20 +27,9 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
             let ix_arg_names: Vec<&syn::Ident> = ix.args.iter().map(|arg| &arg.name).collect();
             let ix_method_name = &ix.raw_method.sig.ident;
             let ix_method_name_str = ix_method_name.to_string();
-            let ix_name = match generate_ix_variant_name(&ix_method_name_str) {
-                Ok(name) => quote! { #name },
-                Err(e) => {
-                    let err = e.to_string();
-                    return quote! { compile_error!(concat!("error generating ix variant name: `", #err, "`")) };
-                }
-            };
-            let variant_arm = match generate_ix_variant(&ix_method_name_str, &ix.args) {
-                Ok(v) => v,
-                Err(e) => {
-                    let err = e.to_string();
-                    return quote! { compile_error!(concat!("error generating ix variant arm: `", #err, "`")) };
-                }
-            };
+            let ix_span = ix.raw_method.span();
+            let ix_name = generate_ix_variant_name(&ix_method_name_str);
+            let variant_arm = generate_ix_variant_spanned(&ix_method_name_str, &ix.args, ix_span);
 
             let ix_name_log = format!("Instruction: {ix_name}");
             let accounts_struct_name = &ix.anchor_ident;
@@ -78,7 +68,8 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                         &format!("__anchor_validate_ix_arg_type_{}", idx),
                         proc_macro2::Span::call_site(),
                     );
-                    quote! {
+                    let arg_ty_span = arg_ty.span();
+                    quote_spanned! { arg_ty_span =>
                         const _: fn() = || {
                             let _: fn(&#arg_ty) = #accounts_struct_name::#method_name;
                         };

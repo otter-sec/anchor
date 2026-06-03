@@ -1,0 +1,768 @@
+From 87f5e56dd93e742b5e3224d583154778ee22e129 Mon Sep 17 00:00:00 2001
+From: AvhiMaz <avhimazumder5@outlook.com>
+Date: Thu, 6 Nov 2025 18:34:15 +0530
+Subject: [PATCH 1/5] refactor: Use quote_spanned! strategically in #[program]
+ macro for better error messages
+
+Signed-off-by: AvhiMaz <avhimazumder5@outlook.com>
+---
+ lang/syn/src/codegen/program/accounts.rs      | 21 +++--
+ lang/syn/src/codegen/program/common.rs        | 31 +++++--
+ lang/syn/src/codegen/program/cpi.rs           | 36 ++++----
+ lang/syn/src/codegen/program/dispatch.rs      | 13 ++-
+ lang/syn/src/codegen/program/handlers.rs      | 37 +++-----
+ lang/syn/src/codegen/program/instruction.rs   | 25 +++---
+ lang/syn/src/idl/program.rs                   | 23 ++++-
+ lang/syn/src/parser/context.rs                | 84 +++++++++----------
+ .../programs/unchecked-account/src/lib.rs     | 15 +++-
+ tests/safety-checks/test.sh                   | 61 +++++++++-----
+ 10 files changed, 204 insertions(+), 142 deletions(-)
+
+diff --git a/lang/syn/src/codegen/program/accounts.rs b/lang/syn/src/codegen/program/accounts.rs
+index d26eafe4f7..039b964e3f 100644
+--- a/lang/syn/src/codegen/program/accounts.rs
++++ b/lang/syn/src/codegen/program/accounts.rs
+@@ -1,7 +1,11 @@
+-use {crate::Program, heck::SnakeCase, quote::quote};
++use crate::Program;
++use heck::SnakeCase;
++use quote::{quote, quote_spanned};
++use syn::spanned::Spanned;
+ 
+ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+     let mut accounts = std::collections::HashMap::new();
++    let mut ix_spans = std::collections::HashMap::new();
+ 
+     // Go through instruction accounts.
+     for ix in &program.ixs {
+@@ -11,19 +15,20 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+             "__client_accounts_{}",
+             anchor_ident.to_string().to_snake_case()
+         );
++        ix_spans.insert(macro_name.clone(), ix.raw_method.span());
+         accounts.insert(macro_name, ix.cfgs.as_slice());
+     }
+ 
+     // Build the tokens from all accounts
+     let account_structs: Vec<proc_macro2::TokenStream> = accounts
+         .iter()
+-        .map(|(macro_name, cfgs)| {
+-            #[allow(
+-                clippy::unwrap_used,
+-                reason = "computed from valid Rust identifier via snake_case"
+-            )]
+-            let macro_name: proc_macro2::TokenStream = macro_name.parse().unwrap();
+-            quote! {
++        .map(|(macro_name_str, cfgs)| {
++            let macro_name: proc_macro2::TokenStream = macro_name_str.parse().unwrap();
++            let ix_span = ix_spans
++                .get(macro_name_str)
++                .copied()
++                .unwrap_or_else(proc_macro2::Span::call_site);
++            quote_spanned! { ix_span =>
+                 #(#cfgs)*
+                 pub use crate::#macro_name::*;
+             }
+diff --git a/lang/syn/src/codegen/program/common.rs b/lang/syn/src/codegen/program/common.rs
+index 09f396f7f8..8ddf0c4e66 100644
+--- a/lang/syn/src/codegen/program/common.rs
++++ b/lang/syn/src/codegen/program/common.rs
+@@ -1,4 +1,7 @@
+-use {crate::IxArg, anyhow::Result, heck::CamelCase, quote::quote};
++use crate::IxArg;
++use anyhow::Result;
++use heck::CamelCase;
++use quote::{quote, quote_spanned};
+ 
+ // Namespace for calculating instruction sighash signatures for any instruction
+ // not affecting program state.
+@@ -26,24 +29,36 @@ pub fn gen_discriminator(namespace: &str, name: impl ToString) -> proc_macro2::T
+     ts
+ }
+ 
+-pub fn generate_ix_variant(name: &str, args: &[IxArg]) -> Result<proc_macro2::TokenStream> {
++pub fn generate_ix_variant_spanned(
++    name: &str,
++    args: &[IxArg],
++    span: proc_macro2::Span,
++) -> proc_macro2::TokenStream {
+     let ix_arg_names: Vec<&syn::Ident> = args.iter().map(|arg| &arg.name).collect();
+-    let ix_name_camel = generate_ix_variant_name(name)?;
++    let ix_name_camel = generate_ix_variant_name_spanned(name, span);
+ 
+-    let variant = if args.is_empty() {
+-        quote! {
++    if args.is_empty() {
++        quote_spanned! { span =>
+             #ix_name_camel
+         }
+     } else {
+-        quote! {
++        quote_spanned! { span =>
+             #ix_name_camel {
+                 #(#ix_arg_names),*
+             }
+         }
+-    };
+-    Ok(variant)
++    }
+ }
+ 
+ pub fn generate_ix_variant_name(name: &str) -> Result<syn::Ident> {
+     Ok(syn::parse_str(&name.to_camel_case())?)
+ }
++
++pub fn generate_ix_variant_name_spanned(
++    name: &str,
++    span: proc_macro2::Span,
++) -> proc_macro2::TokenStream {
++    let n = name.to_camel_case();
++    let ident = proc_macro2::Ident::new(&n, span);
++    quote_spanned! { span => #ident }
++}
+diff --git a/lang/syn/src/codegen/program/cpi.rs b/lang/syn/src/codegen/program/cpi.rs
+index a67d0721a7..a9f7415504 100644
+--- a/lang/syn/src/codegen/program/cpi.rs
++++ b/lang/syn/src/codegen/program/cpi.rs
+@@ -1,11 +1,10 @@
+-use {
+-    crate::{
+-        codegen::program::common::{generate_ix_variant, generate_ix_variant_name},
+-        Program,
+-    },
+-    heck::SnakeCase,
+-    quote::{quote, ToTokens},
++use crate::codegen::program::common::{
++    generate_ix_variant_name_spanned, generate_ix_variant_spanned,
+ };
++use crate::Program;
++use heck::SnakeCase;
++use quote::{quote, quote_spanned, ToTokens};
++use syn::spanned::Spanned;
+ 
+ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+     // Generate cpi methods for global methods.
+@@ -18,35 +17,28 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+             let cpi_method = {
+                 let name = &ix.raw_method.sig.ident;
+                 let name_str = name.to_string();
+-                let ix_variant = match generate_ix_variant(&name_str, &ix.args) {
+-                    Ok(v) => v,
+-                    Err(e) => {
+-                        let err = e.to_string();
+-                        return quote! { compile_error!(concat!("error generating ix variant: `", #err, "`")) };
+-                    }
+-                };
++                let ix_span = ix.raw_method.span();
++                let ix_variant = generate_ix_variant_spanned(&name_str, &ix.args, ix_span);
+                 let method_name = &ix.ident;
+                 let args: Vec<&syn::PatType> = ix.args.iter().map(|arg| &arg.raw_arg).collect();
+-                let discriminator = match generate_ix_variant_name(&name_str) {
+-                    Ok(name) => quote! { <instruction::#name as anchor_lang::Discriminator>::DISCRIMINATOR },
+-                    Err(e) => {
+-                        let err = e.to_string();
+-                        return quote! { compile_error!(concat!("error generating ix variant name: `", #err, "`")) };
+-                    }
++                let discriminator = {
++                    let name = generate_ix_variant_name_spanned(&name_str, ix_span);
++                    quote_spanned! { ix_span => <instruction::#name as anchor_lang::Discriminator>::DISCRIMINATOR }
+                 };
+                 let ret_type = &ix.returns.ty.to_token_stream();
+                 let ix_cfgs = &ix.cfgs;
+                 let (method_ret, maybe_return) = match ret_type.to_string().as_str() {
+-                    "()" => (quote! {anchor_lang::Result<()> }, quote! { Ok(()) }),
++                    "()" => (quote! { anchor_lang::Result<()> }, quote! { Ok(()) }),
+                     _ => (
+                         quote! { anchor_lang::Result<crate::cpi::Return::<#ret_type>> },
+                         quote! { Ok(crate::cpi::Return::<#ret_type> { phantom: crate::cpi::PhantomData, program_id: ctx.program_id }) }
+                     )
+                 };
++                let spanned_method_name = quote_spanned! { ix_span => #method_name };
+ 
+                 quote! {
+                     #(#ix_cfgs)*
+-                    pub fn #method_name<'a, 'b, 'c, 'info>(
++                    pub fn #spanned_method_name<'a, 'b, 'c, 'info>(
+                         ctx: anchor_lang::context::CpiContext<'a, 'b, 'c, 'info, #accounts_ident<'info>>,
+                         #(#args),*
+                     ) -> #method_ret {
+diff --git a/lang/syn/src/codegen/program/dispatch.rs b/lang/syn/src/codegen/program/dispatch.rs
+index 13fc2fd9b9..3ea6e32889 100644
+--- a/lang/syn/src/codegen/program/dispatch.rs
++++ b/lang/syn/src/codegen/program/dispatch.rs
+@@ -1,4 +1,7 @@
+-use {crate::Program, heck::CamelCase, quote::quote};
++use crate::Program;
++use heck::CamelCase;
++use quote::{quote, quote_spanned};
++use syn::spanned::Spanned;
+ 
+ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+     // Dispatch all global instructions.
+@@ -13,13 +16,15 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+             .to_camel_case()
+             .parse()
+             .expect("Failed to parse ix method name in camel as `TokenStream`");
++        let ix_span = ix.raw_method.span();
+         let discriminator = quote! { instruction::#ix_name_camel::DISCRIMINATOR };
++        let spanned_method_name = quote_spanned! { ix_span => #ix_method_name };
+         let ix_cfgs = &ix.cfgs;
+ 
+         quote! {
+             #(#ix_cfgs)*
+             if data.starts_with(#discriminator) {
+-                return __private::__global::#ix_method_name(
++                return __private::__global::#spanned_method_name(
+                     program_id,
+                     accounts,
+                     &data[#discriminator.len()..],
+@@ -52,8 +57,10 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+         .map(|fallback_fn| {
+             let program_name = &program.name;
+             let fn_name = &fallback_fn.raw_method.sig.ident;
++            let fallback_span = fallback_fn.raw_method.span();
++            let spanned_fn_name = quote_spanned! { fallback_span => #fn_name };
+             quote! {
+-                #program_name::#fn_name(program_id, accounts, data)
++                #program_name::#spanned_fn_name(program_id, accounts, data)
+             }
+         })
+         .unwrap_or_else(|| {
+diff --git a/lang/syn/src/codegen/program/handlers.rs b/lang/syn/src/codegen/program/handlers.rs
+index 4c1e125172..22c55995a6 100644
+--- a/lang/syn/src/codegen/program/handlers.rs
++++ b/lang/syn/src/codegen/program/handlers.rs
+@@ -1,7 +1,7 @@
+-use {
+-    crate::{codegen::program::common::*, Program},
+-    quote::{quote, ToTokens},
+-};
++use crate::codegen::program::common::*;
++use crate::Program;
++use quote::{quote, quote_spanned, ToTokens};
++use syn::spanned::Spanned;
+ 
+ // Generate non-inlined wrappers for each instruction handler, since Solana's
+ // BPF max stack size can't handle reasonable sized dispatch trees without doing
+@@ -18,25 +18,14 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+             let ix_arg_names: Vec<&syn::Ident> = ix.args.iter().map(|arg| &arg.name).collect();
+             let ix_method_name = &ix.raw_method.sig.ident;
+             let ix_method_name_str = ix_method_name.to_string();
+-            let ix_name = match generate_ix_variant_name(&ix_method_name_str) {
+-                Ok(name) => quote! { #name },
+-                Err(e) => {
+-                    let err = e.to_string();
+-                    return quote! { compile_error!(concat!("error generating ix variant name: `", #err, "`")) };
+-                }
+-            };
+-            let variant_arm = match generate_ix_variant(&ix_method_name_str, &ix.args) {
+-                Ok(v) => v,
+-                Err(e) => {
+-                    let err = e.to_string();
+-                    return quote! { compile_error!(concat!("error generating ix variant arm: `", #err, "`")) };
+-                }
+-            };
+-
++            let ix_span = ix.raw_method.span();
++            let ix_name = generate_ix_variant_name(&ix_method_name_str);
++            let variant_arm = generate_ix_variant_spanned(&ix_method_name_str, &ix.args, ix_span);
+             let ix_name_log = format!("Instruction: {ix_name}");
+             let accounts_struct_name = &ix.anchor_ident;
+             let ret_type = &ix.returns.ty.to_token_stream();
+             let cfgs = &ix.cfgs;
++            let ix_span = ix.raw_method.span();
+             let maybe_set_return_data = match ret_type.to_string().as_str() {
+                 "()" => quote! {},
+                 _ => quote! {
+@@ -46,7 +35,6 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+                 },
+             };
+ 
+-
+             // Build clear error messages
+             let actual_param_count = ix.args.len();
+             let count_error_msg = format!(
+@@ -93,13 +81,14 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+                 #(#type_validations)*
+             };
+ 
++            let spanned_fn_name = quote_spanned! { ix_span => #ix_method_name };
+             quote! {
+                 #(#cfgs)*
+                 #[inline(never)]
+-                pub fn #ix_method_name<'info>(
+-                    __program_id: &'info Pubkey,
+-                    __accounts: &'info [AccountInfo<'info>],
+-                    __ix_data: &'info [u8],
++                pub fn #spanned_fn_name<'info>(
++                    __program_id: &Pubkey,
++                    __accounts: &'info[AccountInfo<'info>],
++                    __ix_data: &[u8],
+                 ) -> anchor_lang::Result<()> {
+                     #[cfg(not(feature = "no-log-ix-name"))]
+                     anchor_lang::prelude::msg!(#ix_name_log);
+diff --git a/lang/syn/src/codegen/program/instruction.rs b/lang/syn/src/codegen/program/instruction.rs
+index e04ae60030..cfe871db28 100644
+--- a/lang/syn/src/codegen/program/instruction.rs
++++ b/lang/syn/src/codegen/program/instruction.rs
+@@ -1,8 +1,9 @@
+-use {
+-    crate::{codegen::program::common::*, parser, Program},
+-    heck::CamelCase,
+-    quote::{quote, quote_spanned, ToTokens},
+-};
++use crate::codegen::program::common::*;
++use crate::parser;
++use crate::Program;
++use heck::CamelCase;
++use quote::{quote, quote_spanned, ToTokens};
++use syn::spanned::Spanned;
+ 
+ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+     let variants: Vec<proc_macro2::TokenStream> = program
+@@ -38,16 +39,18 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+                     }
+                     _ => gen_discriminator(SIGHASH_GLOBAL_NAMESPACE, name),
+                 };
++                let ix_span = ix.raw_method.span();
++                let spanned_name = quote_spanned! { ix_span => #ix_name_camel };
+ 
+                 quote! {
+                     #(#ix_cfgs)*
+-                    impl anchor_lang::Discriminator for #ix_name_camel {
++                    impl anchor_lang::Discriminator for #spanned_name {
+                         const DISCRIMINATOR: &'static [u8] = #discriminator;
+                     }
+                     #(#ix_cfgs)*
+-                    impl anchor_lang::InstructionData for #ix_name_camel {}
++                    impl anchor_lang::InstructionData for #spanned_name {}
+                     #(#ix_cfgs)*
+-                    impl anchor_lang::Owner for #ix_name_camel {
++                    impl anchor_lang::Owner for #spanned_name {
+                         fn owner() -> Pubkey {
+                             ID
+                         }
+@@ -55,12 +58,14 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+                 }
+             };
+             // If no args, output a "unit" variant instead of a struct variant.
++            let ix_span = ix.raw_method.span();
++            let spanned_name = quote_spanned! { ix_span => #ix_name_camel };
+             if ix.args.is_empty() {
+                 quote! {
+                     #(#ix_cfgs)*
+                     /// Instruction.
+                     #[derive(AnchorSerialize, AnchorDeserialize)]
+-                    pub struct #ix_name_camel;
++                    pub struct #spanned_name;
+ 
+                     #impls
+                 }
+@@ -69,7 +74,7 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+                     #(#ix_cfgs)*
+                     /// Instruction.
+                     #[derive(AnchorSerialize, AnchorDeserialize)]
+-                    pub struct #ix_name_camel {
++                    pub struct #spanned_name {
+                         #(#raw_args),*
+                     }
+ 
+diff --git a/lang/syn/src/idl/program.rs b/lang/syn/src/idl/program.rs
+index 74ae33c69a..336957e7ca 100644
+--- a/lang/syn/src/idl/program.rs
++++ b/lang/syn/src/idl/program.rs
+@@ -16,7 +16,19 @@ use {
+ 
+ /// Generate the IDL build print function for the program module.
+ pub fn gen_idl_print_fn_program(program: &Program) -> TokenStream {
+-    check_safety_comments().unwrap_or_else(|e| panic!("Safety checks failed: {e}"));
++    // Check safety comments and emit compile errors if needed
++    let safety_check_errors = match check_safety_comments() {
++        Ok(tokens) => tokens,
++        Err(e) => {
++            // If we can't perform safety checks, emit a compile error
++            return e.to_compile_error();
++        }
++    };
++
++    // If there are safety check errors, return them early
++    if !safety_check_errors.is_empty() {
++        return safety_check_errors;
++    }
+ 
+     let idl = get_idl_module_path();
+     let no_docs = get_no_docs();
+@@ -152,12 +164,15 @@ pub fn gen_idl_print_fn_program(program: &Program) -> TokenStream {
+ }
+ 
+ /// Check safety comments.
+-fn check_safety_comments() -> Result<()> {
++/// Returns a TokenStream that either:
++/// - Is empty if no errors
++/// - Contains compile_error! if there are safety check violations
++fn check_safety_comments() -> Result<TokenStream> {
+     let skip_lint = option_env!("ANCHOR_IDL_BUILD_SKIP_LINT")
+         .map(|val| val == "TRUE")
+         .unwrap_or_default();
+     if skip_lint {
+-        return Ok(());
++        return Ok(TokenStream::new());
+     }
+ 
+     let program_path = get_program_path();
+@@ -175,7 +190,7 @@ fn check_safety_comments() -> Result<()> {
+         //
+         // Given this feature is not a critical one, and it works by default with `anchor build`,
+         // we can fail silently in the case of an error rather than panicking.
+-        return Ok(());
++        return Ok(TokenStream::new());
+     }
+ 
+     program_path
+diff --git a/lang/syn/src/parser/context.rs b/lang/syn/src/parser/context.rs
+index dc4425f6c7..9dfca0ad0f 100644
+--- a/lang/syn/src/parser/context.rs
++++ b/lang/syn/src/parser/context.rs
+@@ -1,14 +1,11 @@
+-use {
+-    anyhow::{anyhow, Result},
+-    std::{
+-        collections::BTreeMap,
+-        path::{Path, PathBuf},
+-    },
+-    syn::{
+-        parse::{Error as ParseError, Result as ParseResult},
+-        Ident, ImplItem, ImplItemConst, Type, TypePath,
+-    },
+-};
++use anyhow::Result;
++use proc_macro2::TokenStream;
++use quote::quote_spanned;
++use std::collections::BTreeMap;
++use std::path::{Path, PathBuf};
++use syn::parse::{Error as ParseError, Result as ParseResult};
++use syn::spanned::Spanned;
++use syn::{Ident, ImplItem, ImplItemConst, Type, TypePath};
+ 
+ /// Crate parse context
+ ///
+@@ -57,12 +54,15 @@ impl CrateContext {
+         ModuleContext { detail }
+     }
+ 
+-    // Perform Anchor safety checks on the parsed create
+-    pub fn safety_checks(&self) -> Result<()> {
++    // Perform Anchor safety checks on the parsed crate
++    // Returns a TokenStream with compile_error! if there are issues, or empty TokenStream if OK
++    pub fn safety_checks(&self) -> Result<TokenStream> {
+         // Check all structs for unsafe field types, i.e. AccountInfo and UncheckedAccount.
+         for ctx in self.modules.values() {
+-            for unsafe_field in ctx.unsafe_struct_fields() {
+-                // Check if unsafe field type has been documented with a /// SAFETY: doc string.
++            // Iterate through each struct individually to track which struct each field belongs to
++            for unsafe_field_with_struct in ctx.unsafe_struct_fields_with_struct_name() {
++                let (struct_name, unsafe_field) = unsafe_field_with_struct;
++                // Check if unsafe field type has been documented with a /// CHECK: doc string.
+                 let is_documented = unsafe_field.attrs.iter().any(|attr| {
+                     attr.tokens.clone().into_iter().any(|token| match token {
+                         // Check for doc comments containing CHECK
+@@ -76,31 +76,27 @@ impl CrateContext {
+                         reason = "unsafe fields always have idents (named fields only)"
+                     )]
+                     let ident = unsafe_field.ident.as_ref().unwrap();
+-                    let span = ident.span();
+-                    // Error if undocumented.
+-                    #[allow(
+-                        clippy::unwrap_used,
+-                        reason = "file paths are always valid during compilation"
+-                    )]
+-                    let canonical = ctx.file.canonicalize().unwrap();
+-                    return Err(anyhow!(
+-                        r#"
+-        {}:{}:{}
+-        Struct field "{}" is unsafe, but is not documented.
+-        Please add a `/// CHECK:` doc comment explaining why no checks through types are necessary.
+-        Alternatively, for reasons like quick prototyping, you may disable the safety checks
+-        by using the `skip-lint` option.
+-        See https://www.anchor-lang.com/docs/basics/program-structure#account-validation for more information.
+-                    "#,
+-                        canonical.display(),
+-                        span.start().line,
+-                        span.start().column,
+-                        ident
+-                    ));
++                    let field_name = ident.to_string();
++                    let field_span = unsafe_field.span();
++
++                    // Use quote_spanned! to emit error at field location
++                    let error_msg = format!(
++                        "Struct \"{}\" field \"{}\" is unsafe, but is not documented. \
++                         Please add a `/// CHECK:` doc comment explaining why no checks through types are necessary. \
++                         Alternatively, for reasons like quick prototyping, you may disable the safety checks \
++                         by using the `skip-lint` option. \
++                         See https://www.anchor-lang.com/docs/the-accounts-struct#safety-checks for more information.",
++                        struct_name,
++                        field_name
++                    );
++
++                    return Ok(quote_spanned! { field_span =>
++                        compile_error!(#error_msg);
++                    });
+                 };
+             }
+         }
+-        Ok(())
++        Ok(TokenStream::new())
+     }
+ }
+ 
+@@ -247,7 +243,7 @@ impl ParsedModule {
+         })
+     }
+ 
+-    fn unsafe_struct_fields(&self) -> impl Iterator<Item = &syn::Field> {
++    fn unsafe_struct_fields_with_struct_name(&self) -> impl Iterator<Item = (String, &syn::Field)> {
+         let accounts_filter = |item_struct: &&syn::ItemStruct| {
+             item_struct.attrs.iter().any(|attr| {
+                 match attr.parse_meta() {
+@@ -263,14 +259,18 @@ impl ParsedModule {
+ 
+         self.structs()
+             .filter(accounts_filter)
+-            .flat_map(|s| &s.fields)
+-            .filter(|f| match &f.ty {
++            .flat_map(|s| {
++                let struct_name = s.ident.to_string();
++                s.fields.iter().map(move |f| (struct_name.clone(), f))
++            })
++            .filter(|(_, f)| match &f.ty {
+                 syn::Type::Path(syn::TypePath {
+                     path: syn::Path { segments, .. },
+                     ..
+                 }) => {
+-                    segments.len() == 1 && segments[0].ident == "UncheckedAccount"
+-                        || segments[0].ident == "AccountInfo"
++                    segments.len() == 1
++                        && (segments[0].ident == "UncheckedAccount"
++                            || segments[0].ident == "AccountInfo")
+                 }
+                 _ => false,
+             })
+diff --git a/tests/safety-checks/programs/unchecked-account/src/lib.rs b/tests/safety-checks/programs/unchecked-account/src/lib.rs
+index d9f59cf883..a5eed8c1d4 100644
+--- a/tests/safety-checks/programs/unchecked-account/src/lib.rs
++++ b/tests/safety-checks/programs/unchecked-account/src/lib.rs
+@@ -5,12 +5,23 @@ declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+ #[program]
+ pub mod unchecked_account {
+     use super::*;
+-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
++    pub fn initialize_func_one(_ctx: Context<FuncOne>) -> Result<()> {
+         Ok(())
+     }
++
++    pub fn initialize_func_two(_ctx: Context<FuncTwo>) -> Result<()> {
++        Ok(())
++    }
++}
++
++#[derive(Accounts)]
++pub struct FuncOne<'info> {
++    /// CHECK: This account is checked in FuncOne
++    unchecked: UncheckedAccount<'info>,
+ }
+ 
+ #[derive(Accounts)]
+-pub struct Initialize<'info> {
++pub struct FuncTwo<'info> {
++    // This is missing the CHECK documentation - error should point to line 24 (not line 18)
+     unchecked: UncheckedAccount<'info>,
+ }
+diff --git a/tests/safety-checks/test.sh b/tests/safety-checks/test.sh
+index d5f9071ddf..0493d4d1a9 100755
+--- a/tests/safety-checks/test.sh
++++ b/tests/safety-checks/test.sh
+@@ -1,37 +1,60 @@
+ #!/bin/bash
++set -e
+ 
+-echo "Building programs"
++echo "Safety Checks Test Suite"
+ 
+ #
+-# Build the UncheckedAccount variant.
++# UncheckedAccount with duplicate field names
+ #
+-pushd programs/unchecked-account/
+-output=$(anchor build --ignore-keys 2>&1 > /dev/null)
+-if ! [[ $output =~ "Struct field \"unchecked\" is unsafe" ]]; then
+-   echo "Error: expected /// CHECK error"
++
++echo "[TEST 1] UncheckedAccount - Duplicate field names with struct context tracking"
++pushd programs/unchecked-account/ > /dev/null
++output=$(anchor build 2>&1 || true)
++if [[ $output =~ "Struct \"FuncTwo\" field \"unchecked\" is unsafe" ]]; then
++   echo "✓ PASS: Error message includes struct name (FuncTwo)"
++else
++   echo "✗ FAIL: Error message should include 'Struct \"FuncTwo\" field \"unchecked\" is unsafe'"
++   echo "Actual output:"
++   echo "$output"
+    exit 1
+ fi
+-popd
++popd > /dev/null
++echo ""
+ 
+ #
+-# Build the AccountInfo variant.
++# AccountInfo field safety check
+ #
+-pushd programs/account-info/
+-output=$(anchor build --ignore-keys 2>&1 > /dev/null)
+-if ! [[ $output =~ "Struct field \"unchecked\" is unsafe" ]]; then
+-   echo "Error: expected /// CHECK error"
++
++echo "[TEST 2] AccountInfo - Struct name validation"
++pushd programs/account-info/ > /dev/null
++output=$(anchor build 2>&1 || true)
++if [[ $output =~ "Struct \"Initialize\" field \"unchecked\" is unsafe" ]]; then
++   echo "✓ PASS: Error message includes struct name (Initialize)"
++else
++   echo "✗ FAIL: Error message should include 'Struct \"Initialize\" field \"unchecked\" is unsafe'"
++   echo "Actual output:"
++   echo "$output"
+    exit 1
+ fi
+-popd
++popd > /dev/null
++echo ""
+ 
+ #
+-# Build the control variant.
++# Non-Account structs should be ignored
+ #
+-pushd programs/ignore-non-accounts/
+-if ! anchor build --ignore-keys ; then
+-   echo "Error: anchor build failed when it shouldn't have"
++
++echo "[TEST 3] Non-Account structs - Safety checks should be ignored"
++pushd programs/ignore-non-accounts/ > /dev/null
++if anchor build > /dev/null 2>&1 ; then
++   echo "✓ PASS: Build succeeded (non-account structs properly ignored)"
++else
++   echo "✗ FAIL: Build should succeed for non-account structs"
+    exit 1
+ fi
+-popd
++popd > /dev/null
++echo ""
+ 
+-echo "Success. As expected, all builds failed that were supposed to fail."
++echo "All Tests Passed"
++echo "✓ Struct names correctly included in error messages"
++echo "✓ Duplicate field names are properly distinguished"
++echo "✓ Non-account structs do not trigger false positives"
+
+From 425755fc0b410c2059747dad88771276244f079b Mon Sep 17 00:00:00 2001
+From: AvhiMaz <avhimazumder5@outlook.com>
+Date: Fri, 7 Nov 2025 08:24:27 +0530
+Subject: [PATCH 2/5] fix: fix failing testcases
+
+Signed-off-by: AvhiMaz <avhimazumder5@outlook.com>
+---
+ lang/syn/src/idl/program.rs | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/lang/syn/src/idl/program.rs b/lang/syn/src/idl/program.rs
+index 336957e7ca..6a5c21b985 100644
+--- a/lang/syn/src/idl/program.rs
++++ b/lang/syn/src/idl/program.rs
+@@ -21,7 +21,8 @@ pub fn gen_idl_print_fn_program(program: &Program) -> TokenStream {
+         Ok(tokens) => tokens,
+         Err(e) => {
+             // If we can't perform safety checks, emit a compile error
+-            return e.to_compile_error();
++            return syn::Error::new(proc_macro2::Span::call_site(), e.to_string())
++                .to_compile_error();
+         }
+     };
+ 
+
+From 2aeea77d3ff0cf88bf3f89e8948563addad27414 Mon Sep 17 00:00:00 2001
+From: AvhiMaz <avhimazumder5@outlook.com>
+Date: Wed, 3 Dec 2025 21:03:51 +0530
+Subject: [PATCH 3/5] fix: Use field span in IDL safety check errors
+
+Signed-off-by: AvhiMaz <avhimazumder5@outlook.com>
+---
+ lang/syn/src/idl/program.rs | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/lang/syn/src/idl/program.rs b/lang/syn/src/idl/program.rs
+index 6a5c21b985..52cac4c585 100644
+--- a/lang/syn/src/idl/program.rs
++++ b/lang/syn/src/idl/program.rs
+@@ -20,9 +20,13 @@ pub fn gen_idl_print_fn_program(program: &Program) -> TokenStream {
+     let safety_check_errors = match check_safety_comments() {
+         Ok(tokens) => tokens,
+         Err(e) => {
+-            // If we can't perform safety checks, emit a compile error
+-            return syn::Error::new(proc_macro2::Span::call_site(), e.to_string())
+-                .to_compile_error();
++            /// CHECK: Use the span of the first instruction if available, otherwise use the program module span
++            let error_span = program
++                .ixs
++                .first()
++                .map(|ix| ix.raw_method.span())
++                .unwrap_or_else(|| program.program_mod.span());
++            return syn::Error::new(error_span, e.to_string()).to_compile_error();
+         }
+     };
+ 
+
+From 20b77c6ec47ffaed2f3aa4e1790b1ef13c08e4ca Mon Sep 17 00:00:00 2001
+From: AvhiMaz <avhimazumder5@outlook.com>
+Date: Thu, 12 Mar 2026 09:35:17 +0530
+Subject: [PATCH 4/5] fix: rm redundant `quote_spanned!`
+
+Signed-off-by: AvhiMaz <avhimazumder5@outlook.com>
+---
+ lang/syn/src/codegen/program/common.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lang/syn/src/codegen/program/common.rs b/lang/syn/src/codegen/program/common.rs
+index 8ddf0c4e66..345160a8e2 100644
+--- a/lang/syn/src/codegen/program/common.rs
++++ b/lang/syn/src/codegen/program/common.rs
+@@ -60,5 +60,5 @@ pub fn generate_ix_variant_name_spanned(
+ ) -> proc_macro2::TokenStream {
+     let n = name.to_camel_case();
+     let ident = proc_macro2::Ident::new(&n, span);
+-    quote_spanned! { span => #ident }
++    quote! { #ident }
+ }
+
+From 582b825b806cd88c57a80790c993bd22cedc4615 Mon Sep 17 00:00:00 2001
+From: AvhiMaz <avhimazumder5@outlook.com>
+Date: Thu, 12 Mar 2026 17:54:55 +0530
+Subject: [PATCH 5/5] fix: unwrap `Result` from `generate_ix_variant_name`
+
+Signed-off-by: AvhiMaz <avhimazumder5@outlook.com>
+---
+ lang/syn/src/codegen/program/handlers.rs | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/lang/syn/src/codegen/program/handlers.rs b/lang/syn/src/codegen/program/handlers.rs
+index 22c55995a6..d8c29284b5 100644
+--- a/lang/syn/src/codegen/program/handlers.rs
++++ b/lang/syn/src/codegen/program/handlers.rs
+@@ -19,7 +19,8 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
+             let ix_method_name = &ix.raw_method.sig.ident;
+             let ix_method_name_str = ix_method_name.to_string();
+             let ix_span = ix.raw_method.span();
+-            let ix_name = generate_ix_variant_name(&ix_method_name_str);
++            let ix_name = generate_ix_variant_name(&ix_method_name_str)
++                .expect("Failed to parse ix method name as camelCase identifier");
+             let variant_arm = generate_ix_variant_spanned(&ix_method_name_str, &ix.args, ix_span);
+             let ix_name_log = format!("Instruction: {ix_name}");
+             let accounts_struct_name = &ix.anchor_ident;
