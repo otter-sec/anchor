@@ -1,0 +1,201 @@
+---
+title: Raw AccountView
+description:
+  Skip the typed Account<T> wrapper and read pinocchio's AccountView directly
+  when a handler only needs raw bytes.
+---
+
+## When to reach for this
+
+A handler that **reads one field, writes one field, and exits** is a candidate.
+The typed `Account<T>` load does an owner check, a size check, and a
+discriminator check, and constructs a typed view. `load_mut` additionally
+enforces writability under the `guardrails` feature. For a handler that
+immediately throws away most of that information, the load cost can be the
+dominant share of the budget.
+
+Pinocchio's raw `AccountView` lets you skip the wrapper and operate on the bytes
+directly. You keep access to the account's address, lamports, data, and owner.
+Every safety check is now something you write by hand or deliberately omit.
+
+The runnable example is
+[`bench/programs/helloworld/pinocchio`](https://github.com/otter-sec/anchor/tree/anchor-next/bench/programs/helloworld/pinocchio).
+It mirrors the v2 helloworld counter using only pinocchio and a couple of
+imported anchor helpers, and it demonstrates the raw-view pattern end to end.
+For the helloworld workload, v2 itself now lands cheaper than the pinocchio
+hand-roll. v2 is 1,381 CU and 6,440 bytes. The pinocchio version is 1,680 CU and
+8,040 bytes. Do not reach for raw `AccountView` expecting an automatic win.
+
+## The paired example
+
+Here is the typed `Account<T>` version.
+
+```rust title="helloworld/anchor-v2/src/lib.rs"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("B7ihZyoXZ1fwAY3TugkiFJ6SXkzJwMuQrxrekBaSmn32");
+
+#[program]
+pub mod hello_world_v2 {
+    use super::*;
+
+    pub fn init(ctx: &mut Context<Init>) -> Result<()> {
+        let counter = &mut ctx.accounts.counter;
+        counter.value = 42;
+        counter.bump = ctx.bumps.counter;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Init {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer, seeds = [b"counter"], bump)]
+    pub counter: Account<Counter>,
+    pub system_program: Program<System>,
+}
+
+#[account]
+pub struct Counter {
+    pub value: u64,
+    pub bump: u8,
+    pub _pad: [u8; 7],
+}
+```
+
+The raw `AccountView` version uses the same program id and the same logical
+fields, and it produces the same effect. The on-disk layout differs. The
+pinocchio variant uses a 1-byte discriminator (`COUNTER_DISC: u8 = 1`) to shave
+bytes, where `#[account]` types use the standard 8-byte discriminator. The two
+binaries cannot read each other's accounts.
+
+```rust title="helloworld/pinocchio/src/lib.rs"
+use {
+    anchor_lang_v2::{create_account_signed, find_program_address},
+    pinocchio::{
+        account::AccountView, address::Address, no_allocator, program_entrypoint,
+        ProgramResult,
+    },
+};
+
+pub const ID: Address = Address::new_from_array([/* ... */]);
+
+const COUNTER_DISC: u8 = 1;
+const COUNTER_SPACE: usize = 1 + 8 + 1 + 7; // disc + value + bump + pad
+
+#[cfg(not(feature = "no-entrypoint"))]
+program_entrypoint!(process_instruction);
+no_allocator!();
+
+pub fn process_instruction(
+    program_id: &Address,
+    accounts: &mut [AccountView],
+    _instruction_data: &[u8],
+) -> ProgramResult {
+    // Guard `get_unchecked` reads. The verbatim bench source omits this
+    // because the harness only ever feeds it two accounts; production
+    // code must verify the count before any unchecked indexing or it
+    // hits UB on a malformed account list.
+    if accounts.len() < 2 {
+        return Err(anchor_lang_v2::Error::NotEnoughAccountKeys);
+    }
+    let payer = unsafe { accounts.get_unchecked(0) };
+    let counter = unsafe { accounts.get_unchecked(1) };
+
+    // The CreateAccount CPI verifies that `counter` matches the derived PDA;
+    // there is no separate derive-side check.
+    let (_pda, bump) = find_program_address(&[b"counter"], program_id);
+
+    let bump_slice = [bump];
+    create_account_signed(
+        payer,
+        counter,
+        COUNTER_SPACE,
+        program_id,
+        &[b"counter", &bump_slice],
+    )?;
+
+    // Hand-written layout: [disc: u8][value: u64 LE][bump: u8][pad: [u8; 7]]
+    unsafe {
+        let mut counter_mut = *counter;
+        let data = counter_mut.borrow_unchecked_mut();
+        *data.get_unchecked_mut(0) = COUNTER_DISC;
+        data.get_unchecked_mut(1..9).copy_from_slice(&42u64.to_le_bytes());
+        *data.get_unchecked_mut(9) = bump;
+    }
+
+    Ok(())
+}
+```
+
+## What gets dropped (and what to put back)
+
+| Check Anchor normally runs | Status in raw-view code | What to do |
+|---|---|---|
+| Account count | Implicit via `get_unchecked(N)` | Add an `if accounts.len() < N` guard. |
+| Discriminator on read | Gone | Read the first byte and compare against `COUNTER_DISC` before trusting the rest. |
+| Owner | Gone for read paths. CreateAccount enforces it for init paths. | For non-init reads, compare `counter.owner()` against `program_id`. |
+| `is_writable` | Gone | Compare `counter.is_writable()` before any `borrow_unchecked_mut`. |
+| `is_signer` (for `Signer` wrapper) | Gone | Compare `payer.is_signer()`. |
+| Borrow tracking | Gone. `borrow_unchecked_mut` skips it. | Make sure no other `&mut` to the same account exists in scope. |
+| PDA derive | Manual via `find_program_address` | Or pin the bump as a `const` if seeds are literal. |
+
+The helloworld example above leans heavily on the fact that `CreateAccount`
+itself enforces the PDA match and the program owner. That is **only** true for
+an init path. A read-after-init path must re-check owner and discriminator
+manually.
+
+<Callout type="warn" title="`borrow_unchecked_mut` is unsafe">
+  Pinocchio's `borrow_unchecked_mut` skips the runtime borrow-state bookkeeping
+  that the safe `try_borrow_mut` performs. Two live `&mut` to the same account
+  data is undefined behavior. The Rust borrow checker cannot catch this for you
+  when account references come out of a `&mut [AccountView]` slice via
+  `get_unchecked`.
+</Callout>
+
+## Hybrid approach
+
+You rarely need to go all the way to raw `AccountView` for the whole program. A
+common pattern keeps **entry validation via Anchor** and does the **raw byte
+write via `AccountView`**. Keep `#[derive(Accounts)]` so the macro runs owner,
+writable, and discriminator checks at the top of the handler. Then pull the
+underlying `AccountView` out for the hot write path.
+
+```rust
+#[derive(Accounts)]
+pub struct Tick {
+    #[account(mut)]
+    pub feed: Account<PriceFeed>,
+    pub clock: Sysvar<Clock>,
+}
+
+pub fn tick(ctx: &mut Context<Tick>, new_price: u64) -> Result<()> {
+    // Validation has already run: feed is writable, owned, and has
+    // the right discriminator. Drop to raw bytes for the write.
+    unsafe {
+        // `.view()` returns the underlying pinocchio `AccountView` that
+        // `Account<T>` wraps. We Copy it out (pinocchio's `copy` feature)
+        // so the raw write below works on bytes directly instead of the
+        // typed `Slab` Deref path.
+        let mut view = *ctx.accounts.feed.view();
+        let data = view.borrow_unchecked_mut();
+        data.get_unchecked_mut(16..24).copy_from_slice(&new_price.to_le_bytes());
+    }
+    Ok(())
+}
+```
+
+This keeps Anchor's entry-time validation, which `#[derive(Accounts)]` still
+enforces. It gives up only the typed-write cost. The inner `borrow_unchecked_mut`
+and `copy_from_slice` is raw byte work, not `AccountView`'s typed accessors. You
+owe field-offset accuracy and aliasing discipline in exchange for skipping
+`Slab`'s `Deref` and `DerefMut` path.
+
+## See also
+
+- [Custom entrypoint](./custom-entrypoint) is the maximal escape hatch.
+- [Zero-copy layout](./zero-copy-layout) shows how to make typed `Account<T>`
+  itself a pointer cast, which often closes most of the gap without dropping to
+  raw bytes.
+- [Trade-offs](./tradeoffs) gives the guarantee-by-guarantee accounting.

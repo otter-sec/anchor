@@ -1,0 +1,177 @@
+---
+title: Benchmarking
+description:
+  Methodology and tooling for measuring compute units and binary size in Anchor
+  v2 programs using the in-tree LiteSVM-based bench harness.
+---
+
+## Why measure
+
+Measure before you optimize. Before you adopt any pattern on this page, set up a
+measurement you can re-run after the change to produce a delta. The bench
+harness Anchor uses in-tree is small enough to copy into your own program.
+
+The [`bench/` crate](https://github.com/otter-sec/anchor/tree/anchor-next/bench)
+in the Anchor repository is the reference harness. It builds whichever variants
+ship for each program, runs an identical sequence of instructions against each,
+and reports compute units and binary size side by side. The CU numbers in the
+[Examples table](./#examples) on the index page come from there.
+
+`helloworld` and `vault` are benchmarked head-to-head across five frameworks.
+These are `anchor-v1`, `anchor-v2`, `pinocchio`, `quasar`, and `steel`.
+
+## What gets measured
+
+For each `(program, instruction)` pair, the harness reports three things.
+
+- **Compute units** consumed by the on-chain program for that instruction,
+  measured by LiteSVM's `compute_units_consumed` field on the transaction
+  metadata.
+- **Binary size** of the built `.so` in bytes.
+- **A diff** against the other variants of the same logical program.
+
+## The harness, end to end
+
+The integration test for prop-amm is a complete, copy-pasteable template. It has
+three instructions, an asm fast path on one of them, a sanity envelope on every
+CU, and a hard cap on the fast path.
+
+```rust title="bench/tests/prop_amm.rs"
+use {
+    anchor_bench::{print_instruction_comparison, run, suites_with_prefix, RunOptions},
+    std::path::PathBuf,
+};
+
+const EXPECTED_SUITES: &[&str] = &["prop_amm_v1", "prop_amm_v2"];
+const INSTRUCTIONS: &[&str] = &["initialize", "update", "rotate_authority"];
+
+#[test]
+fn prop_amm_end_to_end() {
+    let bench_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let suites = suites_with_prefix("prop_amm");
+    assert_eq!(suites.len(), EXPECTED_SUITES.len());
+
+    let result = run(
+        &bench_dir,
+        &suites,
+        RunOptions {
+            skip_build: std::env::var("BENCH_SKIP_BUILD").is_ok(),
+        },
+    )
+    .expect("bench run failed");
+
+    // Sanity envelope: every binary is non-empty and every CU lands
+    // in (0, 100k).
+    for &suite_name in EXPECTED_SUITES {
+        let program = result
+            .programs
+            .get(suite_name)
+            .unwrap_or_else(|| panic!("missing {suite_name} in result"));
+        assert!(program.binary_size_bytes > 0, "{suite_name} .so has zero bytes");
+        for &ix in INSTRUCTIONS {
+            let cu = program
+                .compute_units
+                .get(ix)
+                .unwrap_or_else(|| panic!("missing CU for {suite_name}/{ix}"));
+            assert!(*cu > 0, "{suite_name}/{ix} reports 0 CU");
+            assert!(*cu < 100_000, "{suite_name}/{ix} CU {cu} exceeds sanity cap");
+        }
+    }
+
+    // Hard cap: v2 `update` is the asm fast path. A regression back
+    // into the dispatcher would trip this.
+    let v2 = result.programs.get("prop_amm_v2").expect("prop_amm_v2");
+    let update_cu = v2.compute_units.get("update").expect("v2 update cu");
+    assert!(
+        *update_cu < 150,
+        "prop_amm_v2/update CU {update_cu} exceeds fast-path cap 150"
+    );
+
+    for &ix in INSTRUCTIONS {
+        print_instruction_comparison(&result, "prop_amm", ix);
+    }
+}
+```
+
+Note the two-tier assertion structure. The outer loop catches gross regressions
+in any variant. The inner check pins the one number you actually care about.
+Both checks are necessary. A CU cap on the fast path is what makes the asm
+entrypoint a tested feature rather than an assumption.
+
+## Running it
+
+Run these from the repo root.
+
+```bash
+# Build every variant and run all bench tests.
+cargo test --manifest-path bench/Cargo.toml --release -- --nocapture
+
+# Skip the build (re-uses cached .so files; ~30s instead of minutes).
+BENCH_SKIP_BUILD=1 cargo test --manifest-path bench/Cargo.toml --release \
+    --test prop_amm -- --nocapture
+
+# History export (for tracking CU over time). `bin` is the default
+# feature, so just running the `anchor-bench` binary is enough.
+cargo run --manifest-path bench/Cargo.toml --release --bin anchor-bench
+```
+
+The `--nocapture` flag is what lets you see the per-instruction comparison
+table. Without it, Cargo swallows the prints.
+
+## Stable measurements
+
+CU numbers wobble for several reasons. A few rules keep a measurement
+reproducible.
+
+- **Share program ids across variants.** The bench `helloworld` and `vault`
+  programs share one id across all five variants, so `find_program_address`
+  returns the same bumps for each. A different bump means a different signed-CPI
+  cost, which shows up as noise. `multisig`, `nested`, and `prop-amm` ship only
+  v1 and v2, so the shared-id rule matters only for those two multi-framework
+  programs.
+- **Pin the agave and pinocchio versions.** Account serialization layout is
+  observable. Bumping a dependency can shift offsets. Lock the versions, and do
+  any bump in a dedicated commit so the CU diff is attributable.
+- **Run `--release`.** Debug builds emit overflow checks on every arithmetic op.
+  The CU numbers come out an order of magnitude high.
+- **Watch for first-instruction variance.** Two measurements of the same
+  instruction can differ if one of them is the first transaction on a fresh
+  `LiteSVM`. If you see noise on the first sample only, discard it or send a
+  throwaway tx before the one you care about. This wobble has not been
+  benchmarked precisely. As a rule of thumb, when in doubt take the second
+  number.
+
+## A minimal harness for your own program
+
+If you do not want to depend on `anchor-bench`, the core loop is small.
+
+```rust
+use {
+    litesvm::LiteSVM,
+    solana_message::{Message, VersionedMessage},
+    solana_transaction::VersionedTransaction,
+};
+
+fn measure(svm: &mut LiteSVM, tx: VersionedTransaction) -> u64 {
+    let meta = svm.send_transaction(tx).expect("tx failed");
+    meta.compute_units_consumed
+}
+
+// `svm` already has your program loaded via `svm.add_program(...)`.
+let initialize_cu = measure(&mut svm, build_initialize_tx(&payer));
+let hot_path_cu   = measure(&mut svm, build_hot_path_tx(&payer));
+
+assert!(hot_path_cu < 200, "hot path CU regression: {hot_path_cu}");
+```
+
+This is all the structure you need to make CU a first-class part of the test
+suite. Once one instruction has a CU cap, every PR that touches it has to
+justify the delta.
+
+## See also
+
+- [`bench/src/lib.rs`](https://github.com/otter-sec/anchor/blob/anchor-next/bench/src/lib.rs)
+  holds the `BenchContext` and `run` orchestrator.
+- [`bench/tests/`](https://github.com/otter-sec/anchor/tree/anchor-next/bench/tests)
+  has full end-to-end tests for every bench program.
+- [Trade-offs](./tradeoffs) covers what the numbers cost you in guarantees.

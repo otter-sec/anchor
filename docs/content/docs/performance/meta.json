@@ -1,0 +1,10 @@
+{
+  "title": "Performance",
+  "pages": [
+    "custom-entrypoint",
+    "raw-account-view",
+    "zero-copy-layout",
+    "benchmarking",
+    "tradeoffs"
+  ]
+}

@@ -1,0 +1,323 @@
+---
+title: Zero-Copy Layout
+description:
+  How Pod accounts, alignment-1 wrappers, PodVec, and Slab let Anchor v2 read
+  and write account bytes without serialization or deserialization.
+---
+
+## Overview
+
+In v2, `Account<T>` **is already zero-copy**. There is no separate
+`AccountLoader<T>` to opt into. The stored bytes are
+`[8-byte discriminator][repr(C) T]`, load is a pointer cast, and exit is a
+no-op. The cost lands on the layout. `T` must be `Pod`, the `bytemuck` trait.
+That means `repr(C)`, no padding, no `Vec`, `String`, or `Option`, and no enums.
+
+## `repr(C)`, alignment, padding
+
+Solana's SBF target requires natural alignment for multi-byte loads. A naive Pod
+struct that violates this either fails to compile or compiles into something
+that wastes bytes. bytemuck is what catches the compile failure.
+
+```rust
+#[repr(C)]
+pub struct Bad {
+    pub bump: u8,    // offset 0
+    // 7 bytes of padding to align `value` to 8
+    pub value: u64,  // offset 8
+}
+// size_of::<Bad>() == 16, even though the data is 9 bytes
+```
+
+There are two ways to fix it.
+
+1. **Re-order fields largest-first and pad the tail explicitly** so inline
+   padding holes disappear. Reordering alone is not enough. `repr(C)` still
+   rounds the struct size up to a multiple of the alignment of the largest
+   field, and `bytemuck::Pod` rejects any implicit padding bytes, inline or
+   trailing. You always own an explicit `_pad` field.
+2. **Use alignment-1 Pod wrappers** so the natural alignment of every field is
+   1. Struct alignment becomes 1, with no trailing rounding and no padding bytes
+   at all, and field order no longer matters. A trailing `_pad` field is then
+   optional. It is only useful when you want a round account size.
+
+```rust
+// Option 1: native u64 kept, fields reordered, padding made explicit.
+//           Struct alignment stays at 8 (from u64), so a trailing
+//           `_pad` is required for bytemuck::Pod to accept the layout.
+#[repr(C)]
+struct Option1 {
+    value: u64,      //  offset 0, 8 bytes (largest first)
+    bump: u8,        //  offset 8, 1 byte
+    _pad: [u8; 7],   //  offset 9, 7 bytes explicit trailing padding
+}
+// align_of::<Option1>() == 8, size_of::<Option1>() == 16. Pod ACCEPTS.
+
+// Option 2: native u64 swapped for alignment-1 PodU64. Struct alignment
+//           becomes 1, no padding bytes anywhere, field order doesn't
+//           matter.
+#[repr(C)]
+struct Option2 {
+    bump: u8,        //  offset 0, 1 byte
+    value: PodU64,   //  offset 1, 8 bytes (no padding: align=1)
+}
+// align_of::<Option2>() == 1, size_of::<Option2>() == 9. Pod ACCEPTS.
+```
+
+The key for Option 2 is that `PodU64` is `[u8; 8]`, not native `u64`. Rust's
+`repr(C)` layout rules align each field to **its own** alignment. Swapping `u64`
+at alignment 8 for `PodU64` at alignment 1 erases every padding hole the
+compiler would otherwise insert. Every byte of `size_of::<Option2>()` is owned
+by a real field.
+
+Both work with `bytemuck::Pod`. Option 2 saves 7 bytes per account and removes
+the bookkeeping burden of keeping `_pad` correct as fields evolve. Option 1 is
+simpler when you cannot swap the integer type, for example when you interop with
+a struct definition you do not own.
+
+You can still add a trailing `_pad: [u8; N]` to Option 2 if you want a specific
+account size.
+
+```rust
+use anchor_lang_v2::prelude::*;
+
+#[account]
+#[repr(C)]
+pub struct Counter {
+    pub value: PodU64,   // [u8; 8], alignment 1
+    pub bump: u8,
+    pub _pad: [u8; 7],   // optional. Only here to make the account a
+                         // tidy 16 bytes. Drop it and `Counter` is 9
+                         // bytes and still Pod.
+}
+```
+
+The explicit `_pad` is there so the struct size is predictable and so clients
+can derive the layout without guessing the compiler's padding rules.
+
+<Callout type="info" title="Why explicit padding">
+  `bytemuck::Pod` rejects structs with **implicit** padding because those bytes
+  have undefined contents. That breaks the "any bit pattern is a valid value"
+  invariant `Pod` requires. There are two ways to satisfy the trait. You can
+  name the padding, which turns it into observable, zero-able bytes. Or you can
+  arrange the layout so no padding exists at all, where every byte is covered by
+  a real field. The second is what alignment-1 wrappers buy you.
+</Callout>
+
+## Pod wrappers
+
+These are defined in
+[`lang-v2/src/pod.rs`](https://github.com/otter-sec/anchor/blob/anchor-next/lang-v2/src/pod.rs).
+Each wraps the native integer in `[u8; N]` so the natural alignment is 1, which
+lets the entire `#[account]` struct be cast directly from the account's raw
+bytes.
+
+| Wrapper | Wraps | Notes |
+|---|---|---|
+| `PodU8` / `PodI8` | `u8` / `i8` | Native. Aliases to the integer type. |
+| `PodU16` / `PodI16` | `[u8; 2]` | LE on the wire. |
+| `PodU32` / `PodI32` | `[u8; 4]` | LE on the wire. |
+| `PodU64` / `PodI64` | `[u8; 8]` | LE on the wire. |
+| `PodU128` / `PodI128` | `[u8; 16]` | LE on the wire. |
+| `PodBool` | `[u8; 1]` | `From<bool>` writes `0`/`1`. `get()` treats any non-zero byte as `true`. |
+
+Arithmetic operators are **overflow-checked in debug, wrapping in release**, the
+same convention as native integers. For overflow-sensitive code use
+`checked_add` / `checked_sub` / `checked_mul` / `checked_div`, which return
+`Option<Self>`.
+
+```rust
+let new_total = old.checked_add(delta).ok_or(ErrorCode::Overflow)?;
+```
+
+## `PodVec<T, MAX>` for fixed-capacity inline data
+
+`PodVec<T, MAX>` stores up to `MAX` elements of `T` inline, prefixed by a `u16`
+length. The whole thing is `Pod`, so it composes inside a zero-copy account.
+
+```rust
+use anchor_lang_v2::{prelude::*, pod::PodVec};
+
+#[account]
+#[repr(C)]
+pub struct Whitelist {
+    pub authority: Address,
+    pub entries: PodVec<Address, 64>,
+}
+
+pub fn add(ctx: &mut Context<Add>, who: Address) -> Result<()> {
+    ctx.accounts.whitelist
+        .entries
+        .try_push(who)
+        .map_err(|_| ErrorCode::Full.into())
+}
+```
+
+Three constraints apply.
+
+- `MAX <= u16::MAX`, which is 65,535. A compile-time assert at
+  [`PodVec::_MAX_FITS_U16`](https://github.com/otter-sec/anchor/blob/anchor-next/lang-v2/src/pod.rs#L659)
+  enforces it. The assert fires whenever a mutation API is monomorphized, so a
+  `PodVec<T, 70_000>` compiles only if you never call those APIs on it. The
+  mutation APIs are `try_push`, `pop`, `truncate`, `set_from_slice`, and
+  `try_extend_from_slice`. Treat the cap as universal in practice.
+- `T` must satisfy `PodVecElement`. It is implemented for `u8`/`i8`/`u16`/`i16`,
+  every `PodU*` and `PodI*` wrapper, `PodBool`, `Address`, the unit `()` type,
+  and arrays of any of the above. The marker exists so the surrounding
+  `PodVec<T, MAX>` can implement `bytemuck::Pod` itself.
+- The two-byte length prefix means the element array starts at offset 2. `T`
+  must not require padding after that prefix, or the layout is rejected by the
+  `PodVecLayoutProbe` assertion.
+
+### Validation contract
+
+`Account<T>` validates the account's owner, discriminator, and min size. It
+**does not** validate any `PodVec` field embedded inside `T`. The `len` prefix
+is read from raw account bytes, so a hostile caller can stamp `len > MAX`. The
+unchecked accessors then panic at the Rust bounds check. Those accessors are
+`as_slice`, `as_mut_slice`, `pop`, `iter`, `iter_mut`, `get`, `first`, `last`,
+and `Index`. `get_mut`, `IndexMut`, and the `Deref` and `DerefMut` impls inherit
+the same panic by routing through `as_slice` and `as_mut_slice`. There is no UB,
+but the transaction aborts.
+
+Two options are safe.
+
+1. **Validate once, then use unchecked accessors freely.**
+
+   ```rust
+   ctx.accounts.whitelist.entries.validate()?;
+   for who in ctx.accounts.whitelist.entries.iter() { /* ... */ }
+   ```
+
+2. **Use the `try_*` variants** that return `Err(CapacityError)` instead of
+   panicking. These are `try_as_slice`, `try_pop`, and `try_get`.
+
+See
+[`lang-v2/src/pod.rs:606-621`](https://github.com/otter-sec/anchor/blob/anchor-next/lang-v2/src/pod.rs#L606)
+for the full validation contract.
+
+## `Slab<H, T>` for a header plus a dynamic tail
+
+`Account<T>` is `Slab<T, HeaderOnly>` under the hood. That is a header of type
+`T` with no trailing items. For accounts that want a fixed header plus a
+variable-length array of items, use `Slab<H, T>` directly.
+
+```rust
+use anchor_lang_v2::{prelude::*, accounts::Slab};
+
+// Header gets the standard #[account] attribute, which supplies the
+// `Owner`, `Discriminator`, and Pod layout. `Slab<H, T>` then picks
+// up `SlabSchema` and `AnchorAccount` via its own blanket impls
+// (`impl<T: Owner + Discriminator> SlabSchema for T`).
+#[account]
+#[repr(C)]
+pub struct OrderHeader {
+    pub authority: Address,
+    pub side: PodBool,
+    pub _pad: [u8; 7],
+}
+
+// Tail item type is plain Pod, with no discriminator and no Anchor
+// wrapping. The wincode derives are only needed because `Fill` also
+// rides as an instruction argument below; an item type used purely
+// inside the slab tail wouldn't need them.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, SchemaRead, SchemaWrite)]
+pub struct Fill {
+    pub price: PodU64,
+    pub size: PodU64,
+}
+
+#[derive(Accounts)]
+pub struct AddFill {
+    #[account(mut)]
+    pub book: Slab<OrderHeader, Fill>,
+    pub authority: Signer,
+}
+
+pub fn add_fill(ctx: &mut Context<AddFill>, fill: Fill) -> Result<()> {
+    ctx.accounts.book.try_push(fill)
+        .map_err(|_| ErrorCode::Full.into())
+}
+```
+
+v2 has no separate `#[zero_copy]` attribute. `#[account]` already produces a
+zero-copy account, and tail item types ride on plain `bytemuck` derives.
+
+For Anchor-native `#[account]` headers, `SlabSchema::DATA_OFFSET` is 8 and the
+layout is `[8-byte disc][H][u32 len][padding to align T][items: T; N]`. External
+`SlabSchema` impls such as SPL `Mint` and `TokenAccount` set `DATA_OFFSET = 0`
+and have no discriminator prefix. The rest of the layout is the same. Capacity
+is re-derived from the live `view.data_len()` on every access, so an account
+reallocated upward grows its capacity without changing the type.
+
+Reach for `Slab` when these hold.
+
+- Items are uniform `Pod`, such as orderbook entries, event log records, or
+  fills.
+- Capacity is bounded by the account size, not a `const`.
+- You want the header and tail in the same account.
+
+For unbounded `Vec<T>` semantics with on-the-fly reallocation, see the
+third-party
+[`anchor-dynamic-account`](https://github.com/chen-robert/anchor-dynamic-account)
+extension, which plugs into v2's `AnchorAccount` trait.
+
+## `BorshAccount<T>` when you must
+
+If your account genuinely needs `Vec`, `String`, or enums in the canonical Rust
+shape, use `BorshAccount<T>`. It serializes and deserializes via wincode at load
+and exit.
+
+```rust
+#[account(borsh)]
+pub struct Profile {
+    pub name: String,
+    pub roles: Vec<u8>,
+}
+
+#[derive(Accounts)]
+pub struct EditProfile {
+    #[account(mut)]
+    pub profile: BorshAccount<Profile>,
+}
+```
+
+The `#[account(borsh)]` mode is what makes `Vec`, `String`, and enums legal on
+the type. The default `#[account]` mode rejects them with a diagnostic that
+points at `Slab<H, T>` or a fixed-size array as the zero-copy alternative.
+
+This is what v1's `Account<T>` did by default. v2 keeps the option available. It
+just is not the default anymore.
+
+## Bytemuck events
+
+By default, v2 events are wincode-encoded. For high-frequency events with a
+fully `Pod` payload, the `bytemuck` flag emits the event as `disc + memcpy(body)`
+and skips per-field encoding.
+
+```rust
+#[event(bytemuck)]
+#[repr(C)]
+pub struct Tick {
+    pub slot: PodU64,
+    pub price: PodU64,
+}
+
+emit!(Tick { slot: clock.slot.into(), price });
+```
+
+Constraints mirror Pod accounts. The payload must be `repr(C)`, with no `Vec`,
+`String`, or `Option`, and no enums. Inside those constraints the emit path is
+`disc + memcpy(body)`. That is the lowest-overhead event shape the framework
+exposes. It does no per-field encoding and uses no allocator. Whether it beats a
+hand-rolled `sol_log_data` call on every payload shape has not been benchmarked.
+
+## See also
+
+- [`pod.rs`](https://github.com/otter-sec/anchor/blob/anchor-next/lang-v2/src/pod.rs)
+  holds the wrapper definitions and `PodVec` source.
+- [`accounts/slab.rs`](https://github.com/otter-sec/anchor/blob/anchor-next/lang-v2/src/accounts/slab.rs)
+  holds the Slab implementation and its safety invariants.
+- The v1 [Zero Copy guide](../features/zero-copy) covers the `AccountLoader<T>`
+  pattern v1 still requires.

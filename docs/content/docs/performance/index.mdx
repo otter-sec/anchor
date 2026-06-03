@@ -1,0 +1,81 @@
+---
+title: Performance Patterns
+description:
+  Optimization patterns and escape hatches for Anchor v2 programs that need to
+  go beyond the default abstractions.
+---
+
+<Callout type="warn" title="Alpha">
+  This section targets Anchor v2, the `anchor-next` branch. v2 is not yet
+  published to crates.io and APIs may break between commits. For migration notes
+  from v1, see the
+  [lang-v2 README](https://github.com/otter-sec/anchor/blob/anchor-next/lang-v2/README.md).
+</Callout>
+
+## Overview
+
+Anchor v2 is **fast by default**. A counter program built with the standard
+`#[program]` macro is roughly **19×** smaller and **4×** cheaper per instruction
+than its v1 counterpart. You get this with no extra effort. Most programs never
+need anything beyond the defaults.
+
+The patterns on this page cover the cases that remain. Some programs have a hot
+path where a few hundred compute units matter. Some are oracles where every byte
+of the binary counts. Some need layouts the safe defaults do not expose. Each
+pattern trades a guarantee for performance. Read the [trade-offs](./tradeoffs)
+page before you reach for one.
+
+## Free wins
+
+These are on for every v2 program already. You do not enable them. They are
+listed here so you know what you are getting.
+
+- **PDA bumps precomputed at macro time.** Literal seeds get folded into a
+  `const` at compile time. The runtime skips `find_program_address`.
+- **On-curve check skipped for program-owned PDAs.** A non-empty, program-owned
+  account was created via signed CPI, which already validated the seeds. This
+  saves roughly 1,000 CU per verify.
+- **wincode instead of borsh on the wire.** The encoding is byte-identical to
+  borsh for the shapes Anchor programs use. It is 3 to 10 times cheaper to
+  encode on SBF.
+- **`CpiHandle` routes through `invoke_signed_unchecked`.** The Rust borrow
+  checker rules out the aliasing UB at compile time, so the runtime borrow-state
+  check is skipped.
+- **`remaining_accounts()` is lazy.** The first call walks the cursor. Later
+  calls clone the cached vec. Instructions that never touch it pay zero
+  overhead.
+- **`Account<T>` is zero-copy by default.** Stored bytes are `[disc][repr(C) T]`,
+  load is a pointer cast, and exit is a no-op. See
+  [Zero-copy layout](./zero-copy-layout) for the Pod constraints, the
+  alignment-1 wrappers like `PodU64` and `PodBool`, and the `PodVec` and `Slab`
+  helpers for variable-length data.
+
+## Escape hatches
+
+Each of these is opt-in. Each one drops a guarantee. Read the linked page and
+the [trade-offs](./tradeoffs) ledger before you adopt one.
+
+| Pattern | When to reach for it | Trade-off |
+|---|---|---|
+| [Custom entrypoint](./custom-entrypoint) | One instruction is the entire hot path, like an oracle update or a price tick. | Discriminator dispatch and every account and data check is now your problem. |
+| [Raw `AccountView`](./raw-account-view) | A handler reads a single field and the typed wrapper's load is the dominant cost. | No discriminator, owner, or borrow validation. You write the checks. |
+| [Bytemuck events](./zero-copy-layout#bytemuck-events) | High-frequency events whose payload is fixed-size Pod. | No `Vec`, `String`, or `Option` in the event body. |
+| `--features const-rent` | Programs that call `create_account` often with a fixed `space`. Saves roughly 85 CU per call. | The rent formula is baked at compile time. A runtime formula change such as SIMD-0194 means rebuilding the program. |
+
+## Examples
+
+Worked programs live under
+[`bench/programs/`](https://github.com/otter-sec/anchor/tree/anchor-next/bench/programs),
+each paired with a v1 version for head-to-head comparison. The binary sizes and
+CU numbers below are from the v2 variant.
+
+| Program | Description | Binary | CU range | Bin ↓ | CU ↓ |
+|---|---|---|---|---|---|
+| [helloworld](https://github.com/otter-sec/anchor/tree/anchor-next/bench/programs/helloworld/anchor-v2) | Single-instruction counter | 6.3 KB | 1,381 | 19× | 4.2× |
+| [prop-amm](https://github.com/otter-sec/anchor/tree/anchor-next/bench/programs/prop-amm/anchor-v2) | Oracle feed with asm fast-path | 8.4 KB | 26-1,375 | 16× | 3.1-50× |
+| [vault](https://github.com/otter-sec/anchor/tree/anchor-next/bench/programs/vault/anchor-v2) | Single-depositor SOL vault | 5.3 KB | 389-1,899 | 20× | 3.0-6.4× |
+| [nested](https://github.com/otter-sec/anchor/tree/anchor-next/bench/programs/nested/anchor-v2) | Shared validation via `Nested<T>` | 12 KB | 473-2,716 | 13× | 7.3-10× |
+| [multisig](https://github.com/otter-sec/anchor/tree/anchor-next/bench/programs/multisig/anchor-v2) | Four-instruction SOL multisig | 30 KB | 469-3,016 | 5.5× | 3.0-9.2× |
+
+The 26 CU low end for `prop-amm` is the asm fast path on `update`. Every other
+entry uses the default macro-dispatched path. None use an escape hatch.

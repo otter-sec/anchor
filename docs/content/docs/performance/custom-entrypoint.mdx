@@ -1,0 +1,298 @@
+---
+title: Custom Entrypoint
+description:
+  Replace the macro-generated entrypoint with a hand-written discriminator
+  dispatcher that fast-paths one instruction and falls back to Anchor for the
+  rest.
+---
+
+## How Anchor picks the right handler
+
+Every instruction Anchor dispatches starts with a **discriminator**. The
+discriminator is the leading bytes of the instruction data that tell the program
+which handler to run. By default the `#[program]` macro hashes
+`instruction:<handler_name>` and uses the first 8 bytes. The macro-emitted
+entrypoint reads those 8 bytes, matches them in a table, and calls the matched
+handler. Two levers on this page touch that flow.
+
+- **`#[discrim = N]`** swaps the 8-byte hash for a single byte you choose. The
+  macro still owns the entrypoint and the dispatch match. It is cheaper on the
+  wire and nothing else changes.
+- **Custom entrypoint** replaces the macro's entrypoint with your own asm or
+  Rust function. You read the disc byte yourself, fast-path the one or two
+  instructions that matter, and hand everything else back to the macro-emitted
+  dispatcher, which is exposed as `__anchor_dispatch`. It pairs naturally with
+  `#[discrim]` because reading one byte is cheaper than reading and matching
+  eight.
+
+## When to reach for this
+
+This pays off when one instruction dominates the call volume and that
+instruction does very little work. Think of an oracle `update`, a price tick, or
+a transfer between two known accounts. For a handler like that, the dispatcher
+overhead itself becomes a meaningful fraction of the budget. That overhead is
+deserializing the instruction discriminator, walking accounts, and calling
+`try_accounts`.
+
+There are two related but distinct levers, and they layer on top of each other.
+
+| Lever | What it does | Needs `no-entrypoint` feature? | Example |
+|---|---|---|---|
+| **`#[discrim = N]` attribute** | Pins each handler to a one-byte discriminator. The macro still emits the entrypoint and dispatches. You just change the on-wire disc bytes. | No | [`tests-v2/programs/spl`](https://github.com/otter-sec/anchor/tree/anchor-next/tests-v2/programs/spl) |
+| **Custom entrypoint** | Replaces the macro-emitted entrypoint with hand-written sBPF assembly or raw Rust. You read the disc, fast-path one or more instructions inline, and fall through to `__anchor_dispatch` for everything else. | Yes | [`bench/programs/prop-amm/anchor-v2`](https://github.com/otter-sec/anchor/tree/anchor-next/bench/programs/prop-amm/anchor-v2) (asm) |
+
+On the runnable example, the prop-amm `update` instruction lands at **26 CU**.
+That is roughly **50×** cheaper than v1's 1,310 CU. The default v2
+macro-dispatched path is not measured separately, because the bench builds v2
+with the asm entrypoint enabled. Use `prop-amm/initialize` at 1,375 CU as a
+stand-in for what the macro path would cost on a handler of similar shape.
+
+## `#[discrim = N]` alone
+
+This is the lightweight option. You do not replace anything. You override the
+macro's default 8-byte SHA-256 discriminator with a single byte of your
+choosing. The macro still emits the entrypoint, allocator, panic handler, and
+dispatch table. They just match on `N` instead of the hashed bytes.
+
+```rust title="src/lib.rs"
+use anchor_lang_v2::prelude::*;
+
+#[program]
+pub mod token_demo {
+    use super::*;
+
+    #[discrim = 0]
+    pub fn init_mint(_ctx: &mut Context<InitMint>) -> Result<()> {
+        Ok(())
+    }
+
+    #[discrim = 1]
+    pub fn init_token_account(_ctx: &mut Context<InitTokenAccount>) -> Result<()> {
+        Ok(())
+    }
+}
+```
+
+`Cargo.toml` is the standard v2 template, with `no-entrypoint` staying out of
+`default`. `N` is an integer literal in `u8` range. The executable `#[program]`
+mode is all-or-nothing. If any handler uses `#[discrim = N]`, every handler must
+use a one-byte discriminator, and duplicates are rejected at compile time. The
+[`tests-v2/programs/spl`](https://github.com/otter-sec/anchor/tree/anchor-next/tests-v2/programs/spl)
+program uses this pattern across its full SPL surface for a complete reference.
+Its handlers are numbered `#[discrim = 0]` through `#[discrim = 54]`.
+
+## Custom entrypoint (asm or Rust)
+
+When `#[discrim]` alone is not enough and you want to skip Anchor's dispatcher
+entirely on a hot path, you replace the entrypoint and dispatch on the disc byte
+yourself, falling back to `__anchor_dispatch` for any disc you do not fast-path.
+This needs two changes on top of the standard v2 template.
+
+1. Flip `no-entrypoint` into `default` features.
+2. Reinstate the allocator and panic handler the feature suppresses, then
+   provide your own `entry` fn.
+
+```toml title="Cargo.toml"
+[features]
+default = ["no-entrypoint", "no-log-ix-name"]
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+no-idl = []
+no-log-ix-name = []
+
+[dependencies]
+anchor-lang-v2 = { git = "https://github.com/otter-sec/anchor", branch = "anchor-next", default-features = false, features = ["alloc"] }
+```
+
+The only diff versus a standard v2 program is the `default = [...]` line. Adding
+`"no-entrypoint"` triggers the macro's `#[cfg(feature = "no-entrypoint")]`
+checks at build time. The entrypoint symbol, allocator, and panic handler stop
+being emitted, and `__anchor_dispatch` becomes the unmangled symbol your code
+can call.
+
+```rust title="src/lib.rs"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("...");
+
+#[program]
+pub mod oracle {
+    use super::*;
+
+    /// Unreachable: the custom entrypoint handles `discrim=0` before
+    /// this arm is reached. Declared so the macro still emits
+    /// `instruction::Update` + `accounts::Update` for clients and IDL.
+    #[discrim = 0]
+    #[allow(unused_variables)]
+    pub fn update(ctx: &mut Context<Update>, new_price: u64) -> Result<()> {
+        unsafe { core::hint::unreachable_unchecked() }
+    }
+
+    #[discrim = 1]
+    pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {
+        Ok(())
+    }
+}
+
+// Reinstate the allocator + panic handler that `no-entrypoint`
+// suppresses, then provide your own entrypoint.
+#[cfg(target_os = "solana")]
+anchor_lang_v2::pinocchio::default_allocator!();
+#[cfg(target_os = "solana")]
+anchor_lang_v2::pinocchio::default_panic_handler!();
+```
+
+From here you have two implementation choices for the entrypoint itself.
+
+### Asm
+
+Hand-written sBPF assembly with hardcoded offsets against agave's account
+serialization layout. It has the lowest CU floor, roughly 26 in prop-amm.
+
+The minimal shape mirrors the Rust example below. Read the disc byte at `r2`,
+short-circuit one discriminator, and tail-call `__anchor_dispatch` for
+everything else.
+
+```text title="src/asm/entrypoint.s"
+.globl entrypoint
+entrypoint:
+    // Guard for empty ix data, matching the `ix_data_len == 0` check
+    // in the Rust example. agave writes the ix-data length as a u64
+    // immediately before `ix_data_ptr` (r2). Hand off to
+    // `__anchor_dispatch` so it returns the typed
+    // `InstructionFallbackNotFound`. Remove these two lines if you
+    // know the fast path is never invoked with empty ix data.
+    ldxdw r3, [r2-8]
+    jeq r3, 0, dispatch
+    ldxb r3, [r2+0]
+    jne r3, 0, dispatch
+    mov64 r0, 0
+    exit
+dispatch:
+    call __anchor_dispatch
+    exit
+```
+
+The realistic example lives at
+[`bench/programs/prop-amm/anchor-v2/src/asm/entrypoint.s`](https://github.com/otter-sec/anchor/tree/anchor-next/bench/programs/prop-amm/anchor-v2/src/asm/entrypoint.s).
+It has full per-handler checks for account count, data length, signer, and
+address compare, and it lands `update` at 26 CU.
+
+### Rust
+
+A raw `extern "C"` entrypoint branches on the disc byte. It either runs the fast
+path inline or forwards to `__anchor_dispatch`. The CU floor is higher than asm
+because it pays the Rust prologue and any typed-view costs you opt into. In
+exchange, the source reads like normal Rust and the compiler catches misuse of
+typed APIs.
+
+```rust title="src/lib.rs (continued)"
+/// Raw SBF entrypoint, same signature the BPF loader hands to asm under
+/// SIMD-0321. The `[ix_data_ptr - 8 .. ix_data_ptr]` slot holds the
+/// `u64` ix-data length (set by agave's aligned serialization).
+///
+/// `__anchor_dispatch` is already declared at crate root by the
+/// `#[program]` macro under `no-entrypoint`, so we call it via its
+/// Rust path with no re-declaration needed.
+#[cfg(target_os = "solana")]
+#[no_mangle]
+pub unsafe extern "C" fn entrypoint(input: *mut u8, ix_data_ptr: *const u8) -> u64 {
+    let ix_data_len = *(ix_data_ptr.sub(8) as *const u64) as usize;
+
+    // Empty ix data: nothing to dispatch on. Hand to `__anchor_dispatch`
+    // so it can produce the typed `InstructionFallbackNotFound` error.
+    if ix_data_len == 0 {
+        return crate::__anchor_dispatch(input, ix_data_ptr);
+    }
+
+    let disc = *ix_data_ptr;
+    match disc {
+        // Fast path for `#[discrim = 0]` (the `update` handler above).
+        // Treated here as a no-op for illustration. The inline branch
+        // just returns success. Real fast paths would walk `input` for
+        // accounts and read args past `ix_data_ptr.add(1)`.
+        0 => 0,
+        // Anything else: hand off to Anchor's typed dispatcher.
+        _ => crate::__anchor_dispatch(input, ix_data_ptr),
+    }
+}
+```
+
+`__anchor_dispatch` expects the same `(input, ix_data_ptr)` pair the loader
+passes to your `entrypoint`, so the fallback is a single forward call. No
+marshalling required. The pattern is sketched in source comments at
+[`lang-v2/derive/src/lib.rs:4064-4083`](https://github.com/otter-sec/anchor/tree/anchor-next/lang-v2/derive/src/lib.rs#L4064).
+No end-to-end example program ships in this tree yet.
+
+### Picking between them
+
+| | Asm | Rust |
+|---|---|---|
+| CU floor on fast path | ~26 (prop-amm) | Higher. Pays the Rust prologue and any typed-view costs. |
+| Effort | High (hardcoded offsets) | Lower if you stick to pinocchio's typed API |
+| Layout coupling | Pinned to agave serialization | Same on raw paths. Abstracted when using `AccountView`. |
+| Compile-time errors on misuse | None | Yes (when using typed API) |
+| In-tree example | [prop-amm](https://github.com/otter-sec/anchor/tree/anchor-next/bench/programs/prop-amm/anchor-v2) | None |
+
+Reach for asm only when the CU delta is worth maintaining hand-written offset
+tables against runtime upgrades. For most "skip the dispatcher" wins, the Rust
+shape closes most of the gap with far less risk.
+
+## Things this gives up
+
+These apply to both asm and Rust custom entrypoints. The part that matters is
+that you bypass `__anchor_dispatch`.
+
+- **Per-handler checks on the fast path.** Anchor normally runs discriminator
+  dispatch, instruction-data length and argument decoding, account count,
+  duplicate mutable account checks, owner/writable/signer flags, account data
+  length, PDA derivation, and address comparisons via the generated
+  `TryAccounts` impl. Whatever disc you fast-path skips all of that. Write the
+  equivalent checks by hand or rely on pinocchio's typed `AccountView` API for
+  the checks it actually covers.
+- **Discriminator scheme is now part of your fast-path ABI.** The
+  `#[discrim = N]` attribute keeps clients, IDL, and the custom entrypoint in
+  sync. If you remove the attributes from every handler, the macro falls back to
+  its default 8-byte discriminator scheme while your fast-path branch still
+  reads one byte. If you remove only one, the executable program fails to
+  compile, because v2 requires all-or-nothing custom discriminators.
+- **Coupling to `__anchor_dispatch`'s ABI.** Your fallback calls the
+  macro-emitted dispatcher with
+  `(input: *mut u8, ix_data_ptr: *const u8) -> u64`. Re-check this on Anchor
+  upgrades. A macro change here is either a compile or link break, or an ABI
+  mismatch in your custom fallback.
+
+### Asm-specific
+
+- **Offsets are hardcoded against agave's serialization layout.** The prop-amm
+  asm reads `oracle.data_len` at `[r1+88]`, `authority.is_signer` at
+  `[r1+10393]`, and so on. A runtime change to the layout requires updating the
+  assembly. The compiler only sees numeric offsets. It will not warn you when
+  the runtime layout moves.
+- **Asm has no Rust safety checks.** The assembly jumps straight from checks to
+  writes to exit. Before every byte or word load, validate the relevant
+  instruction-data length, account count, account data length, and
+  duplicate-account encoding. A bad raw offset can become a VM memory fault or a
+  wrong in-bounds read or write. Unsafe Rust called from the asm can
+  additionally hit Rust UB if it creates invalid references. If the asm calls
+  Rust helpers, keep those helpers non-allocating and non-panicking, unless you
+  intentionally support the reinstated allocator and panic handler on that path.
+
+## What still works
+
+- Clients generated from the IDL still call `instruction::Update` the same way.
+  They serialize the discriminator and args, and the fast path reads them.
+- CPI from another program hits this program's entrypoint the same way an
+  external transaction does, so the custom dispatcher sees CPI calls too. The
+  custom entrypoint branches on the discriminator regardless of caller.
+  Fast-path discriminators take the inline path. Everything else falls through
+  to `__anchor_dispatch` and runs the typed handler.
+- Tests written against the typed handler keep working, as long as the LiteSVM
+  or Surfpool harness exercises the real `.so`. That is what `bench/tests/`
+  does.
+
+## See also
+
+- [Trade-offs](./tradeoffs) has the guarantee-dropped versus CU-saved table.
+- [Benchmarking](./benchmarking) is the harness that produced the 26 CU number
+  for prop-amm `update`.

@@ -1,0 +1,51 @@
+---
+title: Trade-offs
+description:
+  What each performance escape hatch costs you in compile-time and runtime
+  safety, and a pre-flight checklist before adopting one.
+---
+
+## The escape-hatch ledger
+
+Every pattern in this section trades a guarantee for compute units or binary
+size. The table below makes the swap explicit. The "Mitigation owed" column is
+what you owe in return. It is the code you have to write yourself, or the test
+you have to add, to put the guarantee back.
+
+| Pattern | Guarantee dropped | Mitigation owed |
+|---|---|---|
+| [Custom entrypoint](./custom-entrypoint) (asm or Rust) | Anchor's generated fast-path checks. These are discriminator dispatch, instruction-data length and arg decoding, account count, duplicate mutable checks, owner/writable/signer flags, account data length, PDA derivation, and address comparisons. `no-entrypoint` also stops the macro from emitting allocator and panic symbols. | Hand-written checks for every constraint the macro would have emitted. Reinstall allocator and panic symbols if any fallback or helper needs them. Fuzz the entrypoint. Pin the agave version. Re-audit on every dependency bump. |
+| [Raw `AccountView`](./raw-account-view) | Account count, since `get_unchecked(N)` is implicit, plus discriminator, owner, `is_writable`, `is_signer`, borrow tracking, PDA derivation, account data length, and field-offset safety on non-init reads. | Manual checks at the head of the handler. These are an `accounts.len() < N` guard, an owner and disc compare, writability, signer, and data-length range checks before raw indexing. Confirm no aliasing `&mut` exists before `borrow_unchecked_mut`. |
+| Hybrid `Account<T>` and raw write | Nothing on entry. Borrow tracking on the raw write. | Confirm no other `&mut` to the same account in scope while the raw slice is live. |
+| [Zero-copy layout](./zero-copy-layout) | None at runtime. `bytemuck::Pod` enforces layout statically. | Field reordering or explicit padding so the struct stays free of implicit padding bytes. |
+| `PodVec<T, MAX>` | Capacity is a `const`, not data-driven. `Account<T>` does **not** validate the embedded `len` prefix, so a hostile caller can stamp `len > MAX`. The unchecked accessors then panic at the Rust bounds check. Those are `as_slice`, `as_mut_slice`, `pop`, `iter`, `iter_mut`, `get`, `first`, `last`, and `Index`. `get_mut`, `IndexMut`, and the `Deref` and `DerefMut` impls inherit the same panic via `as_slice` and `as_mut_slice`. | Pick `MAX` from the worst case. Reject `try_push` failures with a clear error. Call `vec.validate()?` once at handler entry, or use the `try_*` accessors that return `CapacityError`. |
+| `Slab<H, T>` (variable tail) | None on push or pop. Rent accounting is manual. | Call `top_up` and `refund` around capacity changes. Use `space_for` to size new allocations. |
+| `#[event(bytemuck)]` | No `Vec`, `String`, `Option`, or enums in the payload. | Pick fixed-size fields, or fall back to the default wincode event. |
+| Depend on `anchor-lang-v2` with `default-features = false` (drop `guardrails`) | Diagnostic guardrails such as `check_program_id` in the dispatcher and some early writability and executable checks are compiled out. Core owner/discriminator checks still run in typed account loads. `guardrails` is a default feature of `anchor-lang-v2` itself, so the lever is dependency-feature selection, not a root-package Cargo command. | Run tests with `guardrails` on. Ship without it only after those diagnostics stay quiet. |
+| `default = ["no-entrypoint"]` on your crate | The macro stops emitting its own `entrypoint`, allocator, and panic handler. It still emits `__anchor_dispatch` so your entrypoint can fall back to Anchor. | Use only when pairing with a custom entrypoint. See [Custom entrypoint](./custom-entrypoint). |
+
+## What the defaults already do for you
+
+Worth re-reading before reaching for any of the above. None of these require a
+feature flag or an opt-in. They ship on by default.
+
+- PDA bumps for literal seeds are computed at macro time as a `const`.
+- The on-curve check is skipped when verifying a program-owned PDA.
+- CPI routes through `invoke_signed_unchecked` because `CpiHandle` proves the
+  borrow is exclusive at the Rust level.
+- `Account<T>` is a pointer cast with zero copy. Load is a no-op once the
+  discriminator and owner are checked.
+- `remaining_accounts()` is lazy and cached.
+
+The standard `#[program]` macro picks these up automatically. If your target is
+a 4× improvement, the defaults will already get you there. The patterns on this
+page exist for the cases where 4× is not enough.
+
+## See also
+
+- [Custom entrypoint](./custom-entrypoint), [Raw
+  `AccountView`](./raw-account-view), and [Zero-copy
+  layout](./zero-copy-layout) are the patterns themselves.
+- [Benchmarking](./benchmarking) shows how to measure before and after.
+- [lang-v2 README](https://github.com/otter-sec/anchor/blob/anchor-next/lang-v2/README.md)
+  lists the optimization bullets the defaults already cover.
