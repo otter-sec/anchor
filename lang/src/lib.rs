@@ -653,6 +653,56 @@ pub mod __private {
     pub trait IsSameType<T> {}
 
     impl<T> IsSameType<T> for T {}
+
+    #[doc(hidden)]
+    #[derive(Debug, Clone, Copy)]
+    pub struct CpiReturnData {
+        program_id: Option<Pubkey>,
+        data_len: usize,
+        data: [u8; crate::solana_program::program::MAX_RETURN_DATA],
+    }
+
+    impl CpiReturnData {
+        #[doc(hidden)]
+        pub fn new(return_data: Option<(Pubkey, Vec<u8>)>) -> Self {
+            let mut snapshot = Self {
+                program_id: None,
+                data_len: 0,
+                data: [0u8; crate::solana_program::program::MAX_RETURN_DATA],
+            };
+
+            if let Some((program_id, data)) = return_data {
+                let data_len = data.len();
+                snapshot.data[..data_len].copy_from_slice(&data);
+                snapshot.program_id = Some(program_id);
+                snapshot.data_len = data_len;
+            }
+
+            snapshot
+        }
+
+        #[doc(hidden)]
+        pub fn snapshot() -> Self {
+            Self::new(crate::solana_program::program::get_return_data())
+        }
+
+        #[doc(hidden)]
+        pub fn get<T: crate::AnchorDeserialize>(&self, expected_program_id: Pubkey) -> T {
+            let program_id = self.program_id.unwrap();
+            if program_id != expected_program_id {
+                crate::solana_program::log::sol_log("CPI return data program_id mismatch");
+                panic!();
+            }
+
+            T::try_from_slice(&self.data[..self.data_len]).unwrap()
+        }
+
+        #[doc(hidden)]
+        pub fn return_data(&self) -> Option<(Pubkey, &[u8])> {
+            self.program_id
+                .map(|program_id| (program_id, &self.data[..self.data_len]))
+        }
+    }
 }
 
 /// Ensures a condition is true, otherwise returns with the given error.

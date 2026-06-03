@@ -321,4 +321,36 @@ describe("CPI return", () => {
       console.log(`    Error: ${e.message?.substring(0, 100)}...\n`);
     }
   });
+
+  it("FIX: get() keeps the original return data after a later CPI to the same program", async () => {
+    const tx = await callerProgram.methods
+      .cpiCallReturnU64SameProgramSpoofed()
+      .accounts({
+        cpiReturn: cpiReturn.publicKey,
+        cpiReturnProgram: calleeProgram.programId,
+      })
+      .rpc(confirmOptions);
+
+    const t = await provider.connection.getTransaction(tx, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    });
+
+    const dataPrefix = "Program data: ";
+    const dataLogs = t.meta.logMessages.filter((log) =>
+      log.startsWith(dataPrefix)
+    );
+    const lastDataLog = dataLogs[dataLogs.length - 1];
+    const b64Data = lastDataLog.slice(dataPrefix.length);
+    const buffer = Buffer.from(b64Data, "base64");
+
+    const reader = new borsh.BinaryReader(buffer);
+    const value = reader.readU64().toNumber();
+
+    assert.equal(
+      value,
+      10,
+      "Expected get() to return the original callee value, not the later spoofed one"
+    );
+  });
 });
