@@ -31,7 +31,7 @@ describe("IDL", () => {
       if (!acc) throw new Error(`Account \`${accName}\` not found`);
 
       const caseConversionAccount = await program.account.simpleAccount.fetch(
-        caseConversionAccountKp.publicKey,
+        caseConversionAccountKp.publicKey
       );
       assert.strictEqual(caseConversionAccount.fieldName, FIELD_NAME);
     });
@@ -102,7 +102,7 @@ describe("IDL", () => {
           u128,
           f32,
           f64,
-          pubkey,
+          pubkey
         )
         .accounts({ account: kp.publicKey })
         .signers([kp])
@@ -112,7 +112,7 @@ describe("IDL", () => {
         .rpc();
 
       const account = await program.account.primitiveAccount.fetch(
-        kp.publicKey,
+        kp.publicKey
       );
       assert.strictEqual(account.bool, bool);
 
@@ -223,8 +223,8 @@ describe("IDL", () => {
       if (!unnamed.fullEnum.unnamed) throw new Error("Unnamed not created");
       assert(
         Object.entries(unnamed.fullEnum.unnamed).every(
-          ([key, value]) => value === tupleArg[key as keyof typeof tupleArg],
-        ),
+          ([key, value]) => value === tupleArg[key as keyof typeof tupleArg]
+        )
       );
 
       // Unnamed struct
@@ -239,18 +239,18 @@ describe("IDL", () => {
       }
       assert.strictEqual(
         unnamedStruct.fullEnum.unnamedStruct[0].u8,
-        tupleStructArg[0].u8,
+        tupleStructArg[0].u8
       );
       assert.strictEqual(
         unnamedStruct.fullEnum.unnamedStruct[0].u16,
-        tupleStructArg[0].u16,
+        tupleStructArg[0].u16
       );
       assert.strictEqual(
         unnamedStruct.fullEnum.unnamedStruct[0].u32,
-        tupleStructArg[0].u32,
+        tupleStructArg[0].u32
       );
       assert(
-        unnamedStruct.fullEnum.unnamedStruct[0].u64.eq(tupleStructArg[0].u64),
+        unnamedStruct.fullEnum.unnamedStruct[0].u64.eq(tupleStructArg[0].u64)
       );
     });
 
@@ -283,7 +283,7 @@ describe("IDL", () => {
           aliasOptionVecPubkey,
           aliasGenericConst,
           aliasMultipleGenericsMixed,
-          aliasExternal,
+          aliasExternal
         )
         .accounts({ account: kp.publicKey })
         .signers([kp])
@@ -305,7 +305,7 @@ describe("IDL", () => {
       assert.deepEqual(account.aliasGenericConst, aliasGenericConst);
       assert.deepEqual(
         account.aliasMultipleGenericsMixed,
-        aliasMultipleGenericsMixed,
+        aliasMultipleGenericsMixed
       );
       assert(account.aliasExternal.eq(aliasExternal));
     });
@@ -349,7 +349,7 @@ describe("IDL", () => {
 
       // External non-Anchor defined
       assert(
-        boxed.externalNonAnchor.activatedAt?.eq(externalNonAnchor.activatedAt),
+        boxed.externalNonAnchor.activatedAt?.eq(externalNonAnchor.activatedAt)
       );
     });
 
@@ -366,13 +366,13 @@ describe("IDL", () => {
         .signers([kp])
         .preInstructions([
           await program.account.accountAndEventFieldAccount.createInstruction(
-            kp,
+            kp
           ),
         ])
         .rpc();
 
       const account = await program.account.accountAndEventFieldAccount.fetch(
-        kp.publicKey,
+        kp.publicKey
       );
       assert.deepEqual(account, accountArg);
     });
@@ -387,7 +387,7 @@ describe("IDL", () => {
       };
       const { pubkeys } = await program.methods.generic(arg).rpcAndKeys();
       const myAccount = await program.account.genericAccount.fetch(
-        pubkeys.myAccount,
+        pubkeys.myAccount
       );
       assert.deepEqual(myAccount.field, arg);
     });
@@ -409,7 +409,7 @@ describe("IDL", () => {
         .genericCustomStruct(arg)
         .rpcAndKeys();
       const myAccount = await program.account.genericAccountCustomStruct.fetch(
-        pubkeys.myAccount,
+        pubkeys.myAccount
       );
       assert.deepEqual(myAccount.field, arg);
     });
@@ -430,7 +430,7 @@ describe("IDL", () => {
         .rpc();
 
       const fullPathAccount = await program.account.fullPathAccount.fetch(
-        kp.publicKey,
+        kp.publicKey
       );
       assert.strictEqual(fullPathAccount.namedStruct.u8, namedStructArg.u8);
       assert.strictEqual(fullPathAccount.namedStruct.u16, namedStructArg.u16);
@@ -438,7 +438,7 @@ describe("IDL", () => {
       assert(fullPathAccount.namedStruct.u64.eq(namedStructArg.u64));
       assert.deepEqual(
         fullPathAccount.someModuleNamedStruct,
-        someModuleNamedStructArg,
+        someModuleNamedStructArg
       );
     });
 
@@ -466,7 +466,7 @@ describe("IDL", () => {
         .rpc();
 
       const account = await program.account.accountWithExternalField.fetch(
-        kp.publicKey,
+        kp.publicKey
       );
 
       assert.deepEqual(account.myStruct, externalArg);
@@ -482,14 +482,14 @@ describe("IDL", () => {
         .signers([kp])
         .preInstructions([
           await program.account.accountWithNonAnchorExternalField.createInstruction(
-            kp,
+            kp
           ),
         ])
         .rpc();
 
       const account =
         await program.account.accountWithNonAnchorExternalField.fetch(
-          kp.publicKey,
+          kp.publicKey
         );
 
       assert(account.feature.activatedAt?.eq(feature.activatedAt));
@@ -529,7 +529,7 @@ describe("IDL", () => {
             named: { pointX: new BN(1), pointY: new BN(2) },
           },
         },
-        "named { pointX: 1, pointY: 2 }",
+        "named { pointX: 1, pointY: 2 }"
       );
     });
 
@@ -537,7 +537,7 @@ describe("IDL", () => {
       await formatEnum(
         "fullEnum",
         { fullEnum: { unnamed: [2, 10, 200, 49] } },
-        "unnamed { 0: 2, 1: 10, 2: 200, 3: 49 }",
+        "unnamed { 0: 2, 1: 10, 2: 200, 3: 49 }"
       );
     });
   });
@@ -545,7 +545,7 @@ describe("IDL", () => {
   describe("Verify", () => {
     it("Includes accounts marked with `#[account(zero_copy)]`", () => {
       assert.isDefined(
-        program.idl.accounts.find((acc) => acc.name === "zcAccount"),
+        program.idl.accounts.find((acc) => acc.name === "zcAccount")
       );
       const zcAccount = program.idl.types.find((ty) => ty.name === "zcAccount");
       if (!zcAccount) throw new Error("`zcAccount` not found");
@@ -556,10 +556,10 @@ describe("IDL", () => {
 
     it("Includes accounts marked with `#[account(zero_copy(unsafe))]`", () => {
       assert.isDefined(
-        program.idl.accounts.find((acc) => acc.name === "zcUnsafeAccount"),
+        program.idl.accounts.find((acc) => acc.name === "zcUnsafeAccount")
       );
       const zcUnsafeAccount = program.idl.types.find(
-        (ty) => ty.name === "zcUnsafeAccount",
+        (ty) => ty.name === "zcUnsafeAccount"
       );
       if (!zcUnsafeAccount) throw new Error("`zcUnsafeAccount` not found");
 
@@ -570,41 +570,41 @@ describe("IDL", () => {
     it("Does not include external accounts", () => {
       const external: anchor.Program<External> = anchor.workspace.external;
       assert.isDefined(
-        external.idl.accounts.find((acc) => acc.name === "myAccount"),
+        external.idl.accounts.find((acc) => acc.name === "myAccount")
       );
       assert.isDefined(
-        external.idl.types.find((ty) => ty.name === "myAccount"),
+        external.idl.types.find((ty) => ty.name === "myAccount")
       );
 
       assert.isUndefined(
         // @ts-expect-error
-        program.idl.accounts.find((acc) => acc.name === "myAccount"),
+        program.idl.accounts.find((acc) => acc.name === "myAccount")
       );
       assert.isDefined(program.idl.types.find((ty) => ty.name === "myAccount"));
     });
 
     it("Includes constants marked with `#[constant]`", () => {
       const checkDefined = (
-        cb: (constant: typeof program["idl"]["constants"][number]) => boolean,
+        cb: (constant: typeof program["idl"]["constants"][number]) => boolean
       ) => {
         const constant = program.idl.constants.find(cb);
         if (!constant) throw new Error("Constant not found");
       };
 
       checkDefined(
-        (c) => c.name === "u8" && c.type === "u8" && c.value === "6",
+        (c) => c.name === "u8" && c.type === "u8" && c.value === "6"
       );
       checkDefined(
-        (c) => c.name === "i128" && c.type === "i128" && c.value === "1000000",
+        (c) => c.name === "i128" && c.type === "i128" && c.value === "1000000"
       );
       checkDefined(
-        (c) => c.name === "byteStr" && c.type === "u8" && c.value === "116",
+        (c) => c.name === "byteStr" && c.type === "u8" && c.value === "116"
       );
       checkDefined(
         (c) =>
           c.name === "bytesStr" &&
           c.type === "bytes" &&
-          c.value === "[116, 101, 115, 116]",
+          c.value === "[116, 101, 115, 116]"
       );
     });
 
@@ -643,22 +643,22 @@ describe("IDL", () => {
   describe("Context argument patterns (#3838)", () => {
     it("includes a handler that destructures its Context argument", () => {
       const ix = program.rawIdl.instructions.find(
-        (ix) => ix.name === "destructured_context",
+        (ix) => ix.name === "destructured_context"
       );
       assert.isDefined(
         ix,
-        "`destructured_context` should appear in the IDL — the parser must accept `Context { .. }: Context<T>`",
+        "`destructured_context` should appear in the IDL — the parser must accept `Context { .. }: Context<T>`"
       );
       assert.deepEqual(ix!.args, [{ name: "value", type: "u64" }]);
     });
 
     it("includes a handler that uses a wildcard for its Context argument", () => {
       const ix = program.rawIdl.instructions.find(
-        (ix) => ix.name === "wildcard_context",
+        (ix) => ix.name === "wildcard_context"
       );
       assert.isDefined(
         ix,
-        "`wildcard_context` should appear in the IDL — the parser must accept `_: Context<T>`",
+        "`wildcard_context` should appear in the IDL — the parser must accept `_: Context<T>`"
       );
       assert.deepEqual(ix!.args, [{ name: "value", type: "u64" }]);
     });
