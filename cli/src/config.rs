@@ -5,7 +5,6 @@ use {
     anyhow::{anyhow, bail, Context, Error, Result},
     clap::{Parser, ValueEnum},
     dirs::home_dir,
-    heck::ToSnakeCase,
     reqwest::Url,
     serde::{
         de::{self, MapAccess, Visitor},
@@ -123,7 +122,13 @@ impl Manifest {
                 .package
                 .as_ref()
                 .ok_or_else(|| anyhow!("package section not provided"))
-                .map(|pkg| pkg.name.to_snake_case()),
+                // Mirror Cargo's default lib-target name derivation: only
+                // replace `-` with `_`. `heck::to_snake_case` additionally
+                // lowercases and splits on camel-case boundaries (e.g.
+                // `Groth16Verify` -> `groth16_verify`, `HTTPServer` ->
+                // `http_server`), so anchor would look for IDL/SO artifacts
+                // under a name Cargo never produced.
+                .map(|pkg| pkg.name.replace('-', "_")),
         }
     }
 
@@ -2000,6 +2005,73 @@ extra_args = [
         let string = BASE_CONFIG.to_owned() + "[features]\nskip-lint = false";
         let config = Config::from_str(&string).unwrap();
         assert!(!config.features.skip_lint);
+    }
+
+    fn manifest_with_package_name(name: &str) -> Manifest {
+        let toml =
+            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n");
+        Manifest(cargo_toml::Manifest::from_str(&toml).unwrap())
+    }
+
+    // Regression test for #3715. Cargo's default lib-target name derivation
+    // only replaces `-` with `_`; case is preserved. `heck::to_snake_case`
+    // additionally lowercases and splits on camel-case boundaries, so for any
+    // package name that contains uppercase letters anchor was looking for
+    // IDL/SO artifacts under a name Cargo never produced. The cases below all
+    // fail under the previous `to_snake_case` implementation.
+    #[test]
+    fn lib_name_preserves_pascal_case_with_digits() {
+        let manifest = manifest_with_package_name("Groth16Verify");
+        assert_eq!(manifest.lib_name().unwrap(), "Groth16Verify");
+    }
+
+    #[test]
+    fn lib_name_preserves_camel_case_with_digits() {
+        let manifest = manifest_with_package_name("groth16Verify");
+        assert_eq!(manifest.lib_name().unwrap(), "groth16Verify");
+    }
+
+    #[test]
+    fn lib_name_preserves_consecutive_uppercase() {
+        let manifest = manifest_with_package_name("HTTPServer");
+        assert_eq!(manifest.lib_name().unwrap(), "HTTPServer");
+    }
+
+    #[test]
+    fn lib_name_preserves_pascal_case_without_digits() {
+        let manifest = manifest_with_package_name("MyProgram");
+        assert_eq!(manifest.lib_name().unwrap(), "MyProgram");
+    }
+
+    // Sanity cases that exercise the non-divergent behavior shared with the
+    // previous implementation: dash replacement, plain snake_case pass-through,
+    // and the explicit `[lib].name` override path which doesn't go through any
+    // normalization at all.
+    #[test]
+    fn lib_name_replaces_dashes_with_underscores() {
+        let manifest = manifest_with_package_name("my-program");
+        assert_eq!(manifest.lib_name().unwrap(), "my_program");
+    }
+
+    #[test]
+    fn lib_name_passes_through_plain_snake_case() {
+        let manifest = manifest_with_package_name("my_program");
+        assert_eq!(manifest.lib_name().unwrap(), "my_program");
+    }
+
+    #[test]
+    fn lib_name_passes_through_digits_in_snake_case() {
+        let manifest = manifest_with_package_name("groth16_verify");
+        assert_eq!(manifest.lib_name().unwrap(), "groth16_verify");
+    }
+
+    #[test]
+    fn lib_name_prefers_explicit_lib_target_name() {
+        let toml = "\
+            [package]\nname = \"my-program\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[lib]\nname \
+                    = \"explicit_name\"\n";
+        let manifest = Manifest(cargo_toml::Manifest::from_str(toml).unwrap());
+        assert_eq!(manifest.lib_name().unwrap(), "explicit_name");
     }
 
     #[test]
