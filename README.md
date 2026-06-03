@@ -43,11 +43,6 @@ To jump straight to examples, go [here](https://github.com/otter-sec/anchor/tree
 | `@anchor-lang/core`     | TypeScript client for Anchor programs                    | [![npm](https://img.shields.io/npm/v/@anchor-lang/core.svg?color=blue)](https://www.npmjs.com/package/@anchor-lang/core)         | [![Docs](https://img.shields.io/badge/docs-typedoc-blue)](https://otter-sec.github.io/anchor/ts/index.html)     |
 | `@anchor-lang/cli` | CLI to support building and managing an Anchor workspace | [![npm](https://img.shields.io/npm/v/@anchor-lang/cli.svg?color=blue)](https://www.npmjs.com/package/@anchor-lang/cli) | [![Docs](https://img.shields.io/badge/docs-cli-blue)](https://www.anchor-lang.com/docs/references/cli) |
 
-## Note
-
-- **Anchor is in active development, so all APIs are subject to change.**
-- **This code is unaudited. Use at your own risk.**
-
 ## Examples
 
 Here's a counter program, where only the designated `authority`
@@ -120,6 +115,8 @@ Anchor is licensed under [Apache 2.0](./LICENSE).
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in Anchor by you, as defined in the Apache-2.0 license, shall be
 licensed as above, without any additional terms or conditions.
+
+This code is provided as-is, without warranties or liability.
 
 ## Contribution
 
