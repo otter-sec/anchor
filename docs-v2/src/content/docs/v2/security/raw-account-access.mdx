@@ -1,0 +1,57 @@
+---
+title: Raw account access
+description: Drop the typed `Account<T>{:rs}` wrapper and operate on pinocchio's `AccountView{:rs}` bytes when a handler only touches a field or two.
+---
+
+`Account<T>{:rs}` validates the owner, discriminator, and size on load, then gives you a typed view. For a handler that reads one field, writes one field, and exits, that load can be the dominant cost.
+
+Pinocchio's `AccountView{:rs}` is the raw layer underneath. It exposes the account's address, lamports, data, and owner with no checks attached. Every safety check becomes something you write or knowingly skip.
+
+<Callout variant="warning" title="`borrow_unchecked_mut{:rs}` is unsafe">
+  `borrow_unchecked_mut{:rs}` skips the runtime borrow bookkeeping that `try_borrow_mut{:rs}` performs. Two live `&mut{:rs}` to the same account data is undefined behavior, and the borrow checker cannot catch it once the references come out of a raw slice.
+</Callout>
+
+## The hybrid pattern
+
+You rarely need to go fully raw. The practical shape keeps Anchor's entry validation and drops to bytes only for the hot write. `#[derive(Accounts)]{:rs}` still runs the owner, writable, and discriminator checks, then you pull the underlying `AccountView{:rs}` through `.view(){:rs}`:
+
+```rust title="lib.rs" showLineNumbers=false
+#[derive(Accounts)]
+pub struct Tick {
+    #[account(mut)]
+    pub feed: Account<PriceFeed>,
+}
+
+pub fn tick(ctx: &mut Context<Tick>, new_price: u64) -> Result<()> {
+    // Validation already ran: `feed` is writable, owned, and correctly
+    // discriminated. Drop to raw bytes only for the write.
+    unsafe {
+        let mut view = *ctx.accounts.feed.view();
+        let data = view.borrow_unchecked_mut();
+        data.get_unchecked_mut(16..24).copy_from_slice(&new_price.to_le_bytes());
+    }
+    Ok(())
+}
+```
+
+This keeps every entry-time check and gives up only the typed write. You owe correct field offsets and the guarantee that no other mutable borrow of the account is live.
+
+## Going fully raw
+
+A program that drops `#[derive(Accounts)]{:rs}` owns every check itself. The pinocchio `helloworld{:dir}` bench program shows the pattern end to end. For that workload, typed v2 already measures cheaper than the pinocchio hand-roll, so raw access is not an automatic win. Measure before committing to it.
+
+When you do go raw, put back each check Anchor would have run:
+
+| Check Anchor runs | Put it back with |
+| --- | --- |
+| Account count | An `accounts.len() < N{:rs}` guard before any unchecked indexing |
+| Discriminator | Compare the first byte before trusting the rest |
+| Owner | Compare `view.owner(){:rs}` against the program id |
+| Writable | Check `view.is_writable(){:rs}` before a mutable borrow |
+| Signer | Check `signer.is_signer(){:rs}` |
+| Borrow tracking | Ensure no other `&mut{:rs}` to the account is live |
+| PDA derivation | `find_program_address{:rs}`, or a `const{:rs}` bump for literal seeds |
+
+An init path can lean on `create_account_signed{:rs}`, which enforces the PDA match and the program owner as it creates the account. A read-after-init path has no such helper, so re-check owner and discriminator by hand.
+
+See [Account data model](/docs/v2/programs/account-data-model/) for the typed wrappers this sidesteps.

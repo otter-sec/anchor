@@ -1,0 +1,91 @@
+---
+title: Custom entrypoint
+description: Skip Anchor's dispatcher for one hot instruction with a one-byte discriminator and a hand-written entrypoint.
+---
+
+Every instruction starts with a discriminator. The leading bytes of the instruction data tell the program which handler to run. By default the `#[program]{:rs}` macro hashes the handler name into an 8-byte discriminator, emits the entrypoint, and matches those bytes in a dispatch table.
+
+When one instruction dominates call volume and does very little work, that dispatch becomes a meaningful share of its budget. Two levers cut it down, and they stack:
+
+| Lever | What it changes | Needs `no-entrypoint{:toml}` |
+| --- | --- | --- |
+| `#[discrim = N]{:rs}` | Replaces the 8-byte hash with one byte you pick. The macro still owns the entrypoint and dispatch. | No |
+| Custom entrypoint | Replaces the macro's entrypoint. You read the disc byte, fast-path chosen instructions, and fall back to `__anchor_dispatch{:rs}` for the rest. | Yes |
+
+On the `prop-amm{:dir}` bench program, an assembly fast path lands `update{:rs}` at 26 CU. See [Examples and benchmarks](/docs/v2/reference/examples-and-benchmarks/) for the table.
+
+## When to reach for this
+
+This pays off for a handler that runs often and does almost nothing. An oracle `update{:rs}`, a price tick, a transfer between two known accounts. The fixed cost of reading the discriminator, walking accounts, and running `try_accounts{:rs}` can outweigh the handler's own work.
+
+For everything else, the default dispatch is already cheap. Reach for this only with a benchmark that shows the dispatch cost.
+
+## One-byte discriminators
+
+`#[discrim = N]{:rs}` overrides the default 8-byte discriminator with a single byte. The macro still emits the entrypoint, allocator, panic handler, and dispatch table. They match on `N{:rs}` instead of the hash:
+
+```rust title="lib.rs" showLineNumbers=false
+#[program]
+pub mod oracle {
+    use super::*;
+
+    #[discrim = 0]
+    pub fn update(ctx: &mut Context<Update>, new_price: u64) -> Result<()> {
+        // ...
+        Ok(())
+    }
+
+    #[discrim = 1]
+    pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {
+        Ok(())
+    }
+}
+```
+
+The mode is all-or-nothing. Once one handler sets `#[discrim = N]{:rs}`, every handler needs a one-byte value, and duplicates fail at compile time. The `tests-v2/programs/spl{:dir}` program uses this across its whole surface, numbered `#[discrim = 0]{:rs}` through `#[discrim = 54]{:rs}`.
+
+## Taking over the entrypoint
+
+To skip the dispatcher entirely on a hot path, own the entrypoint. This needs two changes on top of a standard v2 program:
+
+1. Add `no-entrypoint{:toml}` to the crate's `default{:toml}` features. The macro then stops emitting its entrypoint, allocator, and panic handler, and exposes `__anchor_dispatch{:rs}` as a symbol you can call.
+2. Reinstate the allocator and panic handler, then provide your own `entrypoint{:rs}`:
+
+```rust title="lib.rs" showLineNumbers=false
+#[cfg(target_os = "solana")]
+anchor_lang_v2::pinocchio::default_allocator!();
+#[cfg(target_os = "solana")]
+anchor_lang_v2::pinocchio::default_panic_handler!();
+
+#[cfg(target_os = "solana")]
+#[no_mangle]
+pub unsafe extern "C" fn entrypoint(input: *mut u8, ix_data_ptr: *const u8) -> u64 {
+    let ix_data_len = *(ix_data_ptr.sub(8) as *const u64) as usize;
+    if ix_data_len == 0 {
+        return crate::__anchor_dispatch(input, ix_data_ptr);
+    }
+    match *ix_data_ptr {
+        // Fast path for `#[discrim = 0]`. Walk `input` for accounts, read
+        // args past `ix_data_ptr.add(1)`, write, and exit.
+        0 => 0,
+        // Everything else runs the typed handler.
+        _ => crate::__anchor_dispatch(input, ix_data_ptr),
+    }
+}
+```
+
+`__anchor_dispatch{:rs}` takes the same `(input, ix_data_ptr){:rs}` pair the loader hands your entrypoint, so the fallback is one forward call.
+
+The assembly route goes further. Hand-written sBPF with offsets against agave's account layout is what lands `prop-amm{:dir}`'s `update{:rs}` at 26 CU. The full version is at [`bench/programs/prop-amm/anchor-v2/src/asm/entrypoint.s`](https://github.com/otter-sec/anchor/tree/anchor-next/bench/programs/prop-amm/anchor-v2/src/asm/entrypoint.s). Reach for assembly only when the saved compute is worth maintaining offset tables against runtime changes.
+
+## What the fast path gives up
+
+<Callout variant="warning" title="A fast-pathed instruction runs none of Anchor's checks">
+  Skipping `__anchor_dispatch{:rs}` skips the generated `TryAccounts{:rs}` work for that discriminator: account count, duplicate-mutable checks, owner, writable, and signer flags, data-length checks, PDA derivation, and address comparisons. Write each check you still need by hand, or use pinocchio's typed `AccountView{:rs}` for the ones it covers.
+</Callout>
+
+- The `#[discrim = N]{:rs}` values are part of your ABI now. They keep clients, the IDL, and your entrypoint agreeing on one byte.
+- The fallback depends on `__anchor_dispatch{:rs}`'s `(input, ix_data_ptr) -> u64{:rs}` signature. Re-check it on Anchor upgrades.
+- Assembly offsets are pinned to agave's serialization layout. A runtime layout change means editing the assembly, and the compiler only sees raw numbers.
+
+Clients, CPI callers, and tests that exercise the built `.so{:file}` keep working unchanged. The entrypoint branches on the discriminator regardless of caller, so fast-path discriminators take the inline path and everything else runs the typed handler.

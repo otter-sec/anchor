@@ -20,4 +20,6 @@ The main sources are:
 
 Optional flags can reduce a program further when their tradeoffs are acceptable. `const-rent{:toml}` removes a rent sysvar read from account creation. Disabling `guardrails{:toml}` and `account-resize{:toml}` can reduce size and CU for programs that do not need those safety nets.
 
+Two lower-level escape hatches go further when a single instruction justifies the cost. A [custom entrypoint](/docs/v2/security/custom-entrypoint/) skips Anchor's dispatcher for a chosen instruction. [Raw account access](/docs/v2/security/raw-account-access/) drops the typed wrapper to read and write account bytes directly. Both give up checks Anchor normally runs, so reach for them only with measurements and tests in hand.
+
 The checked-in bench programs are under `bench/programs/{:dir}`. See [Examples and benchmarks](/docs/v2/reference/examples-and-benchmarks/) for the current table and reproduction commands.
