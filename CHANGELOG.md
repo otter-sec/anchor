@@ -12,6 +12,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+- cli: Generate a TypeScript error constants file from the IDL during `anchor build` ([#3827](https://github.com/solana-foundation/anchor/pull/3827)).
 - ts: Re-implement `verifiedBuild` using the OtterSec registry (`verify.osec.io`), replacing the defunct `apr.dev` API ([#4522](https://github.com/solana-foundation/anchor/pull/4522)).
 - ts: Add `decodeIdlAccountRaw` ([#4375](https://github.com/solana-foundation/anchor/pull/4375)).
 - cli: Add `--stdout` flag to the `expand` command ([#4400](https://github.com/solana-foundation/anchor/pull/4400)).
