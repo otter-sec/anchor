@@ -31,30 +31,11 @@ pub fn advance_nonce_account<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct AdvanceNonceAccount<'info> {
     pub nonce: AccountInfo<'info>,
     pub authorized: AccountInfo<'info>,
     pub recent_blockhashes: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for AdvanceNonceAccount<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.nonce.to_owned(),
-            self.recent_blockhashes.to_owned(),
-            self.authorized.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for AdvanceNonceAccount<'info> {
-    fn to_account_metas(&self, _: Option<bool>) -> Vec<AccountMeta> {
-        vec![
-            AccountMeta::new(self.nonce.key(), false),
-            AccountMeta::new_readonly(self.recent_blockhashes.key(), false),
-            AccountMeta::new_readonly(self.authorized.key(), true),
-        ]
-    }
 }
 
 pub fn allocate<'info>(
@@ -73,20 +54,9 @@ pub fn allocate<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct Allocate<'info> {
     pub account_to_allocate: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for Allocate<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.account_to_allocate.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for Allocate<'info> {
-    fn to_account_metas(&self, _: Option<bool>) -> Vec<AccountMeta> {
-        vec![AccountMeta::new(self.account_to_allocate.key(), true)]
-    }
 }
 
 pub fn allocate_with_seed<'info>(
@@ -110,24 +80,10 @@ pub fn allocate_with_seed<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct AllocateWithSeed<'info> {
     pub account_to_allocate: AccountInfo<'info>,
     pub base: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for AllocateWithSeed<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.account_to_allocate.to_owned(), self.base.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for AllocateWithSeed<'info> {
-    fn to_account_metas(&self, _: Option<bool>) -> Vec<AccountMeta> {
-        vec![
-            AccountMeta::new(self.account_to_allocate.key(), false),
-            AccountMeta::new_readonly(self.base.key(), true),
-        ]
-    }
 }
 
 pub fn assign<'info>(
@@ -146,20 +102,9 @@ pub fn assign<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct Assign<'info> {
     pub account_to_assign: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for Assign<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.account_to_assign.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for Assign<'info> {
-    fn to_account_metas(&self, _: Option<bool>) -> Vec<AccountMeta> {
-        vec![AccountMeta::new(self.account_to_assign.key(), true)]
-    }
 }
 
 pub fn assign_with_seed<'info>(
@@ -181,24 +126,10 @@ pub fn assign_with_seed<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct AssignWithSeed<'info> {
     pub account_to_assign: AccountInfo<'info>,
     pub base: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for AssignWithSeed<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.account_to_assign.to_owned(), self.base.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for AssignWithSeed<'info> {
-    fn to_account_metas(&self, _: Option<bool>) -> Vec<AccountMeta> {
-        vec![
-            AccountMeta::new(self.account_to_assign.key(), false),
-            AccountMeta::new_readonly(self.base.key(), true),
-        ]
-    }
 }
 
 pub fn authorize_nonce_account<'info>(
@@ -218,24 +149,10 @@ pub fn authorize_nonce_account<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct AuthorizeNonceAccount<'info> {
     pub nonce: AccountInfo<'info>,
     pub authorized: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for AuthorizeNonceAccount<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.nonce.to_owned(), self.authorized.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for AuthorizeNonceAccount<'info> {
-    fn to_account_metas(&self, _: Option<bool>) -> Vec<AccountMeta> {
-        vec![
-            AccountMeta::new(self.nonce.key(), false),
-            AccountMeta::new_readonly(self.authorized.key(), true),
-        ]
-    }
 }
 
 pub fn create_account<'info>(
@@ -259,24 +176,10 @@ pub fn create_account<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct CreateAccount<'info> {
     pub from: AccountInfo<'info>,
     pub to: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for CreateAccount<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.from.to_owned(), self.to.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for CreateAccount<'info> {
-    fn to_account_metas(&self, _: Option<bool>) -> Vec<AccountMeta> {
-        vec![
-            AccountMeta::new(self.from.key(), true),
-            AccountMeta::new(self.to.key(), true),
-        ]
-    }
 }
 
 pub fn create_account_with_seed<'info>(
@@ -303,30 +206,11 @@ pub fn create_account_with_seed<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct CreateAccountWithSeed<'info> {
     pub from: AccountInfo<'info>,
     pub to: AccountInfo<'info>,
     pub base: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for CreateAccountWithSeed<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.from.to_owned(),
-            self.to.to_owned(),
-            self.base.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for CreateAccountWithSeed<'info> {
-    fn to_account_metas(&self, _: Option<bool>) -> Vec<AccountMeta> {
-        vec![
-            AccountMeta::new(self.from.key(), true),
-            AccountMeta::new(self.to.key(), false),
-            AccountMeta::new_readonly(self.to.key(), true),
-        ]
-    }
 }
 
 pub fn create_nonce_account<'info>(
@@ -358,33 +242,12 @@ pub fn create_nonce_account<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct CreateNonceAccount<'info> {
     pub from: AccountInfo<'info>,
     pub nonce: AccountInfo<'info>,
     pub recent_blockhashes: AccountInfo<'info>,
     pub rent: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for CreateNonceAccount<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.from.to_owned(),
-            self.nonce.to_owned(),
-            self.recent_blockhashes.to_owned(),
-            self.rent.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for CreateNonceAccount<'info> {
-    fn to_account_metas(&self, _: Option<bool>) -> Vec<AccountMeta> {
-        vec![
-            AccountMeta::new(self.from.key(), true),
-            AccountMeta::new(self.nonce.key(), false),
-            AccountMeta::new_readonly(self.recent_blockhashes.key(), false),
-            AccountMeta::new_readonly(self.rent.key(), false),
-        ]
-    }
 }
 
 pub fn create_nonce_account_with_seed<'info>(
@@ -423,36 +286,13 @@ pub fn create_nonce_account_with_seed<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct CreateNonceAccountWithSeed<'info> {
     pub from: AccountInfo<'info>,
     pub nonce: AccountInfo<'info>,
     pub base: AccountInfo<'info>,
     pub recent_blockhashes: AccountInfo<'info>,
     pub rent: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for CreateNonceAccountWithSeed<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.from.to_owned(),
-            self.nonce.to_owned(),
-            self.base.to_owned(),
-            self.recent_blockhashes.to_owned(),
-            self.rent.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for CreateNonceAccountWithSeed<'info> {
-    fn to_account_metas(&self, _: Option<bool>) -> Vec<AccountMeta> {
-        vec![
-            AccountMeta::new(self.from.key(), false),
-            AccountMeta::new(self.nonce.key(), false),
-            AccountMeta::new_readonly(self.base.key(), true),
-            AccountMeta::new_readonly(self.recent_blockhashes.key(), false),
-            AccountMeta::new_readonly(self.rent.key(), false),
-        ]
-    }
 }
 
 pub fn transfer<'info>(
@@ -472,24 +312,10 @@ pub fn transfer<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct Transfer<'info> {
     pub from: AccountInfo<'info>,
     pub to: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for Transfer<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.from.to_owned(), self.to.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for Transfer<'info> {
-    fn to_account_metas(&self, _: Option<bool>) -> Vec<AccountMeta> {
-        vec![
-            AccountMeta::new(self.from.key(), true),
-            AccountMeta::new(self.to.key(), false),
-        ]
-    }
 }
 
 pub fn transfer_with_seed<'info>(
@@ -514,30 +340,11 @@ pub fn transfer_with_seed<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct TransferWithSeed<'info> {
     pub from: AccountInfo<'info>,
     pub base: AccountInfo<'info>,
     pub to: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for TransferWithSeed<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.from.to_owned(),
-            self.base.to_owned(),
-            self.to.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for TransferWithSeed<'info> {
-    fn to_account_metas(&self, _: Option<bool>) -> Vec<AccountMeta> {
-        vec![
-            AccountMeta::new(self.from.key(), false),
-            AccountMeta::new_readonly(self.base.key(), true),
-            AccountMeta::new(self.to.key(), false),
-        ]
-    }
 }
 
 pub fn withdraw_nonce_account<'info>(
@@ -564,34 +371,11 @@ pub fn withdraw_nonce_account<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct WithdrawNonceAccount<'info> {
     pub nonce: AccountInfo<'info>,
     pub to: AccountInfo<'info>,
     pub recent_blockhashes: AccountInfo<'info>,
     pub rent: AccountInfo<'info>,
     pub authorized: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for WithdrawNonceAccount<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.nonce.to_owned(),
-            self.to.to_owned(),
-            self.recent_blockhashes.to_owned(),
-            self.rent.to_owned(),
-            self.authorized.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for WithdrawNonceAccount<'info> {
-    fn to_account_metas(&self, _: Option<bool>) -> Vec<AccountMeta> {
-        vec![
-            AccountMeta::new(self.nonce.key(), false),
-            AccountMeta::new(self.to.key(), false),
-            AccountMeta::new_readonly(self.recent_blockhashes.key(), false),
-            AccountMeta::new_readonly(self.rent.key(), false),
-            AccountMeta::new_readonly(self.authorized.key(), true),
-        ]
-    }
 }

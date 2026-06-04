@@ -4,7 +4,7 @@ use {
     anchor_lang::{
         context::CpiContext,
         solana_program::{account_info::AccountInfo, pubkey::Pubkey},
-        Result, ToAccountInfos, ToAccountMetas,
+        Accounts, Result,
     },
     spl_token_2022_interface as spl_token_2022,
 };
@@ -32,24 +32,10 @@ pub fn transfer_fee_initialize<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct TransferFeeInitialize<'info> {
     pub token_program_id: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for TransferFeeInitialize<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.token_program_id.to_owned(), self.mint.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for TransferFeeInitialize<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.token_program_id.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas
-    }
 }
 
 pub fn transfer_fee_set<'info>(
@@ -77,30 +63,11 @@ pub fn transfer_fee_set<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct TransferFeeSetTransferFee<'info> {
     pub token_program_id: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for TransferFeeSetTransferFee<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.token_program_id.to_owned(),
-            self.mint.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for TransferFeeSetTransferFee<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.token_program_id.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
 }
 
 pub fn transfer_checked_with_fee<'info>(
@@ -134,36 +101,13 @@ pub fn transfer_checked_with_fee<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct TransferCheckedWithFee<'info> {
     pub token_program_id: AccountInfo<'info>,
     pub source: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
     pub destination: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for TransferCheckedWithFee<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.token_program_id.to_owned(),
-            self.source.to_owned(),
-            self.mint.to_owned(),
-            self.destination.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for TransferCheckedWithFee<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.token_program_id.to_account_metas(is_signer));
-        account_metas.extend(self.source.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.destination.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
 }
 
 pub fn harvest_withheld_tokens_to_mint<'info>(
@@ -183,24 +127,10 @@ pub fn harvest_withheld_tokens_to_mint<'info>(
         .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct HarvestWithheldTokensToMint<'info> {
     pub token_program_id: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for HarvestWithheldTokensToMint<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.token_program_id.to_owned(), self.mint.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for HarvestWithheldTokensToMint<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.token_program_id.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas
-    }
 }
 
 pub fn withdraw_withheld_tokens_from_mint<'info>(
@@ -227,33 +157,12 @@ pub fn withdraw_withheld_tokens_from_mint<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct WithdrawWithheldTokensFromMint<'info> {
     pub token_program_id: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
     pub destination: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for WithdrawWithheldTokensFromMint<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.token_program_id.to_owned(),
-            self.mint.to_owned(),
-            self.destination.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for WithdrawWithheldTokensFromMint<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.token_program_id.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.destination.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
 }
 
 pub fn withdraw_withheld_tokens_from_accounts<'info>(
@@ -281,31 +190,10 @@ pub fn withdraw_withheld_tokens_from_accounts<'info>(
         .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct WithdrawWithheldTokensFromAccounts<'info> {
     pub token_program_id: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
     pub destination: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for WithdrawWithheldTokensFromAccounts<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.token_program_id.to_owned(),
-            self.mint.to_owned(),
-            self.destination.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for WithdrawWithheldTokensFromAccounts<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.token_program_id.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.destination.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
 }

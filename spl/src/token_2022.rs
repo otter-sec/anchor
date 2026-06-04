@@ -3,7 +3,7 @@
 use anchor_lang::{
     context::CpiContext,
     solana_program::{account_info::AccountInfo, pubkey::Pubkey},
-    Result, ToAccountInfos, ToAccountMetas,
+    Accounts, Result,
 };
 pub use {spl_token_2022::ID, spl_token_2022_interface as spl_token_2022};
 
@@ -457,32 +457,14 @@ pub fn ui_amount_to_amount<'info>(
         .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct Transfer<'info> {
     pub from: AccountInfo<'info>,
     pub to: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for Transfer<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.from.to_owned(),
-            self.to.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for Transfer<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.from.to_account_metas(is_signer));
-        account_metas.extend(self.to.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct TransferChecked<'info> {
     pub from: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
@@ -490,158 +472,42 @@ pub struct TransferChecked<'info> {
     pub authority: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for TransferChecked<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.from.to_owned(),
-            self.mint.to_owned(),
-            self.to.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for TransferChecked<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.from.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.to.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct MintTo<'info> {
     pub mint: AccountInfo<'info>,
     pub to: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for MintTo<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.mint.to_owned(),
-            self.to.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for MintTo<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.to.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct MintToChecked<'info> {
     pub mint: AccountInfo<'info>,
     pub to: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for MintToChecked<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.mint.to_owned(),
-            self.to.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for MintToChecked<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.to.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct Burn<'info> {
     pub mint: AccountInfo<'info>,
     pub from: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for Burn<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.mint.to_owned(),
-            self.from.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for Burn<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.from.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct BurnChecked<'info> {
     pub mint: AccountInfo<'info>,
     pub from: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for BurnChecked<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.mint.to_owned(),
-            self.from.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for BurnChecked<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.from.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct Approve<'info> {
     pub to: AccountInfo<'info>,
     pub delegate: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for Approve<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.to.to_owned(),
-            self.delegate.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for Approve<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.to.to_account_metas(is_signer));
-        account_metas.extend(self.delegate.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct ApproveChecked<'info> {
     pub to: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
@@ -649,48 +515,13 @@ pub struct ApproveChecked<'info> {
     pub authority: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for ApproveChecked<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.to.to_owned(),
-            self.mint.to_owned(),
-            self.delegate.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for ApproveChecked<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.to.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.delegate.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct Revoke<'info> {
     pub source: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for Revoke<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.source.to_owned(), self.authority.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for Revoke<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.source.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct InitializeAccount<'info> {
     pub account: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
@@ -698,299 +529,79 @@ pub struct InitializeAccount<'info> {
     pub rent: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for InitializeAccount<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.account.to_owned(),
-            self.mint.to_owned(),
-            self.authority.to_owned(),
-            self.rent.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for InitializeAccount<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.account.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas.extend(self.rent.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct InitializeAccount3<'info> {
     pub account: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for InitializeAccount3<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.account.to_owned(),
-            self.mint.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for InitializeAccount3<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.account.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct CloseAccount<'info> {
     pub account: AccountInfo<'info>,
     pub destination: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for CloseAccount<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.account.to_owned(),
-            self.destination.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for CloseAccount<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.account.to_account_metas(is_signer));
-        account_metas.extend(self.destination.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct FreezeAccount<'info> {
     pub account: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for FreezeAccount<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.account.to_owned(),
-            self.mint.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for FreezeAccount<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.account.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct ThawAccount<'info> {
     pub account: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
     pub authority: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for ThawAccount<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.account.to_owned(),
-            self.mint.to_owned(),
-            self.authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for ThawAccount<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.account.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.authority.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct InitializeMint<'info> {
     pub mint: AccountInfo<'info>,
     pub rent: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for InitializeMint<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.mint.to_owned(), self.rent.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for InitializeMint<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.rent.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct InitializeMint2<'info> {
     pub mint: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for InitializeMint2<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.mint.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for InitializeMint2<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct SetAuthority<'info> {
     pub current_authority: AccountInfo<'info>,
     pub account_or_mint: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for SetAuthority<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.current_authority.to_owned(),
-            self.account_or_mint.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for SetAuthority<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.current_authority.to_account_metas(is_signer));
-        account_metas.extend(self.account_or_mint.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct SyncNative<'info> {
     pub account: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for SyncNative<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.account.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for SyncNative<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.account.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct GetAccountDataSize<'info> {
     pub mint: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for GetAccountDataSize<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.mint.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for GetAccountDataSize<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct InitializeMintCloseAuthority<'info> {
     pub mint: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for InitializeMintCloseAuthority<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.mint.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for InitializeMintCloseAuthority<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct InitializeImmutableOwner<'info> {
     pub account: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for InitializeImmutableOwner<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.account.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for InitializeImmutableOwner<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.account.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct AmountToUiAmount<'info> {
     pub account: AccountInfo<'info>,
 }
 
-impl<'info> ToAccountInfos<'info> for AmountToUiAmount<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.account.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for AmountToUiAmount<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.account.to_account_metas(is_signer));
-        account_metas
-    }
-}
-
+#[derive(Accounts)]
 pub struct UiAmountToAmount<'info> {
     pub account: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for UiAmountToAmount<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.account.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for UiAmountToAmount<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.account.to_account_metas(is_signer));
-        account_metas
-    }
 }
 
 #[derive(Clone)]

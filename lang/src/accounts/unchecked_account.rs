@@ -21,6 +21,13 @@ impl<'info> From<&'info AccountInfo<'info>> for UncheckedAccount<'info> {
     }
 }
 
+impl<'info> UncheckedAccount<'info> {
+    #[deprecated(note = "Use `UncheckedAccount::from` instead; this constructor cannot fail")]
+    pub fn try_from(acc_info: &'info AccountInfo<'info>) -> Self {
+        Self(acc_info)
+    }
+}
+
 impl<'info, B> Accounts<'info, B> for UncheckedAccount<'info> {
     fn try_accounts(
         _program_id: &Pubkey,

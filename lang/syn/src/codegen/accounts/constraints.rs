@@ -1838,6 +1838,7 @@ fn generate_account_ref(field: &Field) -> proc_macro2::TokenStream {
     let name = &field.ident;
 
     match &field.ty {
+        Ty::AccountInfo => quote!(&#name),
         Ty::Account(acc) if acc.boxed => quote!(AsRef::<AccountInfo>::as_ref(#name.as_ref())),
         Ty::InterfaceAccount(acc) if acc.boxed => {
             quote!(AsRef::<AccountInfo>::as_ref(#name.as_ref()))

@@ -18,6 +18,7 @@ pub fn build_memo<'info>(ctx: CpiContext<'_, '_, '_, 'info, BuildMemo>, memo: &[
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct BuildMemo {}
 
 #[derive(Clone)]

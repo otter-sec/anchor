@@ -2,8 +2,9 @@
 #![allow(deprecated)]
 use {
     anchor_lang::{
-        context::CpiContext, solana_program::account_info::AccountInfo, Result, ToAccountInfos,
-        ToAccountMetas,
+        context::CpiContext,
+        solana_program::{account_info::AccountInfo, pubkey::Pubkey},
+        Accounts, Result,
     },
     spl_token_2022_interface as spl_token_2022,
 };
@@ -51,28 +52,9 @@ pub fn memo_transfer_disable<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct MemoTransfer<'info> {
     pub token_program_id: AccountInfo<'info>,
     pub account: AccountInfo<'info>,
     pub owner: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for MemoTransfer<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.token_program_id.to_owned(),
-            self.account.to_owned(),
-            self.owner.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for MemoTransfer<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.token_program_id.to_account_metas(is_signer));
-        account_metas.extend(self.account.to_account_metas(is_signer));
-        account_metas.extend(self.owner.to_account_metas(is_signer));
-        account_metas
-    }
 }

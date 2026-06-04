@@ -350,6 +350,9 @@ impl Field {
         let account_ty = self.account_ty();
         let container_ty = self.container_ty();
         let inner_ty = match &self.ty {
+            Ty::AccountInfo => quote! {
+                AccountInfo
+            },
             Ty::UncheckedAccount => quote! {
                 UncheckedAccount
             },
@@ -447,6 +450,7 @@ impl Field {
             },
         };
         match &self.ty {
+            Ty::AccountInfo => quote! { #field.to_account_info() },
             Ty::UncheckedAccount => {
                 quote! { UncheckedAccount::from(#field) }
             }
@@ -549,6 +553,7 @@ impl Field {
             Ty::InterfaceAccount(_) => {
                 quote! { anchor_lang::accounts::interface_account::InterfaceAccount }
             }
+            Ty::AccountInfo => quote! {},
             Ty::UncheckedAccount => quote! {},
             Ty::Signer => quote! {},
             Ty::SystemAccount => quote! {},
@@ -559,6 +564,9 @@ impl Field {
     // Returns the inner account struct type.
     pub fn account_ty(&self) -> proc_macro2::TokenStream {
         match &self.ty {
+            Ty::AccountInfo => quote! {
+                AccountInfo
+            },
             Ty::UncheckedAccount => quote! {
                 UncheckedAccount
             },
@@ -649,6 +657,7 @@ pub struct CompositeField {
 // A type of an account field.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Ty {
+    AccountInfo,
     UncheckedAccount,
     AccountLoader(AccountLoaderTy),
     Sysvar(SysvarTy),

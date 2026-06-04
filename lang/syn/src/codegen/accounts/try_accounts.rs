@@ -1,9 +1,9 @@
 use {
     crate::{
         codegen::accounts::{bumps, constraints, generics, ParsedGenerics},
-        AccountField, AccountsStruct,
+        AccountField, AccountsStruct, Ty,
     },
-    quote::quote,
+    quote::{quote, quote_spanned},
 };
 
 // Generates the `Accounts` trait implementation.
@@ -72,11 +72,20 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                         let name = f.ident.to_string();
                         let typed_name = f.typed_ident();
 
+                        // Generate the deprecation call if it is an AccountInfo
+                        let warning = if matches!(f.ty, Ty::AccountInfo) {
+                            quote_spanned! { f.ty_span =>
+                                ::anchor_lang::deprecated_account_info_usage();
+                            }
+                        } else {
+                            quote! {}
+                        };
                         quote! {
                             #[cfg(feature = "anchor-debug")]
                             ::anchor_lang::solana_program::log::sol_log(stringify!(#typed_name));
                             let #typed_name = anchor_lang::Accounts::try_accounts(__program_id, __accounts, __ix_data, __bumps, __reallocs)
                                 .map_err(|e| e.with_account_name(#name))?;
+                            #warning
                         }
                     }
                 }

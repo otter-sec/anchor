@@ -4,7 +4,7 @@ use {
     anchor_lang::{
         context::CpiContext,
         solana_program::{account_info::AccountInfo, pubkey::Pubkey},
-        Result, ToAccountInfos, ToAccountMetas,
+        Accounts, Result,
     },
     spl_token_2022_interface as spl_token_2022,
 };
@@ -28,24 +28,10 @@ pub fn interest_bearing_mint_initialize<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct InterestBearingMintInitialize<'info> {
     pub token_program_id: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for InterestBearingMintInitialize<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![self.token_program_id.to_owned(), self.mint.to_owned()]
-    }
-}
-
-impl<'info> ToAccountMetas for InterestBearingMintInitialize<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.token_program_id.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas
-    }
 }
 
 pub fn interest_bearing_mint_update_rate<'info>(
@@ -71,28 +57,9 @@ pub fn interest_bearing_mint_update_rate<'info>(
     .map_err(Into::into)
 }
 
+#[derive(Accounts)]
 pub struct InterestBearingMintUpdateRate<'info> {
     pub token_program_id: AccountInfo<'info>,
     pub mint: AccountInfo<'info>,
     pub rate_authority: AccountInfo<'info>,
-}
-
-impl<'info> ToAccountInfos<'info> for InterestBearingMintUpdateRate<'info> {
-    fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
-        vec![
-            self.token_program_id.to_owned(),
-            self.mint.to_owned(),
-            self.rate_authority.to_owned(),
-        ]
-    }
-}
-
-impl<'info> ToAccountMetas for InterestBearingMintUpdateRate<'info> {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<anchor_lang::prelude::AccountMeta> {
-        let mut account_metas = vec![];
-        account_metas.extend(self.token_program_id.to_account_metas(is_signer));
-        account_metas.extend(self.mint.to_account_metas(is_signer));
-        account_metas.extend(self.rate_authority.to_account_metas(is_signer));
-        account_metas
-    }
 }
