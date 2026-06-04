@@ -787,6 +787,8 @@ fn generate_constraint_init_group(
             metadata_pointer_metadata_address,
             close_authority,
             permanent_delegate,
+            interest_bearing_mint_rate,
+            interest_bearing_mint_authority,
             transfer_hook_authority,
             transfer_hook_program_id,
             pausable_authority,
@@ -859,6 +861,24 @@ fn generate_constraint_init_group(
                 None => quote! {},
             };
 
+            let interest_bearing_mint_rate_check = match interest_bearing_mint_rate {
+                Some(r) => check_scope.generate_check(r),
+                None => quote! {},
+            };
+
+            let interest_bearing_mint_authority_check = match interest_bearing_mint_authority {
+                Some(a) => check_scope.generate_check(a),
+                None => quote! {},
+            };
+
+            let if_needed_interest_bearing_check = generate_interest_bearing_extension_check(
+                &account_ref,
+                &name_str,
+                interest_bearing_mint_rate.as_ref(),
+                interest_bearing_mint_authority.as_ref(),
+                &mut check_scope,
+            );
+
             let system_program_optional_check = check_scope.generate_check(system_program);
             let token_program_optional_check = check_scope.generate_check(&token_program);
             let rent_optional_check = check_scope.generate_check(rent);
@@ -880,6 +900,8 @@ fn generate_constraint_init_group(
                 #transfer_hook_program_id_check
                 #permanent_delegate_check
                 #pausable_authority_check
+                #interest_bearing_mint_rate_check
+                #interest_bearing_mint_authority_check
             };
 
             let payer_optional_check = check_scope.generate_check(payer);
@@ -913,6 +935,10 @@ fn generate_constraint_init_group(
 
             if pausable_authority.is_some() {
                 extensions.push(quote! {::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::Pausable})
+            }
+
+            if interest_bearing_mint_rate.is_some() || interest_bearing_mint_authority.is_some() {
+                extensions.push(quote! {::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::InterestBearingConfig});
             }
 
             let mint_space = if extensions.is_empty() {
@@ -972,6 +998,18 @@ fn generate_constraint_init_group(
             let permanent_delegate = match permanent_delegate {
                 Some(pd) => quote! { Option::<&anchor_lang::prelude::Pubkey>::Some(&#pd.key()) },
                 None => quote! { Option::<&anchor_lang::prelude::Pubkey>::None },
+            };
+
+            let interest_bearing_mint_rate = match interest_bearing_mint_rate {
+                Some(ibmr) => quote! { #ibmr },
+                None => quote! { 0i16 },
+            };
+
+            let interest_bearing_mint_authority = match interest_bearing_mint_authority {
+                Some(ibma) => {
+                    quote! { Option::<anchor_lang::prelude::Pubkey>::Some(#ibma.key()) }
+                }
+                None => quote! { Option::<anchor_lang::prelude::Pubkey>::None },
             };
 
             let transfer_hook_authority = match transfer_hook_authority {
@@ -1071,6 +1109,12 @@ fn generate_constraint_init_group(
                                             mint: #field.to_account_info(),
                                         }), #pausable_authority.unwrap())?;
                                     },
+                                    ::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::InterestBearingConfig => {
+                                        ::anchor_spl::token_interface::interest_bearing_mint_initialize(anchor_lang::context::CpiContext::new(cpi_program_id, ::anchor_spl::token_interface::InterestBearingMintInitialize {
+                                            token_program_id: #token_program.to_account_info(),
+                                            mint: #field.to_account_info(),
+                                        }), #interest_bearing_mint_authority, #interest_bearing_mint_rate)?;
+                                    },
                                     // All extensions specified by the user should be implemented.
                                     // If this line runs, it means there is a bug in the codegen.
                                     _ => unimplemented!("{e:?}"),
@@ -1103,6 +1147,7 @@ fn generate_constraint_init_group(
                         if owner_program != &#token_program.key() {
                             return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintMintTokenProgram).with_account_name(#name_str).with_pubkeys((*owner_program, #token_program.key())));
                         }
+                        #if_needed_interest_bearing_check
                     }
                     Ok(pa)
                 }})()?;
@@ -1650,6 +1695,14 @@ fn generate_constraint_mint(
         None => quote! {},
     };
 
+    let interest_bearing_check = generate_interest_bearing_extension_check(
+        &account_ref,
+        &name.to_string(),
+        c.interest_bearing_mint_rate.as_ref(),
+        c.interest_bearing_mint_authority.as_ref(),
+        &mut optional_check_scope,
+    );
+
     quote! {
         {
             #decimal_check
@@ -1667,7 +1720,53 @@ fn generate_constraint_mint(
             #transfer_hook_authority_check
             #transfer_hook_program_id_check
             #pausable_authority_check
+            #interest_bearing_check
         }
+    }
+}
+
+fn generate_interest_bearing_extension_check(
+    account_ref: &proc_macro2::TokenStream,
+    name_str: &str,
+    rate: Option<&Expr>,
+    authority: Option<&Expr>,
+    optional_check_scope: &mut OptionalCheckScope,
+) -> proc_macro2::TokenStream {
+    if rate.is_none() && authority.is_none() {
+        return quote! {};
+    }
+    let rate_check = match rate {
+        Some(rate) => quote! {
+            if i16::from(interest_bearing.current_rate) != #rate {
+                return Err(anchor_lang::error::Error::from(
+                    anchor_lang::error::ErrorCode::ConstraintMintInterestBearingRate,
+                ).with_account_name(#name_str));
+            }
+        },
+        None => quote! {},
+    };
+    let authority_check = match authority {
+        Some(authority) => {
+            let authority_optional_check = optional_check_scope.generate_check(authority);
+            quote! {
+                #authority_optional_check
+                if interest_bearing.rate_authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#authority.key()))? {
+                    return Err(anchor_lang::error::Error::from(
+                        anchor_lang::error::ErrorCode::ConstraintMintInterestBearingAuthority,
+                    ).with_account_name(#name_str));
+                }
+            }
+        }
+        None => quote! {},
+    };
+    quote! {
+        let interest_bearing = ::anchor_spl::token_interface::get_mint_extension_data::<
+            ::anchor_spl::token_interface::spl_token_2022::extension::interest_bearing_mint::InterestBearingConfig,
+        >(#account_ref).map_err(|_| anchor_lang::error::Error::from(
+            anchor_lang::error::ErrorCode::ConstraintMintInterestBearingExtension,
+        ).with_account_name(#name_str))?;
+        #rate_check
+        #authority_check
     }
 }
 

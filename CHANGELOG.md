@@ -20,6 +20,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Add `program_id` verification to CPI return values ([#4411](https://github.com/solana-foundation/anchor/pull/4411)).
 - spl: Add pausable mint extension support ([#4092](https://github.com/solana-foundation/anchor/pull/4092)).
 - cli: Resolve the target directory via `cargo metadata` to support target directory overrides ([#3817](https://github.com/solana-foundation/anchor/pull/3817)).
+- spl: Add `Interest Bearing Config` Extension ([#4464](https://github.com/solana-foundation/anchor/pull/4464)).
 - spl: Added `token_metadata_remove_key` to support removing keys from token metadata extension ([#3717](https://github.com/solana-foundation/anchor/pull/3717)).
 - cli: Allow configuring IDL JSON location in workspace config ([#4483](https://github.com/solana-foundation/anchor/pull/4483)).
 - lang: Derive `Clone`, `Debug`, `Copy`, and `Default` on generated client / CPI account structs and instruction args where the field types allow it ([#4085](https://github.com/solana-foundation/anchor/pull/4085)).
