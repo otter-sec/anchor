@@ -564,7 +564,7 @@ export interface EnumLayout<T> extends Layout<T> {
 export type RustEnumVariantLayout =
   | Layout<any>
   | {
-      layout: Layout<any>;
+      variantLayout: Layout<any>;
       discriminant?: number;
     };
 
@@ -575,9 +575,9 @@ export function rustEnum<T>(
 ): EnumLayout<T> {
   const unionLayout = union(discriminant ?? u8(), property);
   variants.forEach((variant, index) => {
-    const layout = "layout" in variant ? variant.layout : variant;
+    const layout = "variantLayout" in variant ? variant.variantLayout : variant;
     const variantDiscriminant =
-      "layout" in variant && variant.discriminant !== undefined
+      "variantLayout" in variant && variant.discriminant !== undefined
         ? variant.discriminant
         : index;
     unionLayout.addVariant(variantDiscriminant, layout, layout.property);

@@ -1,4 +1,5 @@
 import * as assert from "assert";
+import * as borsh from "@anchor-lang/borsh";
 import { BorshCoder, Idl } from "../src";
 import BN from "bn.js";
 
@@ -156,6 +157,18 @@ describe("coder.types", () => {
 
     assert.deepEqual(Array.from(encoded), [5]);
     assert.deepEqual(coder.types.decode("Animal", encoded), { mouse: {} });
+  });
+
+  test("rustEnum preserves wrapped layouts passed directly", () => {
+    const layout = borsh.rustEnum([
+      borsh.bool("yes"),
+      borsh.struct([], "no"),
+    ]);
+    const encoded = Buffer.alloc(8);
+    const span = layout.encode({ yes: true }, encoded);
+
+    assert.deepEqual(Array.from(encoded.subarray(0, span)), [0, 1]);
+    assert.deepEqual(layout.decode(encoded.subarray(0, span)), { yes: true });
   });
 
   test("Can encode and decode 256-bit integers", () => {

@@ -354,7 +354,7 @@ export class IdlCoder {
           );
 
           return {
-            layout: borsh.struct(fieldLayouts, variant.name),
+            variantLayout: borsh.struct(fieldLayouts, variant.name),
             discriminant: variant.discriminant,
           };
         });
