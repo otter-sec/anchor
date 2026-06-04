@@ -160,10 +160,7 @@ describe("coder.types", () => {
   });
 
   test("rustEnum preserves wrapped layouts passed directly", () => {
-    const layout = borsh.rustEnum([
-      borsh.bool("yes"),
-      borsh.struct([], "no"),
-    ]);
+    const layout = borsh.rustEnum([borsh.bool("yes"), borsh.struct([], "no")]);
     const encoded = Buffer.alloc(8);
     const span = layout.encode({ yes: true }, encoded);
 
