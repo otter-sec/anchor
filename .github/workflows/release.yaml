@@ -30,6 +30,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Force fetch upstream tags
         run: git fetch --tags --force
@@ -45,6 +46,7 @@ jobs:
         id: verify
         env:
           RELEASE_MANAGERS: ${{ vars.RELEASE_MANAGERS }}
+          VERSION_TAG: ${{ steps.info.outputs.version_tag }}
         run: |
           if [ -z "${RELEASE_MANAGERS}" ]; then
             echo "RELEASE_MANAGERS variable is not set"
@@ -57,14 +59,14 @@ jobs:
             curl -fsSL "https://github.com/${u}.gpg" | gpg --batch --import >/dev/null
           done
 
-          echo "Verifying the tag: ${{ steps.info.outputs.version_tag }}"
-          if ! git verify-tag -v "${{ steps.info.outputs.version_tag }}" 2>&1; then
+          echo "Verifying the tag: ${VERSION_TAG}"
+          if ! git verify-tag -v "${VERSION_TAG}" 2>&1; then
             echo "❌ Tag verification failed!"
             echo "passed=false" >> $GITHUB_OUTPUT
             exit 1
           fi
           # Run it again to capture the output
-          git verify-tag -v "${{ steps.info.outputs.version_tag }}" 2>&1 | tee /tmp/verify-output.txt;
+          git verify-tag -v "${VERSION_TAG}" 2>&1 | tee /tmp/verify-output.txt;
 
           # SSH verification output typically includes the key fingerprint
           # Use GNU grep with Perl regex for cleaner extraction (Linux environment)
@@ -91,13 +93,17 @@ jobs:
           echo "key_id=$KEY_SHA256" >> $GITHUB_OUTPUT
 
       - name: Summary
+        env:
+          VERSION: ${{ steps.info.outputs.version }}
+          SHA: ${{ steps.info.outputs.sha }}
+          KEY_ID: ${{ steps.verify.outputs.key_id }}
         run: |
           echo "## Tag Verification Summary 🔐" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag:** ${{ steps.info.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** ${{ steps.info.outputs.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** ${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${SHA}" >> $GITHUB_STEP_SUMMARY
           echo "- **Signature:** ✅ Verified" >> $GITHUB_STEP_SUMMARY
-          echo "- **Signed by:** ${{ steps.verify.outputs.key_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Signed by:** ${KEY_ID}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Proceeding with release build..." >> $GITHUB_STEP_SUMMARY
 
@@ -105,6 +111,11 @@ jobs:
     name: Publish crates
     needs: verify-tag
     if: ${{ needs.verify-tag.outputs.verification_passed == 'true' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     uses: ./.github/workflows/publish-crates.yaml
     with:
       dry_run: false
@@ -114,6 +125,9 @@ jobs:
     name: Publish npmjs packages
     needs: verify-tag
     if: ${{ needs.verify-tag.outputs.verification_passed == 'true' }}
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/publish-npmjs.yaml
     with:
       dry_run: false
@@ -135,9 +149,11 @@ jobs:
       IMAGE_NAME: solanafoundation/anchor
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Login to Docker Hub
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -156,7 +172,7 @@ jobs:
 
       - name: Build and push
         id: build
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
         with:
           context: docker/build
           push: true
@@ -180,6 +196,10 @@ jobs:
     name: Build binaries
     needs: verify-tag
     if: ${{ needs.verify-tag.outputs.verification_passed == 'true' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     uses: ./.github/workflows/build-cli.yaml
     with:
       dry_run: false
@@ -190,8 +210,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: [verify-tag, build-cli]
     if: ${{ needs.verify-tag.outputs.verification_passed == 'true' }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
@@ -229,8 +253,10 @@ jobs:
       name: release
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"

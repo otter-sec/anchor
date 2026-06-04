@@ -43,6 +43,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
@@ -68,17 +70,22 @@ jobs:
       - name: Prepare
         id: prepare
         shell: bash
+        env:
+          DIST: ${{ inputs.dist }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          MATRIX_OS: ${{ matrix.os }}
+          MATRIX_TARGET: ${{ matrix.target }}
         run: |
-          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+          if [[ "$DRY_RUN" == "true" ]]; then
             version="dry-run"
           else
             version=$(echo $GITHUB_REF_NAME | cut -dv -f2)
           fi
           ext=""
-          [[ "${{ matrix.os }}" == windows-latest ]] && ext=".exe"
+          [[ "$MATRIX_OS" == windows-latest ]] && ext=".exe"
 
-          mkdir ${{ inputs.dist }}
-          mv "target/${{ matrix.target }}/release/anchor$ext" ${{ inputs.dist }}/anchor-$version-${{ matrix.target }}$ext
+          mkdir "$DIST"
+          mv "target/$MATRIX_TARGET/release/anchor$ext" "$DIST/anchor-$version-$MATRIX_TARGET$ext"
 
           echo "version=$version" >> $GITHUB_OUTPUT
 

@@ -10,6 +10,8 @@ on:
 jobs:
   no-caching-tests:
     name: Reusable
+    permissions:
+      contents: read
     uses: ./.github/workflows/reusable-tests.yaml
     with:
       cache: false

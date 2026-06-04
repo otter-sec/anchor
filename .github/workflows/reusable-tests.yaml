@@ -42,11 +42,13 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup/
-      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: ${{ env.CACHE != 'false' }}
         name: Cache Cargo registry + index
         id: cache-cargo-build
@@ -78,8 +80,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup/
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: ${{ env.CACHE != 'false' }}
         name: Cache Cargo registry + index
         id: cache-anchor
@@ -107,6 +111,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: ${{ env.ANCHOR_BINARY_NAME }}
@@ -118,7 +124,7 @@ jobs:
       - uses: ./.github/actions/setup-ts/
       - uses: ./.github/actions/setup-surfpool/
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: ${{ env.CACHE != 'false' }}
         name: basic-0 cache
         id: cache-basic-0
@@ -126,7 +132,7 @@ jobs:
           path: ./examples/tutorial/basic-0/target
           key: cargo-${{ runner.os }}-${{ hashFiles('./examples/tutorial/basic-0/**/Cargo.toml') }}-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: ${{ env.CACHE != 'false' }}
         name: basic-1 cache
         id: cache-basic-1
@@ -134,7 +140,7 @@ jobs:
           path: ./examples/tutorial/basic-1/target
           key: cargo-${{ runner.os }}-${{ hashFiles('./examples/tutorial/basic-1/**/Cargo.toml') }}-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: ${{ env.CACHE != 'false' }}
         name: basic-2 cache
         id: cache-basic-2
@@ -142,7 +148,7 @@ jobs:
           path: ./examples/tutorial/basic-2/target
           key: cargo-${{ runner.os }}-${{ hashFiles('./examples/tutorial/basic-2/**/Cargo.toml') }}-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: ${{ env.CACHE != 'false' }}
         name: basic-3 cache
         id: cache-basic-3
@@ -150,7 +156,7 @@ jobs:
           path: ./examples/tutorial/basic-3/target
           key: cargo-${{ runner.os }}-${{ hashFiles('./examples/tutorial/basic-3/**/Cargo.toml') }}-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: ${{ env.CACHE != 'false' }}
         name: basic-4 cache
         id: cache-basic-4
@@ -182,6 +188,8 @@ jobs:
             name: composite.so
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-solana/
 
@@ -205,6 +213,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-ts/
 
@@ -234,7 +244,7 @@ jobs:
         with:
           name: composite.so
           path: tests/composite/target/deploy/
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: ${{ env.CACHE != 'false' }}
         name: Cache client/example target
         id: cache-test-target
@@ -253,12 +263,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-ts/
       - uses: ./.github/actions/setup-solana/
       - uses: ./.github/actions/setup-surfpool/
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: ${{ env.CACHE != 'false' }}
         name: Cache Cargo registry + index
         id: cache-anchor
@@ -272,7 +284,7 @@ jobs:
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/anchor
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: ${{ env.CACHE != 'false' }}
         name: Cache tests/bpf-upgradeable-state target
         id: cache-test-target
@@ -351,12 +363,14 @@ jobs:
         template: [mocha, jest, rust, mollusk, litesvm]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-ts/
       - uses: ./.github/actions/setup-solana/
       - uses: ./.github/actions/setup-surfpool/
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: ${{ env.CACHE != 'false' }}
         name: Cache Cargo registry + index
         id: cache-anchor
@@ -501,12 +515,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-ts/
       - uses: ./.github/actions/setup-solana/
       - uses: ./.github/actions/setup-surfpool/
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: ${{ env.CACHE != 'false' }}
         name: Cache Cargo registry + index
         id: cache-anchor
@@ -520,7 +536,7 @@ jobs:
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/anchor
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         if: ${{ env.CACHE != 'false' }}
         name: Cache ${{ matrix.node.path }} target
         id: cache-test-target
