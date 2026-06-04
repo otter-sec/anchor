@@ -17,6 +17,7 @@ chrono = "0.4"
 clap = { version = "4.5.17", features = ["derive"] }
 clap_complete = "4.5.26"
 dirs = "4.0.0"
+indicatif.workspace = true
 reqwest = { workspace = true, default-features = false, features = [
   "blocking",
   "json",
