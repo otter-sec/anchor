@@ -1,0 +1,64 @@
+[programs.localnet]
+account_generation_test = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+[test]
+startup_wait = 10000
+
+[test.validator]
+# Test funded accounts - these should be automatically generated and funded
+[[test.validator.fund_accounts]]
+address = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+lamports = 2000000000  # 2 SOL
+
+[[test.validator.fund_accounts]]
+address = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+# lamports defaults to 1 SOL if not specified
+
+[[test.validator.fund_accounts]]
+address = "new"  # Generate a random keypair
+lamports = 15000000000000  # Above Surfpool's default airdrop to catch duplicate-resolution bugs
+
+[[test.validator.fund_accounts]]
+address = "new"  # Generate a second random keypair
+lamports = 20000000000000
+
+[[test.validator.mints]]
+address = "new"
+decimals = 9
+supply = 1000000000
+
+[[test.validator.mints]]
+address = "new"
+decimals = 6
+supply = 500000000
+mint_authority = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+freeze_authority = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+
+[[test.validator.mints]]
+address = "new"
+decimals = 8
+
+[[test.validator.token_accounts]]
+mint = "new"
+owner = "new"
+amount = 500000000
+
+[[test.validator.token_accounts]]
+mint = "new"
+owner = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+amount = 1000000000
+
+[[test.validator.token_accounts]]
+mint = "new"
+owner = "new"
+address = "new"
+amount = 250000000
+
+[features]

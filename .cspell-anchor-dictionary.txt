@@ -64,6 +64,7 @@ programdata
 projectserum
 pubkeys
 publickey
+realizor
 reallocs
 repr
 reqwest
@@ -80,6 +81,8 @@ solana
 Solana
 Solana's
 solanafoundation
+ottersec
+otter-sec
 Solang
 solpg
 Solpg
@@ -91,9 +94,15 @@ syscalls
 sysvar
 Sysvar
 sysvars
+timelock
+toolsuite
+unbonding
 underyling
 unsized
 Unsized
+unstaked
+unstakes
+unstaking
 unverify
 Zeroable
 Znext

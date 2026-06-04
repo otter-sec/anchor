@@ -1,6 +1,16 @@
 {
   "name": "anchor-examples",
   "private": true,
+  "resolutions": {
+    "@babel/runtime": "^7.26.10",
+    "@solana/web3.js": "1.69.1",
+    "braces": "3.0.3",
+    "diff": "5.2.2",
+    "picomatch": "2.3.2",
+    "serialize-javascript": "7.0.5",
+    "uuid": "11.1.1",
+    "ws": "8.21.0"
+  },
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
@@ -14,7 +24,7 @@
     "basic-5"
   ],
   "devDependencies": {
-    "mocha": "^9.2.2",
+    "mocha": "^10.8.2",
     "prettier": "^2.5.1",
     "@types/mocha": "^9.1.1",
     "ts-mocha": "^10.0.0",

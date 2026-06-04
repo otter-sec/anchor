@@ -9,8 +9,5 @@ multiple-errors = "Mu1tip1eErrors11111111111111111111111111111"
 [scripts]
 test = "yarn run ts-mocha -t 1000000 tests/*.ts"
 
-[features]
-seeds = false
-
 [surfpool]
 block_production_mode = "clock"

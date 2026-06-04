@@ -41,5 +41,3 @@ program = "./deps/stake/target/deploy/registry.so"
 [[test.genesis]]
 address = "6ebQNeTPZ1j7k3TtkCCtEPRvG7GQsucQrZ7sSEDQi9Ks"
 program = "./deps/stake/target/deploy/lockup.so"
-
-[features]

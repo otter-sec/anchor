@@ -9,6 +9,14 @@ use {
 pub fn generate(program: &Program) -> proc_macro2::TokenStream {
     let program_name = &program.name;
 
+    // legacy IDL module — non-empty only when requested by
+    // `#[program(legacy_idl)]`.
+    // Always a TokenStream so it can be interpolated into the quote! block unconditionally.
+    let legacy_idl_mod = match &program.program_args {
+        Some(args) if args.legacy_idl => generate_legacy_idl_mod(),
+        _ => proc_macro2::TokenStream::new(),
+    };
+
     let event_cpi_mod = generate_event_cpi_mod();
 
     let non_inlined_handlers: Vec<proc_macro2::TokenStream> = program
@@ -125,7 +133,10 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                         &mut __reallocs,
                     )?;
 
-                    unsafe fn __shrink_lifetime<'from, 'to, T>(value: &'from mut T) -> &'to mut T {
+                    #[inline(always)]
+                    unsafe fn __shorten_invariant_lifetime_remaining_accounts<'a, 'info: 'a>(
+                        value: &'a [AccountInfo<'info>],
+                    ) -> &'a [AccountInfo<'a>] {
                         unsafe { ::core::mem::transmute(value) }
                     }
 
@@ -133,27 +144,27 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                     let result = #program_name::#ix_method_name(
                         anchor_lang::context::Context::new(
                             __program_id,
-                            // SAFETY: `__shrink_lifetime` is used to *shrink* the lifetime of
-                            // the inner `AccountInfo` from `'info` to the local function lifetime.
-                            // No lifetime is extended by this operation.
-                            // The lifetime is not shrunk automatically as `RefCell` causes `AccountInfo`
+                            // SAFETY: `__shorten_invariant_lifetime` functions are used to *shrink*
+                            // the lifetime of the inner `AccountInfo`s from `'info` to the local
+                            // function's lifetime. No lifetime is extended by this operation. The
+                            // lifetime is not shrunk automatically as `RefCell` causes `AccountInfo`
                             // to be invariant.
+                            //
                             // This is sound provided the following invariants hold:
-                            // (1) The `'info` lifetime strictly outlives the local function
-                            //     lifetime; therefore, the transmuted references cannot outlive
-                            //     their backing data.
-                            // (2) `AccountInfo` does not implement custom `Drop` logic and does not
-                            //     rely on its lifetime parameter during destruction.
-                            // (3) The `Context` value is dropped before the `__accounts` reference
-                            //     is dropped or otherwise accessed, preventing any use-after-scope.
+                            //
+                            // * The `'info` lifetime strictly outlives the local function lifetime;
+                            //   therefore, the transmuted references cannot outlive their backing
+                            //   data.
+                            // * `AccountInfo` does not implement custom `Drop` logic and does not
+                            //   rely on its lifetime parameter during destruction.
+                            // * The `Context` value is dropped before the `__accounts` reference
+                            //   is dropped or otherwise accessed, preventing any use-after-scope.
                             //
                             // This lifetime narrowing is required to conform to the `Context`
-                            // struct’s single-lifetime parameterization, which uses a single
+                            // struct's single-lifetime parameterization, which uses a single
                             // lifetime to keep the API simple and ergonomic.
-                            unsafe {
-                                __shrink_lifetime(&mut __accounts)
-                            },
-                            __remaining_accounts,
+                            unsafe { #accounts_struct_name::__shorten_invariant_lifetime(&mut __accounts) },
+                            unsafe { __shorten_invariant_lifetime_remaining_accounts(__remaining_accounts) },
                             __bumps,
                         ),
                         #(#ix_arg_names),*
@@ -176,6 +187,8 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
         mod __private {
             use super::*;
 
+            #legacy_idl_mod
+
             /// __global mod defines wrapped handlers for global instructions.
             pub mod __global {
                 use super::*;
@@ -184,6 +197,93 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
             }
 
             #event_cpi_mod
+        }
+    }
+}
+
+/// Returns the legacy IDL `__idl` module token stream .
+fn generate_legacy_idl_mod() -> proc_macro2::TokenStream {
+    use crate::codegen::program::idl::idl_accounts_and_functions;
+    let idl_accounts_and_functions = idl_accounts_and_functions();
+    let non_inlined_idl: proc_macro2::TokenStream = quote! {
+
+        #[inline(never)]
+        pub fn __idl_dispatch<'info>(program_id: &Pubkey, accounts: &'info [AccountInfo<'info>], idl_ix_data: &[u8]) -> anchor_lang::Result<()> {
+            let mut accounts = accounts;
+            let mut data: &[u8] = idl_ix_data;
+
+            let ix = anchor_lang::idl::IdlInstruction::deserialize(&mut data)
+                .map_err(|_| anchor_lang::error::ErrorCode::InstructionDidNotDeserialize)?;
+
+            match ix {
+                anchor_lang::idl::IdlInstruction::Create { data_len } => {
+                    let mut bumps = <IdlCreateAccounts as anchor_lang::Bumps>::Bumps::default();
+                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut accounts =
+                        IdlCreateAccounts::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
+                    __idl_create_account(program_id, &mut accounts, data_len)?;
+                    accounts.exit(program_id)?;
+                },
+                anchor_lang::idl::IdlInstruction::Resize { data_len } => {
+                    let mut bumps = <IdlResizeAccount as anchor_lang::Bumps>::Bumps::default();
+                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut accounts =
+                        IdlResizeAccount::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
+                    __idl_resize_account(program_id, &mut accounts, data_len)?;
+                    accounts.exit(program_id)?;
+                },
+                anchor_lang::idl::IdlInstruction::Close => {
+                    let mut bumps = <IdlCloseAccount as anchor_lang::Bumps>::Bumps::default();
+                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut accounts =
+                        IdlCloseAccount::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
+                    __idl_close_account(program_id, &mut accounts)?;
+                    accounts.exit(program_id)?;
+                },
+                anchor_lang::idl::IdlInstruction::CreateBuffer => {
+                    let mut bumps = <IdlCreateBuffer as anchor_lang::Bumps>::Bumps::default();
+                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut accounts =
+                        IdlCreateBuffer::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
+                    __idl_create_buffer(program_id, &mut accounts)?;
+                    accounts.exit(program_id)?;
+                },
+                anchor_lang::idl::IdlInstruction::Write { data } => {
+                    let mut bumps = <IdlAccounts as anchor_lang::Bumps>::Bumps::default();
+                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut accounts =
+                        IdlAccounts::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
+                    __idl_write(program_id, &mut accounts, data)?;
+                    accounts.exit(program_id)?;
+                },
+                anchor_lang::idl::IdlInstruction::SetAuthority { new_authority } => {
+                    let mut bumps = <IdlAccounts as anchor_lang::Bumps>::Bumps::default();
+                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut accounts =
+                        IdlAccounts::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
+                    __idl_set_authority(program_id, &mut accounts, new_authority)?;
+                    accounts.exit(program_id)?;
+                },
+                anchor_lang::idl::IdlInstruction::SetBuffer => {
+                    let mut bumps = <IdlSetBuffer as anchor_lang::Bumps>::Bumps::default();
+                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut accounts =
+                        IdlSetBuffer::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
+                    __idl_set_buffer(program_id, &mut accounts)?;
+                    accounts.exit(program_id)?;
+                },
+            }
+            Ok(())
+        }
+    };
+
+    quote! {
+        /// __idl mod defines handlers for injected Anchor IDL instructions.
+        pub mod __idl {
+            use super::*;
+
+            #non_inlined_idl
+            #idl_accounts_and_functions
         }
     }
 }

@@ -10,7 +10,6 @@ name = "matching_solana_program"
 
 [features]
 no-entrypoint = []
-no-idl = []
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
 default = []

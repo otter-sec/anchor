@@ -1,3 +1,7 @@
+pub mod platform_tools;
+pub mod resolve;
+pub mod solana;
+
 use {
     anyhow::{anyhow, bail, Context, Error, Result},
     cargo_toml::Manifest,
@@ -5,17 +9,33 @@ use {
     reqwest::{header::USER_AGENT, StatusCode},
     semver::{Prerelease, Version},
     serde::{de, Deserialize},
+    sha2::{Digest, Sha256},
     std::{
+        fmt::Write as FmtWrite,
         fs,
         io::{BufRead, Write},
-        path::PathBuf,
+        path::{Path, PathBuf},
         process::{Command, Stdio},
         sync::LazyLock,
+    },
+};
+pub use {
+    platform_tools::{resolve_platform_tools, PlatformToolsResolution, PlatformToolsSource},
+    resolve::{
+        resolve_anchor_version, resolve_solana_version, Resolution, ResolutionSource,
+        SolanaResolution, SolanaResolutionSource,
+    },
+    solana::{
+        ensure_solana_cli, resolve_solana_cli, resolve_solana_cli_for_anchor_resolution,
+        SolanaCliResolution, SolanaCliResolutionSource,
     },
 };
 
 /// Checked at most once per hour.
 const UPDATE_CHECK_INTERVAL_SECS: i64 = 60 * 60;
+const NIGHTLY_MANIFEST_URL: &str =
+    "https://anchor-releases.s3-eu-west-1.amazonaws.com/nightly/latest/manifest.json";
+const NIGHTLY_S3_BASE_URL: &str = "https://anchor-releases.s3-eu-west-1.amazonaws.com/";
 /// Shorter HTTP timeout so a slow or unreachable GitHub does not stall the CLI for long.
 const HTTP_CLIENT_TIMEOUT_SECS: u64 = 5;
 /// Longer timeout for release asset downloads, which can take longer than metadata requests.
@@ -30,7 +50,7 @@ static HTTP_CLIENT: LazyLock<reqwest::blocking::Client> = LazyLock::new(|| {
 });
 
 /// Shared HTTP client with a longer timeout, used for release asset downloads.
-static DOWNLOAD_CLIENT: LazyLock<reqwest::blocking::Client> = LazyLock::new(|| {
+pub(crate) static DOWNLOAD_CLIENT: LazyLock<reqwest::blocking::Client> = LazyLock::new(|| {
     reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(DOWNLOAD_CLIENT_TIMEOUT_SECS))
         .build()
@@ -105,7 +125,7 @@ pub fn ensure_paths() {
     let avm_in_bin = bin_dir.join("avm");
     if let Ok(current_avm) = std::env::current_exe() {
         // Only copy if the paths are different
-        if current_avm != avm_in_bin {
+        if current_avm != avm_in_bin && !nightly_enabled() {
             if let Err(e) = fs::copy(current_avm, &avm_in_bin) {
                 eprintln!("Failed to copy avm binary: {e}");
             }
@@ -270,12 +290,9 @@ pub fn update(include_pre_release: bool) -> Result<()> {
 pub fn check_and_get_full_commit(commit: &str) -> Result<String> {
     let response = HTTP_CLIENT
         .get(format!(
-            "https://api.github.com/repos/solana-foundation/anchor/commits/{commit}"
+            "https://api.github.com/repos/otter-sec/anchor/commits/{commit}"
         ))
-        .header(
-            USER_AGENT,
-            "avm https://github.com/solana-foundation/anchor",
-        )
+        .header(USER_AGENT, "avm https://github.com/otter-sec/anchor")
         .send()?;
 
     if response.status() != StatusCode::OK {
@@ -299,10 +316,7 @@ pub fn check_and_get_full_commit(commit: &str) -> Result<String> {
 fn fetch_raw(client: &reqwest::blocking::Client, url: &str) -> Result<Option<String>> {
     let response = client
         .get(url)
-        .header(
-            USER_AGENT,
-            "avm https://github.com/solana-foundation/anchor",
-        )
+        .header(USER_AGENT, "avm https://github.com/otter-sec/anchor")
         .send()?;
     if response.status() == StatusCode::OK {
         Ok(Some(response.text()?))
@@ -325,7 +339,7 @@ fn append_commit(version: &mut Version, commit: &str) -> Result<()> {
 }
 
 fn get_anchor_version_from_commit(commit: &str) -> Result<Version> {
-    let base = format!("https://raw.githubusercontent.com/solana-foundation/anchor/{commit}");
+    let base = format!("https://raw.githubusercontent.com/otter-sec/anchor/{commit}");
 
     // Newer versions (workspace layout): version lives in [workspace.package] of the root Cargo.toml.
     if let Some(text) = fetch_raw(&HTTP_CLIENT, &format!("{base}/Cargo.toml"))? {
@@ -401,7 +415,7 @@ pub fn install_version(
             InstallTarget::Version(version) => {
                 args.extend_from_slice(&[
                     "--git".into(),
-                    "https://github.com/solana-foundation/anchor".into(),
+                    "https://github.com/otter-sec/anchor".into(),
                     "--tag".into(),
                     format!("v{version}"),
                 ]);
@@ -409,7 +423,7 @@ pub fn install_version(
             InstallTarget::Commit(commit) => {
                 args.extend_from_slice(&[
                     "--git".into(),
-                    "https://github.com/solana-foundation/anchor".into(),
+                    "https://github.com/otter-sec/anchor".into(),
                     "--rev".into(),
                     commit,
                 ]);
@@ -429,7 +443,7 @@ pub fn install_version(
         }
 
         // If the version is older than v0.31, install using `rustc 1.79.0` to get around the problem
-        // explained in https://github.com/solana-foundation/anchor/pull/3143
+        // explained in https://github.com/otter-sec/anchor/pull/3143
         if is_older_than_v0_31_0 {
             const REQUIRED_VERSION: &str = "1.79.0";
             let is_installed = Command::new("rustup")
@@ -447,7 +461,7 @@ pub fn install_version(
                     return Err(anyhow!(
                         "Installation of `rustc {REQUIRED_VERSION}` failed. \
                     `rustc <1.80` is required to install Anchor v{version} from source. \
-                    See https://github.com/solana-foundation/anchor/pull/3143 for more information."
+                    See https://github.com/otter-sec/anchor/pull/3143 for more information."
                     ));
                 }
             }
@@ -490,14 +504,19 @@ pub fn install_version(
         };
         let res = DOWNLOAD_CLIENT
             .get(format!(
-                "https://github.com/solana-foundation/anchor/releases/download/v{version}/anchor-{version}-{target}{ext}"
+                "https://github.com/otter-sec/anchor/releases/download/v{version}/anchor-{version}-{target}{ext}"
             ))
             .send()?;
-        if !res.status().is_success() {
-            return Err(anyhow!(
+        match res.status() {
+            StatusCode::NOT_FOUND => bail!(
+                "No prebuilt binary found for version `{version}` (HTTP 404). Try `avm install \
+                 {version} --from-source`."
+            ),
+            status if !status.is_success() => bail!(
                 "Failed to download the binary for version `{version}` (status code: {})",
                 res.status()
-            ));
+            ),
+            _ => (),
         }
 
         let bin_path = version_binary_path(&version);
@@ -664,11 +683,8 @@ fn fetch_versions_with_client(
     }
 
     let response = client
-        .get("https://api.github.com/repos/solana-foundation/anchor/releases")
-        .header(
-            USER_AGENT,
-            "avm https://github.com/solana-foundation/anchor",
-        )
+        .get("https://api.github.com/repos/otter-sec/anchor/releases")
+        .header(USER_AGENT, "avm https://github.com/otter-sec/anchor")
         .send()?;
 
     if response.status().is_success() {
@@ -774,6 +790,460 @@ pub fn read_installed_versions() -> Result<Vec<Version>> {
     Ok(versions)
 }
 
+// ── Anchor nightly channel ───────────────────────────────────────────────────
+
+fn nightly_enabled_file_path() -> PathBuf {
+    AVM_HOME.join(".nightly")
+}
+
+fn nightly_cache_file_path() -> PathBuf {
+    AVM_HOME.join(".nightly-check")
+}
+
+fn nightly_error_cache_file_path() -> PathBuf {
+    AVM_HOME.join(".nightly-check-error")
+}
+
+fn avm_binary_path() -> PathBuf {
+    get_bin_dir_path().join("avm")
+}
+
+fn anchor_stub_path() -> PathBuf {
+    get_bin_dir_path().join(if cfg!(target_os = "windows") {
+        "anchor.exe"
+    } else {
+        "anchor"
+    })
+}
+
+fn nightly_avm_binary_path() -> PathBuf {
+    get_bin_dir_path().join("avm-nightly")
+}
+
+fn stable_avm_backup_path() -> PathBuf {
+    get_bin_dir_path().join("avm-stable")
+}
+
+pub fn nightly_anchor_binary_path() -> PathBuf {
+    get_bin_dir_path().join(if cfg!(target_os = "windows") {
+        "anchor-nightly.exe"
+    } else {
+        "anchor-nightly"
+    })
+}
+
+pub fn enable_nightly() -> Result<()> {
+    ensure_paths();
+    if !nightly_enabled() {
+        backup_stable_avm()?;
+    }
+
+    let version = ensure_nightly_installed()?;
+    point_anchor_stub_to(&stable_avm_backup_path())
+        .context("Pointing anchor stub at nightly proxy")?;
+    fs::write(nightly_enabled_file_path(), b"enabled\n").context("Writing Anchor nightly state")?;
+    println!("Now using Anchor nightly {version}.");
+    Ok(())
+}
+
+pub fn disable_nightly() -> Result<()> {
+    ensure_paths();
+    match fs::remove_file(nightly_enabled_file_path()) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(err).context("Removing Anchor nightly state"),
+    }
+    restore_stable_avm()?;
+    point_anchor_stub_to(&avm_binary_path()).context("Restoring anchor stub")?;
+    println!("Anchor nightly disabled. AVM will use normal version resolution.");
+    Ok(())
+}
+
+pub fn ensure_nightly_active() -> Result<Option<String>> {
+    if !nightly_enabled() {
+        return Ok(None);
+    }
+    ensure_nightly_installed().map(Some)
+}
+
+fn nightly_enabled() -> bool {
+    nightly_enabled_file_path().is_file()
+}
+
+#[derive(Debug, Deserialize)]
+struct NightlyManifest {
+    version: String,
+    artifacts: Vec<NightlyArtifact>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct NightlyArtifact {
+    tool: String,
+    target: String,
+    file: String,
+    s3_key: String,
+    sha256: String,
+}
+
+enum NightlyCacheState {
+    Success(i64, String),
+    Missing,
+}
+
+fn read_nightly_cache() -> NightlyCacheState {
+    let Ok(content) = fs::read_to_string(nightly_cache_file_path()) else {
+        return NightlyCacheState::Missing;
+    };
+    let mut lines = content.lines();
+    let Some(ts) = lines.next().and_then(|l| l.parse::<i64>().ok()) else {
+        return NightlyCacheState::Missing;
+    };
+    let Some(version) = lines.next().filter(|v| !v.is_empty()) else {
+        return NightlyCacheState::Missing;
+    };
+    NightlyCacheState::Success(ts, version.to_string())
+}
+
+fn cached_nightly_version() -> Option<String> {
+    match read_nightly_cache() {
+        NightlyCacheState::Success(_, version) => Some(version),
+        NightlyCacheState::Missing => None,
+    }
+}
+
+fn write_nightly_cache_success(version: &str) {
+    let content = format!("{}\n{version}", Utc::now().timestamp());
+    let _ = fs::write(nightly_cache_file_path(), content);
+    let _ = fs::remove_file(nightly_error_cache_file_path());
+}
+
+fn read_nightly_error_cache() -> Option<i64> {
+    fs::read_to_string(nightly_error_cache_file_path())
+        .ok()
+        .and_then(|content| content.trim().parse::<i64>().ok())
+}
+
+fn write_nightly_cache_error() {
+    let _ = fs::write(
+        nightly_error_cache_file_path(),
+        Utc::now().timestamp().to_string(),
+    );
+}
+
+fn nightly_binaries_exist() -> bool {
+    nightly_anchor_binary_path().is_file() && nightly_avm_binary_path().is_file()
+}
+
+fn ensure_nightly_installed() -> Result<String> {
+    ensure_paths();
+
+    let now = Utc::now().timestamp();
+    if let NightlyCacheState::Success(ts, version) = read_nightly_cache() {
+        if now - ts < UPDATE_CHECK_INTERVAL_SECS && nightly_binaries_exist() {
+            activate_nightly_avm()?;
+            return Ok(version);
+        }
+    }
+
+    if let Some(ts) = read_nightly_error_cache() {
+        if now - ts < UPDATE_CHECK_INTERVAL_SECS && nightly_binaries_exist() {
+            let next_attempt_secs = (ts + UPDATE_CHECK_INTERVAL_SECS) - now;
+            eprintln!("Anchor nightly update check failed. Next attempt in {next_attempt_secs}s.");
+            activate_nightly_avm()?;
+            return Ok(cached_nightly_version().unwrap_or_else(|| "cached".to_string()));
+        }
+    }
+
+    match fetch_nightly_manifest() {
+        Ok(manifest) => {
+            if let Err(err) = install_nightly_manifest(&manifest) {
+                write_nightly_cache_error();
+                if nightly_binaries_exist() {
+                    let version = cached_nightly_version().unwrap_or_else(|| "cached".to_string());
+                    eprintln!(
+                        "Anchor nightly install failed; using cached nightly {version}. Next \
+                         attempt in {UPDATE_CHECK_INTERVAL_SECS}s."
+                    );
+                    activate_nightly_avm()?;
+                    return Ok(version);
+                }
+                return Err(err).context("Installing Anchor nightly binaries");
+            }
+            write_nightly_cache_success(&manifest.version);
+            activate_nightly_avm()?;
+            Ok(manifest.version)
+        }
+        Err(err) => {
+            write_nightly_cache_error();
+            if nightly_binaries_exist() {
+                let version = cached_nightly_version().unwrap_or_else(|| "cached".to_string());
+                eprintln!(
+                    "Anchor nightly update check failed; using cached nightly {version}. Next \
+                     attempt in {UPDATE_CHECK_INTERVAL_SECS}s."
+                );
+                activate_nightly_avm()?;
+                return Ok(version);
+            }
+            Err(err).context("Fetching Anchor nightly manifest")
+        }
+    }
+}
+
+fn fetch_nightly_manifest() -> Result<NightlyManifest> {
+    let response = HTTP_CLIENT
+        .get(NIGHTLY_MANIFEST_URL)
+        .header(
+            USER_AGENT,
+            "avm https://github.com/solana-foundation/anchor",
+        )
+        .send()
+        .with_context(|| format!("Sending GET {NIGHTLY_MANIFEST_URL}"))?;
+    if !response.status().is_success() {
+        bail!(
+            "Failed to fetch Anchor nightly manifest (status {})",
+            response.status()
+        );
+    }
+    response
+        .json::<NightlyManifest>()
+        .context("Parsing Anchor nightly manifest")
+}
+
+fn install_nightly_manifest(manifest: &NightlyManifest) -> Result<()> {
+    let target = rustc_host_target()?;
+    let anchor = nightly_artifact(manifest, "anchor", &target)?;
+    let avm = nightly_artifact(manifest, "avm", &target)?;
+    let cached_version = cached_nightly_version();
+    let needs_download =
+        cached_version.as_deref() != Some(manifest.version.as_str()) || !nightly_binaries_exist();
+
+    if needs_download {
+        install_nightly_artifact(&anchor, &nightly_anchor_binary_path())?;
+        install_nightly_artifact(&avm, &nightly_avm_binary_path())?;
+    }
+    Ok(())
+}
+
+fn nightly_artifact(
+    manifest: &NightlyManifest,
+    tool: &str,
+    target: &str,
+) -> Result<NightlyArtifact> {
+    manifest
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.tool == tool && artifact.target == target)
+        .cloned()
+        .ok_or_else(|| {
+            anyhow!(
+                "Anchor nightly manifest {} does not include `{tool}` for target `{target}`",
+                manifest.version
+            )
+        })
+}
+
+fn install_nightly_artifact(artifact: &NightlyArtifact, destination: &Path) -> Result<()> {
+    let staging = get_tmp_install_dir_path().join(format!(
+        "nightly-{}-{}",
+        artifact.tool,
+        std::process::id()
+    ));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)
+            .with_context(|| format!("Removing stale {}", staging.display()))?;
+    }
+    fs::create_dir_all(&staging).with_context(|| format!("Creating {}", staging.display()))?;
+
+    let result = (|| -> Result<()> {
+        let archive_path = staging.join(&artifact.file);
+        download_nightly_artifact(artifact, &archive_path)?;
+        extract_tar_gz(&archive_path, &staging)?;
+        let extracted = extracted_nightly_binary(&staging, &artifact.tool)?;
+        install_binary_atomic(&extracted, destination)?;
+        Ok(())
+    })();
+
+    let _ = fs::remove_dir_all(&staging);
+    result
+}
+
+fn download_nightly_artifact(artifact: &NightlyArtifact, dest: &Path) -> Result<()> {
+    let url = nightly_artifact_url(artifact);
+    let response = DOWNLOAD_CLIENT
+        .get(&url)
+        .send()
+        .with_context(|| format!("Sending GET {url}"))?;
+    if !response.status().is_success() {
+        bail!("Failed to download `{url}` (status {})", response.status());
+    }
+    let bytes = response
+        .bytes()
+        .with_context(|| format!("Reading response body from {url}"))?;
+    let actual = sha256_hex(bytes.as_ref());
+    if !actual.eq_ignore_ascii_case(&artifact.sha256) {
+        bail!(
+            "Checksum mismatch for `{url}`: expected {}, got {actual}",
+            artifact.sha256
+        );
+    }
+    fs::write(dest, bytes.as_ref()).with_context(|| format!("Writing {}", dest.display()))?;
+    Ok(())
+}
+
+fn nightly_artifact_url(artifact: &NightlyArtifact) -> String {
+    format!("{NIGHTLY_S3_BASE_URL}{}", artifact.s3_key)
+}
+
+fn extracted_nightly_binary(staging: &Path, tool: &str) -> Result<PathBuf> {
+    let with_ext = staging.join(if cfg!(target_os = "windows") {
+        format!("{tool}.exe")
+    } else {
+        tool.to_string()
+    });
+    if with_ext.is_file() {
+        return Ok(with_ext);
+    }
+
+    let without_ext = staging.join(tool);
+    if without_ext.is_file() {
+        return Ok(without_ext);
+    }
+
+    bail!(
+        "Nightly archive for `{tool}` did not contain an `{tool}` binary under {}",
+        staging.display()
+    )
+}
+
+fn extract_tar_gz(archive: &Path, dest_dir: &Path) -> Result<()> {
+    let status = Command::new("tar")
+        .arg("-xzf")
+        .arg(archive)
+        .arg("-C")
+        .arg(dest_dir)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .context("Spawning `tar`")?;
+    if !status.success() {
+        bail!(
+            "`tar -xzf {} -C {}` exited with status {status}",
+            archive.display(),
+            dest_dir.display()
+        );
+    }
+    Ok(())
+}
+
+fn rustc_host_target() -> Result<String> {
+    let output = Command::new("rustc").arg("-vV").output()?;
+    core::str::from_utf8(&output.stdout)?
+        .lines()
+        .find(|line| line.starts_with("host:"))
+        .and_then(|line| line.split(':').next_back())
+        .map(str::trim)
+        .filter(|target| !target.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| anyhow!("`host` not found from `rustc -vV` output"))
+}
+
+fn backup_stable_avm() -> Result<()> {
+    let backup = stable_avm_backup_path();
+    let source = if avm_binary_path().is_file() {
+        avm_binary_path()
+    } else {
+        std::env::current_exe().context("Resolving current avm executable")?
+    };
+    install_binary_atomic(&source, &backup)
+        .with_context(|| format!("Backing up stable avm to {}", backup.display()))
+}
+
+fn restore_stable_avm() -> Result<()> {
+    let backup = stable_avm_backup_path();
+    if !backup.is_file() {
+        eprintln!(
+            "No stable avm backup found at {}. Run `avm self-update` to reinstall stable avm.",
+            backup.display()
+        );
+        return Ok(());
+    }
+    install_binary_atomic(&backup, &avm_binary_path())
+        .with_context(|| format!("Restoring stable avm from {}", backup.display()))
+}
+
+fn activate_nightly_avm() -> Result<()> {
+    install_binary_atomic(&nightly_avm_binary_path(), &avm_binary_path())
+        .context("Activating nightly avm")
+}
+
+fn point_anchor_stub_to(target: &Path) -> Result<()> {
+    let anchor = anchor_stub_path();
+    if fs::symlink_metadata(&anchor).is_ok() {
+        fs::remove_file(&anchor).with_context(|| format!("Removing {}", anchor.display()))?;
+    }
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, &anchor)
+            .with_context(|| format!("Linking {} to {}", anchor.display(), target.display()))?;
+    }
+
+    #[cfg(windows)]
+    {
+        fs::copy(target, &anchor)
+            .with_context(|| format!("Copying {} to {}", target.display(), anchor.display()))?;
+        set_executable(&anchor)?;
+    }
+
+    Ok(())
+}
+
+fn install_binary_atomic(source: &Path, destination: &Path) -> Result<()> {
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("Creating {}", parent.display()))?;
+    }
+    let file_name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow!("Invalid destination path {}", destination.display()))?;
+    let tmp = destination.with_file_name(format!(".{file_name}.tmp-{}", std::process::id()));
+    if tmp.exists() {
+        fs::remove_file(&tmp).with_context(|| format!("Removing stale {}", tmp.display()))?;
+    }
+    fs::copy(source, &tmp)
+        .with_context(|| format!("Copying {} to {}", source.display(), tmp.display()))?;
+    set_executable(&tmp)?;
+
+    #[cfg(windows)]
+    if destination.exists() {
+        fs::remove_file(destination)
+            .with_context(|| format!("Removing {}", destination.display()))?;
+    }
+
+    fs::rename(&tmp, destination)
+        .with_context(|| format!("Renaming {} to {}", tmp.display(), destination.display()))?;
+    Ok(())
+}
+
+fn set_executable(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o775))
+            .with_context(|| format!("Setting executable permissions on {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut out = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        let _ = write!(&mut out, "{byte:02x}");
+    }
+    out
+}
+
 // ── AVM self-update ───────────────────────────────────────────────────────────
 
 fn update_check_file_path() -> PathBuf {
@@ -872,7 +1342,7 @@ pub fn self_update(include_pre_release: bool, bleeding_edge: bool) -> Result<()>
     let mut args = vec![
         "install".to_string(),
         "--git".to_string(),
-        "https://github.com/solana-foundation/anchor".to_string(),
+        "https://github.com/otter-sec/anchor".to_string(),
         "--locked".to_string(),
     ];
 
@@ -996,6 +1466,57 @@ mod tests {
         // Should ignore this file because it's not anchor- prefixed
         fs::File::create(AVM_HOME.join("bin").join("garbage").as_path()).unwrap();
         assert_eq!(read_installed_versions().unwrap(), expected);
+    }
+
+    #[test]
+    fn test_nightly_artifact_selects_tool_and_target() {
+        let manifest = NightlyManifest {
+            version: "nightly-20260522-f693b0f".to_string(),
+            artifacts: vec![
+                NightlyArtifact {
+                    tool: "anchor".to_string(),
+                    target: "x86_64-unknown-linux-gnu".to_string(),
+                    file: "anchor.tar.gz".to_string(),
+                    s3_key: "nightly/latest/x86_64-unknown-linux-gnu/anchor.tar.gz".to_string(),
+                    sha256: "abc".to_string(),
+                },
+                NightlyArtifact {
+                    tool: "avm".to_string(),
+                    target: "x86_64-unknown-linux-gnu".to_string(),
+                    file: "avm.tar.gz".to_string(),
+                    s3_key: "nightly/latest/x86_64-unknown-linux-gnu/avm.tar.gz".to_string(),
+                    sha256: "def".to_string(),
+                },
+            ],
+        };
+
+        let artifact = nightly_artifact(&manifest, "avm", "x86_64-unknown-linux-gnu").unwrap();
+        assert_eq!(artifact.file, "avm.tar.gz");
+        assert_eq!(
+            nightly_artifact_url(&artifact),
+            "https://anchor-releases.s3-eu-west-1.amazonaws.com/nightly/latest/x86_64-unknown-linux-gnu/avm.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_nightly_artifact_errors_for_missing_target() {
+        let manifest = NightlyManifest {
+            version: "nightly-20260522-f693b0f".to_string(),
+            artifacts: vec![],
+        };
+
+        let err = nightly_artifact(&manifest, "anchor", "x86_64-unknown-linux-gnu")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("does not include `anchor` for target `x86_64-unknown-linux-gnu`"));
+    }
+
+    #[test]
+    fn test_sha256_hex() {
+        assert_eq!(
+            sha256_hex(b"anchor"),
+            "79bfb0e2ba76b9d447606ddbcc494834f05a4c11deb052e74b49ea307a3c5bcd"
+        );
     }
 
     #[test]

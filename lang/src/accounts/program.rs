@@ -19,7 +19,7 @@ use {
 ///
 /// The type has a `programdata_address` function that will return `Option::Some`
 /// if the program is owned by the [`BPFUpgradeableLoader`](https://docs.rs/solana-program/latest/solana_program/bpf_loader_upgradeable/index.html)
-/// which will contain the `programdata_address` property of the `Program` variant of the [`UpgradeableLoaderState`](https://docs.rs/solana-loader-v3-interface/latest/solana_loader_v3_interface/state/enum.UpgradeableLoaderState.html) enum.
+/// which will contain the `programdata_address` property of the `Program` variant of the [`UpgradeableLoaderState`](https://docs.rs/solana-loader-v3-interface/6.1.0/solana_loader_v3_interface/state/enum.UpgradeableLoaderState.html) enum.
 ///
 /// # Table of Contents
 /// - [Basic Functionality](#basic-functionality)

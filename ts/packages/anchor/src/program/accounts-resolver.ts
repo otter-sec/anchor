@@ -86,32 +86,10 @@ export class AccountsResolver<IDL extends Idl> {
     ) {
       depth++;
       if (depth === 16) {
-        const isResolvable = (acc: IdlInstructionAccountItem) => {
-          if (!isCompositeAccounts(acc)) {
-            return !!(acc.address || acc.pda || acc.relations);
-          }
-
-          return acc.accounts.some(isResolvable);
-        };
-
-        const getPaths = (
-          accs: IdlInstructionAccountItem[],
-          path: string[] = [],
-          paths: string[][] = []
-        ) => {
-          for (const acc of accs) {
-            if (isCompositeAccounts(acc)) {
-              paths.push(...getPaths(acc.accounts, [...path, acc.name]));
-            } else {
-              paths.push([...path, acc.name]);
-            }
-          }
-
-          return paths;
-        };
-
-        const resolvableAccs = this._idlIx.accounts.filter(isResolvable);
-        const unresolvedAccs = getPaths(resolvableAccs)
+        const resolvableAccs = this._idlIx.accounts.filter(
+          this.isResolvable.bind(this)
+        );
+        const unresolvedAccs = this.getPaths(resolvableAccs)
           .filter((path) => !this.get(path))
           .map((path) => path.reduce((acc, p) => acc + "." + p))
           .map((acc) => `\`${acc}\``)
@@ -125,6 +103,28 @@ export class AccountsResolver<IDL extends Idl> {
         );
       }
     }
+  }
+
+  private isResolvable(acc: IdlInstructionAccountItem): boolean {
+    if (!isCompositeAccounts(acc)) {
+      return !!(acc.address || acc.pda || acc.relations);
+    }
+    return acc.accounts.some(this.isResolvable.bind(this));
+  }
+
+  private getPaths(
+    accs: IdlInstructionAccountItem[],
+    path: string[] = [],
+    paths: string[][] = []
+  ): string[][] {
+    for (const acc of accs) {
+      if (isCompositeAccounts(acc)) {
+        paths.push(...this.getPaths(acc.accounts, [...path, acc.name]));
+      } else {
+        paths.push([...path, acc.name]);
+      }
+    }
+    return paths;
   }
 
   public resolveOptionals(accounts: PartialAccounts) {
@@ -317,41 +317,57 @@ export class AccountsResolver<IDL extends Idl> {
           // another seed to be resolved *and* the accounts for resolution are
           // out of order. In this case, skip the accounts that throw in order
           // to resolve those accounts later.
-          try {
-            if (account.pda) {
-              const seeds = await Promise.all(
-                account.pda.seeds.map((seed) => this.toBuffer(seed, path))
-              );
-              if (seeds.some((seed) => !seed)) {
-                continue;
-              }
-
-              const programId = await this.parseProgramId(account, path);
-              const [pubkey] = PublicKey.findProgramAddressSync(
-                seeds as Buffer[],
-                programId
-              );
-
-              this.set([...path, name], pubkey);
-            }
-          } catch {}
-
-          try {
-            if (account.relations) {
-              const accountKey = this.get([...path, account.relations[0]]);
-              if (accountKey) {
-                const account = await this._accountStore.fetchAccount({
-                  publicKey: accountKey,
-                });
-                this.set([...path, name], account[name]);
-              }
-            }
-          } catch {}
+          if (await this.resolvePda(account, path, name)) {
+            continue;
+          }
+          await this.resolveRelation(account, path, name);
         }
       }
     }
 
     return found;
+  }
+
+  private async resolvePda(
+    account: IdlInstructionAccount,
+    path: string[],
+    name: string
+  ): Promise<boolean> {
+    if (!account.pda) return false;
+    try {
+      const seeds = await Promise.all(
+        account.pda.seeds.map((seed) => this.toBuffer(seed, path))
+      );
+      if (seeds.some((seed) => !seed)) {
+        return true;
+      }
+
+      const programId = await this.parseProgramId(account, path);
+      const [pubkey] = PublicKey.findProgramAddressSync(
+        seeds as Buffer[],
+        programId
+      );
+
+      this.set([...path, name], pubkey);
+    } catch {}
+    return false;
+  }
+
+  private async resolveRelation(
+    account: IdlInstructionAccount,
+    path: string[],
+    name: string
+  ): Promise<void> {
+    if (!account.relations) return;
+    try {
+      const accountKey = this.get([...path, account.relations[0]]);
+      if (accountKey) {
+        const accountData = await this._accountStore.fetchAccount({
+          publicKey: accountKey,
+        });
+        this.set([...path, name], accountData[name]);
+      }
+    } catch {}
   }
 
   private async parseProgramId(

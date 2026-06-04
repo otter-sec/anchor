@@ -110,14 +110,18 @@ impl<T: ZeroCopy + Owner + fmt::Debug> fmt::Debug for AccountLoader<'_, T> {
 }
 
 impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
-    fn new(acc_info: &'info AccountInfo<'info>) -> AccountLoader<'info, T> {
+    /// Constructs a new [`AccountLoader`] without performing any account validation checks.
+    ///
+    /// - [`Self::try_from`] to perform all checks, or
+    /// - [`Self::try_from_unchecked`] to check the owner but not the discriminator
+    pub fn new_unchecked(acc_info: &'info AccountInfo<'info>) -> AccountLoader<'info, T> {
         Self {
             acc_info,
             phantom: PhantomData,
         }
     }
 
-    /// Constructs a new `Loader` from a previously initialized account.
+    /// Constructs a new [`AccountLoader`] from a previously initialized account.
     #[inline(never)]
     pub fn try_from(acc_info: &'info AccountInfo<'info>) -> Result<AccountLoader<'info, T>> {
         if acc_info.owner != &T::owner() {
@@ -136,10 +140,10 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
             return Err(ErrorCode::AccountDiscriminatorMismatch.into());
         }
 
-        Ok(AccountLoader::new(acc_info))
+        Ok(AccountLoader::new_unchecked(acc_info))
     }
 
-    /// Constructs a new `Loader` from an uninitialized account.
+    /// Constructs a new [`AccountLoader`] from an uninitialized account.
     #[inline(never)]
     pub fn try_from_unchecked(
         _program_id: &Pubkey,
@@ -149,7 +153,18 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
             return Err(Error::from(ErrorCode::AccountOwnedByWrongProgram)
                 .with_pubkeys((*acc_info.owner, T::owner())));
         }
-        Ok(AccountLoader::new(acc_info))
+        Ok(AccountLoader::new_unchecked(acc_info))
+    }
+
+    fn check_size(&self, data: &[u8]) -> Result<()> {
+        let required = T::DISCRIMINATOR
+            .len()
+            .checked_add(mem::size_of::<T>())
+            .ok_or(ErrorCode::AccountDidNotDeserialize)?;
+        if data.len() < required {
+            return Err(ErrorCode::AccountDidNotDeserialize.into());
+        }
+        Ok(())
     }
 
     /// Returns a Ref to the account data structure for reading.
@@ -164,6 +179,8 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
         if given_disc != disc {
             return Err(ErrorCode::AccountDiscriminatorMismatch.into());
         }
+
+        self.check_size(&data)?;
 
         Ok(Ref::map(data, |data| {
             bytemuck::from_bytes(&data[disc.len()..mem::size_of::<T>() + disc.len()])
@@ -189,6 +206,8 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
             return Err(ErrorCode::AccountDiscriminatorMismatch.into());
         }
 
+        self.check_size(&data)?;
+
         Ok(RefMut::map(data, |data| {
             bytemuck::from_bytes_mut(
                 &mut data.deref_mut()[disc.len()..mem::size_of::<T>() + disc.len()],
@@ -209,6 +228,8 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
 
         // The discriminator should be zero, since we're initializing.
         let disc = T::DISCRIMINATOR;
+        self.check_size(&data)?;
+
         let given_disc = &data[..disc.len()];
         let has_disc = given_disc.iter().any(|b| *b != 0);
         if has_disc {

@@ -1,5 +1,3 @@
-[toolchain]
-
 [features]
 resolution = true
 skip-lint = false

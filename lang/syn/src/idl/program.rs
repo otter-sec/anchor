@@ -16,7 +16,13 @@ use {
 
 /// Generate the IDL build print function for the program module.
 pub fn gen_idl_print_fn_program(program: &Program) -> TokenStream {
-    check_safety_comments().unwrap_or_else(|e| panic!("Safety checks failed: {e}"));
+    if let Err(error) = check_safety_comments() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            format!("Safety checks failed: {error}"),
+        )
+        .into_compile_error();
+    }
 
     let idl = get_idl_module_path();
     let no_docs = get_no_docs();
@@ -166,7 +172,7 @@ fn check_safety_comments() -> Result<()> {
         //
         // - Anchor CLI version is incompatible with the current version
         // - The error is coming from Rust Analyzer when the user has `idl-build` feature enabled,
-        // likely due to enabling all features (https://github.com/solana-foundation/anchor/issues/3042)
+        // likely due to enabling all features (https://github.com/otter-sec/anchor/issues/3042)
         //
         // For the first case, we have a warning when the user is using different versions of the
         // lang and CLI crate. For the second case, users would either have to disable the

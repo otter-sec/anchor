@@ -65,7 +65,7 @@ pub mod external {
         Ok(())
     }
 
-    // Test the issue described in https://github.com/solana-foundation/anchor/issues/3274
+    // Test the issue described in https://github.com/otter-sec/anchor/issues/3274
     pub fn update_non_instruction_composite(
         ctx: Context<UpdateNonInstructionComposite>,
         value: u32,
@@ -74,7 +74,7 @@ pub mod external {
         Ok(())
     }
 
-    // Test the issue described in https://github.com/solana-foundation/anchor/issues/3349
+    // Test the issue described in https://github.com/otter-sec/anchor/issues/3349
     pub fn update_non_instruction_composite2(
         ctx: Context<UpdateNonInstructionComposite2>,
         value: u32,
@@ -116,6 +116,12 @@ pub mod external {
 
     // Compilation test for an instruction with no accounts
     pub fn test_compilation_no_accounts(_ctx: Context<TestCompilationNoAccounts>) -> Result<()> {
+        Ok(())
+    }
+
+    // Regression test for `declare_program!` codegen with numeric suffixes.
+    // https://github.com/otter-sec/anchor/issues/4281
+    pub fn initialize_with_token_2022(_ctx: Context<TestCompilation>) -> Result<()> {
         Ok(())
     }
 
@@ -182,7 +188,7 @@ pub struct UpdateNonInstructionComposite<'info> {
 #[derive(Accounts)]
 pub struct UpdateNonInstructionComposite2<'info> {
     // Intenionally using different composite account with the same identifier
-    // https://github.com/solana-foundation/anchor/pull/3350#pullrequestreview-2425405970
+    // https://github.com/otter-sec/anchor/pull/3350#pullrequestreview-2425405970
     pub non_instruction_update: NonInstructionUpdate2<'info>,
     pub non_instruction_update_with_different_ident: NonInstructionUpdate<'info>,
 }
@@ -216,7 +222,7 @@ pub struct MyAccount {
 }
 
 // Regression test for `declare_program!` codegen on `#[account(zero_copy(unsafe))]`
-// https://github.com/solana-foundation/anchor/issues/4072
+// https://github.com/otter-sec/anchor/issues/4072
 #[account(zero_copy(unsafe))]
 pub struct PackedAccount {
     pub a: [u8; 8],

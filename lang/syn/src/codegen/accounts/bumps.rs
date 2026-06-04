@@ -69,7 +69,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
         .unzip();
 
     quote! {
-        #[derive(Debug)]
+        #[derive(Debug, Clone, Copy)]
         pub struct #bumps_name {
             #(#bump_fields),*
         }

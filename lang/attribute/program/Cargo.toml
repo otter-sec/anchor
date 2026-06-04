@@ -3,7 +3,7 @@ name = "anchor-attribute-program"
 version.workspace = true
 publish = true
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/solana-foundation/anchor"
+repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
 description = "Anchor attribute macro for defining a program"
 edition = "2021"
@@ -23,10 +23,10 @@ anchor-debug = ["anchor-syn/anchor-debug"]
 idl-build = ["anchor-syn/idl-build"]
 
 [dependencies]
-anchor-lang-idl = { path = "../../../idl", version = "0.1.2", features = ["convert"] }
+anchor-lang-idl = { path = "../../../idl", version = "0.1.3", features = ["convert"] }
 anchor-syn = { path = "../../syn", version = "1.0.2" }
 anyhow = "1"
 heck = "0.3"
 proc-macro2 = "1"
 quote = "1"
-syn = { version = "1", features = ["full"] }
+syn = { workspace = true, features = ["full"] }

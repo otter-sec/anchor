@@ -1,0 +1,40 @@
+{
+  "address": "BDGVEEyvkqzGJDP3pvA9LeLsPanrPP9pykctEAHpK96z",
+  "metadata": {
+    "name": "anchor_cli_legacy_idl",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "initialize1",
+      "discriminator": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "accounts": [],
+      "args": []
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "CustomError",
+      "msg": "Custom error message"
+    }
+  ],
+  "constants": [
+    {
+      "name": "SEED1",
+      "type": "string",
+      "value": "\"anchor1\""
+    }
+  ]
+}

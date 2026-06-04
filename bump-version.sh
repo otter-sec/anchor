@@ -29,9 +29,12 @@ case "$(uname)" in
   Darwin*) sedi=(-i "")
 esac
 
-# Bump all rust crates that have `publish` enabled
+# Bump all rust crates that have `publish` enabled (excluding crates that are
+# versioned separately)
 cargo release version $version \
     --workspace \
+    --exclude anchor-lang-idl \
+    --exclude anchor-lang-idl-spec \
     $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.publish == []) | "--exclude " + .name') \
     --no-confirm \
     --execute
@@ -80,7 +83,7 @@ description: Anchor - Release Notes $version
 ---
 
 See the full 
-[CHANGELOG](https://github.com/solana-foundation/anchor/blob/v${version}/CHANGELOG.md#${VERSION_CHANGELOG}---$(date '+%Y-%m-%d')).
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/v${version}/CHANGELOG.md#${VERSION_CHANGELOG}---$(date '+%Y-%m-%d')).
 EOF
 
         # Insert the version into release notes meta, and sort the versions so the order is correct

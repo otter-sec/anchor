@@ -12,7 +12,7 @@ name = "ambiguous_discriminator"
 default = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
-no-idl = []
+
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
 

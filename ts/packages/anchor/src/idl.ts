@@ -1,6 +1,6 @@
 import { bs58, utf8 } from "./utils/bytes/index.js";
 import { inflate, ungzip } from "pako";
-import camelCase from "camelcase";
+import { toCamelCase } from "./utils/case.js";
 import { Buffer } from "buffer";
 import { PublicKey } from "@solana/web3.js";
 
@@ -520,18 +520,23 @@ export function convertIdlToCamelCase<I extends Idl>(idl: I) {
   const KEYS_TO_CONVERT = ["name", "path", "account", "relations", "generic"];
 
   // `my_account.field` is getting converted to `myAccountField` but we
-  // need `myAccount.field`.
-  const toCamelCase = (s: any) =>
+  // need `myAccount.field`, so camelCase each dot-separated segment in
+  // isolation. The local helper has a distinct name from the imported
+  // `toCamelCase` to avoid the shadowing that would otherwise turn the
+  // self-reference below into infinite recursion.
+  const toCamelCasePath = (s: any) =>
     s
       .split(".")
-      .map((part: any) => camelCase(part, { locale: false }))
+      .map((part: any) => toCamelCase(part))
       .join(".");
 
   const recursivelyConvertNamesToCamelCase = (obj: Record<string, any>) => {
     for (const key in obj) {
       const val = obj[key];
       if (KEYS_TO_CONVERT.includes(key)) {
-        obj[key] = Array.isArray(val) ? val.map(toCamelCase) : toCamelCase(val);
+        obj[key] = Array.isArray(val)
+          ? val.map(toCamelCasePath)
+          : toCamelCasePath(val);
       } else if (typeof val === "object") {
         recursivelyConvertNamesToCamelCase(val);
       }
