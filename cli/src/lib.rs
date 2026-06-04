@@ -45,7 +45,7 @@ use {
         collections::{BTreeMap, HashMap, HashSet},
         ffi::OsString,
         fs::{self, File},
-        io::prelude::*,
+        io::{self, prelude::*},
         path::{Path, PathBuf},
         process::{Child, ExitStatus, Stdio},
         string::ToString,
@@ -3671,17 +3671,34 @@ fn write_error_constants_file(
     ts_out_dir: &Path,
     cfg_types_dir: Option<PathBuf>,
 ) -> Result<()> {
-    if let Some(error_constants) = idl_ts_errors(idl) {
-        let error_file_name = format!("{}_errors.ts", &idl.metadata.name);
-        let error_out = ts_out_dir.join(&error_file_name);
-        fs::write(&error_out, error_constants)?;
+    let error_file_name = format!("{}_errors.ts", &idl.metadata.name);
+    let error_out = ts_out_dir.join(&error_file_name);
+    let cfg_error_out = cfg_types_dir.map(|types_dir| types_dir.join(&error_file_name));
 
-        // Copy out the error constants file to workspace types directory if configured
-        if let Some(types_dir) = cfg_types_dir {
-            fs::copy(&error_out, types_dir.join(&error_file_name))?;
+    let Some(error_constants) = idl_ts_errors(idl) else {
+        // No errors in the IDL: remove any stale error constants file.
+        remove_file_if_exists(&error_out)?;
+        if let Some(cfg_error_out) = cfg_error_out {
+            remove_file_if_exists(&cfg_error_out)?;
         }
+        return Ok(());
+    };
+
+    fs::write(&error_out, error_constants)?;
+
+    // Copy out the error constants file to workspace types directory if configured
+    if let Some(cfg_error_out) = cfg_error_out {
+        fs::copy(&error_out, cfg_error_out)?;
     }
     Ok(())
+}
+
+fn remove_file_if_exists(path: &Path) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err.into()),
+    }
 }
 
 fn write_idl(idl: &Idl, out: OutFile) -> Result<()> {
