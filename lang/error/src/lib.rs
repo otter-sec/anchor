@@ -200,13 +200,32 @@ pub enum ErrorCode {
     /// 2042 - Account must be migrated before exiting
     #[msg("Account must be migrated before exiting")]
     AccountNotMigrated,
-
     /// 2043 - A pausable extension constraint was violated
     #[msg("A pausable extension constraint was violated")]
     ConstraintMintPausableExtension,
     /// 2044 - A pausable extension authority constraint was violated
     #[msg("A pausable extension authority constraint was violated")]
     ConstraintMintPausableAuthority,
+
+    // Signature verification errors
+    /// 2045 - Invalid Ed25519 program id for signature verification
+    #[msg("Invalid Ed25519 program id for signature verification")]
+    Ed25519InvalidProgram = 2045,
+    /// 2046 - Invalid Secp256k1 program id for signature verification
+    #[msg("Invalid Secp256k1 program id for signature verification")]
+    Secp256k1InvalidProgram,
+    /// 2047 - Instruction unexpectedly had account metas
+    #[msg("Instruction unexpectedly had account metas")]
+    InstructionHasAccounts,
+    /// 2048 - Message length exceeds allowed maximum
+    #[msg("Message length exceeds allowed maximum")]
+    MessageTooLong,
+    /// 2049 - Invalid Secp256k1 recovery id (must be 0 or 1)
+    #[msg("Invalid Secp256k1 recovery id")]
+    InvalidRecoveryId,
+    /// 2050 - Signature verification failed
+    #[msg("Signature verification failed")]
+    SignatureVerificationFailed,
 
     // Require
     /// 2500 - A require expression was violated

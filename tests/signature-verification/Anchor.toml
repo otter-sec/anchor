@@ -1,0 +1,14 @@
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[features]
+seeds = false
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+signature_verification_test = "9P8zSbNRQkwDrjCmqsHHcU1GTk5npaKYgKHroAkupbLG"
+
+[scripts]
+test = "../node_modules/.bin/ts-mocha -p ./tsconfig.json -t 1000000 tests/*.ts"

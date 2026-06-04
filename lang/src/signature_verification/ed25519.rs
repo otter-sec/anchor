@@ -1,13 +1,13 @@
-use crate::error::ErrorCode;
-use crate::prelude::*;
-use crate::solana_program::instruction::Instruction;
-use bytemuck::pod_read_unaligned;
-use solana_ed25519_program::{
-    Ed25519SignatureOffsets, PUBKEY_SERIALIZED_SIZE, SIGNATURE_OFFSETS_SERIALIZED_SIZE,
-    SIGNATURE_OFFSETS_START, SIGNATURE_SERIALIZED_SIZE,
+use {
+    crate::{error::ErrorCode, prelude::*, solana_program::instruction::Instruction},
+    bytemuck::pod_read_unaligned,
+    solana_ed25519_program::{
+        Ed25519SignatureOffsets, PUBKEY_SERIALIZED_SIZE, SIGNATURE_OFFSETS_SERIALIZED_SIZE,
+        SIGNATURE_OFFSETS_START, SIGNATURE_SERIALIZED_SIZE,
+    },
+    solana_instructions_sysvar::load_instruction_at_checked,
+    solana_sdk_ids::ed25519_program,
 };
-use solana_instructions_sysvar::load_instruction_at_checked;
-use solana_sdk_ids::ed25519_program;
 
 /// Verifies an Ed25519 signature instruction assuming the signature, public key,
 /// and message bytes are embedded directly inside the instruction data (Solana's
@@ -80,6 +80,14 @@ pub fn verify_ed25519_ix_with_instruction_index(
     msg: &[u8],
     sig: &[u8; 64],
 ) -> Result<()> {
+    require_keys_eq!(
+        ix.program_id,
+        ed25519_program::id(),
+        ErrorCode::Ed25519InvalidProgram
+    );
+    require_eq!(ix.accounts.len(), 0usize, ErrorCode::InstructionHasAccounts);
+    require!(msg.len() <= u16::MAX as usize, ErrorCode::MessageTooLong);
+
     let (num_signatures, offsets) = parse_ed25519_signature_offsets(ix)?;
     require_eq!(num_signatures, 1u8, ErrorCode::SignatureVerificationFailed);
 
@@ -129,6 +137,10 @@ pub fn verify_ed25519_ix_multiple(
         num_signatures as usize,
         sigs.len(),
         ErrorCode::SignatureVerificationFailed
+    );
+    require!(
+        msgs.iter().all(|msg| msg.len() <= u16::MAX as usize),
+        ErrorCode::MessageTooLong
     );
 
     // Verify each signature
@@ -236,4 +248,132 @@ fn verify_ed25519_signature_at_index(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::{error::Error, solana_program::pubkey::Pubkey},
+    };
+
+    fn build_single_instruction(pubkey: [u8; 32], msg: &[u8], sig: [u8; 64]) -> Instruction {
+        let header_size = SIGNATURE_OFFSETS_START + SIGNATURE_OFFSETS_SERIALIZED_SIZE;
+        let sig_offset = header_size as u16;
+        let pubkey_offset = sig_offset + SIGNATURE_SERIALIZED_SIZE as u16;
+        let msg_offset = pubkey_offset + PUBKEY_SERIALIZED_SIZE as u16;
+
+        let mut data = Vec::with_capacity(header_size + sig.len() + pubkey.len() + msg.len());
+        data.push(1);
+        data.push(0);
+        data.extend_from_slice(&sig_offset.to_le_bytes());
+        data.extend_from_slice(&u16::MAX.to_le_bytes());
+        data.extend_from_slice(&pubkey_offset.to_le_bytes());
+        data.extend_from_slice(&u16::MAX.to_le_bytes());
+        data.extend_from_slice(&msg_offset.to_le_bytes());
+        data.extend_from_slice(&(msg.len() as u16).to_le_bytes());
+        data.extend_from_slice(&u16::MAX.to_le_bytes());
+        data.extend_from_slice(&sig);
+        data.extend_from_slice(&pubkey);
+        data.extend_from_slice(msg);
+
+        Instruction {
+            program_id: ed25519_program::id(),
+            accounts: vec![],
+            data,
+        }
+    }
+
+    fn build_multiple_instruction(
+        pubkeys: &[[u8; 32]],
+        msgs: &[&[u8]],
+        sigs: &[[u8; 64]],
+    ) -> Instruction {
+        let num_signatures = pubkeys.len();
+        let header_size =
+            SIGNATURE_OFFSETS_START + num_signatures * SIGNATURE_OFFSETS_SERIALIZED_SIZE;
+        let mut data = Vec::with_capacity(
+            header_size
+                + sigs.iter().map(|sig| sig.len()).sum::<usize>()
+                + pubkeys.iter().map(|pubkey| pubkey.len()).sum::<usize>()
+                + msgs.iter().map(|msg| msg.len()).sum::<usize>(),
+        );
+
+        data.push(num_signatures as u8);
+        data.push(0);
+
+        let mut cursor = header_size as u16;
+        for ((pubkey, msg), _sig) in pubkeys.iter().zip(msgs.iter()).zip(sigs.iter()) {
+            let sig_offset = cursor;
+            cursor += SIGNATURE_SERIALIZED_SIZE as u16;
+
+            let pubkey_offset = cursor;
+            cursor += PUBKEY_SERIALIZED_SIZE as u16;
+
+            let msg_offset = cursor;
+            cursor += msg.len() as u16;
+
+            data.extend_from_slice(&sig_offset.to_le_bytes());
+            data.extend_from_slice(&u16::MAX.to_le_bytes());
+            data.extend_from_slice(&pubkey_offset.to_le_bytes());
+            data.extend_from_slice(&u16::MAX.to_le_bytes());
+            data.extend_from_slice(&msg_offset.to_le_bytes());
+            data.extend_from_slice(&(msg.len() as u16).to_le_bytes());
+            data.extend_from_slice(&u16::MAX.to_le_bytes());
+
+            let _ = pubkey;
+        }
+
+        for ((pubkey, msg), sig) in pubkeys.iter().zip(msgs.iter()).zip(sigs.iter()) {
+            data.extend_from_slice(sig);
+            data.extend_from_slice(pubkey);
+            data.extend_from_slice(msg);
+        }
+
+        Instruction {
+            program_id: ed25519_program::id(),
+            accounts: vec![],
+            data,
+        }
+    }
+
+    #[test]
+    fn verifies_single_embedded_instruction() {
+        let pubkey = [7u8; 32];
+        let sig = [9u8; 64];
+        let msg = b"verify me";
+        let ix = build_single_instruction(pubkey, msg, sig);
+
+        verify_ed25519_ix(&ix, &pubkey, msg, &sig).unwrap();
+    }
+
+    #[test]
+    fn rejects_non_ed25519_program() {
+        let pubkey = [7u8; 32];
+        let sig = [9u8; 64];
+        let msg = b"verify me";
+        let mut ix = build_single_instruction(pubkey, msg, sig);
+        ix.program_id = Pubkey::new_from_array([42u8; 32]);
+
+        let err =
+            verify_ed25519_ix_with_instruction_index(&ix, None, &pubkey, msg, &sig).unwrap_err();
+        let error_code = match err {
+            Error::AnchorError(error) => error.error_code_number,
+            Error::ProgramError(error) => panic!("unexpected program error: {error:?}"),
+        };
+
+        assert_eq!(error_code, ErrorCode::Ed25519InvalidProgram.into());
+    }
+
+    #[test]
+    fn verifies_multiple_embedded_signatures() {
+        let pubkeys = [[1u8; 32], [2u8; 32]];
+        let sigs = [[3u8; 64], [4u8; 64]];
+        let msg1 = b"first message".as_slice();
+        let msg2 = b"second message".as_slice();
+        let msgs = [msg1, msg2];
+        let ix = build_multiple_instruction(&pubkeys, &msgs, &sigs);
+
+        verify_ed25519_ix_multiple(&ix, None, &pubkeys, &msgs, &sigs).unwrap();
+    }
 }

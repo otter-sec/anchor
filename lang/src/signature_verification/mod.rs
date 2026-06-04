@@ -1,15 +1,19 @@
-use crate::prelude::*;
-use crate::solana_program::instruction::Instruction;
-use solana_instructions_sysvar::load_instruction_at_checked;
+use {
+    crate::{prelude::*, solana_program::instruction::Instruction},
+    solana_instructions_sysvar::load_instruction_at_checked,
+};
 
 mod ed25519;
 mod secp256k1;
 
-pub use ed25519::{
-    verify_ed25519_ix, verify_ed25519_ix_multiple, verify_ed25519_ix_with_instruction_index,
-};
-pub use secp256k1::{
-    verify_secp256k1_ix, verify_secp256k1_ix_multiple, verify_secp256k1_ix_with_instruction_index,
+pub use {
+    ed25519::{
+        verify_ed25519_ix, verify_ed25519_ix_multiple, verify_ed25519_ix_with_instruction_index,
+    },
+    secp256k1::{
+        verify_secp256k1_ix, verify_secp256k1_ix_multiple,
+        verify_secp256k1_ix_with_instruction_index,
+    },
 };
 
 /// Load an instruction from the Instructions sysvar at the given index.

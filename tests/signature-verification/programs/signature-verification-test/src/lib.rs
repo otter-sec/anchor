@@ -95,29 +95,29 @@ pub mod signature_verification_test {
 #[derive(Accounts)]
 pub struct VerifyEd25519Signature<'info> {
     /// CHECK: Signer account
-    pub signer: AccountInfo<'info>,
+    pub signer: UncheckedAccount<'info>,
     /// CHECK: Instructions sysvar account
     #[account(address = solana_sdk_ids::sysvar::instructions::ID)]
-    pub ix_sysvar: AccountInfo<'info>,
+    pub ix_sysvar: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct VerifySecp256k1Signature<'info> {
     /// CHECK: Instructions sysvar account
     #[account(address = solana_sdk_ids::sysvar::instructions::ID)]
-    pub ix_sysvar: AccountInfo<'info>,
+    pub ix_sysvar: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct VerifyEd25519Multiple<'info> {
     /// CHECK: Instructions sysvar account
     #[account(address = solana_sdk_ids::sysvar::instructions::ID)]
-    pub ix_sysvar: AccountInfo<'info>,
+    pub ix_sysvar: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct VerifySecp256k1Multiple<'info> {
     /// CHECK: Instructions sysvar account
     #[account(address = solana_sdk_ids::sysvar::instructions::ID)]
-    pub ix_sysvar: AccountInfo<'info>,
+    pub ix_sysvar: UncheckedAccount<'info>,
 }

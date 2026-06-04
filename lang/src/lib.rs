@@ -45,6 +45,7 @@ pub use anchor_lang_error as error;
 pub mod event;
 #[doc(hidden)]
 pub mod idl;
+pub mod signature_verification;
 pub mod system_program;
 mod vec;
 

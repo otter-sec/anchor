@@ -347,6 +347,7 @@ dependencies = [
  "solana-clock",
  "solana-cpi",
  "solana-define-syscall 3.0.0",
+ "solana-ed25519-program",
  "solana-feature-gate-interface",
  "solana-instruction",
  "solana-instructions-sysvar",
@@ -4879,6 +4880,18 @@ dependencies = [
  "derivation-path",
  "qstring",
  "uriparse",
+]
+
+[[package]]
+name = "solana-ed25519-program"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1419197f1c06abf760043f6d64ba9d79a03ad5a43f18c7586471937122094da"
+dependencies = [
+ "bytemuck",
+ "bytemuck_derive",
+ "solana-instruction",
+ "solana-sdk-ids",
 ]
 
 [[package]]

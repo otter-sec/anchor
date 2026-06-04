@@ -1,10 +1,10 @@
-use crate::error::ErrorCode;
-use crate::prelude::*;
-use crate::solana_program::instruction::Instruction;
-use bincode::deserialize;
-use serde::Deserialize;
-use solana_instructions_sysvar::load_instruction_at_checked;
-use solana_sdk_ids::secp256k1_program;
+use {
+    crate::{error::ErrorCode, prelude::*, solana_program::instruction::Instruction},
+    bincode::deserialize,
+    serde::Deserialize,
+    solana_instructions_sysvar::load_instruction_at_checked,
+    solana_sdk_ids::secp256k1_program,
+};
 
 const SECP256K1_HEADER_SIZE: usize = 1; // num_signatures: u8
 const HASHED_PUBKEY_SERIALIZED_SIZE: usize = 20;
@@ -312,4 +312,54 @@ fn verify_secp256k1_signature_at_index(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_single_instruction(
+        eth_address: [u8; 20],
+        msg: &[u8],
+        sig: [u8; 64],
+        recovery_id: u8,
+    ) -> Instruction {
+        let data_start = SECP256K1_HEADER_SIZE + SIGNATURE_OFFSETS_SERIALIZED_SIZE;
+        let eth_offset = data_start as u16;
+        let sig_offset = eth_offset + HASHED_PUBKEY_SERIALIZED_SIZE as u16;
+        let msg_offset = sig_offset + SIGNATURE_SERIALIZED_SIZE as u16 + 1;
+
+        let mut data =
+            Vec::with_capacity(data_start + eth_address.len() + sig.len() + 1 + msg.len());
+        data.push(1);
+        data.extend_from_slice(&sig_offset.to_le_bytes());
+        data.push(u8::MAX);
+        data.extend_from_slice(&eth_offset.to_le_bytes());
+        data.push(u8::MAX);
+        data.extend_from_slice(&msg_offset.to_le_bytes());
+        data.extend_from_slice(&(msg.len() as u16).to_le_bytes());
+        data.push(u8::MAX);
+        data.extend_from_slice(&eth_address);
+        data.extend_from_slice(&sig);
+        data.push(recovery_id);
+        data.extend_from_slice(msg);
+
+        Instruction {
+            program_id: secp256k1_program::id(),
+            accounts: vec![],
+            data,
+        }
+    }
+
+    #[test]
+    fn verifies_single_embedded_instruction() {
+        let eth_address = [5u8; 20];
+        let sig = [8u8; 64];
+        let msg = b"verify secp";
+        let recovery_id = 1;
+        let ix = build_single_instruction(eth_address, msg, sig, recovery_id);
+
+        verify_secp256k1_ix_with_instruction_index(&ix, None, &eth_address, msg, &sig, recovery_id)
+            .unwrap();
+    }
 }

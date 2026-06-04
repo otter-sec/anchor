@@ -1,0 +1,18 @@
+[package]
+name = "signature-verification-test"
+version = "0.1.0"
+description = "A test program for signature verification"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "signature_verification_test"
+
+[features]
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = { path = "../../../../lang" }
+solana-sdk-ids = "3.0.0"
