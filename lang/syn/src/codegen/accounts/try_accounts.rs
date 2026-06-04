@@ -3,7 +3,7 @@ use {
         codegen::accounts::{bumps, constraints, generics, ParsedGenerics},
         AccountField, AccountsStruct,
     },
-    quote::{quote},
+    quote::quote,
 };
 
 // Generates the `Accounts` trait implementation.
