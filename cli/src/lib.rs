@@ -3234,7 +3234,15 @@ fn test(
         // In either case, skip the deploy if the user specifies.
         let is_localnet = cfg.provider.cluster == Cluster::Localnet;
         if (!is_localnet || skip_local_validator) && !skip_deploy {
-            deploy(cfg_override, None, None, false, true, max_sign_attempts, vec![])?;
+            deploy(
+                cfg_override,
+                None,
+                None,
+                false,
+                true,
+                max_sign_attempts,
+                vec![],
+            )?;
         }
 
         cfg.run_hooks(HookType::PreTest)?;
