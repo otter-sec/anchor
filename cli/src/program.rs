@@ -192,6 +192,7 @@ pub fn process_deploy(
     verifiable: bool,
     no_idl: bool,
     make_final: bool,
+    max_sign_attempts: usize,
     solana_args: Vec<String>,
 ) -> Result<()> {
     // If explicit filepath provided, deploy single program
@@ -207,6 +208,7 @@ pub fn process_deploy(
             max_len,
             no_idl,
             make_final,
+            max_sign_attempts,
             solana_args,
         );
     }
@@ -250,6 +252,7 @@ pub fn process_deploy(
             verifiable,
             no_idl,
             make_final,
+            max_sign_attempts,
             solana_args,
         );
     }
@@ -266,6 +269,7 @@ pub fn process_deploy(
         max_len,
         no_idl,
         make_final,
+        max_sign_attempts,
         solana_args,
     )
 }
@@ -278,6 +282,7 @@ fn deploy_workspace(
     verifiable: bool,
     no_idl: bool,
     make_final: bool,
+    max_sign_attempts: usize,
     solana_args: Vec<String>,
 ) -> Result<()> {
     // Get programs from workspace (Anchor or non-Anchor)
@@ -324,6 +329,7 @@ fn deploy_workspace(
             None, // max_len
             no_idl,
             make_final,
+            max_sign_attempts,
             solana_args.clone(),
         )?;
     }
@@ -345,6 +351,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             max_len,
             no_idl,
             make_final,
+            max_sign_attempts,
             solana_args,
         } => process_deploy(
             cfg_override,
@@ -358,6 +365,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             false, // verifiable
             no_idl,
             make_final,
+            max_sign_attempts,
             solana_args,
         ),
         ProgramCommand::WriteBuffer {
@@ -366,6 +374,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             buffer,
             buffer_authority,
             max_len,
+            max_sign_attempts,
         } => program_write_buffer(
             cfg_override,
             program_filepath,
@@ -373,6 +382,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             buffer,
             buffer_authority,
             max_len,
+            max_sign_attempts,
         ),
         ProgramCommand::SetBufferAuthority {
             buffer,
@@ -484,6 +494,7 @@ pub fn program_deploy(
     max_len: Option<usize>,
     no_idl: bool,
     make_final: bool,
+    max_sign_attempts: usize,
     solana_args: Vec<String>,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
@@ -584,6 +595,7 @@ pub fn program_deploy(
                 &upgrade_authority.pubkey(),
                 &buffer_keypair,
                 max_len,
+                max_sign_attempts,
                 CommitmentConfig::confirmed(),
                 RpcSendTransactionConfig {
                     skip_preflight: false,
@@ -619,6 +631,7 @@ pub fn program_deploy(
                 &upgrade_authority.pubkey(),
                 &buffer_keypair,
                 max_len,
+                max_sign_attempts,
                 CommitmentConfig::confirmed(),
                 RpcSendTransactionConfig {
                     skip_preflight: false,
@@ -969,6 +982,7 @@ fn program_write_buffer(
     _buffer: Option<String>,
     buffer_authority: Option<String>,
     max_len: Option<usize>,
+    max_sign_attempts: usize,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
     let payer = get_payer_keypair(cfg_override, &config)?;
@@ -1016,6 +1030,7 @@ fn program_write_buffer(
         &buffer_authority_keypair.pubkey(),
         &buffer_keypair,
         max_len,
+        max_sign_attempts,
         CommitmentConfig::confirmed(),
         RpcSendTransactionConfig {
             skip_preflight: false,
@@ -1391,6 +1406,7 @@ pub fn program_upgrade(
             &upgrade_authority_keypair.pubkey(),
             &buffer_keypair,
             None, // max_len
+            5,    // max_sign_attempts
             CommitmentConfig::confirmed(),
             RpcSendTransactionConfig {
                 skip_preflight: false,
@@ -1860,6 +1876,7 @@ pub fn write_program_buffer(
     buffer_authority: &Pubkey,
     buffer_keypair: &dyn Signer,
     max_len: Option<usize>,
+    max_sign_attempts: usize,
     commitment: CommitmentConfig,
     send_transaction_config: RpcSendTransactionConfig,
 ) -> Result<Pubkey> {
@@ -1902,7 +1919,6 @@ pub fn write_program_buffer(
         &blockhash,
     );
 
-    const MAX_SIGN_ATTEMPTS: usize = 5;
     send_deploy_messages(
         rpc_client,
         initial_message,
@@ -1912,7 +1928,7 @@ pub fn write_program_buffer(
         Some(buffer_keypair),
         Some(payer),
         None,
-        MAX_SIGN_ATTEMPTS,
+        max_sign_attempts,
         commitment,
         send_transaction_config,
     )?;

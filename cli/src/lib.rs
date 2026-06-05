@@ -235,6 +235,9 @@ pub enum Command {
         /// Environment variables to pass into the docker container
         #[clap(short, long, required = false)]
         env: Vec<String>,
+        /// Max number of times to re-sign with a fresh blockhash when one expires during buffer writes
+        #[clap(long, default_value = "5")]
+        max_sign_attempts: usize,
         /// Arguments to pass to the underlying `cargo build-sbf` command.
         #[clap(required = false, last = true)]
         cargo_args: Vec<String>,
@@ -273,6 +276,9 @@ pub enum Command {
         /// Don't upload IDL during deployment (IDL is uploaded by default)
         #[clap(long)]
         no_idl: bool,
+        /// Max number of times to re-sign with a fresh blockhash when one expires during buffer writes
+        #[clap(long, default_value = "5")]
+        max_sign_attempts: usize,
         /// Arguments to pass to the underlying `solana program deploy` command.
         #[clap(required = false, last = true)]
         solana_args: Vec<String>,
@@ -505,6 +511,9 @@ pub enum ProgramCommand {
         /// Make the program immutable after deployment (cannot be upgraded)
         #[clap(long = "final")]
         make_final: bool,
+        /// Max number of times to re-sign with a fresh blockhash when one expires during buffer writes
+        #[clap(long, default_value = "5")]
+        max_sign_attempts: usize,
         /// Additional arguments to configure deployment (e.g., --with-compute-unit-price 1000)
         #[clap(required = false, last = true)]
         solana_args: Vec<String>,
@@ -526,6 +535,9 @@ pub enum ProgramCommand {
         /// Maximum transaction length
         #[clap(long)]
         max_len: Option<usize>,
+        /// Max number of times to re-sign with a fresh blockhash when one expires during buffer writes
+        #[clap(long, default_value = "5")]
+        max_sign_attempts: usize,
     },
     /// Set a new buffer authority
     SetBufferAuthority {
@@ -1216,6 +1228,7 @@ fn process_command(opts: Opts) -> Result<()> {
             program_keypair,
             verifiable,
             no_idl,
+            max_sign_attempts,
             solana_args,
         } => {
             eprintln!(
@@ -1227,6 +1240,7 @@ fn process_command(opts: Opts) -> Result<()> {
                 program_keypair,
                 verifiable,
                 no_idl,
+                max_sign_attempts,
                 solana_args,
             )
         }
@@ -1265,6 +1279,7 @@ fn process_command(opts: Opts) -> Result<()> {
             validator,
             args,
             env,
+            max_sign_attempts,
             cargo_args,
             skip_lint,
         } => test(
@@ -1280,6 +1295,7 @@ fn process_command(opts: Opts) -> Result<()> {
             validator,
             args,
             env,
+            max_sign_attempts,
             cargo_args,
         ),
         Command::Airdrop { amount, pubkey } => airdrop(&opts.cfg_override, amount, pubkey),
@@ -3169,6 +3185,7 @@ fn test(
     validator_type: ValidatorType,
     extra_args: Vec<String>,
     env_vars: Vec<String>,
+    max_sign_attempts: usize,
     cargo_args: Vec<String>,
 ) -> Result<()> {
     let test_paths = tests_to_run
@@ -3217,7 +3234,7 @@ fn test(
         // In either case, skip the deploy if the user specifies.
         let is_localnet = cfg.provider.cluster == Cluster::Localnet;
         if (!is_localnet || skip_local_validator) && !skip_deploy {
-            deploy(cfg_override, None, None, false, true, vec![])?;
+            deploy(cfg_override, None, None, false, true, max_sign_attempts, vec![])?;
         }
 
         cfg.run_hooks(HookType::PreTest)?;
@@ -4193,6 +4210,7 @@ fn deploy(
     program_keypair: Option<String>,
     verifiable: bool,
     no_idl: bool,
+    max_sign_attempts: usize,
     solana_args: Vec<String>,
 ) -> Result<()> {
     // Execute the code within the workspace
@@ -4232,6 +4250,7 @@ fn deploy(
                 None, // max_len
                 no_idl,
                 false, // make_final
+                max_sign_attempts,
                 solana_args.clone(),
             )?;
         }
