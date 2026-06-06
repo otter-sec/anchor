@@ -53,6 +53,7 @@
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "hast-util-to-html": "9.0.5",
+    "just-bash": "3.0.1",
     "katex": "0.16.45",
     "radix-ui": "1.4.3",
     "react": "19.0.0",
