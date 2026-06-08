@@ -1,6 +1,7 @@
 use {
     crate::{
         config::{Config, Program, WithPath},
+        metadata::{FundedIdlSubcommand, IdlCommand},
         target_dir, ConfigOverride, ProgramCommand, DEFAULT_MAX_SIGN_ATTEMPTS,
     },
     anchor_lang_idl::types::Idl,
@@ -39,11 +40,9 @@ use {
     solana_transaction::Transaction,
     std::{
         collections::{BTreeMap, HashSet},
-        ffi::OsString,
         fs::{self, File},
         io::{ErrorKind, Write},
         path::{Path, PathBuf},
-        process::{Command as ProcessCommand, Stdio},
         sync::Arc,
         thread,
         time::Duration,
@@ -723,12 +722,6 @@ fn get_payer_keypair(
     }
 }
 
-fn security_metadata_cli_command() -> OsString {
-    std::env::var_os("ANCHOR_PROGRAM_METADATA_CLI")
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| OsString::from("program-metadata"))
-}
-
 fn security_metadata_path(config: Option<&WithPath<Config>>) -> Result<PathBuf> {
     let path = match config {
         Some(cfg) => cfg
@@ -768,47 +761,27 @@ fn upload_security_metadata(
     config: Option<&WithPath<Config>>,
     program_id: Pubkey,
     upgrade_authority_path: &str,
-    payer_path: &str,
+    payer_path: String,
 ) -> Result<()> {
     let security_path = security_metadata_path(config)?;
     let (cluster_url, _) = crate::get_cluster_and_wallet(cfg_override)?;
-    let cli = security_metadata_cli_command();
-    let cli_display = cli.to_string_lossy().into_owned();
-    let program_id = program_id.to_string();
 
-    let status = ProcessCommand::new(&cli)
-        .arg("write")
-        .arg("security")
-        .arg(&program_id)
-        .arg(&security_path)
-        .arg("--keypair")
-        .arg(upgrade_authority_path)
-        .arg("--payer")
-        .arg(payer_path)
-        .arg("--rpc")
-        .arg(&cluster_url)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .map_err(|err| match err.kind() {
-            ErrorKind::NotFound => anyhow!(
-                "Security metadata upload requires the `program-metadata` CLI. Install \
-                 `@solana-program/program-metadata` or point `ANCHOR_PROGRAM_METADATA_CLI` to a \
-                 pinned binary. Tried `{cli_display}`."
-            ),
-            _ => anyhow!("Failed to spawn `{cli_display}`: {}", err),
-        })?;
+    let command = IdlCommand::funded(
+        cluster_url,
+        upgrade_authority_path.to_string(),
+        None, // priority fees
+        FundedIdlSubcommand::WriteSecurityMetadata {
+            program_id: program_id.to_string(),
+            security_path,
+            payer: payer_path,
+        },
+    );
 
-    if !status.success() {
-        bail!(
-            "Security metadata upload failed for `{}` with status {}",
-            security_path.display(),
-            status
-        );
+    if !command.status()?.success() {
+        bail!("Security metadata upload failed");
     }
 
     println!("✓ Security metadata uploaded");
-
     Ok(())
 }
 
@@ -1200,7 +1173,7 @@ pub fn program_deploy(
             config.as_ref(),
             program_id,
             &upgrade_authority_path,
-            &wallet_path,
+            wallet_path,
         )?;
     }
 

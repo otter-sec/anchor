@@ -3,6 +3,7 @@
 
 use std::{
     io,
+    path::PathBuf,
     process::{Command, ExitStatus},
 };
 
@@ -102,6 +103,12 @@ pub enum FundedIdlSubcommand {
         seed: String,
         close_buffer: bool,
     },
+
+    WriteSecurityMetadata {
+        program_id: String,
+        security_path: PathBuf,
+        payer: String,
+    },
 }
 
 impl FundedIdlSubcommand {
@@ -148,6 +155,20 @@ impl FundedIdlSubcommand {
                 if *close_buffer {
                     args.push("--close-buffer");
                 }
+            }
+            FundedIdlSubcommand::WriteSecurityMetadata {
+                program_id,
+                security_path,
+                payer,
+            } => {
+                args.extend([
+                    "write",
+                    "security",
+                    &program_id,
+                    security_path.to_str().unwrap(),
+                    "--payer",
+                    payer,
+                ]);
             }
         }
         args
