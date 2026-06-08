@@ -771,7 +771,7 @@ macro_rules! require {
 macro_rules! require_eq {
     ($value1: expr, $value2: expr, $error_code:expr $(,)?) => {
         if $value1 != $value2 {
-            return Err(error!($error_code).with_values(($value1, $value2)));
+            return Err(anchor_lang::error!($error_code).with_values(($value1, $value2)));
         }
     };
     ($value1: expr, $value2: expr $(,)?) => {
@@ -801,7 +801,7 @@ macro_rules! require_eq {
 macro_rules! require_neq {
     ($value1: expr, $value2: expr, $error_code: expr $(,)?) => {
         if $value1 == $value2 {
-            return Err(error!($error_code).with_values(($value1, $value2)));
+            return Err(anchor_lang::error!($error_code).with_values(($value1, $value2)));
         }
     };
     ($value1: expr, $value2: expr $(,)?) => {
@@ -831,7 +831,7 @@ macro_rules! require_neq {
 macro_rules! require_keys_eq {
     ($value1: expr, $value2: expr, $error_code:expr $(,)?) => {
         if $value1 != $value2 {
-            return Err(error!($error_code).with_pubkeys(($value1, $value2)));
+            return Err(anchor_lang::error!($error_code).with_pubkeys(($value1, $value2)));
         }
     };
     ($value1: expr, $value2: expr $(,)?) => {
@@ -861,7 +861,7 @@ macro_rules! require_keys_eq {
 macro_rules! require_keys_neq {
     ($value1: expr, $value2: expr, $error_code: expr $(,)?) => {
         if $value1 == $value2 {
-            return Err(error!($error_code).with_pubkeys(($value1, $value2)));
+            return Err(anchor_lang::error!($error_code).with_pubkeys(($value1, $value2)));
         }
     };
     ($value1: expr, $value2: expr $(,)?) => {
@@ -893,7 +893,7 @@ macro_rules! require_keys_neq {
 macro_rules! require_gt {
     ($value1: expr, $value2: expr, $error_code: expr $(,)?) => {
         if $value1 <= $value2 {
-            return Err(error!($error_code).with_values(($value1, $value2)));
+            return Err(anchor_lang::error!($error_code).with_values(($value1, $value2)));
         }
     };
     ($value1: expr, $value2: expr $(,)?) => {
@@ -921,7 +921,7 @@ macro_rules! require_gt {
 macro_rules! require_gte {
     ($value1: expr, $value2: expr, $error_code: expr $(,)?) => {
         if $value1 < $value2 {
-            return Err(error!($error_code).with_values(($value1, $value2)));
+            return Err(anchor_lang::error!($error_code).with_values(($value1, $value2)));
         }
     };
     ($value1: expr, $value2: expr $(,)?) => {
