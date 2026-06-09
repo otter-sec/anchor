@@ -8,7 +8,7 @@ use {
     heck::ToSnakeCase,
     reqwest::Url,
     serde::{
-        de::{self, MapAccess, Visitor},
+        de::{self, DeserializeOwned, MapAccess, Visitor},
         ser::SerializeMap,
         Deserialize, Deserializer, Serialize, Serializer,
     },
@@ -32,6 +32,81 @@ use {
     },
     walkdir::WalkDir,
 };
+
+fn parse_config_toml<T>(source: &str, source_name: &str) -> Result<T>
+where
+    T: DeserializeOwned,
+{
+    let mut value: toml::Value =
+        toml::from_str(source).map_err(|e| anyhow!("Unable to deserialize {source_name}: {e}"))?;
+    expand_config_env_vars(&mut value, source_name, &mut Vec::new(), false)?;
+    T::deserialize(value).map_err(|e| anyhow!("Unable to deserialize {source_name}: {e}"))
+}
+
+fn expand_config_env_vars(
+    value: &mut toml::Value,
+    source_name: &str,
+    path: &mut Vec<String>,
+    skip_expansion: bool,
+) -> Result<()> {
+    if skip_expansion {
+        return Ok(());
+    }
+
+    match value {
+        toml::Value::String(raw) => {
+            *raw = shellexpand::env(raw)
+                .map(|expanded| expanded.into_owned())
+                .map_err(|err| {
+                    anyhow!(
+                        "Unable to expand environment variable `{}` in {source_name} at `{}`: {}",
+                        err.var_name,
+                        format_toml_path(path),
+                        err.cause
+                    )
+                })?;
+        }
+        toml::Value::Array(items) => {
+            for (index, item) in items.iter_mut().enumerate() {
+                path.push(format!("[{index}]"));
+                expand_config_env_vars(item, source_name, path, false)?;
+                path.pop();
+            }
+        }
+        toml::Value::Table(table) => {
+            for (key, item) in table.iter_mut() {
+                path.push(key.clone());
+                let is_literal_section =
+                    path.len() == 1 && matches!(key.as_str(), "scripts" | "hooks");
+                expand_config_env_vars(item, source_name, path, is_literal_section)?;
+                path.pop();
+            }
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+fn format_toml_path(path: &[String]) -> String {
+    if path.is_empty() {
+        return "<root>".to_string();
+    }
+
+    let mut formatted = String::new();
+    for segment in path {
+        if segment.starts_with('[') {
+            formatted.push_str(segment);
+        } else if !formatted.is_empty() {
+            formatted.push('.');
+            formatted.push_str(segment);
+        } else {
+            formatted.push_str(segment);
+        }
+    }
+
+    formatted
+}
 
 pub const SURFPOOL_HOST: &str = "127.0.0.1";
 /// Wrapper around CommitmentLevel to support case-insensitive parsing
@@ -867,8 +942,7 @@ impl FromStr for Config {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let cfg: _Config =
-            toml::from_str(s).map_err(|e| anyhow!("Unable to deserialize config: {e}"))?;
+        let cfg: _Config = parse_config_toml(s, "Anchor.toml")?;
         Ok(Config {
             toolchain: cfg.toolchain.unwrap_or_default(),
             features: cfg.features.unwrap_or_default(),
@@ -1144,7 +1218,7 @@ pub struct _TestToml {
 impl _TestToml {
     fn from_path(path: impl AsRef<Path>) -> Result<Self, Error> {
         let s = fs::read_to_string(&path)?;
-        let parsed_toml: Self = toml::from_str(&s)?;
+        let parsed_toml: Self = parse_config_toml(&s, "Test.toml")?;
         let mut current_toml = _TestToml {
             extends: None,
             test: None,
@@ -1891,6 +1965,112 @@ go = { enable = true, path = "go-client" }
         let string = BASE_CONFIG.to_owned() + "[features]\nskip-lint = false";
         let config = Config::from_str(&string).unwrap();
         assert!(!config.features.skip_lint);
+    }
+
+    #[test]
+    fn parse_env_vars_in_anchor_toml_values() {
+        let cluster_var = "ANCHOR_TEST_CLUSTER_1545";
+        let wallet_var = "ANCHOR_TEST_WALLET_1545";
+        let airdrop_var = "ANCHOR_TEST_AIRDROP_1545";
+
+        std::env::set_var(cluster_var, "http://rpc.example.com");
+        std::env::set_var(wallet_var, "~/.config/solana/env-wallet.json");
+        std::env::set_var(airdrop_var, "9xQeWvG816bUx9EPjHmaT23yvVMQXTE5AQ5J6PiFzNqA");
+
+        let toml = format!(
+            r#"
+[provider]
+cluster = "${{{cluster_var}}}"
+wallet = "${{{wallet_var}}}"
+
+[surfpool]
+datasource_rpc_url = "${{{cluster_var}}}"
+airdrop_addresses = ["${{{airdrop_var}}}", "${{ANCHOR_TEST_UNSET_AIRDROP_1545:-fallback-address}}"]
+"#
+        );
+
+        let config = Config::from_str(&toml).unwrap();
+        let surfpool = config.surfpool_config.unwrap();
+
+        assert_eq!(
+            config.provider.cluster.to_string(),
+            "http://rpc.example.com"
+        );
+        assert_eq!(
+            config.provider.wallet.to_string(),
+            home_dir()
+                .unwrap()
+                .join(".config/solana/env-wallet.json")
+                .display()
+                .to_string()
+        );
+        assert_eq!(
+            surfpool.datasource_rpc_url.as_deref(),
+            Some("http://rpc.example.com")
+        );
+        assert_eq!(
+            surfpool.airdrop_addresses.unwrap(),
+            vec![
+                "9xQeWvG816bUx9EPjHmaT23yvVMQXTE5AQ5J6PiFzNqA".to_string(),
+                "fallback-address".to_string(),
+            ]
+        );
+
+        std::env::remove_var(cluster_var);
+        std::env::remove_var(wallet_var);
+        std::env::remove_var(airdrop_var);
+    }
+
+    #[test]
+    fn missing_env_vars_include_config_path() {
+        let missing_var = "ANCHOR_TEST_MISSING_1545";
+        std::env::remove_var(missing_var);
+
+        let err = Config::from_str(&format!(
+            r#"
+[provider]
+cluster = "localnet"
+wallet = "${{{missing_var}}}"
+"#
+        ))
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains(missing_var));
+        assert!(err.contains("provider.wallet"));
+    }
+
+    #[test]
+    fn scripts_and_hooks_skip_env_expansion() {
+        let env_var = "ANCHOR_TEST_SCRIPT_1545";
+        std::env::set_var(env_var, "expanded-value");
+
+        let toml = BASE_CONFIG.to_owned()
+            + &format!(
+                r#"
+[scripts]
+test = "echo $1 ${{{env_var}}}"
+
+[hooks]
+pre-build = ["echo $1", "echo ${{{env_var}}}"]
+"#
+            );
+
+        let config = Config::from_str(&toml).unwrap();
+
+        assert_eq!(
+            config.scripts.get("test").unwrap(),
+            &format!("echo $1 ${{{env_var}}}")
+        );
+        match config.hooks.pre_build.unwrap() {
+            Hook::List(hooks) => assert_eq!(
+                hooks,
+                vec!["echo $1".to_string(), format!("echo ${{{env_var}}}")]
+            ),
+            Hook::Single(_) => panic!("expected hook list"),
+        }
+
+        std::env::remove_var(env_var);
     }
 
     #[test]
