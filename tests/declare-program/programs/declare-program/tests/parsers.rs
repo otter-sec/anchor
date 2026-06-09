@@ -305,6 +305,29 @@ pub fn test_instruction_parser() {
 }
 
 #[test]
+pub fn test_enum_discriminants_serialization() {
+    use external::types::Animal;
+
+    fn ser(val: impl AnchorSerialize) -> Vec<u8> {
+        let mut w = vec![];
+        val.serialize(&mut w).unwrap();
+        w
+    }
+
+    fn deser<T: AnchorDeserialize>(data: &[u8]) -> T {
+        T::deserialize(&mut &data[..]).unwrap()
+    }
+
+    assert_eq!(ser(Animal::Cat), vec![0]);
+    assert_eq!(ser(Animal::Dog), vec![1]);
+    assert_eq!(ser(Animal::Mouse), vec![5]);
+
+    assert_eq!(ser(deser::<Animal>(&[0])), vec![0]);
+    assert_eq!(ser(deser::<Animal>(&[1])), vec![1]);
+    assert_eq!(ser(deser::<Animal>(&[5])), vec![5]);
+}
+
+#[test]
 #[cfg(not(feature = "idl-build"))]
 pub fn test_errors() {
     use external::error::ExternalError;

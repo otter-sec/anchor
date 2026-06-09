@@ -233,3 +233,13 @@ pub struct PackedAccount {
 pub struct MyEvent {
     pub value: u32,
 }
+
+/// Enum with explicit discriminants for `declare_program!` integration tests.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
+pub enum Animal {
+    Cat = 0,
+    Dog = 1,
+    Mouse = 5,
+}

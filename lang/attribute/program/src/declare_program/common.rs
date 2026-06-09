@@ -184,11 +184,17 @@ pub fn convert_idl_type_def_to_ts(
             .flatten()
             .unwrap_or_default();
 
+        let borsh_discriminant_attr = matches!(ty_def.serialization, IdlSerialization::Borsh)
+            .then(|| enum_has_explicit_discriminants(ty_def))
+            .flatten()
+            .map(|_| quote!(#[borsh(use_discriminant = true)]));
+
         // `ser_attr` must be expanded first, as it may produce `repr(packed)`
         // This affects builtin derives so must be visible to them
         // https://github.com/otter-sec/anchor/issues/4072
         quote! {
             #ser_attr
+            #borsh_discriminant_attr
             #debug_attr
             #default_attr
             #clone_attr
@@ -321,6 +327,15 @@ pub fn convert_idl_type_def_to_ts(
                 pub type #name = #alias;
             }
         }
+    }
+}
+
+fn enum_has_explicit_discriminants(ty_def: &IdlTypeDef) -> Option<()> {
+    match &ty_def.ty {
+        IdlTypeDefTy::Enum { variants } if variants.iter().any(|v| v.discriminant.is_some()) => {
+            Some(())
+        }
+        _ => None,
     }
 }
 
@@ -1139,6 +1154,7 @@ mod tests {
         };
 
         let result = convert_idl_type_def_to_ts(&ty_def, &[]);
+        let result_str = result.to_string();
         let parsed = syn::parse2::<syn::ItemEnum>(result);
         assert!(
             parsed.is_ok(),
@@ -1183,6 +1199,12 @@ mod tests {
         assert_eq!(discriminants, Some(vec![0, 5, 9]));
         assert!(matches!(parsed.variants[1].fields, syn::Fields::Unnamed(_)));
         assert!(matches!(parsed.variants[2].fields, syn::Fields::Named(_)));
+
+        assert!(
+            result_str.contains("use_discriminant = true"),
+            "generated enum with explicit discriminants should include #[borsh(use_discriminant = \
+             true)]"
+        );
     }
 
     #[test]
