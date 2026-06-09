@@ -8,5 +8,3 @@ registry = "HmbTLCmaGvZhKnn1Zfa1JVnp7vkMV4DYVxPLWBVoN65L"
 
 [scripts]
 test = "yarn run mocha -t 1000000 tests/"
-
-[features]

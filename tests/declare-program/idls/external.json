@@ -114,6 +114,26 @@
       "args": []
     },
     {
+      "name": "initialize_with_token_2022",
+      "discriminator": [
+        37,
+        190,
+        126,
+        222,
+        44,
+        154,
+        171,
+        17
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "test_compilation_packed_account",
       "discriminator": [
         56,

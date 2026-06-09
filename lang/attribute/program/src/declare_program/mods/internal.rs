@@ -1,5 +1,6 @@
 use {
     super::common::{
+        can_derive_clone_ty, can_derive_copy_ty, can_derive_debug_ty, can_derive_default_ty,
         convert_idl_type_to_syn_type, gen_discriminator, get_all_instruction_accounts,
         get_canonical_program_id,
     },
@@ -70,9 +71,39 @@ fn gen_internal_args_mod(idl: &Idl) -> proc_macro2::TokenStream {
             }
         };
 
+        // Generate conditional derives based on field types
+        let copy_attr = ix
+            .args
+            .iter()
+            .map(|field| &field.ty)
+            .all(|ty| can_derive_copy_ty(ty, &idl.types))
+            .then_some(quote!(#[derive(Copy)]));
+        let clone_attr = ix
+            .args
+            .iter()
+            .map(|field| &field.ty)
+            .all(|ty| can_derive_clone_ty(ty, &idl.types))
+            .then_some(quote!(#[derive(Clone)]));
+        let debug_attr = ix
+            .args
+            .iter()
+            .map(|field| &field.ty)
+            .all(|ty| can_derive_debug_ty(ty, &idl.types))
+            .then_some(quote!(#[derive(Debug)]));
+        let default_attr = ix
+            .args
+            .iter()
+            .map(|field| &field.ty)
+            .all(|ty| can_derive_default_ty(ty, &idl.types))
+            .then_some(quote!(#[derive(Default)]));
+
         quote! {
             /// Instruction argument
             #[derive(AnchorSerialize, AnchorDeserialize)]
+            #copy_attr
+            #clone_attr
+            #debug_attr
+            #default_attr
             #ix_struct
 
             #impl_discriminator

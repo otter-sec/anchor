@@ -1,7 +1,7 @@
 # @anchor-lang/core
 
 [![npm](https://img.shields.io/npm/v/@anchor-lang/core.svg?color=blue)](https://www.npmjs.com/package/@anchor-lang/core)
-[![Docs](https://img.shields.io/badge/docs-typedoc-blue)](https://solana-foundation.github.io/anchor/ts/index.html)
+[![Docs](https://img.shields.io/badge/docs-typedoc-blue)](https://otter-sec.github.io/anchor/ts/index.html)
 
 TypeScript client for Anchor programs.
 

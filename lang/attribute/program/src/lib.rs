@@ -8,10 +8,13 @@ use {declare_program::DeclareProgram, quote::ToTokens, syn::parse_macro_input};
 /// handlers defining all entries into a Solana program.
 #[proc_macro_attribute]
 pub fn program(
-    _args: proc_macro::TokenStream,
+    args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let program = parse_macro_input!(input as anchor_syn::Program);
+    let args = parse_macro_input!(args as anchor_syn::ProgramArgs);
+    let mut program = parse_macro_input!(input as anchor_syn::Program);
+    program.program_args.replace(args);
+
     let program_tokens = program.to_token_stream();
 
     #[cfg(feature = "idl-build")]
@@ -69,7 +72,7 @@ pub fn program(
 ///
 /// A full on-chain CPI usage example can be found [here].
 ///
-/// [here]: https://github.com/solana-foundation/anchor/tree/v1.0.2/tests/declare-program
+/// [here]: https://github.com/otter-sec/anchor/tree/v1.0.2/tests/declare-program
 #[proc_macro]
 pub fn declare_program(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     parse_macro_input!(input as DeclareProgram)

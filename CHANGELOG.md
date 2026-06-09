@@ -12,6 +12,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+- ts: Re-implement `verifiedBuild` using the OtterSec registry (`verify.osec.io`), replacing the defunct `apr.dev` API ([#4522](https://github.com/solana-foundation/anchor/pull/4522)).
 - ts: Add `decodeIdlAccountRaw` ([#4375](https://github.com/solana-foundation/anchor/pull/4375)).
 - cli: Add `--stdout` flag to the `expand` command ([#4400](https://github.com/solana-foundation/anchor/pull/4400)).
 - client: Add versioned tx support ([#4207](https://github.com/solana-foundation/anchor/pull/4207)).
@@ -20,9 +21,20 @@ The minor version will be incremented upon a breaking change and the patch versi
 - spl: Add pausable mint extension support ([#4092](https://github.com/solana-foundation/anchor/pull/4092)).
 - cli: Resolve the target directory via `cargo metadata` to support target directory overrides ([#3817](https://github.com/solana-foundation/anchor/pull/3817)).
 - spl: Added `token_metadata_remove_key` to support removing keys from token metadata extension ([#3717](https://github.com/solana-foundation/anchor/pull/3717)).
+- cli: Allow configuring IDL JSON location in workspace config ([#4483](https://github.com/solana-foundation/anchor/pull/4483)).
+- lang: Derive `Clone`, `Debug`, `Copy`, and `Default` on generated client / CPI account structs and instruction args where the field types allow it ([#4085](https://github.com/solana-foundation/anchor/pull/4085)).
+- lang: Add `AccountLoader::new_unchecked` for constructing an `AccountLoader` without performing owner or discriminator checks ([#4162](https://github.com/solana-foundation/anchor/pull/4162)).
+- cli: Support multiple named scripts in `Anchor.toml` and run them via `anchor test --script <name>` / `anchor run <name>` ([#3999](https://github.com/solana-foundation/anchor/pull/3999)).
+- cli/idl: Add `fetch-historical` support to recover historical IDLs with the Anchor CLI ([#3992](https://github.com/solana-foundation/anchor/pull/3992)).
+- cli: `anchor init` refuses to create a new Anchor workspace inside an existing Cargo workspace to avoid broken nested layouts ([#4576](https://github.com/solana-foundation/anchor/pull/4576)).
 
 ### Fixes
 
+- lang: Shorten invariant lifetimes during `Context` creation ([#4363](https://github.com/solana-foundation/anchor/pull/4363)).
+- ts: Guard recursive IDL layouts against stack overflows while preserving supported recursive types ([#4604](https://github.com/solana-foundation/anchor/pull/4604)).
+- idl: Bump version to 0.1.3 ([#4453](https://github.com/solana-foundation/anchor/pull/4453)).
+- lang: Migrate `anchor-syn` from syn 1.x to syn 2.0, allowing use of modern Rust syntax ([#4523](https://github.com/solana-foundation/anchor/issues/4523)).
+- lang: Avoid fatal errors in IDL building when modern Rust syntax is in use ([#4520](https://github.com/solana-foundation/anchor/pull/4520)).
 - client: Avoid panic in `parse_logs_response` when a program-emitted log line ends with `invoke [1]` ([#4461](https://github.com/solana-foundation/anchor/issues/4461)).
 - cli: Correctly honor `--skip-seed-phrase-validation` in `keygen recover` ([#4417](https://github.com/solana-foundation/anchor/pull/4417)).
 - spl: Fix wrong owner pubkey in CPI Guard enable/disable ([#4322](https://github.com/solana-foundation/anchor/pull/4322)).
@@ -30,6 +42,10 @@ The minor version will be incremented upon a breaking change and the patch versi
 - spl: Add missing auth account to `group_pointer_update` ([#4324](https://github.com/solana-foundation/anchor/pull/4324)).
 - lang: Support module constants in `max_len` attribute ([#3879](https://github.com/solana-foundation/anchor/pull/3879)).
 - spl: Deprecate broken `cpi_guard_enable/disable` functions ([#4465](https://github.com/solana-foundation/anchor/pull/4465)).
+- cli: Bump `cargo_toml` to allow parsing `resolver = "3"` ([#4515](https://github.com/solana-foundation/anchor/pull/4515)).
+- ts: Validate instruction args in `BorshInstructionCoder.encode` to reject typo'd or missing fields instead of silently ignoring them ([#4560](https://github.com/solana-foundation/anchor/pull/4560)).
+- ts: Align TS `camelCase` conversion with Rust `heck` for digit-letter identifiers so generated client names match Rust identifiers ([#4571](https://github.com/solana-foundation/anchor/pull/4571)).
+- cli: Warn if `event-cpi` instruction is unreachable with custom discriminators ([#4614](https://github.com/solana-foundation/anchor/pull/4614)).
 
 ### Breaking
 
@@ -184,7 +200,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 - spl: Update SPL dependencies to latest compatible versions ([#3860](https://github.com/solana-foundation/anchor/pull/3860)).
 - cli: Replace `anchor verify` to use `solana-verify` under the hood, adding automatic installation via AVM, local path support, and future-proof argument passing ([#3768](https://github.com/solana-foundation/anchor/pull/3768)).
-- cli: Upload IDL by default with an option to skip ((#3863)[https://github.com/solana-foundation/anchor/pull/3863]).
+- cli: Upload IDL by default with an option to skip ([#3863](https://github.com/solana-foundation/anchor/pull/3863)).
 - lang: remove Solang ([#3824](https://github.com/solana-foundation/anchor/pull/3824)).
 - cli: remove `anchor publish` command ([#3795](https://github.com/solana-foundation/anchor/pull/3795)).
 
@@ -476,7 +492,7 @@ See the [Anchor 0.30 release notes](https://www.anchor-lang.com/release-notes/0.
 - spl: Fix not being able to deserialize newer token 2022 extensions ([#2876](https://github.com/solana-foundation/anchor/pull/2876)).
 - client: Fix erroneous Cluster websocket ports ([#2690](https://github.com/solana-foundation/anchor/pull/2690)).
 - spl: Remove `solana-program` dependency ([#2900](https://github.com/solana-foundation/anchor/pull/2900)).
-- spl: Make `TokenAccount` and ` Mint` `Copy` ([#2904](https://github.com/solana-foundation/anchor/pull/2904)).
+- spl: Make `TokenAccount` and `Mint` `Copy` ([#2904](https://github.com/solana-foundation/anchor/pull/2904)).
 - ts: Add missing errors ([#2906](https://github.com/solana-foundation/anchor/pull/2906)).
 
 ### Breaking
@@ -821,9 +837,9 @@ See the [Anchor 0.29 release notes](https://www.anchor-lang.com/release-notes/0.
 - lang: Require doc comments when using AccountInfo or UncheckedAccount types ([#1452](https://github.com/solana-foundation/anchor/pull/1452)).
 - lang: add [`error!`](https://docs.rs/anchor-lang/latest/anchor_lang/prelude/macro.error.html) and [`err!`](https://docs.rs/anchor-lang/latest/anchor_lang/prelude/macro.err.html) macro and `Result` type ([#1462](https://github.com/solana-foundation/anchor/pull/1462)).
   This change will break most programs. Do the following to upgrade:
-  _ change all `ProgramResult`'s to `Result<()>`
+  _change all `ProgramResult`'s to `Result<()>`
   _ change `#[error]` to `#[error_code]`
-  _ change all `Err(MyError::SomeError.into())` to `Err(error!(MyError::SomeError))` and all `Err(ProgramError::SomeProgramError)` to `Err(ProgramError::SomeProgramError.into())` or `Err(Error::from(ProgramError::SomeProgramError).with_source(source!()))` to provide file and line source of the error (`with_source` is most useful with `ProgramError`s. `error!` already adds source information for custom and anchor internal errors).
+  _change all `Err(MyError::SomeError.into())` to `Err(error!(MyError::SomeError))` and all `Err(ProgramError::SomeProgramError)` to `Err(ProgramError::SomeProgramError.into())` or `Err(Error::from(ProgramError::SomeProgramError).with_source(source!()))` to provide file and line source of the error (`with_source` is most useful with `ProgramError`s. `error!` already adds source information for custom and anchor internal errors).
   _ change all `solana_program::program::invoke()` to `solana_program::program::invoke().map_err(Into::into)` and `solana_program::program::invoke_signed()` to `solana_program::program::invoke_signed().map_err(Into::into)`
 
 ## [0.21.0] - 2022-02-07

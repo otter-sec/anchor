@@ -29,6 +29,25 @@ pub mod caller {
         Ok(())
     }
 
+    pub fn cpi_call_return_u64_same_program_spoofed(ctx: Context<CpiReturnContext>) -> Result<()> {
+        let cpi_program_id = ctx.accounts.cpi_return_program.key();
+        let cpi_accounts = CpiReturn {
+            account: ctx.accounts.cpi_return.to_account_info(),
+        };
+        let cpi_ctx = CpiContext::new(cpi_program_id, cpi_accounts);
+        let result = callee::cpi::return_u64(cpi_ctx)?;
+
+        let spoof_accounts = CpiReturn {
+            account: ctx.accounts.cpi_return.to_account_info(),
+        };
+        let spoof_ctx = CpiContext::new(cpi_program_id, spoof_accounts);
+        callee::cpi::return_u64_spoofed(spoof_ctx)?;
+
+        let solana_return = result.get();
+        anchor_lang::solana_program::log::sol_log_data(&[&borsh::to_vec(&solana_return).unwrap()]);
+        Ok(())
+    }
+
     pub fn cpi_call_return_struct(ctx: Context<CpiReturnContext>) -> Result<()> {
         let cpi_program_id = ctx.accounts.cpi_return_program.key();
         let cpi_accounts = CpiReturn {
@@ -98,12 +117,14 @@ pub mod caller {
         Ok(())
     }
 
-    /// PoC: Demonstrates that get() (with fix) REJECTS spoofed return data.
+    /// Demonstrates that get() (with fix) preserves the original return data
+    /// even if a later CPI from a different program overwrites the global
+    /// return-data slot.
     ///
     /// Same flow as above, but uses get() instead of get_unchecked().
-    /// This will panic because the program_id from get_return_data() doesn't
-    /// match the expected callee program_id.
-    pub fn cpi_call_return_u64_spoofed_rejected(ctx: Context<SpoofedReturnContext>) -> Result<()> {
+    /// Because get() now reads the snapshot captured immediately after the
+    /// callee CPI returns, the later malicious overwrite is ignored.
+    pub fn cpi_call_return_u64_spoofed_preserved(ctx: Context<SpoofedReturnContext>) -> Result<()> {
         // Step 1: CPI to callee, which returns u64 = 10
         let cpi_program_id = ctx.accounts.cpi_return_program.key();
         let cpi_accounts = CpiReturn {
@@ -120,9 +141,10 @@ pub mod caller {
         let spoof_ctx = CpiContext::new(malicious_program_id, spoof_accounts);
         malicious::cpi::spoof_return_data(spoof_ctx)?;
 
-        // Step 3: Use get() (FIXED) — this validates program_id and will PANIC
-        // because return data was set by malicious, not callee.
-        let _value = result.get();
+        // Step 3: Use get() (FIXED) — this reads the invoke-time snapshot, not
+        // the current global return-data slot.
+        let value = result.get();
+        anchor_lang::solana_program::log::sol_log_data(&[&borsh::to_vec(&value).unwrap()]);
 
         Ok(())
     }

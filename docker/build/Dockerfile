@@ -41,7 +41,7 @@ RUN . $NVM_DIR/nvm.sh && \
 RUN sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_CLI}/install)"
 
 # Install anchor.
-RUN cargo install --git https://github.com/solana-foundation/anchor --tag ${ANCHOR_CLI} anchor-cli --locked
+RUN cargo install --git https://github.com/otter-sec/anchor --tag ${ANCHOR_CLI} anchor-cli --locked
 
 # Build a dummy program to bootstrap the BPF SDK (doing this speeds up builds).
 RUN mkdir -p /tmp && cd tmp && anchor init dummy && cd dummy && anchor build

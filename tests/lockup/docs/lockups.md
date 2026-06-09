@@ -123,5 +123,5 @@ transfer funds back into the lockup program on behalf of the **Vesting** account
 
 Assuming the `authority` account is set on the **Lockup** program, one can use this Whitelist
 mechanism to do major version upgrades of the lockup program. One can whitelist the
-new **Lockup** program, and then all **Vesting** accounts would invidiually perform the migration
-by transferring their funds to the new proigram via the `WhitelistWithdraw` instruction.
+new **Lockup** program, and then all **Vesting** accounts would individually perform the migration
+by transferring their funds to the new program via the `WhitelistWithdraw` instruction.

@@ -6,10 +6,13 @@ use {
     anchor_lang::{prelude::*, solana_program::entrypoint::ProgramResult},
     anchor_spl::{
         associated_token::AssociatedToken,
-        token_2022::spl_token_2022::extension::{
-            group_member_pointer::GroupMemberPointer, metadata_pointer::MetadataPointer,
-            mint_close_authority::MintCloseAuthority, pausable::PausableConfig,
-            permanent_delegate::PermanentDelegate, transfer_hook::TransferHook,
+        token_2022::{
+            self,
+            spl_token_2022::extension::{
+                group_member_pointer::GroupMemberPointer, metadata_pointer::MetadataPointer,
+                mint_close_authority::MintCloseAuthority, pausable::PausableConfig,
+                permanent_delegate::PermanentDelegate, transfer_hook::TransferHook,
+            },
         },
         token_2022_extensions,
         token_interface::{
@@ -353,4 +356,43 @@ pub fn update_and_remove_token_metadata_handler(
     let metadata = get_mint_extensible_extension_data::<TokenMetadata>(mint_data)?;
     assert_eq!(metadata.additional_metadata.len(), 0);
     Ok(())
+}
+
+#[derive(Accounts)]
+pub struct CpiCreateNativeMint<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: Native mint address; the Token-2022 program verifies the PDA.
+    #[account(mut)]
+    pub native_mint: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token2022>,
+}
+
+pub fn cpi_create_native_mint_handler(ctx: Context<CpiCreateNativeMint>) -> Result<()> {
+    let cpi_accounts = token_2022::CreateNativeMint {
+        payer: ctx.accounts.payer.to_account_info(),
+        native_mint: ctx.accounts.native_mint.to_account_info(),
+        system_program: ctx.accounts.system_program.to_account_info(),
+    };
+    let cpi_ctx = CpiContext::new(*ctx.accounts.token_program.key, cpi_accounts);
+    token_2022::create_native_mint(cpi_ctx)
+}
+
+#[derive(Accounts)]
+pub struct CpiInitializeNonTransferableMint<'info> {
+    /// CHECK: Uninitialized mint account allocated by the client before this ix.
+    #[account(mut)]
+    pub mint: UncheckedAccount<'info>,
+    pub token_program: Program<'info, Token2022>,
+}
+
+pub fn cpi_initialize_non_transferable_mint_handler(
+    ctx: Context<CpiInitializeNonTransferableMint>,
+) -> Result<()> {
+    let cpi_accounts = token_2022::InitializeNonTransferableMint {
+        mint: ctx.accounts.mint.to_account_info(),
+    };
+    let cpi_ctx = CpiContext::new(*ctx.accounts.token_program.key, cpi_accounts);
+    token_2022::initialize_non_transferable_mint(cpi_ctx)
 }
