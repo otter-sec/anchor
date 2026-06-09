@@ -190,6 +190,7 @@ version = "1.0.2"
 dependencies = [
  "addr2line",
  "anchor-cli-macros",
+ "anchor-client",
  "anchor-cluster",
  "anchor-lang",
  "anchor-lang-idl",
