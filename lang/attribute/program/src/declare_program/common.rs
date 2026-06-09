@@ -184,11 +184,17 @@ pub fn convert_idl_type_def_to_ts(
             .flatten()
             .unwrap_or_default();
 
+        let borsh_discriminant_attr = matches!(ty_def.serialization, IdlSerialization::Borsh)
+            .then(|| enum_has_explicit_discriminants(ty_def))
+            .flatten()
+            .map(|_| quote!(#[borsh(use_discriminant = true)]));
+
         // `ser_attr` must be expanded first, as it may produce `repr(packed)`
         // This affects builtin derives so must be visible to them
         // https://github.com/otter-sec/anchor/issues/4072
         quote! {
             #ser_attr
+            #borsh_discriminant_attr
             #debug_attr
             #default_attr
             #clone_attr
@@ -272,7 +278,7 @@ pub fn convert_idl_type_def_to_ts(
         IdlTypeDefTy::Enum { variants } => {
             let variants = variants.iter().map(|variant| {
                 let variant_name = format_ident!("{}", variant.name);
-                handle_defined_fields(
+                let variant_tokens = handle_defined_fields(
                     variant.fields.as_ref(),
                     || quote! { #variant_name },
                     |fields| {
@@ -293,7 +299,16 @@ pub fn convert_idl_type_def_to_ts(
                             #variant_name (#(#tys,)*)
                         }
                     },
-                )
+                );
+                let discriminant = variant
+                    .discriminant
+                    .map(Literal::u8_unsuffixed)
+                    .map(|discriminant| quote! { = #discriminant })
+                    .unwrap_or_default();
+
+                quote! {
+                    #variant_tokens #discriminant
+                }
             });
 
             quote! {
@@ -312,6 +327,15 @@ pub fn convert_idl_type_def_to_ts(
                 pub type #name = #alias;
             }
         }
+    }
+}
+
+fn enum_has_explicit_discriminants(ty_def: &IdlTypeDef) -> Option<()> {
+    match &ty_def.ty {
+        IdlTypeDefTy::Enum { variants } if variants.iter().any(|v| v.discriminant.is_some()) => {
+            Some(())
+        }
+        _ => None,
     }
 }
 
@@ -573,8 +597,8 @@ mod tests {
     use {
         super::*,
         anchor_lang_idl::types::{
-            IdlArrayLen, IdlDefinedFields, IdlField, IdlGenericArg, IdlSerialization, IdlType,
-            IdlTypeDef, IdlTypeDefTy,
+            IdlArrayLen, IdlDefinedFields, IdlEnumVariant, IdlField, IdlGenericArg, IdlRepr,
+            IdlReprModifier, IdlSerialization, IdlType, IdlTypeDef, IdlTypeDefTy,
         },
     };
 
@@ -599,6 +623,18 @@ mod tests {
         }
     }
 
+    fn enum_variant(
+        name: &str,
+        fields: Option<IdlDefinedFields>,
+        discriminant: Option<u8>,
+    ) -> IdlEnumVariant {
+        IdlEnumVariant {
+            name: name.to_string(),
+            fields,
+            discriminant,
+        }
+    }
+
     fn create_test_idl_types() -> Vec<IdlTypeDef> {
         vec![
             // [0] Simple struct with copyable types
@@ -610,17 +646,12 @@ mod tests {
                 name: "SimpleEnum".to_string(),
                 ty: IdlTypeDefTy::Enum {
                     variants: vec![
-                        anchor_lang_idl::types::IdlEnumVariant {
-                            name: "Variant1".to_string(),
-                            fields: None,
-                        },
-                        anchor_lang_idl::types::IdlEnumVariant {
-                            name: "Variant2".to_string(),
-                            fields: Some(IdlDefinedFields::Named(vec![field(
-                                "value",
-                                IdlType::U32,
-                            )])),
-                        },
+                        enum_variant("Variant1", None, None),
+                        enum_variant(
+                            "Variant2",
+                            Some(IdlDefinedFields::Named(vec![field("value", IdlType::U32)])),
+                            None,
+                        ),
                     ],
                 },
                 generics: vec![],
@@ -1092,6 +1123,88 @@ mod tests {
         );
 
         assert_eq!(s(&IdlType::Generic("T".to_string())), "T");
+    }
+
+    #[test]
+    fn test_convert_idl_type_def_to_ts_emits_enum_discriminants() {
+        let ty_def = IdlTypeDef {
+            name: "Animal".to_string(),
+            ty: IdlTypeDefTy::Enum {
+                variants: vec![
+                    enum_variant("Cat", None, Some(0)),
+                    enum_variant(
+                        "Dog",
+                        Some(IdlDefinedFields::Tuple(vec![IdlType::U64])),
+                        Some(5),
+                    ),
+                    enum_variant(
+                        "Mouse",
+                        Some(IdlDefinedFields::Named(vec![field("value", IdlType::U8)])),
+                        Some(9),
+                    ),
+                ],
+            },
+            generics: vec![],
+            docs: vec![],
+            serialization: IdlSerialization::Borsh,
+            repr: Some(IdlRepr::Rust(IdlReprModifier {
+                packed: false,
+                align: None,
+            })),
+        };
+
+        let result = convert_idl_type_def_to_ts(&ty_def, &[]);
+        let result_str = result.to_string();
+        let parsed = syn::parse2::<syn::ItemEnum>(result);
+        assert!(
+            parsed.is_ok(),
+            "generated enum with explicit discriminants should parse"
+        );
+        let Ok(parsed) = parsed else {
+            return;
+        };
+        let discriminants = parsed
+            .variants
+            .iter()
+            .map(|variant| {
+                assert!(
+                    matches!(
+                        variant.discriminant.as_ref(),
+                        Some((
+                            _,
+                            syn::Expr::Lit(syn::ExprLit {
+                                lit: syn::Lit::Int(_),
+                                ..
+                            })
+                        ))
+                    ),
+                    "each generated variant should keep an integer discriminant"
+                );
+
+                if let Some((
+                    _,
+                    syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Int(discriminant),
+                        ..
+                    }),
+                )) = variant.discriminant.as_ref()
+                {
+                    discriminant.base10_parse::<u8>().ok()
+                } else {
+                    None
+                }
+            })
+            .collect::<Option<Vec<_>>>();
+
+        assert_eq!(discriminants, Some(vec![0, 5, 9]));
+        assert!(matches!(parsed.variants[1].fields, syn::Fields::Unnamed(_)));
+        assert!(matches!(parsed.variants[2].fields, syn::Fields::Named(_)));
+
+        assert!(
+            result_str.contains("use_discriminant = true"),
+            "generated enum with explicit discriminants should include #[borsh(use_discriminant = \
+             true)]"
+        );
     }
 
     #[test]

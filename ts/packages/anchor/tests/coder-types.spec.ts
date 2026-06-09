@@ -1,4 +1,5 @@
 import * as assert from "assert";
+import * as borsh from "@anchor-lang/borsh";
 import { BorshCoder, Idl } from "../src";
 import BN from "bn.js";
 
@@ -109,6 +110,62 @@ describe("coder.types", () => {
     const encoded = coder.types.encode("MintInfo", mintInfo);
 
     assert.deepEqual(coder.types.decode("MintInfo", encoded), mintInfo);
+  });
+
+  test("Can encode and decode enums with explicit discriminants from IDL", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "explicit_enum",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [
+        {
+          name: "initialize",
+          accounts: [],
+          args: [],
+          discriminator: [],
+        },
+      ],
+      types: [
+        {
+          name: "Animal",
+          type: {
+            kind: "enum",
+            variants: [
+              {
+                name: "cat",
+                discriminant: 0,
+              },
+              {
+                name: "dog",
+                discriminant: 1,
+              },
+              {
+                name: "mouse",
+                discriminant: 5,
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const coder = new BorshCoder(idl);
+    const encoded = coder.types.encode("Animal", { mouse: {} });
+
+    assert.deepEqual(Array.from(encoded), [5]);
+    assert.deepEqual(coder.types.decode("Animal", encoded), { mouse: {} });
+  });
+
+  test("rustEnum preserves wrapped layouts passed directly", () => {
+    const layout = borsh.rustEnum([borsh.bool("yes"), borsh.struct([], "no")]);
+    const encoded = Buffer.alloc(8);
+    const span = layout.encode({ yes: true }, encoded);
+
+    assert.deepEqual(Array.from(encoded.subarray(0, span)), [0, 1]);
+    assert.deepEqual(layout.decode(encoded.subarray(0, span)), { yes: true });
   });
 
   test("Can encode and decode 256-bit integers", () => {

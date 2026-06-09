@@ -504,6 +504,29 @@
           }
         ]
       }
+    },
+    {
+      "name": "Animal",
+      "repr": {
+        "kind": "rust"
+      },
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Cat",
+            "discriminant": 0
+          },
+          {
+            "name": "Dog",
+            "discriminant": 1
+          },
+          {
+            "name": "Mouse",
+            "discriminant": 5
+          }
+        ]
+      }
     }
   ],
   "constants": [

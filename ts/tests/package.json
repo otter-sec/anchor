@@ -11,6 +11,5 @@
     "rimraf": "*",
     "ts-node": "*",
     "typescript": "*"
-  },
-  "dependencies": {}
+  }
 }

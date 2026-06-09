@@ -238,6 +238,8 @@ mod legacy {
         pub name: String,
         #[serde(skip_serializing_if = "Option::is_none", default)]
         pub fields: Option<EnumFields>,
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        pub discriminant: Option<u8>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -505,6 +507,7 @@ mod legacy {
                                     tys.into_iter().map(Into::into).collect(),
                                 ),
                             }),
+                            discriminant: variant.discriminant,
                         })
                         .collect(),
                 },
@@ -973,6 +976,7 @@ mod legacy {
                                         })
                                     })
                                     .transpose()?,
+                                discriminant: v.discriminant,
                             })
                         })
                         .collect::<Result<_>>()?,

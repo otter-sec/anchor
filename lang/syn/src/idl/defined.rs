@@ -81,13 +81,8 @@ pub fn gen_idl_type_def_struct(
         let (fields, defined) = match &strct.fields {
             syn::Fields::Unit => (quote! { None }, vec![]),
             syn::Fields::Named(fields) => {
-                let (fields, defined) = fields
-                    .named
-                    .iter()
-                    .map(|f| gen_idl_field(f, generic_params, no_docs))
-                    .collect::<Result<Vec<_>>>()?
-                    .into_iter()
-                    .unzip::<_, _, Vec<_>, Vec<_>>();
+                let (fields, defined) =
+                    gen_named_fields(fields.named.iter(), generic_params, no_docs)?;
 
                 (
                     quote! { Some(#idl::IdlDefinedFields::Named(vec![#(#fields),*])) },
@@ -95,13 +90,7 @@ pub fn gen_idl_type_def_struct(
                 )
             }
             syn::Fields::Unnamed(fields) => {
-                let (types, defined) = fields
-                    .unnamed
-                    .iter()
-                    .map(|f| gen_idl_type(&f.ty, generic_params))
-                    .collect::<Result<Vec<_>>>()?
-                    .into_iter()
-                    .unzip::<_, Vec<_>, Vec<_>, Vec<_>>();
+                let (types, defined) = gen_tuple_fields(fields.unnamed.iter(), generic_params)?;
 
                 (
                     quote! { Some(#idl::IdlDefinedFields::Tuple(vec![#(#types),*])) },
@@ -126,22 +115,30 @@ fn gen_idl_type_def_enum(enm: &syn::ItemEnum) -> Result<(TokenStream, Vec<syn::T
     gen_idl_type_def(&enm.attrs, &enm.generics, |generic_params| {
         let no_docs = get_no_docs();
         let idl = get_idl_module_path();
+        let use_discriminant = get_borsh_use_discriminant(&enm.attrs)?;
+        let mut next_discriminant = quote! { 0 };
 
         let (variants, defined) = enm
             .variants
             .iter()
             .map(|variant| {
                 let name = variant.ident.to_string();
+                let discriminant = if use_discriminant {
+                    let current = variant
+                        .discriminant
+                        .as_ref()
+                        .map(|(_, expr)| quote! { #expr })
+                        .unwrap_or_else(|| quote! { #next_discriminant });
+                    next_discriminant = quote! { (#current) + 1 };
+                    quote! { Some((#current) as u8) }
+                } else {
+                    quote! { None }
+                };
                 let (fields, defined) = match &variant.fields {
                     syn::Fields::Unit => (quote! { None }, vec![]),
                     syn::Fields::Named(fields) => {
-                        let (fields, defined) = fields
-                            .named
-                            .iter()
-                            .map(|f| gen_idl_field(f, generic_params, no_docs))
-                            .collect::<Result<Vec<_>>>()?
-                            .into_iter()
-                            .unzip::<_, Vec<_>, Vec<_>, Vec<_>>();
+                        let (fields, defined) =
+                            gen_named_fields(fields.named.iter(), generic_params, no_docs)?;
                         let defined = defined.into_iter().flatten().collect::<Vec<_>>();
 
                         (
@@ -150,13 +147,8 @@ fn gen_idl_type_def_enum(enm: &syn::ItemEnum) -> Result<(TokenStream, Vec<syn::T
                         )
                     }
                     syn::Fields::Unnamed(fields) => {
-                        let (types, defined) = fields
-                            .unnamed
-                            .iter()
-                            .map(|f| gen_idl_type(&f.ty, generic_params))
-                            .collect::<Result<Vec<_>>>()?
-                            .into_iter()
-                            .unzip::<_, Vec<_>, Vec<_>, Vec<_>>();
+                        let (types, defined) =
+                            gen_tuple_fields(fields.unnamed.iter(), generic_params)?;
                         let defined = defined.into_iter().flatten().collect::<Vec<_>>();
 
                         (
@@ -167,7 +159,13 @@ fn gen_idl_type_def_enum(enm: &syn::ItemEnum) -> Result<(TokenStream, Vec<syn::T
                 };
 
                 Ok((
-                    quote! { #idl::IdlEnumVariant { name: #name.into(), fields: #fields } },
+                    quote! {
+                        #idl::IdlEnumVariant {
+                            name: #name.into(),
+                            fields: #fields,
+                            discriminant: #discriminant,
+                        }
+                    },
                     defined,
                 ))
             })
@@ -406,6 +404,83 @@ fn gen_idl_field(
         },
         defined,
     ))
+}
+
+fn gen_named_fields<'a>(
+    fields: impl Iterator<Item = &'a syn::Field>,
+    generic_params: &[syn::Ident],
+    no_docs: bool,
+) -> Result<(Vec<TokenStream>, Vec<Vec<syn::TypePath>>)> {
+    let mut idl_fields = Vec::new();
+    let mut defined = Vec::new();
+
+    for field in fields {
+        if is_borsh_skipped(&field.attrs)? {
+            continue;
+        }
+
+        let (field, field_defined) = gen_idl_field(field, generic_params, no_docs)?;
+        idl_fields.push(field);
+        defined.push(field_defined);
+    }
+
+    Ok((idl_fields, defined))
+}
+
+fn gen_tuple_fields<'a>(
+    fields: impl Iterator<Item = &'a syn::Field>,
+    generic_params: &[syn::Ident],
+) -> Result<(Vec<TokenStream>, Vec<Vec<syn::TypePath>>)> {
+    let mut idl_fields = Vec::new();
+    let mut defined = Vec::new();
+
+    for field in fields {
+        if is_borsh_skipped(&field.attrs)? {
+            continue;
+        }
+
+        let (field_ty, field_defined) = gen_idl_type(&field.ty, generic_params)?;
+        idl_fields.push(field_ty);
+        defined.push(field_defined);
+    }
+
+    Ok((idl_fields, defined))
+}
+
+fn get_borsh_use_discriminant(attrs: &[syn::Attribute]) -> Result<bool> {
+    let mut use_discriminant = None;
+
+    for attr in attrs.iter().filter(|attr| attr.path().is_ident("borsh")) {
+        attr.parse_nested_meta(|meta| {
+            if !meta.path.is_ident("use_discriminant") {
+                return Ok(());
+            }
+
+            let value = meta.value()?;
+            let value: syn::LitBool = value.parse()?;
+            use_discriminant = Some(value.value);
+
+            Ok(())
+        })?;
+    }
+
+    Ok(use_discriminant.unwrap_or(false))
+}
+
+fn is_borsh_skipped(attrs: &[syn::Attribute]) -> Result<bool> {
+    let mut skipped = false;
+
+    for attr in attrs.iter().filter(|attr| attr.path().is_ident("borsh")) {
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("skip") {
+                skipped = true;
+            }
+
+            Ok(())
+        })?;
+    }
+
+    Ok(skipped)
 }
 
 pub fn gen_idl_type(
