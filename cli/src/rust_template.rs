@@ -2137,6 +2137,35 @@ fn test_initialize() {{
     )]
 }
 
+pub fn get_security_metadata_content(project_name: &str) -> String {
+    let escaped_name = serde_json::to_string(project_name).unwrap();
+
+    format!(
+        r#"{{
+  "name": {escaped_name},
+  "logo": "https://upload.wikimedia.org/wikipedia/en/b/b9/Solana_logo.png",
+  "description": "A fresh Anchor program!",
+  "notification": "Remember to review and publish this metadata with `anchor program deploy --security-metadata` once the contents are accurate.",
+  "sdk": "https://github.com/your-sdk",
+  "project_url": "https://github.com/your-project/",
+  "contacts": [
+    "email:security@example.com",
+    "discord:MyProgram#1234",
+    "twitter:@MyProgram"
+  ],
+  "policy": "https://example.com/security-policy",
+  "preferred_languages": ["en", "de"],
+  "encryption": "https://example.com/pgp-key",
+  "source_code": "https://github.com/your-source-code/",
+  "source_release": "v0.1.0",
+  "source_revision": "abc123def456",
+  "auditors": ["Audit Firm A", "Security Researcher B"],
+  "acknowledgements": "https://example.com/security-acknowledgements",
+  "version": "0.1.0"
+}}"#
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2164,5 +2193,15 @@ mod tests {
         let test = ts_mocha("counter", AnchorVersion::V2);
         assert!(test.contains("const counter = anchor.web3.Keypair.generate();"));
         assert!(test.contains("counter: counter.publicKey"));
+    }
+
+    #[test]
+    fn security_metadata_template_is_valid_json() {
+        let content = get_security_metadata_content("demo-program");
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        assert_eq!(json["name"], "demo-program");
+        assert!(json.get("expiry").is_none());
+        assert_eq!(json["version"], "0.1.0");
     }
 }
