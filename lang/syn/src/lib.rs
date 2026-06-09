@@ -36,6 +36,7 @@ pub struct Program {
     pub docs: Option<Vec<String>>,
     pub program_mod: ItemMod,
     pub fallback_fn: Option<FallbackFn>,
+    pub program_args: Option<ProgramArgs>,
 }
 
 impl Parse for Program {
@@ -54,6 +55,40 @@ impl From<&Program> for TokenStream {
 impl ToTokens for Program {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         tokens.extend::<TokenStream>(self.into());
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ProgramArgs {
+    legacy_idl: bool,
+}
+
+impl Parse for ProgramArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut parsed = Self::default();
+        let args = input.parse_terminated(Ident::parse, Token![,])?;
+
+        for arg in args {
+            match arg.to_string().as_str() {
+                "legacy_idl" => {
+                    if parsed.legacy_idl {
+                        return Err(syn::Error::new(
+                            arg.span(),
+                            "Duplicate `legacy_idl` argument",
+                        ));
+                    }
+                    parsed.legacy_idl = true;
+                }
+                name => {
+                    return Err(syn::Error::new(
+                        arg.span(),
+                        format!("Invalid argument `{name}`. Expected one of: `legacy_idl`"),
+                    ));
+                }
+            }
+        }
+
+        Ok(parsed)
     }
 }
 

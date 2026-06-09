@@ -55,7 +55,13 @@ fn gen_cpi_instructions(idl: &Idl) -> proc_macro2::TokenStream {
                 let ty = convert_idl_type_to_syn_type(ty);
                 (
                     quote! { anchor_lang::Result<Return::<#ty>> },
-                    quote! { Ok(Return::<#ty> { phantom: std::marker::PhantomData, program_id: ctx.program_id }) },
+                    quote! {
+                        Ok(Return::<#ty> {
+                            phantom: std::marker::PhantomData,
+                            program_id: ctx.program_id,
+                            return_data: anchor_lang::__private::CpiReturnData::snapshot(),
+                        })
+                    },
                 )
             },
             None => (
@@ -108,16 +114,12 @@ fn gen_cpi_return_type() -> proc_macro2::TokenStream {
         pub struct Return<T> {
             phantom: std::marker::PhantomData<T>,
             program_id: anchor_lang::solana_program::pubkey::Pubkey,
+            return_data: anchor_lang::__private::CpiReturnData,
         }
 
         impl<T: AnchorDeserialize> Return<T> {
             pub fn get(&self) -> T {
-                let (key, data) = anchor_lang::solana_program::program::get_return_data().unwrap();
-                if key != self.program_id {
-                    anchor_lang::solana_program::log::sol_log("CPI return data program_id mismatch");
-                    panic!();
-                }
-                T::try_from_slice(&data).unwrap()
+                self.return_data.get(self.program_id)
             }
 
             /// Read return data without validating the program_id.

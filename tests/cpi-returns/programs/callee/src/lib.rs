@@ -21,6 +21,10 @@ pub mod callee {
         Ok(10)
     }
 
+    pub fn return_u64_spoofed(_ctx: Context<CpiReturn>) -> Result<u64> {
+        Ok(999)
+    }
+
     pub fn return_struct(_ctx: Context<CpiReturn>) -> Result<StructReturn> {
         let s = StructReturn { value: 11 };
         Ok(s)

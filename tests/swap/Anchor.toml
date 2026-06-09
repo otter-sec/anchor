@@ -11,5 +11,3 @@ program = "prebuilt-programs/openbook_dex.so"
 
 [scripts]
 test = "yarn run mocha -t 1000000 tests/"
-
-[features]

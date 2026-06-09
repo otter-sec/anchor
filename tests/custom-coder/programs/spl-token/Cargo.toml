@@ -10,7 +10,6 @@ name = "spl_token"
 
 [features]
 no-entrypoint = []
-no-idl = []
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
 default = []

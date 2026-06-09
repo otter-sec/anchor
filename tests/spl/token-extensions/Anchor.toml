@@ -8,7 +8,5 @@ token_extensions = "tKEkkQtgMXhdaz5NMTR3XbdUu215sZyHSj6Menvous1"
 [scripts]
 test = "yarn run ts-mocha -t 1000000 tests/*.ts"
 
-[features]
-
 [test.validator]
 url = "https://api.mainnet-beta.solana.com"

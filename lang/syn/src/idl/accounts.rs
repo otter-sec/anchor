@@ -17,116 +17,125 @@ pub fn gen_idl_build_impl_accounts_struct(accounts: &AccountsStruct) -> TokenStr
     let ident = &accounts.ident;
     let (impl_generics, ty_generics, where_clause) = accounts.generics.split_for_impl();
 
-    let (accounts, defined) = accounts
+    let result = accounts
         .fields
         .iter()
-        .map(|acc| match acc {
-            AccountField::Field(acc) => {
-                let name = acc.ident.to_string();
-                let writable = acc.constraints.is_mutable();
-                let signer = match acc.ty {
-                    Ty::Signer => true,
-                    _ => acc.constraints.is_signer(),
-                };
-                let optional = acc.is_optional;
-                let docs = match &acc.docs {
-                    Some(docs) if !no_docs => quote! { vec![#(#docs.into()),*] },
-                    _ => quote! { vec![] },
-                };
-
-                let (address, pda, relations) = if resolution {
-                    (
-                        get_address(acc),
-                        get_pda(acc, accounts),
-                        get_relations(acc, accounts),
-                    )
-                } else {
-                    (quote! { None }, quote! { None }, quote! { vec![] })
-                };
-
-                let defined = match &acc.ty {
-                    Ty::Account(ty)
-                    // Skip `UpgradeableLoaderState` type for now until `bincode` serialization
-                    // is supported.
-                    //
-                    // TODO: Remove this once either `bincode` serialization is supported or
-                    // we wrap the type in order to implement `IdlBuild` in `anchor-lang`.
-                        if !ty
-                            .account_type_path
-                            .path
-                            .to_token_stream()
-                            .to_string()
-                            .contains("UpgradeableLoaderState") =>
-                    {
-                        let defined = &ty.account_type_path;
-                        Some((defined, quote! { <#defined>::owner() == crate::ID }))
-                    }
-                    Ty::LazyAccount(ty) => {
-                        let defined = &ty.account_type_path;
-                        Some((defined, quote! { <#defined>::owner() == crate::ID }))
-                    },
-                    Ty::AccountLoader(ty) => {
-                        let defined = &ty.account_type_path;
-                        Some((defined, quote! { <#defined>::owner() == crate::ID }))
-                    },
-                    Ty::InterfaceAccount(ty) => {
-                        let defined = &ty.account_type_path;
-                        Some((defined, quote! { <#defined>::owners().contains(&crate::ID) }))
-                    },
-                    _ => None,
-                };
-
-                (
-                    quote! {
-                        #idl::IdlInstructionAccountItem::Single(#idl::IdlInstructionAccount {
-                            name: #name.into(),
-                            docs: #docs,
-                            writable: #writable,
-                            signer: #signer,
-                            optional: #optional,
-                            address: #address,
-                            pda: #pda,
-                            relations: #relations,
-                        })
-                    },
-                    defined,
-                )
-            }
-            AccountField::CompositeField(comp_f) => {
-                let ty = if let syn::Type::Path(path) = &comp_f.raw_field.ty {
-                    // some::path::Foo<'info> -> some::path::Foo
-                    let mut res = syn::Path {
-                        leading_colon: path.path.leading_colon,
-                        segments: syn::punctuated::Punctuated::new(),
-                    };
-                    for segment in &path.path.segments {
-                        let s = syn::PathSegment {
-                            ident: segment.ident.clone(),
-                            arguments: syn::PathArguments::None,
+        .map(
+            |acc| -> syn::Result<(TokenStream, Option<(&syn::TypePath, TokenStream)>)> {
+                match acc {
+                    AccountField::Field(acc) => {
+                        let name = acc.ident.to_string();
+                        let writable = acc.constraints.is_mutable();
+                        let signer = match acc.ty {
+                            Ty::Signer => true,
+                            _ => acc.constraints.is_signer(),
                         };
-                        res.segments.push(s);
-                    }
-                    res
-                } else {
-                    panic!(
-                        "Compose field type must be a path but received: {:?}",
-                        comp_f.raw_field.ty
-                    )
-                };
-                let name = comp_f.ident.to_string();
+                        let optional = acc.is_optional;
+                        let docs = match &acc.docs {
+                            Some(docs) if !no_docs => quote! { vec![#(#docs.into()),*] },
+                            _ => quote! { vec![] },
+                        };
 
-                (
-                    quote! {
-                        #idl::IdlInstructionAccountItem::Composite(#idl::IdlInstructionAccounts {
-                            name: #name.into(),
-                            accounts: <#ty>::__anchor_private_gen_idl_accounts(accounts, types),
-                        })
-                    },
-                    None,
-                )
-            }
-        })
-        .unzip::<_, _, Vec<_>, Vec<_>>();
+                        let (address, pda, relations) = if resolution {
+                            (
+                                get_address(acc),
+                                get_pda(acc, accounts),
+                                get_relations(acc, accounts),
+                            )
+                        } else {
+                            (quote! { None }, quote! { None }, quote! { vec![] })
+                        };
+
+                        let defined = match &acc.ty {
+                            Ty::Account(ty)
+                            // Skip `UpgradeableLoaderState` type for now until `bincode`
+                            // serialization is supported.
+                            //
+                            // TODO: Remove this once either `bincode` serialization is supported
+                            // or we wrap the type in order to implement `IdlBuild` in
+                            // `anchor-lang`.
+                                if !ty
+                                    .account_type_path
+                                    .path
+                                    .to_token_stream()
+                                    .to_string()
+                                    .contains("UpgradeableLoaderState") =>
+                            {
+                                let defined = &ty.account_type_path;
+                                Some((defined, quote! { <#defined>::owner() == crate::ID }))
+                            }
+                            Ty::LazyAccount(ty) => {
+                                let defined = &ty.account_type_path;
+                                Some((defined, quote! { <#defined>::owner() == crate::ID }))
+                            }
+                            Ty::AccountLoader(ty) => {
+                                let defined = &ty.account_type_path;
+                                Some((defined, quote! { <#defined>::owner() == crate::ID }))
+                            }
+                            Ty::InterfaceAccount(ty) => {
+                                let defined = &ty.account_type_path;
+                                Some((defined, quote! { <#defined>::owners().contains(&crate::ID) }))
+                            }
+                            _ => None,
+                        };
+
+                        Ok((
+                            quote! {
+                                #idl::IdlInstructionAccountItem::Single(#idl::IdlInstructionAccount {
+                                    name: #name.into(),
+                                    docs: #docs,
+                                    writable: #writable,
+                                    signer: #signer,
+                                    optional: #optional,
+                                    address: #address,
+                                    pda: #pda,
+                                    relations: #relations,
+                                })
+                            },
+                            defined,
+                        ))
+                    }
+                    AccountField::CompositeField(comp_f) => {
+                        let ty = if let syn::Type::Path(path) = &comp_f.raw_field.ty {
+                            // some::path::Foo<'info> -> some::path::Foo
+                            let mut res = syn::Path {
+                                leading_colon: path.path.leading_colon,
+                                segments: syn::punctuated::Punctuated::new(),
+                            };
+                            for segment in &path.path.segments {
+                                let s = syn::PathSegment {
+                                    ident: segment.ident.clone(),
+                                    arguments: syn::PathArguments::None,
+                                };
+                                res.segments.push(s);
+                            }
+                            res
+                        } else {
+                            return Err(syn::Error::new_spanned(
+                                &comp_f.raw_field.ty,
+                                "Composite field type must be a path",
+                            ));
+                        };
+                        let name = comp_f.ident.to_string();
+
+                        Ok((
+                            quote! {
+                                #idl::IdlInstructionAccountItem::Composite(#idl::IdlInstructionAccounts {
+                                    name: #name.into(),
+                                    accounts: <#ty>::__anchor_private_gen_idl_accounts(accounts, types),
+                                })
+                            },
+                            None,
+                        ))
+                    }
+                }
+            },
+        )
+        .collect::<syn::Result<Vec<_>>>();
+    let (accounts, defined) = match result {
+        Ok(result) => result.into_iter().unzip::<_, _, Vec<_>, Vec<_>>(),
+        Err(error) => return error.into_compile_error(),
+    };
     let (defined, is_owner) = defined
         .into_iter()
         .flatten()
@@ -165,7 +174,7 @@ fn get_address(acc: &Field) -> TokenStream {
             let ty = acc.account_ty();
             // Check if this is the unit type marker (for generic Program<'info>)
             let ty_str = quote!(#ty).to_string();
-            if ty_str == "" || ty_str == "__SolanaProgramUnitType" {
+            if ty_str.is_empty() || ty_str == "__SolanaProgramUnitType" {
                 // For generic programs, we don't have a specific address
                 quote! { None }
             } else {
@@ -175,32 +184,34 @@ fn get_address(acc: &Field) -> TokenStream {
                 quote! { Some(<#ty as #id_trait>::id().to_string()) }
             }
         }
-        _ => acc
-            .constraints
-            .address
-            .as_ref()
-            .map(|constraint| &constraint.address)
-            .filter(|address| {
-                match address {
-                    // Allow constants (assume the identifier follows the Rust naming convention)
-                    // e.g. `crate::ID`
-                    syn::Expr::Path(expr) => expr
-                        .path
-                        .segments
-                        .last()
-                        .unwrap()
-                        .ident
-                        .to_string()
-                        .chars()
-                        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'),
-                    // Allow `const fn`s (assume any stand-alone function call without an argument)
-                    // e.g. `crate::id()`
-                    syn::Expr::Call(expr) => expr.args.is_empty(),
-                    _ => false,
-                }
-            })
-            .map(|address| quote! { Some(#address.to_string()) })
-            .unwrap_or_else(|| quote! { None }),
+        _ => {
+            acc.constraints
+                .address
+                .as_ref()
+                .map(|constraint| &constraint.address)
+                .filter(|address| {
+                    match address {
+                        // Allow constants (assume the identifier follows the Rust naming convention)
+                        // e.g. `crate::ID`
+                        syn::Expr::Path(expr) => expr
+                            .path
+                            .segments
+                            .last()
+                            .map(|segment| {
+                                segment.ident.to_string().chars().all(|c| {
+                                    c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'
+                                })
+                            })
+                            .unwrap_or(false),
+                        // Allow `const fn`s (assume any stand-alone function call without an argument)
+                        // e.g. `crate::id()`
+                        syn::Expr::Call(expr) => expr.args.is_empty(),
+                        _ => false,
+                    }
+                })
+                .map(|address| quote! { Some(#address.to_string()) })
+                .unwrap_or_else(|| quote! { None })
+        }
     }
 }
 
@@ -258,7 +269,11 @@ fn get_pda(acc: &Field, accounts: &AccountsStruct) -> TokenStream {
         })
         .and_then(|(wallet, mint, token_program)| {
             // ATA constraints have implicit `.key()` call
-            let parse_expr = |ts| parse_default(&syn::parse2(ts).unwrap()).ok();
+            let parse_expr = |ts| {
+                syn::parse2(ts)
+                    .ok()
+                    .and_then(|expr| parse_default(&expr).ok())
+            };
             let parse_ata = |expr| parse_expr(quote! { #expr.key().as_ref() });
 
             let wallet = parse_ata(wallet);
@@ -274,8 +289,7 @@ fn get_pda(acc: &Field, accounts: &AccountsStruct) -> TokenStream {
             };
 
             let program = parse_expr(quote!(anchor_spl::associated_token::ID))
-                .map(|program| quote! { Some(#program) })
-                .unwrap();
+                .map(|program| quote! { Some(#program) })?;
 
             Some(quote! {
                 Some(
@@ -435,9 +449,7 @@ impl SeedPath {
         let seed_str = seed.to_token_stream().to_string();
 
         // Check unsupported cases e.g. `&(account.field + 1).to_le_bytes()`
-        if !seed_str.contains('"')
-            && seed_str.contains(|c: char| matches!(c, '+' | '-' | '*' | '/' | '%' | '^'))
-        {
+        if !seed_str.contains('"') && seed_str.contains(['+', '-', '*', '/', '%', '^']) {
             return Err(anyhow!("Seed expression not supported: {seed:#?}"));
         }
 
@@ -459,8 +471,8 @@ impl SeedPath {
             }
             path.push(subfield.into());
         }
-        if path.len() == 1 && (path[0] == "key" || path[0] == "key()") {
-            path = Vec::new();
+        if matches!(path.first().map(String::as_str), Some("key" | "key()")) && path.len() == 1 {
+            path.clear();
         }
 
         Ok(SeedPath {

@@ -1,6 +1,3 @@
-[features]
-seeds = false
-
 [programs.localnet]
 callee = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
 caller = "HmbTLCmaGvZhKnn1Zfa1JVnp7vkMV4DYVxPLWBVoN65L"

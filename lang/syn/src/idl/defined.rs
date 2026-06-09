@@ -203,19 +203,43 @@ where
         _ => quote! { vec![] },
     };
 
-    let serialization = get_attr_str("derive", attrs)
-        .and_then(|derive| {
-            if derive.contains("bytemuck") {
-                if derive.to_lowercase().contains("unsafe") {
-                    Some(quote! { #idl::IdlSerialization::BytemuckUnsafe })
-                } else {
-                    Some(quote! { #idl::IdlSerialization::Bytemuck })
+    // Track both safe and unsafe bytemuck derives from the same derive list.
+    let mut saw_bytemuck_pod = false;
+    let mut saw_bytemuck_unsafe = false;
+    for attr in attrs {
+        if !attr.path().is_ident("derive") {
+            continue;
+        }
+
+        let _ = attr.parse_nested_meta(|meta| {
+            let has_bytemuck_segment = meta.path.segments.iter().any(|s| s.ident == "bytemuck");
+
+            if has_bytemuck_segment {
+                let has_unsafe_segment = meta
+                    .path
+                    .segments
+                    .iter()
+                    .any(|s| s.ident.to_string().to_ascii_lowercase().contains("unsafe"));
+
+                let is_pod = meta.path.segments.last().is_some_and(|s| s.ident == "Pod");
+
+                if has_unsafe_segment {
+                    saw_bytemuck_unsafe = true;
+                } else if is_pod {
+                    saw_bytemuck_pod = true;
                 }
-            } else {
-                None
             }
-        })
-        .unwrap_or_else(|| quote! { #idl::IdlSerialization::default() });
+            Ok(())
+        });
+    }
+
+    let serialization = if saw_bytemuck_unsafe {
+        quote! { #idl::IdlSerialization::BytemuckUnsafe }
+    } else if saw_bytemuck_pod {
+        quote! { #idl::IdlSerialization::Bytemuck }
+    } else {
+        quote! { #idl::IdlSerialization::default() }
+    };
 
     let repr = get_attr_str("repr", attrs)
         .map(|repr| {
@@ -263,30 +287,40 @@ where
     let generics = generics
         .params
         .iter()
-        .filter_map(|p| match p {
-            syn::GenericParam::Type(ty) => {
-                let name = ty.ident.to_string();
-                Some(quote! {
-                    #idl::IdlTypeDefGeneric::Type {
-                        name: #name.into(),
-                    }
-                })
+        .map(|p| -> Result<Option<TokenStream>> {
+            match p {
+                syn::GenericParam::Type(ty) => {
+                    let name = ty.ident.to_string();
+                    Ok(Some(quote! {
+                        #idl::IdlTypeDefGeneric::Type {
+                            name: #name.into(),
+                        }
+                    }))
+                }
+                syn::GenericParam::Const(c) => {
+                    let name = c.ident.to_string();
+                    let ty = match &c.ty {
+                        syn::Type::Path(path) => get_first_segment(path)?.ident.to_string(),
+                        _ => {
+                            return Err(syn::Error::new_spanned(
+                                &c.ty,
+                                "Const generic type must be a path",
+                            ))
+                        }
+                    };
+                    Ok(Some(quote! {
+                        #idl::IdlTypeDefGeneric::Const {
+                            name: #name.into(),
+                            ty: #ty.into(),
+                        }
+                    }))
+                }
+                _ => Ok(None),
             }
-            syn::GenericParam::Const(c) => {
-                let name = c.ident.to_string();
-                let ty = match &c.ty {
-                    syn::Type::Path(path) => get_first_segment(path).ident.to_string(),
-                    _ => unreachable!("Const generic type can only be path"),
-                };
-                Some(quote! {
-                    #idl::IdlTypeDefGeneric::Const {
-                        name: #name.into(),
-                        ty: #ty.into(),
-                    }
-                })
-            }
-            _ => None,
         })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
         .collect::<Vec<_>>();
 
     Ok((
@@ -302,6 +336,22 @@ where
         },
         defined,
     ))
+}
+
+fn trim_attr_start(value: &str) -> &str {
+    value
+        .strip_prefix('(')
+        .or_else(|| value.strip_prefix('['))
+        .or_else(|| value.strip_prefix('{'))
+        .unwrap_or(value)
+}
+
+fn trim_attr_end(value: &str) -> &str {
+    value
+        .strip_suffix(')')
+        .or_else(|| value.strip_suffix(']'))
+        .or_else(|| value.strip_suffix('}'))
+        .unwrap_or(value)
 }
 
 fn get_attr_str(name: impl AsRef<str>, attrs: &[syn::Attribute]) -> Option<String> {
@@ -325,13 +375,7 @@ fn get_attr_str(name: impl AsRef<str>, attrs: &[syn::Attribute]) -> Option<Strin
             }
             _ => None,
         })
-        .reduce(|acc, cur| {
-            format!(
-                "{} , {}",
-                acc.get(..acc.len() - 1).unwrap(),
-                cur.get(1..).unwrap()
-            )
-        })
+        .reduce(|acc, cur| format!("{} , {}", trim_attr_end(&acc), trim_attr_start(&cur)))
 }
 
 fn gen_idl_field(
@@ -341,7 +385,11 @@ fn gen_idl_field(
 ) -> Result<(TokenStream, Vec<syn::TypePath>)> {
     let idl = get_idl_module_path();
 
-    let name = field.ident.as_ref().unwrap().to_string();
+    let name = field
+        .ident
+        .as_ref()
+        .map(|ident| ident.to_string())
+        .ok_or_else(|| syn::Error::new_spanned(field, "Expected a named field"))?;
     let docs = match docs::parse(&field.attrs) {
         Some(docs) if !no_docs => quote! { vec![#(#docs.into()),*] },
         _ => quote! { vec![] },
@@ -369,22 +417,43 @@ pub fn gen_idl_type(
     fn the_only_segment_is(path: &syn::TypePath, cmp: &str) -> bool {
         if path.path.segments.len() != 1 {
             return false;
-        };
-        return get_first_segment(path).ident == cmp;
+        }
+
+        get_first_segment(path)
+            .map(|segment| segment.ident == cmp)
+            .unwrap_or_default()
     }
 
-    fn get_angle_bracketed_type_args(seg: &syn::PathSegment) -> Vec<&syn::Type> {
+    fn get_angle_bracketed_type_args(seg: &syn::PathSegment) -> Result<Vec<&syn::Type>> {
         match &seg.arguments {
-            syn::PathArguments::AngleBracketed(ab) => ab
+            syn::PathArguments::AngleBracketed(ab) => Ok(ab
                 .args
                 .iter()
                 .filter_map(|arg| match arg {
                     syn::GenericArgument::Type(ty) => Some(ty),
                     _ => None,
                 })
-                .collect(),
-            _ => panic!("No angle bracket for {seg:#?}"),
+                .collect()),
+            _ => Err(syn::Error::new_spanned(
+                seg,
+                format!(
+                    "Expected angle-bracketed type arguments for `{}`",
+                    seg.ident
+                ),
+            )),
         }
+    }
+
+    fn get_first_type_arg(seg: &syn::PathSegment) -> Result<&syn::Type> {
+        get_angle_bracketed_type_args(seg)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                syn::Error::new_spanned(
+                    seg,
+                    format!("Expected a type argument for `{}`", seg.ident),
+                )
+            })
     }
 
     match ty {
@@ -436,20 +505,14 @@ pub fn gen_idl_type(
             Ok((quote! { #idl::IdlType::Pubkey }, vec![]))
         }
         syn::Type::Path(path) if the_only_segment_is(path, "Option") => {
-            let segment = get_first_segment(path);
-            let arg = get_angle_bracketed_type_args(segment)
-                .into_iter()
-                .next()
-                .unwrap();
+            let segment = get_first_segment(path)?;
+            let arg = get_first_type_arg(segment)?;
             let (inner, defined) = gen_idl_type(arg, generic_params)?;
             Ok((quote! { #idl::IdlType::Option(Box::new(#inner)) }, defined))
         }
         syn::Type::Path(path) if the_only_segment_is(path, "Vec") => {
-            let segment = get_first_segment(path);
-            let arg = get_angle_bracketed_type_args(segment)
-                .into_iter()
-                .next()
-                .unwrap();
+            let segment = get_first_segment(path)?;
+            let arg = get_first_type_arg(segment)?;
             match arg {
                 syn::Type::Path(path) if the_only_segment_is(path, "u8") => {
                     return Ok((quote! {#idl::IdlType::Bytes}, vec![]));
@@ -460,11 +523,8 @@ pub fn gen_idl_type(
             Ok((quote! { #idl::IdlType::Vec(Box::new(#inner)) }, defined))
         }
         syn::Type::Path(path) if the_only_segment_is(path, "Box") => {
-            let segment = get_first_segment(path);
-            let arg = get_angle_bracketed_type_args(segment)
-                .into_iter()
-                .next()
-                .unwrap();
+            let segment = get_first_segment(path)?;
+            let arg = get_first_type_arg(segment)?;
             gen_idl_type(arg, generic_params)
         }
         syn::Type::Array(arr) => {
@@ -477,7 +537,16 @@ pub fn gen_idl_type(
             let len = if is_generic {
                 match len {
                     syn::Expr::Path(len) => {
-                        let len = len.path.get_ident().unwrap().to_string();
+                        let len = len
+                            .path
+                            .get_ident()
+                            .map(|ident| ident.to_string())
+                            .ok_or_else(|| {
+                                syn::Error::new_spanned(
+                                    &len.path,
+                                    "Array length generic must be an identifier",
+                                )
+                            })?;
                         quote! { #idl::IdlArrayLen::Generic(#len.into()) }
                     }
                     _ => unreachable!("Array length can only be a generic parameter"),
@@ -496,7 +565,7 @@ pub fn gen_idl_type(
         syn::Type::Path(path) => {
             let is_generic_param = generic_params.iter().any(|param| path.path.is_ident(param));
             if is_generic_param {
-                let generic = get_first_segment(path).ident.to_string();
+                let generic = get_first_segment(path)?.ident.to_string();
                 return Ok((quote! { #idl::IdlType::Generic(#generic.into()) }, vec![]));
             }
 
@@ -531,7 +600,10 @@ pub fn gen_idl_type(
                     let Ok(lib_path) = find_path("lib.rs", &source_path) else {
                         break 'cache;
                     };
-                    let name = path.path.segments.last().unwrap().ident.to_string();
+                    let Some(segment) = path.path.segments.last() else {
+                        break 'cache;
+                    };
+                    let name = segment.ident.to_string();
 
                     let cache = CRATE_DATA_CACHE.get_or_init(|| {
                         CrateContext::parse(&lib_path)
@@ -578,40 +650,52 @@ pub fn gen_idl_type(
                                     .args
                                     .iter()
                                     .map(|arg| match arg {
-                                        syn::GenericArgument::Type(ty) => match ty {
-                                            syn::Type::Path(inner_ty) => {
-                                                inner_ty.path.to_token_stream().to_string()
-                                            }
-                                            _ => {
-                                                unimplemented!("Inner type not implemented: {ty:?}")
-                                            }
-                                        },
-                                        syn::GenericArgument::Const(c) => {
-                                            c.to_token_stream().to_string()
+                                        syn::GenericArgument::Type(ty) => {
+                                            Ok(ty.to_token_stream().to_string())
                                         }
-                                        _ => unimplemented!("Arg not implemented: {arg:?}"),
+                                        syn::GenericArgument::Const(c) => {
+                                            Ok(c.to_token_stream().to_string())
+                                        }
+                                        syn::GenericArgument::Lifetime(lifetime) => {
+                                            Ok(lifetime.to_token_stream().to_string())
+                                        }
+                                        _ => Err(syn::Error::new_spanned(
+                                            arg,
+                                            "Unsupported generic argument in type alias",
+                                        )),
                                     })
-                                    .collect::<Vec<_>>();
+                                    .collect::<Result<Vec<_>>>()?;
 
-                                let outer = match &*alias.ty {
-                                    syn::Type::Path(outer_ty) => outer_ty.path.to_token_stream(),
-                                    syn::Type::Array(outer_ty) => outer_ty.to_token_stream(),
-                                    _ => unimplemented!("Type not implemented: {:?}", alias.ty),
-                                }
-                                .to_string();
+                                let outer = alias.ty.to_token_stream().to_string();
 
-                                let resolved_alias = alias
+                                let alias_param_names = alias
                                     .generics
                                     .params
                                     .iter()
                                     .map(|param| match param {
-                                        syn::GenericParam::Const(param) => param.ident.to_string(),
-                                        syn::GenericParam::Type(param) => param.ident.to_string(),
-                                        _ => panic!("Lifetime parameters are not allowed"),
+                                        syn::GenericParam::Const(param) => {
+                                            Ok(param.ident.to_string())
+                                        }
+                                        syn::GenericParam::Type(param) => {
+                                            Ok(param.ident.to_string())
+                                        }
+                                        syn::GenericParam::Lifetime(param) => {
+                                            Ok(param.lifetime.to_token_stream().to_string())
+                                        }
                                     })
-                                    .enumerate()
-                                    .fold(outer, |acc, (i, cur)| {
-                                        let inner = &inners[i];
+                                    .collect::<Result<Vec<_>>>()?;
+                                if alias_param_names.len() != inners.len() {
+                                    return Err(syn::Error::new_spanned(
+                                        segment,
+                                        "Type alias argument count does not match generic \
+                                         parameter count",
+                                    ));
+                                }
+
+                                let resolved_alias = alias_param_names
+                                    .into_iter()
+                                    .zip(inners.iter())
+                                    .fold(outer, |acc, (cur, inner)| {
                                         // The spacing of the `outer` variable can differ between
                                         // versions, e.g. `[T; N]` and `[T ; N]`
                                         acc.replace(&format!(" {cur} "), &format!(" {inner} "))
@@ -627,7 +711,7 @@ pub fn gen_idl_type(
                         };
 
                         // Non-generic type alias e.g. `type UnixTimestamp = i64`
-                        return gen_idl_type(&*alias.ty, generic_params);
+                        return gen_idl_type(&alias.ty, generic_params);
                     }
 
                     // Handle external types
@@ -705,6 +789,10 @@ pub fn gen_idl_type(
     }
 }
 
-fn get_first_segment(type_path: &syn::TypePath) -> &syn::PathSegment {
-    type_path.path.segments.first().unwrap()
+fn get_first_segment(type_path: &syn::TypePath) -> Result<&syn::PathSegment> {
+    type_path
+        .path
+        .segments
+        .first()
+        .ok_or_else(|| syn::Error::new_spanned(type_path, "Expected a non-empty type path"))
 }

@@ -98,6 +98,15 @@ impl<T: Lazy> Lazy for Option<T> {
     }
 }
 
+impl<T: Lazy + Clone> Lazy for Box<T> {
+    const SIZED: bool = T::SIZED;
+
+    #[inline(always)]
+    fn size_of(buf: &[u8]) -> usize {
+        T::size_of(buf)
+    }
+}
+
 impl<T: Lazy> Lazy for Vec<T> {
     const SIZED: bool = false;
 

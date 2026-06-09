@@ -249,12 +249,31 @@ impl WithPath<Config> {
         let programs = self.read_all_programs()?;
         let programs = match name {
             Some(name) => vec![programs
-                .into_iter()
+                .iter()
                 .find(|program| {
-                    name == program.lib_name
-                        || name == program.path.file_name().unwrap().to_str().unwrap()
+                    program.lib_name == name
+                        || program
+                            .path
+                            .file_name()
+                            .and_then(|f| f.to_str())
+                            .map(|f| f == name)
+                            .unwrap_or(false)
                 })
-                .ok_or_else(|| anyhow!("Program {name} not found"))?],
+                .cloned()
+                .ok_or_else(|| {
+                    let mut available_programs: Vec<String> =
+                        programs.iter().map(|p| p.lib_name.clone()).collect();
+                    available_programs.sort();
+
+                    if available_programs.is_empty() {
+                        anyhow!("Program '{name}' not found. No programs available in workspace.")
+                    } else {
+                        anyhow!(
+                            "Program '{name}' not found.\n\nAvailable programs:\n  {}",
+                            available_programs.join("\n  ")
+                        )
+                    }
+                })?],
             None => programs,
         };
 
@@ -643,7 +662,7 @@ impl Config {
             .anchor_version
             .as_deref()
             .unwrap_or(crate::DOCKER_BUILDER_VERSION);
-        format!("solanafoundation/anchor:v{version}")
+        format!("quay.io/ottersec/anchor:v{version}")
     }
 
     pub fn discover(cfg_override: &ConfigOverride) -> Result<Option<WithPath<Config>>> {
@@ -1335,6 +1354,45 @@ pub struct AccountDirEntry {
     pub directory: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FundedAccount {
+    // Base58 pubkey string of the account to fund, or "new" to generate a random keypair
+    pub address: String,
+    // Amount of lamports to fund the account with (default: 1 SOL = 1_000_000_000 lamports)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lamports: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenMint {
+    // Base58 pubkey string of the mint account, or "new" to generate a random keypair
+    pub address: String,
+    // Number of base 10 digits to the right of the decimal place (required)
+    pub decimals: u8,
+    // Initial supply of tokens (default: 0)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supply: Option<u64>,
+    // Optional mint authority (default: None = fixed supply)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mint_authority: Option<String>,
+    // Optional freeze authority (default: None = no freeze authority)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub freeze_authority: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenAccount {
+    // Reference to mint (pubkey string or "new" to use the most recently created mint)
+    pub mint: String,
+    // Owner of the token account ("new" to generate random keypair, or specific pubkey)
+    pub owner: String,
+    // Amount of tokens to fund the account with
+    pub amount: u64,
+    // Optional: specific token account address (default: generate new)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct _Validator {
     // Load an account from the provided JSON file
@@ -1343,6 +1401,15 @@ pub struct _Validator {
     // Load all the accounts from the JSON files found in the specified DIRECTORY
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_dir: Option<Vec<AccountDirEntry>>,
+    // Generate and fund accounts with lamports
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fund_accounts: Option<Vec<FundedAccount>>,
+    // Create SPL token mints
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mints: Option<Vec<TokenMint>>,
+    // Create and fund SPL token accounts
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_accounts: Option<Vec<TokenAccount>>,
     // IP address to bind the validator ports. [default: 127.0.0.1]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bind_address: Option<String>,
@@ -1402,6 +1469,12 @@ pub struct Validator {
     pub account: Option<Vec<AccountEntry>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_dir: Option<Vec<AccountDirEntry>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fund_accounts: Option<Vec<FundedAccount>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mints: Option<Vec<TokenMint>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_accounts: Option<Vec<TokenAccount>>,
     pub bind_address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clone: Option<Vec<CloneEntry>>,
@@ -1440,6 +1513,9 @@ impl From<_Validator> for Validator {
         Self {
             account: _validator.account,
             account_dir: _validator.account_dir,
+            fund_accounts: _validator.fund_accounts,
+            mints: _validator.mints,
+            token_accounts: _validator.token_accounts,
             bind_address: _validator
                 .bind_address
                 .unwrap_or_else(|| DEFAULT_BIND_ADDRESS.to_string()),
@@ -1470,6 +1546,9 @@ impl From<Validator> for _Validator {
         Self {
             account: validator.account,
             account_dir: validator.account_dir,
+            fund_accounts: validator.fund_accounts,
+            mints: validator.mints,
+            token_accounts: validator.token_accounts,
             bind_address: Some(validator.bind_address),
             clone: validator.clone,
             dynamic_port_range: validator.dynamic_port_range,
@@ -1496,6 +1575,17 @@ pub fn get_default_ledger_path() -> PathBuf {
 }
 
 const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1";
+
+fn is_generated_address(address: &str) -> bool {
+    address.eq_ignore_ascii_case("new")
+}
+
+fn explicit_token_account_address(address: Option<&str>) -> Option<&str> {
+    match address {
+        Some(address) if !is_generated_address(address) => Some(address),
+        _ => None,
+    }
+}
 
 impl Merge for _Validator {
     fn merge(&mut self, other: Self) {
@@ -1531,6 +1621,69 @@ impl Merge for _Validator {
                                 .iter()
                                 .position(|my_entry| *my_entry.directory == other_entry.directory)
                             {
+                                None => entries.push(other_entry),
+                                Some(i) => entries[i] = other_entry,
+                            };
+                        }
+                        Some(entries)
+                    }
+                },
+            },
+            fund_accounts: match self.fund_accounts.take() {
+                None => other.fund_accounts,
+                Some(mut entries) => match other.fund_accounts {
+                    None => Some(entries),
+                    Some(other_entries) => {
+                        for other_entry in other_entries {
+                            match entries.iter().position(|my_entry| {
+                                !is_generated_address(&my_entry.address)
+                                    && !is_generated_address(&other_entry.address)
+                                    && *my_entry.address == other_entry.address
+                            }) {
+                                None => entries.push(other_entry),
+                                Some(i) => entries[i] = other_entry,
+                            };
+                        }
+                        Some(entries)
+                    }
+                },
+            },
+            mints: match self.mints.take() {
+                None => other.mints,
+                Some(mut entries) => match other.mints {
+                    None => Some(entries),
+                    Some(other_entries) => {
+                        for other_entry in other_entries {
+                            match entries.iter().position(|my_entry| {
+                                !is_generated_address(&my_entry.address)
+                                    && !is_generated_address(&other_entry.address)
+                                    && *my_entry.address == other_entry.address
+                            }) {
+                                None => entries.push(other_entry),
+                                Some(i) => entries[i] = other_entry,
+                            };
+                        }
+                        Some(entries)
+                    }
+                },
+            },
+            token_accounts: match self.token_accounts.take() {
+                None => other.token_accounts,
+                Some(mut entries) => match other.token_accounts {
+                    None => Some(entries),
+                    Some(other_entries) => {
+                        // Generated token accounts do not have a stable merge key.
+                        // Only explicitly addressed accounts override inherited entries.
+                        for other_entry in other_entries {
+                            match entries.iter().position(|my_entry| {
+                                explicit_token_account_address(my_entry.address.as_deref())
+                                    .zip(explicit_token_account_address(
+                                        other_entry.address.as_deref(),
+                                    ))
+                                    .is_some_and(|(my_address, other_address)| {
+                                        my_address == other_address
+                                    })
+                            }) {
                                 None => entries.push(other_entry),
                                 Some(i) => entries[i] = other_entry,
                             };
@@ -1814,6 +1967,143 @@ mod tests {
     fn parse_skip_lint_no_section() {
         let config = Config::from_str(BASE_CONFIG).unwrap();
         assert!(!config.features.skip_lint);
+    }
+
+    #[test]
+    fn parse_fund_accounts_config() {
+        let config_str = r#"
+        [provider]
+        cluster = "localnet"
+        wallet = "id.json"
+
+        [test.validator]
+        [[test.validator.fund_accounts]]
+        address = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+        lamports = 2000000000
+
+        [[test.validator.fund_accounts]]
+        address = "GjJyeC1rB1hL8ZkLqKqJzJzJzJzJzJzJzJzJzJzJzJzJz"
+        "#;
+
+        let config = Config::from_str(config_str).unwrap();
+        assert!(config.test_validator.is_some());
+        let test_validator = config.test_validator.as_ref().unwrap();
+        assert!(test_validator.validator.is_some());
+        let validator = test_validator.validator.as_ref().unwrap();
+        assert!(validator.fund_accounts.is_some());
+
+        let fund_accounts = validator.fund_accounts.as_ref().unwrap();
+        assert_eq!(fund_accounts.len(), 2);
+        assert_eq!(
+            fund_accounts[0].address,
+            "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+        );
+        assert_eq!(fund_accounts[0].lamports, Some(2000000000));
+        assert_eq!(
+            fund_accounts[1].address,
+            "GjJyeC1rB1hL8ZkLqKqJzJzJzJzJzJzJzJzJzJzJzJzJz"
+        );
+        assert_eq!(fund_accounts[1].lamports, None); // Should default to 1 SOL
+    }
+
+    #[test]
+    fn parse_fund_accounts_without_lamports() {
+        let config_str = r#"
+        [provider]
+        cluster = "localnet"
+        wallet = "id.json"
+
+        [test.validator]
+        [[test.validator.fund_accounts]]
+        address = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+        "#;
+
+        let config = Config::from_str(config_str).unwrap();
+        let fund_accounts = config
+            .test_validator
+            .as_ref()
+            .unwrap()
+            .validator
+            .as_ref()
+            .unwrap()
+            .fund_accounts
+            .as_ref()
+            .unwrap();
+        assert_eq!(fund_accounts.len(), 1);
+        assert_eq!(fund_accounts[0].lamports, None);
+    }
+
+    #[test]
+    fn test_toml_extends_preserves_generated_validator_accounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let suite_dir = dir.path().join("tests").join("suite");
+        fs::create_dir_all(&suite_dir).unwrap();
+
+        let base_toml = suite_dir.join("Base.toml");
+        fs::write(
+            &base_toml,
+            r#"
+[scripts]
+test = "true"
+
+[[test.validator.fund_accounts]]
+address = "new"
+lamports = 1
+
+[[test.validator.mints]]
+address = "new"
+decimals = 6
+
+[[test.validator.token_accounts]]
+mint = "new"
+owner = "new"
+amount = 1
+"#,
+        )
+        .unwrap();
+
+        let test_toml = suite_dir.join("Test.toml");
+        fs::write(
+            &test_toml,
+            r#"
+extends = ["Base.toml"]
+
+[scripts]
+test = "true"
+
+[[test.validator.fund_accounts]]
+address = "new"
+lamports = 2
+
+[[test.validator.mints]]
+address = "new"
+decimals = 9
+
+[[test.validator.token_accounts]]
+mint = "new"
+owner = "new"
+amount = 2
+"#,
+        )
+        .unwrap();
+
+        let parsed = TestToml::from_path(test_toml).unwrap();
+        let validator = parsed.test.unwrap().validator.unwrap();
+
+        let fund_accounts = validator.fund_accounts.unwrap();
+        assert_eq!(fund_accounts.len(), 2);
+        assert_eq!(fund_accounts[0].lamports, Some(1));
+        assert_eq!(fund_accounts[1].lamports, Some(2));
+
+        let mints = validator.mints.unwrap();
+        assert_eq!(mints.len(), 2);
+        assert_eq!(mints[0].decimals, 6);
+        assert_eq!(mints[1].decimals, 9);
+
+        let token_accounts = validator.token_accounts.unwrap();
+        assert_eq!(token_accounts.len(), 2);
+        assert_eq!(token_accounts[0].amount, 1);
+        assert_eq!(token_accounts[1].amount, 2);
     }
 
     #[test]

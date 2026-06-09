@@ -16,7 +16,13 @@ use {
 
 /// Generate the IDL build print function for the program module.
 pub fn gen_idl_print_fn_program(program: &Program) -> TokenStream {
-    check_safety_comments().unwrap_or_else(|e| panic!("Safety checks failed: {e}"));
+    if let Err(error) = check_safety_comments() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            format!("Safety checks failed: {error}"),
+        )
+        .into_compile_error();
+    }
 
     let idl = get_idl_module_path();
     let no_docs = get_no_docs();

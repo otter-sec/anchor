@@ -6,7 +6,7 @@ mod cpi;
 mod dispatch;
 mod entry;
 mod handlers;
-
+mod idl;
 mod instruction;
 
 pub fn generate(program: &Program) -> proc_macro2::TokenStream {

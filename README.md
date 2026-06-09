@@ -1,42 +1,125 @@
 <div align="center">
+  <img height="170x" src="https://pbs.twimg.com/media/FVUVaO9XEAAulvK?format=png&name=small" />
 
-  #  <picture><source media="(prefers-color-scheme: dark)" srcset="docs-v2/src/assets/wordmark-dark.svg" /><img alt="Anchor" src="docs-v2/src/assets/wordmark-light.svg" height="60" /></picture>
+  <h1>Anchor</h1>
 
-[![Build Status][Build Status Badge]][Build Status]
-[![Tutorials][Tutorials Badge]][Documentation]
-[![Discord Chat][Discord Badge]][Discord]
-[![License][License Badge]][Apache 2.0 Spec]
+  <p>
+    <strong>Solana Program Framework</strong>
+  </p>
+
+  <p>
+    <a href="https://github.com/otter-sec/anchor/actions"><img alt="Build Status" src="https://github.com/otter-sec/anchor/actions/workflows/tests.yaml/badge.svg" /></a>
+    <a href="https://anchor-lang.com"><img alt="Tutorials" src="https://img.shields.io/badge/docs-tutorials-blueviolet" /></a>
+    <a href="https://discord.gg/NHHGSXAnXk"><img alt="Discord Chat" src="https://img.shields.io/discord/889577356681945098?color=blueviolet" /></a>
+    <a href="https://opensource.org/licenses/Apache-2.0"><img alt="License" src="https://img.shields.io/github/license/otter-sec/anchor?color=blueviolet" /></a>
+  </p>
 </div>
 
----
+[Anchor](https://www.anchor-lang.com/) is a framework providing several convenient developer tools for writing Solana programs (sometimes called 'smart contracts').
 
-Anchor is a framework for writing Solana programs in Rust. Solana's native program model gives you fine-grained control over accounts and instruction bytes, but very little structure. Anchor handles the parts that most programs need to do the same way. It validates accounts, checks ownership, serializes data, and dispatches instructions into your handler functions. You write what is specific to your program and let Anchor handle the rest.
+- Rust eDSL for writing Solana programs
+- [IDL](https://en.wikipedia.org/wiki/Interface_description_language) specification
+- TypeScript package for generating clients from IDL
+- CLI and workspace management for developing complete applications
 
-The project ships four pieces that work together:
+Anchor is the most popular framework for Solana programs.
 
-- `anchor-lang`, the Rust crate you use to write programs.
-- An [IDL][IDL] format that describes a program's surface once and generates clients from it.
-- `@anchor-lang/core`, a TypeScript package for calling deployed programs from a browser or a script.
-- The `anchor` CLI that scaffolds workspaces, builds, runs tests, deploys to a cluster, and manages on-chain IDLs.
+> [!NOTE]
+> If you're familiar with developing in Ethereum's [Solidity](https://docs.soliditylang.org/en/), [Truffle](https://www.trufflesuite.com/), [web3.js](https://github.com/ethereum/web3.js), then using Anchor will be familiar. Although the DSL syntax and semantics are targeted at Solana, the high level flow of writing RPC request handlers, emitting an IDL, and generating clients from IDL is the same.
 
-> [!IMPORTANT]
-> [`anchor-lang-v2`][Anchor Lang v2] is the next-generation runtime. It is built on [pinocchio][Pinocchio] and `#![no_std]` by default, and produces orders-of-magnitude smaller binaries and fewer CU per instruction than v1. See the [v2 docs][Anchor Lang v2 Docs] for the quick-start, bench numbers, and caveats. Note that the v2 path is alpha.
+## Getting Started
 
-## Getting started
+For a quickstart guide and in depth tutorials, see the [Anchor book](https://book.anchor-lang.com) and the [Anchor documentation](https://anchor-lang.com).
 
-- Read the [documentation][Documentation] for a guided tutorial and full reference.
-- Explore the [examples][Examples] and [tests][Tests] directories for runnable code.
-- Look up Rust types on [docs.rs][Anchor Lang Docs] and TypeScript types in [TypeDoc][TypeDoc].
+To jump straight to examples, go [here](https://github.com/otter-sec/anchor/tree/master/examples). For the latest Rust and TypeScript API documentation, see [docs.rs](https://docs.rs/anchor-lang) and the [typedoc](https://www.anchor-lang.com/docs/clients/typescript).
+
+## Installation
+
+The recommended way to install the Anchor CLI is with the Anchor Version Manager (AVM).
+
+```sh
+curl -sSfL https://raw.githubusercontent.com/solana-foundation/anchor/master/avm/install | sh
+```
+
+The installer downloads the latest nightly AVM and Anchor CLI binaries, enables
+the nightly channel, and links the `avm` and `anchor` commands into
+`~/.cargo/bin` when possible. After that, `anchor` will use the latest cached
+nightly build and periodically check for updates.
+
+If you already have AVM installed, you can enable the nightly channel directly:
+
+```sh
+avm nightly
+```
+
+To leave nightly mode and return to normal AVM version resolution, run:
+
+```sh
+avm nightly --disable
+```
 
 ## Packages
 
-| Package | Description | Version | Docs |
-| :--- | :--- | :--- | :--- |
-| `anchor-lang` | Rust primitives for writing programs on Solana | [![Crates.io][Anchor Lang Crates Badge]][Anchor Lang Crates] | [![Docs.rs][Anchor Lang Docs Badge]][Anchor Lang Docs] |
-| `anchor-spl` | CPI clients for SPL programs on Solana | [![crates][Anchor SPL Crates Badge]][Anchor SPL Crates] | [![Docs.rs][Anchor SPL Docs Badge]][Anchor SPL Docs] |
-| `anchor-client` | Rust client for Anchor programs | [![crates][Anchor Client Crates Badge]][Anchor Client Crates] | [![Docs.rs][Anchor Client Docs Badge]][Anchor Client Docs] |
-| `@anchor-lang/core` | TypeScript client for Anchor programs | [![npm][Anchor Core NPM Badge]][Anchor Core NPM] | [![Docs][Anchor Core Docs Badge]][Anchor Core Docs] |
-| `@anchor-lang/cli` | CLI for building and managing an Anchor workspace | [![npm][Anchor CLI NPM Badge]][Anchor CLI NPM] | [![Docs][Anchor CLI Docs Badge]][Anchor CLI Docs] |
+| Package                 | Description                                              | Version                                                                                                                          | Docs                                                                                                            |
+| :---------------------- | :------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------- |
+| `anchor-lang`           | Rust primitives for writing programs on Solana           | [![Crates.io](https://img.shields.io/crates/v/anchor-lang?color=blue)](https://crates.io/crates/anchor-lang)                     | [![Docs.rs](https://docs.rs/anchor-lang/badge.svg)](https://docs.rs/anchor-lang)                                |
+| `anchor-spl`            | CPI clients for SPL programs on Solana                   | [![crates](https://img.shields.io/crates/v/anchor-spl?color=blue)](https://crates.io/crates/anchor-spl)                          | [![Docs.rs](https://docs.rs/anchor-spl/badge.svg)](https://docs.rs/anchor-spl)                                  |
+| `anchor-client`         | Rust client for Anchor programs                          | [![crates](https://img.shields.io/crates/v/anchor-client?color=blue)](https://crates.io/crates/anchor-client)                    | [![Docs.rs](https://docs.rs/anchor-client/badge.svg)](https://docs.rs/anchor-client)                            |
+| `@anchor-lang/core`     | TypeScript client for Anchor programs                    | [![npm](https://img.shields.io/npm/v/@anchor-lang/core.svg?color=blue)](https://www.npmjs.com/package/@anchor-lang/core)         | [![Docs](https://img.shields.io/badge/docs-typedoc-blue)](https://otter-sec.github.io/anchor/ts/index.html)     |
+| `@anchor-lang/cli` | CLI to support building and managing an Anchor workspace | [![npm](https://img.shields.io/npm/v/@anchor-lang/cli.svg?color=blue)](https://www.npmjs.com/package/@anchor-lang/cli) | [![Docs](https://img.shields.io/badge/docs-cli-blue)](https://www.anchor-lang.com/docs/references/cli) |
+
+## Examples
+
+Here's a counter program, where only the designated `authority`
+can increment the count.
+
+```rust
+use anchor_lang::prelude::*;
+
+declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+
+#[program]
+mod counter {
+    use super::*;
+
+    pub fn initialize(ctx: Context<Initialize>, start: u64) -> Result<()> {
+        let counter = &mut ctx.accounts.counter;
+        counter.authority = *ctx.accounts.authority.key;
+        counter.count = start;
+        Ok(())
+    }
+
+    pub fn increment(ctx: Context<Increment>) -> Result<()> {
+        let counter = &mut ctx.accounts.counter;
+        counter.count += 1;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(init, payer = authority, space = 48)]
+    pub counter: Account<'info, Counter>,
+    pub authority: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct Increment<'info> {
+    #[account(mut, has_one = authority)]
+    pub counter: Account<'info, Counter>,
+    pub authority: Signer<'info>,
+}
+
+#[account]
+pub struct Counter {
+    pub authority: Pubkey,
+    pub count: u64,
+}
+```
+
+For more, see the [examples](https://github.com/otter-sec/anchor/tree/master/examples)
+and [tests](https://github.com/otter-sec/anchor/tree/master/tests) directories.
 
 ## Fuzzing
 
@@ -52,51 +135,23 @@ anchor fuzz run program_name test_name --release
 
 ## License
 
-Anchor is licensed under [Apache 2.0][License]. Contributions are accepted under the same license unless you explicitly state otherwise. See [CONTRIBUTING.md][Contributing] for guidelines.
+Anchor is licensed under [Apache 2.0](./LICENSE).
 
-&nbsp;
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in Anchor by you, as defined in the Apache-2.0 license, shall be
+licensed as above, without any additional terms or conditions.
+
+This code is provided as-is, without warranties or liability.
+
+## Contribution
+
+Thank you for your interest in contributing to Anchor!
+Please see the [CONTRIBUTING.md](./CONTRIBUTING.md) to learn how.
+
+### Thanks ❤️
 
 <div align="center">
-  <a href="https://github.com/solana-foundation/anchor/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=solana-foundation/anchor" width="100%" />
+  <a href="https://github.com/otter-sec/anchor/graphs/contributors">
+    <img src="https://contrib.rocks/image?repo=otter-sec/anchor" width="100%" />
   </a>
-
 </div>
-
-[Build Status]: https://github.com/solana-foundation/anchor/actions
-[Build Status Badge]: https://img.shields.io/github/actions/workflow/status/solana-foundation/anchor/tests.yaml?color=6c7086&label=build
-[Documentation]: https://anchor-lang.com
-[Tutorials Badge]: https://img.shields.io/badge/docs-tutorials-7f849c
-[Discord]: https://discord.gg/NHHGSXAnXk
-[Discord Badge]: https://img.shields.io/discord/889577356681945098?color=9399b2&label=discord
-[Apache 2.0 Spec]: https://opensource.org/licenses/Apache-2.0
-[License Badge]: https://img.shields.io/github/license/solana-foundation/anchor?color=a6adc8
-[IDL]: https://en.wikipedia.org/wiki/Interface_description_language
-[Anchor Lang v2]: https://github.com/otter-sec/anchor/tree/anchor-next/lang-v2
-[Pinocchio]: https://github.com/anza-xyz/pinocchio
-[Anchor Lang v2 Docs]: https://www.anchor-lang.com/docs/v2/
-[Examples]: ./examples/
-[Tests]: ./tests/
-[Anchor Lang Docs]: https://docs.rs/anchor-lang
-[TypeDoc]: https://www.anchor-lang.com/docs/clients/typescript
-[Anchor Lang Crates]: https://crates.io/crates/anchor-lang
-[Anchor Lang Crates Badge]: https://img.shields.io/crates/v/anchor-lang?color=9399b2
-[Anchor Lang Docs Badge]: https://img.shields.io/docsrs/anchor-lang?color=a6adc8&label=docs
-[Anchor SPL Crates]: https://crates.io/crates/anchor-spl
-[Anchor SPL Crates Badge]: https://img.shields.io/crates/v/anchor-spl?color=9399b2
-[Anchor SPL Docs]: https://docs.rs/anchor-spl
-[Anchor SPL Docs Badge]: https://img.shields.io/docsrs/anchor-spl?color=a6adc8&label=docs
-[Anchor Client Crates]: https://crates.io/crates/anchor-client
-[Anchor Client Crates Badge]: https://img.shields.io/crates/v/anchor-client?color=9399b2
-[Anchor Client Docs]: https://docs.rs/anchor-client
-[Anchor Client Docs Badge]: https://img.shields.io/docsrs/anchor-client?color=a6adc8&label=docs
-[Anchor Core NPM]: https://www.npmjs.com/package/@anchor-lang/core
-[Anchor Core NPM Badge]: https://img.shields.io/npm/v/@anchor-lang/core.svg?color=9399b2
-[Anchor Core Docs]: https://solana-foundation.github.io/anchor/ts/index.html
-[Anchor Core Docs Badge]: https://img.shields.io/badge/docs-typedoc-a6adc8
-[Anchor CLI NPM]: https://www.npmjs.com/package/@anchor-lang/cli
-[Anchor CLI NPM Badge]: https://img.shields.io/npm/v/@anchor-lang/cli.svg?color=9399b2
-[Anchor CLI Docs]: https://www.anchor-lang.com/docs/references/cli
-[Anchor CLI Docs Badge]: https://img.shields.io/badge/docs-cli-a6adc8
-[License]: ./LICENSE
-[Contributing]: ./CONTRIBUTING.md

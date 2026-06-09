@@ -1,6 +1,9 @@
 use {
     crate::{
-        parser::{docs, program::ctx_accounts_ident},
+        parser::{
+            docs,
+            program::{ctx_accounts_ident, function_type, FunctionType},
+        },
         FallbackFn, Ix, IxArg, IxReturn, Overrides,
     },
     syn::{
@@ -18,24 +21,30 @@ pub fn parse(program_mod: &syn::ItemMod) -> ParseResult<(Vec<Ix>, Option<Fallbac
         .ok_or_else(|| ParseError::new(program_mod.span(), "program content not provided"))?
         .1;
 
-    let ixs = mod_content
-        .iter()
-        .filter_map(|item| match item {
-            syn::Item::Fn(item_fn) => {
-                let (ctx, _) = parse_args(item_fn).ok()?;
-                ctx_accounts_ident(&ctx.raw_arg).ok()?;
-                Some(item_fn)
-            }
-            _ => None,
-        })
-        .map(|method: &syn::ItemFn| {
+    let mut handlers = Vec::new();
+    let mut fallback = Vec::new();
+    let mut errors = Vec::new();
+    for func in mod_content.iter().filter_map(|item| match item {
+        syn::Item::Fn(method) => Some(method),
+        _ => None,
+    }) {
+        match function_type(func) {
+            FunctionType::IxHandler => handlers.push(func),
+            FunctionType::Fallback => fallback.push(func),
+            FunctionType::Error(error) => errors.push(error),
+        }
+    }
+
+    let ixs = handlers
+        .into_iter()
+        .map(|method| {
             let (ctx, args) = parse_args(method)?;
+            let anchor_ident = ctx_accounts_ident(&ctx.raw_arg)?;
             let overrides = parse_overrides(&method.attrs)?;
             let docs = docs::parse(&method.attrs);
             let cfgs = parse_cfg(method);
             let returns = parse_return(method)?;
-            let anchor_ident = ctx_accounts_ident(&ctx.raw_arg)?;
-            Ok(Ix {
+            Ok(Some(Ix {
                 raw_method: method.clone(),
                 ident: method.sig.ident.clone(),
                 docs,
@@ -44,37 +53,27 @@ pub fn parse(program_mod: &syn::ItemMod) -> ParseResult<(Vec<Ix>, Option<Fallbac
                 anchor_ident,
                 returns,
                 overrides,
-            })
+            }))
         })
+        .filter_map(|ix| ix.transpose())
         .collect::<ParseResult<Vec<Ix>>>()?;
 
-    let fallback_fn = {
-        let fallback_fns = mod_content
-            .iter()
-            .filter_map(|item| match item {
-                syn::Item::Fn(item_fn) => {
-                    let (ctx, _args) = parse_args(item_fn).ok()?;
-                    if ctx_accounts_ident(&ctx.raw_arg).is_ok() {
-                        return None;
-                    }
-                    Some(item_fn)
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        if fallback_fns.len() > 1 {
-            #[allow(clippy::indexing_slicing, reason = "guarded by len() > 1 check above")]
+    let fallback_fn = match *fallback.as_slice() {
+        [] => None,
+        [f] => Some(FallbackFn {
+            raw_method: f.clone(),
+        }),
+        [_, f2, ..] => {
             return Err(ParseError::new(
-                fallback_fns[0].span(),
+                f2.span(),
                 "More than one fallback function found",
             ));
         }
-        fallback_fns
-            .first()
-            .map(|method: &&syn::ItemFn| FallbackFn {
-                raw_method: (*method).clone(),
-            })
     };
+
+    if let Some(e) = errors.pop() {
+        return Err(e);
+    }
 
     Ok((ixs, fallback_fn))
 }
@@ -101,7 +100,7 @@ pub fn parse_args(method: &syn::ItemFn) -> ParseResult<(IxArg, Vec<IxArg>)> {
                 let docs = docs::parse(&arg.attrs);
                 let ident = match &*arg.pat {
                     syn::Pat::Ident(ident) => &ident.ident,
-                    _ => return Err(ParseError::new(arg.pat.span(), "expected argument name")),
+                    _ => return Err(ParseError::new(arg.pat.span(), "expected named argument")),
                 };
                 Ok(IxArg {
                     name: ident.clone(),
@@ -111,7 +110,7 @@ pub fn parse_args(method: &syn::ItemFn) -> ParseResult<(IxArg, Vec<IxArg>)> {
             }
             syn::FnArg::Receiver(_) => Err(ParseError::new(
                 arg.span(),
-                "expected a typed argument not self",
+                "expected a typed argument, not self",
             )),
         })
         .collect::<ParseResult<_>>()?;
@@ -152,7 +151,7 @@ pub fn parse_return(method: &syn::ItemFn) -> ParseResult<IxReturn> {
                     return Err(ParseError::new(
                         ty.span(),
                         "expected generic return type to be a type",
-                    ))
+                    ));
                 }
             };
             Ok(IxReturn { ty })

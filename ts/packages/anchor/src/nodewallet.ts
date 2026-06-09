@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import {
   Keypair,
   PublicKey,
@@ -14,17 +13,17 @@ import { isVersionedTransaction } from "./utils/common.js";
 export default class NodeWallet implements Wallet {
   constructor(readonly payer: Keypair) {}
 
-  static local(): NodeWallet | never {
+  static local(): NodeWallet {
     const process = require("process");
 
-    if (!process.env.ANCHOR_WALLET || process.env.ANCHOR_WALLET === "") {
+    if (!process.env.ANCHOR_WALLET) {
       throw new Error(
         "expected environment variable `ANCHOR_WALLET` is not set."
       );
     }
 
     const payer = Keypair.fromSecretKey(
-      Buffer.from(
+      Uint8Array.from(
         JSON.parse(
           require("fs").readFileSync(process.env.ANCHOR_WALLET, {
             encoding: "utf-8",

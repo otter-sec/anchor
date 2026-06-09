@@ -10,6 +10,7 @@ use {
 
 pub mod __client_accounts;
 pub mod __cpi_client_accounts;
+mod __shorten_invariant_lifetime;
 mod bumps;
 mod constraints;
 mod duplicate_mutable_account_keys;
@@ -24,6 +25,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
     let impl_to_account_metas = to_account_metas::generate(accs);
     let impl_exit = exit::generate(accs);
     let impl_dup_mutable_keys = duplicate_mutable_account_keys::generate(accs);
+    let impl_shorten_invariant_lifetime = __shorten_invariant_lifetime::generate(accs);
     let bumps_struct = bumps::generate(accs);
 
     let program_id = quote! {
@@ -45,6 +47,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
         #impl_to_account_metas
         #impl_exit
         #impl_dup_mutable_keys
+        #impl_shorten_invariant_lifetime
         #bumps_struct
 
         #__client_accounts_mod

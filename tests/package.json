@@ -26,6 +26,7 @@
   "workspaces": [
     "anchor-cli-account",
     "anchor-cli-idl",
+    "anchor-cli-legacy-idl",
     "auction-house",
     "bench",
     "cashiers-check",
@@ -70,7 +71,9 @@
     "multiple-suites",
     "multiple-suites-run-single",
     "bpf-upgradeable-state",
-    "duplicate-mutable-accounts"
+    "multiple-scripts",
+    "duplicate-mutable-accounts",
+    "account-generation-test"
   ],
   "dependencies": {
     "@project-serum/common": "^0.0.1-beta.3",

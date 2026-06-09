@@ -13,5 +13,8 @@ remaining_accounts = "RemainingAccounts11111111111111111111111111"
 [workspace]
 exclude = ["programs/shared"]
 
+# `transaction` mode produces one block per transaction, giving deterministic
+# confirmation and avoiding the intermittent `TransactionExpiredTimeoutError`
+# seen with `clock` mode under CI load.
 [surfpool]
-block_production_mode = "clock"
+block_production_mode = "transaction"

@@ -46,6 +46,7 @@ jobs:
         id: verify
         env:
           RELEASE_MANAGERS: ${{ vars.RELEASE_MANAGERS }}
+          VERSION_TAG: ${{ steps.info.outputs.version_tag }}
         run: |
           if [ -z "${RELEASE_MANAGERS}" ]; then
             echo "RELEASE_MANAGERS variable is not set"
@@ -58,14 +59,14 @@ jobs:
             curl -fsSL "https://github.com/${u}.gpg" | gpg --batch --import >/dev/null
           done
 
-          echo "Verifying the tag: ${{ steps.info.outputs.version_tag }}"
-          if ! git verify-tag -v "${{ steps.info.outputs.version_tag }}" 2>&1; then
+          echo "Verifying the tag: ${VERSION_TAG}"
+          if ! git verify-tag -v "${VERSION_TAG}" 2>&1; then
             echo "❌ Tag verification failed!"
             echo "passed=false" >> $GITHUB_OUTPUT
             exit 1
           fi
           # Run it again to capture the output
-          git verify-tag -v "${{ steps.info.outputs.version_tag }}" 2>&1 | tee /tmp/verify-output.txt;
+          git verify-tag -v "${VERSION_TAG}" 2>&1 | tee /tmp/verify-output.txt;
 
           # SSH verification output typically includes the key fingerprint
           # Use GNU grep with Perl regex for cleaner extraction (Linux environment)
@@ -92,13 +93,17 @@ jobs:
           echo "key_id=$KEY_SHA256" >> $GITHUB_OUTPUT
 
       - name: Summary
+        env:
+          VERSION: ${{ steps.info.outputs.version }}
+          SHA: ${{ steps.info.outputs.sha }}
+          KEY_ID: ${{ steps.verify.outputs.key_id }}
         run: |
           echo "## Tag Verification Summary 🔐" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag:** ${{ steps.info.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** ${{ steps.info.outputs.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** ${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${SHA}" >> $GITHUB_STEP_SUMMARY
           echo "- **Signature:** ✅ Verified" >> $GITHUB_STEP_SUMMARY
-          echo "- **Signed by:** ${{ steps.verify.outputs.key_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Signed by:** ${KEY_ID}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Proceeding with release build..." >> $GITHUB_STEP_SUMMARY
 
@@ -126,8 +131,8 @@ jobs:
     with:
       dry_run: false
 
-  publish-dockerhub:
-    name: Publish Docker image to Dockerhub
+  publish-container-image:
+    name: Publish Docker image to Container Registry
     runs-on: ubuntu-latest
     needs: [verify-tag, publish-crates]
     if: ${{ needs.verify-tag.outputs.verification_passed == 'true' }}
@@ -139,17 +144,33 @@ jobs:
     environment:
       name: release
     env:
-      IMAGE_NAME: solanafoundation/anchor
+      IMAGE_NAME: quay.io/ottersec/anchor
+      ROBOT_ACCOUNT: ottersec+anchor_releases_github
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - name: Login to Docker Hub
+      - name: Exchange GitHub OIDC token for Quay robot token
+        run: |
+          set -euo pipefail
+          OIDC_TOKEN=$(curl --silent --fail \
+            --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=quay.io" | jq -r '.value')
+          [ -n "${OIDC_TOKEN}" ] || { echo "Failed to obtain OIDC token" >&2; exit 1; }
+          QUAY_TOKEN=$(curl --silent --fail \
+            --user "${ROBOT_ACCOUNT}:${OIDC_TOKEN}" \
+            "https://quay.io/oauth2/federation/robot/token" | jq -r '.token')
+          [ -n "${QUAY_TOKEN}" ] || { echo "Failed to exchange token with Quay" >&2; exit 1; }
+          echo "::add-mask::${QUAY_TOKEN}"
+          echo "QUAY_TOKEN=${QUAY_TOKEN}" >> "${GITHUB_ENV}"
+
+      - name: Login to Quay.io
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: quay.io
+          username: ${{ env.ROBOT_ACCOUNT }}
+          password: ${{ env.QUAY_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
@@ -183,7 +204,7 @@ jobs:
         with:
           subject-name: ${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: false # provenance: mode=max above already pushes it to Dockerhub
+          push-to-registry: false # provenance: mode=max above already pushes it to Quay.io
 
   build-cli:
     name: Build binaries

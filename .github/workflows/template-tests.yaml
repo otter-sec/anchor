@@ -84,8 +84,16 @@ jobs:
       - run: chmod +x ~/.cargo/bin/anchor
 
       # Pre-install so concurrent `cargo build-sbf` invocations don't race on
-      # the platform-tools extract-then-rename.
-      - run: cargo build-sbf --tools-version v1.52 --install-only
+      # the platform-tools extract-then-rename. Retry on transient
+      # `Failed to parse Github response` from the platform-tools release API.
+      - uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4 # v2
+        with:
+          retry_wait_seconds: 30
+          timeout_minutes: 5
+          max_attempts: 3
+          retry_on: error
+          shell: bash
+          command: cargo build-sbf --tools-version v1.52 --install-only
 
       # Cache the generated project's `target/` so subsequent runs reuse
       # compiled deps. Restored before `anchor init` (which is invoked with
@@ -174,7 +182,16 @@ jobs:
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/anchor
 
-      - run: cargo build-sbf --tools-version v1.52 --install-only
+      # Retry on transient `Failed to parse Github response` from the
+      # platform-tools release API (same flake as the matching step above).
+      - uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4 # v2
+        with:
+          retry_wait_seconds: 30
+          timeout_minutes: 5
+          max_attempts: 3
+          retry_on: error
+          shell: bash
+          command: cargo build-sbf --tools-version v1.52 --install-only
 
       # Cache cargo `target/` and `node_modules/` for the generated project.
       # `anchor init --force` leaves both alone, so the dirs survive a fresh

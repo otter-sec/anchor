@@ -1,6 +1,37 @@
 import BN from "bn.js";
+import fetch from "cross-fetch";
 import * as borsh from "@anchor-lang/borsh";
 import { Connection, PublicKey } from "@solana/web3.js";
+
+const OSEC_REGISTRY_URL = "https://verify.osec.io";
+
+export type VerifiedBuild = {
+  is_verified: boolean;
+  message: string;
+  on_chain_hash: string;
+  executable_hash: string;
+  repo_url: string;
+  commit: string;
+  last_verified_at: string | null;
+  is_frozen: boolean;
+  is_closed: boolean;
+};
+
+/** Returns verified build info from the OtterSec registry, or null if unverified or the request fails. */
+export async function verifiedBuild(
+  programId: PublicKey
+): Promise<VerifiedBuild | null> {
+  try {
+    const resp = await fetch(
+      `${OSEC_REGISTRY_URL}/status/${programId.toString()}`
+    );
+    if (!resp.ok) return null;
+    const build = (await resp.json()) as VerifiedBuild;
+    return build.is_verified ? build : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Returns the program data account for this program, containing the

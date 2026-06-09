@@ -55,6 +55,7 @@ namespacing
 nonblocking
 openbook
 orderbooks
+osec
 pathlib
 pdas
 pdksh
@@ -81,6 +82,8 @@ solana
 Solana
 Solana's
 solanafoundation
+ottersec
+otter-sec
 Solang
 solpg
 Solpg

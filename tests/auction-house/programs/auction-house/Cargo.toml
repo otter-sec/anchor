@@ -11,7 +11,6 @@ name = "auction_house"
 
 [features]
 no-entrypoint = []
-no-idl = []
 cpi = ["no-entrypoint"]
 default = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]

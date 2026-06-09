@@ -1,0 +1,15 @@
+[package]
+name = "example"
+version = "0.1.0"
+description = "Example program demonstrating multiple test scripts"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "example"
+
+[features]
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = { path = "../../../../lang" }
