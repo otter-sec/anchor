@@ -129,6 +129,28 @@ export function publicKey(property?: string): Layout<PublicKey> {
   );
 }
 
+const OPTION_SOME = Symbol.for("@anchor-lang/borsh.option.some");
+
+export type Some<T> = Readonly<{
+  readonly [OPTION_SOME]: true;
+  readonly value: T;
+}>;
+
+function isSome<T>(src: unknown): src is Some<T> {
+  if (typeof src !== "object" || src === null) {
+    return false;
+  }
+
+  return OPTION_SOME in src;
+}
+
+export function some<T>(value: T): Some<T> {
+  return {
+    value,
+    [OPTION_SOME]: true,
+  } as Some<T>;
+}
+
 class OptionLayout<T> extends LayoutCls<T | null> {
   layout: Layout<T>;
   discriminator: Layout<number>;
@@ -139,12 +161,14 @@ class OptionLayout<T> extends LayoutCls<T | null> {
     this.discriminator = u8();
   }
 
-  encode(src: T | null, b: Buffer, offset = 0): number {
+  encode(src: T | null | Some<T> | undefined, b: Buffer, offset = 0): number {
     if (src === null || src === undefined) {
       return this.discriminator.encode(0, b, offset);
     }
+
+    const value = isSome<T>(src) ? src.value : src;
     this.discriminator.encode(1, b, offset);
-    return this.layout.encode(src, b, offset + 1) + 1;
+    return this.layout.encode(value, b, offset + 1) + 1;
   }
 
   decode(b: Buffer, offset = 0): T | null {
@@ -188,7 +212,7 @@ class COptionLayout<T> extends LayoutCls<T | null> {
     this.discriminator = u32();
   }
 
-  encode(src: T | null, b: Buffer, offset = 0): number {
+  encode(src: T | null | Some<T> | undefined, b: Buffer, offset = 0): number {
     if (src === null || src === undefined) {
       this.discriminator.encode(0, b, offset);
       // Still reserve the payload slot for fixed-width inners so downstream
@@ -196,8 +220,10 @@ class COptionLayout<T> extends LayoutCls<T | null> {
       const payloadSpan = this.layout.span >= 0 ? this.layout.span : 0;
       return 4 + payloadSpan;
     }
+
+    const value = isSome<T>(src) ? src.value : src;
     this.discriminator.encode(1, b, offset);
-    return this.layout.encode(src, b, offset + 4) + 4;
+    return this.layout.encode(value, b, offset + 4) + 4;
   }
 
   decode(b: Buffer, offset = 0): T | null {
