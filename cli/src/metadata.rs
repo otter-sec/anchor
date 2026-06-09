@@ -164,7 +164,7 @@ impl FundedIdlSubcommand {
                 args.extend([
                     "write",
                     "security",
-                    &program_id,
+                    program_id,
                     security_path.to_str().unwrap(),
                     "--payer",
                     payer,
