@@ -1,4 +1,9 @@
 {
   "title": "Anchor Project Updates",
-  "pages": ["release-notes", "changelog", "contribution-guide"]
+  "pages": [
+    "release-notes",
+    "changelog",
+    "contribution-guide",
+    "backport-workflow"
+  ]
 }
