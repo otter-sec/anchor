@@ -1,0 +1,21 @@
+---
+title: MCP
+description: Model Context Protocol server for the Anchor docs.
+autoCards: false
+---
+
+The Anchor docs site hosts a Model Context Protocol server that lets AI coding assistants search, read, and grep the docs.
+
+Note that since Anchor v2 is very fresh, this greatly improves the code quality for agents that are unware of its new syntax and feats.
+
+## Claude Code
+
+```sh
+claude mcp add --scope user --transport http anchor-docs https://v2.anchor-lang.com/mcp
+```
+
+## Codex
+
+```sh
+codex mcp add anchor-docs --url https://v2.anchor-lang.com/mcp
+```

@@ -11,5 +11,7 @@ export default {
       collapsed: false,
     },
     updates: { order: 3, collapsed: true },
+    audits: { order: 4, collapsed: true },
+    mcp: { order: 5, collapsed: true },
   },
 } satisfies MetaFile
