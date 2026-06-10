@@ -7,7 +7,7 @@ use {
     },
     abs_path::AbsolutePath,
     anchor_cli_macros::AbsolutePath,
-    anchor_client::Cluster,
+    anchor_cluster::Cluster,
     anchor_lang::{
         prelude::UpgradeableLoaderState, solana_program::bpf_loader_upgradeable, AnchorDeserialize,
     },

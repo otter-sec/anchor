@@ -1,6 +1,6 @@
 use {
     crate::{get_keypair, is_hidden, keys_sync, target_dir, AbsolutePath, DEFAULT_RPC_PORT},
-    anchor_client::Cluster,
+    anchor_cluster::Cluster,
     anchor_lang_idl::types::Idl,
     anyhow::{anyhow, bail, Context, Error, Result},
     clap::{Parser, ValueEnum},

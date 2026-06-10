@@ -67,8 +67,8 @@
 #[cfg(feature = "async")]
 pub use nonblocking::ThreadSafeSigner;
 pub use {
+    anchor_cluster::Cluster,
     anchor_lang,
-    cluster::Cluster,
     solana_commitment_config::CommitmentConfig,
     solana_hash::Hash,
     solana_instruction::Instruction,
@@ -113,8 +113,6 @@ use {
         task::JoinHandle,
     },
 };
-
-mod cluster;
 
 /// Specifies which transaction version to use when building transactions.
 #[derive(Debug, Clone, Default)]
