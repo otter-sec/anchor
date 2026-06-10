@@ -95,15 +95,23 @@ pub fn parse_args(method: &syn::ItemFn) -> ParseResult<(IxArg, Vec<IxArg>)> {
         .sig
         .inputs
         .iter()
-        .map(|arg: &syn::FnArg| match arg {
+        .enumerate()
+        .map(|(idx, arg): (usize, &syn::FnArg)| match arg {
             syn::FnArg::Typed(arg) => {
                 let docs = docs::parse(&arg.attrs);
                 let ident = match &*arg.pat {
-                    syn::Pat::Ident(ident) => &ident.ident,
-                    _ => return Err(ParseError::new(arg.pat.span(), "expected named argument")),
+                    syn::Pat::Ident(ident) => ident.ident.clone(),
+                    // The first argument is the Context. Its name is unused by
+                    // the derive macro (only the type matters for accounts
+                    // resolution), so accept any pattern here -- including
+                    // wildcards (`_: Context<T>`) and destructures
+                    // (`Context { .. }: Context<T>`). Without this, those
+                    // patterns silently drop the instruction from the IDL.
+                    _ if idx == 0 => syn::Ident::new("ctx", arg.pat.span()),
+                    _ => return Err(ParseError::new(arg.pat.span(), "expected argument name")),
                 };
                 Ok(IxArg {
-                    name: ident.clone(),
+                    name: ident,
                     docs,
                     raw_arg: arg.clone(),
                 })

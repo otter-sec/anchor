@@ -55,5 +55,6 @@ fn underscore_instruction_arg_is_rejected() {
     );
 
     let err = program.unwrap_err().to_string();
-    assert_eq!(err, "expected named argument");
+    // PR #4469 reworded the diagnostic
+    assert_eq!(err, "expected argument name");
 }
