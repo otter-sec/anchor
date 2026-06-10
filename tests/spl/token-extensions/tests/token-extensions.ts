@@ -5,6 +5,7 @@ import { PublicKey, Keypair } from "@solana/web3.js";
 import { TokenExtensions } from "../target/types/token_extensions";
 import { ASSOCIATED_PROGRAM_ID } from "@anchor-lang/core/dist/cjs/utils/token";
 import {
+  createAccount,
   createInitializeMintInstruction,
   createMint,
   ExtensionType,
@@ -12,6 +13,7 @@ import {
   getMint,
   getMintLen,
   NATIVE_MINT_2022,
+  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 
 const TOKEN_2022_PROGRAM_ID = new anchor.web3.PublicKey(
@@ -47,6 +49,8 @@ describe("token extensions", () => {
   });
 
   let mint = new Keypair();
+  let mintTokenAccount = new Keypair();
+  let mintImmutableTokenAccount = new Keypair();
 
   it("Create mint account test passes", async () => {
     const [extraMetasAccount] = PublicKey.findProgramAddressSync(
@@ -67,16 +71,14 @@ describe("token extensions", () => {
         authority: payer.publicKey,
         receiver: payer.publicKey,
         mint: mint.publicKey,
-        mintTokenAccount: associatedAddress({
-          mint: mint.publicKey,
-          owner: payer.publicKey,
-        }),
+        mintTokenAccount: mintTokenAccount.publicKey,
+        mintImmutableTokenAccount: mintImmutableTokenAccount.publicKey,
         extraMetasAccount: extraMetasAccount,
         systemProgram: anchor.web3.SystemProgram.programId,
         associatedTokenProgram: ASSOCIATED_PROGRAM_ID,
         tokenProgram: TOKEN_2022_PROGRAM_ID,
       })
-      .signers([mint, payer])
+      .signers([mint, mintTokenAccount, mintImmutableTokenAccount, payer])
       .rpc();
   });
 
@@ -141,6 +143,18 @@ describe("token extensions", () => {
         authority: payer.publicKey,
         mint: mint.publicKey,
         tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .signers([payer])
+      .rpc();
+  });
+
+  it("token account immutable owner constraint passes", async () => {
+    await program.methods
+      .checkTokenAccountExtensionsConstraints()
+      .accountsStrict({
+        authority: payer.publicKey,
+        mint: mint.publicKey,
+        mintImmutableTokenAccount: mintImmutableTokenAccount.publicKey,
       })
       .signers([payer])
       .rpc();
@@ -360,5 +374,69 @@ describe("token extensions", () => {
       })
       .signers([payer])
       .rpc();
+  });
+
+  it("immutable owner constraint fails when a token-2022 account lacks the extension", async () => {
+    try {
+      await program.methods
+        .checkMissingTokenAccountExtensionsConstraints()
+        .accountsStrict({
+          authority: payer.publicKey,
+          mint: mint.publicKey,
+          mintTokenAccount: mintTokenAccount.publicKey,
+        })
+        .signers([payer])
+        .rpc();
+      assert.fail("Transaction should fail");
+    } catch (err) {
+      assert.ok(err instanceof AnchorError);
+      assert.equal(
+        (err as AnchorError).error.errorCode.code,
+        "ConstraintTokenAccountImmutableOwnerExtension"
+      );
+      assert.equal((err as AnchorError).error.errorCode.number, 2045);
+    }
+  });
+
+  it("immutable owner constraint fails on legacy SPL token accounts", async () => {
+    const legacyMint = await createMint(
+      provider.connection,
+      payer,
+      payer.publicKey,
+      null,
+      0,
+      undefined,
+      undefined,
+      TOKEN_PROGRAM_ID
+    );
+    const legacyTokenAccount = await createAccount(
+      provider.connection,
+      payer,
+      legacyMint,
+      payer.publicKey,
+      undefined,
+      undefined,
+      TOKEN_PROGRAM_ID
+    );
+
+    try {
+      await program.methods
+        .checkMissingTokenAccountExtensionsConstraints()
+        .accountsStrict({
+          authority: payer.publicKey,
+          mint: legacyMint,
+          mintTokenAccount: legacyTokenAccount,
+        })
+        .signers([payer])
+        .rpc();
+      assert.fail("expected ConstraintTokenAccountImmutableOwnerExtension");
+    } catch (err) {
+      assert.ok(err instanceof AnchorError);
+      assert.equal(
+        (err as AnchorError).error.errorCode.code,
+        "ConstraintTokenAccountImmutableOwnerExtension"
+      );
+      assert.equal((err as AnchorError).error.errorCode.number, 2045);
+    }
   });
 });

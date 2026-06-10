@@ -283,6 +283,12 @@ pub fn parse_token(stream: ParseStream) -> ParseResult<ConstraintToken> {
                         _ => return Err(ParseError::new(ident.span(), "Invalid attribute")),
                     }
                 }
+                "immutable_owner" => ConstraintToken::ExtensionImmutableOwner(Context::new(
+                    ident.span(),
+                    ConstraintExtensionImmutableOwner {
+                        immutable_owner: true,
+                    },
+                )),
                 _ => return Err(ParseError::new(ident.span(), "Invalid attribute")),
             }
         }
@@ -582,6 +588,7 @@ pub struct ConstraintGroupBuilder<'ty> {
     pub extension_transfer_hook_program_id: Option<Context<ConstraintExtensionTokenHookProgramId>>,
     pub extension_permanent_delegate: Option<Context<ConstraintExtensionPermanentDelegate>>,
     pub extension_pausable_authority: Option<Context<ConstraintExtensionAuthority>>,
+    pub extension_immutable_owner: Option<Context<ConstraintExtensionImmutableOwner>>,
     pub bump: Option<Context<ConstraintTokenBump>>,
     pub program_seed: Option<Context<ConstraintProgramSeed>>,
     pub realloc: Option<Context<ConstraintRealloc>>,
@@ -629,6 +636,7 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             extension_transfer_hook_program_id: None,
             extension_permanent_delegate: None,
             extension_pausable_authority: None,
+            extension_immutable_owner: None,
             bump: None,
             program_seed: None,
             realloc: None,
@@ -847,6 +855,7 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             extension_transfer_hook_program_id,
             extension_permanent_delegate,
             extension_pausable_authority,
+            extension_immutable_owner,
             bump,
             program_seed,
             realloc,
@@ -927,8 +936,13 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             }
         }
 
-        let token_account = match (&token_mint, &token_authority, &token_token_program) {
-            (None, None, None) => None,
+        let token_account = match (
+            &token_mint,
+            &token_authority,
+            &token_token_program,
+            &extension_immutable_owner,
+        ) {
+            (None, None, None, None) => None,
             _ => Some(ConstraintTokenAccountGroup {
                 mint: token_mint.as_ref().map(|a| a.clone().into_inner().mint),
                 authority: token_authority
@@ -937,6 +951,9 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
                 token_program: token_token_program
                     .as_ref()
                     .map(|a| a.clone().into_inner().token_program),
+                immutable_owner: extension_immutable_owner
+                    .as_ref()
+                    .map(|io| io.clone().into_inner().immutable_owner),
             }),
         };
 
@@ -1052,6 +1069,8 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
                                 },
                                 token_program: token_token_program
                                     .map(|tp| tp.into_inner().token_program),
+                                immutable_owner: extension_immutable_owner
+                                    .map(|io| io.into_inner().immutable_owner),
                             }
                         } else if let Some(at) = &associated_token {
                             InitKind::AssociatedToken {
@@ -1202,6 +1221,7 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             ConstraintToken::ExtensionPermanentDelegate(c) => {
                 self.add_extension_permanent_delegate(c)
             }
+            ConstraintToken::ExtensionImmutableOwner(c) => self.add_extension_immutable_owner(c),
             ConstraintToken::Dup(c) => self.add_dup(c),
             ConstraintToken::ExtensionPausableAuthority(c) => {
                 self.add_extension_pausable_authority(c)
@@ -1787,6 +1807,20 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             ));
         }
         self.extension_permanent_delegate.replace(c);
+        Ok(())
+    }
+
+    fn add_extension_immutable_owner(
+        &mut self,
+        c: Context<ConstraintExtensionImmutableOwner>,
+    ) -> ParseResult<()> {
+        if self.extension_immutable_owner.is_some() {
+            return Err(ParseError::new(
+                c.span(),
+                "extension immutable owner already provided",
+            ));
+        }
+        self.extension_immutable_owner.replace(c);
         Ok(())
     }
 

@@ -207,6 +207,9 @@ pub enum ErrorCode {
     /// 2044 - A pausable extension authority constraint was violated
     #[msg("A pausable extension authority constraint was violated")]
     ConstraintMintPausableAuthority,
+    /// 2045 - An immutable owner extension constraint was violated
+    #[msg("An immutable owner extension constraint was violated")]
+    ConstraintTokenAccountImmutableOwnerExtension = 2045,
 
     // Require
     /// 2500 - A require expression was violated
