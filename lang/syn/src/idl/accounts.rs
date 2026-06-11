@@ -214,14 +214,9 @@ fn get_pda(acc: &Field, accounts: &AccountsStruct) -> TokenStream {
             // CHECK FOR ERRORS:
             // If `any` seed failed to parse (returns Err), it means the user used syntax that IDL doesn't support
             if results.iter().any(|r| r.is_err()) {
-                // Instead of failing silently, we print a warning to stderr.
-                // usage of `eprintln!` ensures the user sees it in their terminal during build.
-                let name = acc.ident.to_string();
-                eprintln!(
-                    "WARNING: Anchor IDL generation skipped for PDA seeds in account '{}'. \
-                     Reason: Seeds contain unsupported complex expressions (e.g., function calls). \
-                     Workaround: Derive this PDA manually in your client.",
-                    name
+                warn_skipped_pda_seed(
+                    acc,
+                    "Seeds contain unsupported complex expressions (e.g., function calls)",
                 );
 
                 // Return None. This is safe; it simply omits the `pda` field from the JSON,
@@ -236,9 +231,16 @@ fn get_pda(acc: &Field, accounts: &AccountsStruct) -> TokenStream {
                 Some(ConstraintSeedsGroup {
                     program_seed: Some(program),
                     ..
-                }) => parse_default(program)
-                    .map(|program| quote! { Some(#program) })
-                    .ok()?,
+                }) => match parse_default(program) {
+                    Ok(program) => quote! { Some(#program) },
+                    Err(_) => {
+                        warn_skipped_pda_seed(
+                            acc,
+                            "seeds::program contains unsupported complex expressions (e.g., function calls)",
+                        );
+                        return None;
+                    }
+                },
                 _ => quote! { None },
             };
 
@@ -309,6 +311,16 @@ fn get_pda(acc: &Field, accounts: &AccountsStruct) -> TokenStream {
     }
 
     quote! { None }
+}
+
+fn warn_skipped_pda_seed(acc: &Field, reason: &str) {
+    let name = acc.ident.to_string();
+    eprintln!(
+        "WARNING: Anchor IDL generation skipped for PDA seeds in account '{}'. \
+         Reason: {}. \
+         Workaround: Derive this PDA manually in your client.",
+        name, reason
+    );
 }
 
 /// Parse a seeds constraint, extracting the `IdlSeed` types.
