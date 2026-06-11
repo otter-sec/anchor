@@ -313,6 +313,19 @@ fn clear_panics_when_tail_mutation_uses_guard_bytes_mut_on_read_only_slab() {
     slab.clear();
 }
 
+#[test]
+#[should_panic(
+    expected = "Slab<H, T> mutated through a read-only load. Add #[account(mut)] to your accounts \
+                struct."
+)]
+fn resize_to_capacity_panics_when_loaded_read_only() {
+    let buf = setup_ledger(/*capacity*/ 2, /*len*/ 1);
+
+    let view = unsafe { buf.view() };
+    let mut slab = CounterLedger::load(view).unwrap();
+    slab.resize_to_capacity(4).unwrap();
+}
+
 // -- Regression: truncate clamps to effective_len ---------------------
 
 #[test]
@@ -398,6 +411,28 @@ fn refund_moves_excess_lamports_to_recipient() {
 }
 
 #[test]
+#[should_panic(
+    expected = "Slab<H, T> mutated through a read-only load. Add #[account(mut)] to your accounts \
+                struct."
+)]
+fn refund_panics_when_loaded_read_only() {
+    let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 1);
+
+    let required = expected_min_lamports(ITEMS_OFFSET + 4 * ITEM_SIZE).unwrap();
+    buf.set_lamports(required + 500);
+
+    let mut recipient = AccountBuffer::<128>::new();
+    recipient.init([0xBB; 32], PROGRAM_ID, 0, false, true, false);
+    recipient.set_lamports(25);
+
+    let view = unsafe { buf.view() };
+    let mut slab = CounterLedger::load(view).unwrap();
+    let mut recipient_view = unsafe { recipient.view() };
+
+    slab.refund(&mut recipient_view).unwrap();
+}
+
+#[test]
 fn refund_is_noop_when_account_is_at_rent_floor() {
     let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 1);
 
@@ -416,6 +451,28 @@ fn refund_is_noop_when_account_is_at_rent_floor() {
 
     assert_eq!(slab.view().lamports(), required);
     assert_eq!(recipient_view.lamports(), 25);
+}
+
+#[test]
+#[should_panic(
+    expected = "Slab<H, T> mutated through a read-only load. Add #[account(mut)] to your accounts \
+                struct."
+)]
+fn top_up_panics_when_loaded_read_only() {
+    let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 1);
+
+    let required = expected_min_lamports(ITEMS_OFFSET + 4 * ITEM_SIZE).unwrap();
+    buf.set_lamports(required - 1);
+
+    let payer = AccountBuffer::<128>::new();
+    payer.init([0xCC; 32], PROGRAM_ID, 0, true, true, false);
+    payer.set_lamports(999);
+
+    let view = unsafe { buf.view() };
+    let mut slab = CounterLedger::load(view).unwrap();
+    let payer_view = unsafe { payer.view() };
+
+    slab.top_up(&payer_view).unwrap();
 }
 
 #[test]

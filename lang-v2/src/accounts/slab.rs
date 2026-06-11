@@ -249,6 +249,18 @@ where
         &self.view
     }
 
+    /// Enforce that this slab came from `load_mut` before any method mutates
+    /// account bytes, lamports, or data length.
+    #[inline(always)]
+    fn assert_mutable(&self) {
+        if !self.is_mutable {
+            panic!(
+                "Slab<H, T> mutated through a read-only load. Add #[account(mut)] to your \
+                 accounts struct."
+            );
+        }
+    }
+
     /// Validate `len <= capacity` for the tail region before we do the
     /// lifetime transmute. Works on `&[u8]` directly — no unsafe, no
     /// alignment concerns (uses `u32::from_le_bytes` on a stack copy).
@@ -354,6 +366,7 @@ where
     /// Uses a `system::Transfer` CPI; `payer` must be a signer on the outer
     /// transaction (pinocchio enforces signerness at CPI time).
     pub fn top_up(&mut self, payer: &AccountView) -> Result<(), ProgramError> {
+        self.assert_mutable();
         let required = self.min_lamports()?;
         let current = self.view.lamports();
         if current >= required {
@@ -369,6 +382,7 @@ where
     /// Direct lamport arithmetic, no CPI — callers must only use this for
     /// accounts whose owner permits in-program lamport mutation.
     pub fn refund(&mut self, recipient: &mut AccountView) -> Result<(), ProgramError> {
+        self.assert_mutable();
         let required = self.min_lamports()?;
         let current = self.view.lamports();
         if current <= required {
@@ -416,12 +430,7 @@ where
     /// Mutable account data bytes. Panics if the slab was loaded read-only.
     #[inline(always)]
     fn guard_bytes_mut(&mut self) -> &mut [u8] {
-        if !self.is_mutable {
-            panic!(
-                "Slab<H, T> mutated through a read-only load. Add #[account(mut)] to your \
-                 accounts struct."
-            );
-        }
+        self.assert_mutable();
         // SAFETY: is_mutable guarantees this was loaded via load_mut.
         // AccountView data is valid for the instruction lifetime.
         unsafe { self.view.borrow_unchecked_mut() }
@@ -659,6 +668,7 @@ where
     pub fn resize_to_capacity(&mut self, new_capacity: u32) -> Result<(), ProgramError> {
         use pinocchio::Resize;
 
+        self.assert_mutable();
         let new_space = Self::try_space_for(new_capacity)?;
         let mut view_mut = self.view;
         // SAFETY: Slab owns exclusive access to the data (enforced by the
@@ -738,6 +748,7 @@ where
     }
 
     fn close(&mut self, mut destination: AccountView) -> pinocchio::ProgramResult {
+        self.assert_mutable();
         let mut self_view = self.view;
         let dest_lamports = destination
             .lamports()
@@ -789,6 +800,7 @@ where
         payer: AccountView,
         zero: bool,
     ) -> pinocchio::ProgramResult {
+        self.assert_mutable();
         let mut view = *self.account();
         if new_space != view.data_len() {
             if new_space < Self::ITEMS_OFFSET {
