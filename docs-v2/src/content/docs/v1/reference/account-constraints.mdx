@@ -417,3 +417,53 @@ pub struct Initialize<'info> {
     // --snip--
 }
 ```
+
+### Compile-time validation
+
+Since Anchor 1.0, the compiler validates that the argument **count** and **types** declared in `#[instruction(..)]{:rs}` match the corresponding instruction handler signature ([#4000](https://github.com/otter-sec/anchor/pull/4000)). Mismatches that previously caused silent runtime deserialization failures now fail at compile time.
+
+Each entry in `#[instruction(..)]{:rs}` must include an explicit type (for example, `index: u64`). The attribute types are checked against the handler parameter types; they are not inferred from the handler alone.
+
+A **type mismatch** between the attribute and the handler produces a compile error:
+
+```rust showLineNumbers=false
+pub fn handler(ctx: Context<MyIx>, index: u64) -> Result<()> {
+    // --snip--
+}
+
+#[derive(Accounts)]
+#[instruction(index: u32)] // u32 here, u64 in the handler
+pub struct MyIx<'info> {
+    #[account(
+        seeds = [index.to_le_bytes().as_ref()],
+        bump,
+    )]
+    pub my_pda: Account<'info, MyPda>,
+}
+```
+
+```text
+error[E0277]: instruction handler argument type `u64` does not match
+              `#[instruction(...)]` attribute type `u32`
+```
+
+A **count mismatch** — when `#[instruction(..)]{:rs}` declares more arguments than the handler accepts — also fails at compile time:
+
+```rust showLineNumbers=false
+pub fn handler(ctx: Context<MyIx>, data: u64) -> Result<()> {
+    // --snip--
+}
+
+#[derive(Accounts)]
+#[instruction(data: u64, extra: u64)] // two args declared, handler has one
+pub struct MyIx<'info> {
+    // --snip--
+}
+```
+
+```text
+error: #[instruction(...)] on Account `MyIx<'_>` expects MORE args,
+       the ix `handler(...)` has only 1 args.
+```
+
+See the [1.0.0 release notes](/docs/updates/release-notes/1-0-0/#instruction-argument-validation) for the original announcement.

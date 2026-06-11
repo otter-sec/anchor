@@ -82,3 +82,56 @@ pub admin: UncheckedAccount,
 ```
 
 Use this when an account address comes from a sibling account's field, a constant, or a domain-specific newtype that implements `Into<Address>{:rs}`.
+
+## Instruction attribute
+
+### `#[instruction(...)]{:rs}`
+
+Exposes instruction arguments to the `Accounts{:rs}` struct so constraints can reference them — for example, in `seeds{:rs}` or `space{:rs}` calculations:
+
+```rust showLineNumbers=false
+#[program]
+pub mod example {
+    use super::*;
+
+    pub fn initialize(ctx: &mut Context<Initialize>, input: String) -> Result<()> {
+        // --snip--
+    }
+}
+
+#[account(borsh)]
+pub struct DataAccount {
+    pub input: String,
+}
+
+#[derive(Accounts)]
+#[instruction(input: String)]
+pub struct Initialize {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + 4 + input.len(),
+    )]
+    pub new_account: BorshAccount<DataAccount>,
+    pub system_program: Program<System>,
+}
+```
+
+The `8` is the Anchor discriminator. The `4` is the borsh length prefix for `String{:rs}`.
+
+Arguments must appear in the same order as the handler signature. Listing every argument is valid. Omitting **trailing** arguments is valid when constraints only need the leading ones. Skipping a **leading** argument is invalid.
+
+### Compile-time validation
+
+Since Anchor 1.0, the compiler validates that the argument **count** and **types** in `#[instruction(..)]{:rs}` match the instruction handler ([#4000](https://github.com/otter-sec/anchor/pull/4000)). Each entry must include an explicit type (for example, `index: u64`); types are not inferred from the handler.
+
+A type mismatch fails at compile time:
+
+```text
+error[E0277]: instruction handler argument type `u64` does not match
+              `#[instruction(...)]` attribute type `u32`
+```
+
+Declaring more arguments in `#[instruction(..)]{:rs}` than the handler accepts also fails at compile time. See the [v1 account constraints reference](/docs/v1/reference/account-constraints/#compile-time-validation) for full examples and ordering rules.
