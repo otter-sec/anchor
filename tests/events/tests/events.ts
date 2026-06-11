@@ -2,11 +2,14 @@ import * as anchor from "@anchor-lang/core";
 import { assert } from "chai";
 
 import { Events } from "../target/types/events";
+import { EventsCaller } from "../target/types/events_caller";
 
 describe("Events", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
   const program = anchor.workspace.Events as anchor.Program<Events>;
+  const eventsCaller = anchor.workspace
+    .EventsCaller as anchor.Program<EventsCaller>;
   const confirmOptions: anchor.web3.ConfirmOptions = {
     commitment: "confirmed",
     preflightCommitment: "confirmed",
@@ -117,6 +120,55 @@ describe("Events", () => {
       }
 
       throw new Error("Was able to invoke the self-CPI instruction");
+    });
+  });
+
+  // The `events-caller` program CPIs into the `events` program, so the
+  // event is emitted from an inner instruction (invoke depth 2). These
+  // tests verify the log parsing fix from #4451 against a real
+  // deployment instead of synthetic log data (#4656, #4450).
+  describe("Inner instruction event", () => {
+    it("Is delivered to event listeners", async () => {
+      let listenerId: number;
+      const eventPromise = new Promise<Event["myOtherEvent"]>((res) => {
+        listenerId = program.addEventListener("myOtherEvent", (event) => {
+          res(event);
+        });
+      });
+      // Give the log subscription time to become active before sending
+      // the transaction, otherwise the only emission can be missed.
+      await new Promise((res) => setTimeout(res, 500));
+      await eventsCaller.methods
+        .cpiEvent()
+        .accounts({ eventsProgram: program.programId })
+        .rpc(confirmOptions);
+      const event = await eventPromise;
+      await program.removeEventListener(listenerId);
+
+      assert.strictEqual(event.data.toNumber(), 6);
+      assert.strictEqual(event.label, "bye");
+    });
+
+    it("Is detected by the event parser in on-chain transaction logs", async () => {
+      const txHash = await eventsCaller.methods
+        .cpiEvent()
+        .accounts({ eventsProgram: program.programId })
+        .rpc(confirmOptions);
+      const txResult = await program.provider.connection.getTransaction(
+        txHash,
+        {
+          commitment: "confirmed",
+          maxSupportedTransactionVersion: 0,
+        }
+      );
+
+      const parser = new anchor.EventParser(program.programId, program.coder);
+      const events = [...parser.parseLogs(txResult.meta.logMessages)];
+
+      assert.strictEqual(events.length, 1);
+      assert.strictEqual(events[0].name, "myOtherEvent");
+      assert.strictEqual(events[0].data.label, "bye");
+      assert.strictEqual((events[0].data.data as anchor.BN).toNumber(), 6);
     });
   });
 });
