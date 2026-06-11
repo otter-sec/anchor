@@ -48,6 +48,11 @@ export type CustomAccountResolver<IDL extends Idl> = (params: {
 // Populates a given accounts context with PDAs and common missing accounts.
 export class AccountsResolver<IDL extends Idl> {
   private _accountStore: AccountStore<IDL>;
+  // Last error swallowed during a PDA / relations resolution attempt. Surfaced
+  // when resolution ultimately fails so the caller sees the underlying cause
+  // (e.g. a `seeds = [..., arg]` referencing an instruction-arg name that
+  // doesn't match the one declared in `#[instruction(...)]`).
+  private _lastResolutionError?: unknown;
 
   constructor(
     private _args: any[],
@@ -74,6 +79,7 @@ export class AccountsResolver<IDL extends Idl> {
   //       in parallel because there can be dependencies between
   //       addresses. That is, one PDA can be used as a seed in another.
   public async resolve() {
+    this._lastResolutionError = undefined;
     this.resolveEventCpi(this._idlIx.accounts);
     this.resolveConst(this._idlIx.accounts);
 
@@ -95,12 +101,23 @@ export class AccountsResolver<IDL extends Idl> {
           .map((acc) => `\`${acc}\``)
           .join(", ");
 
-        throw new Error(
-          [
-            `Reached maximum depth for account resolution.`,
-            `Unresolved accounts: ${unresolvedAccs}`,
-          ].join(" ")
-        );
+        const parts = [
+          `Reached maximum depth for account resolution.`,
+          `Unresolved accounts: ${unresolvedAccs}`,
+        ];
+        if (this._lastResolutionError !== undefined) {
+          const causeMsg =
+            this._lastResolutionError instanceof Error
+              ? this._lastResolutionError.message
+              : String(this._lastResolutionError);
+          parts.push(`Last error encountered while resolving: ${causeMsg}`);
+        }
+        const err = new Error(parts.join(" "));
+        if (this._lastResolutionError !== undefined) {
+          (err as Error & { cause?: unknown }).cause =
+            this._lastResolutionError;
+        }
+        throw err;
       }
     }
   }
@@ -349,7 +366,9 @@ export class AccountsResolver<IDL extends Idl> {
       );
 
       this.set([...path, name], pubkey);
-    } catch {}
+    } catch (err) {
+      this._lastResolutionError = err;
+    }
     return false;
   }
 
@@ -367,7 +386,9 @@ export class AccountsResolver<IDL extends Idl> {
         });
         this.set([...path, name], accountData[name]);
       }
-    } catch {}
+    } catch (err) {
+      this._lastResolutionError = err;
+    }
   }
 
   private async parseProgramId(
