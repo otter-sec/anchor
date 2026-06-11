@@ -6,6 +6,7 @@ use {
     anyhow::{anyhow, bail, Context, Error, Result},
     cargo_toml::Manifest,
     chrono::{TimeZone, Utc},
+    indicatif::{ProgressBar, ProgressStyle},
     reqwest::{header::USER_AGENT, StatusCode},
     semver::{Prerelease, Version},
     serde::{de, Deserialize},
@@ -13,10 +14,11 @@ use {
     std::{
         fmt::Write as FmtWrite,
         fs,
-        io::{BufRead, Write},
+        io::{self, BufRead, Write},
         path::{Path, PathBuf},
         process::{Command, Stdio},
         sync::LazyLock,
+        time::Duration,
     },
 };
 pub use {
@@ -40,6 +42,7 @@ const NIGHTLY_S3_BASE_URL: &str = "https://anchor-releases.s3-eu-west-1.amazonaw
 const HTTP_CLIENT_TIMEOUT_SECS: u64 = 5;
 /// Longer timeout for release asset downloads, which can take longer than metadata requests.
 const DOWNLOAD_CLIENT_TIMEOUT_SECS: u64 = 60;
+const DOWNLOAD_PROGRESS_TICK_MS: u64 = 100;
 
 /// Shared HTTP client with a short timeout, used for metadata/API requests.
 static HTTP_CLIENT: LazyLock<reqwest::blocking::Client> = LazyLock::new(|| {
@@ -56,6 +59,59 @@ pub(crate) static DOWNLOAD_CLIENT: LazyLock<reqwest::blocking::Client> = LazyLoc
         .build()
         .expect("Failed to build download HTTP client")
 });
+
+fn download_progress_bar(content_length: Option<u64>) -> ProgressBar {
+    let progress = match content_length {
+        Some(total) if total > 0 => {
+            let progress = ProgressBar::new(total);
+            progress.set_style(
+                ProgressStyle::default_bar()
+                    .template(
+                        "{spinner:.green} {msg} [{elapsed_precise}] [{bar:40.cyan/blue}] \
+                         {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
+                    )
+                    .expect("download progress template must be valid")
+                    .progress_chars("#>-"),
+            );
+            progress
+        }
+        _ => {
+            let progress = ProgressBar::new_spinner();
+            progress.set_style(
+                ProgressStyle::default_spinner()
+                    .template(
+                        "{spinner:.green} {msg} [{elapsed_precise}] {bytes} ({bytes_per_sec})",
+                    )
+                    .expect("download spinner template must be valid"),
+            );
+            progress
+        }
+    };
+    progress.enable_steady_tick(Duration::from_millis(DOWNLOAD_PROGRESS_TICK_MS));
+    progress
+}
+
+pub(crate) fn download_response_to_writer(
+    response: reqwest::blocking::Response,
+    message: impl Into<String>,
+    writer: &mut impl Write,
+) -> Result<u64> {
+    let progress = download_progress_bar(response.content_length());
+    progress.set_message(message.into());
+    let mut reader = progress.wrap_read(response);
+    let result = io::copy(&mut reader, writer);
+    progress.finish_and_clear();
+    result.context("reading download response")
+}
+
+fn download_response_to_vec(
+    response: reqwest::blocking::Response,
+    message: impl Into<String>,
+) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    download_response_to_writer(response, message, &mut bytes)?;
+    Ok(bytes)
+}
 
 /// Storage directory for AVM, customizable by setting the $AVM_HOME, defaults to ~/.avm
 pub static AVM_HOME: LazyLock<PathBuf> = LazyLock::new(|| {
@@ -502,11 +558,11 @@ pub fn install_version(
         } else {
             ""
         };
-        let res = DOWNLOAD_CLIENT
-            .get(format!(
-                "https://github.com/otter-sec/anchor/releases/download/v{version}/anchor-{version}-{target}{ext}"
-            ))
-            .send()?;
+        let url = format!(
+            "https://github.com/otter-sec/anchor/releases/download/v{version}/\
+             anchor-{version}-{target}{ext}"
+        );
+        let res = DOWNLOAD_CLIENT.get(&url).send()?;
         match res.status() {
             StatusCode::NOT_FOUND => bail!(
                 "No prebuilt binary found for version `{version}` (HTTP 404). Try `avm install \
@@ -520,7 +576,8 @@ pub fn install_version(
         }
 
         let bin_path = version_binary_path(&version);
-        fs::write(&bin_path, res.bytes()?)?;
+        let bytes = download_response_to_vec(res, format!("Downloading anchor {version}"))?;
+        fs::write(&bin_path, bytes)?;
 
         // Set file to executable on UNIX
         #[cfg(unix)]
@@ -590,7 +647,7 @@ fn install_solana_verify() -> Result<()> {
     let url = format!(
         "https://github.com/Ellipsis-Labs/solana-verifiable-build/releases/download/v{SOLANA_VERIFY_VERSION}/solana-verify-{os}"
     );
-    let res = DOWNLOAD_CLIENT.get(url).send()?;
+    let res = DOWNLOAD_CLIENT.get(&url).send()?;
     if !res.status().is_success() {
         bail!(
             "Failed to download `solana-verify-{os} v{SOLANA_VERIFY_VERSION} (status code: {})",
@@ -598,7 +655,11 @@ fn install_solana_verify() -> Result<()> {
         );
     } else {
         let bin_path = get_bin_dir_path().join("solana-verify");
-        fs::write(&bin_path, res.bytes()?)?;
+        let bytes = download_response_to_vec(
+            res,
+            format!("Downloading solana-verify {SOLANA_VERIFY_VERSION}"),
+        )?;
+        fs::write(&bin_path, bytes)?;
         #[cfg(unix)]
         fs::set_permissions(
             bin_path,
@@ -1076,9 +1137,9 @@ fn download_nightly_artifact(artifact: &NightlyArtifact, dest: &Path) -> Result<
     if !response.status().is_success() {
         bail!("Failed to download `{url}` (status {})", response.status());
     }
-    let bytes = response
-        .bytes()
-        .with_context(|| format!("Reading response body from {url}"))?;
+    let bytes =
+        download_response_to_vec(response, format!("Downloading nightly {}", artifact.tool))
+            .with_context(|| format!("Reading response body from {url}"))?;
     let actual = sha256_hex(bytes.as_ref());
     if !actual.eq_ignore_ascii_case(&artifact.sha256) {
         bail!(
@@ -1086,7 +1147,7 @@ fn download_nightly_artifact(artifact: &NightlyArtifact, dest: &Path) -> Result<
             artifact.sha256
         );
     }
-    fs::write(dest, bytes.as_ref()).with_context(|| format!("Writing {}", dest.display()))?;
+    fs::write(dest, &bytes).with_context(|| format!("Writing {}", dest.display()))?;
     Ok(())
 }
 
