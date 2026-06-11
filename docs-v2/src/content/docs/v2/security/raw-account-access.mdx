@@ -42,15 +42,15 @@ A program that drops `#[derive(Accounts)]{:rs}` owns every check itself. The pin
 
 When you do go raw, put back each check Anchor would have run:
 
-| Check Anchor runs | Put it back with |
-| --- | --- |
-| Account count | An `accounts.len() < N{:rs}` guard before any unchecked indexing |
-| Discriminator | Compare the first byte before trusting the rest |
-| Owner | Compare `view.owner(){:rs}` against the program id |
-| Writable | Check `view.is_writable(){:rs}` before a mutable borrow |
-| Signer | Check `signer.is_signer(){:rs}` |
-| Borrow tracking | Ensure no other `&mut{:rs}` to the account is live |
-| PDA derivation | `find_program_address{:rs}`, or a `const{:rs}` bump for literal seeds |
+| Check Anchor runs | Put it back with                                                      |
+| ----------------- | --------------------------------------------------------------------- |
+| Account count     | An `accounts.len() < N{:rs}` guard before any unchecked indexing      |
+| Discriminator     | Compare the first byte before trusting the rest                       |
+| Owner             | Compare `view.owner(){:rs}` against the program id                    |
+| Writable          | Check `view.is_writable(){:rs}` before a mutable borrow               |
+| Signer            | Check `signer.is_signer(){:rs}`                                       |
+| Borrow tracking   | Ensure no other `&mut{:rs}` to the account is live                    |
+| PDA derivation    | `find_program_address{:rs}`, or a `const{:rs}` bump for literal seeds |
 
 An init path can lean on `create_account_signed{:rs}`, which enforces the PDA match and the program owner as it creates the account. A read-after-init path has no such helper, so re-check owner and discriminator by hand.
 

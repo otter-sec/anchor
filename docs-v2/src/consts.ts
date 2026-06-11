@@ -3,7 +3,7 @@ import type { DocsConfig, IconMap, Site, SocialLink } from '@/types'
 export const SITE: Site = {
   title: 'Anchor Docs',
   description: 'Anchor is the leading development framework for building Solana programs.',
-  href: 'https://www.anchor-lang.com',
+  href: 'https://v2.anchor-lang.com',
   author: 'solana-foundation',
   locale: 'en-US',
 }

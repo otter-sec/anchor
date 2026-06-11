@@ -24,7 +24,10 @@ import { darkTheme, lightTheme } from './src/lib/shiki-themes'
 
 type DevMiddleware = (
   req: { url?: string },
-  res: { setHeader(name: string, value: string): void; end(data: Uint8Array): void },
+  res: {
+    setHeader(name: string, value: string): void
+    end(data: Uint8Array): void
+  },
   next: () => void,
 ) => void | Promise<void>
 
@@ -87,7 +90,7 @@ function resolvePagefindAsset(url: string): string | null {
 }
 
 export default defineConfig({
-  site: 'https://www.anchor-lang.com',
+  site: 'https://v2.anchor-lang.com',
   base: DOCS_BASE,
   trailingSlash: 'always',
   outDir: './dist/docs',

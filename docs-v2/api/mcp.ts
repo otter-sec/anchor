@@ -17,19 +17,25 @@ async function getDocs(origin: string): Promise<Doc[]> {
 const TOOLS = [
   {
     name: 'search_anchor_docs',
-    description: 'Search the Anchor (anchor-lang) docs. Returns matching pages with title, path, url, snippet.',
+    description:
+      'Search the Anchor (anchor-lang) docs. Returns matching pages with title, path, url, snippet.',
     inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
   },
   {
     name: 'read_anchor_doc',
-    description: 'Read the full Markdown of an Anchor docs page by its path (from search results), e.g. "v2/fundamentals/pda".',
+    description:
+      'Read the full Markdown of an Anchor docs page by its path (from search results), e.g. "v2/fundamentals/pda".',
     inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
   },
   {
     name: 'query_docs_filesystem_anchor',
     description:
       'Run a read-only shell command (rg, grep, find, tree, ls, cat, head, sed, awk, jq, pipes, &&) against an in-memory filesystem of the Anchor docs rooted at /. Pages are at /<path>.mdx. No network, no persisted writes.',
-    inputSchema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
+    inputSchema: {
+      type: 'object',
+      properties: { command: { type: 'string' } },
+      required: ['command'],
+    },
   },
 ]
 
@@ -53,14 +59,20 @@ function search(docs: Doc[], query: string, limit = 8) {
 }
 
 async function shell(docs: Doc[], command: string): Promise<string> {
-  const files = Object.fromEntries(docs.map((d) => [`/${d.id}.mdx`, `Title: ${d.title}\n${d.description}\n\n${d.body}`]))
+  const files = Object.fromEntries(
+    docs.map((d) => [`/${d.id}.mdx`, `Title: ${d.title}\n${d.description}\n\n${d.body}`]),
+  )
   //this is a fake shell to make it easier for the agent to interact, nothing too fancy
   const { stdout, stderr, exitCode } = await new Bash({
     files,
     cwd: '/',
     executionLimits: { maxCommandCount: 200, maxLoopIterations: 10_000 },
   }).exec(command)
-  return `exit: ${exitCode}` + (stdout ? `\n--- stdout ---\n${stdout}` : '') + (stderr ? `\n--- stderr ---\n${stderr}` : '')
+  return (
+    `exit: ${exitCode}` +
+    (stdout ? `\n--- stdout ---\n${stdout}` : '') +
+    (stderr ? `\n--- stderr ---\n${stderr}` : '')
+  )
 }
 
 const ok = (id: unknown, result: unknown) =>
@@ -93,7 +105,12 @@ export async function POST(request: Request) {
       const q = String(args.query ?? '')
       const hits = search(docs, q)
       const text = hits.length
-        ? hits.map((d) => `## ${d.title}\npath: ${d.id}\nurl: ${d.url}\n${d.description || d.body.slice(0, 200)}`).join('\n\n')
+        ? hits
+            .map(
+              (d) =>
+                `## ${d.title}\npath: ${d.id}\nurl: ${d.url}\n${d.description || d.body.slice(0, 200)}`,
+            )
+            .join('\n\n')
         : `No results for "${q}".`
       return ok(m.id, { content: [{ type: 'text', text }] })
     }
@@ -101,12 +118,16 @@ export async function POST(request: Request) {
       const path = String(args.path ?? '').replace(/^\/+|\/+$|\.mdx?$/g, '')
       const d = docs.find((x) => x.id === path || x.id === `${path}/index`)
       return ok(m.id, {
-        content: [{ type: 'text', text: d ? `# ${d.title}\n${d.url}\n\n${d.body}` : `Not found: ${path}` }],
+        content: [
+          { type: 'text', text: d ? `# ${d.title}\n${d.url}\n\n${d.body}` : `Not found: ${path}` },
+        ],
         isError: !d,
       })
     }
     if (name === 'query_docs_filesystem_anchor')
-      return ok(m.id, { content: [{ type: 'text', text: await shell(docs, String(args.command ?? '')) }] })
+      return ok(m.id, {
+        content: [{ type: 'text', text: await shell(docs, String(args.command ?? '')) }],
+      })
 
     return fail(m.id, -32602, `Unknown tool: ${name}`)
   }

@@ -1,16 +1,23 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { BANNER_GRAPHICS, getBannerGraphic, type BannerGraphic } from '@/lib/banner-graphics'
 import { docSlugFromId, getAllDocs, type Doc } from '@/lib/docs'
 import { darkTheme, lightTheme } from '@/lib/shiki-themes'
 import type { MetaFile } from '@/types'
 import { ImageResponse } from '@vercel/og'
 import React from 'react'
+import sharp from 'sharp'
 import { codeToTokens } from 'shiki'
 import type { BundledLanguage } from 'shiki'
 
 const size = {
   width: 1200,
   height: 630,
+}
+
+const bannerPanel = {
+  width: 1200,
+  height: 210,
 }
 
 const dmSansRegular = readFile(resolve(process.cwd(), 'src/assets/fonts/DMSans-Regular.ttf'))
@@ -47,16 +54,25 @@ interface Props {
 
 export async function GET({ props }: { props: Props }) {
   const { doc } = props
+  const banner = resolveBannerGraphic(doc)
   const theme = resolveTheme(doc.id)
-  const [title, description, wordmark, dmSansRegularData, dmSansMediumData, cascadiaCodeData] =
-    await Promise.all([
-      renderInlineText(doc.data.title, theme),
-      doc.data.description ? renderInlineText(doc.data.description, theme) : null,
-      svgDataUrl(theme.dark ? wordmarkDark : wordmarkLight),
-      dmSansRegular,
-      dmSansMedium,
-      cascadiaCodeRegular,
-    ])
+  const [
+    title,
+    description,
+    bannerImage,
+    wordmark,
+    dmSansRegularData,
+    dmSansMediumData,
+    cascadiaCodeData,
+  ] = await Promise.all([
+    renderInlineText(doc.data.title, theme),
+    doc.data.description ? renderInlineText(doc.data.description, theme) : null,
+    bannerDataUrl(resolve(process.cwd(), 'public', banner.src.replace(/^\//, '')), banner),
+    svgDataUrl(theme.dark ? wordmarkDark : wordmarkLight),
+    dmSansRegular,
+    dmSansMedium,
+    cascadiaCodeRegular,
+  ])
   const breadcrumb = breadcrumbParts(doc.id)
 
   return new ImageResponse(
@@ -80,7 +96,27 @@ export async function GET({ props }: { props: Props }) {
         {
           style: {
             width: '100%',
+            height: bannerPanel.height,
+            display: 'flex',
+            overflow: 'hidden',
+            borderBottom: `1px solid ${theme.border}`,
+          },
+        },
+        React.createElement('img', {
+          src: bannerImage,
+          alt: banner.description,
+          style: {
+            width: '100%',
             height: '100%',
+          },
+        }),
+      ),
+      React.createElement(
+        'div',
+        {
+          style: {
+            width: '100%',
+            height: size.height - bannerPanel.height,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
@@ -186,6 +222,29 @@ export async function GET({ props }: { props: Props }) {
       ],
     },
   )
+}
+
+async function bannerDataUrl(path: string, banner: BannerGraphic): Promise<string> {
+  const metadata = await sharp(path).metadata()
+
+  if (!metadata.width || !metadata.height) {
+    throw new Error(`Unable to read banner dimensions for ${banner.src}`)
+  }
+
+  const crop = coverCrop(
+    metadata.width,
+    metadata.height,
+    bannerPanel.width,
+    bannerPanel.height,
+    banner,
+  )
+  const data = await sharp(path)
+    .extract(crop)
+    .resize(bannerPanel.width, bannerPanel.height)
+    .jpeg({ quality: 86 })
+    .toBuffer()
+
+  return `data:image/jpeg;base64,${data.toString('base64')}`
 }
 
 async function svgDataUrl(svg: Promise<string>): Promise<string> {
@@ -305,6 +364,38 @@ async function renderInlineCode(
   )
 }
 
+function resolveBannerGraphic(doc: Doc): BannerGraphic {
+  if (typeof doc.data.banner === 'string' && doc.data.banner !== 'random') {
+    return getBannerGraphic(doc.data.banner)
+  }
+
+  return BANNER_GRAPHICS[hashString(doc.id) % BANNER_GRAPHICS.length]
+}
+
+function coverCrop(
+  sourceWidth: number,
+  sourceHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+  banner: BannerGraphic,
+) {
+  const [xPercent, yPercent] = banner.objectPosition
+    .split(' ')
+    .map((value) => Number.parseFloat(value) / 100)
+
+  const scale = Math.max(targetWidth / sourceWidth, targetHeight / sourceHeight)
+  const width = Math.min(sourceWidth, Math.round(targetWidth / scale))
+  const height = Math.min(sourceHeight, Math.round(targetHeight / scale))
+  const left = Math.round(clamp((sourceWidth - width) * xPercent, 0, sourceWidth - width))
+  const top = Math.round(clamp((sourceHeight - height) * yPercent, 0, sourceHeight - height))
+
+  return { left, top, width, height }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
 function resolveTheme(id: string) {
   const dark = id === 'v1' || id.startsWith('v1/')
 
@@ -331,6 +422,14 @@ function resolveTheme(id: string) {
     codeForeground: '#4b5169',
     codeBackground: '#e7e7f1',
   }
+}
+
+function hashString(input: string): number {
+  let hash = 0
+  for (const char of input) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  }
+  return hash
 }
 
 function titleSize(title: string): number {

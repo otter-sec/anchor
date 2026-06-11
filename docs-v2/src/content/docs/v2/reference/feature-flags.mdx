@@ -70,11 +70,11 @@ The `compat{:toml}` feature exposes a small set of v1-shaped helpers for program
 
 The remaining helpers re-expose v1 names so existing call sites compile without rewrites:
 
-| Helper | Form |
-| --- | --- |
-| `error!{:rs}`, `err!{:rs}`, `pubkey!{:rs}` | Macros |
-| `Pubkey{:rs}` | Type alias for `Address{:rs}` |
-| `AccountViewCompat{:rs}` | Extension trait on pinocchio's `AccountView{:rs}` |
+| Helper                                     | Form                                              |
+| ------------------------------------------ | ------------------------------------------------- |
+| `error!{:rs}`, `err!{:rs}`, `pubkey!{:rs}` | Macros                                            |
+| `Pubkey{:rs}`                              | Type alias for `Address{:rs}`                     |
+| `AccountViewCompat{:rs}`                   | Extension trait on pinocchio's `AccountView{:rs}` |
 
 <Callout variant="warning" title="`debug!{:rs}` cost">
   `debug!{:rs}` is meaningfully more expensive than the native `msg!{:rs}` because of the heap allocation and fmt-trait dispatch. The feature is off by default to keep production binaries from accidentally shipping the heavier path.
