@@ -579,8 +579,11 @@ pub fn realloc_account(
             transfer_lamports_unchecked(payer, &*account as &AccountView, deficit)?;
         }
     } else if new_space < old_space {
-        let excess = current_lamports.saturating_sub(required);
-        if excess > 0 {
+        let old_required = rent_exempt_lamports(old_space)?;
+        let rent_savings = old_required.saturating_sub(required);
+        let available_above_new_floor = current_lamports.saturating_sub(required);
+        let refund = rent_savings.min(available_above_new_floor);
+        if refund > 0 {
             let mut payer_mut = *payer;
             // `checked_add` rather than `+`: overflow-checks is disabled in
             // release builds, and this arithmetic is on user-supplied account
@@ -588,10 +591,14 @@ pub fn realloc_account(
             // unreachable in practice, but silent wrap would be a downgrade.
             let new_payer_lamports = payer_mut
                 .lamports()
-                .checked_add(excess)
+                .checked_add(refund)
                 .ok_or(ProgramError::ArithmeticOverflow)?;
             payer_mut.set_lamports(new_payer_lamports);
-            account.set_lamports(required);
+            account.set_lamports(
+                current_lamports
+                    .checked_sub(refund)
+                    .ok_or(ProgramError::ArithmeticOverflow)?,
+            );
         }
     }
 
