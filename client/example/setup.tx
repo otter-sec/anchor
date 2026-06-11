@@ -33,6 +33,11 @@ action "setup" "svm::setup_surfnet" {
         authority = signer.authority.public_key
     }
     deploy_program {
+        program_id = input.events_caller_pid
+        binary_path = "../../tests/events/target/deploy/events_caller.so"
+        authority = signer.authority.public_key
+    }
+    deploy_program {
         program_id = input.optional_pid
         binary_path = "../../tests/optional/target/deploy/optional.so"
         authority = signer.authority.public_key
