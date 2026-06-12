@@ -51,7 +51,7 @@ use {
         prelude::BorshAccount,
         testing::AccountBuffer,
         wincode::{SchemaRead, SchemaWrite},
-        AnchorAccount, Discriminator, Owner,
+        AccountRealloc, AnchorAccount, Discriminator, Owner,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::{account::RuntimeAccount, address::Address},
@@ -397,7 +397,7 @@ fn slab_close_scrubs_discriminator_to_closed_sentinel() {
 }
 
 #[test]
-#[should_panic(expected = "Slab<H, T> mutably dereferenced but loaded read-only")]
+#[should_panic(expected = "Tried to mutate `Slab<H, T>` through a read-only load")]
 fn slab_close_flips_is_mutable_so_deref_mut_panics() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf);
@@ -445,4 +445,39 @@ fn slab_resurrected_account_reload_rejects_after_disc_scrub() {
         result.is_err(),
         "Post-fix: reload must reject because scrubbed disc != CounterHeader::DISCRIMINATOR"
     );
+}
+
+#[test]
+#[should_panic(expected = "Tried to mutate `Slab<H, T>` through a read-only load")]
+fn slab_close_panics_after_read_only_load_even_if_account_is_writable() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf);
+
+    let dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
+
+    let view = unsafe { buf.view() };
+    let dest_view = unsafe { dest_buf.view() };
+
+    let mut counter = Slab::<CounterHeader>::load(view).unwrap();
+    counter.close(dest_view).unwrap();
+}
+
+#[test]
+#[should_panic(expected = "Tried to mutate `Slab<H, T>` through a read-only load")]
+fn slab_realloc_panics_after_read_only_load_even_if_account_is_writable() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf);
+
+    let payer = AccountBuffer::<128>::new();
+    payer.init([0xCC; 32], PROGRAM_ID, 0, true, true, false);
+    payer.set_lamports(10_000_000_000);
+
+    let view = unsafe { buf.view() };
+    let payer_view = unsafe { payer.view() };
+
+    let mut counter = Slab::<CounterHeader>::load(view).unwrap();
+    counter
+        .realloc_account(counter.current_space() + 16, payer_view, true)
+        .unwrap();
 }
