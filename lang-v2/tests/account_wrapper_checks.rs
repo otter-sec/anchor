@@ -477,8 +477,7 @@ fn account_load_mut_rejects_non_writable() {
 
 #[test]
 #[should_panic(
-    expected = "Slab<H, T> mutably dereferenced but loaded read-only. Add #[account(mut)] to your \
-                accounts struct."
+    expected = "Tried to mutate `Slab<H, T>` through a read-only load"
 )]
 fn account_deref_mut_panics_when_loaded_read_only() {
     let mut buf = AccountBuffer::<128>::new();

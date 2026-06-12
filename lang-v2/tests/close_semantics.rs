@@ -397,7 +397,7 @@ fn slab_close_scrubs_discriminator_to_closed_sentinel() {
 }
 
 #[test]
-#[should_panic(expected = "Slab<H, T> mutably dereferenced but loaded read-only")]
+#[should_panic(expected = "Tried to mutate `Slab<H, T>` through a read-only load")]
 fn slab_close_flips_is_mutable_so_deref_mut_panics() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf);
@@ -448,7 +448,7 @@ fn slab_resurrected_account_reload_rejects_after_disc_scrub() {
 }
 
 #[test]
-#[should_panic(expected = "Slab<H, T> mutated through a read-only load")]
+#[should_panic(expected = "Tried to mutate `Slab<H, T>` through a read-only load")]
 fn slab_close_panics_after_read_only_load_even_if_account_is_writable() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf);
@@ -464,7 +464,7 @@ fn slab_close_panics_after_read_only_load_even_if_account_is_writable() {
 }
 
 #[test]
-#[should_panic(expected = "Slab<H, T> mutated through a read-only load")]
+#[should_panic(expected = "Tried to mutate `Slab<H, T>` through a read-only load")]
 fn slab_realloc_panics_after_read_only_load_even_if_account_is_writable() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf);

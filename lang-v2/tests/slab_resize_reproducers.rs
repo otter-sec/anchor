@@ -302,8 +302,7 @@ fn swap_remove_panics_when_index_geq_effective_len() {
 
 #[test]
 #[should_panic(
-    expected = "Slab<H, T> mutated through a read-only load. Add #[account(mut)] to your accounts \
-                struct."
+    expected = "Tried to mutate `Slab<H, T>` through a read-only load"
 )]
 fn clear_panics_when_tail_mutation_uses_guard_bytes_mut_on_read_only_slab() {
     let mut buf = setup_ledger(/*capacity*/ 2, /*len*/ 1);
@@ -315,8 +314,7 @@ fn clear_panics_when_tail_mutation_uses_guard_bytes_mut_on_read_only_slab() {
 
 #[test]
 #[should_panic(
-    expected = "Slab<H, T> mutated through a read-only load. Add #[account(mut)] to your accounts \
-                struct."
+    expected = "Tried to mutate `Slab<H, T>` through a read-only load"
 )]
 fn resize_to_capacity_panics_when_loaded_read_only() {
     let buf = setup_ledger(/*capacity*/ 2, /*len*/ 1);
@@ -412,8 +410,7 @@ fn refund_moves_excess_lamports_to_recipient() {
 
 #[test]
 #[should_panic(
-    expected = "Slab<H, T> mutated through a read-only load. Add #[account(mut)] to your accounts \
-                struct."
+    expected = "Tried to mutate `Slab<H, T>` through a read-only load"
 )]
 fn refund_panics_when_loaded_read_only() {
     let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 1);
@@ -455,8 +452,7 @@ fn refund_is_noop_when_account_is_at_rent_floor() {
 
 #[test]
 #[should_panic(
-    expected = "Slab<H, T> mutated through a read-only load. Add #[account(mut)] to your accounts \
-                struct."
+    expected = "Tried to mutate `Slab<H, T>` through a read-only load"
 )]
 fn top_up_panics_when_loaded_read_only() {
     let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 1);

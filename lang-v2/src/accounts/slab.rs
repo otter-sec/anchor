@@ -255,8 +255,8 @@ where
     fn assert_mutable(&self) {
         if !self.is_mutable {
             panic!(
-                "Slab<H, T> mutated through a read-only load. Add #[account(mut)] to your \
-                 accounts struct."
+                "Tried to mutate `Slab<H, T>` through a read-only load. Add `#[account(mut)]` \
+                 to your accounts struct."
             );
         }
     }
@@ -851,12 +851,7 @@ where
     fn deref_mut(&mut self) -> &mut H {
         // Always checked (not guardrails-gated): creating `&mut H` from a
         // const-provenance pointer is UB, so this must run even in release.
-        if !self.is_mutable {
-            panic!(
-                "Slab<H, T> mutably dereferenced but loaded read-only. Add #[account(mut)] to \
-                 your accounts struct."
-            );
-        }
+        self.assert_mutable();
         // SAFETY: is_mutable guarantees header_ptr was derived via data_mut_ptr
         // (write provenance). No other live mutable borrow exists; we hold &mut self.
         unsafe { &mut *self.header_ptr }
