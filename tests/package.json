@@ -1,6 +1,7 @@
 {
   "name": "anchor-tests",
   "private": true,
+  "packageManager": "yarn@1.22.22",
   "resolutions": {
     "@babel/runtime": "^7.26.10",
     "@solana/web3.js": "1.69.1",
