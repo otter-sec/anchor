@@ -373,7 +373,8 @@ where
                 // Only persist if the owner is the current program
                 let expected_owner = To::owner();
                 if &expected_owner != program_id {
-                    return Ok(());
+                    return Err(Error::from(ErrorCode::InvalidProgramId)
+                        .with_pubkeys((*program_id, expected_owner)));
                 }
 
                 // Serialize the migrated data
@@ -481,6 +482,7 @@ mod tests {
     const TEST_DISCRIMINATOR_V1: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
     const TEST_DISCRIMINATOR_V2: [u8; 8] = [8, 7, 6, 5, 4, 3, 2, 1];
     const TEST_OWNER: Pubkey = Pubkey::new_from_array([1u8; 32]);
+    const TEST_OTHER_OWNER: Pubkey = Pubkey::new_from_array([2u8; 32]);
 
     #[derive(Debug, Clone, AnchorSerialize, AnchorDeserialize, PartialEq)]
     struct AccountV1 {
@@ -541,6 +543,26 @@ mod tests {
     }
 
     impl AccountSerialize for AccountV2 {
+        fn try_serialize<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
+            writer.write_all(&TEST_DISCRIMINATOR_V2)?;
+            AnchorSerialize::serialize(self, writer)?;
+            Ok(())
+        }
+    }
+
+    #[derive(Debug, Clone, AnchorSerialize, AnchorDeserialize, PartialEq)]
+    struct AccountV2OtherOwner {
+        pub data: u64,
+        pub new_field: u64,
+    }
+
+    impl Owner for AccountV2OtherOwner {
+        fn owner() -> Pubkey {
+            TEST_OTHER_OWNER
+        }
+    }
+
+    impl AccountSerialize for AccountV2OtherOwner {
         fn try_serialize<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
             writer.write_all(&TEST_DISCRIMINATOR_V2)?;
             AnchorSerialize::serialize(self, writer)?;
@@ -858,5 +880,40 @@ mod tests {
         let result: Result<Migration<AccountV1, AccountV2>> = Migration::try_from(&info);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_exit_fails_when_migrated_owner_does_not_match_program_id() {
+        let key = Pubkey::default();
+        let mut lamports = 100;
+        let v1 = AccountV1 { data: 42 };
+        let mut data = vec![0u8; 100];
+        data[..8].copy_from_slice(&TEST_DISCRIMINATOR_V1);
+        v1.serialize(&mut &mut data[8..]).unwrap();
+
+        let info = create_account_info(&key, &TEST_OWNER, &mut lamports, &mut data);
+        let mut migration: Migration<AccountV1, AccountV2OtherOwner> =
+            Migration::try_from(&info).unwrap();
+
+        migration
+            .migrate(AccountV2OtherOwner {
+                data: 42,
+                new_field: 100,
+            })
+            .unwrap();
+
+        let err = migration
+            .exit(&TEST_OWNER)
+            .expect_err("exit must fail when migrated data cannot be persisted");
+        match err {
+            Error::AnchorError(e) => {
+                assert_eq!(e.error_code_number, ErrorCode::InvalidProgramId as u32);
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+
+        let mut persisted_data: &[u8] = &info.try_borrow_data().unwrap();
+        let persisted = AccountV1::try_deserialize(&mut persisted_data).unwrap();
+        assert_eq!(persisted.data, 42);
     }
 }

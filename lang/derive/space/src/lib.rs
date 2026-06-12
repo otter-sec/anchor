@@ -9,8 +9,8 @@ use {
         punctuated::Punctuated,
         spanned::Spanned,
         token::Comma,
-        Attribute, DeriveInput, Expr, Field, Fields, GenericArgument, PathArguments, Token, Type,
-        TypeArray,
+        Attribute, DeriveInput, Expr, ExprLit, Field, Fields, GenericArgument, Lit, PathArguments,
+        Token, Type, TypeArray,
     },
 };
 
@@ -49,63 +49,76 @@ pub fn derive_init_space(item: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let name = input.ident.clone();
 
-    let process_struct_fields = |fields: Punctuated<Field, Comma>| {
-        let recurse = fields.into_iter().map(|f| {
-            let mut max_len_args = get_max_len_args(&f.attrs);
-            len_from_type(f.ty, &mut max_len_args)
-        });
+    let process_struct_fields =
+        |fields: Punctuated<Field, Comma>| -> Result<TokenStream2, syn::Error> {
+            let recurse = fields
+                .into_iter()
+                .map(|f| {
+                    let mut max_len_args = get_max_len_args(&f.attrs)?;
+                    Ok(len_from_type(f.ty, &mut max_len_args))
+                })
+                .collect::<Result<Vec<_>, syn::Error>>()?;
 
-        quote! {
-            #[automatically_derived]
-            impl #impl_generics anchor_lang::Space for #name #ty_generics #where_clause {
-                const INIT_SPACE: usize = 0 #(+ #recurse)*;
-            }
-        }
-    };
-
-    let expanded: TokenStream2 = match input.data {
-        syn::Data::Struct(strct) => match strct.fields {
-            Fields::Named(named) => process_struct_fields(named.named),
-            Fields::Unnamed(unnamed) => process_struct_fields(unnamed.unnamed),
-            Fields::Unit => quote! {
+            Ok(quote! {
                 #[automatically_derived]
                 impl #impl_generics anchor_lang::Space for #name #ty_generics #where_clause {
-                    const INIT_SPACE: usize = 0;
+                    const INIT_SPACE: usize = 0 #(+ #recurse)*;
                 }
+            })
+        };
+
+    let expanded = (|| -> Result<TokenStream2, syn::Error> {
+        match input.data {
+            syn::Data::Struct(strct) => match strct.fields {
+                Fields::Named(named) => process_struct_fields(named.named),
+                Fields::Unnamed(unnamed) => process_struct_fields(unnamed.unnamed),
+                Fields::Unit => Ok(quote! {
+                    #[automatically_derived]
+                    impl #impl_generics anchor_lang::Space for #name #ty_generics #where_clause {
+                        const INIT_SPACE: usize = 0;
+                    }
+                }),
             },
-        },
-        syn::Data::Enum(enm) => {
-            let variants = enm.variants.into_iter().map(|v| {
-                let len = v.fields.into_iter().map(|f| {
-                    let mut max_len_args = get_max_len_args(&f.attrs);
-                    len_from_type(f.ty, &mut max_len_args)
-                });
+            syn::Data::Enum(enm) => {
+                let variants = enm
+                    .variants
+                    .into_iter()
+                    .map(|v| {
+                        let len = v
+                            .fields
+                            .into_iter()
+                            .map(|f| {
+                                let mut max_len_args = get_max_len_args(&f.attrs)?;
+                                Ok(len_from_type(f.ty, &mut max_len_args))
+                            })
+                            .collect::<Result<Vec<_>, syn::Error>>()?;
 
-                quote! {
-                    0 #(+ #len)*
-                }
-            });
+                        Ok(quote! {
+                            0 #(+ #len)*
+                        })
+                    })
+                    .collect::<Result<Vec<_>, syn::Error>>()?;
 
-            let max = gen_max(variants);
+                let max = gen_max(variants.into_iter());
 
-            quote! {
-                #[automatically_derived]
-                impl anchor_lang::Space for #name {
-                    const INIT_SPACE: usize = 1 + #max;
-                }
+                Ok(quote! {
+                    #[automatically_derived]
+                    impl anchor_lang::Space for #name {
+                        const INIT_SPACE: usize = 1 + #max;
+                    }
+                })
             }
-        }
-        _ => {
-            return syn::Error::new(
+            _ => Err(syn::Error::new(
                 input.ident.span(),
                 "#[derive(InitSpace)] is only supported on structs and enums",
-            )
-            .into_compile_error()
-            .into()
+            )),
         }
-    };
+    })();
 
-    TokenStream::from(expanded)
+    TokenStream::from(match expanded {
+        Ok(expanded) => expanded,
+        Err(err) => err.into_compile_error(),
+    })
 }
 
 fn gen_max<T: Iterator<Item = TokenStream2>>(mut iter: T) -> TokenStream2 {
@@ -206,23 +219,32 @@ fn parse_len_arg(item: ParseStream) -> Result<VecDeque<TokenStream2>, syn::Error
 
     // Push them in reverse because get_next_arg() pops from the back
     for expr in exprs.into_iter().rev() {
-        if !matches!(expr, Expr::Path(_) | Expr::Lit(_)) {
-            return Err(syn::Error::new(
-                expr.span(),
-                "max_len only accepts identifiers, literals, or paths",
-            ));
+        match expr {
+            Expr::Path(path) => result.push_back(quote!((#path as usize))),
+            Expr::Lit(ExprLit {
+                lit: Lit::Int(lit_int),
+                ..
+            }) => result.push_back(quote!(#lit_int as usize)),
+            other => {
+                return Err(syn::Error::new(
+                    other.span(),
+                    "max_len only accepts integer literals, identifiers, or paths",
+                ))
+            }
         }
-        result.push_back(quote!((#expr as usize)));
     }
 
     Ok(result)
 }
 
-fn get_max_len_args(attributes: &[Attribute]) -> Option<VecDeque<TokenStream2>> {
+fn get_max_len_args(
+    attributes: &[Attribute],
+) -> Result<Option<VecDeque<TokenStream2>>, syn::Error> {
     attributes
         .iter()
         .find(|a| a.path().is_ident("max_len"))
-        .and_then(|a| a.parse_args_with(parse_len_arg).ok())
+        .map(|a| a.parse_args_with(parse_len_arg))
+        .transpose()
 }
 
 fn get_next_arg(ident: &Ident, args: &mut Option<VecDeque<TokenStream2>>) -> TokenStream2 {
@@ -234,5 +256,43 @@ fn get_next_arg(ident: &Ident, args: &mut Option<VecDeque<TokenStream2>>) -> Tok
         }
     } else {
         quote_spanned!(ident.span() => compile_error!("Expected max_len attribute."))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, syn::parse::Parser};
+
+    #[test]
+    fn parse_len_arg_accepts_int_literals_and_paths() {
+        let mut args = parse_len_arg.parse_str("10, module::MAX_LEN").unwrap();
+
+        assert_eq!(args.pop_back().unwrap().to_string(), "10 as usize");
+        assert_eq!(
+            args.pop_back().unwrap().to_string(),
+            "(module :: MAX_LEN as usize)"
+        );
+    }
+
+    #[test]
+    fn parse_len_arg_rejects_non_integer_literals() {
+        let err = parse_len_arg.parse_str("1.5").unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "max_len only accepts integer literals, identifiers, or paths"
+        );
+    }
+
+    #[test]
+    fn get_max_len_args_propagates_parse_errors() {
+        let attr = syn::parse_quote!(#[max_len(1.5)]);
+
+        let err = get_max_len_args(&[attr]).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "max_len only accepts integer literals, identifiers, or paths"
+        );
     }
 }
