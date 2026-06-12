@@ -445,7 +445,7 @@ use {proc_macro::TokenStream, quote::ToTokens, syn::parse_macro_input};
 ///                 The account must be marked as <code>mut</code> and applied to either <code>Account</code> or <code>AccountLoader</code> types.
 ///                 <br><br>
 ///                 If the change in account data length is additive, lamports will be transferred from the <code>realloc::payer</code> into the
-///                 program account in order to maintain rent exemption. Likewise, if the change is subtractive, only the rent savings from the
+///                 program account in order to maintain rent exemption. If the change is subtractive, only the rent savings from the
 ///                 removed bytes will be transferred from the program account back into the <code>realloc::payer</code>.
 ///                 <br><br>
 ///                 The <code>realloc::zero</code> constraint is required in order to determine whether the new memory should be zero initialized after
