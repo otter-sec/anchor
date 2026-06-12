@@ -148,6 +148,73 @@ fn slab_realloc_clamps_tail_len_to_resized_capacity() {
     assert_eq!(CounterLedger::load(view).unwrap().len(), 1);
 }
 
+#[test]
+fn slab_realloc_shrink_refunds_only_rent_delta_not_vault_balance() {
+    let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 1);
+    let payer = AccountBuffer::<128>::new();
+    payer.init([0xCC; 32], PROGRAM_ID, 0, true, true, false);
+    payer.set_lamports(25);
+
+    let old_space = ITEMS_OFFSET + 4 * ITEM_SIZE;
+    let new_space = ITEMS_OFFSET + ITEM_SIZE;
+    let old_required = expected_min_lamports(old_space).unwrap();
+    let new_required = expected_min_lamports(new_space).unwrap();
+    let rent_delta = old_required - new_required;
+    let vault_balance = 1_000_000;
+
+    buf.set_lamports(old_required + vault_balance);
+
+    let view = unsafe { buf.view() };
+    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let payer_view = unsafe { payer.view() };
+
+    slab.realloc_account(new_space, payer_view, false).unwrap();
+
+    assert_eq!(
+        payer_view.lamports(),
+        25 + rent_delta,
+        "shrinking should only refund the rent savings for the removed bytes",
+    );
+    assert_eq!(
+        slab.view().lamports(),
+        new_required + vault_balance,
+        "vault lamports unrelated to rent must remain on the account after shrink",
+    );
+}
+
+#[test]
+fn slab_realloc_shrink_refund_is_capped_by_available_lamports_above_new_floor() {
+    let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 1);
+    let payer = AccountBuffer::<128>::new();
+    payer.init([0xCC; 32], PROGRAM_ID, 0, true, true, false);
+    payer.set_lamports(25);
+
+    let new_space = ITEMS_OFFSET + ITEM_SIZE;
+    let new_required = expected_min_lamports(new_space).unwrap();
+
+    // Simulate an underfunded oversized account: only 7 lamports are
+    // available above the new rent floor, even though shrinking would save
+    // more than that in ideal rent terms.
+    buf.set_lamports(new_required + 7);
+
+    let view = unsafe { buf.view() };
+    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let payer_view = unsafe { payer.view() };
+
+    slab.realloc_account(new_space, payer_view, false).unwrap();
+
+    assert_eq!(
+        payer_view.lamports(),
+        25 + 7,
+        "refund must be capped by the lamports actually available above the new rent floor",
+    );
+    assert_eq!(
+        slab.view().lamports(),
+        new_required,
+        "the shrunken account must retain at least the new rent-exempt minimum",
+    );
+}
+
 // -- `load_mut` rejects a buffer shrunk below ITEMS_OFFSET -----------
 
 #[test]

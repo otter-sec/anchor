@@ -570,17 +570,25 @@ pub fn realloc_account(
     use pinocchio::Resize;
 
     let old_space = account.data_len();
-    let required = rent_exempt_lamports(new_space)?;
+    let new_rent_minimum = rent_exempt_lamports(new_space)?;
     let current_lamports = account.lamports();
 
     if new_space > old_space {
-        let deficit = required.saturating_sub(current_lamports);
+        let deficit = new_rent_minimum.saturating_sub(current_lamports);
         if deficit > 0 {
             transfer_lamports_unchecked(payer, &*account as &AccountView, deficit)?;
         }
     } else if new_space < old_space {
-        let excess = current_lamports.saturating_sub(required);
-        if excess > 0 {
+        let old_rent_minimum = rent_exempt_lamports(old_space)?;
+        // Shrinking should only reclaim rent that was reserved for bytes we are
+        // removing, not unrelated lamports the account might be holding.
+        let reclaimable_rent = old_rent_minimum.saturating_sub(new_rent_minimum);
+        // Cap the refund by the lamports actually available above the new rent
+        // floor so underfunded oversized accounts cannot underflow here.
+        let lamports_above_new_minimum =
+            current_lamports.saturating_sub(new_rent_minimum);
+        let refund = reclaimable_rent.min(lamports_above_new_minimum);
+        if refund > 0 {
             let mut payer_mut = *payer;
             // `checked_add` rather than `+`: overflow-checks is disabled in
             // release builds, and this arithmetic is on user-supplied account
@@ -588,10 +596,14 @@ pub fn realloc_account(
             // unreachable in practice, but silent wrap would be a downgrade.
             let new_payer_lamports = payer_mut
                 .lamports()
-                .checked_add(excess)
+                .checked_add(refund)
                 .ok_or(ProgramError::ArithmeticOverflow)?;
             payer_mut.set_lamports(new_payer_lamports);
-            account.set_lamports(required);
+            account.set_lamports(
+                current_lamports
+                    .checked_sub(refund)
+                    .ok_or(ProgramError::ArithmeticOverflow)?,
+            );
         }
     }
 
