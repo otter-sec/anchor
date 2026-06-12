@@ -65,7 +65,9 @@ describe("realloc", () => {
       toPubkey: sample,
       lamports: extraLamports,
     });
-    await program.provider.sendAndConfirm(new anchor.web3.Transaction().add(transferIx));
+    await program.provider.sendAndConfirm(
+      new anchor.web3.Transaction().add(transferIx)
+    );
 
     const before = await program.provider.connection.getAccountInfo(sample);
     assert.isNotNull(before);
