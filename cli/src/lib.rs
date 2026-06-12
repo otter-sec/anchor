@@ -23,7 +23,6 @@ use {
     dirs::home_dir,
     heck::{ToKebabCase, ToLowerCamelCase, ToPascalCase, ToSnakeCase},
     regex::{Regex, RegexBuilder},
-    rust_template::{AnchorVersion, ProgramTemplate, TestTemplate},
     semver::{Version, VersionReq},
     serde::Deserialize,
     serde_json::{json, Map, Value as JsonValue},
@@ -51,6 +50,7 @@ use {
         string::ToString,
         sync::{LazyLock, OnceLock},
     },
+    template::{AnchorVersion, ProgramTemplate, TestTemplate},
 };
 
 mod abs_path;
@@ -71,7 +71,7 @@ mod metadata;
 #[cfg(not(windows))]
 mod profile;
 mod program;
-pub mod rust_template;
+pub mod template;
 
 // Version of the docker image.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -1704,10 +1704,10 @@ fn init(
     }
 
     // Initialize .gitignore file
-    fs::write(".gitignore", rust_template::git_ignore())?;
+    fs::write(".gitignore", template::git_ignore())?;
 
     // Initialize .prettierignore file
-    fs::write(".prettierignore", rust_template::prettier_ignore())?;
+    fs::write(".prettierignore", template::prettier_ignore())?;
 
     // Remove the default program if `--force` is passed
     if force {
@@ -1720,14 +1720,14 @@ fn init(
     }
 
     // Build the program.
-    rust_template::create_program(
+    template::create_program(
         &project_name,
         template,
         Some(&test_template),
         anchor_version,
     )?;
 
-    let program_id = rust_template::get_or_create_program_id(&rust_name, target_dir()?);
+    let program_id = template::get_or_create_program_id(&rust_name, target_dir()?);
     let mut localnet = BTreeMap::new();
     localnet.insert(
         rust_name,
@@ -1753,22 +1753,21 @@ fn init(
             // Build javascript config
             let mut package_json = File::create("package.json")?;
             package_json
-                .write_all(rust_template::package_json(jest, license, anchor_version).as_bytes())?;
+                .write_all(template::package_json(jest, license, anchor_version).as_bytes())?;
 
             let mut deploy = File::create(migrations_path.join("deploy.js"))?;
-            deploy.write_all(rust_template::deploy_script().as_bytes())?;
+            deploy.write_all(template::deploy_script().as_bytes())?;
         } else {
             // Build typescript config
             let mut ts_config = File::create("tsconfig.json")?;
-            ts_config.write_all(rust_template::ts_config(jest).as_bytes())?;
+            ts_config.write_all(template::ts_config(jest).as_bytes())?;
 
             let mut ts_package_json = File::create("package.json")?;
-            ts_package_json.write_all(
-                rust_template::ts_package_json(jest, license, anchor_version).as_bytes(),
-            )?;
+            ts_package_json
+                .write_all(template::ts_package_json(jest, license, anchor_version).as_bytes())?;
 
             let mut deploy = File::create(migrations_path.join("deploy.ts"))?;
-            deploy.write_all(rust_template::ts_deploy_script().as_bytes())?;
+            deploy.write_all(template::ts_deploy_script().as_bytes())?;
         }
     }
 
@@ -1965,12 +1964,12 @@ fn new(
                     fs::remove_dir_all(std::env::current_dir()?.join("programs").join(&name))?;
                 }
 
-                rust_template::create_program(&name, template, None, anchor_version)?;
+                template::create_program(&name, template, None, anchor_version)?;
 
                 programs.insert(
                     name.clone(),
                     ProgramDeployment {
-                        address: rust_template::get_or_create_program_id(&name, target_dir()?),
+                        address: template::get_or_create_program_id(&name, target_dir()?),
                         path: None,
                         idl: None,
                     },
@@ -2101,7 +2100,7 @@ fn expand_all(
     cargo_args: &[String],
 ) -> Result<()> {
     let cur_dir = std::env::current_dir()?;
-    for p in workspace_cfg.get_rust_program_list()? {
+    for p in workspace_cfg.get_program_list()? {
         expand_program(p, expansions_path.clone(), stdout, cargo_args)?;
     }
     std::env::set_current_dir(cur_dir)?;
@@ -2265,7 +2264,7 @@ pub fn build(
             no_docs,
         )?,
         // Cargo.toml represents a single package. Build it.
-        Some(cargo) => build_rust_cwd(
+        Some(cargo) => build_cwd(
             &cfg,
             cargo.path().to_path_buf(),
             no_idl,
@@ -2315,8 +2314,8 @@ fn build_all(
             None => Err(anyhow!("Invalid Anchor.toml at {}", cfg_path.display())),
             Some(_parent) => {
                 let mut idl_paths = Vec::new();
-                for p in get_metadata_ordered_rust_program_list(cfg)? {
-                    idl_paths.extend(build_rust_cwd(
+                for p in get_metadata_ordered_program_list(cfg)? {
+                    idl_paths.extend(build_cwd(
                         cfg,
                         p.join("Cargo.toml"),
                         no_idl,
@@ -2339,13 +2338,13 @@ fn build_all(
     r
 }
 
-fn get_metadata_ordered_rust_program_list(cfg: &WithPath<Config>) -> Result<Vec<PathBuf>> {
-    let programs = cfg.get_rust_program_list()?;
-    let ordered = order_rust_programs_by_metadata(cfg, &programs);
+fn get_metadata_ordered_program_list(cfg: &WithPath<Config>) -> Result<Vec<PathBuf>> {
+    let programs = cfg.get_program_list()?;
+    let ordered = order_programs_by_metadata(cfg, &programs);
     Ok(ordered.unwrap_or(programs))
 }
 
-fn order_rust_programs_by_metadata(
+fn order_programs_by_metadata(
     cfg: &WithPath<Config>,
     programs: &[PathBuf],
 ) -> Result<Vec<PathBuf>> {
@@ -2482,7 +2481,7 @@ fn local_dependency_closure(start: usize, deps: &[Vec<usize>]) -> HashSet<usize>
 
 // Runs the build command outside of a workspace.
 #[allow(clippy::too_many_arguments)]
-fn build_rust_cwd(
+fn build_cwd(
     cfg: &WithPath<Config>,
     cargo_toml: PathBuf,
     no_idl: bool,
@@ -2501,7 +2500,7 @@ fn build_rust_cwd(
         Some(p) => std::env::set_current_dir(p)?,
     };
     match build_config.verifiable {
-        false => _build_rust_cwd(
+        false => _build_cwd(
             cfg, no_idl, idl_out, idl_ts_out, skip_lint, no_docs, cargo_args,
         ),
         true => build_cwd_verifiable(
@@ -2852,7 +2851,7 @@ fn docker_exec(container_name: &str, args: &[&str]) -> Result<()> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn _build_rust_cwd(
+fn _build_cwd(
     cfg: &WithPath<Config>,
     no_idl: bool,
     idl_out: Option<PathBuf>,
@@ -6027,7 +6026,7 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
         let exit = if use_ts {
             let module_path = migrations_dir.join(deploy_ts);
             let deploy_script_host_str =
-                rust_template::deploy_ts_script_host(&url, &module_path.display().to_string());
+                template::deploy_ts_script_host(&url, &module_path.display().to_string());
             fs::write(deploy_ts, deploy_script_host_str)?;
 
             let pkg_manager_cmd =
@@ -6047,7 +6046,7 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
             let deploy_js = deploy_ts.with_extension("js");
             let module_path = migrations_dir.join(&deploy_js);
             let deploy_script_host_str =
-                rust_template::deploy_js_script_host(&url, &module_path.display().to_string());
+                template::deploy_js_script_host(&url, &module_path.display().to_string());
             fs::write(&deploy_js, deploy_script_host_str)?;
 
             std::process::Command::new("node")
@@ -6358,7 +6357,7 @@ fn shell(cfg_override: &ConfigOverride) -> Result<()> {
             }
         };
         let url = cluster_url(cfg, &cfg.test_validator, &cfg.surfpool_config);
-        let js_code = rust_template::node_shell(&url, &cfg.provider.wallet.to_string(), programs)?;
+        let js_code = template::node_shell(&url, &cfg.provider.wallet.to_string(), programs)?;
         let mut child = std::process::Command::new("node")
             .args(["-e", &js_code, "-i", "--experimental-repl-await"])
             .stdout(Stdio::inherit())
@@ -7415,8 +7414,8 @@ mod tests {
     #[test]
     fn test_jest_package_json_pins_uuid_for_commonjs() {
         for package_json in [
-            rust_template::package_json(true, "ISC".to_owned(), AnchorVersion::V1),
-            rust_template::ts_package_json(true, "ISC".to_owned(), AnchorVersion::V1),
+            template::package_json(true, "ISC".to_owned(), AnchorVersion::V1),
+            template::ts_package_json(true, "ISC".to_owned(), AnchorVersion::V1),
         ] {
             let package: JsonValue = serde_json::from_str(&package_json).unwrap();
 

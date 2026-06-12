@@ -185,7 +185,7 @@ impl Deref for Manifest {
 }
 
 impl WithPath<Config> {
-    pub fn get_rust_program_list(&self) -> Result<Vec<PathBuf>> {
+    pub fn get_program_list(&self) -> Result<Vec<PathBuf>> {
         // Canonicalize the workspace filepaths to compare with relative paths.
         let (members, exclude) = self.canonicalize_workspace()?;
 
@@ -220,7 +220,7 @@ impl WithPath<Config> {
 
     pub fn read_all_programs(&self) -> Result<Vec<Program>> {
         let mut r = vec![];
-        for path in self.get_rust_program_list()? {
+        for path in self.get_program_list()? {
             let cargo = Manifest::from_path(path.join("Cargo.toml"))?;
             let lib_name = cargo.lib_name()?;
 
