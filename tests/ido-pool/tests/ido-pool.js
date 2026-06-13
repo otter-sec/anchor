@@ -21,7 +21,7 @@ describe("ido-pool", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.IdoPool;
+  const program = anchor.workspace.idoPool;
 
   // All mints default to 6 decimal places.
   const watermelonIdoAmount = new anchor.BN(5000000);

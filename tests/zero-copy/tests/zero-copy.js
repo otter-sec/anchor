@@ -8,8 +8,8 @@ describe("zero-copy", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.ZeroCopy;
-  const programCpi = anchor.workspace.ZeroCpi;
+  const program = anchor.workspace.zeroCopy;
+  const programCpi = anchor.workspace.zeroCpi;
 
   const foo = anchor.web3.Keypair.generate();
   it("Is creates a zero copy account", async () => {

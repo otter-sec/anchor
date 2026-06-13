@@ -6,7 +6,7 @@ import { Events } from "../target/types/events";
 describe("Events", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
-  const program = anchor.workspace.Events as anchor.Program<Events>;
+  const program = anchor.workspace.events as anchor.Program<Events>;
   const confirmOptions: anchor.web3.ConfirmOptions = {
     commitment: "confirmed",
     preflightCommitment: "confirmed",

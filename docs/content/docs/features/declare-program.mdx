@@ -301,8 +301,8 @@ import { Keypair } from "@solana/web3.js";
 describe("example", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.Example as Program<Example>;
-  const cpiProgram = anchor.workspace.ExampleCpi as Program<ExampleCpi>;
+  const program = anchor.workspace.example as Program<Example>;
+  const cpiProgram = anchor.workspace.exampleCpi as Program<ExampleCpi>;
 
   const counterAccount = Keypair.generate();
 

@@ -15,8 +15,8 @@ describe("Lockup and Registry", () => {
   // Configure the client to use the provider.
   anchor.setProvider(provider);
 
-  const lockup = anchor.workspace.Lockup;
-  const registry = anchor.workspace.Registry;
+  const lockup = anchor.workspace.lockup;
+  const registry = anchor.workspace.registry;
 
   let lockupAddress = null;
   const WHITELIST_SIZE = 10;

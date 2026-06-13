@@ -12,7 +12,7 @@ describe("basic-1", () => {
   it("Creates and initializes an account in a single atomic transaction (simplified)", async () => {
     // #region code-simplified
     // The program to execute.
-    const program = anchor.workspace.Basic1;
+    const program = anchor.workspace.basic1;
 
     // The Account to create.
     const myAccount = anchor.web3.Keypair.generate();
@@ -46,7 +46,7 @@ describe("basic-1", () => {
     // #region update-test
 
     // The program to execute.
-    const program = anchor.workspace.Basic1;
+    const program = anchor.workspace.basic1;
 
     // Invoke the update rpc.
     await program.methods

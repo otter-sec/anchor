@@ -11,7 +11,7 @@ describe("Test CLI account commands", () => {
 
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.AccountCommand as Program<AccountCommand>;
+  const program = anchor.workspace.accountCommand as Program<AccountCommand>;
 
   it("Can fetch and deserialize account using the account command", async () => {
     const myAccount = anchor.web3.Keypair.generate();

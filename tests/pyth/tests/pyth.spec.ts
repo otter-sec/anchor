@@ -6,7 +6,7 @@ import { createPriceFeed, setFeedPrice, getFeedData } from "./oracleUtils";
 describe("pyth-oracle", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace.Pyth as Program;
+  const program = anchor.workspace.pyth as Program;
 
   it("initialize", async () => {
     const price = 50000;

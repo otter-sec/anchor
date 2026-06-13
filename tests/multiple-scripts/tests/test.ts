@@ -6,7 +6,7 @@ import { assert } from "chai";
 describe("multiple-scripts: default test suite", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.Example as Program<Example>;
+  const program = anchor.workspace.example as Program<Example>;
 
   it("initializes", async () => {
     const tx = await program.methods.initialize().rpc();

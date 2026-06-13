@@ -18,7 +18,7 @@ describe("swap", () => {
   anchor.setProvider(provider);
 
   // Swap program client.
-  const program = anchor.workspace.Swap;
+  const program = anchor.workspace.swap;
 
   // Accounts used to setup the orderbook.
   let ORDERBOOK_ENV,

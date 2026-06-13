@@ -6,7 +6,7 @@ import { assert } from "chai";
 
 describe("declare_id", () => {
   anchor.setProvider(anchor.AnchorProvider.local());
-  const program = anchor.workspace.DeclareId as Program<DeclareId>;
+  const program = anchor.workspace.declareId as Program<DeclareId>;
 
   it("throws error!", async () => {
     try {

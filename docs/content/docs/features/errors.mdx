@@ -244,7 +244,7 @@ import assert from "assert";
 
 describe("custom-error", () = {
   anchor.setProvider(anchor.AnchorProvider.env());
-  const program = anchor.workspace.CustomError as Program<CustomError;
+  const program = anchor.workspace.customError as Program<CustomError;
 
   it("Successfully validates amount within range", async () = {
     const tx = await program.methods.validateAmount(new anchor.BN(50)).rpc();

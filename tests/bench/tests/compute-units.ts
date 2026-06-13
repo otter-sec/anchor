@@ -8,7 +8,7 @@ describe("Compute units", () => {
   // Configure the client to use the local cluster
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.Bench as anchor.Program<Bench>;
+  const program = anchor.workspace.bench as anchor.Program<Bench>;
   const owner = program.provider.publicKey!;
 
   let mintPk: anchor.web3.PublicKey;

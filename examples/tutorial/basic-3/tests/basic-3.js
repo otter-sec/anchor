@@ -9,8 +9,8 @@ describe("basic-3", () => {
   anchor.setProvider(provider);
 
   it("Performs CPI from puppet master to puppet", async () => {
-    const puppetMaster = anchor.workspace.PuppetMaster;
-    const puppet = anchor.workspace.Puppet;
+    const puppetMaster = anchor.workspace.puppetMaster;
+    const puppet = anchor.workspace.puppet;
 
     // Initialize a new puppet account.
     const newPuppetAccount = anchor.web3.Keypair.generate();

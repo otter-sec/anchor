@@ -218,7 +218,7 @@ import { TOKEN_2022_PROGRAM_ID, getMint } from "@solana/spl-token";
 describe("token-example", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.TokenExample as Program<TokenExample>;
+  const program = anchor.workspace.tokenExample as Program<TokenExample>;
   const mint = anchor.web3.Keypair.generate();
 
   it("Is initialized!", async () => {
@@ -305,7 +305,7 @@ import { TOKEN_2022_PROGRAM_ID, getMint } from "@solana/spl-token";
 describe("token-example", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.TokenExample as Program<TokenExample>;
+  const program = anchor.workspace.tokenExample as Program<TokenExample>;
   const [mint, bump] = anchor.web3.PublicKey.findProgramAddressSync(
     [Buffer.from("mint")],
     program.programId,

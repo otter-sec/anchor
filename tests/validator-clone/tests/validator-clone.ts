@@ -7,7 +7,7 @@ describe("validator-clone", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.ValidatorClone as Program<ValidatorClone>;
+  const program = anchor.workspace.validatorClone as Program<ValidatorClone>;
   const connection = program.provider.connection;
 
   it("Cloned non-executable account", async () => {

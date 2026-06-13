@@ -13,7 +13,7 @@ const CUSTOM_PROGRAM_ADDRESS = "dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH";
 
 describe("custom_program", () => {
   anchor.setProvider(anchor.AnchorProvider.local());
-  const program = anchor.workspace.CustomProgram as Program<CustomProgram>;
+  const program = anchor.workspace.customProgram as Program<CustomProgram>;
 
   it("Should pass test program validation", async () => {
     try {

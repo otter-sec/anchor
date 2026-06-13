@@ -13,8 +13,8 @@ module.exports = async function (provider) {
   const registrarConfigs = await genesis(provider);
 
   // Program clients.
-  const lockup = anchor.workspace.Lockup;
-  const registry = anchor.workspace.Registry;
+  const lockup = anchor.workspace.lockup;
+  const registry = anchor.workspace.registry;
 
   // Registry state constructor.
   await registry.state.rpc.new({

@@ -93,7 +93,7 @@ describe("event", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.Event as Program<Event>;
+  const program = anchor.workspace.event as Program<Event>;
 
   it("Emits custom event", async () => {
     // Set up listener before sending transaction
@@ -200,7 +200,7 @@ import { EventCpi } from "../target/types/event_cpi";
 describe("event-cpi", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
-  const program = anchor.workspace.EventCpi as Program<EventCpi>;
+  const program = anchor.workspace.eventCpi as Program<EventCpi>;
 
   it("Emits custom event", async () => {
     const message = "Hello, Solana!";
@@ -235,7 +235,8 @@ describe("event-cpi", () => {
 
 The
 [`event_cpi`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/event/src/lib.rs#L229-L238)
-attribute must be added to the `#[derive(Accounts)]` struct for the instruction that emits events using the `emit_cpi!()` macro. This attribute
+attribute must be added to the `#[derive(Accounts)]` struct for the instruction
+that emits events using the `emit_cpi!()` macro. This attribute
 [automatically includes additional accounts](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/parser/accounts/event_cpi.rs#L28-L69)
 that are required for the self CPI.
 

@@ -6,7 +6,7 @@ describe("lamports", () => {
   // Configure the client to use the local cluster
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.Lamports as anchor.Program<Lamports>;
+  const program = anchor.workspace.lamports as anchor.Program<Lamports>;
 
   it("Can transfer from/to PDA", async () => {
     await program.methods

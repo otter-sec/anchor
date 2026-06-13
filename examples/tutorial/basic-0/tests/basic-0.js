@@ -7,7 +7,7 @@ describe("basic-0", () => {
   it("Uses the workspace to invoke the initialize instruction", async () => {
     // #region code
     // Read the deployed program from the workspace.
-    const program = anchor.workspace.Basic0;
+    const program = anchor.workspace.basic0;
 
     // Execute the RPC.
     await program.methods.initialize().rpc();

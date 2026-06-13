@@ -16,7 +16,8 @@ for handling large accounts efficiently on Solana.
 Traditional account deserialization (`Account<T>`) copies data from the account
 into a heap-allocated struct. This has limitations:
 
-- **Size Constraints**: Stack (4KB) and heap (32KB) limits restrict account sizes
+- **Size Constraints**: Stack (4KB) and heap (32KB) limits restrict account
+  sizes
 - **Compute Cost**: Deserialization consumes significant compute units
 - **Memory Overhead**: Data is duplicated in memory
 
@@ -38,13 +39,15 @@ Zero-copy (`AccountLoader<T>`) instead:
 
 ### When to Use Zero-Copy
 
-   **Use zero-copy for:**
+**Use zero-copy for:**
+
 - Accounts larger than 1KB
 - Arrays with many elements (orderbooks, event queues)
 - High-frequency operations
 - Compute-sensitive programs
 
- **Use regular Account\<T\> for:**
+  **Use regular Account\<T\> for:**
+
 - Small accounts (< 1KB)
 - Dynamic data structures (Vec, String, HashMap)
 - Frequently changing schemas
@@ -242,7 +245,8 @@ pub fn read_only(ctx: Context<ReadOnly>) -> Result<()> {
 
 ### Nested Zero-Copy Types
 
-For types used within zero-copy accounts, use `#[zero_copy]` (without `account`):
+For types used within zero-copy accounts, use `#[zero_copy]` (without
+`account`):
 
 ```rust
 #[account(zero_copy)]
@@ -400,13 +404,13 @@ pub fn update_item(
     value: u64
 ) -> Result<()> {
     let account = &mut ctx.accounts.data_account.load_mut()?;
-    
+
     // [!code highlight:4]
     require!(
         (index as usize) < account.items.len(),
         ErrorCode::IndexOutOfBounds
     );
-    
+
     account.items[index as usize] = value;
     Ok(())
 }
@@ -536,7 +540,7 @@ describe("zero-copy", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.ZeroCopy as Program<ZeroCopy>;
+  const program = anchor.workspace.zeroCopy as Program<ZeroCopy>;
   const dataAccount = anchor.web3.Keypair.generate();
 
   it("Is initialized!", async () => {
@@ -625,7 +629,7 @@ describe("zero-copy-two", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.ZeroCopyTwo as Program<ZeroCopyTwo>;
+  const program = anchor.workspace.zeroCopyTwo as Program<ZeroCopyTwo>;
   const dataAccount = anchor.web3.Keypair.generate();
 
   it("Is initialized!", async () => {

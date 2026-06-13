@@ -19,7 +19,7 @@ describe("escrow", () => {
     [TOKEN_2022_PROGRAM_ID, TOKEN_2022_PROGRAM_ID],
     [TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID],
   ];
-  const program = anchor.workspace.Escrow as Program<Escrow>;
+  const program = anchor.workspace.escrow as Program<Escrow>;
 
   let mintA: Token = null;
   let mintB: Token = null;

@@ -21,8 +21,8 @@ describe("Test CLI IDL commands", () => {
 
   anchor.setProvider(provider);
 
-  const programOne = anchor.workspace.IdlCommandsOne as Program<IdlCommandsOne>;
-  const programTwo = anchor.workspace.IdlCommandsTwo as Program<IdlCommandsTwo>;
+  const programOne = anchor.workspace.idlCommandsOne as Program<IdlCommandsOne>;
+  const programTwo = anchor.workspace.idlCommandsTwo as Program<IdlCommandsTwo>;
 
   const fetchIdl = anchor.Program.fetchIdl;
   const historyDir = fs.mkdtempSync(

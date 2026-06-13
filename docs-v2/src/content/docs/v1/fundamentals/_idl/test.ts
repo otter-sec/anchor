@@ -8,7 +8,7 @@ describe('hello_anchor', () => {
   const provider = anchor.AnchorProvider.env()
   anchor.setProvider(provider)
   const wallet = provider.wallet as anchor.Wallet
-  const program = anchor.workspace.HelloAnchor as Program<HelloAnchor>
+  const program = anchor.workspace.helloAnchor as Program<HelloAnchor>
 
   it('initialize', async () => {
     // Generate keypair for the new account

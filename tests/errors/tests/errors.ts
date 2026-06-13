@@ -56,7 +56,7 @@ describe("errors", () => {
   anchor.setProvider(provider);
   provider.opts.maxRetries = 3;
 
-  const program = anchor.workspace.Errors as Program<Errors>;
+  const program = anchor.workspace.errors as Program<Errors>;
 
   it("Emits a Hello error", async () => {
     await withLogTest(async () => {

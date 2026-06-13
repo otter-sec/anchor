@@ -6,7 +6,7 @@ import { assert } from "chai";
 describe("multiple-scripts: extended test suite (selected via --script test2)", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.Example as Program<Example>;
+  const program = anchor.workspace.example as Program<Example>;
 
   it("initializes repeatedly", async () => {
     const signatures: string[] = [];

@@ -10,7 +10,7 @@ describe("typescript", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.PdaDerivation as Program<PdaDerivation>;
+  const program = anchor.workspace.pdaDerivation as Program<PdaDerivation>;
   const base = Keypair.generate();
   const dataKey = Keypair.generate();
   const data = new BN(1);

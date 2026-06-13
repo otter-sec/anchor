@@ -7,9 +7,8 @@ describe("accountloader-realloc", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
 
   const program = anchor.workspace
-    .AccountloaderRealloc as Program<AccountloaderRealloc>;
-  const authority = (program.provider as any).wallet
-    .payer as anchor.web3.Keypair;
+    .accountloaderRealloc as Program<AccountloaderRealloc>;
+  const authority = program.provider.wallet!.payer;
 
   const DISCRIMINATOR_LEN = 8;
 
