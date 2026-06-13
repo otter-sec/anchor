@@ -273,11 +273,9 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
     ) -> Result<T, ClientError> {
         let account = self
             .internal_rpc_client
-            .get_account_with_commitment(&address, CommitmentConfig::processed())
+            .get_account(&address)
             .await
-            .map_err(Box::new)?
-            .value
-            .ok_or(ClientError::AccountNotFound)?;
+            .map_err(Box::new)?;
         let mut data: &[u8] = &account.data;
         T::try_deserialize(&mut data).map_err(Into::into)
     }
