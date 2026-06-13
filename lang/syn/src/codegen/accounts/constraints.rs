@@ -483,11 +483,7 @@ fn generate_constraint_realloc(
                     )?;
                 }
             } else {
-                let __old_rent_minimum = __anchor_rent.minimum_balance(__field_info.data_len());
-                let __rent_savings = __old_rent_minimum.saturating_sub(__new_rent_minimum);
-                let __available_above_new_minimum =
-                    __field_info.lamports().saturating_sub(__new_rent_minimum);
-                let __lamport_amt = ::std::cmp::min(__rent_savings, __available_above_new_minimum);
+                let __lamport_amt = __field_info.lamports().checked_sub(__new_rent_minimum).unwrap();
                 anchor_lang::Lamports::add_lamports(&#payer, __lamport_amt)?;
                 anchor_lang::Lamports::sub_lamports(&__field_info, __lamport_amt)?;
             }

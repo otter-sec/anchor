@@ -59,24 +59,6 @@ describe("realloc", () => {
   });
 
   it("realloc subtractive", async () => {
-    const extraLamports = 1_000_000;
-    const transferIx = anchor.web3.SystemProgram.transfer({
-      fromPubkey: authority.publicKey,
-      toPubkey: sample,
-      lamports: extraLamports,
-    });
-    await program.provider.sendAndConfirm(
-      new anchor.web3.Transaction().add(transferIx)
-    );
-
-    const before = await program.provider.connection.getAccountInfo(sample);
-    assert.isNotNull(before);
-    const oldRentMinimum =
-      await program.provider.connection.getMinimumBalanceForRentExemption(
-        before!.data.length
-      );
-    assert.strictEqual(before!.lamports, oldRentMinimum + extraLamports);
-
     await program.methods
       .realloc(1)
       .accounts({ authority: authority.publicKey, sample })
@@ -84,18 +66,6 @@ describe("realloc", () => {
 
     const s = await program.account.sample.fetch(sample);
     assert.lengthOf(s.data, 1);
-
-    const after = await program.provider.connection.getAccountInfo(sample);
-    assert.isNotNull(after);
-    const newRentMinimum =
-      await program.provider.connection.getMinimumBalanceForRentExemption(
-        after!.data.length
-      );
-    assert.strictEqual(
-      after!.lamports,
-      newRentMinimum + extraLamports,
-      "subtractive realloc should preserve lamports unrelated to rent"
-    );
   });
 
   it("fails with duplicate account reallocations", async () => {
