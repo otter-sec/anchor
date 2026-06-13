@@ -4587,16 +4587,21 @@ fn run_test_suite(
     }
     let url = cluster_url(cfg, test_validator, surfpool_config);
 
-    let node_options = format!(
-        "{} {}",
-        match std::env::var_os("NODE_OPTIONS") {
-            Some(value) => value
+    let mut node_options_parts = Vec::new();
+    if let Some(value) = std::env::var_os("NODE_OPTIONS") {
+        node_options_parts.push(
+            value
                 .into_string()
                 .map_err(std::env::VarError::NotUnicode)?,
-            None => "".to_owned(),
-        },
-        get_node_dns_option(),
-    );
+        );
+    }
+    node_options_parts.push(get_node_dns_option().to_string());
+    // Note: --no-experimental-strip-types cannot be set via NODE_OPTIONS.
+    let node_options = node_options_parts
+        .into_iter()
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
 
     // Setup log reader - kept alive until end of scope
     let log_streams = if stream_program_logs {
@@ -6014,6 +6019,7 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
 
         let url = cluster_url(cfg, &cfg.test_validator, &cfg.surfpool_config);
         let cur_dir = std::env::current_dir()?;
+        let workspace_root = cur_dir.clone();
         let migrations_dir = cur_dir.join("migrations");
         let deploy_ts = Path::new("deploy.ts");
 
@@ -6030,19 +6036,34 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
                 rust_template::deploy_ts_script_host(&url, &module_path.display().to_string());
             fs::write(deploy_ts, deploy_script_host_str)?;
 
-            let pkg_manager_cmd =
-                resolve_package_manager(cfg.toolchain.package_manager.clone())?.to_string();
+            let pkg_manager = resolve_package_manager(cfg.toolchain.package_manager.clone())?;
+            let deploy_module_path = fs::canonicalize(deploy_ts)?.to_string_lossy().to_string();
 
-            std::process::Command::new(pkg_manager_cmd)
-                .args([
-                    "run",
-                    "ts-node",
-                    &fs::canonicalize(deploy_ts)?.to_string_lossy(),
-                ])
-                .env("ANCHOR_WALLET", cfg.provider.wallet.to_string())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .output()?
+            let has_tsx = {
+                let bin_dir = workspace_root.join("node_modules").join(".bin");
+                let mut candidates = vec![bin_dir.join("tsx")];
+                if cfg!(target_os = "windows") {
+                    candidates.push(bin_dir.join("tsx.cmd"));
+                    candidates.push(bin_dir.join("tsx.ps1"));
+                }
+                candidates.into_iter().any(|path| path.exists())
+            };
+
+            let run_ts_command = |bin: &str| -> Result<std::process::Output> {
+                let (command, args) = build_ts_command(&pkg_manager, bin, &deploy_module_path);
+
+                std::process::Command::new(&command)
+                    .args(&args)
+                    .env("ANCHOR_WALLET", cfg.provider.wallet.to_string())
+                    .output()
+                    .map_err(|e| anyhow::format_err!("{}", e))
+            };
+
+            if has_tsx {
+                run_ts_command("tsx")?
+            } else {
+                run_ts_command("ts-node")?
+            }
         } else {
             let deploy_js = deploy_ts.with_extension("js");
             let module_path = migrations_dir.join(&deploy_js);
@@ -6827,6 +6848,31 @@ fn get_node_dns_option() -> &'static str {
         "--dns-result-order=ipv4first"
     } else {
         ""
+    }
+}
+
+fn build_ts_command(
+    pkg_manager: &PackageManager,
+    bin: &str,
+    module_path: &str,
+) -> (String, Vec<String>) {
+    match pkg_manager {
+        PackageManager::Yarn => (
+            "yarn".to_string(),
+            vec!["run".to_string(), bin.to_string(), module_path.to_string()],
+        ),
+        PackageManager::NPM => (
+            "npx".to_string(),
+            vec![bin.to_string(), module_path.to_string()],
+        ),
+        PackageManager::PNPM => (
+            "pnpm".to_string(),
+            vec!["exec".to_string(), bin.to_string(), module_path.to_string()],
+        ),
+        PackageManager::Bun => (
+            "bunx".to_string(),
+            vec![bin.to_string(), module_path.to_string()],
+        ),
     }
 }
 
