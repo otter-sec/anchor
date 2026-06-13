@@ -109,7 +109,7 @@ pub struct InitMyAccount<'info> {
     base: Account<'info, BaseAccount>,
     // Intentionally using this qualified form instead of importing to test parsing
     another_base: Account<'info, crate::other::AnotherBaseAccount>,
-    base2: AccountInfo<'info>,
+    base2: UncheckedAccount<'info>,
     #[account(
         init,
         payer = payer,
@@ -153,7 +153,7 @@ pub struct Nested<'info> {
         bump,
     )]
     /// CHECK: Not needed
-    account_nested: AccountInfo<'info>,
+    account_nested: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]

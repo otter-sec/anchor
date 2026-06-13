@@ -202,7 +202,7 @@ pub struct Initialize<'info> {
         seeds = [WRAPPER_AUTH_SEED, deposit_mint.key().as_ref(), wrapped_mint.key().as_ref()],
         bump,
     )]
-    pub wrapper_authority: AccountInfo<'info>,
+    pub wrapper_authority: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
     pub deposit_token_program: Interface<'info, TokenInterface>,
@@ -253,7 +253,7 @@ pub struct Wrap<'info> {
         seeds = [WRAPPER_AUTH_SEED, deposit_mint.key().as_ref(), wrapped_mint.key().as_ref()],
         bump,
     )]
-    pub wrapper_authority: AccountInfo<'info>,
+    pub wrapper_authority: UncheckedAccount<'info>,
 
     pub deposit_token_program: Interface<'info, TokenInterface>,
     pub wrapped_token_program: Interface<'info, TokenInterface>,
@@ -303,7 +303,7 @@ pub struct Unwrap<'info> {
         seeds = [crate::token_wrapper::WRAPPER_AUTH_SEED, deposit_mint.key().as_ref(), wrapped_mint.key().as_ref()],
         bump,
     )]
-    pub wrapper_authority: AccountInfo<'info>,
+    pub wrapper_authority: UncheckedAccount<'info>,
 
     pub deposit_token_program: Interface<'info, TokenInterface>,
     pub wrapped_token_program: Interface<'info, TokenInterface>,

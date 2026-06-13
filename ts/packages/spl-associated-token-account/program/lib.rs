@@ -26,9 +26,9 @@ pub struct Create<'info> {
     #[account(mut)]
     funding_address: Signer<'info>,
     #[account(mut)]
-    associated_account_address: AccountInfo<'info>,
-    wallet_address: AccountInfo<'info>,
-    token_mint_address: AccountInfo<'info>,
+    associated_account_address: UncheckedAccount<'info>,
+    wallet_address: UncheckedAccount<'info>,
+    token_mint_address: UncheckedAccount<'info>,
     system_program: Program<'info, System>,
     token_program: Program<'info, Token>,
 }
@@ -38,9 +38,9 @@ pub struct CreateIdempotent<'info> {
     #[account(mut)]
     funding_address: Signer<'info>,
     #[account(mut)]
-    associated_account_address: AccountInfo<'info>,
-    wallet_address: AccountInfo<'info>,
-    token_mint_address: AccountInfo<'info>,
+    associated_account_address: UncheckedAccount<'info>,
+    wallet_address: UncheckedAccount<'info>,
+    token_mint_address: UncheckedAccount<'info>,
     system_program: Program<'info, System>,
     token_program: Program<'info, Token>,
 }
@@ -48,12 +48,12 @@ pub struct CreateIdempotent<'info> {
 #[derive(Accounts)]
 pub struct RecoverNested<'info> {
     #[account(mut)]
-    nested_associated_account_address: AccountInfo<'info>,
-    nested_token_mint_address: AccountInfo<'info>,
+    nested_associated_account_address: UncheckedAccount<'info>,
+    nested_token_mint_address: UncheckedAccount<'info>,
     #[account(mut)]
-    destination_associated_account_address: AccountInfo<'info>,
-    owner_associated_account_address: AccountInfo<'info>,
-    owner_token_mint_address: AccountInfo<'info>,
+    destination_associated_account_address: UncheckedAccount<'info>,
+    owner_associated_account_address: UncheckedAccount<'info>,
+    owner_token_mint_address: UncheckedAccount<'info>,
     #[account(mut)]
     wallet_address: Signer<'info>,
     token_program: Program<'info, Token>,

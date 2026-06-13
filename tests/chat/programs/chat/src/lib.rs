@@ -50,7 +50,7 @@ pub struct CreateUser<'info> {
     user: Account<'info, User>,
     #[account(mut)]
     authority: Signer<'info>,
-    system_program: AccountInfo<'info>,
+    system_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]

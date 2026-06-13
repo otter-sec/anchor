@@ -23,7 +23,7 @@ where
     T: AccountSerialize + AccountDeserialize + Owner + Clone,
     U: BorshSerialize + BorshDeserialize + Default + Clone,
 {
-    pub non_generic: AccountInfo<'info>,
+    pub non_generic: UncheckedAccount<'info>,
     pub generic: Account<'info, T>,
 
     pub const_generic: AccountLoader<'info, FooAccount<N>>,

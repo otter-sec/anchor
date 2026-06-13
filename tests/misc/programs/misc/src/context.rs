@@ -27,7 +27,7 @@ pub struct TestTokenSeedsInit<'info> {
     pub my_pda: Account<'info, TokenAccount>,
     #[account(mut)]
     /// CHECK:
-    pub authority: AccountInfo<'info>,
+    pub authority: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
 }
@@ -64,7 +64,7 @@ pub struct TestInitAssociatedTokenWithTokenProgram<'info> {
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
     /// CHECK: ignore
-    pub associated_token_token_program: AccountInfo<'info>,
+    pub associated_token_token_program: UncheckedAccount<'info>,
     pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
@@ -77,7 +77,7 @@ pub struct TestValidateAssociatedToken<'info> {
     pub token: Account<'info, TokenAccount>,
     pub mint: Account<'info, Mint>,
     /// CHECK:
-    pub wallet: AccountInfo<'info>,
+    pub wallet: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -88,9 +88,9 @@ pub struct TestInstructionConstraint<'info> {
         bump = nonce,
     )]
     /// CHECK:
-    pub my_pda: AccountInfo<'info>,
+    pub my_pda: UncheckedAccount<'info>,
     /// CHECK:
-    pub my_account: AccountInfo<'info>,
+    pub my_account: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -107,7 +107,7 @@ pub struct TestPdaInit<'info> {
     #[account(mut)]
     pub my_payer: Signer<'info>,
     /// CHECK:
-    pub foo: AccountInfo<'info>,
+    pub foo: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -135,7 +135,7 @@ pub struct TestPdaMutZeroCopy<'info> {
     )]
     pub my_pda: AccountLoader<'info, DataZeroCopy>,
     /// CHECK:
-    pub my_payer: AccountInfo<'info>,
+    pub my_payer: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -159,23 +159,23 @@ pub struct InitializeSkipRentExempt<'info> {
 #[derive(Accounts)]
 pub struct InitializeNoRentExempt<'info> {
     /// CHECK:
-    pub data: AccountInfo<'info>,
+    pub data: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct TestOwner<'info> {
     #[account(owner = *misc.key)]
     /// CHECK:
-    pub data: AccountInfo<'info>,
+    pub data: UncheckedAccount<'info>,
     /// CHECK:
-    pub misc: AccountInfo<'info>,
+    pub misc: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct TestExecutable<'info> {
     #[account(executable)]
     /// CHECK:
-    pub program: AccountInfo<'info>,
+    pub program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -183,7 +183,7 @@ pub struct TestClose<'info> {
     #[account(mut, close = sol_dest)]
     pub data: Account<'info, Data>,
     /// CHECK:
-    sol_dest: AccountInfo<'info>,
+    sol_dest: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -191,7 +191,7 @@ pub struct TestCloseTwice<'info> {
     #[account(mut, close = sol_dest)]
     pub data: Account<'info, Data>,
     /// CHECK:
-    pub sol_dest: AccountInfo<'info>,
+    pub sol_dest: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -199,7 +199,7 @@ pub struct TestCloseMut<'info> {
     #[account(mut)]
     pub data: Account<'info, Data>,
     /// CHECK:
-    pub sol_dest: AccountInfo<'info>,
+    pub sol_dest: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -247,7 +247,7 @@ pub struct TestInitMintWithTokenProgram<'info> {
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
     /// CHECK: ignore
-    pub mint_token_program: AccountInfo<'info>,
+    pub mint_token_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -275,7 +275,7 @@ pub struct TestInitTokenWithTokenProgram<'info> {
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
     /// CHECK: ignore
-    pub token_token_program: AccountInfo<'info>,
+    pub token_token_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -308,7 +308,7 @@ pub struct TestInitWithEmptySeeds<'info> {
 pub struct TestEmptySeedsConstraint<'info> {
     #[account(seeds = [], bump)]
     /// CHECK:
-    pub pda: AccountInfo<'info>,
+    pub pda: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -339,7 +339,7 @@ pub struct TestInitIfNeededChecksOwner<'info> {
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
     /// CHECK:
-    pub owner: AccountInfo<'info>,
+    pub owner: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -363,9 +363,9 @@ pub struct TestInitMintIfNeeded<'info> {
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     /// CHECK:
-    pub mint_authority: AccountInfo<'info>,
+    pub mint_authority: UncheckedAccount<'info>,
     /// CHECK:
-    pub freeze_authority: AccountInfo<'info>,
+    pub freeze_authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -382,11 +382,11 @@ pub struct TestInitMintIfNeededWithTokenProgram<'info> {
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
     /// CHECK: ignore
-    pub mint_token_program: AccountInfo<'info>,
+    pub mint_token_program: UncheckedAccount<'info>,
     /// CHECK: ignore
-    pub mint_authority: AccountInfo<'info>,
+    pub mint_authority: UncheckedAccount<'info>,
     /// CHECK: ignore
-    pub freeze_authority: AccountInfo<'info>,
+    pub freeze_authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -399,7 +399,7 @@ pub struct TestInitTokenIfNeeded<'info> {
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     /// CHECK:
-    pub authority: AccountInfo<'info>,
+    pub authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -416,9 +416,9 @@ pub struct TestInitTokenIfNeededWithTokenProgram<'info> {
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
     /// CHECK: ignore
-    pub token_token_program: AccountInfo<'info>,
+    pub token_token_program: UncheckedAccount<'info>,
     /// CHECK:
-    pub authority: AccountInfo<'info>,
+    pub authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -436,7 +436,7 @@ pub struct TestInitAssociatedTokenIfNeeded<'info> {
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     /// CHECK:
-    pub authority: AccountInfo<'info>,
+    pub authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -453,10 +453,10 @@ pub struct TestInitAssociatedTokenIfNeededWithTokenProgram<'info> {
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
     /// CHECK: ignore
-    pub associated_token_token_program: AccountInfo<'info>,
+    pub associated_token_token_program: UncheckedAccount<'info>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     /// CHECK: ignore
-    pub authority: AccountInfo<'info>,
+    pub authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -486,21 +486,21 @@ pub struct TestMultidimensionalArrayConstSizes<'info> {
 #[derive(Accounts)]
 pub struct NoRentExempt<'info> {
     /// CHECK:
-    pub data: AccountInfo<'info>,
+    pub data: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct EnforceRentExempt<'info> {
     #[account(rent_exempt = enforce)]
     /// CHECK:
-    pub data: AccountInfo<'info>,
+    pub data: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct InitDecreaseLamports<'info> {
     #[account(init, payer = user, space = 1000)]
     /// CHECK:
-    pub data: AccountInfo<'info>,
+    pub data: UncheckedAccount<'info>,
     #[account(mut)]
     pub user: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -510,7 +510,7 @@ pub struct InitDecreaseLamports<'info> {
 pub struct InitIfNeededChecksRentExemption<'info> {
     #[account(init_if_needed, payer = user, space = 1000)]
     /// CHECK:
-    pub data: AccountInfo<'info>,
+    pub data: UncheckedAccount<'info>,
     #[account(mut)]
     pub user: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -523,11 +523,11 @@ pub struct TestProgramIdConstraint<'info> {
     // just deriving like this for testing purposes
     #[account(seeds = [b"seed"], bump = bump, seeds::program = anchor_spl::associated_token::ID)]
     /// CHECK:
-    first: AccountInfo<'info>,
+    first: UncheckedAccount<'info>,
 
     #[account(seeds = [b"seed"], bump = second_bump, seeds::program = crate::ID)]
     /// CHECK:
-    second: AccountInfo<'info>,
+    second: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -536,11 +536,11 @@ pub struct TestProgramIdConstraintUsingFindPda<'info> {
     // just deriving like this for testing purposes
     #[account(seeds = [b"seed"], bump, seeds::program = anchor_spl::associated_token::ID)]
     /// CHECK:
-    first: AccountInfo<'info>,
+    first: UncheckedAccount<'info>,
 
     #[account(seeds = [b"seed"], bump, seeds::program = crate::ID)]
     /// CHECK:
-    second: AccountInfo<'info>,
+    second: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -583,7 +583,7 @@ pub struct TestAuthorityConstraint<'info> {
     pub token: Account<'info, TokenAccount>,
     pub mint: Account<'info, Mint>,
     /// CHECK: ignore
-    pub fake_authority: AccountInfo<'info>,
+    pub fake_authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -603,7 +603,7 @@ pub struct TestOnlyTokenProgramConstraint<'info> {
     )]
     pub token: Account<'info, TokenAccount>,
     /// CHECK: ignore
-    pub token_token_program: AccountInfo<'info>,
+    pub token_token_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -625,9 +625,9 @@ pub struct TestMintConstraint<'info> {
     )]
     pub mint: Account<'info, Mint>,
     /// CHECK: ignore
-    pub mint_authority: AccountInfo<'info>,
+    pub mint_authority: UncheckedAccount<'info>,
     /// CHECK: ignore
-    pub freeze_authority: AccountInfo<'info>,
+    pub freeze_authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -647,9 +647,9 @@ pub struct TestMintAuthorityConstraint<'info> {
     )]
     pub mint: Account<'info, Mint>,
     /// CHECK: ignore
-    pub mint_authority: AccountInfo<'info>,
+    pub mint_authority: UncheckedAccount<'info>,
     /// CHECK: ignore
-    pub freeze_authority: AccountInfo<'info>,
+    pub freeze_authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -659,7 +659,7 @@ pub struct TestMintOneAuthorityConstraint<'info> {
     )]
     pub mint: Account<'info, Mint>,
     /// CHECK: ignore
-    pub mint_authority: AccountInfo<'info>,
+    pub mint_authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -671,7 +671,7 @@ pub struct TestMintMissMintAuthConstraint<'info> {
     )]
     pub mint: Account<'info, Mint>,
     /// CHECK: ignore
-    pub freeze_authority: AccountInfo<'info>,
+    pub freeze_authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -681,7 +681,7 @@ pub struct TestMintOnlyTokenProgramConstraint<'info> {
     )]
     pub mint: Account<'info, Mint>,
     /// CHECK: ignore
-    pub mint_token_program: AccountInfo<'info>,
+    pub mint_token_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -693,7 +693,7 @@ pub struct TestAssociatedToken<'info> {
     pub token: Account<'info, TokenAccount>,
     pub mint: Account<'info, Mint>,
     /// CHECK: ignore
-    pub authority: AccountInfo<'info>,
+    pub authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -706,9 +706,9 @@ pub struct TestAssociatedTokenWithTokenProgramConstraint<'info> {
     pub token: InterfaceAccount<'info, TokenAccountInterface>,
     pub mint: InterfaceAccount<'info, MintInterface>,
     /// CHECK: ignore
-    pub authority: AccountInfo<'info>,
+    pub authority: UncheckedAccount<'info>,
     /// CHECK: ignore
-    pub associated_token_token_program: AccountInfo<'info>,
+    pub associated_token_token_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -726,32 +726,32 @@ pub struct TestUsedIdentifiers<'info> {
         constraint = 4 == remaining_accounts,
     )]
     /// CHECK: ignore
-    pub test: AccountInfo<'info>,
+    pub test: UncheckedAccount<'info>,
 
     #[account(
         seeds = [&[program_id], &[accounts], &[ix_data], &[remaining_accounts]],
         bump = program_id,
     )]
     /// CHECK: ignore
-    pub test1: AccountInfo<'info>,
+    pub test1: UncheckedAccount<'info>,
     #[account(
         seeds = [&[program_id], &[accounts], &[ix_data], &[remaining_accounts]],
         bump = accounts,
     )]
     /// CHECK: ignore
-    pub test2: AccountInfo<'info>,
+    pub test2: UncheckedAccount<'info>,
     #[account(
         seeds = [&[program_id], &[accounts], &[ix_data], &[remaining_accounts]],
         bump = ix_data,
     )]
     /// CHECK: ignore
-    pub test3: AccountInfo<'info>,
+    pub test3: UncheckedAccount<'info>,
     #[account(
         seeds = [&[program_id], &[accounts], &[ix_data], &[remaining_accounts]],
         bump = remaining_accounts,
     )]
     /// CHECK: ignore
-    pub test4: AccountInfo<'info>,
+    pub test4: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]

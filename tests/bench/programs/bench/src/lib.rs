@@ -383,33 +383,33 @@ pub struct Unsized {
 
 #[derive(Accounts)]
 pub struct AccountInfo1<'info> {
-    pub account1: AccountInfo<'info>,
+    pub account1: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct AccountInfo2<'info> {
-    pub account1: AccountInfo<'info>,
-    pub account2: AccountInfo<'info>,
+    pub account1: UncheckedAccount<'info>,
+    pub account2: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct AccountInfo4<'info> {
-    pub account1: AccountInfo<'info>,
-    pub account2: AccountInfo<'info>,
-    pub account3: AccountInfo<'info>,
-    pub account4: AccountInfo<'info>,
+    pub account1: UncheckedAccount<'info>,
+    pub account2: UncheckedAccount<'info>,
+    pub account3: UncheckedAccount<'info>,
+    pub account4: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct AccountInfo8<'info> {
-    pub account1: AccountInfo<'info>,
-    pub account2: AccountInfo<'info>,
-    pub account3: AccountInfo<'info>,
-    pub account4: AccountInfo<'info>,
-    pub account5: AccountInfo<'info>,
-    pub account6: AccountInfo<'info>,
-    pub account7: AccountInfo<'info>,
-    pub account8: AccountInfo<'info>,
+    pub account1: UncheckedAccount<'info>,
+    pub account2: UncheckedAccount<'info>,
+    pub account3: UncheckedAccount<'info>,
+    pub account4: UncheckedAccount<'info>,
+    pub account5: UncheckedAccount<'info>,
+    pub account6: UncheckedAccount<'info>,
+    pub account7: UncheckedAccount<'info>,
+    pub account8: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]

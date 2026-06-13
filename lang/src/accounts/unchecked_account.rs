@@ -15,7 +15,14 @@ use {
 #[derive(Debug, Clone)]
 pub struct UncheckedAccount<'info>(&'info AccountInfo<'info>);
 
+impl<'info> From<&'info AccountInfo<'info>> for UncheckedAccount<'info> {
+    fn from(value: &'info AccountInfo<'info>) -> Self {
+        Self(value)
+    }
+}
+
 impl<'info> UncheckedAccount<'info> {
+    #[deprecated(note = "Use `UncheckedAccount::from` instead; this constructor cannot fail")]
     pub fn try_from(acc_info: &'info AccountInfo<'info>) -> Self {
         Self(acc_info)
     }

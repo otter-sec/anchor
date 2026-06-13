@@ -130,33 +130,33 @@ pub mod spl_token {
 #[derive(Accounts)]
 pub struct InitializeMint<'info> {
     #[account(mut)]
-    mint: AccountInfo<'info>,
+    mint: UncheckedAccount<'info>,
     rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
 pub struct InitializeAccount<'info> {
     #[account(mut)]
-    account: AccountInfo<'info>,
-    mint: AccountInfo<'info>,
-    owner: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
+    mint: UncheckedAccount<'info>,
+    owner: UncheckedAccount<'info>,
     rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
 pub struct InitializeMultisig<'info> {
     #[account(mut)]
-    multisig: AccountInfo<'info>,
+    multisig: UncheckedAccount<'info>,
     rent: Sysvar<'info, Rent>,
-    // optional_signer: AccountInfo<'info>,
+    // optional_signer: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct Transfer<'info> {
     #[account(mut)]
-    source: AccountInfo<'info>,
+    source: UncheckedAccount<'info>,
     #[account(mut)]
-    destination: AccountInfo<'info>,
+    destination: UncheckedAccount<'info>,
     authority: Signer<'info>,
     // optional_signer: Signer<'info>,
 }
@@ -164,8 +164,8 @@ pub struct Transfer<'info> {
 #[derive(Accounts)]
 pub struct Approve<'info> {
     #[account(mut)]
-    source: AccountInfo<'info>,
-    delegate: AccountInfo<'info>,
+    source: UncheckedAccount<'info>,
+    delegate: UncheckedAccount<'info>,
     owner: Signer<'info>,
     // optional_signer: Signer<'info>,
 }
@@ -173,7 +173,7 @@ pub struct Approve<'info> {
 #[derive(Accounts)]
 pub struct Revoke<'info> {
     #[account(mut)]
-    source: AccountInfo<'info>,
+    source: UncheckedAccount<'info>,
     owner: Signer<'info>,
     // optional_signer: Signer<'info>,
 }
@@ -181,7 +181,7 @@ pub struct Revoke<'info> {
 #[derive(Accounts)]
 pub struct SetAuthority<'info> {
     #[account(mut)]
-    owned: AccountInfo<'info>,
+    owned: UncheckedAccount<'info>,
     owner: Signer<'info>,
     signer: Signer<'info>,
 }
@@ -189,9 +189,9 @@ pub struct SetAuthority<'info> {
 #[derive(Accounts)]
 pub struct MintTo<'info> {
     #[account(mut)]
-    mint: AccountInfo<'info>,
+    mint: UncheckedAccount<'info>,
     #[account(mut)]
-    account: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
     owner: Signer<'info>,
     // optional_signer: Signer<'info>,
 }
@@ -199,9 +199,9 @@ pub struct MintTo<'info> {
 #[derive(Accounts)]
 pub struct Burn<'info> {
     #[account(mut)]
-    account: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
     #[account(mut)]
-    mint: AccountInfo<'info>,
+    mint: UncheckedAccount<'info>,
     authority: Signer<'info>,
     // optional_signer: Signer<'info>,
 }
@@ -209,9 +209,9 @@ pub struct Burn<'info> {
 #[derive(Accounts)]
 pub struct CloseAccount<'info> {
     #[account(mut)]
-    account: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
     #[account(mut)]
-    destination: AccountInfo<'info>,
+    destination: UncheckedAccount<'info>,
     owner: Signer<'info>,
     // optional_signer: Signer<'info>,
 }
@@ -219,8 +219,8 @@ pub struct CloseAccount<'info> {
 #[derive(Accounts)]
 pub struct FreezeAccount<'info> {
     #[account(mut)]
-    account: AccountInfo<'info>,
-    mint: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
+    mint: UncheckedAccount<'info>,
     owner: Signer<'info>,
     // optional_signer: Signer<'info>,
 }
@@ -228,8 +228,8 @@ pub struct FreezeAccount<'info> {
 #[derive(Accounts)]
 pub struct ThawAccount<'info> {
     #[account(mut)]
-    account: AccountInfo<'info>,
-    mint: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
+    mint: UncheckedAccount<'info>,
     owner: Signer<'info>,
     // optional_signer: Signer<'info>,
 }
@@ -237,10 +237,10 @@ pub struct ThawAccount<'info> {
 #[derive(Accounts)]
 pub struct TransferChecked<'info> {
     #[account(mut)]
-    source: AccountInfo<'info>,
-    mint: AccountInfo<'info>,
+    source: UncheckedAccount<'info>,
+    mint: UncheckedAccount<'info>,
     #[account(mut)]
-    destination: AccountInfo<'info>,
+    destination: UncheckedAccount<'info>,
     authority: Signer<'info>,
     // optional_signer: Signer<'info>,
 }
@@ -248,9 +248,9 @@ pub struct TransferChecked<'info> {
 #[derive(Accounts)]
 pub struct ApproveChecked<'info> {
     #[account(mut)]
-    source: AccountInfo<'info>,
-    mint: AccountInfo<'info>,
-    delegate: AccountInfo<'info>,
+    source: UncheckedAccount<'info>,
+    mint: UncheckedAccount<'info>,
+    delegate: UncheckedAccount<'info>,
     owner: Signer<'info>,
     // optional_signer: Signer<'info>,
 }
@@ -258,9 +258,9 @@ pub struct ApproveChecked<'info> {
 #[derive(Accounts)]
 pub struct MintToChecked<'info> {
     #[account(mut)]
-    mint: AccountInfo<'info>,
+    mint: UncheckedAccount<'info>,
     #[account(mut)]
-    account: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
     owner: Signer<'info>,
     // optional_signer: Signer<'info>,
 }
@@ -268,9 +268,9 @@ pub struct MintToChecked<'info> {
 #[derive(Accounts)]
 pub struct BurnChecked<'info> {
     #[account(mut)]
-    account: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
     #[account(mut)]
-    mint: AccountInfo<'info>,
+    mint: UncheckedAccount<'info>,
     authority: Signer<'info>,
     // optional_signer: Signer<'info>,
 }
@@ -278,56 +278,56 @@ pub struct BurnChecked<'info> {
 #[derive(Accounts)]
 pub struct InitializeAccount2<'info> {
     #[account(mut)]
-    account: AccountInfo<'info>,
-    mint: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
+    mint: UncheckedAccount<'info>,
     rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
 pub struct SyncNative<'info> {
     #[account(mut)]
-    account: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct InitializeAccount3<'info> {
     #[account(mut)]
-    account: AccountInfo<'info>,
-    mint: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
+    mint: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct InitializeMultisig2<'info> {
     #[account(mut)]
-    multisig: AccountInfo<'info>,
-    signer: AccountInfo<'info>,
+    multisig: UncheckedAccount<'info>,
+    signer: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct InitializeMint2<'info> {
     #[account(mut)]
-    mint: AccountInfo<'info>,
+    mint: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct GetAccountDataSize<'info> {
-    mint: AccountInfo<'info>,
+    mint: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct InitializeImmutableOwner<'info> {
     #[account(mut)]
-    account: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct AmountToUiAmount<'info> {
-    mint: AccountInfo<'info>,
+    mint: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct UiAmountToAmount<'info> {
-    mint: AccountInfo<'info>,
+    mint: UncheckedAccount<'info>,
 }
 
 #[account]
