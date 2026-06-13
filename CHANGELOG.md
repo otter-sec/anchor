@@ -54,6 +54,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Reduce cloning in `realloc` constraint when shrinking ([#4642](https://github.com/solana-foundation/anchor/pull/4642)).
 - syn: Remove `anyhow` ([#4640](https://github.com/solana-foundation/anchor/pull/4640)).
 - ts: Update `engines.node` to `>= 20.18` ([#4647](https://github.com/solana-foundation/anchor/pull/4647)).
+- lang: Sync type derives and simplify internal args creation in `declare_program!` ([#4667](https://github.com/solana-foundation/anchor/pull/4667)).
 
 ### Breaking
 

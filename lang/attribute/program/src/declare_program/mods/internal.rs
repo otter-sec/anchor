@@ -1,10 +1,11 @@
 use {
     super::common::{
-        can_derive_clone_ty, can_derive_copy_ty, can_derive_debug_ty, can_derive_default_ty,
-        convert_idl_type_to_syn_type, gen_discriminator, get_all_instruction_accounts,
+        convert_idl_type_def_to_ts, gen_discriminator, get_all_instruction_accounts,
         get_canonical_program_id,
     },
-    anchor_lang_idl::types::{Idl, IdlInstructionAccountItem},
+    anchor_lang_idl::types::{
+        Idl, IdlDefinedFields, IdlInstructionAccountItem, IdlTypeDef, IdlTypeDefTy,
+    },
     anchor_syn::{
         codegen::accounts::{__client_accounts, __cpi_client_accounts},
         parser::accounts,
@@ -32,24 +33,23 @@ pub fn gen_internal_mod(idl: &Idl) -> proc_macro2::TokenStream {
 fn gen_internal_args_mod(idl: &Idl) -> proc_macro2::TokenStream {
     let ixs = idl.instructions.iter().map(|ix| {
         let ix_struct_name = format_ident!("{}", ix.name.to_camel_case());
-
-        let fields = ix.args.iter().map(|arg| {
-            let name = format_ident!("{}", arg.name);
-            let ty = convert_idl_type_to_syn_type(&arg.ty);
-            quote! { pub #name: #ty }
-        });
-
-        let ix_struct = if ix.args.is_empty() {
-            quote! {
-                pub struct #ix_struct_name;
-            }
-        } else {
-            quote! {
-                pub struct #ix_struct_name {
-                    #(#fields),*
-                }
-            }
-        };
+        let ty_def = convert_idl_type_def_to_ts(
+            &IdlTypeDef {
+                name: ix_struct_name.to_string(),
+                docs: vec![String::from("Instruction arguments")],
+                ty: IdlTypeDefTy::Struct {
+                    fields: if ix.args.is_empty() {
+                        None
+                    } else {
+                        Some(IdlDefinedFields::Named(ix.args.to_owned()))
+                    },
+                },
+                generics: Default::default(),
+                repr: Default::default(),
+                serialization: Default::default(),
+            },
+            &idl.types,
+        );
 
         let discriminator = gen_discriminator(&ix.discriminator);
         let impl_discriminator = quote! {
@@ -71,40 +71,8 @@ fn gen_internal_args_mod(idl: &Idl) -> proc_macro2::TokenStream {
             }
         };
 
-        // Generate conditional derives based on field types
-        let copy_attr = ix
-            .args
-            .iter()
-            .map(|field| &field.ty)
-            .all(|ty| can_derive_copy_ty(ty, &idl.types))
-            .then_some(quote!(#[derive(Copy)]));
-        let clone_attr = ix
-            .args
-            .iter()
-            .map(|field| &field.ty)
-            .all(|ty| can_derive_clone_ty(ty, &idl.types))
-            .then_some(quote!(#[derive(Clone)]));
-        let debug_attr = ix
-            .args
-            .iter()
-            .map(|field| &field.ty)
-            .all(|ty| can_derive_debug_ty(ty, &idl.types))
-            .then_some(quote!(#[derive(Debug)]));
-        let default_attr = ix
-            .args
-            .iter()
-            .map(|field| &field.ty)
-            .all(|ty| can_derive_default_ty(ty, &idl.types))
-            .then_some(quote!(#[derive(Default)]));
-
         quote! {
-            /// Instruction argument
-            #[derive(AnchorSerialize, AnchorDeserialize)]
-            #copy_attr
-            #clone_attr
-            #debug_attr
-            #default_attr
-            #ix_struct
+            #ty_def
 
             #impl_discriminator
             #impl_ix_data

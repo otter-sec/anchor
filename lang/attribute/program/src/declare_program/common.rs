@@ -156,8 +156,7 @@ pub fn convert_idl_type_def_to_ts(
     };
 
     let attrs = {
-        let debug_attr = quote!(#[derive(Debug)]);
-
+        let debug_attr = can_derive_debug(ty_def, ty_defs).then_some(quote!(#[derive(Debug)]));
         let default_attr =
             can_derive_default(ty_def, ty_defs).then_some(quote!(#[derive(Default)]));
 
@@ -176,7 +175,8 @@ pub fn convert_idl_type_def_to_ts(
         };
 
         let clone_attr = matches!(ty_def.serialization, IdlSerialization::Borsh)
-            .then(|| quote!(#[derive(Clone)]))
+            .then(|| can_derive_clone(ty_def, ty_defs).then_some(quote!(#[derive(Clone)])))
+            .flatten()
             .unwrap_or_default();
 
         let copy_attr = matches!(ty_def.serialization, IdlSerialization::Borsh)
@@ -362,7 +362,7 @@ fn can_derive_default(ty_def: &IdlTypeDef, ty_defs: &[IdlTypeDef]) -> bool {
     }
 }
 
-pub fn can_derive_copy_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
+fn can_derive_copy_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
     match ty {
         IdlType::Option(inner) => can_derive_copy_ty(inner, ty_defs),
         IdlType::Array(inner, len) => {
@@ -389,7 +389,7 @@ pub fn can_derive_copy_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
     }
 }
 
-pub fn can_derive_clone_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
+fn can_derive_clone_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
     match ty {
         IdlType::Option(inner) => can_derive_clone_ty(inner, ty_defs),
         IdlType::Vec(inner) => can_derive_clone_ty(inner, ty_defs),
@@ -408,7 +408,7 @@ pub fn can_derive_clone_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
     }
 }
 
-pub fn can_derive_debug_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
+fn can_derive_debug_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
     match ty {
         IdlType::Option(inner) => can_derive_debug_ty(inner, ty_defs),
         IdlType::Vec(inner) => can_derive_debug_ty(inner, ty_defs),
@@ -427,7 +427,7 @@ pub fn can_derive_debug_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
     }
 }
 
-pub fn can_derive_default_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
+fn can_derive_default_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
     match ty {
         IdlType::Option(inner) => can_derive_default_ty(inner, ty_defs),
         IdlType::Vec(inner) => can_derive_default_ty(inner, ty_defs),
