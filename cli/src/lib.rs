@@ -5785,20 +5785,12 @@ fn start_solana_test_validator(
 
     // Wait for the validator to be ready.
     let client = create_client(rpc_url);
-    let mut count = 0;
     let ms_wait = test_validator
         .as_ref()
         .map(|test| test.startup_wait)
         .unwrap_or(STARTUP_WAIT);
-    while count < ms_wait {
-        let r = client.get_latest_blockhash();
-        if r.is_ok() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        count += 100;
-    }
-    if count >= ms_wait {
+
+    if wait_for_validator_ready(&client, ms_wait).is_err() {
         eprintln!(
             "Unable to get latest blockhash. Test validator does not look started. Check \
              {test_ledger_log_filename:?} for errors. Consider increasing [test.startup_wait] in \
@@ -5808,6 +5800,19 @@ fn start_solana_test_validator(
         std::process::exit(1);
     }
     Ok(validator_handle)
+}
+
+fn wait_for_validator_ready(client: &RpcClient, ms_wait: i32) -> Result<()> {
+    let mut count = 0;
+    while count < ms_wait {
+        let r = client.get_latest_blockhash();
+        if r.is_ok() {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        count += 100;
+    }
+    Err(anyhow!("Timeout waiting for validator to start"))
 }
 
 // Return the URL that solana-test-validator should be running on given the
