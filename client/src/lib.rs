@@ -273,11 +273,9 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
     ) -> Result<T, ClientError> {
         let account = self
             .internal_rpc_client
-            .get_account_with_commitment(&address, CommitmentConfig::processed())
+            .get_account(&address)
             .await
-            .map_err(Box::new)?
-            .value
-            .ok_or(ClientError::AccountNotFound)?;
+            .map_err(Box::new)?;
         let mut data: &[u8] = &account.data;
         T::try_deserialize(&mut data).map_err(Into::into)
     }
@@ -769,23 +767,24 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     ) -> Result<solana_transaction::versioned::VersionedTransaction, ClientError> {
         let latest_hash = self
             .internal_rpc_client
-            .get_latest_blockhash()
+            .get_latest_blockhash_with_commitment(self.options)
             .await
-            .map_err(Box::new)?;
+            .map_err(Box::new)?
+            .0;
 
         self.signed_transaction_with_blockhash_versioned(version, latest_hash)
     }
 
     async fn send_internal(&self, version: TxVersion<'_>) -> Result<Signature, ClientError> {
-        let latest_hash = self
+        let (latest_hash, _) = self
             .internal_rpc_client
-            .get_latest_blockhash()
+            .get_latest_blockhash_with_commitment(self.options)
             .await
             .map_err(Box::new)?;
         let tx = self.signed_transaction_with_blockhash_versioned(version, latest_hash)?;
 
         self.internal_rpc_client
-            .send_and_confirm_transaction(&tx)
+            .send_and_confirm_transaction_with_spinner_and_commitment(&tx, self.options)
             .await
             .map_err(|e| Box::new(e).into())
     }
@@ -795,19 +794,15 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
         version: TxVersion<'_>,
         config: RpcSendTransactionConfig,
     ) -> Result<Signature, ClientError> {
-        let latest_hash = self
+        let (latest_hash, _) = self
             .internal_rpc_client
-            .get_latest_blockhash()
+            .get_latest_blockhash_with_commitment(self.options)
             .await
             .map_err(Box::new)?;
         let tx = self.signed_transaction_with_blockhash_versioned(version, latest_hash)?;
 
         self.internal_rpc_client
-            .send_and_confirm_transaction_with_spinner_and_config(
-                &tx,
-                self.internal_rpc_client.commitment(),
-                config,
-            )
+            .send_and_confirm_transaction_with_spinner_and_config(&tx, self.options, config)
             .await
             .map_err(|e| Box::new(e).into())
     }
