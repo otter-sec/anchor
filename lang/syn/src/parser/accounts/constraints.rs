@@ -884,35 +884,40 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
                 .expect("bump must be provided with seeds"),
             program_seed: into_inner!(program_seed).map(|id| id.program_seed),
         });
-        let associated_token =
-            match (
-                associated_token_mint,
-                associated_token_authority,
-                &associated_token_token_program,
-            ) {
-                (Some(mint), Some(auth), _) => Some(ConstraintAssociatedToken {
-                    wallet: auth.into_inner().auth,
-                    mint: mint.into_inner().mint,
-                    token_program: associated_token_token_program
-                        .as_ref()
-                        .map(|a| a.clone().into_inner().token_program),
-                }),
-                (Some(mint), None, _) => return Err(ParseError::new(
+        let associated_token = match (
+            associated_token_mint,
+            associated_token_authority,
+            &associated_token_token_program,
+        ) {
+            (Some(mint), Some(auth), _) => Some(ConstraintAssociatedToken {
+                wallet: auth.into_inner().auth,
+                mint: mint.into_inner().mint,
+                token_program: associated_token_token_program
+                    .as_ref()
+                    .map(|a| a.clone().into_inner().token_program),
+            }),
+            (Some(mint), None, _) => {
+                return Err(ParseError::new(
                     mint.span(),
                     "authority must be provided to specify an associated token program derived \
                      address",
-                )),
-                (None, Some(auth), _) => return Err(ParseError::new(
+                ))
+            }
+            (None, Some(auth), _) => {
+                return Err(ParseError::new(
                     auth.span(),
                     "mint must be provided to specify an associated token program derived address",
-                )),
-                (None, None, Some(token_program)) => return Err(ParseError::new(
+                ))
+            }
+            (None, None, Some(token_program)) => {
+                return Err(ParseError::new(
                     token_program.span(),
                     "mint and authority must be provided to specify an associated token program \
                      derived address",
-                )),
-                _ => None,
-            };
+                ))
+            }
+            _ => None,
+        };
         if let Some(associated_token) = &associated_token {
             if seeds.is_some() {
                 return Err(ParseError::new(
