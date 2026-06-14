@@ -44,11 +44,19 @@ pub fn generate(
                 } else {
                     quote!()
                 };
-                #[allow(clippy::unwrap_used, reason = "computed from valid Rust identifiers via snake_case")]
+                #[allow(
+                    clippy::unwrap_used,
+                    clippy::expect_used,
+                    reason = "symbol path is always non-empty and is a valid Rust path"
+                )]
                 let symbol: proc_macro2::TokenStream = {
                     let symbol_path = s.symbol.split("::").collect::<Vec<_>>();
-                    let name = symbol_path.last().unwrap();
-                    let prefix = &symbol_path[..symbol_path.len() - 1];
+                    let name = symbol_path
+                        .last()
+                        .expect("symbol path must have at least one segment");
+                    let prefix = symbol_path
+                        .get(..symbol_path.len().saturating_sub(1))
+                        .unwrap_or(&[]);
                     let helper_mod = format!("__cpi_client_accounts_{}", name.to_snake_case());
                     if prefix.is_empty() {
                         format!("{helper_mod}::{name}")
@@ -56,7 +64,7 @@ pub fn generate(
                         format!("{}::{helper_mod}::{name}", prefix.join("::"),)
                     }
                     .parse()
-                    .unwrap()
+                    .expect("generated module path must be valid Rust tokens")
                 };
                 quote! {
                     #docs
@@ -154,13 +162,22 @@ pub fn generate(
     let re_exports: Vec<proc_macro2::TokenStream> = {
         // First, dedup the exports.
         let mut re_exports = std::collections::HashSet::new();
+        #[allow(
+            clippy::unwrap_used,
+            clippy::expect_used,
+            reason = "symbol path is always non-empty and is a valid Rust path"
+        )]
         for f in accs.fields.iter().filter_map(|f: &AccountField| match f {
             AccountField::CompositeField(s) => Some(s),
             AccountField::Field(_) => None,
         }) {
             let symbol_path = f.symbol.split("::").collect::<Vec<_>>();
-            let name = symbol_path.last().unwrap();
-            let prefix = &symbol_path[..symbol_path.len() - 1];
+            let name = symbol_path
+                .last()
+                .expect("symbol path must have at least one segment");
+            let prefix = symbol_path
+                .get(..symbol_path.len().saturating_sub(1))
+                .unwrap_or(&[]);
             let helper_mod = format!("__cpi_client_accounts_{}", name.to_snake_case());
             if prefix.is_empty() {
                 re_exports.insert(format!("{helper_mod}::{name}"));

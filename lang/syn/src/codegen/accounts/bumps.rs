@@ -8,7 +8,14 @@ use {
 
 pub fn generate_bumps_name(anchor_ident: &str) -> proc_macro2::TokenStream {
     if let Some((prefix, name)) = anchor_ident.rsplit_once("::") {
-        let prefix: proc_macro2::TokenStream = prefix.parse().unwrap();
+        #[allow(
+            clippy::unwrap_used,
+            clippy::expect_used,
+            reason = "prefix is derived from a valid Rust path string"
+        )]
+        let prefix: proc_macro2::TokenStream = prefix
+            .parse()
+            .expect("module prefix must be a valid Rust path");
         let bumps_name = format!("{name}Bumps");
         let bumps_ident = Ident::new(&bumps_name, Span::call_site());
         quote! { #prefix :: #bumps_ident }
