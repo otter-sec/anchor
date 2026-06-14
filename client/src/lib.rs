@@ -767,9 +767,10 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     ) -> Result<solana_transaction::versioned::VersionedTransaction, ClientError> {
         let latest_hash = self
             .internal_rpc_client
-            .get_latest_blockhash()
+            .get_latest_blockhash_with_commitment(self.options)
             .await
-            .map_err(Box::new)?;
+            .map_err(Box::new)?
+            .0;
 
         self.signed_transaction_with_blockhash_versioned(version, latest_hash)
     }
