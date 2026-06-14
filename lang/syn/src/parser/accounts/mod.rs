@@ -531,19 +531,15 @@ fn ident_string(f: &syn::Field) -> ParseResult<(String, bool, Path)> {
     {
         return Ok(("InterfaceAccount".to_string(), optional, path));
     }
-    // TODO: allow segmented paths.
-    if path.segments.len() != 1 {
-        return Err(ParseError::new(
-            f.ty.span(),
-            "segmented paths are not currently allowed",
-        ));
+    let mut path_no_args = path.clone();
+    for s in &mut path_no_args.segments {
+        s.arguments = syn::PathArguments::None;
     }
-
-    let segments = path
-        .segments
-        .first()
-        .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?;
-    Ok((segments.ident.to_string(), optional, path))
+    Ok((
+        parser::tts_to_string(&path_no_args).replace(' ', ""),
+        optional,
+        path,
+    ))
 }
 
 fn parse_program_account_loader(path: &syn::Path) -> ParseResult<AccountLoaderTy> {

@@ -4,16 +4,24 @@ use {
         codegen::accounts::{generics, ParsedGenerics},
         *,
     },
-    std::fmt::Display,
 };
 
-pub fn generate_bumps_name<T: Display>(anchor_ident: &T) -> Ident {
-    Ident::new(&format!("{anchor_ident}Bumps"), Span::call_site())
+pub fn generate_bumps_name(anchor_ident: &str) -> proc_macro2::TokenStream {
+    if let Some((prefix, name)) = anchor_ident.rsplit_once("::") {
+        let prefix: proc_macro2::TokenStream = prefix.parse().unwrap();
+        let bumps_name = format!("{name}Bumps");
+        let bumps_ident = Ident::new(&bumps_name, Span::call_site());
+        quote! { #prefix :: #bumps_ident }
+    } else {
+        let bumps_name = format!("{anchor_ident}Bumps");
+        let bumps_ident = Ident::new(&bumps_name, Span::call_site());
+        quote! { #bumps_ident }
+    }
 }
 
 pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
     let name = &accs.ident;
-    let bumps_name = generate_bumps_name(name);
+    let bumps_name = Ident::new(&format!("{name}Bumps"), Span::call_site());
     let ParsedGenerics {
         combined_generics,
         trait_generics: _,

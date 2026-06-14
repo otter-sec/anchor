@@ -45,13 +45,19 @@ pub fn generate(
                     quote!()
                 };
                 #[allow(clippy::unwrap_used, reason = "computed from valid Rust identifiers via snake_case")]
-                let symbol: proc_macro2::TokenStream = format!(
-                    "__cpi_client_accounts_{0}::{1}",
-                    s.symbol.to_snake_case(),
-                    s.symbol,
-                )
-                .parse()
-                .unwrap();
+                let symbol: proc_macro2::TokenStream = {
+                    let symbol_path = s.symbol.split("::").collect::<Vec<_>>();
+                    let name = symbol_path.last().unwrap();
+                    let prefix = &symbol_path[..symbol_path.len() - 1];
+                    let helper_mod = format!("__cpi_client_accounts_{}", name.to_snake_case());
+                    if prefix.is_empty() {
+                        format!("{helper_mod}::{name}")
+                    } else {
+                        format!("{}::{helper_mod}::{name}", prefix.join("::"),)
+                    }
+                    .parse()
+                    .unwrap()
+                };
                 quote! {
                     #docs
                     pub #name: #symbol<'info>
@@ -152,11 +158,15 @@ pub fn generate(
             AccountField::CompositeField(s) => Some(s),
             AccountField::Field(_) => None,
         }) {
-            re_exports.insert(format!(
-                "__cpi_client_accounts_{0}::{1}",
-                f.symbol.to_snake_case(),
-                f.symbol,
-            ));
+            let symbol_path = f.symbol.split("::").collect::<Vec<_>>();
+            let name = symbol_path.last().unwrap();
+            let prefix = &symbol_path[..symbol_path.len() - 1];
+            let helper_mod = format!("__cpi_client_accounts_{}", name.to_snake_case());
+            if prefix.is_empty() {
+                re_exports.insert(format!("{helper_mod}::{name}"));
+            } else {
+                re_exports.insert(format!("{}::{helper_mod}::{name}", prefix.join("::"),));
+            }
         }
 
         re_exports

@@ -1,6 +1,6 @@
 use {
     crate::{
-        codegen::accounts::{bumps, constraints, generics, ParsedGenerics},
+        codegen::accounts::{constraints, generics, ParsedGenerics},
         AccountField, AccountsStruct, Ty,
     },
     quote::{quote, quote_spanned},
@@ -95,7 +95,10 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
 
     let constraints = generate_constraints(accs);
     let accounts_instance = generate_accounts_instance(accs);
-    let bumps_struct_name = bumps::generate_bumps_name(&accs.ident);
+    let bumps_struct_name = syn::Ident::new(
+        &format!("{}Bumps", accs.ident),
+        proc_macro2::Span::call_site(),
+    );
 
     let ix_de = match &accs.instruction_api {
         None => quote! {},
