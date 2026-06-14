@@ -308,7 +308,7 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
                     let data = account
                         .data
                         .decode()
-                        .expect("account was fetched with binary encoding");
+                        .ok_or_else(|| ClientError::AccountDataWrongFormat)?;
                     Ok((key, T::try_deserialize(&mut data.as_slice())?))
                 }),
         })
@@ -356,8 +356,14 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
             })?;
 
             while let Some(logs) = notifications.next().await {
+                let signature: Signature = logs.value.signature.parse().map_err(|e| {
+                    ClientError::LogParseError(format!(
+                        "Invalid signature '{}': {e}",
+                        logs.value.signature
+                    ))
+                })?;
                 let ctx = EventContext {
-                    signature: logs.value.signature.parse().unwrap(),
+                    signature,
                     slot: logs.context.slot,
                 };
                 let events = parse_logs_response(logs, &program_id_str)?;
@@ -524,6 +530,8 @@ pub enum ClientError {
     CompileError(#[from] solana_message::CompileError),
     #[error("Expected a legacy transaction but got a versioned transaction")]
     NotLegacyTransaction,
+    #[error("Account data is in the wrong format")]
+    AccountDataWrongFormat,
 }
 
 pub trait AsSigner {
