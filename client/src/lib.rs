@@ -775,15 +775,15 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     }
 
     async fn send_internal(&self, version: TxVersion<'_>) -> Result<Signature, ClientError> {
-        let latest_hash = self
+        let (latest_hash, _) = self
             .internal_rpc_client
-            .get_latest_blockhash()
+            .get_latest_blockhash_with_commitment(self.options)
             .await
             .map_err(Box::new)?;
         let tx = self.signed_transaction_with_blockhash_versioned(version, latest_hash)?;
 
         self.internal_rpc_client
-            .send_and_confirm_transaction(&tx)
+            .send_and_confirm_transaction_with_spinner_and_commitment(&tx, self.options)
             .await
             .map_err(|e| Box::new(e).into())
     }
@@ -793,19 +793,15 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
         version: TxVersion<'_>,
         config: RpcSendTransactionConfig,
     ) -> Result<Signature, ClientError> {
-        let latest_hash = self
+        let (latest_hash, _) = self
             .internal_rpc_client
-            .get_latest_blockhash()
+            .get_latest_blockhash_with_commitment(self.options)
             .await
             .map_err(Box::new)?;
         let tx = self.signed_transaction_with_blockhash_versioned(version, latest_hash)?;
 
         self.internal_rpc_client
-            .send_and_confirm_transaction_with_spinner_and_config(
-                &tx,
-                self.internal_rpc_client.commitment(),
-                config,
-            )
+            .send_and_confirm_transaction_with_spinner_and_config(&tx, self.options, config)
             .await
             .map_err(|e| Box::new(e).into())
     }
