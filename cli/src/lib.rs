@@ -5771,6 +5771,18 @@ fn start_solana_test_validator(
             "Your configured faucet port: {faucet_port} is already in use"
         ));
     }
+    let program_ids: Vec<Pubkey> = flags
+        .as_deref()
+        .unwrap_or(&[])
+        .windows(3)
+        .filter_map(|w| {
+            if w[0] == "--bpf-program" || w[0] == "--upgradeable-program" {
+                w[1].parse::<Pubkey>().ok()
+            } else {
+                None
+            }
+        })
+        .collect();
 
     let mut validator_handle = std::process::Command::new("solana-test-validator")
         .arg("--ledger")
@@ -5789,13 +5801,6 @@ fn start_solana_test_validator(
         .as_ref()
         .map(|test| test.startup_wait)
         .unwrap_or(STARTUP_WAIT);
-
-    let program_ids: Vec<Pubkey> = cfg
-        .get_programs(None)
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|p| p.pubkey().ok())
-        .collect();
 
     if let Err(e) = wait_for_validator_ready(&client, ms_wait, &program_ids) {
         eprintln!(
