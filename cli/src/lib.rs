@@ -5722,7 +5722,7 @@ fn start_surfpool_validator(
 }
 
 fn start_solana_test_validator(
-    cfg: &Config,
+    cfg: &WithPath<Config>,
     test_validator: &Option<TestValidator>,
     flags: Option<Vec<String>>,
     test_log_stdout: bool,
@@ -5771,6 +5771,18 @@ fn start_solana_test_validator(
             "Your configured faucet port: {faucet_port} is already in use"
         ));
     }
+    let program_ids: Vec<Pubkey> = flags
+        .as_deref()
+        .unwrap_or(&[])
+        .windows(3)
+        .filter_map(|w| {
+            if w[0] == "--bpf-program" || w[0] == "--upgradeable-program" {
+                w[1].parse::<Pubkey>().ok()
+            } else {
+                None
+            }
+        })
+        .collect();
 
     let mut validator_handle = std::process::Command::new("solana-test-validator")
         .arg("--ledger")
@@ -5785,29 +5797,59 @@ fn start_solana_test_validator(
 
     // Wait for the validator to be ready.
     let client = create_client(rpc_url);
-    let mut count = 0;
     let ms_wait = test_validator
         .as_ref()
         .map(|test| test.startup_wait)
         .unwrap_or(STARTUP_WAIT);
-    while count < ms_wait {
-        let r = client.get_latest_blockhash();
-        if r.is_ok() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        count += 100;
-    }
-    if count >= ms_wait {
+
+    if let Err(e) = wait_for_validator_ready(&client, ms_wait, &program_ids) {
         eprintln!(
-            "Unable to get latest blockhash. Test validator does not look started. Check \
-             {test_ledger_log_filename:?} for errors. Consider increasing [test.startup_wait] in \
-             Anchor.toml."
+            "Test validator setup failed: {e}. Check {test_ledger_log_filename:?} for errors. \
+             Consider increasing [test.startup_wait] in Anchor.toml."
         );
         validator_handle.kill()?;
         std::process::exit(1);
     }
     Ok(validator_handle)
+}
+
+fn wait_for_validator_ready(
+    client: &RpcClient,
+    ms_wait: i32,
+    program_ids: &[Pubkey],
+) -> Result<()> {
+    let start = std::time::Instant::now();
+    let max_wait = std::time::Duration::from_millis(ms_wait as u64);
+
+    // Wait for RPC to be up
+    loop {
+        if client.get_latest_blockhash().is_ok() {
+            break;
+        }
+        if start.elapsed() >= max_wait {
+            return Err(anyhow!(
+                "Timeout waiting for validator to start (RPC not ready)"
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    // Wait for programs to be deployed and executable
+    for pubkey in program_ids {
+        loop {
+            if let Ok(account) = client.get_account(pubkey) {
+                if account.executable {
+                    break;
+                }
+            }
+            if start.elapsed() >= max_wait {
+                return Err(anyhow!("Timeout waiting for program {} to deploy", pubkey));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+
+    Ok(())
 }
 
 // Return the URL that solana-test-validator should be running on given the
@@ -7092,7 +7134,13 @@ mod tests {
             IdlGenericArg, IdlInstructionAccount, IdlInstructionAccountItem, IdlPda, IdlSeed,
             IdlSeedAccount, IdlTypeDef, IdlTypeDefGeneric,
         },
-        std::collections::{HashMap, HashSet},
+        solana_pubkey::Pubkey,
+        std::{
+            collections::{HashMap, HashSet},
+            io::{Read, Write},
+            net::TcpListener,
+            str::FromStr,
+        },
         tempfile::tempdir,
     };
 
@@ -7816,5 +7864,86 @@ mod tests {
 
         assert_eq!(generated_accounts.len(), 2);
         assert_ne!(generated_accounts[0].pubkey, generated_accounts[1].pubkey);
+    }
+
+    #[test]
+    fn test_wait_for_validator_ready_success() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        std::thread::spawn(move || {
+            let mut expected_requests = 2; // blockhash, then getAccount
+            while expected_requests > 0 {
+                if let Ok((mut stream, _)) = listener.accept() {
+                    let mut buf = [0; 1024];
+                    let size = stream.read(&mut buf).unwrap_or(0);
+                    let req = String::from_utf8_lossy(&buf[..size]);
+
+                    let response_body = if req.contains("getLatestBlockhash") {
+                        r#"{"jsonrpc":"2.0","result":{"context":{"slot":1},"value":{"blockhash":"11111111111111111111111111111111","lastValidBlockHeight":1}},"id":1}"#
+                    } else if req.contains("getAccountInfo") {
+                        r#"{"jsonrpc":"2.0","result":{"context":{"slot":1},"value":{"data":["","base64"],"executable":true,"lamports":1,"owner":"11111111111111111111111111111111","rentEpoch":1}},"id":1}"#
+                    } else {
+                        r#"{"jsonrpc":"2.0","error":{"code":-32601,"message":"Method not found"},"id":1}"#
+                    };
+
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        response_body.len(),
+                        response_body
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                    expected_requests -= 1;
+                }
+            }
+        });
+
+        let client = create_client(format!("http://127.0.0.1:{}", port));
+        let program_id = Pubkey::from_str("11111111111111111111111111111111").unwrap();
+
+        let result = wait_for_validator_ready(&client, 5000, &[program_id]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_wait_for_validator_ready_timeout() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        // Server only replies to blockhash, not getAccountInfo
+        std::thread::spawn(move || {
+            // Keep listening until the timeout
+            for _ in 0..10 {
+                if let Ok((mut stream, _)) = listener.accept() {
+                    let mut buf = [0; 1024];
+                    let size = stream.read(&mut buf).unwrap_or(0);
+                    let req = String::from_utf8_lossy(&buf[..size]);
+
+                    let response_body = if req.contains("getLatestBlockhash") {
+                        r#"{"jsonrpc":"2.0","result":{"context":{"slot":1},"value":{"blockhash":"11111111111111111111111111111111","lastValidBlockHeight":1}},"id":1}"#
+                    } else {
+                        r#"{"jsonrpc":"2.0","result":{"context":{"slot":1},"value":null},"id":1}"#
+                    };
+
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        response_body.len(),
+                        response_body
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                }
+            }
+        });
+
+        let client = create_client(format!("http://127.0.0.1:{}", port));
+        let program_id = Pubkey::from_str("11111111111111111111111111111111").unwrap();
+
+        // Wait 300ms, will timeout because getAccountInfo returns null
+        let result = wait_for_validator_ready(&client, 300, &[program_id]);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Timeout waiting for program"));
     }
 }
