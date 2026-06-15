@@ -399,13 +399,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "anchor-repro-3811"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
-]
-
-[[package]]
 name = "anchor-spl"
 version = "1.0.2"
 dependencies = [
