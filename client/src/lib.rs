@@ -520,10 +520,17 @@ pub enum ClientError {
     IOError(#[from] std::io::Error),
     #[error("{0}")]
     SignerError(#[from] SignerError),
-    #[error("{0}")]
-    CompileError(#[from] solana_message::CompileError),
-    #[error("Expected a legacy transaction but got a versioned transaction")]
-    NotLegacyTransaction,
+}
+
+impl ClientError {
+    /// Adding a new variant to [`ClientError`] is a breaking change in v1. To mitigate this issue,
+    /// use this helper method for all errors that cannot be precisely described by [`ClientError`].
+    fn other<E>(e: E) -> Self
+    where
+        E: Into<Box<dyn std::error::Error + Send + Sync>>,
+    {
+        Self::IOError(std::io::Error::other(e))
+    }
 }
 
 pub trait AsSigner {
@@ -713,7 +720,8 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
                     &instructions,
                     address_lookup_table_accounts,
                     recent_blockhash,
-                )?;
+                )
+                .map_err(ClientError::other)?;
                 Ok(solana_transaction::versioned::VersionedTransaction {
                     signatures: vec![
                         solana_signature::Signature::default();
@@ -752,7 +760,8 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
                     &instructions,
                     address_lookup_table_accounts,
                     latest_hash,
-                )?;
+                )
+                .map_err(ClientError::other)?;
                 solana_message::VersionedMessage::V0(msg)
             }
         };
