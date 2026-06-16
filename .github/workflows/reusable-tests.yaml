@@ -411,6 +411,8 @@ jobs:
       - name: Run generated JS project tests
         if: ${{ matrix.template == 'mocha' || matrix.template == 'jest' }}
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
+        # `anchor init` does not generate a yarn.lock, so --frozen-lockfile would fail here.
+        # locked-in: ignore[yarn-frozen-lockfile]
         run: yarn link @anchor-lang/core && yarn && anchor test && yarn lint:fix
 
       - name: Run generated Rust project tests

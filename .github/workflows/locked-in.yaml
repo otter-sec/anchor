@@ -1,0 +1,40 @@
+name: Locked-in
+
+# Lints package installations across Dockerfiles, shell scripts, Markdown,
+# Makefiles, GitHub workflows, and package.json scripts for supply-chain
+# hygiene: lockfile-respecting installs and version-pinned adds.
+# https://github.com/asymmetric-research/locked-in
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  locked-in:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # v0.3.1 — keep up-to-date with releases at
+      # https://github.com/asymmetric-research/locked-in/releases
+      LOCKED_IN_COMMIT: 7978ff8e3717a30c18352ab1eb687e5f8210a5ac
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install locked-in from pinned source
+        run: |
+          cargo install --locked \
+            --git https://github.com/asymmetric-research/locked-in \
+            --rev "$LOCKED_IN_COMMIT" \
+            locked-in
+
+      - name: Run locked-in
+        run: locked-in .
