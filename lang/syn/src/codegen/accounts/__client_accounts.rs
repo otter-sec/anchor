@@ -175,8 +175,6 @@ pub fn generate(
             let helper_mod = format!("__client_accounts_{}", name.to_snake_case());
             if prefix.is_empty() {
                 re_exports.insert(format!("{helper_mod}::{name}"));
-            } else {
-                re_exports.insert(format!("{}::{helper_mod}::{name}", prefix.join("::"),));
             }
         }
 
@@ -211,7 +209,8 @@ pub fn generate(
         ///
         /// To access the struct in this module, one should use the sibling
         /// `accounts` module (also generated), which re-exports this.
-        pub(crate) mod #account_mod_name {
+        #[doc(hidden)]
+        pub mod #account_mod_name {
             use super::*;
             use anchor_lang::prelude::borsh;
             #(#re_exports)*
