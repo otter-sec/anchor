@@ -5852,7 +5852,7 @@ fn wait_for_validator_ready(
             Ok(accounts)
                 if accounts
                     .iter()
-                    .all(|a| a.as_ref().map_or(false, |acc| acc.executable)) =>
+                    .all(|a| a.as_ref().is_some_and(|acc| acc.executable)) =>
             {
                 break
             }
