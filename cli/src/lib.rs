@@ -5831,7 +5831,7 @@ fn wait_for_validator_ready(
     program_ids: &[Pubkey],
 ) -> Result<()> {
     let start = std::time::Instant::now();
-    let max_wait = std::time::Duration::from_millis(ms_wait as u64);
+    let max_wait = std::time::Duration::from_millis(ms_wait.max(0) as u64);
 
     // Wait for RPC to be up
     loop {
