@@ -14,7 +14,7 @@ anchor --version
 ```
 
 For reproducible installs, we recommend pinning to a specific version
-instead of `@latest`, e.g. `npm install -g @anchor-lang/cli@0.31.1`. This
+instead of `@latest`, e.g. `npm install -g @anchor-lang/cli@1.0.2`. This
 ensures the CLI version is locked across machines and CI runs.
 
 For most users, the recommended installation method is [AVM](https://www.anchor-lang.com/docs/installation).
