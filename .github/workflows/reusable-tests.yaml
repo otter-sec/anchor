@@ -259,6 +259,8 @@ jobs:
       - uses: ./.github/actions/setup-solana/
       - uses: ./.github/actions/setup-surfpool/
       - run: cd client/example && ./run-test.sh
+        env:
+          ANCHOR_BUILD_SBF_ARCH: "v2"
       - uses: ./.github/actions/git-diff/
 
   test-bpf-upgradeable-state:
@@ -445,7 +447,7 @@ jobs:
             path: tests/sysvars
           - cmd: cd tests/composite && anchor test --skip-lint
             path: tests/composite
-          - cmd: cd tests/errors && ./test.sh && npx tsc --noEmit
+          - cmd: cd tests/errors && ANCHOR_TEST_VALIDATOR=surfpool ANCHOR_BUILD_SBF_ARCH=v2 ./test.sh && npx tsc --noEmit
             path: tests/errors
           - cmd: cd tests/spl/metadata && anchor test --skip-lint
             path: spl/metadata
@@ -455,7 +457,7 @@ jobs:
             path: spl/token-wrapper
           - cmd: cd tests/spl/transfer-hook && anchor test --skip-lint
             path: spl/transfer-hook
-          - cmd: cd tests/spl/token-extensions && anchor test --skip-lint
+          - cmd: cd tests/spl/token-extensions && ANCHOR_TEST_VALIDATOR=surfpool ANCHOR_BUILD_SBF_ARCH=v2 anchor test --skip-lint
             path: spl/token-extensions
           - cmd: cd tests/multisig && anchor test --skip-lint
             path: tests/multisig
@@ -474,7 +476,7 @@ jobs:
             path: tests/accountloader-realloc
           - cmd: cd tests/system-accounts && anchor test --skip-lint
             path: tests/system-accounts
-          - cmd: cd tests/misc && anchor test --skip-lint && npx tsc --noEmit
+          - cmd: cd tests/misc && ANCHOR_TEST_VALIDATOR=surfpool ANCHOR_BUILD_SBF_ARCH=v2 anchor test --skip-lint && npx tsc --noEmit
             path: tests/misc
           - cmd: cd tests/events && anchor test --skip-lint
             path: tests/events
@@ -528,7 +530,7 @@ jobs:
             path: tests/relations-derivation
           - cmd: cd tests/anchor-cli-idl && ./test.sh
             path: tests/anchor-cli-idl
-          - cmd: cd tests/anchor-cli-legacy-idl && anchor test
+          - cmd: cd tests/anchor-cli-legacy-idl && ANCHOR_TEST_VALIDATOR=surfpool ANCHOR_BUILD_SBF_ARCH=v2 anchor test
             path: tests/anchor-cli-legacy-idl
           - cmd: cd tests/anchor-cli-account && anchor test --skip-lint
             path: tests/anchor-cli-account
