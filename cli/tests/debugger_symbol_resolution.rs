@@ -25,7 +25,7 @@ use {
 const FIXTURE_CRATE_REL: &str = "tests/fixtures/debugger_program";
 const FIXTURE_SO_NAME: &str = "debugger_fixture.so";
 const MARKER_TAG: &str = "// MARKER:";
-const TOOLS_VERSION: &str = "v1.52";
+const TOOLS_VERSION: &str = "v1.54";
 /// PCs beyond any plausible fixture text section. The fixture's `.text`
 /// is ~1-2 KB (~250 insns) — 10k gives comfortable headroom without
 /// slowing the scan. Out-of-range PCs resolve to `None` and cost pennies.

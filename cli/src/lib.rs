@@ -2779,7 +2779,7 @@ fn docker_build_bpf(
                 .concat(),
         )
         .args([container_name, "cargo"])
-        .args(BUILD_SUBCOMMAND)
+        .args(build_sbf_base_args(&cargo_args))
         .args(["--manifest-path", &manifest_path.display().to_string()])
         .args(cargo_args)
         .stdout(match stdout {
@@ -2873,9 +2873,9 @@ fn _build_cwd(
     no_docs: bool,
     cargo_args: Vec<String>,
 ) -> Result<Vec<PathBuf>> {
+    let build_args = build_sbf_args(&cargo_args);
     let exit = std::process::Command::new("cargo")
-        .args(BUILD_SUBCOMMAND)
-        .args(cargo_args.clone())
+        .args(&build_args)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .output()
@@ -2936,8 +2936,49 @@ fn _build_cwd(
     }
 }
 
-/// Subcommand and any arguments to be passed to cargo
-const BUILD_SUBCOMMAND: &[&str] = &["build-sbf", "--tools-version", "v1.52"];
+/// Subcommand and fixed arguments to be passed to cargo.
+const BUILD_SUBCOMMAND: &[&str] = &["build-sbf", "--tools-version", "v1.54"];
+const DEFAULT_BUILD_ARCH: &str = "v3";
+const BUILD_ARCH_ENV: &str = "ANCHOR_BUILD_SBF_ARCH";
+
+fn validator_type_from_env() -> Result<Option<ValidatorType>> {
+    let Ok(value) = std::env::var("ANCHOR_TEST_VALIDATOR") else {
+        return Ok(None);
+    };
+    match value.to_ascii_lowercase().as_str() {
+        "surfpool" => Ok(Some(ValidatorType::Surfpool)),
+        "legacy" => Ok(Some(ValidatorType::Legacy)),
+        _ => Err(anyhow!(
+            "invalid ANCHOR_TEST_VALIDATOR value `{value}`; expected `surfpool` or `legacy`"
+        )),
+    }
+}
+
+fn has_arch_arg(args: &[String]) -> bool {
+    args.iter()
+        .any(|arg| arg == "--arch" || arg.starts_with("--arch="))
+}
+
+fn build_sbf_base_args(extra_args: &[String]) -> Vec<String> {
+    let mut args = BUILD_SUBCOMMAND
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    if !has_arch_arg(extra_args) {
+        let arch = std::env::var(BUILD_ARCH_ENV).unwrap_or_else(|_| DEFAULT_BUILD_ARCH.to_owned());
+        if !arch.is_empty() {
+            args.push("--arch".to_owned());
+            args.push(arch);
+        }
+    }
+    args
+}
+
+fn build_sbf_args(extra_args: &[String]) -> Vec<String> {
+    let mut args = build_sbf_base_args(extra_args);
+    args.extend(extra_args.iter().cloned());
+    args
+}
 
 /// Run the configured SBF build command.
 pub fn cargo_build_sbf(cwd: Option<&Path>, extra_args: &[String]) -> Result<()> {
@@ -2945,9 +2986,9 @@ pub fn cargo_build_sbf(cwd: Option<&Path>, extra_args: &[String]) -> Result<()> 
     if let Some(d) = cwd {
         cmd.current_dir(d);
     }
+    let args = build_sbf_args(extra_args);
     let status = cmd
-        .args(BUILD_SUBCOMMAND)
-        .args(extra_args)
+        .args(&args)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
@@ -2955,7 +2996,7 @@ pub fn cargo_build_sbf(cwd: Option<&Path>, extra_args: &[String]) -> Result<()> 
     if !status.success() {
         return Err(anyhow!(
             "`cargo {}` failed with status {status}",
-            BUILD_SUBCOMMAND.join(" ")
+            args.join(" ")
         ));
     }
     Ok(())
@@ -3968,7 +4009,9 @@ fn test(
         .collect::<Result<Vec<_>, _>>()?;
 
     with_workspace(cfg_override, |cfg| -> Result<()> {
-        // Set validator type based on CLI choice
+        // Set validator type based on CLI choice, with an escape hatch for CI
+        // matrices that need a runtime compatible with the build arch.
+        let validator_type = validator_type_from_env()?.unwrap_or(validator_type);
         cfg.validator = Some(validator_type);
 
         let cli_skip_local_validator = skip_local_validator;

@@ -15,9 +15,10 @@ permissions:
   contents: read
 
 env:
-  SOLANA_VERSION: "3.1.10"
+  SOLANA_VERSION: "4.0.0"
   NODE_VERSION: "20"
   SURFPOOL_CLI_VERSION: "1.2.0"
+  ANCHOR_TEST_VALIDATOR: "legacy"
 
 jobs:
   # Build CLI once to share across test jobs
@@ -93,7 +94,7 @@ jobs:
           max_attempts: 3
           retry_on: error
           shell: bash
-          command: cargo build-sbf --tools-version v1.52 --install-only
+          command: cargo build-sbf --tools-version v1.54 --install-only
 
       # Cache the generated project's `target/` so subsequent runs reuse
       # compiled deps. Restored before `anchor init` (which is invoked with
@@ -133,7 +134,14 @@ jobs:
           EOF
 
       - name: anchor test
+        if: matrix.test_template != 'litesvm'
         working-directory: /tmp/my_program
+        run: anchor test
+      - name: anchor test
+        if: matrix.test_template == 'litesvm'
+        working-directory: /tmp/my_program
+        env:
+          ANCHOR_BUILD_SBF_ARCH: "v2"
         run: anchor test
 
   # JS-based test templates: cross-product over template x language x
@@ -191,7 +199,7 @@ jobs:
           max_attempts: 3
           retry_on: error
           shell: bash
-          command: cargo build-sbf --tools-version v1.52 --install-only
+          command: cargo build-sbf --tools-version v1.54 --install-only
 
       # Cache cargo `target/` and `node_modules/` for the generated project.
       # `anchor init --force` leaves both alone, so the dirs survive a fresh

@@ -168,7 +168,7 @@ pub fn discover_platform_tools_stdlib_roots() -> Vec<PathBuf> {
             candidate.is_dir().then_some((name, candidate))
         })
         .collect();
-    // Lexical sort on version strings like `v1.41`, `v1.52` — good enough
+    // Lexical sort on version strings like `v1.41`, `v1.54` — good enough
     // for numeric-minor ordering up to v1.99; beyond that we'd want proper
     // semver parsing.
     versions.sort_by(|a, b| b.0.cmp(&a.0));

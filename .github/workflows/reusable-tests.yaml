@@ -31,6 +31,7 @@ env:
   CARGO_PROFILE: ${{ inputs.cargo_profile }}
   ANCHOR_BINARY_NAME: ${{ inputs.anchor_binary_name }}
   SURFPOOL_CLI_VERSION: ${{ inputs.surfpool_cli_version }}
+  ANCHOR_TEST_VALIDATOR: "legacy"
   CARGO_CACHE_PATH: |
     ~/.cargo/bin/
     ~/.cargo/registry/index/
@@ -301,6 +302,8 @@ jobs:
       - run: cd tests/bpf-upgradeable-state && yarn --frozen-lockfile
       - run: cd tests/bpf-upgradeable-state
       - run: cd tests/bpf-upgradeable-state && anchor build --skip-lint --ignore-keys
+        env:
+          ANCHOR_BUILD_SBF_ARCH: "v2"
       - run: cd tests/bpf-upgradeable-state && solana program deploy --program-id program_with_different_programdata.json --use-rpc target/deploy/bpf_upgradeable_state.so
       - run: cd tests/bpf-upgradeable-state && cp bpf_upgradeable_state-keypair.json target/deploy/bpf_upgradeable_state-keypair.json && anchor test --skip-local-validator --skip-build --skip-lint
       - run: cd tests/bpf-upgradeable-state && npx tsc --noEmit
@@ -416,8 +419,15 @@ jobs:
         run: yarn link @anchor-lang/core && yarn && anchor test && yarn lint:fix
 
       - name: Run generated Rust project tests
-        if: ${{ matrix.template == 'rust' || matrix.template == 'mollusk' || matrix.template == 'litesvm' }}
+        if: ${{ matrix.template == 'rust' || matrix.template == 'mollusk' }}
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
+        run: anchor test
+
+      - name: Run generated LiteSVM project tests
+        if: ${{ matrix.template == 'litesvm' }}
+        working-directory: /tmp/hello-anchor-${{ matrix.template }}
+        env:
+          ANCHOR_BUILD_SBF_ARCH: "v2"
         run: anchor test
 
       - uses: ./.github/actions/git-diff/
