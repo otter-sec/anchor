@@ -51,7 +51,7 @@ pub fn check_anchor_version(cfg: &WithPath<Config>) -> Result<()> {
     // mid-migration workspace that contains programs of both generations
     // still gets one warning per mismatched generation.
     let manifests: Vec<cargo_toml::Manifest> = cfg
-        .get_rust_program_list()?
+        .get_program_list()?
         .into_iter()
         .map(|path| path.join("Cargo.toml"))
         .filter_map(|path| cargo_toml::Manifest::from_path(path).ok())
@@ -132,7 +132,7 @@ pub fn check_deps(cfg: &WithPath<Config>) -> Result<()> {
         req.matches(&workspace_solana_prog_version)
     }
 
-    cfg.get_rust_program_list()?
+    cfg.get_program_list()?
         .into_iter()
         .map(|path| path.join("Cargo.toml"))
         .map(cargo_toml::Manifest::from_path)

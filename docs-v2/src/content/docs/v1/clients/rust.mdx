@@ -1,0 +1,60 @@
+---
+title: Rust
+description: Learn how to use Anchor's Rust client library to interact with Solana programs.
+---
+
+import Code from '@/components/code.astro'
+import lib from './_rust/lib.rs?raw'
+import idl from './_rust/example.json?raw'
+import main from './_rust/main.rs?raw'
+
+The [`anchor-client`](https://docs.rs/anchor-client/latest/anchor_client/) crate is the Rust client library for interacting with Anchor programs.
+
+## Example
+
+The following example uses the `anchor-client` crate to interact with a simple Anchor program. The `declare_program!{:rs}` macro generates dependency-free client modules from the program's IDL, exposing typed builders for the program's instructions and accounts.
+
+The program below exposes two instructions: `initialize{:rs}` creates and initializes a counter account that stores a value, and `increment{:rs}` increments the stored value.
+
+<Code code={lib} lang="rust" title="lib.rs" />
+
+An example folder structure for a Rust client:
+
+<FileTree>
+  <Dir name="client-example" open={true}>
+    <Dir name="idls" open={true}>
+      <File name="example.json" />
+    </Dir>
+    <Dir name="src" open={true}>
+      <File name="main.rs" />
+    </Dir>
+    <Dir name="target" />
+    <File name="Cargo.toml" />
+  </Dir>
+</FileTree>
+
+The program IDL must live in an `idls/{:dir}` folder. The `declare_program!{:rs}` macro reads it from there to generate the client modules:
+
+<Code code={idl} lang="json" title="idls/example.json" meta="collapse={21-41,49-62}" />
+
+The `src/main.rs{:file}` file drives the program. Two pieces do the work:
+
+- The `declare_program!{:rs}` macro generates client modules for the program from the IDL.
+- The `anchor-client` crate provides utilities to build instructions, send transactions, and fetch program accounts.
+
+<Code code={main} lang="rust" title="src/main.rs" meta="{13-14,49-75,79}" />
+
+The `Cargo.toml{:file}` dependencies:
+
+```toml title="Cargo.toml"
+[package]
+name = "client-example"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anchor-client = { version = "1.0.1", features = ["async"] }
+anchor-lang = "1.0.1"
+anyhow = "1.0.93"
+tokio = { version = "1.0", features = ["full"] }
+```

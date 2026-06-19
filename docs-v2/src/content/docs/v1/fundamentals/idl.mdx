@@ -1,0 +1,176 @@
+---
+title: Program IDL file
+description: Learn about the Interface Description Language (IDL) file in Anchor, its purpose, benefits, and how it simplifies program-client interactions.
+---
+
+import Code from '@/components/code.astro'
+import lib from './_idl/lib.rs?raw'
+import idl from './_idl/idl.json?raw'
+import client from './_idl/test.ts?raw'
+
+An Interface Description Language (IDL) file for an Anchor program is a standardized JSON file describing the program's instructions and accounts. It gives client code generators a consistent format to consume so they can produce typed bindings for the program without reading its Rust source.
+
+<Callout variant="tip" title="Where the IDL lives">
+  The `$ <blue>anchor</blue> build` command writes the IDL to `/target/idl/<program-name>.json{:file}`.
+</Callout>
+
+The sections below show how the same program corresponds to its IDL and to a generated client.
+
+## Program instructions
+
+The `instructions` array in the IDL maps directly to the public functions inside the `#[program]{:rs}` module. Each entry records the accounts and arguments the instruction requires.
+
+<Tabs items={['Program', 'IDL', 'Client']}>
+<Tab>
+
+The program below exposes a single `initialize(){:rs}` instruction along with the `Initialize{:rs}` accounts struct it expects:
+
+<Code code={lib} lang="rust" title="lib.rs" meta="{8-12,15-22} collapse={23-27}" />
+
+</Tab>
+<Tab>
+
+The IDL captures that instruction in JSON, including its name, 8-byte discriminator, account list, and argument list:
+
+<Code code={idl} lang="json" title="idl.json" meta="{11-12,14-27,30-33} collapse={3-8,37-56}" />
+
+</Tab>
+<Tab>
+
+A generated client uses the IDL to build and send the transaction. The fluent builder mirrors the IDL fields, with `.initialize(data){:ts}` carrying the args and `.accounts({...}){:ts}` supplying the account list:
+
+<Code code={client} lang="ts" title="test.ts" meta="{19-26}" />
+
+</Tab>
+</Tabs>
+
+## Program accounts
+
+The `accounts` array in the IDL maps to every struct annotated with `#[account]{:rs}`. These structs define the data layout for accounts created and owned by the program.
+
+<Tabs items={['Program', 'IDL', 'Client']}>
+<Tab>
+
+The program defines a `NewAccount{:rs}` struct with a single `data: u64{:rs}` field:
+
+<Code code={lib} lang="rust" title="lib.rs" meta="{24-27} collapse={4-23}" />
+
+</Tab>
+<Tab>
+
+The IDL records the account's name and 8-byte discriminator under `accounts`, and its field layout under `types`:
+
+<Code code={idl} lang="json" title="idl.json" meta="{39-40,44-55} collapse={3-36}" />
+
+</Tab>
+<Tab>
+
+The client fetches the account by public key and deserializes it into the typed shape declared in the IDL:
+
+<Code code={client} lang="ts" title="test.ts" meta="{29}" />
+
+</Tab>
+</Tabs>
+
+## Discriminators
+
+Anchor assigns a unique 8-byte discriminator to every instruction and every account type. These bytes act as runtime identifiers so the program can dispatch the right instruction handler and so deserialization can verify the right account type.
+
+A discriminator is the first 8 bytes of `SHA256("<prefix>:<name>"){:rs}`. The prefix is `global{:rs}` for instructions and `account{:rs}` for accounts. Since Anchor v0.30, every discriminator is included in the generated IDL.
+
+<Callout variant="remark">
+  You won't normally interact with discriminators directly. Anchor inserts them on the wire and
+  verifies them on read. This section is here for reference.
+</Callout>
+
+<Tabs items={['Instructions', 'Accounts']}>
+<Tab>
+
+The instruction discriminator tells the program which handler to invoke. The Anchor client prepends it as the first 8 bytes of the instruction data:
+
+```json title="idl.json"
+"instructions": [
+  {
+    "name": "initialize",
+    "discriminator": [175, 175, 109, 31, 13, 152, 155, 237],
+     ...
+  }
+]
+```
+
+The discriminator is the first 8 bytes of `SHA256("global:<InstructionName>"){:rs}`. For `initialize{:rs}`:
+
+```text
+sha256("global:initialize")
+```
+
+The full hash, in hex:
+
+```text
+af af 6d 1f 0d 98 9b ed d4 6a 95 07 32 81 ad c2 1b b5 e0 e1 d7 73 b2 fb bd 7a b5 04 cd d4 aa 30
+```
+
+The leading 8 bytes become the discriminator:
+
+```text
+af = 175
+af = 175
+6d = 109
+1f = 31
+0d = 13
+98 = 152
+9b = 155
+ed = 237
+```
+
+See the `gen_discriminator{:rs}` [source](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/program/common.rs#L5-L22) for the implementation.
+
+</Tab>
+<Tab>
+
+The account discriminator identifies the account type during deserialization. Anchor writes it to the first 8 bytes of account data when the account is created and checks it on every read:
+
+```json title="idl.json"
+"accounts": [
+  {
+    "name": "NewAccount",
+    "discriminator": [176, 95, 4, 118, 91, 177, 125, 232]
+  }
+]
+```
+
+The discriminator is the first 8 bytes of `SHA256("account:<StructName>"){:rs}`. For `NewAccount{:rs}`:
+
+```text
+sha256("account:NewAccount")
+```
+
+The full hash, in hex:
+
+```text
+b0 5f 04 76 5b b1 7d e8 a1 93 57 2a d3 5e b1 ae e5 f0 69 e2 09 7e 5c d2 64 56 55 2a cb 4a e9 57
+```
+
+The leading 8 bytes become the discriminator:
+
+```text
+b0 = 176
+5f = 95
+04 = 4
+76 = 118
+5b = 91
+b1 = 177
+7d = 125
+e8 = 232
+```
+
+See the [account discriminator source](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/account/src/lib.rs#L113-L125) for the implementation.
+
+<Callout variant="note">
+  Two programs that define accounts with the same struct name produce identical discriminators.
+  Anchor avoids confusion at deserialization time by also verifying that the account is owned by the
+  expected program.
+</Callout>
+
+</Tab>
+</Tabs>

@@ -18,6 +18,30 @@ mod id;
 #[cfg(feature = "lazy-account")]
 mod lazy;
 
+fn is_zero_lit(lit: &syn::Lit) -> bool {
+    match lit {
+        syn::Lit::Int(val) => val.base10_parse::<u128>().is_ok_and(|v| v == 0),
+        syn::Lit::Byte(val) => val.value() == 0,
+        syn::Lit::ByteStr(val) => val.value().iter().all(|byte| *byte == 0),
+        _ => false,
+    }
+}
+
+fn is_zeroed_discriminator(discr: &Expr) -> bool {
+    match discr {
+        Expr::Reference(syn::ExprReference { expr, .. })
+        | Expr::Paren(syn::ExprParen { expr, .. })
+        | Expr::Group(syn::ExprGroup { expr, .. }) => is_zeroed_discriminator(expr),
+        Expr::Lit(syn::ExprLit { lit, .. }) => is_zero_lit(lit),
+        Expr::Array(arr) => arr.elems.iter().all(is_zeroed_discriminator),
+        // [0; N] is all zeroed for any N, and [X; 0] is empty.
+        Expr::Repeat(rep) => {
+            is_zeroed_discriminator(&rep.expr) || is_zeroed_discriminator(&rep.len)
+        }
+        _ => false,
+    }
+}
+
 /// An attribute for a data structure representing a Solana account.
 ///
 /// `#[account]` generates trait implementations for the following traits:
@@ -56,7 +80,7 @@ mod lazy;
 ///     - `discriminator = MY_DISC`
 ///     - `discriminator = get_disc(...)`
 ///
-/// All-zeroed discriminators are not supported.
+/// All-zero or empty discriminators are not supported.
 ///
 /// # Zero Copy Deserialization
 ///
@@ -113,32 +137,10 @@ pub fn account(
     let account_name_str = account_name.to_string();
     let (impl_gen, type_gen, where_clause) = account_strct.generics.split_for_impl();
 
-    fn is_zero_lit(expr: &Expr) -> bool {
-        matches!(
-            expr,
-            Expr::Lit(syn::ExprLit { lit: syn::Lit::Int(val), .. })
-                if val.base10_parse::<u128>().is_ok_and(|v| v == 0)
-        )
-    }
-
-    fn is_zeroed_discriminator(mut discr: &Expr) -> bool {
-        // Peel references
-        while let Expr::Reference(syn::ExprReference { expr, .. }) = discr {
-            discr = expr;
-        }
-        match discr {
-            Expr::Lit(_) => is_zero_lit(discr),
-            Expr::Array(arr) => arr.elems.iter().all(is_zero_lit),
-            // [0; N] — repeat expression
-            Expr::Repeat(rep) => is_zero_lit(&rep.expr),
-            _ => false,
-        }
-    }
-
     let discriminator = match args.overrides.and_then(|ov| ov.discriminator) {
         Some(discrim) => {
             let zero_err = is_zeroed_discriminator(&discrim).then(||
-                quote_spanned! {discrim.span() => compile_error!("all-zero discriminators are not supported");}
+                quote_spanned! {discrim.span() => compile_error!("all-zero or empty discriminators are not supported");}
             );
             quote! {
                 {
@@ -642,4 +644,42 @@ pub fn declare_id(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     #[allow(unreachable_code)]
     proc_macro::TokenStream::from(ret)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[allow(clippy::expect_used)]
+    fn zeroed(source: &str) -> bool {
+        let expr = syn::parse_str(source).expect("test expression should parse");
+        is_zeroed_discriminator(&expr)
+    }
+
+    #[test]
+    fn detects_zeroed_discriminator_literals() {
+        assert!(zeroed("0"));
+        assert!(zeroed("b'\\x00'"));
+        assert!(zeroed("b\"\""));
+        assert!(zeroed("b\"\\x00\\x00\""));
+
+        assert!(!zeroed("1"));
+        assert!(!zeroed("b'a'"));
+        assert!(!zeroed("b\"\\x00\\x01\""));
+        assert!(!zeroed("\"\""));
+    }
+
+    #[test]
+    fn detects_zeroed_discriminator_collections() {
+        assert!(zeroed("&[0, (0)]"));
+        assert!(zeroed("[]"));
+        assert!(zeroed("[0; N]"));
+        assert!(zeroed("[1; 0]"));
+        assert!(zeroed("(&b\"\\x00\" )"));
+
+        assert!(!zeroed("&[0, 1]"));
+        assert!(!zeroed("[1; N]"));
+        assert!(!zeroed("MY_DISC"));
+        assert!(!zeroed("get_disc()"));
+    }
 }

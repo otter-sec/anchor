@@ -1,0 +1,91 @@
+---
+title: Anchor version manager
+description: Manage multiple installations of the anchor-cli binary.
+---
+
+Anchor Version Manager (`$ <blue>avm</blue>`) manages multiple installations of the `anchor-cli` binary. Use it to switch between versions for verifiable builds or to work with an alternate release:
+
+```console
+$ <blue>avm</blue> <dim>--help</dim>
+Anchor version manager
+
+<bold>Usage:</bold> <bold>avm</bold> <COMMAND>
+
+<bold>Commands:</bold>
+  <bold>use</bold>          Use a specific version of Anchor
+  <bold>install</bold>      Install a version of Anchor
+  <bold>uninstall</bold>    Uninstall a version of Anchor
+  <bold>list</bold>         List available versions of Anchor
+  <bold>update</bold>       Update to the latest Anchor version
+  <bold>self-update</bold>  Update avm itself to the latest version via cargo install
+  <bold>completions</bold>  Generate shell completions for AVM
+  <bold>help</bold>         Print this message or the help of the given subcommand(s)
+
+<bold>Options:</bold>
+  <bold>-h</bold>, <bold>--help</bold>     Print help
+  <bold>-V</bold>, <bold>--version</bold>  Print version
+```
+
+## `<blue>avm</blue> install`
+
+Install a version of `anchor-cli` with `$ <blue>avm</blue> install <dim><version-or-commit></dim>`. The version argument follows semver, or pass `latest` for the latest stable release and `latest-pre-release` for the latest pre-release:
+
+```console
+$ <blue>avm</blue> install latest
+$ <blue>avm</blue> install latest-pre-release
+```
+
+You can also install with the following arguments:
+
+| Argument example | Description |
+| --- | --- |
+| `$ <blue>avm</blue> install 1.0.0-rc.3` | Install specific pre-release tag |
+| `$ <blue>avm</blue> install 0.30.1-cfe82aa682138f7c6c58bf7a78f48f7d63e9e466` | Install a `<dim><version></dim>`-`<dim><commit></dim>` pair |
+| `$ <blue>avm</blue> install cfe82aa682138f7c6c58bf7a78f48f7d63e9e466` | Install by full commit hash |
+| `$ <blue>avm</blue> install cfe82aa` | Install by short commit hash |
+
+## `<blue>avm</blue> list`
+
+List installed and available versions with `$ <blue>avm</blue> list`. Pass `--pre-release` to include pre-release versions:
+
+```console
+<blue>avm</blue> list <dim>--pre-release</dim>
+```
+
+## `<blue>avm</blue> uninstall`
+
+Remove an installed version with `$ <blue>avm</blue> uninstall <version>`.
+
+## `<blue>avm</blue> update`
+
+Update to the latest stable version with `$ <blue>avm</blue> update`. Pass `<dim>--pre-release</dim>` to update to the latest pre-release instead:
+
+```console
+<blue>avm</blue> update <dim>--pre-release</dim>
+```
+
+## `<blue>avm</blue> use`
+
+Select an installed version with `$ <blue>avm</blue> use <dim><version></dim>`. The selected version remains active until the command runs again with a different argument. As with `$ <blue>avm</blue> install`, the version argument accepts `latest` or `latest-pre-release`:
+
+```console
+<blue>avm</blue> use latest
+<blue>avm</blue> use latest-pre-release
+```
+
+## `<blue>avm</blue> self-update`
+
+Update `$ <blue>avm</blue>` itself with `$ <blue>avm</blue> self-update`. By default this installs the latest stable release of `$ <blue>avm</blue>`.
+
+| Flag | Description |
+| --- | --- |
+| `<dim>--pre-release</dim>` | Update to the latest pre-release version instead of the latest stable |
+| `<dim>--bleeding-edge</dim>` | Build and install from the latest commit on the master branch (conflicts with `<dim>--pre-release</dim>`) |
+
+```console
+$ <blue>avm</blue> self-update
+$ <blue>avm</blue> self-update <dim>--pre-release</dim>
+$ <blue>avm</blue> self-update <dim>--bleeding-edge</dim>
+```
+
+`$ <blue>avm</blue>` also passively warns you when it detects that a newer version of itself is available.

@@ -1,0 +1,37 @@
+---
+title: Tokens and CPI
+description: SPL token account types, constraints, CPI helpers, and Token-2022 interfaces in anchor-spl-v2.
+autoCards: false
+---
+
+SPL token programs own token mints and token accounts. Your program usually does not edit those accounts directly. It validates the accounts it was given, then calls the Token Program through CPI.
+
+`anchor-spl-v2` provides zero-copy SPL account types, namespaced constraints, CPI helpers, associated token address utilities, and Token-2022 interface account support.
+
+The token surface is built like the rest of Anchor. Account wrappers implement shared traits, constraints are downstream `AccountConstraint{:rs}` markers, and CPI helpers use `CpiHandle<'a>{:rs}` so token instructions can run through the cheaper CPI path.
+
+If you are new to SPL tokens, start with the basic pages in order. Create a mint first, create a token account for that mint, mint tokens into it, then transfer tokens between token accounts.
+
+<CardGrid>
+
+<Card title="SPL token basics" href="/docs/v2/tokens/spl-token-basics/">
+  Create mints, create token accounts, mint tokens, and transfer tokens with Anchor SPL wrappers.
+</Card>
+
+<Card title="Token-2022 and extensions" href="/docs/v2/tokens/token-2022-and-extensions/">
+Accept Token or Token-2022 accounts with `InterfaceAccount<T>{:rs}` and parse TLV extensions.
+</Card>
+
+</CardGrid>
+
+## Core modules
+
+| Module | Use |
+| --- | --- |
+| `anchor_spl_v2::mint{:rs}` | Legacy SPL Token mint wrapper and `mint::*{:rs}` constraints. |
+| `anchor_spl_v2::token{:rs}` | Legacy SPL Token account wrapper, `token::*{:rs}` constraints, and CPI helpers. |
+| `anchor_spl_v2::token_interface{:rs}` | `InterfaceAccount<T>{:rs}` for accounts owned by Token or Token-2022. |
+| `anchor_spl_v2::associated_token{:rs}` | Associated token account address derivation. |
+| `anchor_spl_v2::extensions{:rs}` | Token-2022 TLV extension readers. |
+
+The SPL token basics pages cover the legacy Token Program path. Reach for Token-2022 and extensions only when an instruction must accept Token-2022 accounts or parse extension state.

@@ -274,9 +274,12 @@ export class EventParser {
 
   // Handles logs when the current program being executing is *not* this.
   private handleSystemLog(log: string): [string | null, boolean] {
-    if (log.startsWith(`Program ${this.programId.toString()} log:`)) {
+    const invokeMatch = EventParser.INVOKE_RE.exec(log);
+    if (invokeMatch && invokeMatch[1] === this.programId.toString()) {
       return [this.programId.toString(), false];
-    } else if (log.includes("invoke") && !log.endsWith("[1]")) {
+    } else if (log.startsWith(`Program ${this.programId.toString()} log: `)) {
+      return [this.programId.toString(), false];
+    } else if (invokeMatch && invokeMatch[2] !== EventParser.ROOT_DEPTH) {
       return ["cpi", false];
     } else {
       let regex = /^Program ([1-9A-HJ-NP-Za-km-z]+) success$/;

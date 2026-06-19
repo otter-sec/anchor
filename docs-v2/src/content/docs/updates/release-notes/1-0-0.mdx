@@ -1,0 +1,368 @@
+---
+title: 1.0.0
+description: Anchor release notes for 1.0.0.
+---
+
+`1.0.0` is the first stable major release of Anchor. It ships a large number of breaking changes designed to clean up long-standing technical debt, modernize the toolchain, and establish a stable foundation going forward. These notes cover the most significant changes. The full list lives in the [`CHANGELOG.md{:file}`](https://github.com/otter-sec/anchor/blob/v1.0.0/CHANGELOG.md#100---2026-04-02).
+
+---
+
+## How to upgrade
+
+### Using AVM (recommended)
+
+1. Update `avm` itself before installing the new CLI. Existing `avm` installs that already support `self-update` can update in place:
+
+   ```bash
+   $ <blue>avm</blue> self-update
+   ```
+
+   Older installs need a fresh `cargo install` first to pick up the new binary:
+
+   ```bash
+   $ <blue>cargo</blue> install avm <dim>--git</dim> https://github.com/otter-sec/anchor <dim>--locked</dim>
+   ```
+
+2. Update `anchor-cli`:
+
+   ```bash
+   <blue>avm</blue> install 1.0.0
+   ```
+
+### Without AVM
+
+Install `anchor-cli` directly:
+
+```console
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor <dim>--tag</dim> v1.0.0 anchor-cli <dim>--locked</dim>
+```
+
+### Common steps
+
+3. Update Anchor crate(s) to `1.0.0`.
+
+4. Update TS package(s). The package has been renamed in this release. See [TypeScript package rename](#typescript-package-rename) for the new import path.
+
+## Recommended Solana version
+
+The recommended Solana version is `3.1.10`. Install the new tooling with:
+
+```console
+$ <blue>sh</blue> <dim>-c</dim> "$(curl <dim>-sSfL</dim> https://release.anza.xyz/v3.1.10/install)"
+```
+
+---
+
+## Breaking changes
+
+### TypeScript package rename
+
+The TypeScript package has been moved from `@coral-xyz/anchor` to `@anchor-lang/core`:
+
+```console
+$ <blue>npm</blue> install @anchor-lang/core
+```
+
+Every import in the project needs the new package name:
+
+```ts title="example.ts" showLineNumbers=false del={1-2} add={3-4}
+import * as anchor from '@coral-xyz/anchor'
+import { Program } from '@coral-xyz/anchor'
+import * as anchor from '@anchor-lang/core'
+import { Program } from '@anchor-lang/core'
+```
+
+IDL types that were previously imported from `@coral-xyz/anchor/dist/cjs/idl` are now exported directly from `@anchor-lang/core`:
+
+```ts title="example.ts" showLineNumbers=false del={1} add={2}
+import { Idl } from '@coral-xyz/anchor/dist/cjs/idl'
+import { Idl } from '@anchor-lang/core'
+```
+
+### Solana 3.0
+
+Anchor `1.0.0` targets Solana `3.x`. Workspaces still on Solana `2.x` must upgrade their toolchain before installing the new CLI.
+
+### Solana CLI dependency removed
+
+The `anchor` CLI no longer depends on the external `solana` CLI binary. Native implementations are now provided for the most common subcommands, including `balance`, `airdrop`, `address`, and `deploy`. The `solana` binary no longer needs to be on `PATH` for any `anchor` command to function.
+
+### `<blue>anchor</blue> test` and `<blue>anchor</blue> localnet` use Surfpool by default
+
+[Surfpool](https://github.com/solana-foundation/surfpool) replaces `solana-test-validator` as the default local backend for `$ <blue>anchor</blue> test` and `$ <blue>anchor</blue> localnet`. Pass `<dim>--validator legacy</dim>` to keep using `solana-test-validator`.
+
+Surfpool must be installed for the default `$ <blue>anchor</blue> test` and `$ <blue>anchor</blue> localnet` flow. Verify the installation with `$ <blue>surfpool</blue> <dim>--version</dim>`. The minimum recommended Surfpool version for use with Anchor is [`v1.1.2`](https://github.com/solana-foundation/surfpool/releases/tag/v1.1.2). For installation, follow the [Surfpool installation instructions](https://github.com/solana-foundation/surfpool?tab=readme-ov-file#installation).
+
+### Duplicate mutable accounts disallowed by default
+
+Passing the same mutable account twice in an instruction now produces a runtime error by default. The `dup{:rs}` constraint opts back into duplicate mutable accounts when they are intentional:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct MyIx<'info> {
+    #[account(mut)]
+    pub account_a: Account<'info, MyData>,
+    #[account(mut, dup)]
+    pub account_b: Account<'info, MyData>,
+}
+```
+
+### Legacy IDL instructions replaced by Program Metadata
+
+The on-chain IDL management instructions that Anchor has used since the beginning have been removed and replaced with the new [Program Metadata Program (PMP)](https://github.com/otter-sec/anchor/pull/3798). IDL uploads through `$ <blue>anchor</blue> deploy` and `$ <blue>anchor</blue> idl` commands work as before. Only the underlying storage mechanism has changed.
+
+The `program-id` argument of `$ <blue>anchor</blue> idl init` and `$ <blue>anchor</blue> idl upgrade` is now optional. When omitted, the program ID is read from the `address` field of the IDL file itself.
+
+Existing deployed programs with IDLs require migration. The legacy IDL accounts must be closed before deploying the v1 program, since the v1 binary no longer carries the IDL management instructions. The closure step itself requires the previous `v0.32.1` CLI.
+
+### Remove program account info from CPI context
+
+The `program` field in `CpiContext{:rs}` previously held a redundant copy of the program's `AccountInfo{:rs}`. The constructor now takes the program ID directly:
+
+```rust showLineNumbers=false del={1} add={2}
+CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts)
+CpiContext::new(Token::id(), cpi_accounts)
+```
+
+### `interface-instructions` feature removed
+
+The `interface-instructions` feature flag and the `#[interface]{:rs}` attribute have been removed. Use `#[instruction(discriminator = <EXPR>)]{:rs}` to specify custom discriminators.
+
+### `Anchor.toml{:file}` cleanup
+
+- The `[registry]` section is no longer recognized. Remove it from `Anchor.toml{:file}`.
+- The program `arch` build options have been removed from the CLI.
+
+### `#[error_code]` may only appear once per program
+
+Having more than one `#[error_code]{:rs}` block in a single program is now a compile-time error.
+
+### Client tx signing error no longer panics
+
+`RequestBuilder::send(){:rs}` (and its variants) previously panicked when signing failed. It now returns an `Err{:rs}` instead.
+
+---
+
+## AVM
+
+### `<blue>avm</blue> self-update`
+
+A v1-capable `avm` can update itself without going back through `cargo install`:
+
+```console
+$ <blue>avm</blue> self-update
+```
+
+Bootstrapping to a version that supports the command requires a one-off `cargo` install first:
+
+```console
+$ <blue>cargo</blue> install avm <dim>--git</dim> https://github.com/otter-sec/anchor <dim>--tag</dim> v1.0.0 <dim>--locked</dim>
+```
+
+`avm` also passively warns when it detects that a newer version of itself is available.
+
+### Pre-release support
+
+All three `avm` commands (`install`, `list`, `update`) now recognize pre-release version labels:
+
+```console
+$ <blue>avm</blue> install latest-pre-release
+$ <blue>avm</blue> list <dim>--pre-release</dim>
+$ <blue>avm</blue> update <dim>--pre-release</dim>
+```
+
+---
+
+## CLI
+
+### Lifecycle hooks
+
+Shell commands can now run at key points in the build, test, and deploy lifecycle through a `[hooks]` section in `Anchor.toml{:file}`:
+
+```toml
+[hooks]
+pre_build  = "echo building..."
+post_build = ["echo done", "echo done again"]
+pre_test   = "some-setup-script"
+post_deploy = "some-notify-script"
+```
+
+Supported hooks: `pre_build`, `post_build`, `pre_test`, `post_test`, `pre_deploy`, `post_deploy`.
+
+### LiteSVM test template is now the default
+
+`$ <blue>anchor</blue> init` now generates a [LiteSVM](https://github.com/LiteSVM/litesvm) test template by default, replacing the previous TypeScript-based default. A different template can be selected explicitly:
+
+```console
+$ <blue>anchor</blue> init my-program <dim>--test-template</dim> mollusk
+$ <blue>anchor</blue> init my-program <dim>--test-template</dim> mocha
+```
+
+### Program ID mismatch check
+
+`$ <blue>anchor</blue> build` now checks that the program ID declared in source matches the public key in the program's keypair file and emits an error when they differ. The check is skipped during `$ <blue>anchor</blue> test` where ephemeral keypairs are common. Pass `<dim>--ignore-keys</dim>` to suppress the check on builds.
+
+### `<dim>--install-agent-skills</dim>`
+
+Pass `<dim>--install-agent-skills</dim>` to `$ <blue>anchor</blue> init` to install Solana agent-AI skills into the new workspace automatically.
+
+### `<blue>anchor</blue> login` removed
+
+`$ <blue>anchor</blue> login` has been removed alongside the `[registry]` section of `Anchor.toml{:file}`.
+
+---
+
+## Lang
+
+### `Migration<'info, From, To>{:rs}` account type
+
+The new `Migration{:rs}` type migrates an account between two different data layouts in a single instruction:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct MigrateMyAccount<'info> {
+    #[account(mut)]
+    pub my_account: Migration<'info, OldAccount, NewAccount>,
+}
+```
+
+The account is deserialized as `From{:rs}` and serialized back as `To{:rs}` on instruction exit.
+
+### `declare_program!(){:rs}` improvements
+
+Several renames apply to the code generated by `declare_program!(){:rs}`. The `utils` module is now `parsers`, and the deserialization methods are now named `parse` instead of `try_from_bytes`:
+
+```rust showLineNumbers=false del={1,4} add={2,5}
+my_program::utils::Account::try_from_bytes(&data)?;
+my_program::parsers::Account::parse(&data)?;
+
+my_program::utils::Event::try_from_bytes(&data)?;
+my_program::parsers::Event::parse(&data)?;
+```
+
+The `errors` module is now `error` (singular), and `ProgramError{:rs}` has been renamed to `<ProgramName>Error{:rs}`, where `<ProgramName>` is the PascalCase name of the declared program:
+
+```rust showLineNumbers=false del={1} add={2}
+my_program::errors::ProgramError
+my_program::error::MyProgramError
+```
+
+A typed instruction parser is now generated alongside the CPI helpers. Call `my_program::parsers::Instruction::parse(){:rs}` with a `solana_instruction::Instruction{:rs}` to decode any instruction belonging to the program.
+
+Composite (non-instruction) account structs used more than once in a program previously caused duplicate definitions or incorrect instruction-name derivation in the generated code. Each composite account definition is now guaranteed to be unique, and colliding instruction names have a numeric suffix appended until uniqueness is reached.
+
+Error generation has also been improved. `declare_program!(){:rs}` previously interfered with the IDL error module of the declaring program. Programs that use `declare_program!(){:rs}` alongside their own `#[error_code]{:rs}` block now produce correct error code definitions.
+
+### Use `declare_program!(){:rs}` with only `anchor-client`
+
+`declare_program!(){:rs}` no longer requires `anchor-lang` in client-side contexts. Adding `anchor-client` as a dependency is sufficient.
+
+### Remove lifetime definitions from `Context`
+
+Three redundant lifetime parameters have been removed from `Context{:rs}`. Most programs are unaffected. Programs that referenced the removed lifetimes explicitly need to update their annotations:
+
+```rust showLineNumbers=false
+// Before (v0.32)
+pub fn my_handler<'a, 'b, 'c, 'info>(
+    ctx: Context<'a, 'b, 'c, 'info, MyAccounts<'info>>,
+) -> Result<()> { ... }
+
+// After (v1)
+pub fn my_handler<'info>(ctx: Context<'info, MyAccounts<'info>>) -> Result<()> { ... }
+// or simply (when the lifetime is inferred)
+pub fn my_handler(ctx: Context<MyAccounts>) -> Result<()> { ... }
+```
+
+### Deprecate `AccountInfo` in `Accounts` macro
+
+Using `AccountInfo{:rs}` directly inside a `#[derive(Accounts)]{:rs}` struct now emits a compile-time warning. Prefer `UncheckedAccount{:rs}` or a more specific account type.
+
+### Relaxed PDA seed syntax
+
+Seed expressions inside `seeds = [...]{:rs}` constraints accept a broader set of Rust expressions. More complex seed expressions reduce the likelihood that the seeds can be represented in the IDL and resolved automatically by the client.
+
+### Owner check on account reload
+
+`Account::reload(){:rs}` now re-validates the account's owner, matching the behavior of the initial load.
+
+### Generic `Program` type
+
+`Program<'info>{:rs}` can now be used without a generic type argument for executable-only validation when the concrete program type isn't known statically:
+
+```rust showLineNumbers=false
+pub program: Program<'info>,
+```
+
+### `Owners` exported from `prelude`
+
+`anchor_lang::Owners{:rs}` is now re-exported from `anchor_lang::prelude{:rs}`, removing the need for a separate `use{:rs}` statement.
+
+### Borsh upgraded to 1.5.7
+
+Both the Rust and TypeScript Borsh implementations have been updated to `1.5.7`. The `borsh` dependency in `Cargo.toml{:file}` must be compatible with that version.
+
+### `#[instruction(..)]{:rs}` argument validation
+
+The compiler now enforces that the types and count of arguments declared in `#[instruction(..)]{:rs}` match the corresponding instruction handler's signature, catching mismatches that were previously silent.
+
+---
+
+## IDL
+
+### Unsupported field types produce a hard error
+
+Defined types that contained unsupported fields (such as tuple types) were previously omitted from the generated IDL silently. They now produce a compile-time error:
+
+```text
+error: Unsupported type
+  --> programs/name/src/lib.rs:37:8
+   |
+37 |     x: (u32, u32),
+   |        ^^^^^^^^^^
+```
+
+Programs that previously relied on silent omission must refactor those fields into supported types before building.
+
+### Full path account names supported in IDL generation
+
+The IDL builder previously rejected account types that shared a short name with another type in a different module (for example, `program::module::Account{:rs}` conflicting with `other::Account{:rs}`). The duplicate-name check has been removed, so fully qualified account paths now resolve without error.
+
+### `address` constraint resolves constants with numbers in their names
+
+The `address{:rs}` constraint previously failed to resolve constants whose identifiers contained numbers, such as `MY_PROGRAM_V2_ID{:rs}`. The resolver now handles them correctly.
+
+### `serde_json` is now optional
+
+The `serde_json` dependency of `anchor-lang-idl` is now behind an opt-in feature flag. Disabling it reduces compile time when JSON serialization isn't needed.
+
+### External accounts excluded from IDL
+
+Accounts defined in external programs (such as SPL token accounts referenced through CPI) are no longer included in the generated IDL's `accounts` array, keeping the IDL scoped to the declaring program's own types.
+
+### Custom error offset respected
+
+The `offset = N{:rs}` argument in `#[error_code]{:rs}` is now reflected in the generated IDL, so IDL error codes match the values emitted at runtime.
+
+---
+
+## TypeScript
+
+### IDL fetching uses Program Metadata Program
+
+The TypeScript client now fetches IDLs from the new Program Metadata Program storage. Existing code calling `Program.fetchIdl(){:ts}` continues to work without changes.
+
+---
+
+## Rust client
+
+### `FnMut{:rs}` closures for event subscriptions
+
+`program.on::<Event>(|event, slot| { ... }){:rs}` now accepts `FnMut{:rs}` closures, so the callback can capture and mutate state from the surrounding scope.
+
+### Reduced re-exports from `anchor-client`
+
+`anchor-client` previously re-exported the entirety of `solana-sdk`, which made types easy to discover but pulled in a large transitive dependency. It now only re-exports the types that are part of its own public API. Programs that depended on transitive `solana-sdk` types through `anchor-client` must now add the underlying crates (`solana-account`, `solana-pubkey`, and so on) as direct dependencies.
+
+---
+
+See the full list of notable changes in the [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.0.0/CHANGELOG.md).

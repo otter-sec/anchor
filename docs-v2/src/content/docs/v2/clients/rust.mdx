@@ -1,0 +1,187 @@
+---
+title: Rust
+description: Build instructions in Rust with generated instruction, account, and resolved account structs.
+---
+
+Rust is the primary client and test surface while the TypeScript package is still alpha. An Anchor program crate generates typed modules that Rust tests and other Rust clients can use directly, without reading an IDL at runtime.
+
+The generated Rust surface is useful even when you do not plan to ship a Rust client. It gives tests a strongly typed way to build the exact instruction bytes and account metas the program expects.
+
+In the default LiteSVM scaffold, the Rust client is an integration test next to the program crate:
+
+<FileTree>
+  <Dir name="programs">
+    <Dir name="counter">
+      <Dir name="tests">
+        <File name="test_initialize.rs" comment="Builds and sends instructions" />
+      </Dir>
+      <Dir name="src">
+        <File name="lib.rs" comment="Program crate that emits generated modules" />
+      </Dir>
+    </Dir>
+  </Dir>
+</FileTree>
+
+The generated modules mirror the shape Anchor users expect:
+
+- `program::instruction::*{:rs}` structs encode instruction discriminators and arguments.
+- `program::accounts::*{:rs}` structs build full account metas.
+- `program::accounts::*Resolved{:rs}` structs fill in derivable PDAs and well-known programs when possible.
+- PDA helper methods such as `find_counter_address(){:rs}` derive addresses from the same seed metadata used by validation.
+
+## Generated instruction data
+
+Every handler gets an instruction struct under `program::instruction{:rs}`. The struct implements `InstructionData{:rs}`, so calling `data(){:rs}` returns the discriminator plus serialized arguments:
+
+```rust showLineNumbers=false
+use anchor_lang_v2::InstructionData;
+
+let data = vault::instruction::Deposit { amount: 1_000_000 }.data();
+```
+
+By default, instruction discriminators are the first 8 bytes of `sha256("global:" + handler_name){:rs}`. Programs that opt into compact byte discriminators with `#[discrim = N]{:rs}` still use the same `InstructionData{:rs}` trait.
+
+## Account builders
+
+<Tabs items={['Full accounts', 'Resolved accounts', 'to_instruction(){:rs}']}>
+<Tab>
+
+Full account structs include every account the instruction expects. This is the most explicit form and works for every account shape:
+
+```rust showLineNumbers=false
+use {
+    anchor_lang_v2::{solana_program::instruction::Instruction, InstructionData, ToAccountMetas},
+    anchor_lang_v2::programs::System,
+};
+
+let ix = Instruction::new_with_bytes(
+    counter::id(),
+    &counter::instruction::Initialize {}.data(),
+    counter::accounts::Initialize {
+        payer: payer.pubkey(),
+        counter: counter.pubkey(),
+        system_program: System::id(),
+    }
+    .to_account_metas(None),
+);
+```
+
+Use this form when every address is already known, when an account cannot be derived from IDL seed metadata, or when a test should be explicit about the exact transaction shape.
+
+</Tab>
+<Tab>
+
+When the derive can infer account addresses, Anchor also emits a `Resolved{:rs}` struct. The resolved form asks only for accounts the caller must supply and fills in the rest:
+
+```rust showLineNumbers=false
+use anchor_lang_v2::ToAccountMetas;
+
+let metas = multisig_v2::accounts::CreateResolved {
+    creator: creator.pubkey(),
+}
+.to_account_metas(None);
+```
+
+Resolved structs derive PDAs whose seeds are visible to the macro, and insert well-known program accounts such as System or Token when the account wrapper determines the address.
+
+</Tab>
+<Tab>
+
+The instruction struct also has a convenience `to_instruction(){:rs}` method:
+
+```rust showLineNumbers=false
+let ix = multisig_v2::instruction::Create {
+    threshold: 2,
+}
+.to_instruction(multisig_v2::accounts::CreateResolved {
+    creator: creator.pubkey(),
+});
+```
+
+Several bench tests use this shape because it keeps the test focused on the accounts the caller actually controls.
+
+</Tab>
+</Tabs>
+
+## PDA helpers
+
+For PDA fields, the generated accounts module includes helper methods named from the account field:
+
+```rust showLineNumbers=false
+let (counter, bump) = counter::accounts::Initialize::find_counter_address(
+    payer.pubkey().as_ref(),
+);
+```
+
+When seeds have no runtime inputs, the helper has no arguments:
+
+```rust showLineNumbers=false
+let (config, bump) = nested_v2::accounts::Initialize::find_config_address();
+```
+
+Prefer these helpers in Rust tests when available. They keep client-side derivation locked to the program's account declaration.
+
+## LiteSVM tests
+
+The default scaffold uses Rust integration tests with LiteSVM through `anchor-v2-testing`:
+
+```rust showLineNumbers=false
+use anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction};
+use anchor_lang_v2::{
+    solana_program::instruction::Instruction,
+    InstructionData,
+    ToAccountMetas,
+};
+
+let mut svm: LiteSVM = anchor_v2_testing::svm();
+let payer = Keypair::new();
+let counter_account = Keypair::new();
+svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+
+let bytes = include_bytes!("../../../target/deploy/counter.so");
+svm.add_program(counter::id(), bytes).unwrap();
+
+let ix = Instruction::new_with_bytes(
+    counter::id(),
+    &counter::instruction::Initialize {}.data(),
+    counter::accounts::Initialize {
+        payer: payer.pubkey(),
+        counter: counter_account.pubkey(),
+        system_program: anchor_lang_v2::programs::System::id(),
+    }
+    .to_account_metas(None),
+);
+
+let blockhash = svm.latest_blockhash();
+let msg = Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &blockhash);
+let tx = VersionedTransaction::try_new(
+    VersionedMessage::Legacy(msg),
+    &[&payer, &counter_account],
+)
+.unwrap();
+let result = svm.send_transaction(tx);
+assert!(result.is_ok());
+```
+
+Use `anchor_v2_testing::svm(){:rs}` instead of calling `LiteSVM::new(){:rs}` directly. The wrapper turns into a trace-recording VM when the crate is built with the generated `profile = ["anchor-v2-testing/profile"]{:toml}` feature, which powers `$ <blue>anchor</blue> test <dim>--profile</dim>`, `$ <blue>anchor</blue> debugger`, and `$ <blue>anchor</blue> coverage`.
+
+## When to use Rust first
+
+Use the Rust generated surface for:
+
+- instruction tests that need to run against LiteSVM
+- profiler, debugger, and coverage workflows
+- client code that wants compile-time checking against the program crate
+- account resolution features that TypeScript clients do not fully mirror yet
+
+The IDL still matters for cross-language clients, but Rust is the most complete client surface during alpha.
+
+## Standalone Rust clients
+
+The in-crate generated modules above are the common path because integration tests share the program crate. For a Rust client that ships in a separate crate, `$ <blue>anchor</blue> codama generate <dim>-l</dim> rust` renders a standalone Rust crate from the IDL using the `@codama/renderers-rust` package:
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> codama generate <dim>-l</dim> rust <dim>-p</dim> clients target/idl/counter.json
+```
+
+This is useful for off-chain services, SDKs, or downstream Rust apps that consume an Anchor program without depending on its program crate. See [CLI reference: `anchor codama`](/docs/v2/reference/cli/#anchor-codama) for renderer details.

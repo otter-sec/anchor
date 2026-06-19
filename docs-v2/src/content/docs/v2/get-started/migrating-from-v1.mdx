@@ -1,0 +1,155 @@
+---
+title: Migrating from v1
+description: Port a v1 program to v2 with the main rename and account-model changes.
+---
+
+Most v1 programs port to v2 with mechanical renames plus one account-model decision. Fixed-size state goes through zero-copy `Account<T>{:rs}`. Variable-length state goes through `BorshAccount<T>{:rs}`.
+
+This page is for existing programs. If you are learning Anchor for the first time, start with [First program](/docs/v2/get-started/first-program/) and come back here when you need to compare old code to new code.
+
+<Steps>
+<Step title="Apply the mechanical renames">
+
+Update the crate name, handler signatures, wrapper lifetimes, and key type names using the table below.
+
+</Step>
+<Step title="Choose the account model">
+
+Move fixed-size state to `Account<T>{:rs}` and move variable-length state to `BorshAccount<T>{:rs}`.
+
+</Step>
+<Step title="Refresh constraints">
+
+Replace deprecated `has_one{:rs}` checks with explicit `address{:rs}` checks where possible, then verify PDA seeds and bumps compile.
+
+</Step>
+<Step title="Rebuild the test harness">
+
+Use LiteSVM tests through `anchor_v2_testing::svm(){:rs}` so the same tests can feed profiling, debugger, and coverage tooling.
+
+</Step>
+</Steps>
+
+## Rename table
+
+| v1 | v2 |
+| --- | --- |
+| `use anchor_lang::prelude::*{:rs}` | `use anchor_lang_v2::prelude::*{:rs}` |
+| `solana_program{:rs}` | `pinocchio{:rs}` or v2 re-exports |
+| `std{:rs}` required | `#![no_std]{:rs}` compatible, with `alloc{:toml}` on by default |
+| `<'info>{:rs}` lifetimes on wrappers | removed |
+| `Context<T>{:rs}` handlers | `&mut Context<T>{:rs}` handlers |
+| `Pubkey{:rs}` | `Address{:rs}` |
+| `Account<'info, T>{:rs}` for fixed-size data | `Account<T>{:rs}` with `T: Pod{:rs}` |
+| `Account<'info, T>{:rs}` for `Vec{:rs}`, `String{:rs}`, payload enums | `BorshAccount<T>{:rs}` |
+| `AccountLoader<'info, T>{:rs}` zero-copy | `Account<T>{:rs}` |
+| `ctx.bumps.get("name"){:rs}` | `ctx.bumps.name{:rs}` |
+| `has_one = field{:rs}` | `address = parent.field{:rs}` on the sibling account |
+
+<Callout variant="note" title="AccountLoader means something else in v2">
+  v2 still has a type named `AccountLoader{:rs}`, but it is the sequential account cursor used internally by generated validation code. It is not the v1 user-facing zero-copy wrapper.
+</Callout>
+
+## Account data choice
+
+`Account<T>{:rs}` is now zero-copy by default. The account bytes are cast directly into `T{:rs}`, so `T{:rs}` must be fixed-size and Pod-compatible:
+
+<Tabs items={['Account<T>{:rs}', 'BorshAccount<T>{:rs}']}>
+<Tab>
+
+```rust title="v2 fixed-size state" showLineNumbers=false
+#[account]
+pub struct Counter {
+    pub count: u64,
+    pub authority: Address,
+}
+
+#[derive(Accounts)]
+pub struct Increment {
+    #[account(mut)]
+    pub counter: Account<Counter>,
+}
+```
+
+</Tab>
+<Tab>
+
+For variable-length data, use `#[account(borsh)]{:rs}`:
+
+```rust title="v2 variable-length state" showLineNumbers=false
+#[account(borsh)]
+pub struct Profile {
+    pub owner: Address,
+    pub name: String,
+    pub friends: Vec<Address>,
+}
+
+#[derive(Accounts)]
+pub struct EditProfile {
+    #[account(mut)]
+    pub profile: BorshAccount<Profile>,
+}
+```
+
+</Tab>
+</Tabs>
+
+## Constraint changes
+
+The v1 `has_one{:rs}` constraint still parses, but v2 emits a deprecation warning. Prefer moving the check onto the sibling account with `address{:rs}`:
+
+<Tabs items={['has_one{:rs}', 'address{:rs}']}>
+<Tab>
+
+```rust title="v1 style" del={3} showLineNumbers=false
+#[derive(Accounts)]
+pub struct Withdraw {
+    #[account(has_one = creator)]
+    pub config: Account<Config>,
+    pub creator: UncheckedAccount,
+}
+```
+
+</Tab>
+<Tab>
+
+```rust title="v2 style" add={5} showLineNumbers=false
+#[derive(Accounts)]
+pub struct Withdraw {
+    pub config: Account<Config>,
+    #[account(address = config.creator)]
+    pub creator: UncheckedAccount,
+}
+```
+
+</Tab>
+</Tabs>
+
+`address{:rs}` is more general. The right-hand side can be any expression, not only a field with the same name as a sibling account.
+
+## Compat feature
+
+The `compat{:toml}` feature re-exposes a small set of v1-shaped helpers so existing call sites compile without rewrites:
+
+```toml title="Cargo.toml" showLineNumbers=false
+[dependencies]
+anchor-lang-v2 = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next", features = ["compat"] }
+```
+
+| v1 helper | Notes |
+| --- | --- |
+| `debug!{:rs}` | Logging macro that accepts any Rust format string by routing through `alloc::format!{:rs}`. |
+| `error!{:rs}`, `err!{:rs}` | Convert an error code into a `ProgramError{:rs}` (and an `Err(...){:rs}` wrapper). |
+| `pubkey!{:rs}` | Compile-time base58 decode that yields an `Address{:rs}`. |
+| `Pubkey{:rs}` | Type alias for `Address{:rs}` under `anchor_lang_v2::solana_program::pubkey{:rs}`. |
+| `AccountViewCompat{:rs}` | Extension trait that exposes v1-style accessors on pinocchio's `AccountView{:rs}`. |
+
+`error!{:rs}` is implemented as a thin shim in v2, not a proc-macro, so it does not allocate a rich `AnchorError{:rs}` with source and message metadata the way v1 did. v2 keeps runtime errors as `ProgramError{:rs}` and routes error text through the IDL.
+
+Keep `compat{:toml}` off in production unless one of these shims is on a hot path. `debug!{:rs}` in particular allocates and is more expensive than v2's native `msg!{:rs}`.
+
+The `Lamports{:rs}` trait, which gives accounts v1-style `get_lamports{:rs}`, `add_lamports{:rs}`, and `sub_lamports{:rs}` methods, is in the prelude unconditionally and does not require the `compat{:toml}` feature.
+
+## Still alpha
+
+Some surfaces are intentionally incomplete while v2 is alpha. Less-common `anchor-spl` constraints, parts of the TypeScript publishing pipeline, and some client-codegen shapes are still settling. See [Alpha limitations](/docs/v2/reference/alpha-limitations/) before porting a large production program.

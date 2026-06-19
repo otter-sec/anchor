@@ -1,0 +1,145 @@
+---
+title: Token-2022 and extensions
+description: Accept Token-2022 accounts, read TLV extensions, and use anchor-spl-v2 interface accounts.
+---
+
+Token-2022 uses the same base mint and token-account layouts as the legacy Token Program, then appends extension data in a TLV section. A mint or token account can opt into features like transfer fees, metadata pointers, permanent delegates, and transfer hooks.
+
+Anchor handles Token-2022 in two layers:
+
+- `InterfaceAccount<T>{:rs}` accepts accounts owned by either the legacy Token Program or Token-2022.
+- `anchor_spl_v2::extensions{:rs}` parses supported fixed-size TLV extension structs from the account tail.
+
+<Callout variant="warning" title="Alpha surface">
+  The Token-2022 surface is read and validation focused. Not every Token-2022 initialization or
+  extension instruction has a high-level helper yet. Use the lower-level token program CPI APIs when
+  an extension instruction is not wrapped.
+</Callout>
+
+## Interface accounts
+
+Use `InterfaceAccount<Mint>{:rs}` or `InterfaceAccount<TokenAccount>{:rs}` when an instruction should accept either Token or Token-2022-owned accounts:
+
+```rust showLineNumbers=false
+use {
+    anchor_lang_v2::prelude::*,
+    anchor_spl_v2::{
+        mint::Mint,
+        token::TokenAccount,
+        token_interface::InterfaceAccount,
+    },
+};
+
+#[derive(Accounts)]
+pub struct ReadAnyTokenAccount {
+    pub mint: InterfaceAccount<Mint>,
+    #[account(token::mint = mint)]
+    pub token_account: InterfaceAccount<TokenAccount>,
+}
+```
+
+`InterfaceAccount<T>{:rs}` is a transparent wrapper over the same base SPL types. It relaxes ownership validation to accept both token program IDs, and it allows Token-2022 accounts to be larger than the base layout because extension data follows the base state.
+
+## Constraints
+
+The usual namespaced constraints work on interface accounts:
+
+| Constraint | Applies to | What it checks |
+| --- | --- | --- |
+| `token::mint = mint{:rs}` | `InterfaceAccount<TokenAccount>{:rs}` | The token account's mint equals `mint{:rs}`. |
+| `token::authority = authority{:rs}` | `InterfaceAccount<TokenAccount>{:rs}` | The token account's authority equals `authority{:rs}`. |
+| `token::token_program = program{:rs}` | `InterfaceAccount<TokenAccount>{:rs}` | The Solana account owner is the supplied token program. |
+| `mint::authority = authority{:rs}` | `InterfaceAccount<Mint>{:rs}` | The mint authority equals `authority{:rs}`. |
+| `mint::freeze_authority = authority{:rs}` | `InterfaceAccount<Mint>{:rs}` | The freeze authority equals `authority{:rs}`. |
+| `mint::decimals = N{:rs}` | `InterfaceAccount<Mint>{:rs}` | The mint decimals equal `N{:rs}`. |
+| `mint::token_program = program{:rs}` | `InterfaceAccount<Mint>{:rs}` | The Solana account owner is the supplied token program. |
+
+For a public instruction that accepts either token program, include the token program account in the account list and validate ownership with `token::token_program{:rs}` or `mint::token_program{:rs}`. If the token program field is unchecked, also constrain it to one of the two known token program IDs before using it for initialization or CPI:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct ReadToken2022Account {
+    #[account(
+        constraint = *token_program.address() == Token::id()
+            || *token_program.address() == Token2022::id()
+    )]
+    pub token_program: UncheckedAccount,
+    pub mint: InterfaceAccount<Mint>,
+    #[account(
+        token::mint = mint,
+        token::token_program = token_program,
+    )]
+    pub token_account: InterfaceAccount<TokenAccount>,
+}
+```
+
+Use a concrete `Program<Token>{:rs}` or `Program<Token2022>{:rs}` field when an instruction should accept only one token program.
+
+## Interface init
+
+The current high-level interface init path is for the legacy Token Program. Useful when initializing a base SPL mint or token account while keeping the account type as `InterfaceAccount<T>{:rs}` for later read and validation paths:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct InitInterfaceMint {
+    #[account(mut)]
+    pub payer: Signer,
+    pub authority: UncheckedAccount,
+    pub token_program: Program<Token>,
+    #[account(
+        init,
+        payer = payer,
+        mint::decimals = 6,
+        mint::authority = authority,
+        mint::token_program = token_program,
+    )]
+    pub mint: InterfaceAccount<Mint>,
+    pub system_program: Program<System>,
+}
+```
+
+For Token-2022 account creation or extension selection, use lower-level Token-2022 APIs, then validate or read the resulting account with `InterfaceAccount<T>{:rs}`. Most Token-2022 extensions must be selected before the base account is initialized.
+
+## Extension data
+
+Token-2022 stores extension data after the base mint or token-account layout. `anchor_spl_v2::extensions{:rs}` reads supported TLV entries by type:
+
+```rust showLineNumbers=false
+use anchor_spl_v2::extensions::{self, TransferFeeConfig};
+
+pub fn read_fee_config(
+    ctx: &mut Context<ReadFeeConfig>,
+    expected_bps: u16,
+) -> Result<()> {
+    let ext: &TransferFeeConfig =
+        extensions::get_mint_extension(ctx.accounts.mint.account())?;
+    require_eq!(ext.newer_transfer_fee.basis_points(), expected_bps);
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct ReadFeeConfig {
+    pub mint: InterfaceAccount<Mint>,
+}
+```
+
+Use `get_mint_extension::<T>(){:rs}` for mint extensions and `get_token_account_extension::<T>(){:rs}` for token-account extensions.
+
+## Supported extension structs
+
+The current helpers include fixed-size structs for common extensions:
+
+| Extension struct           | Account kind  |
+| -------------------------- | ------------- |
+| `TransferFeeConfig{:rs}`   | Mint          |
+| `MintCloseAuthority{:rs}`  | Mint          |
+| `DefaultAccountState{:rs}` | Mint          |
+| `PermanentDelegate{:rs}`   | Mint          |
+| `TransferHook{:rs}`        | Mint          |
+| `MetadataPointer{:rs}`     | Mint          |
+| `GroupPointer{:rs}`        | Mint          |
+| `GroupMemberPointer{:rs}`  | Mint          |
+| `TransferFeeAmount{:rs}`   | Token account |
+| `TransferHookAccount{:rs}` | Token account |
+
+Variable-length extension data and extension initialization flows are still settling. Keep Token-2022 programs close to the source APIs, and add focused tests for every extension path.

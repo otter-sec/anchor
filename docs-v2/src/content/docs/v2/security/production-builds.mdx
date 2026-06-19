@@ -1,0 +1,24 @@
+---
+title: Production builds
+description: Feature-flag and release considerations for production programs.
+---
+
+Keep the default `anchor-lang-v2` features while developing. They preserve diagnostics and runtime support that matter while tests, fuzzers, and reviewers are still exercising the program.
+
+Production builds are the last step, not the first. Start with the defaults, measure the program, then remove features only once you know which checks or helpers it no longer needs.
+
+```toml showLineNumbers=false
+anchor-lang-v2 = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }
+```
+
+The default features are `alloc{:toml}`, `guardrails{:toml}`, and `account-resize{:toml}`. `guardrails{:toml}` catches runtime misuse such as wrong program id dispatch or mutable access to a read-only account. `account-resize{:toml}` enables `realloc_account{:rs}` and the pinocchio hook that tracks original account lengths. Disable it only if the program has no realloc paths.
+
+A minimal profile looks like:
+
+```toml showLineNumbers=false
+anchor-lang-v2 = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next", default-features = false, features = ["alloc"] }
+```
+
+Only use that after tests, fuzzing, and review have shown the removed guardrails are not covering active mistakes. Disabling `guardrails{:toml}` saves a small amount of binary size and CU, but removes diagnostics that are valuable during testing.
+
+Two opt-in features need extra production care. `const-rent{:toml}` skips the runtime rent sysvar call by baking the rent formula into the binary. It is off by default because a future Solana rent-formula change would make the baked constants stale until the program is rebuilt and redeployed. `idl-build{:toml}` is a build-time feature for IDL emission and should not be included in deployed SBF binaries.

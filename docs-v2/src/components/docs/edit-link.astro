@@ -1,0 +1,27 @@
+---
+import Icon from '@/components/icon.astro'
+import Link from '@/components/link.astro'
+import { cn } from '@/lib/utils'
+
+interface Props {
+  href: string
+  class?: string
+  [key: string]: unknown
+}
+
+const { href, class: className, ...rest } = Astro.props
+---
+
+<Link
+  href={href}
+  class={cn(
+    'text-muted-foreground hover:bg-muted/50 hover:text-foreground inline-flex size-8 items-center justify-center rounded-md no-underline transition-colors',
+    className,
+  )}
+  external
+  aria-label="Edit this page"
+  title="Edit this page"
+  {...rest}
+>
+  <Icon name="pencil" class="size-4" />
+</Link>

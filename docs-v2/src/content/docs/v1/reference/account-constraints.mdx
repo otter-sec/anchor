@@ -1,0 +1,419 @@
+---
+title: Account constraints
+description: 'Reference for Anchor account constraints used inside the `#[account(...)]{:rs}` attribute.'
+---
+
+Account constraints are declared inside the `#[account(...)]{:rs}` attribute on fields of a struct that derives [`Accounts{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/derive.Accounts.html). They run before the instruction handler and reject the transaction if any check fails.
+
+See the [constraint codegen](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/accounts/constraints.rs) for implementation details.
+
+<Callout variant="notation" title="Custom error syntax">
+  Each constraint accepts an optional `@ <custom_error>{:rs}` clause to override the default error. Wherever you see `@ <custom_error>{:rs}` in the snippets below, the constraint will return that variant instead of Anchor's built-in error code on failure.
+</Callout>
+
+## Normal constraints
+
+### `#[account(signer)]{:rs}`
+
+Checks the given account signed the transaction. Prefer the `Signer{:rs}` type if `signer{:rs}` is the only constraint needed on the account:
+
+```rust showLineNumbers=false
+#[account(signer)]
+#[account(signer @ <custom_error>)]
+```
+
+### `#[account(mut)]{:rs}`
+
+Checks the given account is mutable and persists any state changes after the instruction completes:
+
+```rust showLineNumbers=false
+#[account(mut)]
+#[account(mut @ <custom_error>)]
+```
+
+### `#[account(dup)]{:rs}`
+
+Allows a mutable account to be passed in more than once. Anchor blocks duplicate mutable accounts by default to avoid silent overwrites; `dup{:rs}` opts back in when the duplication is intentional.
+
+<Callout variant="note">
+  This constraint only applies to mutable account types that serialize on exit. `UncheckedAccount{:rs}`, `Signer{:rs}`, `SystemAccount{:rs}`, `AccountLoader{:rs}`, `Program{:rs}`, and `Interface{:rs}` allow duplicates already because they don't serialize data on exit.
+</Callout>
+
+```rust showLineNumbers=false
+#[account(mut, dup)]
+#[account(mut, dup @ <custom_error>)]
+```
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct AllowsDuplicateMutable<'info> {
+    #[account(mut)]
+    pub account1: Account<'info, Counter>,
+    // This account can be the same as account1
+    #[account(mut, dup)]
+    pub account2: Account<'info, Counter>,
+}
+
+pub fn allows_duplicate_mutable(ctx: Context<AllowsDuplicateMutable>) -> Result<()> {
+    Ok(())
+}
+```
+
+### `#[account(init)]{:rs}`
+
+Creates the account via a CPI to the System Program and writes the 8-byte account discriminator. Requires `payer{:rs}` and `space{:rs}`:
+
+```rust showLineNumbers=false
+#[account(
+    init,
+    payer = <target_account>,
+    space = <num_bytes>
+)]
+```
+
+### `#[account(init_if_needed)]{:rs}`
+
+Same as `init{:rs}` but only runs if the account does not exist yet. Requires the `init-if-needed` cargo feature:
+
+```rust showLineNumbers=false
+#[account(
+    init_if_needed,
+    payer = <target_account>
+)]
+
+#[account(
+    init_if_needed,
+    payer = <target_account>,
+    space = <num_bytes>
+)]
+```
+
+### `#[account(seeds, bump)]{:rs}`
+
+Checks that the given account is a PDA derived from the currently executing program, the seeds, and (if provided) the bump. See [Program derived address](/docs/v1/fundamentals/pdas/) for usage patterns:
+
+```rust showLineNumbers=false
+#[account(
+    seeds = <seeds>,
+    bump
+)]
+
+#[account(
+    seeds = <seeds>,
+    bump,
+    seeds::program = <expr>
+)]
+
+#[account(
+    seeds = <seeds>,
+    bump = <expr>
+)]
+
+#[account(
+    seeds = <seeds>,
+    bump = <expr>,
+    seeds::program = <expr>
+)]
+```
+
+### `#[account(has_one = target)]{:rs}`
+
+Checks that the `target{:rs}` field stored on the account matches the key of the `target{:rs}` field in the `Accounts{:rs}` struct:
+
+```rust showLineNumbers=false
+#[account(
+    has_one = <target_account>
+)]
+
+#[account(
+    has_one = <target_account> @ <custom_error>
+)]
+```
+
+### `#[account(address = expr)]{:rs}`
+
+Checks the account key matches the given pubkey:
+
+```rust showLineNumbers=false
+#[account(address = <expr>)]
+#[account(address = <expr> @ <custom_error>)]
+```
+
+### `#[account(owner = expr)]{:rs}`
+
+Checks the account owner matches `expr{:rs}`:
+
+```rust showLineNumbers=false
+#[account(owner = <expr>)]
+#[account(owner = <expr> @ <custom_error>)]
+```
+
+### `#[account(executable)]{:rs}`
+
+Checks the account is executable (the account is a program):
+
+```rust showLineNumbers=false
+#[account(executable)]
+```
+
+### `#[account(zero)]{:rs}`
+
+Checks the account discriminator is zero. Use for accounts larger than 10 KiB, where `init{:rs}` exceeds the System Program's allocation limit:
+
+```rust showLineNumbers=false
+#[account(zero)]
+```
+
+### `#[account(close = target)]{:rs}`
+
+Closes the account by sending its lamports to `target{:rs}` and zeroing its data:
+
+```rust showLineNumbers=false
+#[account(close = <target_account>)]
+```
+
+### `#[account(constraint = expr)]{:rs}`
+
+Custom constraint that checks whether the given expression evaluates to `true{:rs}`:
+
+```rust showLineNumbers=false
+#[account(constraint = <expr>)]
+#[account(
+    constraint = <expr> @ <custom_error>
+)]
+```
+
+### `#[account(realloc)]{:rs}`
+
+Reallocates program account space at the start of an instruction. `realloc::zero{:rs}` controls whether new bytes are zeroed:
+
+```rust showLineNumbers=false
+#[account(
+    realloc = <space>,
+    realloc::payer = <target>,
+    realloc::zero = <bool>
+)]
+```
+
+### `#[account(discriminator = <expr>)]{:rs}`
+
+Overrides the auto-generated discriminator for an account. Any constant expression is accepted. All-zero discriminators are rejected because zeroed discriminators are indistinguishable from newly allocated accounts; see [zeroed discriminators](/docs/v1/security/footguns/#zeroed-discriminators) for the security background:
+
+```rust showLineNumbers=false
+#[account(discriminator = 12)]
+#[account(discriminator = [1, 2, 3, 4])]
+#[account(discriminator = MY_CONST_DISCRIMINATOR)]
+```
+
+## SPL constraints
+
+### `#[account(token::*)]{:rs}`
+
+Creates or validates token accounts with the specified mint and authority:
+
+```rust showLineNumbers=false
+#[account(
+    token::mint = <target_account>,
+    token::authority = <target_account>
+)]
+
+#[account(
+    token::mint = <target_account>,
+    token::authority = <target_account>,
+    token::token_program = <target_account>
+)]
+```
+
+### `#[account(mint::*)]{:rs}`
+
+Creates or validates mint accounts with the specified parameters:
+
+```rust showLineNumbers=false
+#[account(
+    mint::authority = <target_account>,
+    mint::decimals = <expr>
+)]
+
+#[account(
+    mint::authority = <target_account>,
+    mint::decimals = <expr>,
+    mint::freeze_authority = <target_account>
+)]
+```
+
+### `#[account(associated_token::*)]{:rs}`
+
+Creates or validates associated token accounts:
+
+```rust showLineNumbers=false
+#[account(
+    associated_token::mint = <target_account>,
+    associated_token::authority = <target_account>
+)]
+
+#[account(
+    associated_token::mint = <target_account>,
+    associated_token::authority = <target_account>,
+    associated_token::token_program = <target_account>
+)]
+```
+
+### `#[account(*::token_program = expr)]{:rs}`
+
+Overrides the token program used by `token{:rs}`, `mint{:rs}`, or `associated_token{:rs}` constraints:
+
+```rust showLineNumbers=false
+#[account(*::token_program = <target_account>)]
+```
+
+## Token extensions constraints
+
+### `#[account(extensions::close_authority::*)]{:rs}`
+
+Creates or validates the close authority extension on the mint account:
+
+```rust showLineNumbers=false
+#[account(
+    extensions::close_authority::authority = <target_account>
+)]
+```
+
+### `#[account(extensions::permanent_delegate::*)]{:rs}`
+
+Creates or validates the permanent delegate extension on the mint account:
+
+```rust showLineNumbers=false
+#[account(
+    extensions::permanent_delegate::delegate = <target_account>
+)]
+```
+
+### `#[account(extensions::transfer_hook::*)]{:rs}`
+
+Creates or validates the transfer hook extension on the mint account:
+
+```rust showLineNumbers=false
+#[account(
+    extensions::transfer_hook::authority = <target_account>,
+    extensions::transfer_hook::program_id = <target_account>
+)]
+```
+
+### `#[account(extensions::group_pointer::*)]{:rs}`
+
+Creates or validates the group pointer extension on the mint account:
+
+```rust showLineNumbers=false
+#[account(
+    extensions::group_pointer::authority = <target_account>,
+    extensions::group_pointer::group_address = <target_account>
+)]
+```
+
+### `#[account(extensions::group_member_pointer::*)]{:rs}`
+
+Creates or validates the group member pointer extension on the mint account:
+
+```rust showLineNumbers=false
+#[account(
+    extensions::group_member_pointer::authority = <target_account>,
+    extensions::group_member_pointer::member_address = <target_account>
+)]
+```
+
+### `#[account(extensions::metadata_pointer::*)]{:rs}`
+
+Creates or validates the metadata pointer extension on the mint account:
+
+```rust showLineNumbers=false
+#[account(
+    extensions::metadata_pointer::authority = <target_account>,
+    extensions::metadata_pointer::metadata_address = <target_account>
+)]
+```
+
+## Instruction attribute
+
+### `#[instruction(...)]{:rs}`
+
+Exposes the instruction's arguments to the `Accounts{:rs}` struct so constraints can reference them. The example below uses `input{:rs}` in the `space{:rs}` calculation when initializing an account:
+
+```rust showLineNumbers=false {8}
+#[program]
+pub mod example {
+    use super::*;
+
+    pub fn initialize(ctx: Context<Initialize>, input: String) -> Result<()> {
+        // --snip--
+    }
+}
+
+#[derive(Accounts)]
+#[instruction(input: String)]
+pub struct Initialize<'info> {
+    #[account(
+        init,
+        payer = signer,
+        space = 8 + 4 + input.len(),
+    )]
+    pub new_account: Account<'info, DataAccount>,
+    // --snip--
+}
+```
+
+Arguments must appear in the same order as the handler signature. Listing every argument is valid:
+
+```rust showLineNumbers=false {10}
+#[program]
+pub mod example {
+    use super::*;
+
+    pub fn initialize(ctx: Context<Initialize>, input_one: String, input_two: String) -> Result<()> {
+        // --snip--
+    }
+}
+
+#[derive(Accounts)]
+#[instruction(input_one: String, input_two: String)]
+pub struct Initialize<'info> {
+    // --snip--
+}
+```
+
+Omitting trailing arguments is valid:
+
+```rust showLineNumbers=false {10}
+#[program]
+pub mod example {
+    use super::*;
+
+    pub fn initialize(ctx: Context<Initialize>, input_one: String, input_two: String) -> Result<()> {
+        // --snip--
+    }
+}
+
+#[derive(Accounts)]
+#[instruction(input_one: String)]
+pub struct Initialize<'info> {
+    // --snip--
+}
+```
+
+Skipping a leading argument is invalid and produces a compile error:
+
+```rust showLineNumbers=false
+#[program]
+pub mod example {
+    use super::*;
+
+    pub fn initialize(ctx: Context<Initialize>, input_one: String, input_two: String) -> Result<()> {
+        // --snip--
+    }
+}
+
+#[derive(Accounts)]
+#[instruction(input_two: String)]
+pub struct Initialize<'info> {
+    // --snip--
+}
+```

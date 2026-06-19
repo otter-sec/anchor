@@ -11,6 +11,6 @@
     "url": "https://github.com/otter-sec/anchor.git"
   },
   "engines": {
-    "node": ">=17"
+    "node": ">=20.18"
   }
 }

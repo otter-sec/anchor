@@ -19,8 +19,14 @@ runs:
         max_attempts: 10
         retry_on: error
         shell: bash
-        command: sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
+        # Pipe (not `$(...)`) so curl failures propagate to the retry action.
+        command: |
+          set -euo pipefail
+          curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install | sh
     - run: echo "/home/runner/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+      shell: bash
+    - name: Verify Solana install
+      run: command -v solana-keygen || { echo "Solana install failed - solana-keygen not on PATH"; exit 1; }
       shell: bash
     - run: solana-keygen new --no-bip39-passphrase
       shell: bash

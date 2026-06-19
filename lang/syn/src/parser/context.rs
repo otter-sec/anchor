@@ -1,11 +1,11 @@
 use {
-    anyhow::{anyhow, Result},
+    proc_macro2::Span,
     std::{
         collections::BTreeMap,
         path::{Path, PathBuf},
     },
     syn::{
-        parse::{Error as ParseError, Result as ParseResult},
+        parse::{Error as ParseError, Result},
         Ident, ImplItem, ImplItemConst, Type, TypePath,
     },
 };
@@ -91,8 +91,10 @@ impl CrateContext {
                         reason = "file paths are always valid during compilation"
                     )]
                     let canonical = ctx.file.canonicalize().unwrap();
-                    return Err(anyhow!(
-                        r#"
+                    return Err(syn::Error::new(
+                        span,
+                        format!(
+                            r#"
         {}:{}:{}
         Struct field "{}" is unsafe, but is not documented.
         Please add a `/// CHECK:` doc comment explaining why no checks through types are necessary.
@@ -100,10 +102,11 @@ impl CrateContext {
         by using the `skip-lint` option.
         See https://www.anchor-lang.com/docs/references/account-types#uncheckedaccountinfo for more information.
                     "#,
-                        canonical.display(),
-                        span.start().line,
-                        span.start().column,
-                        ident
+                            canonical.display(),
+                            span.start().line,
+                            span.start().column,
+                            ident,
+                        ),
                     ));
                 };
             }
@@ -143,7 +146,8 @@ impl ParsedModule {
     fn parse_recursive(root: &Path) -> Result<BTreeMap<String, ParsedModule>> {
         let mut modules = BTreeMap::new();
 
-        let root_content = std::fs::read_to_string(root)?;
+        let root_content =
+            std::fs::read_to_string(root).map_err(|e| syn::Error::new(Span::call_site(), e))?;
         let root_file = syn::parse_file(&root_content)?;
         let root_mod = Self::new(
             String::new(),
@@ -166,11 +170,7 @@ impl ParsedModule {
         Ok(modules)
     }
 
-    fn from_item_mod(
-        parent_file: &Path,
-        parent_path: &str,
-        item: syn::ItemMod,
-    ) -> ParseResult<Self> {
+    fn from_item_mod(parent_file: &Path, parent_path: &str, item: syn::ItemMod) -> Result<Self> {
         Ok(match item.content {
             Some((_, items)) => {
                 // The module content is within the parent file being parsed

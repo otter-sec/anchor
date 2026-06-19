@@ -7,21 +7,17 @@ use {
         parser::{context::CrateContext, docs},
         Program,
     },
-    anyhow::{anyhow, Result},
     heck::CamelCase,
     proc_macro2::TokenStream,
     quote::{format_ident, quote},
-    syn::spanned::Spanned,
+    syn::{spanned::Spanned, Result},
 };
 
 /// Generate the IDL build print function for the program module.
 pub fn gen_idl_print_fn_program(program: &Program) -> TokenStream {
-    if let Err(error) = check_safety_comments() {
-        return syn::Error::new(
-            proc_macro2::Span::call_site(),
-            format!("Safety checks failed: {error}"),
-        )
-        .into_compile_error();
+    if let Err(e) = check_safety_comments() {
+        return syn::Error::new(e.span(), format!("Safety checks failed: {e}"))
+            .into_compile_error();
     }
 
     let idl = get_idl_module_path();
@@ -70,7 +66,7 @@ pub fn gen_idl_print_fn_program(program: &Program) -> TokenStream {
                         defined,
                     ))
                 })
-                .collect::<syn::Result<Vec<_>>>()?
+                .collect::<Result<Vec<_>>>()?
                 .into_iter()
                 .unzip::<_, Vec<_>, Vec<_>, Vec<_>>();
 
@@ -100,7 +96,7 @@ pub fn gen_idl_print_fn_program(program: &Program) -> TokenStream {
                 defined,
             ))
         })
-        .collect::<syn::Result<Vec<_>>>();
+        .collect::<Result<Vec<_>>>();
     let (instructions, defined) = match result {
         Err(e) => return e.into_compile_error(),
         Ok(v) => v.into_iter().unzip::<_, Vec<_>, Vec<_>, Vec<_>>(),
@@ -166,8 +162,7 @@ fn check_safety_comments() -> Result<()> {
         return Ok(());
     }
 
-    let program_path = get_program_path();
-    if program_path.is_err() {
+    let Ok(program_path) = get_program_path() else {
         // Getting the program path can fail in the following scenarios:
         //
         // - Anchor CLI version is incompatible with the current version
@@ -182,11 +177,9 @@ fn check_safety_comments() -> Result<()> {
         // Given this feature is not a critical one, and it works by default with `anchor build`,
         // we can fail silently in the case of an error rather than panicking.
         return Ok(());
-    }
+    };
 
-    program_path
-        .map(|path| path.join("src").join("lib.rs"))
-        .map(CrateContext::parse)?
-        .map_err(|e| anyhow!("Failed to parse crate: {e}"))?
+    CrateContext::parse(program_path.join("src").join("lib.rs"))
+        .map_err(|e| syn::Error::new(e.span(), format!("Failed to parse crate: {e}")))?
         .safety_checks()
 }

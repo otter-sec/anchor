@@ -268,6 +268,11 @@ impl<'info, T: ZeroCopy + Owner> AccountsExit<'info> for AccountLoader<'info, T>
     fn exit(&self, program_id: &Pubkey) -> Result<()> {
         // Only persist if the owner is the current program and the account is not closed.
         if &T::owner() == program_id && !crate::common::is_closed(self.acc_info) {
+            // Guard against truncation: refuse to rewrite the discriminator over an undersized buffer.
+            let required = T::DISCRIMINATOR.len() + mem::size_of::<T>();
+            if self.acc_info.try_data_len()? < required {
+                return Err(ErrorCode::AccountDidNotDeserialize.into());
+            }
             let mut data = self.acc_info.try_borrow_mut_data()?;
             let dst: &mut [u8] = &mut data;
             let mut writer = BpfWriter::new(dst);

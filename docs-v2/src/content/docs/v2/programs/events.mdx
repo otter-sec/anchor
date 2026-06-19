@@ -1,0 +1,80 @@
+---
+title: Events
+description: 'Emit program events with `wincode{:rs}` or `bytemuck{:rs}` encoding.'
+---
+
+Events are structured log records emitted by a program. Clients and indexers can read them from transaction logs instead of trying to infer every state change from account data.
+
+Events are declared with `#[event]{:rs}` and emitted with `emit!{:rs}`. The default encoder is wincode configured to match borsh wire layout for Anchor-supported shapes.
+
+## Default events
+
+Use default events when the payload includes variable-length fields:
+
+```rust showLineNumbers=false
+#[event]
+pub struct OrderFilled {
+    pub maker: Address,
+    pub taker: Address,
+    pub size: u64,
+    pub memo: String,
+}
+
+emit!(OrderFilled {
+    maker: *ctx.accounts.maker.address(),
+    taker: *ctx.accounts.taker.address(),
+    size,
+    memo,
+});
+```
+
+The default encoding supports `Vec{:rs}`, `String{:rs}`, `Option{:rs}`, and enums while staying cheaper than borsh on SBF.
+
+## Bytemuck events
+
+When every field is fixed-size and Pod-compatible, use `#[event(bytemuck)]{:rs}`:
+
+```rust showLineNumbers=false
+#[event(bytemuck)]
+#[repr(C)]
+pub struct PriceUpdate {
+    pub price: PodU64,
+    pub slot: PodU64,
+}
+```
+
+This emits the discriminator and then copies the body bytes directly. It is the cheapest event path, but it is only correct for fixed-size Pod payloads.
+
+## Choosing an event form
+
+Default `#[event]{:rs}` is the right pick for expressive Rust data. `#[event(bytemuck)]{:rs}` is the cheaper option for compact telemetry records with stable fixed-size fields.
+
+## Self-CPI events
+
+Transaction logs can be truncated by RPC providers, which makes log-only events unreliable for indexers that need to replay program history. The self-CPI event pattern emits an event as instruction data on a no-op CPI back to the program, so indexers can recover it from instruction history instead of logs.
+
+Opt in by enabling the `event-cpi{:toml}` feature on `anchor-lang-v2`, then mark the handler's accounts struct with `#[event_cpi]{:rs}` and emit with `emit_cpi!{:rs}`:
+
+```toml title="Cargo.toml" showLineNumbers=false
+[dependencies]
+anchor-lang-v2 = { git = "...", branch = "anchor-next", features = ["event-cpi"] }
+```
+
+```rust showLineNumbers=false
+#[event_cpi]
+#[derive(Accounts)]
+pub struct EmitOnce {
+    #[account(mut, seeds = [COUNTER_SEED], bump)]
+    pub counter: Account<Counter>,
+}
+
+pub fn emit_once(ctx: &mut Context<EmitOnce>, value: u64) -> Result<()> {
+    ctx.accounts.counter.value = value;
+    emit_cpi!(EventCpiObserved { value, marker: 7 });
+    Ok(())
+}
+```
+
+`#[event_cpi]{:rs}` injects an `event_authority{:rs}` PDA derived from `[b"__event_authority"]{:rs}` plus a `program{:rs}` field into the accounts struct. `emit_cpi!{:rs}` issues a self-CPI tagged with a reserved 8-byte discriminator. The `#[program]{:rs}` dispatcher checks for that tag before normal instruction dispatch and short-circuits the call after verifying the signer PDA, so the CPI never reaches a user handler.
+
+Use self-CPI events when downstream indexers need replay guarantees stronger than log retention provides. The default `emit!{:rs}` path remains the right choice for ordinary telemetry that consumers read from logs.

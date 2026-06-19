@@ -1,0 +1,49 @@
+---
+import Icon from '@/components/icon.astro'
+import Link from '@/components/link.astro'
+import { cn } from '@/lib/utils'
+
+interface Props {
+  title: string
+  titleHtml?: string
+  icon?: string
+  href?: string
+  class?: string
+}
+
+const { title, titleHtml, icon, href, class: className } = Astro.props
+
+const baseClass = cn('not-prose flex flex-col gap-2 rounded-lg border-2 p-5', className)
+const linkClass = cn('group hover:border-foreground/30 no-underline', baseClass)
+const titleClass = 'text-foreground text-base font-medium leading-tight m-0'
+---
+
+{
+  href ? (
+    <Link href={href} class={linkClass}>
+      {icon && (
+        <Icon name={icon} class="text-muted-foreground group-hover:text-foreground size-5" />
+      )}
+      {titleHtml ? (
+        <h3 class={titleClass} data-doc-title set:html={titleHtml} />
+      ) : (
+        <h3 class={titleClass}>{title}</h3>
+      )}
+      <div class="text-muted-foreground text-sm leading-relaxed [&_p]:m-0" data-doc-description>
+        <slot />
+      </div>
+    </Link>
+  ) : (
+    <div class={baseClass}>
+      {icon && <Icon name={icon} class="text-muted-foreground size-5" />}
+      {titleHtml ? (
+        <h3 class={titleClass} data-doc-title set:html={titleHtml} />
+      ) : (
+        <h3 class={titleClass}>{title}</h3>
+      )}
+      <div class="text-muted-foreground text-sm leading-relaxed [&_p]:m-0" data-doc-description>
+        <slot />
+      </div>
+    </div>
+  )
+}

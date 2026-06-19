@@ -1,0 +1,32 @@
+---
+import { getExpressiveCodeEngine } from '@/lib/expressive-code-engine'
+import { toHtml } from 'hast-util-to-html'
+
+interface Props {
+  code: string
+  lang: string
+  title?: string
+  meta?: string
+  dataCurlExample?: boolean
+}
+
+const { code, lang, title, meta = '', dataCurlExample = false } = Astro.props
+
+const metaParts: string[] = []
+if (title) metaParts.push(`title="${title}"`)
+if (meta) metaParts.push(meta)
+const fullMeta = metaParts.join(' ')
+
+const engine = await getExpressiveCodeEngine()
+const { renderedGroupAst } = await engine.render({
+  code: code.replace(/\n+$/, ''),
+  language: lang,
+  meta: fullMeta,
+})
+const html = toHtml(renderedGroupAst as Parameters<typeof toHtml>[0])
+const taggedHtml = dataCurlExample
+  ? html.replace(/class="([^"]*\bexpressive-code\b[^"]*)"/, 'data-curl-example class="$1"')
+  : html
+---
+
+<Fragment set:html={taggedHtml} />

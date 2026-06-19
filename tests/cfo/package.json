@@ -11,7 +11,7 @@
     "url": "https://github.com/otter-sec/anchor.git"
   },
   "engines": {
-    "node": ">=17"
+    "node": ">=20.18"
   },
   "scripts": {
     "test": "anchor run test-with-build"

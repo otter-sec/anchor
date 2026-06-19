@@ -1,0 +1,341 @@
+---
+title: '`Anchor.toml{:file}` configuration'
+description: "Reference for the fields available in an Anchor workspace's `Anchor.toml` file."
+---
+
+`Anchor.toml` configures a workspace's provider, programs, scripts, test validator, and toolchain. The full set of fields is defined in the [`Config` struct](https://github.com/otter-sec/anchor/blob/master/cli/src/config.rs) in the Anchor CLI.
+
+## `[provider]` (required)
+
+Sets the wallet and cluster used for all `anchor` commands:
+
+```toml
+[provider]
+cluster = "localnet"                    # The cluster used for all commands.
+wallet = "~/.config/solana/id.json"     # The keypair used for all commands.
+```
+
+## `[scripts]` (required for testing)
+
+Defines named scripts runnable with `$ <blue>anchor</blue> run <script>`. The `test` script is executed by `$ <blue>anchor</blue> test`:
+
+```toml
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+```
+
+## `skip_local_validator`
+
+When set to `true`, `$ <blue>anchor</blue> test` does not start a local validator for localnet tests. `$ <blue>anchor</blue> init` writes this for Rust templates that run the Solana VM in-process, such as LiteSVM and Mollusk:
+
+```toml
+skip_local_validator = true
+```
+
+## `[features]`
+
+### `resolution`
+
+Enables IDL account resolution. Defaults to `true`:
+
+```toml
+[features]
+resolution = true
+```
+
+## `[workspace]`
+
+### `types`
+
+Copies the generated `<idl>.ts{:file}` file to the given directory on `$ <blue>anchor</blue> build`. Useful for committing the IDL types into a frontend that does not have access to the `target{:dir}` directory:
+
+```toml
+[workspace]
+types = "app/src/idl/"
+```
+
+### `members`
+
+Paths (relative to `Anchor.toml{:file}`) to every `Cargo.toml{:file}` manifest the `anchor` CLI should compile. Programs using the standard Anchor workflow can omit this field; non-Anchor programs that still publish through the CLI must list their manifests here:
+
+```toml
+[workspace]
+members = [
+    "programs/*",
+    "other_place/my_program"
+]
+```
+
+### `exclude`
+
+Lists workspace paths to skip, mirroring the include list in `members`:
+
+```toml
+[workspace]
+exclude = [
+    "programs/my_program"
+]
+```
+
+## `[programs]`
+
+Maps program names to addresses, scoped by cluster:
+
+```toml
+[programs.localnet]
+my_program = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+```
+
+During tests on localnet, Anchor reads `programs.localnet` to tell `solana-test-validator` which programs to load at genesis via `--bpf-program`.
+
+## `[clients]`
+
+Configures [Codama](https://github.com/codama-idl/codama) client generation. When `auto = true`, `$ <blue>anchor</blue> build` converts emitted Anchor IDLs into Codama IDLs and invokes the selected language renderers after the build completes.
+
+Each language can be enabled with a boolean or a table. If `path` is omitted, the default output directory is `clients/<language>{:dir}`. Supported language keys are `js`, `js-umi`, `rust`, and `go`:
+
+```toml
+[clients]
+auto = true
+rust = true
+js = { enable = true }
+go = { enable = true, path = "go-client" }
+js-umi = false
+```
+
+## `[test]`
+
+### `startup_wait`
+
+Increases the time `anchor` waits for `solana-test-validator` to start. Useful when cloning many accounts (see [`test.validator.clone`](#testvalidatorclone)) extends startup time:
+
+```toml
+[test]
+startup_wait = 10000
+```
+
+### `genesis`
+
+Starts `solana-test-validator` with the listed programs preloaded:
+
+```toml
+[[test.genesis]]
+address = "srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX"
+program = "dex.so"
+
+[[test.genesis]]
+address = "22Y43yTVxuUkoRKdm9thyRhQ3SdgQS7c7kB6UNCiaczD"
+program = "swap.so"
+upgradeable = true
+```
+
+### `upgradeable`
+
+Deploys the program-under-test with `--upgradeable-program` so tests can exercise instructions gated on the upgrade authority. The initial upgrade authority is set to `provider.wallet`.
+
+When unset or `false`, the program is deployed with `--bpf-program` and cannot be upgraded:
+
+```toml
+[test]
+upgradeable = true
+```
+
+## `[test.validator]`
+
+Forwards options to `solana-test-validator` (run `$ <blue>solana-test-validator</blue> --help` for the full list) during commands like `$ <blue>anchor</blue> test`:
+
+```toml
+[test.validator]
+url = "https://api.mainnet-beta.solana.com"     # This is the url of the cluster that accounts are cloned from (See `test.validator.clone`).
+warp_slot = 1337                                # Warp the ledger to `warp_slot` after starting the validator.
+slots_per_epoch = 5                             # Override the number of slots in an epoch.
+rpc_port = 1337                                 # Set JSON RPC on this port, and the next port for the RPC websocket.
+limit_ledger_size = 1337                        # Keep this amount of shreds in root slots.
+ledger = "test-ledger"                          # Set ledger location.
+gossip_port = 1337                              # Gossip port number for the validator.
+gossip_host = "127.0.0.1"                       # Gossip DNS name or IP address for the validator to advertise in gossip.
+faucet_sol = 1337                               # Give the faucet address this much SOL in genesis.
+faucet_port = 1337                              # Enable the faucet on this port.
+dynamic_port_range = "1337 - 13337"             # Range to use for dynamically assigned ports.
+bind_address = "127.0.0.1"                      # IP address to bind the validator ports.
+```
+
+### `test.validator.clone`
+
+Clones an account from `test.validator.url` into the test cluster. If `address` points to a program owned by the BPF upgradeable loader, Anchor (>= 0.23.0) clones the program data account automatically:
+
+```toml
+[test.validator]
+url = "https://api.mainnet-beta.solana.com"
+
+[[test.validator.clone]]
+address = "7NL2qWArf2BbEBBH1vTRZCsoNqFATTddH6h8GkVvrLpG"
+[[test.validator.clone]]
+address = "2RaN5auQwMdg5efgCaVqpETBV8sacWGR8tkK4m9kjo5r"
+[[test.validator.clone]]
+address = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s" # implicitly also clones PwDiXFxQsGra4sFFTT8r1QWRMd4vfumiWC1jfWNfdYT
+```
+
+### `test.validator.account`
+
+Uploads an account from a `.json` file:
+
+```toml
+[[test.validator.account]]
+address = "Ev8WSPQsGb4wfjybqff5eZNcS3n6HaMsBkMk9suAiuM"
+filename = "some_account.json"
+
+[[test.validator.account]]
+address = "Ev8WSPQsGb4wfjybqff5eZNcS3n6HaMsBkMk9suAiuM"
+filename = "some_other_account.json"
+```
+
+## `[surfpool]`
+
+Configures the [Surfpool](https://github.com/solana-foundation/surfpool) validator, used when `$ <blue>anchor</blue> test <dim>--validator</dim> <dim>surfpool</dim>` selects Surfpool as the local network backend. Surfpool is a lightweight Solana simulator with features like automatic account cloning and runbook execution. All fields are optional and have sensible defaults:
+
+```toml
+[surfpool]
+startup_wait = 5000                                # Time (ms) to wait for Surfpool to start. Default: 5000.
+shutdown_wait = 2000                               # Time (ms) to wait for Surfpool to shut down. Default: 2000.
+rpc_port = 8899                                    # JSON RPC port. Default: 8899.
+ws_port = 8900                                     # WebSocket port. If not set, derived automatically.
+host = "127.0.0.1"                                 # IP address to bind to. Default: "127.0.0.1".
+online = true                                      # Enable online mode (clone accounts from a remote cluster).
+datasource_rpc_url = "https://api.mainnet.solana.com"
+airdrop_addresses = ["addr1...", "addr2..."]       # Addresses to airdrop SOL to at startup.
+manifest_file_path = "./Cargo.toml"                # Path to the Cargo.toml manifest file.
+runbooks = ["./runbooks/setup.json"]               # Paths to runbook files to execute on startup.
+slot_time = 400                                    # Simulated slot time in milliseconds.
+log_level = "info"                                 # Log level for Surfpool. Default: "none".
+block_production_mode = "clock"                    # Block production mode. Default: "transaction".
+```
+
+### `startup_wait`
+
+Time in milliseconds to wait for Surfpool to start up. Useful when loading many accounts or running runbooks at startup. Default: `5000`.
+
+### `shutdown_wait`
+
+Time in milliseconds to wait for Surfpool to shut down gracefully. Default: `2000`.
+
+### `rpc_port`
+
+The port on which Surfpool exposes its JSON RPC endpoint. Default: `8899`.
+
+### `ws_port`
+
+The port for the WebSocket endpoint. If not specified, it is derived automatically.
+
+### `host`
+
+The IP address to bind the Surfpool validator ports to. Default: `"127.0.0.1"`.
+
+### `online`
+
+When set to `true`, Surfpool operates in online mode, cloning accounts from the remote cluster specified by `datasource_rpc_url`. Default: `false`.
+
+### `datasource_rpc_url`
+
+The RPC URL of the remote cluster used as a data source when `online` is enabled:
+
+```toml
+[surfpool]
+online = true
+datasource_rpc_url = "https://api.mainnet.solana.com"
+```
+
+### `airdrop_addresses`
+
+A list of base58-encoded addresses that will receive an airdrop of SOL when Surfpool starts:
+
+```toml
+[surfpool]
+airdrop_addresses = [
+    "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
+    "7NL2qWArf2BbEBBH1vTRZCsoNqFATTddH6h8GkVvrLpG",
+]
+```
+
+### `manifest_file_path`
+
+Path to the `Cargo.toml{:file}` manifest file for the workspace. Typically not needed because Anchor resolves it automatically.
+
+### `runbooks`
+
+A list of file paths to runbooks that Surfpool will execute on startup. Runbooks allow setting up initial state (deploy programs, create accounts, etc.) before tests run:
+
+```toml
+[surfpool]
+runbooks = ["./runbooks/setup.json"]
+```
+
+### `slot_time`
+
+The simulated slot time in milliseconds. Controls how fast slots advance in the Surfpool simulator.
+
+### `log_level`
+
+Log verbosity for the Surfpool process. Common values include `"none"`, `"info"`, `"debug"`, `"warn"`, and `"error"`. Default: `"none"`.
+
+### `block_production_mode`
+
+Controls how Surfpool produces blocks. Default: `"transaction"`. Known values:
+
+- `"clock"` produces blocks at regular intervals based on `slot_time`.
+- `"transaction"` produces a new block for each incoming transaction.
+
+```toml
+[surfpool]
+block_production_mode = "clock"
+```
+
+## `[toolchain]`
+
+Overrides toolchain versions for the workspace, similar to [`rust-toolchain.toml{:file}`](https://rust-lang.github.io/rustup/overrides.html#the-toolchain-file):
+
+```toml
+[toolchain]
+anchor_version = "1.0.1"    # `anchor-cli` version to use (requires `avm`)
+solana_version = "3.1.10"   # Solana version to use (applies to all Solana tools)
+package_manager = "yarn"    # JS package manager to use
+```
+
+### `package_manager`
+
+Selects the JS package manager Anchor uses for client and workspace commands. Valid values are `npm`, `yarn`, `pnpm`, and `bun`.
+
+When the field is omitted, Anchor probes `pnpm`, `yarn`, then `npm` and uses the first one found on `PATH`. Values must be lowercase, since they are deserialized with `serde(rename_all = "lowercase")`:
+
+```toml
+[toolchain]
+package_manager = "pnpm"
+```
+
+### `hooks`
+
+Configures commands that run at specific stages of the build, test, and deploy pipeline:
+
+```toml
+[hooks]
+# Accepts kebab-case names...
+pre-build = "echo foo"
+# ...and snake-case names
+post_build = "echo bar"
+# Accepts a list of commands, run in series
+pre-test = ["echo 1", "echo 2"]
+# Non-zero exit codes will abort the CLI
+post-test = "exit 1"
+# Unused hooks may be omitted
+# pre-deploy = []
+# post-deploy = []
+```
+
+## `[registry]` (removed)
+
+The `[registry]` section is no longer supported and was removed in `1.0.0`. Remove it from any existing `Anchor.toml`:
+
+```toml title="Anchor.toml" del={1-2}
+[registry]
+url = "https://anchor.projectserum.com"
+```

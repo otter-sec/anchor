@@ -1,0 +1,197 @@
+---
+title: First program
+description: Scaffold, build, and test an Anchor program with the LiteSVM template.
+---
+
+The quickest path is the default `$ <blue>anchor</blue> init` template. It creates a workspace, a multi-file Rust program, and a LiteSVM integration test under `programs/<name>/tests/{:dir}`.
+
+This walkthrough uses a tiny counter program so the generated files are easy to inspect. What matters is the shape of the project. Anchor writes the entrypoint, account validation, tests, IDL, and build artifacts into predictable places.
+
+<Steps>
+<Step title="Scaffold the workspace">
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> init <dim>--no-install</dim> counter
+$ <blue>cd</blue> counter
+```
+
+`<dim>--no-install</dim>` skips the JavaScript package install. The default test template is Rust + LiteSVM, so the program can build and test without Node.
+
+The new workspace has this shape:
+
+<FileTree>
+  <Dir name="app" comment="Frontend code, empty by default" />
+  <Dir name="migrations" comment="Optional deploy scripts">
+    <File name="deploy.ts" />
+  </Dir>
+  <Dir name="programs" comment="On-chain programs">
+    <Dir name="counter">
+      <Dir name="src">
+        <Dir name="instructions" comment="Instruction handlers">
+          <File name="initialize.rs" />
+        </Dir>
+        <File name="constants.rs" comment="Program constants" />
+        <File name="error.rs" comment="Custom errors" />
+        <File name="instructions.rs" comment="Instruction module root" />
+        <File name="lib.rs" comment="Program entrypoint" highlight />
+        <File name="state.rs" comment="Account data types" />
+      </Dir>
+      <Dir name="tests" comment="LiteSVM integration tests">
+        <File name="test_initialize.rs" />
+      </Dir>
+      <File name="Cargo.toml" comment="Program crate manifest" />
+    </Dir>
+  </Dir>
+  <File name="Anchor.toml" comment="Workspace config" />
+  <File name="Cargo.toml" comment="Rust workspace manifest" />
+  <File name="package.json" comment="TypeScript package metadata" />
+  <File name="rust-toolchain.toml" comment="Rust toolchain pin" />
+  <File name="tsconfig.json" comment="TypeScript config" />
+</FileTree>
+
+</Step>
+<Step title="Inspect the generated program">
+
+Start with `programs/counter/src/lib.rs{:file}`. It declares the modules, the program id, and the instruction entrypoints. The default multi-file template keeps the handler body in `instructions/initialize.rs{:file}`, then the `#[program]{:rs}` module forwards to it.
+
+```rust title="programs/counter/src/lib.rs" showLineNumbers=false
+pub mod constants;
+pub mod error;
+pub mod instructions;
+pub mod state;
+
+use anchor_lang_v2::prelude::*;
+
+pub use instructions::*;
+
+declare_id!("3ynNB373Q3VAzKp7m4x238po36hjAGFXFJB4ybN2iTyg");
+
+#[program]
+pub mod counter {
+    use super::*;
+
+    pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {
+        initialize::handler(ctx)
+    }
+}
+```
+
+Your generated `declare_id!(){:rs}` value will be different. Anchor creates it from the program keypair under `target/deploy/{:dir}`.
+
+The first real instruction is in `programs/counter/src/instructions/initialize.rs{:file}`. It uses `anchor_lang_v2::prelude::*{:rs}`, `&mut Context<T>{:rs}`, and account wrappers without `<'info>{:rs}` lifetimes:
+
+```rust title="programs/counter/src/instructions/initialize.rs" showLineNumbers=false
+use anchor_lang_v2::prelude::*;
+
+use crate::state::Counter;
+
+#[derive(Accounts)]
+pub struct Initialize {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer)]
+    pub counter: Account<Counter>,
+    pub system_program: Program<System>,
+}
+
+pub fn handler(ctx: &mut Context<Initialize>) -> Result<()> {
+    ctx.accounts.counter.count = 0;
+    ctx.accounts.counter.authority = *ctx.accounts.payer.address();
+    msg!("Counter initialized");
+    Ok(())
+}
+```
+
+The account data is fixed-size, so it uses the default zero-copy account form:
+
+```rust title="programs/counter/src/state.rs" showLineNumbers=false
+use anchor_lang_v2::prelude::*;
+
+#[account]
+pub struct Counter {
+    pub count: u64,
+    pub authority: Address,
+}
+```
+
+`#[account]{:rs}` makes `Counter{:rs}` Pod-backed and gives `Account<Counter>{:rs}` the layout `[8-byte discriminator][Counter bytes]`. Use [`BorshAccount<T>{:rs}`](/docs/v2/programs/borsh-accounts-and-realloc/) instead when the account contains `Vec{:rs}`, `String{:rs}`, or payload enums.
+
+The `#[derive(Accounts)]{:rs}` struct is the checklist Anchor runs before the handler. Here, `payer{:rs}` must be writable, `counter{:rs}` is created and paid for by `payer{:rs}`, and `system_program{:rs}` is the well-known program field the scaffold expects.
+
+</Step>
+<Step title="Build and test">
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> build
+$ <blue>anchor</blue> test
+```
+
+`$ <blue>anchor</blue> build` compiles the program and writes the SBF binary to `target/deploy/counter.so{:file}`. It also writes client-facing artifacts such as `target/idl/counter.json{:file}` and `target/types/counter.ts{:file}`.
+
+`$ <blue>anchor</blue> test` runs the script in `Anchor.toml{:file}`. For the default LiteSVM template, that script is `$ cargo test`, and the workspace is configured to skip starting a local validator.
+
+The LiteSVM test adds the deployed SBF program to an in-process VM, builds an instruction using generated account structs, and sends a signed transaction:
+
+```rust title="programs/counter/tests/test_initialize.rs" showLineNumbers=false
+use {
+    anchor_lang_v2::{
+        accounts::Account, bytemuck, programs::System,
+        solana_program::instruction::Instruction, Id, InstructionData, Space, ToAccountMetas,
+    },
+    anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction},
+};
+
+#[test]
+fn test_initialize() {
+    let program_id = counter::id();
+    let payer = Keypair::new();
+    let counter = Keypair::new();
+    let mut svm = anchor_v2_testing::svm();
+
+    svm.add_program(program_id, include_bytes!("../../../target/deploy/counter.so")).unwrap();
+    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+
+    let instruction = Instruction::new_with_bytes(
+        program_id,
+        &counter::instruction::Initialize {}.data(),
+        counter::accounts::Initialize {
+            payer: payer.pubkey(),
+            counter: counter.pubkey(),
+            system_program: System::id(),
+        }
+        .to_account_metas(None),
+    );
+
+    let blockhash = svm.latest_blockhash();
+    let msg = Message::new_with_blockhash(&[instruction], Some(&payer.pubkey()), &blockhash);
+    let tx = VersionedTransaction::try_new(
+        VersionedMessage::Legacy(msg),
+        &[&payer, &counter],
+    )
+    .unwrap();
+
+    let res = svm.send_transaction(tx);
+    assert!(res.is_ok(), "send_transaction failed: {:?}", res);
+
+    let account = svm.get_account(&counter.pubkey()).expect("counter account");
+    assert_eq!(account.data.len(), <Account<counter::state::Counter> as Space>::INIT_SPACE);
+    let counter_state: &counter::state::Counter = bytemuck::from_bytes(&account.data[8..]);
+    assert_eq!(counter_state.count, 0);
+    assert_eq!(counter_state.authority, payer.pubkey());
+}
+```
+
+</Step>
+<Step title="Profile and debug">
+
+The generated `profile = ["anchor-v2-testing/profile"]{:toml}` feature lets the same tests feed the profiler and debugger. Run either tool directly. Each tool records traces on demand if they are not already present.
+
+```console showLineNumbers=false
+$ <blue>anchor</blue> test <dim>--profile</dim>     <dim># renders flamegraph SVGs</dim>
+$ <blue>anchor</blue> debugger              <dim># opens the instruction-stepper TUI</dim>
+```
+
+The trace-backed tooling is covered in [Profiling and debugger](/docs/v2/testing/profiling-and-debugger/).
+
+</Step>
+</Steps>

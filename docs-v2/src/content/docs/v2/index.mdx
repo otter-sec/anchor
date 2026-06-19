@@ -1,0 +1,69 @@
+---
+title: Anchor v2
+description: Alpha docs for anchor-lang-v2, the pinocchio-based Anchor runtime.
+autoCards: false
+---
+
+Anchor is a framework for Solana programs. It provides a Rust eDSL for writing programs, an IDL format for describing them, generated client surfaces, and a CLI for the workspace loop.
+
+`anchor-lang-v2` is the alpha runtime for this version of Anchor. It is pinocchio-based, `#![no_std]{:rs}`, zero-copy by default for fixed-size accounts, and organized around traits so account wrappers, constraints, CPI helpers, and IDL metadata can be extended from downstream crates.
+
+If you are new to Anchor, read the getting started pages first and keep the generated counter project open while reading the fundamentals. Most pages refer back to the same few pieces of the model, including a handler, a `Context<T>{:rs}`, an accounts struct, account data, and generated client helpers.
+
+<Callout variant="warning" title="Alpha">
+  This version is alpha software. It has not been audited, is not published on `crates.io`, and APIs
+  may break between commits. Depend on it from git on the
+  [`anchor-next`](https://github.com/otter-sec/anchor/tree/anchor-next) branch.
+</Callout>
+
+## Design
+
+Anchor programs are written as Rust handlers plus account validation structs. The runtime loads accounts, verifies constraints, derives PDAs, emits IDL metadata, and dispatches instructions into your handlers.
+
+The default account model is fixed-size and zero-copy. Use `Account<T>{:rs}` for Pod-backed account state, and use `BorshAccount<T>{:rs}` when an account needs variable-length fields such as `Vec{:rs}` or `String{:rs}`. CPI uses borrow-tracked `CpiHandle<'a>{:rs}` values so typed account access and cross-program calls share the same safety model.
+
+## Bench numbers
+
+<Callout variant="example" title="Bench programs">
+  You can see worked programs at
+  [`bench/programs/`](https://github.com/otter-sec/anchor/tree/anchor-next/bench/programs). Binary
+  sizes and CU ranges below are from the current Anchor programs on this branch.
+</Callout>
+
+| Program | Description | Binary | CU range | Bin down | CU down |
+| --- | --- | --- | --- | --- | --- |
+| `helloworld` | Single-instruction counter | 6.5 KB | 1,395 | 19.2x | 4.2x |
+| `prop-amm` | Oracle feed with asm fast-path | 8.3 KB | 26-1,379 | 16.8x | 3.1-50.4x |
+| `vault` | Single-depositor SOL vault | 5.4 KB | 393-1,905 | 19.8x | 3.0-6.3x |
+| `nested` | Shared validation via `Nested<T>{:rs}` | 13.3 KB | 476-2,872 | 11.9x | 6.9-10.0x |
+| `multisig` | Four-instruction SOL multisig | 31.2 KB | 475-3,039 | 5.4x | 3.0-9.1x |
+
+## Where to start
+
+<CardGrid>
+
+<Card icon="download" title="Installation" href="/docs/v2/get-started/installation/">
+
+Install the CLI from `anchor-next` and add git dependencies for `anchor-lang-v2`, `anchor-spl-v2`, and `anchor-v2-testing`.
+
+</Card>
+
+<Card icon="code" title="First program" href="/docs/v2/get-started/first-program/">
+
+Scaffold a LiteSVM project and walk through the generated program, accounts, test, and profiling commands.
+
+</Card>
+
+<Card icon="rotate" title="Migrating from v1" href="/docs/v2/get-started/migrating-from-v1/">
+
+Port an existing v1 program with the rename table and account-model changes.
+
+</Card>
+
+<Card icon="file-text" title="Account data model" href="/docs/v2/programs/account-data-model/">
+
+Understand why `Account<T>{:rs}` is zero-copy by default and when to use `BorshAccount<T>{:rs}` instead.
+
+</Card>
+
+</CardGrid>

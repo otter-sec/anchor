@@ -1,4 +1,4 @@
-use quote::quote;
+use quote::{quote, ToTokens};
 
 /// This struct is used to keep the authority account information in sync.
 pub struct EventAuthority {
@@ -19,8 +19,7 @@ impl EventAuthority {
 
     /// Returns the name without surrounding quotes.
     pub fn name_token_stream(&self) -> proc_macro2::TokenStream {
-        let name_ident = syn::Ident::new(self.name, proc_macro2::Span::call_site());
-        quote! {#name_ident}
+        syn::Ident::new(self.name, proc_macro2::Span::call_site()).to_token_stream()
     }
 }
 

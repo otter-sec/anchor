@@ -1,0 +1,838 @@
+---
+title: Installation
+description: Learn how to install Rust, the Solana CLI, and Anchor Framework on Windows (WSL), Linux, or Mac.
+---
+
+This page covers how to set up a local environment for Solana development on the stable v1 (`anchor-lang`) path. For the v2 alpha, see [v2 installation](/docs/v2/get-started/installation/).
+
+## Quick installation
+
+A single script installs Rust, the Solana CLI, the Anchor CLI, Surfpool, Node.js, and Yarn in one go.
+
+<Tabs groupId="os" items={["Mac/Linux", "Windows"]}>
+<Tab>
+Run the installer in your terminal:
+
+```console
+$ <blue>curl</blue> <dim>--proto</dim> '=https' <dim>--tlsv1.2</dim> <dim>-sSfL</dim> https://solana-install.solana.workers.dev | <blue>bash</blue>
+```
+
+</Tab>
+<Tab>
+<Callout variant="warning" title="WSL required">
+  Solana program development on Windows requires [WSL](https://learn.microsoft.com/en-us/windows/wsl/install). All commands below run inside the Ubuntu (Linux) terminal, not PowerShell.
+</Callout>
+
+Install WSL from PowerShell with `$ <blue>wsl</blue> <dim>--install</dim>`, restart your machine, and create a default Ubuntu user when prompted. Then open the Ubuntu terminal and run:
+
+```console
+$ <blue>curl</blue> <dim>--proto</dim> '=https' <dim>--tlsv1.2</dim> <dim>-sSfL</dim> https://solana-install.solana.workers.dev | <blue>bash</blue>
+```
+
+</Tab>
+</Tabs>
+
+After installation, you should see output similar to the following:
+
+```console
+Installed Versions:
+Rust: rustc 1.95.0 (59807616e 2026-04-14)
+Solana CLI: solana-cli 3.1.14 (src:ca2c682f; feat:534737035, client:Agave)
+Anchor CLI: anchor-cli 0.32.1
+Surfpool CLI: surfpool 1.2.0
+Node.js: v24.12.0
+Yarn: 1.22.22
+
+Installation complete. Please restart your terminal to apply all changes.
+```
+
+<Callout>
+  If the quick install succeeds, skip ahead to [Solana CLI basics](#solana-cli-basics) and [Anchor
+  CLI basics](#anchor-cli-basics). If it fails, follow the per-tool instructions below.
+</Callout>
+
+## Manual installation
+
+The walkthroughs below install each dependency individually.
+
+<Tabs groupId="os" items={["Mac", "Linux", "Windows"]}>
+
+<Tab>
+
+<Steps>
+
+<Step title="Install Rust">
+
+Solana programs are written in [Rust](https://www.rust-lang.org/). The recommended installer is [rustup](https://www.rust-lang.org/tools/install):
+
+```console
+$ <blue>curl</blue> <dim>--proto</dim> '=https' <dim>--tlsv1.2</dim> <dim>-sSf</dim> https://sh.rustup.rs | <blue>sh</blue> <dim>-s</dim> -- <dim>-y</dim>
+```
+
+A successful install prints:
+
+```console
+<bold>Rust is installed now. Great!</bold>
+
+To get started you may need to restart your current shell.
+This would reload your <bold>PATH</bold> environment variable to include
+Cargo's bin directory ($HOME/.cargo/bin).
+```
+
+Reload your `PATH` to pick up the `~/.cargo/bin/{:dir}` directory:
+
+```console
+$ . "$HOME/.cargo/env"
+```
+
+Verify the install with `$ <blue>rustc</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>rustc</blue> <dim>--version</dim>
+rustc 1.95.0 (59807616e 2026-04-14)
+```
+
+</Step>
+
+<Step title="Install Solana CLI">
+
+The Solana CLI ships the tools required to build and deploy Solana programs. Install with the official script:
+
+```console
+$ <blue>sh</blue> <dim>-c</dim> "$(curl <dim>-sSfL</dim> https://release.anza.xyz/stable/install)"
+```
+
+<Callout variant="tip" title="Pinning a version">
+  Replace `stable` with a release tag (e.g. `v2.0.3{:bash}`) or one of `beta` / `edge`. All available releases are listed on the [Agave GitHub repo](https://github.com/anza-xyz/agave/releases).
+</Callout>
+
+On macOS with `zsh`, append the `PATH` export to `~/.zshrc{:file}` so it persists between shell sessions:
+
+```console
+$ <blue>echo</blue> 'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"' >> ~/.zshrc
+```
+
+Reload the shell with `$ <blue>source</blue> ~/.zshrc`, then verify with `$ <blue>solana</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>solana</blue> <dim>--version</dim>
+solana-cli 3.1.14 (src:ca2c682f; feat:534737035, client:Agave)
+```
+
+<Callout>
+  Agave is the validator client from [Anza](https://www.anza.xyz/), formerly known as the Solana
+  Labs validator client.
+</Callout>
+
+To update the Solana CLI later, run `$ <blue>agave-install</blue> update`.
+
+</Step>
+
+<Step title="Install Anchor CLI">
+
+[Anchor](https://www.anchor-lang.com/) is a framework for developing Solana programs that uses Rust macros to reduce boilerplate. The recommended install path is the Anchor Version Manager (AVM), which tracks multiple Anchor versions and simplifies upgrades.
+
+<Tabs groupId="anchor" items={["AVM", "Without AVM"]}>
+<Tab>
+
+Install AVM:
+
+```console
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor avm <dim>--locked</dim> <dim>--force</dim>
+```
+
+Verify AVM with `$ <blue>avm</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>avm</blue> <dim>--version</dim>
+avm 1.0.1
+```
+
+Install and activate the latest Anchor CLI:
+
+```console
+$ <blue>avm</blue> install latest
+$ <blue>avm</blue> use latest
+```
+
+<Callout variant="tip" title="Pinning a version">
+  To install a specific version, pass the version number:
+
+```bash
+$ <blue>avm</blue> install 1.0.1
+$ <blue>avm</blue> use 1.0.1
+```
+
+</Callout>
+
+<Callout variant="note">
+  `$ <blue>avm</blue> use` is required after every `$ <blue>avm</blue> install` to activate the
+  version on your system.
+</Callout>
+
+</Tab>
+<Tab>
+
+Install a specific Anchor CLI version directly from the repository:
+
+```console
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor <dim>--tag</dim> v1.0.1 anchor-cli <dim>--locked</dim>
+```
+
+</Tab>
+</Tabs>
+
+Verify with `$ <blue>anchor</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>anchor</blue> <dim>--version</dim>
+anchor-cli 1.0.1
+```
+
+</Step>
+
+<Step title="Install Node.js and Yarn (optional)">
+
+Node.js and Yarn are required for `$ <blue>anchor</blue> init` and the TypeScript-based test templates (`mocha`, `jest`). The default `litesvm` template runs entirely in Rust, so Node and Yarn are not needed for day-to-day work once a project is initialized.
+
+<Tabs groupId="node-yarn" items={["Node", "Yarn"]}>
+<Tab>
+
+Install [Node Version Manager (nvm)](https://github.com/nvm-sh/nvm):
+
+```console
+$ <blue>curl</blue> <dim>-o</dim>- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | <blue>bash</blue>
+```
+
+Restart your terminal, then verify nvm is on your `PATH` with `$ <blue>command</blue> <dim>-v</dim> nvm`. Install Node and verify with `$ <blue>node</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>nvm</blue> install node
+$ <blue>node</blue> <dim>--version</dim>
+v23.7.0
+```
+
+</Tab>
+<Tab>
+
+Install Yarn globally via npm:
+
+```console
+$ <blue>npm</blue> install <dim>--global</dim> yarn
+```
+
+Verify with `$ <blue>yarn</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>yarn</blue> <dim>--version</dim>
+1.22.1
+```
+
+</Tab>
+</Tabs>
+
+</Step>
+
+</Steps>
+
+</Tab>
+
+<Tab>
+
+<Steps>
+
+<Step title="Install build prerequisites">
+
+The Anchor CLI build requires several apt packages. Refresh apt's package index and install:
+
+```console
+$ <blue>sudo</blue> apt-get update
+$ <blue>sudo</blue> apt-get install <dim>-y</dim> build-essential pkg-config libudev-dev llvm libclang-dev protobuf-compiler libssl-dev
+```
+
+<Callout variant="problem" title="Package protobuf-compiler is not available">
+  If apt reports `Package protobuf-compiler is not available, but is referred to by another
+  package`, run `$ <blue>sudo</blue> apt-get update` first and retry.
+</Callout>
+
+</Step>
+
+<Step title="Install Rust">
+
+Solana programs are written in [Rust](https://www.rust-lang.org/). The recommended installer is [rustup](https://www.rust-lang.org/tools/install):
+
+```console
+$ <blue>curl</blue> <dim>--proto</dim> '=https' <dim>--tlsv1.2</dim> <dim>-sSf</dim> https://sh.rustup.rs | <blue>sh</blue> <dim>-s</dim> -- <dim>-y</dim>
+```
+
+Reload your `PATH` to pick up the `~/.cargo/bin/{:dir}` directory:
+
+```console
+$ . "$HOME/.cargo/env"
+```
+
+Verify with `$ <blue>rustc</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>rustc</blue> <dim>--version</dim>
+rustc 1.95.0 (59807616e 2026-04-14)
+```
+
+</Step>
+
+<Step title="Install Solana CLI">
+
+Install the Solana CLI with the official script:
+
+```console
+$ <blue>sh</blue> <dim>-c</dim> "$(curl <dim>-sSfL</dim> https://release.anza.xyz/stable/install)"
+```
+
+<Callout variant="tip" title="Pinning a version">
+  Replace `stable` with a release tag (e.g. `v2.0.3{:bash}`) or one of `beta` / `edge`. All available releases are listed on the [Agave GitHub repo](https://github.com/anza-xyz/agave/releases).
+</Callout>
+
+The installer prints the `PATH` export you need:
+
+```console
+Close and reopen your terminal to apply the PATH changes or run the following in your existing shell:
+
+export PATH="/home/test/.local/share/solana/install/active_release/bin:$PATH"
+```
+
+Either restart your terminal or apply the export in the current shell:
+
+```console
+$ <blue>export</blue> PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+```
+
+Verify with `$ <blue>solana</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>solana</blue> <dim>--version</dim>
+solana-cli 3.1.14 (src:ca2c682f; feat:534737035, client:Agave)
+```
+
+To update the Solana CLI later, run `$ <blue>agave-install</blue> update`.
+
+</Step>
+
+<Step title="Install Anchor CLI">
+
+[Anchor](https://www.anchor-lang.com/) is a framework for developing Solana programs that uses Rust macros to reduce boilerplate. The recommended install path is the Anchor Version Manager (AVM).
+
+<Tabs groupId="anchor" items={["AVM", "Without AVM"]}>
+<Tab>
+
+Install AVM, then install and activate the latest Anchor CLI:
+
+```console
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor avm <dim>--locked</dim> <dim>--force</dim>
+$ <blue>avm</blue> install latest
+$ <blue>avm</blue> use latest
+```
+
+<Callout variant="tip" title="Pinning a version">
+  To install a specific version, pass the version number:
+
+```bash
+$ <blue>avm</blue> install 1.0.1
+$ <blue>avm</blue> use 1.0.1
+```
+
+</Callout>
+
+<Callout variant="note">
+  `$ <blue>avm</blue> use` is required after every `$ <blue>avm</blue> install` to activate the
+  version on your system.
+</Callout>
+
+</Tab>
+<Tab>
+
+Install a specific Anchor CLI version directly from the repository:
+
+```console
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor <dim>--tag</dim> v1.0.1 anchor-cli <dim>--locked</dim>
+```
+
+</Tab>
+</Tabs>
+
+Verify with `$ <blue>anchor</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>anchor</blue> <dim>--version</dim>
+anchor-cli 1.0.1
+```
+
+<Callout variant="problem" title='"could not exec the linker cc"'>
+  If the install fails with `error: could not exec the linker cc = note: Permission denied (os error
+  13)`, the build prerequisites above are missing. Install them and retry the Anchor CLI install.
+</Callout>
+
+</Step>
+
+<Step title="Install Node.js and Yarn (optional)">
+
+Node.js and Yarn are required for `$ <blue>anchor</blue> init` and the TypeScript-based test templates (`mocha`, `jest`). The default `litesvm` template runs entirely in Rust, so Node and Yarn are not needed for day-to-day work once a project is initialized.
+
+<Tabs groupId="node-yarn" items={["Node", "Yarn"]}>
+<Tab>
+
+Install [Node Version Manager (nvm)](https://github.com/nvm-sh/nvm):
+
+```console
+$ <blue>curl</blue> <dim>-o</dim>- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | <blue>bash</blue>
+```
+
+Restart your terminal, then verify nvm is on your `PATH` with `$ <blue>command</blue> <dim>-v</dim> nvm`. Install Node and verify with `$ <blue>node</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>nvm</blue> install node
+$ <blue>node</blue> <dim>--version</dim>
+v23.7.0
+```
+
+</Tab>
+<Tab>
+
+Install Yarn globally via npm:
+
+```console
+$ <blue>npm</blue> install <dim>--global</dim> yarn
+```
+
+Verify with `$ <blue>yarn</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>yarn</blue> <dim>--version</dim>
+1.22.1
+```
+
+</Tab>
+</Tabs>
+
+</Step>
+
+</Steps>
+
+</Tab>
+
+<Tab>
+
+<Callout variant="warning" title="WSL required">
+  Solana program development on Windows requires
+  [WSL](https://learn.microsoft.com/en-us/windows/wsl/install). All commands below run inside the
+  Ubuntu (Linux) terminal, not PowerShell.
+</Callout>
+
+<Steps>
+
+<Step title="Install WSL">
+
+Install WSL from Windows PowerShell with `$ <blue>wsl</blue> <dim>--install</dim>`. The installer prompts you to create a default user account.
+
+![WSL Install](/docs/installation/wsl-install.png)
+
+By default, WSL installs Ubuntu. Open a Linux terminal by searching "Ubuntu" in the Search bar.
+
+![WSL Ubuntu](/docs/installation/wsl-ubuntu-search.png)
+
+<Callout variant="tip" title="Paste not working?">
+  If <kbd>Ctrl</kbd>+<kbd>V</kbd> doesn't paste in your Ubuntu terminal, open Windows Terminal
+  (search "Terminal" in the Search bar), close it, then reopen the Ubuntu terminal. Paste should now
+  work.
+</Callout>
+
+![Ubuntu Terminal](/docs/installation/wsl-ubuntu-terminal-2.png)
+
+For VS Code users, the [WSL extension](https://code.visualstudio.com/docs/remote/wsl-tutorial) enables editing WSL projects directly from VS Code. Once active, the status bar shows the connected distribution.
+
+![WSL: Ubuntu](/docs/installation/wsl-vscode-ubuntu.png)
+
+</Step>
+
+<Step title="Install build prerequisites">
+
+Inside your Ubuntu terminal, refresh apt and install the packages required by the Anchor CLI build:
+
+```console
+$ <blue>sudo</blue> apt-get update
+$ <blue>sudo</blue> apt-get install <dim>-y</dim> build-essential pkg-config libudev-dev llvm libclang-dev protobuf-compiler libssl-dev
+```
+
+<Callout variant="problem" title="Package protobuf-compiler is not available">
+  If apt reports `Package protobuf-compiler is not available, but is referred to by another
+  package`, run `$ <blue>sudo</blue> apt-get update` first and retry.
+</Callout>
+
+</Step>
+
+<Step title="Install Rust">
+
+Install [Rust](https://www.rust-lang.org/) with [rustup](https://www.rust-lang.org/tools/install):
+
+```console
+$ <blue>curl</blue> <dim>--proto</dim> '=https' <dim>--tlsv1.2</dim> <dim>-sSf</dim> https://sh.rustup.rs | <blue>sh</blue> <dim>-s</dim> -- <dim>-y</dim>
+```
+
+Reload your `PATH` to pick up the `~/.cargo/bin/{:dir}` directory:
+
+```console
+$ . "$HOME/.cargo/env"
+```
+
+Verify with `$ <blue>rustc</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>rustc</blue> <dim>--version</dim>
+rustc 1.95.0 (59807616e 2026-04-14)
+```
+
+</Step>
+
+<Step title="Install Solana CLI">
+
+Install the Solana CLI with the official script:
+
+```console
+$ <blue>sh</blue> <dim>-c</dim> "$(curl <dim>-sSfL</dim> https://release.anza.xyz/stable/install)"
+```
+
+Apply the `PATH` export the installer prints:
+
+```console
+$ <blue>export</blue> PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+```
+
+Verify with `$ <blue>solana</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>solana</blue> <dim>--version</dim>
+solana-cli 3.1.14 (src:ca2c682f; feat:534737035, client:Agave)
+```
+
+To update the Solana CLI later, run `$ <blue>agave-install</blue> update`.
+
+</Step>
+
+<Step title="Install Anchor CLI">
+
+Install the Anchor Version Manager (AVM), then install and activate the latest Anchor CLI:
+
+```console
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor avm <dim>--locked</dim> <dim>--force</dim>
+$ <blue>avm</blue> install latest
+$ <blue>avm</blue> use latest
+```
+
+Verify with `$ <blue>anchor</blue> <dim>--version</dim>`:
+
+```console
+$ <blue>anchor</blue> <dim>--version</dim>
+anchor-cli 1.0.1
+```
+
+<Callout variant="problem" title='"could not exec the linker cc"'>
+  If the install fails with `error: could not exec the linker cc = note: Permission denied (os error
+  13)`, the build prerequisites above are missing. Install them and retry.
+</Callout>
+
+</Step>
+
+<Step title="Install Node.js and Yarn (optional)">
+
+Node.js and Yarn are required for `$ <blue>anchor</blue> init` and the TypeScript-based test templates (`mocha`, `jest`).
+
+<Tabs groupId="node-yarn" items={["Node", "Yarn"]}>
+<Tab>
+
+Install nvm and then Node:
+
+```console
+$ <blue>curl</blue> <dim>-o</dim>- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | <blue>bash</blue>
+$ <blue>nvm</blue> install node
+$ <blue>node</blue> <dim>--version</dim>
+v23.7.0
+```
+
+</Tab>
+<Tab>
+
+Install Yarn globally via npm:
+
+```console
+$ <blue>npm</blue> install <dim>--global</dim> yarn
+$ <blue>yarn</blue> <dim>--version</dim>
+1.22.1
+```
+
+</Tab>
+</Tabs>
+
+</Step>
+
+</Steps>
+
+</Tab>
+
+</Tabs>
+
+<Callout variant="warning" title="Common build errors">
+  These errors can surface on any OS when running `$ <blue>anchor</blue> build` or `$ <blue>anchor</blue> test`.
+
+  <Callout variant="problem" title='"error: not a directory"' defaultOpen={false}>
+    ```bash
+    error: not a directory: '.../solana-release/bin/sdk/sbf/dependencies/platform-tools/rust/lib'
+    ```
+
+    Try these solutions in order:
+
+    1. Force install platform tools:
+
+        ```bash
+        $ <blue>cargo</blue> build-sbf <dim>--force-tools-install</dim>
+        ```
+
+    2. If that doesn't work, clear the Solana cache:
+
+        ```bash
+        $ <blue>rm</blue> <dim>-rf</dim> ~/.cache/solana/*
+        ```
+
+  </Callout>
+
+  <Callout variant="problem" title="lock file version 4 requires -Znext-lockfile-bump" defaultOpen={false}>
+    Change the `version` field of `Cargo.lock{:file}` from `4` to `3`:
+
+    ```yml title="Cargo.lock" showLineNumbers={false} add={2} del={1}
+    version = 4
+    version = 3
+    ```
+
+    Then retry `$ <blue>anchor</blue> build`. See [anchor#3392](https://github.com/otter-sec/anchor/issues/3392) for background.
+
+  </Callout>
+
+  <Callout variant="problem" title='"Permission denied" or "No such file or directory"' defaultOpen={false}>
+    On Linux or WSL, `$ <blue>anchor</blue> test` may fail with `Permission denied (os error 13)` or `No such file or directory (os error 2)` when Node.js or Yarn are not installed. Install both using the steps above and retry.
+  </Callout>
+</Callout>
+
+## Solana CLI basics
+
+The following steps cover the most common Solana CLI commands. These work identically on every operating system.
+
+<Steps>
+<Step>
+
+### Solana config
+
+Inspect the current config with `$ <blue>solana</blue> config get`:
+
+```console
+$ <blue>solana</blue> config get
+<bold>Config File:</bold> /Users/test/.config/solana/cli/config.yml
+<bold>RPC URL:</bold> https://api.mainnet-beta.solana.com <italic></italic>
+<bold>WebSocket URL:</bold> wss://api.mainnet-beta.solana.com/ <italic>(computed)</italic>
+<bold>Keypair Path:</bold> /Users/test/.config/solana/id.json <italic></italic>
+<bold>Commitment:</bold> confirmed <italic></italic>
+```
+
+`RPC URL` and `WebSocket URL` identify the cluster the CLI targets. The default is `mainnet-beta`. To switch clusters, use either the long (`--url`) or short (`-u<letter>`) form:
+
+| Cluster | Long | Short |
+| --- | --- | --- |
+| mainnet-beta | `$ <blue>solana</blue> config set <dim>--url</dim> mainnet-beta` | `$ <blue>solana</blue> config set <dim>-um</dim>` |
+| devnet | `$ <blue>solana</blue> config set <dim>--url</dim> devnet` | `$ <blue>solana</blue> config set <dim>-ud</dim>` |
+| localhost | `$ <blue>solana</blue> config set <dim>--url</dim> localhost` | `$ <blue>solana</blue> config set <dim>-ul</dim>` |
+| testnet | `$ <blue>solana</blue> config set <dim>--url</dim> testnet` | `$ <blue>solana</blue> config set <dim>-ut</dim>` |
+
+`Keypair Path` points at the default wallet used to sign transactions and pay fees, located at `~/.config/solana/id.json{:file}`. The next step generates a keypair at that location.
+
+</Step>
+<Step>
+
+### Create wallet
+
+The Solana CLI requires a keypair wallet funded with SOL to interact with the network. Generate one at the default keypair path:
+
+```console
+$ <blue>solana-keygen</blue> new
+Generating a new keypair
+
+For added security, enter a BIP39 passphrase
+
+NOTE! This passphrase improves security of the recovery seed phrase NOT the
+keypair file itself, which is stored as insecure plain text
+
+BIP39 Passphrase (empty for none):
+
+Wrote new keypair to /Users/test/.config/solana/id.json
+===========================================================================
+pubkey: 8dBTPrjnkXyuQK3KDt9wrZBfizEZijmmUQXVHpFbVwGT
+===========================================================================
+Save this seed phrase and your BIP39 passphrase to recover your new keypair:
+cream bleak tortoise ocean nasty game gift forget fancy salon mimic amazing
+===========================================================================
+```
+
+<Callout variant="note">
+  If a wallet already exists at the default path, `$ <blue>solana-keygen</blue> new` will not
+  overwrite it unless you pass `<dim>--force</dim>`.
+</Callout>
+
+Print the public key of the wallet with `$ <blue>solana</blue> address`:
+
+```console
+$ <blue>solana</blue> address
+8dBTPrjnkXyuQK3KDt9wrZBfizEZijmmUQXVHpFbVwGT
+```
+
+</Step>
+<Step>
+
+### Airdrop SOL
+
+Your wallet needs SOL to pay transaction fees and deployment costs. Point the CLI at devnet:
+
+```console {3,4}
+$ <blue>solana</blue> config set <dim>-ud</dim>
+<bold>Config File:</bold> /Users/test/.config/solana/cli/config.yml
+<bold>RPC URL:</bold> https://api.devnet.solana.com <italic></italic>
+<bold>WebSocket URL:</bold> wss://api.devnet.solana.com/ <italic>(computed)</italic>
+<bold>Keypair Path:</bold> /Users/test/.config/solana/id.json <italic></italic>
+<bold>Commitment:</bold> confirmed <italic></italic>
+```
+
+Then request an airdrop with `$ <blue>solana</blue> airdrop 2`.
+
+<Callout variant="important" title="Rate limits">
+  The public faucet rate-limits airdrops per IP. If you see this error, use the [Solana Web Faucet](https://faucet.solana.com) instead.
+
+```bash
+$ <blue>solana</blue> airdrop 2
+Requesting airdrop of 2 SOL
+Error: airdrop request failed. This can happen when the rate limit is reached.
+```
+
+</Callout>
+
+Check the wallet balance with `$ <blue>solana</blue> balance`:
+
+```console
+$ <blue>solana</blue> balance
+2 SOL
+```
+
+</Step>
+<Step>
+
+### Run local validator
+
+The Solana CLI ships with a built-in [test validator](https://docs.anza.xyz/cli/examples/test-validator) for local development.
+
+<Callout variant="tip" title="localhost cluster">
+  Point the CLI at the local validator before sending commands with `$ <blue>solana</blue> config
+  set <dim>-ul</dim>`.
+</Callout>
+
+In a separate terminal, start the validator with `$ <blue>solana-test-validator</blue>`.
+
+</Step>
+</Steps>
+
+## Anchor CLI basics
+
+The following steps cover the most common Anchor CLI commands. For full reference documentation, see the [Anchor docs](https://www.anchor-lang.com/docs).
+
+<Steps>
+<Step>
+
+### Initialize project
+
+Create a new Anchor project with `$ <blue>anchor</blue> init <dim><project-name></dim>`.
+
+This creates a directory named `<dim><project-name></dim>` and scaffolds a modular Rust program. Tests default to the [LiteSVM](https://github.com/LiteSVM/litesvm) crate. To choose a different test template (`mollusk`, `mocha`, `jest`, etc.), pass `<dim>--test-template</dim>`:
+
+```console
+$ <blue>anchor</blue> init <dim><project-name></dim> <dim>--test-template</dim> mollusk
+```
+
+<Callout variant="note">
+  The default modular layout separates instructions, state, constants, and errors into distinct
+  files. This structure is recommended for any codebase you plan to maintain. See the [project file
+  structure](/docs/v1/get-started/local-development/#project-file-structure) for details.
+</Callout>
+
+Navigate into the new directory with `$ <blue>cd</blue> <dim><project-name></dim>`.
+
+</Step>
+
+<Step>
+
+### Build program
+
+Compile the program with `$ <blue>anchor</blue> build`. The compiled artifact is written to `target/deploy/`.
+
+</Step>
+<Step>
+
+### Deploy program
+
+Deploy the program to the cluster specified in [`Anchor.toml`](https://www.anchor-lang.com/docs/references/anchor-toml) with `$ <blue>anchor</blue> deploy`.
+
+</Step>
+<Step>
+
+### Test program
+
+Run the project's test suite with `$ <blue>anchor</blue> test`.
+
+<Callout>
+  `$ <blue>anchor</blue> test` builds, deploys, and runs the tests. When `cluster = "Localnet"{:toml}` in `Anchor.toml`, it also starts a local validator, runs the tests against it, and shuts it down afterward.
+</Callout>
+
+</Step>
+</Steps>
+
+## Shell completions
+
+`anchor` and `avm` can generate completions for `bash`, `fish`, and `zsh`.
+
+<Tabs groupId="shell-completions" items={["bash", "fish", "zsh"]}>
+  <Tab>
+    ```bash
+    $ <blue>mkdir</blue> <dim>-p</dim> $HOME/.local/share/bash-completion/completions
+    $ <blue>anchor</blue> completions bash > $HOME/.local/share/bash-completion/completions/anchor
+    $ <blue>avm</blue> completions bash > $HOME/.local/share/bash-completion/completions/avm
+    $ <blue>exec</blue> bash
+    ```
+  </Tab>
+  <Tab>
+    ```bash
+    $ <blue>mkdir</blue> <dim>-p</dim> $HOME/.config/fish/completions
+    $ <blue>anchor</blue> completions fish > $HOME/.config/fish/completions/anchor.fish
+    $ <blue>avm</blue> completions fish > $HOME/.config/fish/completions/avm.fish
+    $ <blue>source</blue> $HOME/.config/fish/config.fish
+    ```
+  </Tab>
+  <Tab>
+    First ensure the following is in your `~/.zshrc{:file}` (skip this if using `oh-my-zsh`):
+
+    ```bash
+    autoload <dim>-U</dim> compinit
+    compinit <dim>-i</dim>
+    ```
+
+    Then generate the completions:
+
+    ```bash
+    $ <blue>anchor</blue> completions zsh | <blue>sudo</blue> tee /usr/local/share/zsh/site-functions/_anchor
+    $ <blue>avm</blue> completions zsh | <blue>sudo</blue> tee /usr/local/share/zsh/site-functions/_avm
+    $ <blue>exec</blue> zsh
+    ```
+
+  </Tab>
+</Tabs>

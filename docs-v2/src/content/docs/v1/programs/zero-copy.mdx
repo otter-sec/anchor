@@ -1,0 +1,588 @@
+---
+title: Zero copy
+description: Use Anchor's zero-copy deserialization to handle large account data in Solana programs.
+---
+
+## Overview
+
+Zero-copy deserialization lets programs read and write account data directly from memory without copying or deserializing it. This approach is the practical way to handle large accounts on Solana.
+
+### Why use zero-copy?
+
+Traditional account deserialization with `Account<T>{:rs}` copies the account data into a heap-allocated struct. The copied struct is constrained by Solana's 4KB stack and 32KB heap limits, the deserialization step consumes significant compute units, and the same data ends up duplicated in memory.
+
+`AccountLoader<T>{:rs}` casts the raw account bytes directly to the struct type without copying, supports accounts up to 10MB (10,485,760 bytes), reduces compute usage by roughly 90% for large accounts, and modifies account data in place.
+
+<Callout variant="intuition" title="Why the cast is sound">
+  The struct annotated with `#[account(zero_copy)]{:rs}` is `#[repr(C)]{:rs}` and `Pod{:rs}`, so its in-memory layout matches the raw bytes byte-for-byte. The "deserialize" step that `Account<T>{:rs}` performs is therefore unnecessary work; the bytes already are the struct, and `AccountLoader<T>{:rs}` exposes that fact through a checked pointer cast.
+</Callout>
+
+### Performance comparison
+
+| Account Size | `Account<T>{:rs}` | `AccountLoader<T>{:rs}` | Improvement |
+| ------------ | ----------------- | ----------------------- | ----------- |
+| 1 KB         | ~8,000 CU         | ~1,500 CU               | 81% faster  |
+| 10 KB        | ~50,000 CU        | ~5,000 CU               | 90% faster  |
+| 100 KB       | Too large         | ~12,000 CU              | Possible    |
+| 1 MB         | Impossible        | ~25,000 CU              | Possible    |
+
+### When to use zero-copy
+
+Reach for zero-copy when accounts exceed roughly 1KB, when fields are large fixed-size arrays such as orderbooks or event queues, when instructions run at high frequency, or when the program is compute-sensitive.
+
+A regular `Account<T>{:rs}` is the better choice for small accounts under 1KB, dynamic data structures (`Vec{:rs}`, `String{:rs}`, `HashMap{:rs}`), schemas that change frequently, and simple state that does not require optimization.
+
+## Usage
+
+Add the `bytemuck` crate to the program's dependencies. The `min_const_generics` feature lets zero-copy types contain arrays of any size:
+
+```toml title="Cargo.toml" showLineNumbers=false
+[dependencies]
+bytemuck = { version = "1.20.0", features = ["min_const_generics"] }
+anchor-lang = "1.0.1"
+```
+
+### Define a zero-copy account
+
+To define an account type that uses zero-copy, annotate the struct with [`#[account(zero_copy)]{:rs}`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/account/src/lib.rs#L419):
+
+```rust showLineNumbers=false {1}
+#[account(zero_copy)]
+pub struct Data {
+    // 10240 bytes - 8 bytes account discriminator
+    pub data: [u8; 10232],
+}
+```
+
+The `#[account(zero_copy)]{:rs}` attribute automatically implements the traits required for zero-copy deserialization:
+
+```rust showLineNumbers=false {1-4}
+#[derive(Copy, Clone)]
+#[derive(bytemuck::Zeroable)]
+#[derive(bytemuck::Pod)]
+#[repr(C)]
+struct Data {
+  // --snip--
+}
+```
+
+### Use `AccountLoader<'info, T>{:rs}` for zero-copy accounts
+
+To deserialize a zero-copy account, use `AccountLoader<'info, T>{:rs}`, where `T` is the zero-copy account type defined with the `#[account(zero_copy)]{:rs}` attribute:
+
+```rust showLineNumbers=false {3}
+#[derive(Accounts)]
+pub struct InstructionAccounts<'info> {
+    pub zero_copy_account: AccountLoader<'info, Data>,
+}
+```
+
+#### Initialize a zero-copy account
+
+The `init{:rs}` constraint can be used with `AccountLoader{:rs}` to create a zero-copy account:
+
+```rust showLineNumbers=false {4-7}
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(
+        init,
+        // 10240 bytes is max space to allocate with init constraint
+        space = 8 + 10232,
+        payer = payer,
+    )]
+    pub data_account: AccountLoader<'info, Data>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+```
+
+<Callout variant="note">
+  The `init{:rs}` constraint is limited to allocating a maximum of 10240 bytes due to CPI limitations. Under the hood, `init{:rs}` invokes the System Program to create the account.
+</Callout>
+
+When initializing a zero-copy account for the first time, use `load_init(){:rs}` to get a mutable reference to the account data. The `load_init(){:rs}` method also sets the account discriminator:
+
+```rust showLineNumbers=false {2}
+pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+    let account = &mut ctx.accounts.data_account.load_init()?;
+    account.data = [1; 10232];
+    Ok(())
+}
+```
+
+For accounts that require more than 10240 bytes, use the `zero{:rs}` constraint instead of `init{:rs}`. The `zero{:rs}` constraint verifies the account has not been initialized by checking that its discriminator has not been set:
+
+```rust showLineNumbers=false {3}
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(zero)]
+    pub data_account: AccountLoader<'info, Data>,
+}
+```
+
+With the `zero{:rs}` constraint, the account must first be created in a separate instruction by directly calling the System Program. This bypasses the CPI allocation limit and supports accounts up to Solana's maximum size of 10MB (10_485_760 bytes).
+
+Just as before, `load_init(){:rs}` returns a mutable reference and sets the account discriminator. Since 8 bytes are reserved for the discriminator, the maximum data size is 10_485_752 bytes (10MB - 8 bytes):
+
+```rust showLineNumbers=false {2}
+pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+    let account = &mut ctx.accounts.data_account.load_init()?;
+    account.data = [1; 10_485_752];
+    Ok(())
+}
+```
+
+#### Update a zero-copy account
+
+Use `load_mut(){:rs}` to obtain mutable access to an existing zero-copy account:
+
+```rust showLineNumbers=false {3}
+#[derive(Accounts)]
+pub struct Update<'info> {
+    #[account(mut)]
+    pub data_account: AccountLoader<'info, Data>,
+}
+```
+
+```rust showLineNumbers=false {2}
+pub fn update(ctx: Context<Update>) -> Result<()> {
+    let account = &mut ctx.accounts.data_account.load_mut()?;
+    account.data = [2; 10232];
+    Ok(())
+}
+```
+
+#### Read a zero-copy account
+
+Use `load(){:rs}` for read-only access to the account data:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct ReadOnly<'info> {
+    pub data_account: AccountLoader<'info, Data>,
+}
+```
+
+```rust showLineNumbers=false {2}
+pub fn read_only(ctx: Context<ReadOnly>) -> Result<()> {
+    let account = &ctx.accounts.data_account.load()?;
+    msg!("First 10 bytes: {:?}", &account.data[..10]);
+    Ok(())
+}
+```
+
+## Common patterns
+
+### Nested zero-copy types
+
+For types used inside zero-copy accounts, use `#[zero_copy]{:rs}` (without `account`):
+
+```rust showLineNumbers=false {8}
+#[account(zero_copy)]
+pub struct OrderBook {
+    pub market: Pubkey,
+    pub bids: [Order; 1000],
+    pub asks: [Order; 1000],
+}
+
+#[zero_copy]
+pub struct Order {
+    pub trader: Pubkey,
+    pub price: u64,
+    pub quantity: u64,
+}
+```
+
+### Accessor methods for byte arrays
+
+Zero-copy uses `#[repr(packed)]{:rs}`, which makes direct field references unsafe. The `#[accessor]{:rs}` attribute generates safe getter and setter methods:
+
+```rust showLineNumbers=false {4}
+#[account(zero_copy)]
+pub struct Config {
+    pub authority: Pubkey,
+    #[accessor(Pubkey)]
+    pub secondary_authority: [u8; 32],
+}
+
+// Usage:
+let config = &mut ctx.accounts.config.load_mut()?;
+let secondary = config.get_secondary_authority();
+config.set_secondary_authority(&new_authority);
+```
+
+### Zero-copy with PDAs
+
+Zero-copy accounts work seamlessly with program-derived addresses:
+
+```rust showLineNumbers=false {5}
+#[derive(Accounts)]
+pub struct CreatePdaAccount<'info> {
+    #[account(
+        init,
+        seeds = [b"data", authority.key().as_ref()],
+        bump,
+        payer = authority,
+        space = 8 + std::mem::size_of::<Data>(),
+    )]
+    pub data_account: AccountLoader<'info, Data>,
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+```
+
+### Separate types for RPC parameters
+
+Zero-copy types cannot derive `AnchorSerialize{:rs}` or `AnchorDeserialize{:rs}`. Define separate types for instruction parameters:
+
+```rust showLineNumbers=false {8}
+// For zero-copy account
+#[zero_copy]
+pub struct Event {
+    pub from: Pubkey,
+    pub data: u64,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct EventParams {
+    pub from: Pubkey,
+    pub data: u64,
+}
+
+impl From<EventParams> for Event {
+    fn from(params: EventParams) -> Self {
+        Event {
+            from: params.from,
+            data: params.data,
+        }
+    }
+}
+```
+
+## Common pitfalls
+
+### Forgetting the account discriminator
+
+<Callout variant="danger" title="Always reserve 8 bytes for the discriminator">
+  Skipping the 8-byte discriminator from a `space{:rs}` calculation produces an account that the Anchor runtime cannot validate, since the discriminator check expects the first 8 bytes to be the account-type marker. The bug usually surfaces only on first read, where the runtime returns a deserialization error that looks unrelated to the allocation site.
+</Callout>
+
+```rust showLineNumbers=false {5}
+// Wrong - missing discriminator
+space = std::mem::size_of::<Data>()
+
+// Correct - includes discriminator
+space = 8 + std::mem::size_of::<Data>()
+```
+
+### Using dynamic types
+
+<Callout variant="danger" title="Zero-copy fields must be `Copy{:rs}`">
+  Zero-copy requires every field to be a `Copy{:rs}` type. `Vec<T>{:rs}`, `String{:rs}`, and other heap-backed collections store a pointer rather than the data itself, so reading them through a zero-copy cast points at memory the program does not own. The compiler rejects these fields outright; if a derive error mentions `Pod{:rs}` or `Copy{:rs}`, the fix is to switch to a fixed-size array.
+</Callout>
+
+```rust showLineNumbers=false
+#[account(zero_copy)]
+pub struct InvalidData {
+    pub items: Vec<u64>,  // Vec is not Copy
+    pub name: String,     // String is not Copy
+}
+
+#[account(zero_copy)]
+pub struct ValidData {
+    pub items: [u64; 100], // Fixed-size array
+    pub name: [u8; 32],    // Fixed-size bytes
+}
+```
+
+### Choosing between `load_init(){:rs}` and `load_mut(){:rs}`
+
+Call `load_init(){:rs}` for first-time initialization (which sets the discriminator), and `load_mut(){:rs}` for subsequent updates:
+
+```rust showLineNumbers=false {3,10}
+// First initialization
+pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+    let account = &mut ctx.accounts.data_account.load_init()?;
+    account.data = [1; 10232];
+    Ok(())
+}
+
+// Subsequent updates
+pub fn update(ctx: Context<Update>) -> Result<()> {
+    let account = &mut ctx.accounts.data_account.load_mut()?;
+    account.data = [2; 10232];
+    Ok(())
+}
+```
+
+### Not validating array indices
+
+Validate array indices before use to prevent panics:
+
+```rust showLineNumbers=false {4-7}
+pub fn update_item(ctx: Context<Update>, index: u32, value: u64) -> Result<()> {
+    let account = &mut ctx.accounts.data_account.load_mut()?;
+
+    require!(
+        (index as usize) < account.items.len(),
+        ErrorCode::IndexOutOfBounds
+    );
+
+    account.items[index as usize] = value;
+    Ok(())
+}
+```
+
+## Real-world use cases
+
+### Event queue pattern
+
+<Callout variant="example" title="Event queue">
+  Store large sequences of events efficiently in a single zero-copy account rather than spreading
+  them across many small accounts. Trading protocols, audit logs, and messaging systems all use this
+  pattern.
+</Callout>
+
+```rust showLineNumbers=false
+#[account(zero_copy)]
+pub struct EventQueue {
+    pub head: u64,
+    pub count: u64,
+    pub events: [Event; 10000],
+}
+
+#[zero_copy]
+pub struct Event {
+    pub timestamp: i64,
+    pub user: Pubkey,
+    pub event_type: u8,
+    pub data: [u8; 32],
+}
+```
+
+### Order book pattern
+
+<Callout variant="example" title="Order book">
+  Efficient storage for trading pairs. DEXs such as Serum and Mango, along with NFT marketplaces,
+  use this layout to keep bid and ask sides resident in a single account.
+</Callout>
+
+```rust showLineNumbers=false
+#[account(zero_copy)]
+pub struct OrderBook {
+    pub market: Pubkey,
+    pub bid_count: u32,
+    pub ask_count: u32,
+    pub bids: [Order; 1000],
+    pub asks: [Order; 1000],
+}
+
+#[zero_copy]
+pub struct Order {
+    pub trader: Pubkey,
+    pub price: u64,
+    pub size: u64,
+    pub timestamp: i64,
+}
+```
+
+## Examples
+
+The examples below show two approaches for initializing zero-copy accounts:
+
+1. Using the `init{:rs}` constraint to initialize the account in a single instruction.
+2. Using the `zero{:rs}` constraint to initialize an account with data greater than 10240 bytes.
+
+### Zero copy
+
+<Tabs items={['Program', 'Client']}>
+<Tab>
+
+```rust title="lib.rs" showLineNumbers=false
+use anchor_lang::prelude::*;
+
+declare_id!("8B7XpDXjPWodpDUWDSzv4q9k73jB5WdNQXZxNBj1hqw1");
+
+#[program]
+pub mod zero_copy {
+    use super::*;
+    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+        let account = &mut ctx.accounts.data_account.load_init()?;
+        account.data = [1; 10232];
+        Ok(())
+    }
+
+    pub fn update(ctx: Context<Update>) -> Result<()> {
+        let account = &mut ctx.accounts.data_account.load_mut()?;
+        account.data = [2; 10232];
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(
+        init,
+        // 10240 bytes is max space to allocate with init constraint
+        space = 8 + 10232,
+        payer = payer,
+    )]
+    pub data_account: AccountLoader<'info, Data>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct Update<'info> {
+    #[account(mut)]
+    pub data_account: AccountLoader<'info, Data>,
+}
+
+#[account(zero_copy)]
+pub struct Data {
+    // 10240 bytes - 8 bytes account discriminator
+    pub data: [u8; 10232],
+}
+```
+
+</Tab>
+<Tab>
+
+```ts title="test.ts" showLineNumbers=false
+import * as anchor from '@anchor-lang/core'
+import { Program } from '@anchor-lang/core'
+import { ZeroCopy } from '../target/types/zero_copy'
+
+describe('zero-copy', () => {
+  // Configure the client to use the local cluster.
+  anchor.setProvider(anchor.AnchorProvider.env())
+
+  const program = anchor.workspace.ZeroCopy as Program<ZeroCopy>
+  const dataAccount = anchor.web3.Keypair.generate()
+
+  it('Is initialized!', async () => {
+    const tx = await program.methods
+      .initialize()
+      .accounts({
+        dataAccount: dataAccount.publicKey,
+      })
+      .signers([dataAccount])
+      .rpc()
+    console.log('Your transaction signature', tx)
+
+    const account = await program.account.data.fetch(dataAccount.publicKey)
+    console.log('Account', account)
+  })
+
+  it('Update!', async () => {
+    const tx = await program.methods
+      .update()
+      .accounts({
+        dataAccount: dataAccount.publicKey,
+      })
+      .rpc()
+    console.log('Your transaction signature', tx)
+
+    const account = await program.account.data.fetch(dataAccount.publicKey)
+    console.log('Account', account)
+  })
+})
+```
+
+</Tab>
+</Tabs>
+
+### Initialize a large account
+
+When initializing an account that requires more than 10,240 bytes of space, split the initialization into two steps:
+
+1. Create the account in a separate instruction invoking the System Program.
+2. Initialize the account data in the program instruction.
+
+The maximum Solana account size is 10MB (10_485_760 bytes), with 8 bytes reserved for the account discriminator.
+
+<Tabs items={['Program', 'Client']}>
+<Tab>
+
+```rust title="lib.rs" showLineNumbers=false
+use anchor_lang::prelude::*;
+
+declare_id!("CZgWhy3FYPFgKE5v9atSGaiQzbSB7cM38ofwX1XxeCFH");
+
+#[program]
+pub mod zero_copy_two {
+    use super::*;
+    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+        let account = &mut ctx.accounts.data_account.load_init()?;
+        account.data = [1; 10_485_752];
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(zero)]
+    pub data_account: AccountLoader<'info, Data>,
+}
+
+#[account(zero_copy)]
+pub struct Data {
+    // 10240 bytes - 8 bytes account discriminator
+    pub data: [u8; 10_485_752],
+}
+```
+
+</Tab>
+<Tab>
+
+```ts title="test.ts" {15-21,24-29} showLineNumbers=false
+import * as anchor from '@anchor-lang/core'
+import { Program } from '@anchor-lang/core'
+import { ZeroCopyTwo } from '../target/types/zero_copy_two'
+
+describe('zero-copy-two', () => {
+  // Configure the client to use the local cluster.
+  anchor.setProvider(anchor.AnchorProvider.env())
+
+  const program = anchor.workspace.ZeroCopyTwo as Program<ZeroCopyTwo>
+  const dataAccount = anchor.web3.Keypair.generate()
+
+  it('Is initialized!', async () => {
+    const space = 10_485_760 // 10MB max account size
+    const lamports = await program.provider.connection.getMinimumBalanceForRentExemption(space)
+
+    const createAccountInstruction = anchor.web3.SystemProgram.createAccount({
+      fromPubkey: program.provider.publicKey,
+      newAccountPubkey: dataAccount.publicKey,
+      space,
+      lamports,
+      programId: program.programId,
+    })
+
+    const initializeInstruction = await program.methods
+      .initialize()
+      .accounts({
+        dataAccount: dataAccount.publicKey,
+      })
+      .instruction()
+
+    const transaction = new anchor.web3.Transaction().add(
+      createAccountInstruction,
+      initializeInstruction,
+    )
+
+    const tx = await program.provider.sendAndConfirm(transaction, [dataAccount])
+
+    console.log('Your transaction signature', tx)
+
+    const account = await program.account.data.fetch(dataAccount.publicKey)
+    console.log('Account', account)
+  })
+})
+```
+
+</Tab>
+</Tabs>

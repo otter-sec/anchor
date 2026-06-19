@@ -1,0 +1,155 @@
+---
+title: Create a token mint
+description: Create and initialize SPL token mint accounts with namespaced mint constraints.
+---
+
+A mint account is the Token Program account that represents a token on Solana. The mint address is the token's unique identifier, and the account stores global token state such as supply, decimals, mint authority, and optional freeze authority.
+
+Anchor models the legacy SPL Token mint as `Account<Mint>{:rs}` from `anchor_spl_v2::mint{:rs}`. The wrapper is zero-copy over the SPL Token mint layout. It does not add an Anchor discriminator because the account is owned and initialized by the Token Program.
+
+## Mint account data
+
+The base mint layout is 82 bytes:
+
+```rust showLineNumbers=false
+pub struct Mint {
+    mint_authority_flag: [u8; 4],
+    mint_authority: Address,
+    supply: [u8; 8],
+    decimals: u8,
+    is_initialized: u8,
+    freeze_authority_flag: [u8; 4],
+    freeze_authority: Address,
+}
+```
+
+The fields are private in `anchor-spl-v2`. Read them through accessors such as `supply(){:rs}`, `decimals(){:rs}`, `is_initialized(){:rs}`, `mint_authority(){:rs}`, and `freeze_authority(){:rs}`.
+
+## Usage
+
+The usual import shape is:
+
+```rust showLineNumbers=false
+use {
+    anchor_lang_v2::prelude::*,
+    anchor_spl_v2::mint::{self, Mint},
+};
+```
+
+The account constraints handle the full setup. They create the account, allocate the Token Program mint size, transfer ownership to the Token Program, and invoke `InitializeMint2{:rs}`:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct CreateMint {
+    #[account(mut)]
+    pub payer: Signer,
+    pub authority: UncheckedAccount,
+    #[account(
+        init,
+        payer = payer,
+        mint::decimals = 6,
+        mint::authority = authority,
+    )]
+    pub mint: Account<Mint>,
+    pub token_program: Program<Token>,
+    pub system_program: Program<System>,
+}
+```
+
+The handler does not need to call the token program manually. Initialization happens in the generated account-validation path before the handler runs:
+
+```rust showLineNumbers=false
+pub fn create_mint(_ctx: &mut Context<CreateMint>) -> Result<()> {
+    Ok(())
+}
+```
+
+## Account constraints
+
+Use these constraints together for a new legacy SPL Token mint:
+
+| Constraint | Description |
+| --- | --- |
+| `init{:rs}` | Creates the account through the System Program and runs the mint initializer. |
+| `payer = payer{:rs}` | Pays rent for the new mint account. |
+| `mint::decimals = N{:rs}` | Sets the number of base-10 digits to the right of the decimal point. |
+| `mint::authority = account{:rs}` | Sets the authority allowed to mint new tokens. |
+| `mint::freeze_authority = account{:rs}` | Optionally sets the authority allowed to freeze token accounts. |
+
+After initialization, the same namespaced constraints validate existing mints:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct UseMint {
+    pub expected_authority: UncheckedAccount,
+    #[account(
+        mint::decimals = 6,
+        mint::authority = expected_authority,
+    )]
+    pub mint: Account<Mint>,
+}
+```
+
+## Address choices
+
+<Tabs items={['Keypair mint', 'PDA mint']}>
+<Tab>
+
+Use a normal account address when a client should generate the mint keypair and pass it to the instruction:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct CreateMint {
+    #[account(mut)]
+    pub payer: Signer,
+    pub authority: UncheckedAccount,
+    #[account(
+        init,
+        payer = payer,
+        mint::decimals = 6,
+        mint::authority = authority,
+        mint::freeze_authority = authority,
+    )]
+    pub mint: Account<Mint>,
+    pub token_program: Program<Token>,
+    pub system_program: Program<System>,
+}
+```
+
+The client or Rust test must include the mint keypair as a signer because the address is not a PDA.
+
+</Tab>
+<Tab>
+
+Use `seeds{:rs}` and `bump{:rs}` when the program should own a deterministic mint address. For program-controlled minting, a separate authority PDA keeps later CPI code simple:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct CreateMint {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(seeds = [b"mint-authority"], bump)]
+    pub mint_authority: UncheckedAccount,
+    #[account(
+        init,
+        payer = payer,
+        seeds = [b"mint"],
+        bump,
+        mint::decimals = 6,
+        mint::authority = mint_authority,
+        mint::freeze_authority = mint_authority,
+    )]
+    pub mint: Account<Mint>,
+    pub token_program: Program<Token>,
+    pub system_program: Program<System>,
+}
+```
+
+Later CPI calls can sign with the `mint_authority{:rs}` seeds to mint tokens. A design can use the same PDA as both the mint address and the mint authority, but a separate authority PDA avoids duplicate-account examples and works cleanly with CPI handles.
+
+</Tab>
+</Tabs>
+
+<Callout variant="note" title="Token-2022 and interface accounts">
+  `Account<Mint>{:rs}` is the legacy Token Program wrapper and validates exact legacy mint size. Use `InterfaceAccount<Mint>{:rs}` from `anchor_spl_v2::token_interface{:rs}` when a read or validation path should accept either Token or Token-2022-owned mints. Token-2022 extension parsing is covered in [Token-2022 and extensions](/docs/v2/tokens/token-2022-and-extensions/).
+</Callout>

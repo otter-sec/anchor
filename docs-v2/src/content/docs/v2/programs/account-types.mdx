@@ -1,0 +1,103 @@
+---
+title: Account types
+description: Account wrappers and when to use each one.
+---
+
+Account wrappers load from pinocchio `AccountView{:rs}` values and implement the shared `AnchorAccount{:rs}` trait. The wrapper you choose determines the account's ownership checks, data layout, borrow behavior, and exit behavior.
+
+For most program-owned state, the choice is between `Account<T>{:rs}` and `BorshAccount<T>{:rs}`. The rest of the wrappers describe signers, programs, sysvars, optional slots, and the intentional escape hatch.
+
+| Type                    | Use for                                                                |
+| ----------------------- | ---------------------------------------------------------------------- |
+| `Account<T>{:rs}`       | Program-owned fixed-size data. Zero-copy, Pod-backed.                  |
+| `BorshAccount<T>{:rs}`  | Variable-length data with `Vec{:rs}`, `String{:rs}`, or payload enums. |
+| `Slab<H, Item>{:rs}`    | Header plus dynamic Pod item tail.                                     |
+| `Option<A>{:rs}`        | Optional account slot, with the program id as the absent sentinel.     |
+| `Nested<T>{:rs}`        | Inline composition of another `#[derive(Accounts)]{:rs}` struct.       |
+| `Box<A>{:rs}`           | Heap-boxed wrapper for large account structs.                          |
+| `Signer{:rs}`           | An account that must have signed the transaction.                      |
+| `Program<T: Id>{:rs}`   | A CPI target or well-known executable program.                         |
+| `SystemAccount{:rs}`    | System-owned account with no typed payload.                            |
+| `UncheckedAccount{:rs}` | Escape hatch with no validation.                                       |
+| `Sysvar<T>{:rs}`        | Account-form sysvar access when a handler requires a sysvar account.   |
+
+## `Account<T>{:rs}`
+
+`Account<T>{:rs}` is the default wrapper for your own fixed-size state. It requires `T: Pod{:rs}` and uses `[disc][repr(C) T]{:text}` layout:
+
+```rust showLineNumbers=false
+#[account]
+pub struct Counter {
+    pub count: u64,
+    pub authority: Address,
+}
+```
+
+For zero-copy details, see [Account data model](/docs/v2/programs/account-data-model/).
+
+## `BorshAccount<T>{:rs}`
+
+Use `BorshAccount<T>{:rs}` for state that cannot be Pod:
+
+```rust showLineNumbers=false
+#[account(borsh)]
+pub struct Profile {
+    pub owner: Address,
+    pub name: String,
+}
+```
+
+It serializes on successful exit and provides `release_borrow(){:rs}` / `reacquire_borrow_mut(){:rs}` for CPI or realloc paths that need to mutate the same account through another route.
+
+## `Slab<H, Item>{:rs}`
+
+`Slab<H, Item>{:rs}` stores a Pod header followed by a dynamic item tail. It is useful for account-local ledgers, order books, ring buffers, and other bounded collections that should stay zero-copy.
+
+The wrapper exposes vector-style methods such as `try_push{:rs}`, `pop{:rs}`, `iter{:rs}`, indexing, and resize helpers behind the `account-resize{:toml}` feature.
+
+## `Option<A>{:rs}`
+
+`Option<A>{:rs}` makes an account slot optional. When absent, clients pass the program id as a sentinel address. PDA bumps become `Option<u8>{:rs}` so handlers can distinguish present from absent:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct MaybeProfile {
+    pub user: Signer,
+    #[account(seeds = [b"profile", user.address().as_ref()], bump)]
+    pub profile: Option<Account<Profile>>,
+}
+```
+
+## `Nested<T>{:rs}`
+
+`Nested<T>{:rs}` lets multiple instructions share a validation block:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct AdminGate {
+    pub admin: Signer,
+    #[account(address = config.admin)]
+    pub config: Account<Config>,
+}
+
+#[derive(Accounts)]
+pub struct Reset {
+    pub gate: Nested<AdminGate>,
+    #[account(mut)]
+    pub counter: Account<Counter>,
+}
+```
+
+The nested fields are flattened into the outer account list. `Nested<T>{:rs}` does not consume an extra account slot.
+
+## Utility wrappers
+
+`Signer{:rs}`, `Program<T>{:rs}`, `SystemAccount{:rs}`, `UncheckedAccount{:rs}`, and `Sysvar<T>{:rs}` keep ordinary Anchor code readable. `UncheckedAccount{:rs}` performs no validation, so pair it with explicit constraints or handler checks before trusting it.
+
+`Sysvar<T>{:rs}` accepts the pinocchio sysvar types whose payload can be read directly into a typed value. The supported types are `Clock{:rs}`, `Rent{:rs}`, and `Instructions{:rs}`.
+
+`SlotHashes{:rs}` deliberately does not implement `SysvarId{:rs}`, so `Sysvar<SlotHashes>{:rs}` fails to compile with a missing-trait diagnostic. Programs that need slot-hash data should call the partial-read syscall directly through pinocchio.
+
+## Trait surface
+
+All wrappers implement `AnchorAccount{:rs}`. Third-party crates can add new wrappers by implementing that trait. See [Extensibility](/docs/v2/programs/extensibility/).

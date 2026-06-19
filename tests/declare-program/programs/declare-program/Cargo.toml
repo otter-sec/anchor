@@ -13,14 +13,9 @@ no-entrypoint = []
 cpi = ["no-entrypoint"]
 default = []
 idl-build = ["anchor-lang/idl-build"]
-test-sbf = []
 
 [dependencies]
 anchor-lang = { path = "../../../../lang" }
-
-[dev-dependencies]
-solana-sdk = "2"
-solana-program-test = "2"
 
 [lints.rust.unexpected_cfgs]
 level = "warn"

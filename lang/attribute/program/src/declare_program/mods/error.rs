@@ -8,7 +8,13 @@ pub fn gen_error_mod(idl: &Idl) -> proc_macro2::TokenStream {
     let errors = idl.errors.iter().map(|e| {
         let name = format_ident!("{}", e.name);
         let code = e.code;
+        let msg = e
+            .msg
+            .as_ref()
+            .map(|msg| quote! { #[msg(#msg)] })
+            .unwrap_or_default();
         quote! {
+            #msg
             #name = #code,
         }
     });

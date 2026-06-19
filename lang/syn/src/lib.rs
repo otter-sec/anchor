@@ -29,6 +29,10 @@ use {
     },
 };
 
+/// Generic result type, only used when [`syn::Error`] doesn't make sense.
+#[cfg(feature = "idl-build")]
+pub(crate) type AnyResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 #[derive(Debug)]
 pub struct Program {
     pub ixs: Vec<Ix>,
@@ -64,7 +68,7 @@ pub struct ProgramArgs {
 }
 
 impl Parse for ProgramArgs {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> ParseResult<Self> {
         let mut parsed = Self::default();
         let args = input.parse_terminated(Ident::parse, Token![,])?;
 

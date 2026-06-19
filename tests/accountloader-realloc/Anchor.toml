@@ -1,0 +1,9 @@
+[programs.localnet]
+accountloader_realloc = "8GM8KqKaxYb1jEbn5TiqqPqJYsChhjYvfpT2f6KTmUKb"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

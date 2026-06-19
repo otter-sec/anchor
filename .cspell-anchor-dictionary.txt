@@ -55,6 +55,7 @@ namespacing
 nonblocking
 openbook
 orderbooks
+osec
 pathlib
 pdas
 pdksh

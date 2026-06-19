@@ -1,0 +1,79 @@
+{
+  "name": "@anchor-lang/docs",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro check && astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check",
+    "astro": "astro",
+    "prettier": "prettier --write . --ignore-path .gitignore",
+    "prettier:check": "prettier --check . --ignore-path .gitignore"
+  },
+  "prettier": {
+    "semi": false,
+    "singleQuote": true,
+    "tabWidth": 2,
+    "printWidth": 100,
+    "proseWrap": "never",
+    "plugins": [
+      "prettier-plugin-astro"
+    ],
+    "overrides": [
+      {
+        "files": "*.astro",
+        "options": {
+          "parser": "astro"
+        }
+      }
+    ]
+  },
+  "dependencies": {
+    "@astrojs/check": "0.9.7",
+    "@astrojs/markdown-remark": "7.0.0",
+    "@astrojs/mdx": "5.0.0",
+    "@astrojs/react": "5.0.0",
+    "@astrojs/sitemap": "3.7.1",
+    "@expressive-code/core": "0.40.2",
+    "@expressive-code/plugin-collapsible-sections": "0.40.2",
+    "@expressive-code/plugin-frames": "0.40.2",
+    "@expressive-code/plugin-line-numbers": "0.40.2",
+    "@expressive-code/plugin-shiki": "0.40.2",
+    "@expressive-code/plugin-text-markers": "0.40.2",
+    "@shikijs/rehype": "3.23.0",
+    "@shikijs/themes": "3.23.0",
+    "@tailwindcss/vite": "4.2.1",
+    "@types/react": "19.0.0",
+    "@types/react-dom": "19.0.0",
+    "@vercel/og": "0.11.1",
+    "astro": "6.0.2",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "hast-util-to-html": "9.0.5",
+    "just-bash": "3.0.1",
+    "katex": "0.16.45",
+    "radix-ui": "1.4.3",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "rehype-autolink-headings": "7.1.0",
+    "rehype-expressive-code": "0.40.2",
+    "rehype-external-links": "3.0.0",
+    "rehype-katex": "7.0.1",
+    "remark-emoji": "5.0.2",
+    "remark-math": "6.0.0",
+    "sharp": "0.34.5",
+    "shiki": "3.23.0",
+    "tailwind-merge": "3.5.0",
+    "tailwindcss": "4.2.1",
+    "typescript": "5.9.3"
+  },
+  "devDependencies": {
+    "@types/hast": "3.0.4",
+    "astro-pagefind": "1.8.6",
+    "prettier": "3.8.3",
+    "prettier-plugin-astro": "0.14.1"
+  }
+}

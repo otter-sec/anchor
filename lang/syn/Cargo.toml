@@ -28,7 +28,6 @@ idl-build = ["cargo_toml"]
 init-if-needed = []
 
 [dependencies]
-anyhow = "1"
 bs58 = "0.5"
 
 # `idl-build` feature only

@@ -27,11 +27,18 @@ The minor version will be incremented upon a breaking change and the patch versi
 - cli: Support multiple named scripts in `Anchor.toml` and run them via `anchor test --script <name>` / `anchor run <name>` ([#3999](https://github.com/solana-foundation/anchor/pull/3999)).
 - cli/idl: Add `fetch-historical` support to recover historical IDLs with the Anchor CLI ([#3992](https://github.com/solana-foundation/anchor/pull/3992)).
 - cli: `anchor init` refuses to create a new Anchor workspace inside an existing Cargo workspace to avoid broken nested layouts ([#4576](https://github.com/solana-foundation/anchor/pull/4576)).
+- cli: Add `r` as an alias to the `run` command ([#4643](https://github.com/solana-foundation/anchor/pull/4643)).
 
 ### Fixes
 
+- lang: Remove cloning `AccountInfo` to read lamports in `init_if_needed` codegen ([#4675](https://github.com/solana-foundation/anchor/pull/4675)).
+- ts: Remove `cross-fetch` dependency ([#4671](https://github.com/solana-foundation/anchor/pull/4671)).
+- lang: Guard `AccountLoader<T>::exit` against zero-copy buffer truncation and bail with `AccountDidNotDeserialize` instead of rewriting the discriminator over an undersized buffer ([#4633](https://github.com/otter-sec/anchor/pull/4633)).
+- lang: Set `anchor-lang` Minimum Supported Rust Version to `1.89` ([#4638](https://github.com/otter-sec/anchor/pull/4638)).
 - lang: Shorten invariant lifetimes during `Context` creation ([#4363](https://github.com/solana-foundation/anchor/pull/4363)).
+- lang: Qualify bare `error!` calls in require macros so they don't depend on global prelude imports ([#4639](https://github.com/otter-sec/anchor/pull/4639)).
 - ts: Guard recursive IDL layouts against stack overflows while preserving supported recursive types ([#4604](https://github.com/solana-foundation/anchor/pull/4604)).
+- lang: Fix missing error messages of the generated errors in `declare_program!` ([#4652](https://github.com/solana-foundation/anchor/pull/4652)).
 - idl: Bump version to 0.1.3 ([#4453](https://github.com/solana-foundation/anchor/pull/4453)).
 - lang: Migrate `anchor-syn` from syn 1.x to syn 2.0, allowing use of modern Rust syntax ([#4523](https://github.com/solana-foundation/anchor/issues/4523)).
 - lang: Avoid fatal errors in IDL building when modern Rust syntax is in use ([#4520](https://github.com/solana-foundation/anchor/pull/4520)).
@@ -46,6 +53,9 @@ The minor version will be incremented upon a breaking change and the patch versi
 - ts: Validate instruction args in `BorshInstructionCoder.encode` to reject typo'd or missing fields instead of silently ignoring them ([#4560](https://github.com/solana-foundation/anchor/pull/4560)).
 - ts: Align TS `camelCase` conversion with Rust `heck` for digit-letter identifiers so generated client names match Rust identifiers ([#4571](https://github.com/solana-foundation/anchor/pull/4571)).
 - cli: Warn if `event-cpi` instruction is unreachable with custom discriminators ([#4614](https://github.com/solana-foundation/anchor/pull/4614)).
+- lang: Reduce cloning in `realloc` constraint when shrinking ([#4642](https://github.com/solana-foundation/anchor/pull/4642)).
+- syn: Remove `anyhow` ([#4640](https://github.com/solana-foundation/anchor/pull/4640)).
+- ts: Update `engines.node` to `>= 20.18` ([#4647](https://github.com/solana-foundation/anchor/pull/4647)).
 
 ### Breaking
 

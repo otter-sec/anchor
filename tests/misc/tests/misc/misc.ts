@@ -1006,14 +1006,18 @@ const miscTest = (
           })
           .rpc({ commitment: "confirmed" });
 
-        let otherMint = await Token.createMint(
-          program.provider.connection,
-          wallet.payer,
-          provider.wallet.publicKey,
-          provider.wallet.publicKey,
-          9,
-          TOKEN_PROGRAM_ID
-        );
+        // Create the second mint through the Anchor provider (program instruction)
+        // rather than the legacy `Token.createMint` helper.
+        const otherMint = anchor.web3.Keypair.generate();
+        await program.rpc.testInitMint({
+          accounts: {
+            mint: otherMint.publicKey,
+            payer: provider.wallet.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          },
+          signers: [otherMint],
+        });
 
         await nativeAssert.rejects(
           async () => {
@@ -1044,12 +1048,19 @@ const miscTest = (
           })
           .rpc({ commitment: "confirmed" });
 
-        await localClient.setAuthority(
-          associatedToken,
-          anchor.web3.Keypair.generate().publicKey,
-          "AccountOwner",
-          wallet.payer,
-          []
+        // Change the token account's owner via a SetAuthority instruction sent
+        // through the Anchor provider instead of the legacy `setAuthority` helper
+        await program.provider.sendAndConfirm(
+          new anchor.web3.Transaction().add(
+            Token.createSetAuthorityInstruction(
+              TOKEN_PROGRAM_ID,
+              associatedToken,
+              anchor.web3.Keypair.generate().publicKey,
+              "AccountOwner",
+              provider.wallet.publicKey,
+              []
+            )
+          )
         );
 
         await nativeAssert.rejects(

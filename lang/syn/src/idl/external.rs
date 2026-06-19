@@ -1,7 +1,6 @@
 use {
     super::common::{find_path, get_program_path},
-    crate::parser::context::CrateContext,
-    anyhow::{anyhow, Result},
+    crate::{parser::context::CrateContext, AnyResult as Result},
     cargo_toml::Manifest,
     quote::ToTokens,
     std::{
@@ -14,7 +13,7 @@ pub fn get_external_type(name: &str, path: impl AsRef<Path>) -> Result<Option<sy
     let use_path = get_uses(path.as_ref())?
         .into_iter()
         .find(|u| u.rsplit("::").next() == Some(name))
-        .ok_or_else(|| anyhow!("`{name}` not found in use statements"))?;
+        .ok_or_else(|| format!("`{name}` not found in use statements"))?;
 
     // Get crate name and version from lock file
     let program_path = get_program_path()?;
@@ -34,11 +33,11 @@ fn recursively_find_type(
     let crate_name = use_path
         .split("::")
         .next()
-        .ok_or_else(|| anyhow!("Use path should include a crate name"))?;
+        .ok_or("Use path should include a crate name")?;
     let (crate_name, version) = lock_file
         .iter()
         .find(|(name, _)| name == crate_name || name == &crate_name.replace('_', "-"))
-        .ok_or_else(|| anyhow!("Crate should exist in the lock file"))?;
+        .ok_or("Crate should exist in the lock file")?;
 
     let crate_path = registry_path.join(format!("{crate_name}-{version}"));
     let lib_path = crate_path.join("src").join("lib.rs");
@@ -77,7 +76,7 @@ fn get_registry_path() -> Result<PathBuf> {
     let cargo_home = env::var_os("CARGO_HOME")
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".cargo")))
-        .ok_or_else(|| anyhow!("Cargo home not found"))?;
+        .ok_or("Cargo home not found")?;
     let path = cargo_home.join("registry").join("src");
     fs::read_dir(&path)?
         .filter_map(|entry| entry.ok())
@@ -90,7 +89,8 @@ fn get_registry_path() -> Result<PathBuf> {
             }
         })
         .map(|name| path.join(name))
-        .ok_or_else(|| anyhow!("crates.io registry not found"))
+        .ok_or("crates.io registry not found")
+        .map_err(Into::into)
 }
 
 fn parse_lock_file(path: impl AsRef<Path>) -> Result<Vec<(String, String)>> {
@@ -102,12 +102,13 @@ fn parse_lock_file(path: impl AsRef<Path>) -> Result<Vec<(String, String)>> {
                 let line = pkg
                     .lines()
                     .find(|line| line.starts_with(key))
-                    .ok_or_else(|| anyhow!("`{key}` line not found"))?;
+                    .ok_or_else(|| format!("`{key}` line not found"))?;
 
                 line.split('"')
                     .nth(1)
                     .map(ToOwned::to_owned)
-                    .ok_or_else(|| anyhow!("`{key}` value not found"))
+                    .ok_or_else(|| format!("`{key}` value not found"))
+                    .map_err(Into::into)
             };
             Ok((get_value("name")?, get_value("version")?))
         })

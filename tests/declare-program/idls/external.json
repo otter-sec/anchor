@@ -99,6 +99,26 @@
       ]
     },
     {
+      "name": "test_compilation_initialize_with_token_2022",
+      "discriminator": [
+        230,
+        250,
+        159,
+        229,
+        79,
+        47,
+        74,
+        64
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "test_compilation_no_accounts",
       "discriminator": [
         194,
@@ -111,26 +131,6 @@
         201
       ],
       "accounts": [],
-      "args": []
-    },
-    {
-      "name": "initialize_with_token_2022",
-      "discriminator": [
-        37,
-        190,
-        126,
-        222,
-        44,
-        154,
-        171,
-        17
-      ],
-      "accounts": [
-        {
-          "name": "signer",
-          "signer": true
-        }
-      ],
       "args": []
     },
     {
@@ -442,11 +442,16 @@
   "errors": [
     {
       "code": 6000,
-      "name": "MyNormalError"
+      "name": "Default"
     },
     {
       "code": 6500,
-      "name": "MyErrorWithSpecialOffset"
+      "name": "WithOffset"
+    },
+    {
+      "code": 6501,
+      "name": "WithMsg",
+      "msg": "Custom msg"
     }
   ],
   "types": [

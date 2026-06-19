@@ -1,9 +1,9 @@
 use {
     super::common::{get_idl_module_path, get_no_docs},
     crate::{AccountField, AccountsStruct, ConstraintSeedsGroup, Field, InitKind, Ty},
-    anyhow::{anyhow, Result},
     proc_macro2::TokenStream,
     quote::{quote, ToTokens},
+    syn::Result,
 };
 
 /// Generate the IDL build impl for the Accounts struct.
@@ -21,7 +21,7 @@ pub fn gen_idl_build_impl_accounts_struct(accounts: &AccountsStruct) -> TokenStr
         .fields
         .iter()
         .map(
-            |acc| -> syn::Result<(TokenStream, Option<(&syn::TypePath, TokenStream)>)> {
+            |acc| -> Result<(TokenStream, Option<(&syn::TypePath, TokenStream)>)> {
                 match acc {
                     AccountField::Field(acc) => {
                         let name = acc.ident.to_string();
@@ -131,7 +131,7 @@ pub fn gen_idl_build_impl_accounts_struct(accounts: &AccountsStruct) -> TokenStr
                 }
             },
         )
-        .collect::<syn::Result<Vec<_>>>();
+        .collect::<Result<Vec<_>>>();
     let (accounts, defined) = match result {
         Ok(result) => result.into_iter().unzip::<_, _, Vec<_>, Vec<_>>(),
         Err(error) => return error.into_compile_error(),
@@ -427,7 +427,10 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
             )
         }),
         syn::Expr::Reference(rf) => parse_seed(&rf.expr, accounts),
-        _ => Err(anyhow!("Unexpected seed: {seed:?}")),
+        expr => Err(syn::Error::new_spanned(
+            expr,
+            format!("Unexpected seed: {seed:?}"),
+        )),
     }
 }
 
@@ -450,13 +453,19 @@ impl SeedPath {
 
         // Check unsupported cases e.g. `&(account.field + 1).to_le_bytes()`
         if !seed_str.contains('"') && seed_str.contains(['+', '-', '*', '/', '%', '^']) {
-            return Err(anyhow!("Seed expression not supported: {seed:#?}"));
+            return Err(syn::Error::new_spanned(
+                seed,
+                format!("Seed expression not supported: {seed:#?}"),
+            ));
         }
 
         // Break up the seed into each subfield component.
         let mut components = seed_str.split('.').collect::<Vec<_>>();
         if components.len() <= 1 {
-            return Err(anyhow!("Seed is in unexpected format: {seed:#?}"));
+            return Err(syn::Error::new_spanned(
+                seed,
+                format!("Seed is in unexpected format: {seed:#?}"),
+            ));
         }
 
         // The name of the variable (or field).

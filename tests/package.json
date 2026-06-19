@@ -24,6 +24,7 @@
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
   },
   "workspaces": [
+    "accountloader-realloc",
     "anchor-cli-account",
     "anchor-cli-idl",
     "anchor-cli-legacy-idl",

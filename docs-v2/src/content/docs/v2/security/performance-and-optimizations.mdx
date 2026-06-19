@@ -1,0 +1,25 @@
+---
+title: Performance and optimizations
+description: Where Anchor's binary and CU savings come from.
+---
+
+Anchor's performance gains are cumulative. No single change explains the full result. The savings come from many smaller choices stacking up.
+
+For application developers, the takeaway is simple. Write normal Anchor code first, then reach for lower-level options only after tests and measurements show where the program spends binary size or compute.
+
+The main sources are:
+
+- the pinocchio and `#![no_std]{:rs}` runtime path
+- a smaller core derive that delegates account behavior to traits the compiler can optimize
+- `Account<T>{:rs}` casting account bytes directly into Pod-backed fixed-size state
+- macro-time PDA resolution when seeds are byte literals
+- runtime PDA validation that can skip repeated on-curve checks for non-empty program-owned PDA accounts
+- typed `CpiHandle<'a>{:rs}` values that let Anchor use pinocchio's unchecked CPI path without ordinary typed mutable aliasing
+- wincode instruction and event encoding with a borsh-compatible wire configuration
+- `#[event(bytemuck)]{:rs}` for fixed-size events that can be emitted with a discriminator write plus one body copy
+
+Optional flags can reduce a program further when their tradeoffs are acceptable. `const-rent{:toml}` removes a rent sysvar read from account creation. Disabling `guardrails{:toml}` and `account-resize{:toml}` can reduce size and CU for programs that do not need those safety nets.
+
+Two lower-level escape hatches go further when a single instruction justifies the cost. A [custom entrypoint](/docs/v2/security/custom-entrypoint/) skips Anchor's dispatcher for a chosen instruction. [Raw account access](/docs/v2/security/raw-account-access/) drops the typed wrapper to read and write account bytes directly. Both give up checks Anchor normally runs, so reach for them only with measurements and tests in hand.
+
+The checked-in bench programs are under `bench/programs/{:dir}`. See [Examples and benchmarks](/docs/v2/reference/examples-and-benchmarks/) for the current table and reproduction commands.
