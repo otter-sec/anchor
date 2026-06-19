@@ -76,6 +76,9 @@ $ <blue>anchor</blue> build
 
 Builds programs in the workspace targeting Solana's BPF runtime and emits IDLs into the `target/idl{:dir}` directory:
 
+Anchor passes `<dim>--tools-version</dim> v1.54` and `<dim>--arch</dim> v3` to `cargo build-sbf` by default.
+Override them with `$ <blue>anchor</blue> build <dim>--tools-version</dim> <version> <dim>--arch</dim> <arch>`.
+
 ```console
 $ <blue>anchor</blue> build <dim>--verifiable</dim>
 ```
