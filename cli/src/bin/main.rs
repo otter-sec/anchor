@@ -1,6 +1,43 @@
-use {anchor_cli::Opts, anyhow::Result, clap::Parser, std::ffi::OsString};
+use {anchor_cli::Opts, anyhow::Result, clap::Parser, std::ffi::OsString, std::path::PathBuf};
+
+fn find_system_binary(binary_name: &str) -> Option<PathBuf> {
+    let target_name = if cfg!(windows) {
+        if binary_name.ends_with(".exe") {
+            binary_name.to_string()
+        } else {
+            format!("{binary_name}.exe")
+        }
+    } else {
+        binary_name.to_string()
+    };
+
+    if let Some(paths) = std::env::var_os("PATH") {
+        for path in std::env::split_paths(&paths) {
+            let candidate = path.join(&target_name);
+            if candidate.is_file() {
+                let path_str = candidate.to_string_lossy().to_lowercase();
+                if path_str.contains("solana") || path_str.contains("platform-tools") {
+                    continue;
+                }
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
 
 fn main() -> Result<()> {
+    if std::env::var("ANCHOR_USE_SYSTEM_CARGO").map(|v| v == "true").unwrap_or(false) {
+        if let Some(cargo_path) = find_system_binary("cargo") {
+            std::env::set_var("CARGO", cargo_path);
+        }
+    }
+    if std::env::var("ANCHOR_USE_SYSTEM_RUST").map(|v| v == "true").unwrap_or(false) {
+        if let Some(rustc_path) = find_system_binary("rustc") {
+            std::env::set_var("RUSTC", rustc_path);
+        }
+    }
+
     #[cfg(not(windows))]
     if anchor_cli::debugger::rustc_wrapper::maybe_exec_as_wrapper() {
         unreachable!();
