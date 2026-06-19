@@ -2936,8 +2936,9 @@ fn _build_cwd(
     }
 }
 
-/// Subcommand and fixed arguments to be passed to cargo.
-const BUILD_SUBCOMMAND: &[&str] = &["build-sbf", "--tools-version", "v1.54"];
+/// Subcommand to be passed to cargo.
+const BUILD_SUBCOMMAND: &str = "build-sbf";
+const DEFAULT_TOOLS_VERSION: &str = "v1.54";
 const DEFAULT_BUILD_ARCH: &str = "v3";
 const BUILD_ARCH_ENV: &str = "ANCHOR_BUILD_SBF_ARCH";
 
@@ -2954,17 +2955,19 @@ fn validator_type_from_env() -> Result<Option<ValidatorType>> {
     }
 }
 
-fn has_arch_arg(args: &[String]) -> bool {
+fn has_cargo_arg(args: &[String], name: &str) -> bool {
+    let name_with_value = format!("{name}=");
     args.iter()
-        .any(|arg| arg == "--arch" || arg.starts_with("--arch="))
+        .any(|arg| arg == name || arg.starts_with(&name_with_value))
 }
 
 fn build_sbf_base_args(extra_args: &[String]) -> Vec<String> {
-    let mut args = BUILD_SUBCOMMAND
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
-    if !has_arch_arg(extra_args) {
+    let mut args = vec![BUILD_SUBCOMMAND.to_owned()];
+    if !has_cargo_arg(extra_args, "--tools-version") {
+        args.push("--tools-version".to_owned());
+        args.push(DEFAULT_TOOLS_VERSION.to_owned());
+    }
+    if !has_cargo_arg(extra_args, "--arch") {
         let arch = std::env::var(BUILD_ARCH_ENV).unwrap_or_else(|_| DEFAULT_BUILD_ARCH.to_owned());
         if !arch.is_empty() {
             args.push("--arch".to_owned());
