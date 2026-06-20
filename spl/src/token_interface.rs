@@ -100,3 +100,13 @@ pub fn get_mint_extension_data<T: Extension + Pod>(
     let extension_data = *mint_with_extension.get_extension::<T>()?;
     Ok(extension_data)
 }
+
+pub fn get_token_account_extension_data<T: Extension + Pod>(
+    account: &anchor_lang::solana_program::account_info::AccountInfo,
+) -> anchor_lang::Result<T> {
+    let token_account_data = account.data.borrow();
+    let token_account_with_extension =
+        StateWithExtensions::<spl_token_2022::state::Account>::unpack(&token_account_data)?;
+    let extension_data = *token_account_with_extension.get_extension::<T>()?;
+    Ok(extension_data)
+}
