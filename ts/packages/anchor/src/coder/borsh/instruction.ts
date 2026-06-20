@@ -553,15 +553,12 @@ class InstructionFormatter {
       return data.toString();
     }
     if ("vec" in idlField.type) {
+      const innerType = idlField.type.vec;
       return (
         "[" +
         (<Array<IdlField>>data)
           .map((d) =>
-            this.formatIdlData(
-              { name: "", type: (<IdlTypeVec>idlField.type).vec },
-              d,
-              types
-            )
+            this.formatIdlData({ name: "", type: innerType }, d, types)
           )
           .join(", ") +
         "]"

@@ -130,6 +130,8 @@ export type IdlTypeDef = {
 
 export type IdlSerialization =
   | "borsh"
+  | "borshu8"
+  | "borshu16"
   | "bytemuck"
   | "bytemuckunsafe"
   | { custom: string };

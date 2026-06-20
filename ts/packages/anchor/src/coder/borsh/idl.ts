@@ -8,6 +8,7 @@ import {
   Idl,
   handleDefinedFields,
   IdlArrayLen,
+  IdlSerialization,
 } from "../../idl.js";
 import { IdlError } from "../../error.js";
 
@@ -66,15 +67,22 @@ export class IdlCoder {
   public static fieldLayout(
     field: PartialField,
     types: IdlTypeDef[] = [],
-    genericArgs?: IdlGenericArg[] | null
+    genericArgs?: IdlGenericArg[] | null,
+    serialization?: IdlSerialization
   ): Layout {
-    return IdlCoder.fieldLayoutWithContext(field, types, genericArgs);
+    return IdlCoder.fieldLayoutWithContext(
+      field,
+      types,
+      genericArgs,
+      serialization
+    );
   }
 
   private static fieldLayoutWithContext(
     field: PartialField,
     types: IdlTypeDef[] = [],
     genericArgs?: IdlGenericArg[] | null,
+    serialization?: IdlSerialization,
     definedTypeStack: string[] = [],
     allowRecursive = false
   ): Layout {
@@ -141,6 +149,7 @@ export class IdlCoder {
               { type: field.type.option },
               types,
               genericArgs,
+              serialization,
               definedTypeStack,
               true
             ),
@@ -148,14 +157,27 @@ export class IdlCoder {
           );
         }
         if ("vec" in field.type) {
-          return borsh.vec(
+          // Vec length prefix is determined by the serialization format:
+          // - "borsh" (default): 4 bytes (u32)
+          // - "borshu8": 1 byte (u8)
+          // - "borshu16": 2 bytes (u16)
+          const lengthType =
+            serialization === "borshu8"
+              ? "u8"
+              : serialization === "borshu16"
+              ? "u16"
+              : "u32";
+
+          return borsh.vecWithLength(
             IdlCoder.fieldLayoutWithContext(
               { type: field.type.vec },
               types,
               genericArgs,
+              serialization,
               definedTypeStack,
               true
             ),
+            lengthType,
             fieldName
           );
         }
@@ -168,6 +190,7 @@ export class IdlCoder {
               { type },
               types,
               genericArgs,
+              serialization,
               definedTypeStack,
               allowRecursive
             ),
@@ -222,7 +245,8 @@ export class IdlCoder {
           return IdlCoder.fieldLayoutWithContext(
             { ...field, type: genericArg.type },
             types,
-            undefined,
+            null,
+            serialization,
             definedTypeStack,
             allowRecursive
           );
@@ -290,6 +314,7 @@ export class IdlCoder {
                 f,
                 types,
                 genArgs,
+                typeDef.serialization,
                 typeStack
               );
             }),
@@ -306,6 +331,7 @@ export class IdlCoder {
                 { name: i.toString(), type: f },
                 types,
                 genArgs,
+                typeDef.serialization,
                 typeStack
               );
             })
@@ -332,6 +358,7 @@ export class IdlCoder {
                   f,
                   types,
                   genArgs,
+                  typeDef.serialization,
                   typeStack
                 );
               }),
@@ -348,6 +375,7 @@ export class IdlCoder {
                   { name: i.toString(), type: f },
                   types,
                   genArgs,
+                  typeDef.serialization,
                   typeStack
                 );
               })
@@ -369,7 +397,8 @@ export class IdlCoder {
         return IdlCoder.fieldLayoutWithContext(
           { type: typeDef.type.alias, name },
           types,
-          genericArgs,
+          null,
+          typeDef.serialization,
           typeStack
         );
       }
