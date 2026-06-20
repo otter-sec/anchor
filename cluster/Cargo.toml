@@ -1,0 +1,18 @@
+[package]
+name = "anchor-cluster"
+version.workspace = true
+publish = true
+authors = ["Anchor Maintainers <accounts@200ms.io>"]
+repository = "https://github.com/solana-foundation/anchor"
+edition = "2021"
+license = "Apache-2.0"
+description = "Anchor Cluster type, for use in anchor-client crate."
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+url = "2"

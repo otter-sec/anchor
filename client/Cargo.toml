@@ -18,11 +18,10 @@ debug = []
 mock = []
 
 [dependencies]
+anchor-cluster = { path = "../cluster", version = "1.0.2" }
 anchor-lang = { path = "../lang", version = "1.0.2" }
-anyhow = "1"
 futures = "0.3"
 regex = "1"
-serde = { version = "1", features = ["derive"] }
 solana-account.workspace = true
 solana-account-decoder.workspace = true
 solana-commitment-config.workspace = true
@@ -37,7 +36,6 @@ solana-signer.workspace = true
 solana-transaction.workspace = true
 thiserror = "1"
 tokio = { version = "1", features = ["rt", "sync"] }
-url = "2"
 
 [dev-dependencies]
 solana-keypair.workspace = true

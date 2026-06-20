@@ -4,6 +4,7 @@ members = [
     "cli",
     "cli/cli-macros",
     "client",
+    "cluster",
     "idl",
     "lang",
     "lang/attribute/*",

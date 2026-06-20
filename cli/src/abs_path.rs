@@ -63,7 +63,7 @@ impl_nop! {
     String,
 
     // First-party types
-    anchor_client::Cluster,
+    anchor_cluster::Cluster,
 
     // Third-party types
     crucible_fuzz_cli::Cli,
