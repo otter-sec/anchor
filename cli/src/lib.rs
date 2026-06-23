@@ -5813,8 +5813,6 @@ fn start_solana_test_validator(
         .as_ref()
         .map(|test| test.startup_wait)
         .unwrap_or(STARTUP_WAIT);
-    let ms_wait =
-        u64::try_from(ms_wait).map_err(|_| anyhow!("startup_wait must be a non-negative value"))?;
 
     if let Err(e) = wait_for_validator_ready(&client, ms_wait, &program_ids) {
         eprintln!(

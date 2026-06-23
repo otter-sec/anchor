@@ -990,14 +990,14 @@ fn deser_programs(
 pub struct TestValidator {
     pub genesis: Option<Vec<GenesisEntry>>,
     pub validator: Option<Validator>,
-    pub startup_wait: i32,
+    pub startup_wait: u64,
     pub shutdown_wait: i32,
     pub upgradeable: bool,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct SurfpoolConfig {
-    pub startup_wait: i32,
+    pub startup_wait: u64,
     pub shutdown_wait: i32,
     pub rpc_port: u16,
     pub ws_port: Option<u16>,
@@ -1019,7 +1019,7 @@ pub struct _TestValidator {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validator: Option<_Validator>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub startup_wait: Option<i32>,
+    pub startup_wait: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shutdown_wait: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1029,7 +1029,7 @@ pub struct _TestValidator {
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct _SurfpoolConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub startup_wait: Option<i32>,
+    pub startup_wait: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shutdown_wait: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1095,7 +1095,7 @@ impl From<SurfpoolConfig> for _SurfpoolConfig {
         }
     }
 }
-pub const STARTUP_WAIT: i32 = 30000;
+pub const STARTUP_WAIT: u64 = 30000;
 pub const SHUTDOWN_WAIT: i32 = 2000;
 
 impl From<_TestValidator> for TestValidator {
