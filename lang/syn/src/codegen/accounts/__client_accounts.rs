@@ -156,11 +156,6 @@ pub fn generate(
     let re_exports: Vec<proc_macro2::TokenStream> = {
         // First, dedup the exports.
         let mut re_exports = std::collections::HashSet::new();
-        #[allow(
-            clippy::unwrap_used,
-            clippy::expect_used,
-            reason = "symbol path is always non-empty and is a valid Rust path"
-        )]
         // We need to keep track of the names we've already re-exported to avoid
         // name collisions in the generated module.
         let mut re_exported_names = std::collections::HashSet::new();
