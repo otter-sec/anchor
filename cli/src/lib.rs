@@ -5813,6 +5813,8 @@ fn start_solana_test_validator(
         .as_ref()
         .map(|test| test.startup_wait)
         .unwrap_or(STARTUP_WAIT);
+    let ms_wait =
+        u64::try_from(ms_wait).map_err(|_| anyhow!("startup_wait must be a non-negative value"))?;
 
     if let Err(e) = wait_for_validator_ready(&client, ms_wait, &program_ids) {
         eprintln!(
@@ -5827,17 +5829,14 @@ fn start_solana_test_validator(
 
 fn wait_for_validator_ready(
     client: &RpcClient,
-    ms_wait: i32,
+    ms_wait: u64,
     program_ids: &[Pubkey],
 ) -> Result<()> {
     let start = std::time::Instant::now();
-    let max_wait = std::time::Duration::from_millis(ms_wait.max(0) as u64);
+    let max_wait = std::time::Duration::from_millis(ms_wait);
 
     // Wait for RPC to be up
-    loop {
-        if client.get_latest_blockhash().is_ok() {
-            break;
-        }
+    while client.get_latest_blockhash().is_err() {
         if start.elapsed() >= max_wait {
             return Err(anyhow!(
                 "Timeout waiting for validator to start (RPC not ready)"
