@@ -167,21 +167,34 @@ pub fn generate(
             clippy::expect_used,
             reason = "symbol path is always non-empty and is a valid Rust path"
         )]
+        // We need to keep track of the names we've already re-exported to avoid
+        // name collisions in the generated module.
+        let mut re_exported_names = std::collections::HashSet::new();
+
         for f in accs.fields.iter().filter_map(|f: &AccountField| match f {
             AccountField::CompositeField(s) => Some(s),
             AccountField::Field(_) => None,
         }) {
             let symbol_path = f.symbol.split("::").collect::<Vec<_>>();
-            let name = symbol_path
-                .last()
-                .expect("symbol path must have at least one segment");
+            let name = symbol_path.last().copied().unwrap_or_default(); // Never empty for valid Rust paths
+
+            // If we've already re-exported something with this name, skip it to
+            // avoid a "name defined multiple times" error.
+            if re_exported_names.contains(name) {
+                continue;
+            }
+
             let prefix = symbol_path
                 .get(..symbol_path.len().saturating_sub(1))
                 .unwrap_or(&[]);
             let helper_mod = format!("__cpi_client_accounts_{}", name.to_snake_case());
+
             if prefix.is_empty() {
                 re_exports.insert(format!("{helper_mod}::{name}"));
+            } else {
+                re_exports.insert(format!("{}::{helper_mod}::{name}", prefix.join("::")));
             }
+            re_exported_names.insert(name.to_string());
         }
 
         re_exports

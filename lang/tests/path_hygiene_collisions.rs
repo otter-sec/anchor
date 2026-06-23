@@ -16,6 +16,8 @@ mod mod_b {
     }
 }
 
+// Test: two composite fields with the same struct name from different modules.
+// The generated __client_accounts_main must NOT produce "name defined multiple times".
 #[derive(Accounts)]
 pub struct Main<'info> {
     pub a: mod_a::Shared<'info>,
@@ -26,9 +28,30 @@ pub struct Main<'info> {
 
 #[test]
 fn test_path_hygiene_collisions() {
-    // This test primarily checks for compilation.
-    // If there's a name collision in the generated __client_accounts_main module,
-    // it will fail to compile.
+    // Compilation verifies that our re-export deduplication works.
+}
+
+// Test: a module that defines a struct whose name matches an Anchor primitive.
+// `nested::CustomAccounts` contains an `anchor_lang::prelude::Signer` field —
+// it should be treated as a composite (Accounts) field, not as Ty::Signer.
+mod nested {
+    use super::*;
+
+    #[derive(Accounts)]
+    pub struct CustomAccounts<'info> {
+        pub authority: Signer<'info>,
+    }
+}
+
+#[derive(Accounts)]
+pub struct UsesNested<'info> {
+    // Must be parsed as composite — NOT a primitive type.
+    pub inner: nested::CustomAccounts<'info>,
+}
+
+#[test]
+fn test_nested_composite_accounts_parsed_correctly() {
+    // Compilation verifies that nested::CustomAccounts is a composite field.
 }
 
 mod mod_c {
@@ -41,11 +64,9 @@ mod mod_c {
 
     #[test]
     pub fn test_visibility() {
-        // This should compile because we made the helper module `pub`
+        // Verifies helper modules are `pub` and accessible externally.
         let _ = crate::mod_a::__client_accounts_shared::Shared::default();
 
-        // We just need to check the type exists and is accessible.
-        // We use a dummy function to check type without instantiating it with invalid values.
         fn _test_type(_: crate::mod_a::__cpi_client_accounts_shared::Shared) {}
     }
 }

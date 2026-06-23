@@ -433,7 +433,11 @@ pub fn parse_account_field(f: &syn::Field) -> ParseResult<AccountField> {
 
 fn is_field_primitive(f: &syn::Field) -> ParseResult<bool> {
     let (ident, _, _) = ident_string(f)?;
-    let last_ident = ident.split("::").last().unwrap_or(&ident);
+    let segments: Vec<&str> = ident.split("::").collect();
+    if segments.len() > 1 && segments.first() != Some(&"anchor_lang") {
+        return Ok(false);
+    }
+    let last_ident = segments.last().copied().unwrap_or(&ident);
     let r = matches!(
         last_ident,
         "Sysvar"
@@ -455,7 +459,11 @@ fn is_field_primitive(f: &syn::Field) -> ParseResult<bool> {
 
 fn parse_ty(f: &syn::Field) -> ParseResult<(Ty, bool)> {
     let (ident, optional, path) = ident_string(f)?;
-    let last_ident = ident.split("::").last().unwrap_or(&ident);
+    let segments: Vec<&str> = ident.split("::").collect();
+    if segments.len() > 1 && segments.first() != Some(&"anchor_lang") {
+        return Err(ParseError::new(f.ty.span(), "invalid account type given"));
+    }
+    let last_ident = segments.last().copied().unwrap_or(&ident);
     let ty = match last_ident {
         "Sysvar" => Ty::Sysvar(parse_sysvar(&path)?),
         "AccountInfo" => Ty::AccountInfo,
