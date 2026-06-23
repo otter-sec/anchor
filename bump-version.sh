@@ -107,17 +107,17 @@ sed "${sedi[@]}" -e \
 # Cannot use --frozen-lockfile: package.json versions were just bumped, so refresh the lockfiles.
 # Only workspace versions changed above; if lockfile diffs look like broad third-party churn, investigate before tagging.
 pushd ts
-yarn install
+yarn install  # locked-in: ignore[yarn-frozen-lockfile]
 popd
 
 pushd tests
-yarn install
+yarn install  # locked-in: ignore[yarn-frozen-lockfile]
 popd
 
 pushd examples
-yarn install
+yarn install  # locked-in: ignore[yarn-frozen-lockfile]
 pushd tutorial
-yarn install
+yarn install  # locked-in: ignore[yarn-frozen-lockfile]
 popd
 popd
 

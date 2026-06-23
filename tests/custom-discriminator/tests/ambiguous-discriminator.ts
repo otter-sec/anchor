@@ -1,6 +1,24 @@
+import fs from "fs";
 import { spawnSync } from "child_process";
 
 describe("ambiguous-discriminator", () => {
+  const anchorTomlPath = "Anchor.toml";
+  const anchorToml = fs.readFileSync(anchorTomlPath, { encoding: "utf8" });
+
+  before(() => {
+    fs.writeFileSync(
+      anchorTomlPath,
+      anchorToml.replace(
+        'exclude = ["programs/ambiguous-discriminator"]',
+        (match) => "#" + match
+      )
+    );
+  });
+
+  after(() => {
+    fs.writeFileSync(anchorTomlPath, anchorToml);
+  });
+
   it("Returns ambiguous discriminator error on builds", () => {
     const result = spawnSync("anchor", [
       "idl",
@@ -14,7 +32,9 @@ describe("ambiguous-discriminator", () => {
 
     const output = result.output.toString();
     if (
-      !output.includes("Error: Program 'ambiguous-discriminator' not found")
+      !output.includes(
+        "Error: Ambiguous discriminators for accounts `AnotherAccount` and `SomeAccount`"
+      )
     ) {
       throw new Error(
         `Ambiguous discriminators did not return the expected error: "${output}"`

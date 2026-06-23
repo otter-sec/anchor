@@ -40,7 +40,6 @@
     "bn.js": "^5.2.3",
     "bs58": "^4.0.1",
     "buffer-layout": "^1.2.2",
-    "cross-fetch": "^3.1.5",
     "eventemitter3": "^4.0.7",
     "pako": "^2.0.3",
     "superstruct": "^0.15.4",

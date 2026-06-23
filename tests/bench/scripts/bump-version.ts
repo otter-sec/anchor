@@ -21,6 +21,9 @@ import {
     return;
   }
 
+  // Ignore non-stable releases
+  if (newVersion.includes("-")) return;
+
   // Cache lock file in ./locks
   await LockFile.cache(newVersion);
 

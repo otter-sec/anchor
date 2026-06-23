@@ -1,12 +1,11 @@
 import * as anchor from "@anchor-lang/core";
-import { BN, Program, web3 } from "@anchor-lang/core";
 import { assert } from "chai";
 import { createPriceFeed, setFeedPrice, getFeedData } from "./oracleUtils";
 
 describe("pyth-oracle", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace.Pyth as Program;
+  const program = anchor.workspace.Pyth as anchor.Program;
 
   it("initialize", async () => {
     const price = 50000;

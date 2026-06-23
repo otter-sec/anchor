@@ -25,3 +25,4 @@ docker-target
 test-keypair.json
 tsconfig.tsbuildinfo
 .vscode
+.vercel

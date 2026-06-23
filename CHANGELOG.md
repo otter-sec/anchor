@@ -28,9 +28,12 @@ The minor version will be incremented upon a breaking change and the patch versi
 - cli/idl: Add `fetch-historical` support to recover historical IDLs with the Anchor CLI ([#3992](https://github.com/solana-foundation/anchor/pull/3992)).
 - cli: `anchor init` refuses to create a new Anchor workspace inside an existing Cargo workspace to avoid broken nested layouts ([#4576](https://github.com/solana-foundation/anchor/pull/4576)).
 - cli: Add `r` as an alias to the `run` command ([#4643](https://github.com/solana-foundation/anchor/pull/4643)).
+- lang: Provide better error messages for `token` constraints ([#4698](https://github.com/solana-foundation/anchor/pull/4698)).
 
 ### Fixes
 
+- lang: Remove cloning `AccountInfo` to read lamports in `init_if_needed` codegen ([#4675](https://github.com/solana-foundation/anchor/pull/4675)).
+- ts: Remove `cross-fetch` dependency ([#4671](https://github.com/solana-foundation/anchor/pull/4671)).
 - lang: Guard `AccountLoader<T>::exit` against zero-copy buffer truncation and bail with `AccountDidNotDeserialize` instead of rewriting the discriminator over an undersized buffer ([#4633](https://github.com/otter-sec/anchor/pull/4633)).
 - lang: Set `anchor-lang` Minimum Supported Rust Version to `1.89` ([#4638](https://github.com/otter-sec/anchor/pull/4638)).
 - lang: Shorten invariant lifetimes during `Context` creation ([#4363](https://github.com/solana-foundation/anchor/pull/4363)).
@@ -54,6 +57,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Reduce cloning in `realloc` constraint when shrinking ([#4642](https://github.com/solana-foundation/anchor/pull/4642)).
 - syn: Remove `anyhow` ([#4640](https://github.com/solana-foundation/anchor/pull/4640)).
 - ts: Update `engines.node` to `>= 20.18` ([#4647](https://github.com/solana-foundation/anchor/pull/4647)).
+- lang: Sync type derives and simplify internal args creation in `declare_program!` ([#4667](https://github.com/solana-foundation/anchor/pull/4667)).
 - lang: Fix path hygiene in `#[derive(Accounts)]` for composite fields using segmented paths.
 
 ### Breaking

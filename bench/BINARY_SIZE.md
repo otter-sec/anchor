@@ -14,7 +14,7 @@ The programs and their tests are located in [/tests/bench](https://github.com/ot
 
 ## [Unreleased]
 
-Solana version: 2.3.0
+Solana version: 3.1.10
 
 | Program | Binary Size | -   |
 | ------- | ----------- | --- |
@@ -26,7 +26,7 @@ Solana version: 2.3.0
 
 ## [1.0.2]
 
-Solana version: 2.3.0
+Solana version: 3.1.10
 
 | Program | Binary Size | -   |
 | ------- | ----------- | --- |
@@ -38,7 +38,7 @@ Solana version: 2.3.0
 
 ## [1.0.1]
 
-Solana version: 2.3.0
+Solana version: 3.1.10
 
 | Program | Binary Size | -   |
 | ------- | ----------- | --- |
@@ -50,19 +50,7 @@ Solana version: 2.3.0
 
 ## [1.0.0]
 
-Solana version: 2.3.0
-
-| Program | Binary Size | -   |
-| ------- | ----------- | --- |
-| bench   | 932,992     | -   |
-
-### Notable changes
-
----
-
-## [v1.0.0-rc.3]
-
-Solana version: 2.3.0
+Solana version: 3.1.10
 
 | Program | Binary Size | -                        |
 | ------- | ----------- | ------------------------ |
@@ -76,25 +64,25 @@ Solana version: 2.3.0
 
 Solana version: 2.3.0
 
-| Program | Binary Size | -                        |
-| ------- | ----------- | ------------------------ |
-| bench   | 1,126,840   | 🔴 **+181,272 (19.17%)** |
+| Program | Binary Size | -                   |
+| ------- | ----------- | ------------------- |
+| bench   | 1,126,840   | 🔴 **+472 (0.04%)** |
 
 ### Notable changes
-
-- Upgrade to Solana `2.3.0`. This upgrade increased the binary size by 8.15% (84912 bytes) ([#3967](https://github.com/otter-sec/anchor/pull/3967)).
 
 ---
 
 ## [0.32.0]
 
-Solana version: 2.1.0
+Solana version: 2.3.0
 
 | Program | Binary Size | -                      |
 | ------- | ----------- | ---------------------- |
-| bench   | 945,568     | 🟢 **-96,360 (9.25%)** |
+| bench   | 1,126,368   | 🔴 **+84,440 (8.10%)** |
 
 ### Notable changes
+
+- Upgrade to Solana `2.3.0` ([#3967](https://github.com/otter-sec/anchor/pull/3967)).
 
 ---
 

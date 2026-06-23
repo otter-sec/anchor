@@ -132,6 +132,6 @@ cargo clippy --all-targets -- -D warnings
 Enter the relevant JS package (e.g. `tests/`, or `ts/packages/anchor`) and run:
 
 ```sh
-yarn
+yarn install --frozen-lockfile
 yarn lint:fix
 ```

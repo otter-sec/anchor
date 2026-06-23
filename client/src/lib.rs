@@ -75,7 +75,8 @@ pub use {
     solana_message::AddressLookupTableAccount,
     solana_pubsub_client::nonblocking::pubsub_client::PubsubClientError,
     solana_rpc_client_api::{
-        client_error::Error as SolanaClientError, config::RpcSendTransactionConfig,
+        client_error::{Error as SolanaClientError, ErrorKind as SolanaClientErrorKind},
+        config::RpcSendTransactionConfig,
         filter::RpcFilterType,
     },
     solana_signer::{Signer, SignerError},
@@ -305,10 +306,16 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
                 .map_err(Box::new)?
                 .into_iter()
                 .map(|(key, account)| {
-                    let data = account
-                        .data
-                        .decode()
-                        .expect("account was fetched with binary encoding");
+                    let data = account.data.decode().ok_or_else(|| {
+                        ClientError::SolanaClientError(Box::new(
+                            SolanaClientError::new_with_request(
+                                SolanaClientErrorKind::Custom(
+                                    "Failed to decode account data".to_string(),
+                                ),
+                                solana_rpc_client_api::request::RpcRequest::GetProgramAccounts,
+                            ),
+                        ))
+                    })?;
                     Ok((key, T::try_deserialize(&mut data.as_slice())?))
                 }),
         })
@@ -356,8 +363,14 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
             })?;
 
             while let Some(logs) = notifications.next().await {
+                let signature: Signature = logs.value.signature.parse().map_err(|e| {
+                    ClientError::LogParseError(format!(
+                        "Invalid signature '{}': {e}",
+                        logs.value.signature
+                    ))
+                })?;
                 let ctx = EventContext {
-                    signature: logs.value.signature.parse().unwrap(),
+                    signature,
                     slot: logs.context.slot,
                 };
                 let events = parse_logs_response(logs, &program_id_str)?;
@@ -520,10 +533,17 @@ pub enum ClientError {
     IOError(#[from] std::io::Error),
     #[error("{0}")]
     SignerError(#[from] SignerError),
-    #[error("{0}")]
-    CompileError(#[from] solana_message::CompileError),
-    #[error("Expected a legacy transaction but got a versioned transaction")]
-    NotLegacyTransaction,
+}
+
+impl ClientError {
+    /// Adding a new variant to [`ClientError`] is a breaking change in v1. To mitigate this issue,
+    /// use this helper method for all errors that cannot be precisely described by [`ClientError`].
+    fn other<E>(e: E) -> Self
+    where
+        E: Into<Box<dyn std::error::Error + Send + Sync>>,
+    {
+        Self::IOError(std::io::Error::other(e))
+    }
 }
 
 pub trait AsSigner {
@@ -713,7 +733,8 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
                     &instructions,
                     address_lookup_table_accounts,
                     recent_blockhash,
-                )?;
+                )
+                .map_err(ClientError::other)?;
                 Ok(solana_transaction::versioned::VersionedTransaction {
                     signatures: vec![
                         solana_signature::Signature::default();
@@ -752,7 +773,8 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
                     &instructions,
                     address_lookup_table_accounts,
                     latest_hash,
-                )?;
+                )
+                .map_err(ClientError::other)?;
                 solana_message::VersionedMessage::V0(msg)
             }
         };

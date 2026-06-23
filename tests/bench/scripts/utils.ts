@@ -539,11 +539,15 @@ export const spawn = (
   opts?: { logOutput?: boolean; throwOnError?: { msg: string } }
 ) => {
   const result = spawnSync(cmd, args);
-  if (opts?.logOutput) {
-    console.log(result.output.toString());
+  const success = result.status === 0;
+  if (opts?.logOutput || !success) {
+    console.log(
+      `Output of \`${cmd} ${args.join(" ")}\`:`,
+      result.output.toString()
+    );
   }
 
-  if (opts?.throwOnError && result.status !== 0) {
+  if (opts?.throwOnError && !success) {
     throw new Error(opts.throwOnError.msg);
   }
 

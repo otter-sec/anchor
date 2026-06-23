@@ -100,7 +100,7 @@ describe("Optional", () => {
       } catch (e) {
         // @ts-ignore
         assert.isTrue(e instanceof AnchorError, e.toString());
-        const err: AnchorError = <AnchorError>e;
+        const err = e as AnchorError;
         const errorCode = LangErrorCode.AccountNotEnoughKeys;
         assert.strictEqual(
           err.error.errorMessage,
@@ -220,7 +220,7 @@ describe("Optional", () => {
       } catch (e) {
         // @ts-ignore
         assert.isTrue(e instanceof AnchorError, e.toString());
-        const err: AnchorError = <AnchorError>e;
+        const err = e as AnchorError;
         const errorCode = LangErrorCode.ConstraintAccountIsNone;
         assert.strictEqual(
           err.error.errorMessage,
@@ -305,7 +305,7 @@ describe("Optional", () => {
       } catch (e) {
         // @ts-ignore
         assert.isTrue(e instanceof AnchorError, e.toString());
-        const err: AnchorError = <AnchorError>e;
+        const err = e as AnchorError;
         const errorCode = LangErrorCode.ConstraintSeeds;
         assert.strictEqual(
           err.error.errorMessage,
@@ -377,7 +377,7 @@ describe("Optional", () => {
       } catch (e) {
         // @ts-ignore
         assert.isTrue(e instanceof AnchorError, e.toString());
-        const err: AnchorError = <AnchorError>e;
+        const err = e as AnchorError;
         const errorCode = LangErrorCode.ConstraintSeeds;
         assert.strictEqual(
           err.error.errorMessage,
@@ -409,7 +409,7 @@ describe("Optional", () => {
       } catch (e) {
         // @ts-ignore
         assert.isTrue(e instanceof web3.SendTransactionError, e.toString());
-        const err: web3.SendTransactionError = <web3.SendTransactionError>e;
+        const err = e as web3.SendTransactionError;
         const anchorError = AnchorError.parse(err.logs!)!;
         const errorCode = LangErrorCode.ConstraintSigner;
         assert.strictEqual(
@@ -437,7 +437,7 @@ describe("Optional", () => {
       } catch (e) {
         // @ts-ignore
         assert.isTrue(e instanceof AnchorError, e.toString());
-        const err: AnchorError = <AnchorError>e;
+        const err = e as AnchorError;
         const errorCode = LangErrorCode.ConstraintRaw;
         assert.strictEqual(
           err.error.errorMessage,
@@ -508,7 +508,7 @@ describe("Optional", () => {
       } catch (e) {
         // @ts-ignore
         assert.isTrue(e instanceof AnchorError, e.toString());
-        const err: AnchorError = <AnchorError>e;
+        const err = e as AnchorError;
         const errorCode = LangErrorCode.ConstraintAccountIsNone;
         assert.strictEqual(
           err.error.errorMessage,
@@ -537,7 +537,7 @@ describe("Optional", () => {
       } catch (e) {
         // @ts-ignore
         assert.isTrue(e instanceof AnchorError, e.toString());
-        const err: AnchorError = <AnchorError>e;
+        const err = e as AnchorError;
         const errorCode = LangErrorCode.ConstraintAccountIsNone;
         assert.strictEqual(
           err.error.errorMessage,
@@ -565,7 +565,7 @@ describe("Optional", () => {
       } catch (e) {
         // @ts-ignore
         assert.isTrue(e instanceof AnchorError, e.toString());
-        const err: AnchorError = <AnchorError>e;
+        const err = e as AnchorError;
         const errorCode = LangErrorCode.AccountDiscriminatorMismatch;
         assert.strictEqual(
           err.error.errorMessage,
@@ -770,7 +770,7 @@ describe("Optional", () => {
       } catch (e) {
         // @ts-ignore
         assert.isTrue(e instanceof AnchorError, e.toString());
-        const err: AnchorError = <AnchorError>e;
+        const err = e as AnchorError;
         const errorCode = LangErrorCode.ConstraintAccountIsNone;
         assert.strictEqual(
           err.error.errorMessage,
@@ -798,7 +798,7 @@ describe("Optional", () => {
       } catch (e) {
         // @ts-ignore
         assert.isTrue(e instanceof AnchorError, e.toString());
-        const err: AnchorError = <AnchorError>e;
+        const err = e as AnchorError;
         const errorCode = LangErrorCode.ConstraintHasOne;
         assert.strictEqual(
           err.error.errorMessage,

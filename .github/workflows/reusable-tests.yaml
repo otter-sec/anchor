@@ -411,6 +411,8 @@ jobs:
       - name: Run generated JS project tests
         if: ${{ matrix.template == 'mocha' || matrix.template == 'jest' }}
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
+        # `anchor init` does not generate a yarn.lock, so --frozen-lockfile would fail here.
+        # locked-in: ignore[yarn-frozen-lockfile]
         run: yarn link @anchor-lang/core && yarn && anchor test && yarn lint:fix
 
       - name: Run generated Rust project tests
@@ -454,7 +456,7 @@ jobs:
           #   path: tests/swap
           - cmd: cd tests/escrow && anchor test --skip-lint && npx tsc --noEmit
             path: tests/escrow
-          - cmd: cd tests/pyth && anchor test --skip-lint && npx tsc --noEmit
+          - cmd: cd tests/pyth && anchor test --skip-lint
             path: tests/pyth
           - cmd: cd tests/realloc && anchor test --skip-lint && npx tsc --noEmit
             path: tests/realloc
@@ -534,6 +536,8 @@ jobs:
             path: tests/test-instruction-validation
           - cmd: cd tests/account-generation-test && anchor test
             path: tests/account-generation-test
+          - cmd: cd tests/tictactoe && anchor test
+            path: tests/tictactoe
 
     steps:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3

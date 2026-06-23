@@ -99,6 +99,44 @@
       ]
     },
     {
+      "name": "test_compilation_generic_types",
+      "discriminator": [
+        2,
+        200,
+        154,
+        199,
+        119,
+        208,
+        171,
+        225
+      ],
+      "accounts": [
+        {
+          "name": "account_with_generic_field"
+        }
+      ],
+      "args": [
+        {
+          "name": "generic_struct",
+          "type": {
+            "defined": {
+              "name": "GenericStruct",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": "u32"
+                },
+                {
+                  "kind": "const",
+                  "value": "8"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "test_compilation_initialize_with_token_2022",
       "discriminator": [
         230,
@@ -398,6 +436,19 @@
   ],
   "accounts": [
     {
+      "name": "AccountWithGenericField",
+      "discriminator": [
+        3,
+        245,
+        8,
+        220,
+        119,
+        168,
+        105,
+        172
+      ]
+    },
+    {
       "name": "MyAccount",
       "discriminator": [
         246,
@@ -455,6 +506,64 @@
     }
   ],
   "types": [
+    {
+      "name": "AccountWithGenericField",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field",
+            "type": {
+              "defined": {
+                "name": "GenericStruct",
+                "generics": [
+                  {
+                    "kind": "type",
+                    "type": "u32"
+                  },
+                  {
+                    "kind": "const",
+                    "value": "8"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "GenericStruct",
+      "generics": [
+        {
+          "kind": "type",
+          "name": "T"
+        },
+        {
+          "kind": "const",
+          "name": "N",
+          "type": "usize"
+        }
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field",
+            "type": {
+              "array": [
+                {
+                  "generic": "T"
+                },
+                {
+                  "generic": "N"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
     {
       "name": "MyAccount",
       "type": {
