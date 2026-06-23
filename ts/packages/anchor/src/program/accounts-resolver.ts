@@ -95,12 +95,14 @@ export class AccountsResolver<IDL extends Idl> {
           .map((acc) => `\`${acc}\``)
           .join(", ");
 
-        throw new Error(
-          [
-            `Reached maximum depth for account resolution.`,
-            `Unresolved accounts: ${unresolvedAccs}`,
-          ].join(" ")
-        );
+        if (unresolvedAccs.length > 0) {
+          throw new Error(
+            [
+              `Reached maximum depth for account resolution.`,
+              `Unresolved accounts: ${unresolvedAccs}`,
+            ].join(" ")
+          );
+        }
       }
     }
   }
