@@ -9,6 +9,7 @@ import {
   createMint,
   ExtensionType,
   getExtensionTypes,
+  getInterestBearingMintConfigState,
   getMint,
   getMintLen,
   NATIVE_MINT_2022,
@@ -78,6 +79,19 @@ describe("token extensions", () => {
       })
       .signers([mint, payer])
       .rpc();
+  });
+
+  it("Interest bearing mint extension is initialized on the mint", async () => {
+    const mintAccount = await getMint(
+      provider.connection,
+      mint.publicKey,
+      "confirmed",
+      TOKEN_2022_PROGRAM_ID
+    );
+    const config = getInterestBearingMintConfigState(mintAccount);
+    assert.ok(config !== null);
+    assert.equal(config!.rateAuthority.toBase58(), payer.publicKey.toBase58());
+    assert.equal(config!.currentRate, 100);
   });
 
   it("mint extension constraints test passes", async () => {

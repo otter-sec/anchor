@@ -208,6 +208,16 @@ pub enum ErrorCode {
     #[msg("A pausable extension authority constraint was violated")]
     ConstraintMintPausableAuthority,
 
+    /// 2045 - An interest-bearing extension constraint was violated
+    #[msg("An interest-bearing extension constraint was violated")]
+    ConstraintMintInterestBearingExtension,
+    /// 2046 - An interest-bearing extension authority constraint was violated
+    #[msg("An interest-bearing extension authority constraint was violated")]
+    ConstraintMintInterestBearingAuthority,
+    /// 2047 - An interest-bearing extension rate constraint was violated
+    #[msg("An interest-bearing extension rate constraint was violated")]
+    ConstraintMintInterestBearingRate,
+
     // Require
     /// 2500 - A require expression was violated
     #[msg("A require expression was violated")]

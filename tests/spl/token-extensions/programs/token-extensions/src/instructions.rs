@@ -9,9 +9,13 @@ use {
         token_2022::{
             self,
             spl_token_2022::extension::{
-                group_member_pointer::GroupMemberPointer, metadata_pointer::MetadataPointer,
-                mint_close_authority::MintCloseAuthority, pausable::PausableConfig,
-                permanent_delegate::PermanentDelegate, transfer_hook::TransferHook,
+                group_member_pointer::GroupMemberPointer,
+                interest_bearing_mint::{BasisPoints, InterestBearingConfig},
+                metadata_pointer::MetadataPointer,
+                mint_close_authority::MintCloseAuthority,
+                pausable::PausableConfig,
+                permanent_delegate::PermanentDelegate,
+                transfer_hook::TransferHook,
             },
         },
         token_2022_extensions,
@@ -61,6 +65,8 @@ pub struct CreateMintAccount<'info> {
         extensions::close_authority::authority = authority,
         extensions::permanent_delegate::delegate = authority,
         extensions::pausable::authority = authority,
+        extensions::interest_bearing_mint::authority = authority,
+        extensions::interest_bearing_mint::rate = 100,
     )]
     pub mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(
@@ -158,6 +164,12 @@ pub fn handler(ctx: Context<CreateMintAccount>, args: CreateMintAccountArgs) -> 
         group_member_pointer.member_address,
         OptionalNonZeroPubkey::try_from(mint_key)?
     );
+    let interest_bearing_config = get_mint_extension_data::<InterestBearingConfig>(mint_data)?;
+    assert_eq!(
+        interest_bearing_config.rate_authority,
+        OptionalNonZeroPubkey::try_from(authority_key)?
+    );
+    assert_eq!(interest_bearing_config.current_rate, BasisPoints::from(100));
     // transfer minimum rent to mint account
     update_account_lamports_to_minimum_balance(
         ctx.accounts.mint.to_account_info(),
