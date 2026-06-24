@@ -27,6 +27,7 @@ env:
 jobs:
   publish-crates-dryrun:
     name: Publish crates (dry-run)
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -61,6 +62,7 @@ jobs:
 
   publish-npmjs-dryrun:
     name: Publish npmjs packages (dry-run)
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:

@@ -109,6 +109,7 @@ jobs:
 
   publish-crates:
     name: Publish crates
+    runs-on: ubuntu-latest
     needs: verify-tag
     if: ${{ needs.verify-tag.outputs.verification_passed == 'true' }}
     permissions:
@@ -187,6 +188,7 @@ jobs:
 
   publish-npmjs:
     name: Publish npmjs packages
+    runs-on: ubuntu-latest
     needs: verify-tag
     if: ${{ needs.verify-tag.outputs.verification_passed == 'true' }}
     permissions:
