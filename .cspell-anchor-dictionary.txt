@@ -65,6 +65,7 @@ programdata
 projectserum
 pubkeys
 publickey
+Quicknode
 realizor
 reallocs
 repr
