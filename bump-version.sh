@@ -8,6 +8,7 @@ if [ $# -eq 0 ]; then
 fi
 
 old_version=$(cat VERSION)
+old_version_regex=$(printf '%s\n' "$old_version" | sed 's/[.[\*^$()+?{}|\\]/\\&/g') # escape .
 version=$1
 
 if [[ "$version" == v* ]]; then
@@ -41,9 +42,9 @@ cargo release version $version \
 
 # Only replace version with the following globs
 allow_globs="**/Makefile client/src/lib.rs lang/attribute/program/src/lib.rs"
-git grep -l $old_version -- $allow_globs |
+git grep -l "$old_version" -- $allow_globs |
     xargs sed "${sedi[@]}" \
-    -e "s/$old_version/$version/g"
+    -e "s/$old_version_regex/$version/g"
 
 # Avoid updating the docs for pre-release builds
 if [[ "$is_prerelease" -eq 0 ]]; then
@@ -53,21 +54,22 @@ if [[ "$is_prerelease" -eq 0 ]]; then
             head -n1 | \
             sed 's/^v//'
     )
+    latest_stable_version_regex=$(printf '%s\n' "$latest_stable_version" | sed 's/[.[\*^$()+?{}|\\]/\\&/g')
     echo "Latest stable version for documentation was $latest_stable_version..."
 
     # Separately handle docs because blindly replacing the old version with the new
     # might break certain examples/links
     pushd docs/content/docs
-    git grep -l $latest_stable_version -- "./*.md*" | \
+    git grep -l "$latest_stable_version" -- "./*.md*" | \
         xargs sed "${sedi[@]}" \
-        -e "s/\"$latest_stable_version\"/\"$version\"/g"
+        -e "s/\"$latest_stable_version_regex\"/\"$version\"/g"
     allow_globs="installation.mdx quickstart/local.mdx references/verifiable-builds.mdx"
-    git grep -l $latest_stable_version -- $allow_globs |
+    git grep -l "$latest_stable_version" -- $allow_globs |
         xargs sed "${sedi[@]}" \
-        -e "s/$latest_stable_version/$version/g"
+        -e "s/$latest_stable_version_regex/$version/g"
     # Replace `solana_version` with the current version
     solana_version=$(solana --version | awk '{print $2;}')
-    sed $sedi "s/solana_version.*\"/solana_version = \"$solana_version\"/g" references/anchor-toml.mdx
+    sed "${sedi[@]}" "s/solana_version.*\"/solana_version = \"$solana_version\"/g" references/anchor-toml.mdx
     # Keep release notes and changelog the same
     git restore updates
     popd
@@ -93,10 +95,10 @@ fi
 
 # Potential for collisions in `package.json` files, handle those separately
 # Replace only matching "version": "x.xx.x" and "@anchor-lang/core": "x.xx.x"
-git grep -l $old_version -- "**/package.json" | \
+git grep -l "$old_version" -- "**/package.json" | \
     xargs sed -E "${sedi[@]}" \
-    -e "s/\"version\": \"$old_version\"/\"version\": \"$version\"/g" \
-    -e "s/@anchor-lang\/(.*)\": \"(.*)$old_version\"/@anchor-lang\/\1\": \"\2$version\"/g"
+    -e "s/\"version\": \"$old_version_regex\"/\"version\": \"$version\"/g" \
+    -e "s/@anchor-lang\/(.*)\": \"(.*)$old_version_regex\"/@anchor-lang\/\1\": \"\2$version\"/g"
 
 # Insert version number into CHANGELOG
 sed "${sedi[@]}" -e \
