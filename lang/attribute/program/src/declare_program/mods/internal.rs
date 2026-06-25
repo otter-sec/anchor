@@ -71,6 +71,32 @@ fn gen_internal_args_mod(idl: &Idl) -> proc_macro2::TokenStream {
             }
         };
 
+        // Generate conditional derives based on field types
+        let copy_attr = ix
+            .args
+            .iter()
+            .map(|field| &field.ty)
+            .all(|ty| can_derive_copy_ty(ty, &idl.types))
+            .then_some(quote!(#[derive(Copy)]));
+        let clone_attr = ix
+            .args
+            .iter()
+            .map(|field| &field.ty)
+            .all(|ty| can_derive_clone_ty(ty, &idl.types))
+            .then_some(quote!(#[derive(Clone)]));
+        let debug_attr = ix
+            .args
+            .iter()
+            .map(|field| &field.ty)
+            .all(|ty| can_derive_debug_ty(ty, &idl.types))
+            .then_some(quote!(#[derive(Debug)]));
+        let default_attr = ix
+            .args
+            .iter()
+            .map(|field| &field.ty)
+            .all(|ty| can_derive_default_ty(ty, &idl.types))
+            .then_some(quote!(#[derive(Default)]));
+
         quote! {
             #ty_def
 

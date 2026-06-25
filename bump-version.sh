@@ -116,11 +116,8 @@ pushd tests
 yarn install  # locked-in: ignore[yarn-frozen-lockfile]
 popd
 
-pushd examples
+pushd examples/tutorial
 yarn install  # locked-in: ignore[yarn-frozen-lockfile]
-pushd tutorial
-yarn install  # locked-in: ignore[yarn-frozen-lockfile]
-popd
 popd
 
 # Avoid updating the benchmarks for pre-release builds

@@ -362,7 +362,7 @@ fn can_derive_default(ty_def: &IdlTypeDef, ty_defs: &[IdlTypeDef]) -> bool {
     }
 }
 
-fn can_derive_copy_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
+pub fn can_derive_copy_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
     match ty {
         IdlType::Option(inner) => can_derive_copy_ty(inner, ty_defs),
         IdlType::Array(inner, len) => {

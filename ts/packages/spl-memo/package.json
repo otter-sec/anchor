@@ -27,7 +27,7 @@
     "watch": "tsc -p tsconfig.cjs.json --watch"
   },
   "dependencies": {
-    "@anchor-lang/core": "=1.0.2"
+    "@anchor-lang/core": "=1.1.1"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "=21.0.2",
