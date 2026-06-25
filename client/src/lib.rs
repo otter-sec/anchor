@@ -54,7 +54,7 @@
 //! The client is blocking by default. To enable asynchronous client, add `async` feature:
 //!
 //! ```toml
-//! anchor-client = { version = "1.1.1 ", features = ["async"] }
+//! anchor-client = { version = "1.1.1", features = ["async"] }
 //! ````
 //!
 //! ## `mock`
