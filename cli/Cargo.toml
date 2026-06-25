@@ -21,9 +21,9 @@ dev = []
 idl-localnet-testing = []
 
 [dependencies]
-anchor-cli-macros = { path = "cli-macros", version = "1.1.0" }
-anchor-client = { path = "../client", version = "1.1.0" }
-anchor-lang = { path = "../lang", version = "1.1.0" }
+anchor-cli-macros = { path = "cli-macros", version = "1.1.1" }
+anchor-client = { path = "../client", version = "1.1.1" }
+anchor-lang = { path = "../lang", version = "1.1.1" }
 anchor-lang-idl = { path = "../idl", version = "0.1.4", features = ["build", "convert"] }
 anyhow = "1.0.32"
 base64 = "0.21"
