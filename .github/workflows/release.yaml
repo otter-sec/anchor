@@ -126,7 +126,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: stable
+          # FIXME: https://github.com/rust-lang/cargo/issues/17093
+          # Stable cargo has a publishing bug. Switch back to stable when the fix is out
+          toolchain: nightly
 
       - name: Install cargo-release
         run: cargo install cargo-release --version 1.1.1 --locked
