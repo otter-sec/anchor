@@ -2235,13 +2235,13 @@
     "solanaVersion": "3.1.10",
     "result": {
       "binarySize": {
-        "bench": 917416
+        "bench": 932048
       },
       "computeUnits": {
-        "accountInfo1": 647,
-        "accountInfo2": 978,
-        "accountInfo4": 1626,
-        "accountInfo8": 2922,
+        "accountInfo1": 702,
+        "accountInfo2": 1115,
+        "accountInfo4": 1921,
+        "accountInfo8": 3480,
         "accountEmptyInit1": 4716,
         "accountEmpty1": 738,
         "accountEmptyInit2": 8379,
