@@ -292,10 +292,7 @@ pub fn check_and_get_full_commit(commit: &str) -> Result<String> {
         .get(format!(
             "https://api.github.com/repos/otter-sec/anchor/commits/{commit}"
         ))
-        .header(
-            USER_AGENT,
-            "avm https://github.com/otter-sec/anchor",
-        )
+        .header(USER_AGENT, "avm https://github.com/otter-sec/anchor")
         .send()?;
 
     if response.status() != StatusCode::OK {
@@ -319,10 +316,7 @@ pub fn check_and_get_full_commit(commit: &str) -> Result<String> {
 fn fetch_raw(client: &reqwest::blocking::Client, url: &str) -> Result<Option<String>> {
     let response = client
         .get(url)
-        .header(
-            USER_AGENT,
-            "avm https://github.com/otter-sec/anchor",
-        )
+        .header(USER_AGENT, "avm https://github.com/otter-sec/anchor")
         .send()?;
     if response.status() == StatusCode::OK {
         Ok(Some(response.text()?))
@@ -690,10 +684,7 @@ fn fetch_versions_with_client(
 
     let response = client
         .get("https://api.github.com/repos/otter-sec/anchor/releases")
-        .header(
-            USER_AGENT,
-            "avm https://github.com/otter-sec/anchor",
-        )
+        .header(USER_AGENT, "avm https://github.com/otter-sec/anchor")
         .send()?;
 
     if response.status().is_success() {
