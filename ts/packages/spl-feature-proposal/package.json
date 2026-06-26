@@ -1,7 +1,7 @@
 {
   "name": "@anchor-lang/spl-feature-proposal",
   "description": "Anchor client for Solana Program Library Feature Proposal Program",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": "acheron <acheroncrypto@gmail.com>",
   "license": "Apache-2.0",
   "repository": {
@@ -27,7 +27,7 @@
     "watch": "tsc -p tsconfig.cjs.json --watch"
   },
   "dependencies": {
-    "@anchor-lang/core": "=1.1.1",
+    "@anchor-lang/core": "=1.1.2",
     "@native-to-anchor/buffer-layout": "=0.1.0"
   },
   "devDependencies": {
