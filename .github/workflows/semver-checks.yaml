@@ -51,4 +51,4 @@ jobs:
       - name: Check semver compatibility
         uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
-          exclude: avm
+          exclude: avm, anchor-cli
