@@ -16,7 +16,7 @@ exclude = ["tests/cfo/deps/openbook-dex", "tests/swap/deps/openbook-dex"]
 resolver = "2"
 
 [workspace.package]
-version = "1.1.1"
+version = "1.1.2"
 
 [workspace.metadata.docs.rs]
 all-features = true
@@ -73,21 +73,21 @@ reqwest = { version = "0.12.28", default-features = false }
 syn = "2"
 
 # Internal anchor crates
-anchor-lang = { path = "lang", version = "=1.1.1" }
-anchor-spl = { path = "spl", version = "=1.1.1" }
-anchor-client = { path = "client", version = "=1.1.1" }
-anchor-syn = { path = "lang/syn", version = "=1.1.1" }
-anchor-lang-error = { path = "lang/error", version = "=1.1.1" }
-anchor-attribute-access-control = { path = "lang/attribute/access-control", version = "=1.1.1" }
-anchor-attribute-account = { path = "lang/attribute/account", version = "=1.1.1" }
-anchor-attribute-constant = { path = "lang/attribute/constant", version = "=1.1.1" }
-anchor-attribute-error = { path = "lang/attribute/error", version = "=1.1.1" }
-anchor-attribute-event = { path = "lang/attribute/event", version = "=1.1.1" }
-anchor-attribute-program = { path = "lang/attribute/program", version = "=1.1.1" }
-anchor-derive-accounts = { path = "lang/derive/accounts", version = "=1.1.1" }
-anchor-derive-serde = { path = "lang/derive/serde", version = "=1.1.1" }
-anchor-derive-space = { path = "lang/derive/space", version = "=1.1.1" }
-anchor-cli-macros = { path = "cli/cli-macros", version = "=1.1.1" }
+anchor-lang = { path = "lang", version = "=1.1.2" }
+anchor-spl = { path = "spl", version = "=1.1.2" }
+anchor-client = { path = "client", version = "=1.1.2" }
+anchor-syn = { path = "lang/syn", version = "=1.1.2" }
+anchor-lang-error = { path = "lang/error", version = "=1.1.2" }
+anchor-attribute-access-control = { path = "lang/attribute/access-control", version = "=1.1.2" }
+anchor-attribute-account = { path = "lang/attribute/account", version = "=1.1.2" }
+anchor-attribute-constant = { path = "lang/attribute/constant", version = "=1.1.2" }
+anchor-attribute-error = { path = "lang/attribute/error", version = "=1.1.2" }
+anchor-attribute-event = { path = "lang/attribute/event", version = "=1.1.2" }
+anchor-attribute-program = { path = "lang/attribute/program", version = "=1.1.2" }
+anchor-derive-accounts = { path = "lang/derive/accounts", version = "=1.1.2" }
+anchor-derive-serde = { path = "lang/derive/serde", version = "=1.1.2" }
+anchor-derive-space = { path = "lang/derive/space", version = "=1.1.2" }
+anchor-cli-macros = { path = "cli/cli-macros", version = "=1.1.2" }
 anchor-lang-idl = { path = "idl", version = "=0.1.4" }
 anchor-lang-idl-spec = { path = "idl/spec", version = "=0.1.0" }
 

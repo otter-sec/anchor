@@ -27,7 +27,7 @@
     "watch": "tsc -p tsconfig.cjs.json --watch"
   },
   "dependencies": {
-    "@anchor-lang/core": "=1.1.1",
+    "@anchor-lang/core": "=1.1.2",
     "@native-to-anchor/buffer-layout": "=0.1.0"
   },
   "devDependencies": {

@@ -14,6 +14,14 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+### Breaking
+
+## [1.1.2] - 2026-06-26
+
+### Features
+
+### Fixes
+
 - deps: Tighten dependencies between `anchor-*` crates to reduce breakage ([#4726](https://github.com/otter-sec/anchor/pull/4726)).
 
 ### Breaking
