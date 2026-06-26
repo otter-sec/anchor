@@ -2418,7 +2418,7 @@
     }
   },
   "unreleased": {
-    "solanaVersion": "2.3.0",
+    "solanaVersion": "3.1.10",
     "result": {
       "binarySize": {
         "bench": 932992
@@ -2496,9 +2496,9 @@
         "interface4": 1308,
         "interface8": 1873,
         "program1": 899,
-        "program2": 1049,
-        "program4": 1336,
-        "program8": 1917,
+        "program2": 1035,
+        "program4": 1308,
+        "program8": 1861,
         "signer1": 888,
         "signer2": 1237,
         "signer4": 1920,
