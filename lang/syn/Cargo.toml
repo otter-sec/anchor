@@ -9,8 +9,7 @@ description = "Anchor syntax parsing and code generation tools"
 edition = "2021"
 
 [package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+workspace = true
 
 [lints.clippy]
 unwrap-used = "deny"

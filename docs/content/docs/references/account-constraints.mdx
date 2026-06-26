@@ -412,6 +412,7 @@ Description: You can access the instruction's arguments with the
 `#[instruction(..)]` attribute. You must list them in the same order as in the
 instruction handler but you can omit all arguments after the last one you need.
 Skipping arguments will result in an error.
+The attribute must appear after `#[derive(Accounts)]`.
 
 Examples:
 [Github](https://github.com/solana-developers/anchor-examples/tree/main/account-constraints/instruction)

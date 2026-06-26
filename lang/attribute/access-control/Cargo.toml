@@ -8,6 +8,9 @@ license = "Apache-2.0"
 description = "Anchor attribute macro for instruction access control"
 edition = "2021"
 
+[package.metadata.docs.rs]
+workspace = true
+
 [lib]
 proc-macro = true
 

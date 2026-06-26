@@ -8,6 +8,9 @@ license = "Apache-2.0"
 description = "Anchor attribute macro for creating constant types"
 edition = "2021"
 
+[package.metadata.docs.rs]
+workspace = true
+
 [lib]
 proc-macro = true
 
@@ -23,6 +26,6 @@ anchor-debug = ["anchor-syn/anchor-debug"]
 idl-build = ["anchor-syn/idl-build"]
 
 [dependencies]
-anchor-syn = { path = "../../syn", version = "1.0.2" }
+anchor-syn = { workspace = true }
 quote = "1"
 syn = { workspace = true, features = ["full"] }

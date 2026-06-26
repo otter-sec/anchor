@@ -8,6 +8,9 @@ license = "Apache-2.0"
 description = "Anchor Derive macro to automatically calculate the size of a structure or an enum"
 edition = "2021"
 
+[package.metadata.docs.rs]
+workspace = true
+
 [lib]
 proc-macro = true
 

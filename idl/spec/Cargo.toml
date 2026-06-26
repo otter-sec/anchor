@@ -9,8 +9,7 @@ license = "Apache-2.0"
 description = "Anchor framework IDL spec"
 
 [package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+workspace = true
 
 [dependencies]
 anyhow = "1"

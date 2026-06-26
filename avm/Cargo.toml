@@ -4,6 +4,9 @@ version.workspace = true
 publish = false
 edition = "2021"
 
+[package.metadata.docs.rs]
+workspace = true
+
 [[bin]]
 name = "avm"
 path = "src/main.rs"

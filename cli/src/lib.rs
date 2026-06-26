@@ -2201,7 +2201,20 @@ pub fn build(
 
     // Check for program ID mismatches before building (skip if --ignore-keys is used), Always skipped in anchor test
     if !ignore_keys {
-        check_program_id_mismatch(&cfg, program_name.clone())?;
+        // FIXME: Consider making this a hard error in `deploy` instead
+        if let ProgramIdComparison::Mismatch {
+            lib_name,
+            actual_id,
+            declared_id,
+        } = check_program_id_mismatch(&cfg, program_name.clone())?
+        {
+            eprintln!(
+                "Program ID mismatch detected for program '{lib_name}':\n  Keypair file has: \
+                 {actual_id}\n  Source code has:  {declared_id}\n\nPlease run 'anchor keys sync' \
+                 to update the program ID in your source code or use the '--ignore-keys' flag to \
+                 skip this check.",
+            );
+        }
     }
 
     let idl_out = match idl {
@@ -6504,9 +6517,21 @@ fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Res
     })?
 }
 
+enum ProgramIdComparison {
+    Same,
+    Mismatch {
+        lib_name: String,
+        actual_id: String,
+        declared_id: String,
+    },
+}
+
 /// Check if there's a mismatch between the program keypair and the `declare_id!` in the source code.
-/// Returns an error if a mismatch is detected, prompting the user to run `anchor keys sync`.
-fn check_program_id_mismatch(cfg: &WithPath<Config>, program_name: Option<String>) -> Result<()> {
+/// Returns `false` if there is a mismatch.
+fn check_program_id_mismatch(
+    cfg: &WithPath<Config>,
+    program_name: Option<String>,
+) -> Result<ProgramIdComparison> {
     let declare_id_regex = RegexBuilder::new(r#"^(([\w]+::)*)declare_id!\("(\w*)"\)"#)
         .multi_line(true)
         .build()
@@ -6532,20 +6557,16 @@ fn check_program_id_mismatch(cfg: &WithPath<Config>, program_name: Option<String
                 .filter(|program_id_match| program_id_match.as_str() != actual_program_id);
 
             if let Some(program_id_match) = incorrect_program_id {
-                let declared_id = program_id_match.as_str();
-                return Err(anyhow!(
-                    "Program ID mismatch detected for program '{}':\n  Keypair file has: {}\n  \
-                     Source code has:  {}\n\nPlease run 'anchor keys sync' to update the program \
-                     ID in your source code or use the '--ignore-keys' flag to skip this check.",
-                    program.lib_name,
-                    actual_program_id,
-                    declared_id
-                ));
+                return Ok(ProgramIdComparison::Mismatch {
+                    lib_name: program.lib_name,
+                    actual_id: actual_program_id,
+                    declared_id: program_id_match.as_str().to_string(),
+                });
             }
         }
     }
 
-    Ok(())
+    Ok(ProgramIdComparison::Same)
 }
 
 #[allow(clippy::too_many_arguments)]
