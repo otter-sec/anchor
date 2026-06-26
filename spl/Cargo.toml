@@ -32,7 +32,7 @@ token_2022_extensions = [
 ]
 
 [dependencies]
-anchor-lang = { path = "../lang", version = "1.1.1", features = ["derive"] }
+anchor-lang = { workspace = true, features = ["derive"] }
 borsh = { version = "1.5.7", optional = true }
 mpl-token-metadata = { version = "=5.1.2-alpha.2", optional = true }
 solana-stake-interface = { workspace = true, features = ["borsh"], optional = true }
