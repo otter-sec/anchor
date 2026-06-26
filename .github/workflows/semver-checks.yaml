@@ -4,7 +4,6 @@ on:
   pull_request:
     branches:
       - master
-      - anchor-next
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
@@ -13,7 +12,6 @@ on:
   push:
     branches:
       - master
-      - anchor-next
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
