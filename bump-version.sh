@@ -111,11 +111,8 @@ pushd tests
 yarn
 popd
 
-pushd examples
-yarn
-pushd tutorial
-yarn
-popd
+pushd examples/tutorial
+yarn install
 popd
 
 # Avoid updating the benchmarks for pre-release builds
