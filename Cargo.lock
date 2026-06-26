@@ -130,7 +130,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-access-control"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -139,7 +139,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-account"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anchor-syn",
  "proc-macro2",
@@ -149,7 +149,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-constant"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -158,7 +158,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-error"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -167,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-event"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anchor-syn",
  "proc-macro2",
@@ -177,7 +177,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-program"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anchor-lang-idl",
  "anchor-syn",
@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-cli"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anchor-client",
  "anchor-lang",
@@ -244,7 +244,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-client"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anchor-lang",
  "anyhow",
@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-accounts"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -280,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-serde"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anchor-lang",
  "anchor-syn",
@@ -292,7 +292,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-space"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -301,7 +301,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-lang"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anchor-attribute-access-control",
  "anchor-attribute-account",
@@ -365,7 +365,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-spl"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anchor-lang",
  "borsh 1.6.1",
@@ -383,7 +383,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-syn"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anyhow",
  "bs58",
@@ -663,7 +663,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "avm"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anyhow",
  "cargo_toml",
