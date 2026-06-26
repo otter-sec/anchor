@@ -16,7 +16,7 @@ build = ["dep:regex", "dep:serde_json"]
 convert = ["dep:heck", "dep:serde_json", "dep:sha2"]
 
 [dependencies]
-anchor-lang-idl-spec = { path = "./spec", version = "0.1.0" }
+anchor-lang-idl-spec = { workspace = true }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", optional = true }

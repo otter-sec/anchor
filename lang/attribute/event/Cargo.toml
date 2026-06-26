@@ -28,7 +28,7 @@ event-cpi = ["anchor-syn/event-cpi"]
 idl-build = ["anchor-syn/idl-build"]
 
 [dependencies]
-anchor-syn = { path = "../../syn", version = "1.1.1", features = ["hash"] }
+anchor-syn = { workspace = true, features = ["hash"] }
 proc-macro2 = "1"
 quote = "1"
 syn = { workspace = true, features = ["full"] }
