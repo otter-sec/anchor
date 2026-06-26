@@ -14,7 +14,7 @@ exclude = ["tests/cfo/deps/openbook-dex", "tests/swap/deps/openbook-dex"]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.2"
+version = "1.0.3"
 
 [workspace.dependencies]
 solana-account = "3.2.0"
@@ -59,19 +59,19 @@ solana-sysvar-id = "3.1.0"
 solana-transaction = "3.0.1"
 
 # Internal anchor crates
-anchor-lang = { path = "lang", version = "=1.0.2" }
-anchor-spl = { path = "spl", version = "=1.0.2" }
-anchor-client = { path = "client", version = "=1.0.2" }
-anchor-syn = { path = "lang/syn", version = "=1.0.2" }
-anchor-attribute-access-control = { path = "lang/attribute/access-control", version = "=1.0.2" }
-anchor-attribute-account = { path = "lang/attribute/account", version = "=1.0.2" }
-anchor-attribute-constant = { path = "lang/attribute/constant", version = "=1.0.2" }
-anchor-attribute-error = { path = "lang/attribute/error", version = "=1.0.2" }
-anchor-attribute-event = { path = "lang/attribute/event", version = "=1.0.2" }
-anchor-attribute-program = { path = "lang/attribute/program", version = "=1.0.2" }
-anchor-derive-accounts = { path = "lang/derive/accounts", version = "=1.0.2" }
-anchor-derive-serde = { path = "lang/derive/serde", version = "=1.0.2" }
-anchor-derive-space = { path = "lang/derive/space", version = "=1.0.2" }
+anchor-lang = { path = "lang", version = "=1.0.3" }
+anchor-spl = { path = "spl", version = "=1.0.3" }
+anchor-client = { path = "client", version = "=1.0.3" }
+anchor-syn = { path = "lang/syn", version = "=1.0.3" }
+anchor-attribute-access-control = { path = "lang/attribute/access-control", version = "=1.0.3" }
+anchor-attribute-account = { path = "lang/attribute/account", version = "=1.0.3" }
+anchor-attribute-constant = { path = "lang/attribute/constant", version = "=1.0.3" }
+anchor-attribute-error = { path = "lang/attribute/error", version = "=1.0.3" }
+anchor-attribute-event = { path = "lang/attribute/event", version = "=1.0.3" }
+anchor-attribute-program = { path = "lang/attribute/program", version = "=1.0.3" }
+anchor-derive-accounts = { path = "lang/derive/accounts", version = "=1.0.3" }
+anchor-derive-serde = { path = "lang/derive/serde", version = "=1.0.3" }
+anchor-derive-space = { path = "lang/derive/space", version = "=1.0.3" }
 anchor-lang-idl = { path = "idl", version = "=0.1.2" }
 anchor-lang-idl-spec = { path = "idl/spec", version = "=0.1.0" }
 

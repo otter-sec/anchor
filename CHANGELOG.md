@@ -16,6 +16,14 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Breaking
 
+## [1.0.3] - 2026-06-26
+
+### Features
+
+### Fixes
+
+### Breaking
+
 ## [1.0.2] - 2026-05-02
 
 ### Features
