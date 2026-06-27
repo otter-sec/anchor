@@ -23,7 +23,6 @@ use {
     dirs::home_dir,
     heck::{ToKebabCase, ToLowerCamelCase, ToPascalCase, ToSnakeCase},
     regex::{Regex, RegexBuilder},
-    rust_template::{get_security_metadata_content, AnchorVersion, ProgramTemplate, TestTemplate},
     semver::{Version, VersionReq},
     serde::Deserialize,
     serde_json::{json, Map, Value as JsonValue},
@@ -51,7 +50,7 @@ use {
         string::ToString,
         sync::{LazyLock, OnceLock},
     },
-    template::{AnchorVersion, ProgramTemplate, TestTemplate},
+    template::{get_security_metadata_content, AnchorVersion, ProgramTemplate, TestTemplate},
 };
 
 mod abs_path;

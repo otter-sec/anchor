@@ -2143,7 +2143,7 @@ pub fn get_security_metadata_content(project_name: &str) -> String {
     format!(
         r#"{{
   "name": {escaped_name},
-  "logo": "https://solana.com/src/img/branding/solanaLogoMark.png",
+  "logo": "https://solana.com/pt/src/img/branding/solanaLogoMark.png",
   "description": "A fresh Anchor program!",
   "notification": "Remember to review and publish this metadata with `anchor program deploy --security-metadata` once the contents are accurate.",
   "sdk": "https://github.com/your-sdk",
