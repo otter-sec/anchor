@@ -332,11 +332,13 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
 
             if args.contains_key(&seed_path.name) {
                 let path = seed_path.path();
+                let encoding = seed_path.encoding_tokens(&idl);
 
                 Ok(quote! {
                     #idl::IdlSeed::Arg(
                         #idl::IdlSeedArg {
                             path: #path.into(),
+                            encoding: #encoding,
                         }
                     )
                 })
@@ -395,6 +397,7 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
                         #idl::IdlSeed::Arg(
                             #idl::IdlSeedArg {
                                 path: stringify!(#ident).into(),
+                                encoding: None,
                             }
                         )
                     }
@@ -443,11 +446,65 @@ struct SeedPath {
     name: String,
     /// All path components for the subfields accessed on this seed
     subfields: Vec<String>,
+    /// Encoding applied to the value before it is used as seed bytes.
+    encoding: Option<SeedEncoding>,
+}
+
+#[derive(Clone, Copy)]
+enum SeedEncoding {
+    Utf8,
+    Be,
+}
+
+impl SeedEncoding {
+    fn from_expr(expr: &syn::Expr) -> Option<Self> {
+        // Walk down the method-call chain looking for an encoding-indicating
+        // method. We require `to_string().as_bytes()` for Utf8 (not bare
+        // `as_bytes()` which is idiomatic for string literals and byte slices
+        // and carries no non-standard encoding). `to_be_bytes()` maps to Be.
+        match expr {
+            syn::Expr::MethodCall(method) => {
+                let method_name = method.method.to_string();
+                match method_name.as_str() {
+                    "as_bytes" => {
+                        // Only Utf8 if the receiver is a `to_string()` call.
+                        match method.receiver.as_ref() {
+                            syn::Expr::MethodCall(inner)
+                                if inner.method == "to_string" =>
+                            {
+                                Some(Self::Utf8)
+                            }
+                            _ => Self::from_expr(&method.receiver),
+                        }
+                    }
+                    // `to_le_bytes()` is the default representation — no
+                    // annotation needed.
+                    "to_le_bytes" => None,
+                    "to_be_bytes" => Some(Self::Be),
+                    _ => Self::from_expr(&method.receiver),
+                }
+            }
+            syn::Expr::Reference(reference) => Self::from_expr(&reference.expr),
+            syn::Expr::Group(group) => Self::from_expr(&group.expr),
+            syn::Expr::Paren(paren) => Self::from_expr(&paren.expr),
+            _ => None,
+        }
+    }
+
+    fn to_token_stream(self, idl: &TokenStream) -> TokenStream {
+        let variant = match self {
+            Self::Utf8 => quote! { Utf8 },
+            Self::Be => quote! { Be },
+        };
+        quote! { Some(#idl::IdlSeedEncoding::#variant) }
+    }
 }
 
 impl SeedPath {
     /// Extract the seed path from a single seed expression.
     fn new(seed: &syn::Expr) -> Result<Self> {
+        let encoding = SeedEncoding::from_expr(seed);
+
         // Convert the seed into the raw string representation.
         let seed_str = seed.to_token_stream().to_string();
 
@@ -487,6 +544,7 @@ impl SeedPath {
         Ok(SeedPath {
             name,
             subfields: path,
+            encoding,
         })
     }
 
@@ -496,6 +554,12 @@ impl SeedPath {
             0 => self.name.to_owned(),
             _ => format!("{}.{}", self.name, self.subfields.join(".")),
         }
+    }
+
+    fn encoding_tokens(&self, idl: &TokenStream) -> TokenStream {
+        self.encoding
+            .map(|encoding| encoding.to_token_stream(idl))
+            .unwrap_or_else(|| quote! { None })
     }
 }
 

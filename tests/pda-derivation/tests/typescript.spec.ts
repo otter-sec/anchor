@@ -77,6 +77,36 @@ describe("typescript", () => {
     expect(actualData.toNumber()).is.equal(1337);
   });
 
+  it("Resolves non-standard seed encodings", async () => {
+    const decimal = -443520;
+    const bigEndian = -123456;
+    const bigEndianBuffer = Buffer.alloc(4);
+    bigEndianBuffer.writeInt32BE(bigEndian);
+
+    const expectedPda = PublicKey.findProgramAddressSync(
+      [Buffer.from(decimal.toString()), bigEndianBuffer],
+      program.programId
+    )[0];
+    const method = program.methods.nonStandardSeedEncodings(decimal, bigEndian);
+
+    const keys = await method.pubkeys();
+    expect(keys.pda!.equals(expectedPda)).is.true;
+
+    const instruction = program.idl.instructions.find(
+      (ix) => ix.name === "nonStandardSeedEncodings"
+    )!;
+    const pda = instruction.accounts.find((account) => account.name === "pda")!;
+    if (!("pda" in pda) || !pda.pda) {
+      throw new Error("Expected PDA metadata");
+    }
+    expect(pda.pda.seeds).to.deep.equal([
+      { kind: "arg", path: "decimal", encoding: "utf8" },
+      { kind: "arg", path: "bigEndian", encoding: "be" },
+    ]);
+
+    await method.rpc();
+  });
+
   it("should allow custom resolvers", async () => {
     let called = false;
     const customProgram = new Program<PdaDerivation>(

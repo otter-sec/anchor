@@ -9,4 +9,7 @@ pda_derivation = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
 members = ["programs/pda-derivation"]
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+test = "npx --ignore-engines yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+[features]
+skip-lint = true

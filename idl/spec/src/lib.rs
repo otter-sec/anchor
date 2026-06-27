@@ -123,6 +123,8 @@ pub struct IdlSeedConst {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct IdlSeedArg {
     pub path: String,
+    #[serde(skip_serializing_if = "is_default")]
+    pub encoding: Option<IdlSeedEncoding>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -130,6 +132,17 @@ pub struct IdlSeedAccount {
     pub path: String,
     #[serde(skip_serializing_if = "is_default")]
     pub account: Option<String>,
+}
+
+/// Explicit byte-encoding for a PDA seed derived from an instruction argument.
+/// When absent the default little-endian representation is used.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum IdlSeedEncoding {
+    /// Value is stringified and encoded as UTF-8 bytes (e.g. `val.to_string().as_bytes()`).
+    Utf8,
+    /// Value is encoded as big-endian bytes (e.g. `val.to_be_bytes()`).
+    Be,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

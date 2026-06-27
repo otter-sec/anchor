@@ -12,6 +12,7 @@ import {
   IdlSeedConst,
   IdlSeedArg,
   IdlSeedAccount,
+  IdlSeedEncoding,
   IdlTypeDefined,
   IdlDefinedFieldsNamed,
 } from "../idl.js";
@@ -423,7 +424,7 @@ export class AccountsResolver<IDL extends Idl> {
     }
 
     const type = this.getType(this._idlIx.args[index].type, path);
-    return this.toBufferValue(type, value);
+    return this.toBufferValue(type, value, seed.encoding);
   }
 
   private async toBufferAccount(
@@ -471,7 +472,28 @@ export class AccountsResolver<IDL extends Idl> {
    * Converts the given idl valaue into a Buffer. The values here must be
    * primitives, e.g. no structs.
    */
-  private toBufferValue(type: any, value: any): Buffer {
+  private toBufferValue(
+    type: any,
+    value: any,
+    encoding?: IdlSeedEncoding
+  ): Buffer {
+    if (encoding === "utf8") {
+      return Buffer.from(value.toString());
+    }
+
+    if (encoding === "be") {
+      const integerType = /^(u|i)(8|16|32|64|128|256)$/.exec(type);
+      if (!integerType) {
+        throw new Error(`Unexpected 'be' seed type: ${type}`);
+      }
+
+      const bitLength = Number(integerType[2]);
+      const integer = new BN(value);
+      const encoded =
+        integerType[1] === "i" ? integer.toTwos(bitLength) : integer;
+      return encoded.toArrayLike(Buffer, "be", bitLength / 8);
+    }
+
     switch (type) {
       case "u8":
       case "i8":

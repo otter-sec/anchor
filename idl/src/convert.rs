@@ -613,6 +613,7 @@ mod legacy {
                 }),
                 IdlSeed::Arg(seed) => Self::Arg(t::IdlSeedArg {
                     path: recase_path(&seed.path, |s| s.to_snake_case()),
+                    encoding: None,
                 }),
                 IdlSeed::Const(seed) => Self::Const(t::IdlSeedConst {
                     value: match seed.ty {

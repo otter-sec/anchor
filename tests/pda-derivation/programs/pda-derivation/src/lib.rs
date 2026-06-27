@@ -75,6 +75,14 @@ pub mod pda_derivation {
     pub fn seeds_program_arg(_ctx: Context<SeedsProgramArg>, _some_program: Pubkey) -> Result<()> {
         Ok(())
     }
+
+    pub fn non_standard_seed_encodings(
+        _ctx: Context<NonStandardSeedEncodings>,
+        _decimal: i32,
+        _big_endian: i32,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -109,6 +117,7 @@ pub struct InitMyAccount<'info> {
     base: Account<'info, BaseAccount>,
     // Intentionally using this qualified form instead of importing to test parsing
     another_base: Account<'info, crate::other::AnotherBaseAccount>,
+    /// CHECK: test seed parsing
     base2: AccountInfo<'info>,
     #[account(
         init,
@@ -136,6 +145,20 @@ pub struct InitMyAccount<'info> {
     #[account(mut)]
     payer: Signer<'info>,
     system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(decimal: i32, big_endian: i32)]
+pub struct NonStandardSeedEncodings<'info> {
+    #[account(
+        seeds = [
+            decimal.to_string().as_bytes(),
+            big_endian.to_be_bytes().as_ref(),
+        ],
+        bump,
+    )]
+    /// CHECK: The PDA is only used to test automatic account resolution.
+    pda: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]

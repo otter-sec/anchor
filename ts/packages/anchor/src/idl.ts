@@ -83,6 +83,7 @@ export type IdlSeedConst = {
 export type IdlSeedArg = {
   kind: "arg";
   path: string;
+  encoding?: IdlSeedEncoding;
 };
 
 export type IdlSeedAccount = {
@@ -90,6 +91,9 @@ export type IdlSeedAccount = {
   path: string;
   account?: string;
 };
+
+/** Explicit encoding for an argument-derived PDA seed. When absent, the default little-endian encoding is assumed. */
+export type IdlSeedEncoding = "utf8" | "be";
 
 export type IdlAccount = {
   name: string;
