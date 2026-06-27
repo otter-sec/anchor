@@ -26,6 +26,7 @@ main() {
     local basic_2_pid="Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
     local basic_4_pid="CwrqeMj2U8tFr1Rhkgwc84tpAsqbt9pTt2a4taoTADPr"
     local events_pid="2dhGsWUzy5YKUsjZdLHLmkNpUDAXkNa9MYWsPc4Ziqzy"
+    local events_caller_pid="9Cjn1bYn2naaf4JCHSSEfMGcnUsLGSdKHpYX3wc6NvwU"
     local optional_pid="FNqz6pqLAwvMSds2FYjR4nKV3moVpPNtvkfGFrqLKrgG"
 
     cd ../../tests/composite && anchor build --skip-lint --ignore-keys && cd -
@@ -52,6 +53,7 @@ main() {
         --basic-2-pid $basic_2_pid \
         --basic-4-pid $basic_4_pid \
         --events-pid $events_pid \
+        --events-caller-pid $events_caller_pid \
         --optional-pid $optional_pid
 
     #
@@ -68,6 +70,7 @@ main() {
         --basic-2-pid $basic_2_pid \
         --basic-4-pid $basic_4_pid \
         --events-pid $events_pid \
+        --events-caller-pid $events_caller_pid \
         --optional-pid $optional_pid \
         --multithreaded
 
@@ -85,6 +88,7 @@ main() {
         --basic-2-pid $basic_2_pid \
         --basic-4-pid $basic_4_pid \
         --events-pid $events_pid \
+        --events-caller-pid $events_caller_pid \
         --optional-pid $optional_pid \
         --multithreaded
 
@@ -143,6 +147,7 @@ start_surfpool() {
         --input basic_2_pid=$basic_2_pid \
         --input basic_4_pid=$basic_4_pid \
         --input events_pid=$events_pid \
+        --input events_caller_pid=$events_caller_pid \
         --input optional_pid=$optional_pid \
         >&2
 
