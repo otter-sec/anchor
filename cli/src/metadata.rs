@@ -3,12 +3,57 @@
 
 use std::{
     io,
-    path::PathBuf,
     process::{Command, ExitStatus},
 };
 
 /// Corresponds to a version of the [program-metadata JS client](https://www.npmjs.com/package/@solana-program/program-metadata).
 const PMP_CLIENT_VERSION: &str = "0.5.1";
+
+pub enum MetadataCommand {
+    Funded {
+        keypair_path: String,
+        priority_fees: Option<String>,
+        args: Vec<String>,
+    },
+    Unfunded {
+        args: Vec<String>,
+    },
+}
+
+impl MetadataCommand {
+    fn status(self, rpc_url: &str) -> io::Result<ExitStatus> {
+        let mut command = Command::new("npx");
+        // Force on first-time install
+        command.arg("--yes");
+        // Use pinned version
+        command.arg(format!(
+            "--package=@solana-program/program-metadata@{PMP_CLIENT_VERSION}"
+        ));
+        command.arg("--");
+        command.arg("program-metadata");
+        command.args(["--rpc", rpc_url]);
+        match self {
+            MetadataCommand::Funded {
+                keypair_path,
+                priority_fees,
+                args,
+            } => {
+                command.args(["--keypair", &keypair_path]);
+
+                if let Some(priority_fee) = priority_fees {
+                    command.args(["--priority-fees", &priority_fee]);
+                }
+
+                command.args(args);
+            }
+
+            MetadataCommand::Unfunded { args } => {
+                command.args(args);
+            }
+        };
+        command.status()
+    }
+}
 
 pub struct IdlCommand {
     rpc_url: String,
@@ -41,18 +86,64 @@ impl IdlCommand {
     }
 
     pub fn status(self) -> io::Result<ExitStatus> {
-        let mut command = Command::new("npx");
-        // Force on first-time install
-        command.arg("--yes");
-        // Use pinned version
-        command.arg(format!(
-            "--package=@solana-program/program-metadata@{PMP_CLIENT_VERSION}"
-        ));
-        command.arg("--");
-        command.arg("program-metadata");
-        command.args(["--rpc", &self.rpc_url]);
-        command.args(self.subcommand.args());
-        command.status()
+        let Self {
+            rpc_url,
+            subcommand,
+        } = self;
+        subcommand.into_metadata().status(&rpc_url)
+    }
+}
+
+pub enum SecurityCommand {
+    Write {
+        program_id: String,
+        security_path: String,
+        /// Program upgrade authority signs to authorize the write
+        keypair_path: String,
+        /// Fee payer for the write
+        payer: String,
+        priority_fees: Option<String>,
+    },
+}
+
+impl SecurityCommand {
+    pub fn status(self, rpc_url: &str) -> io::Result<ExitStatus> {
+        self.into_metadata().status(rpc_url)
+    }
+
+    fn into_metadata(self) -> MetadataCommand {
+        let args = self.args();
+        match self {
+            Self::Write {
+                keypair_path,
+                priority_fees,
+                ..
+            } => MetadataCommand::Funded {
+                keypair_path,
+                priority_fees,
+                args,
+            },
+        }
+    }
+
+    /// The domain-specific tail only (`write security <id> <file> --payer <payer>`)
+    fn args(&self) -> Vec<String> {
+        let parts: Vec<&str> = match self {
+            Self::Write {
+                program_id,
+                security_path,
+                payer,
+                ..
+            } => vec![
+                "write",
+                "security",
+                program_id,
+                security_path,
+                "--payer",
+                payer,
+            ],
+        };
+        parts.into_iter().map(String::from).collect()
     }
 }
 
@@ -68,14 +159,18 @@ pub enum IdlSubcommandKind {
 }
 
 impl IdlSubcommandKind {
-    fn args(&self) -> Vec<&str> {
+    fn into_metadata(self) -> MetadataCommand {
         match self {
             IdlSubcommandKind::Funded {
                 keypair_path,
                 priority_fees_str,
                 cmd,
-            } => cmd.args(keypair_path, priority_fees_str.as_deref()),
-            IdlSubcommandKind::Unfunded(cmd) => cmd.args(),
+            } => MetadataCommand::Funded {
+                keypair_path,
+                priority_fees: priority_fees_str,
+                args: cmd.args(),
+            },
+            IdlSubcommandKind::Unfunded(cmd) => MetadataCommand::Unfunded { args: cmd.args() },
         }
     }
 }
@@ -103,75 +198,49 @@ pub enum FundedIdlSubcommand {
         seed: String,
         close_buffer: bool,
     },
-
-    WriteSecurityMetadata {
-        program_id: String,
-        security_path: PathBuf,
-        payer: String,
-    },
 }
 
 impl FundedIdlSubcommand {
-    fn args<'a>(&'a self, keypair_path: &'a str, priority_fees: Option<&'a str>) -> Vec<&'a str> {
-        let mut args = vec!["--keypair", keypair_path];
-        if let Some(fees) = priority_fees {
-            args.extend(["--priority-fees", fees]);
-        }
-        match self {
+    /// The domain-specific tail only (e.g. `write idl <id> <file>`). Funding flags
+    /// (`--keypair` / `--priority-fees`) are added by `MetadataCommand::Funded`
+    fn args(&self) -> Vec<String> {
+        let parts: Vec<&str> = match self {
             FundedIdlSubcommand::Write {
                 program_id,
-                idl_filepath: filepath,
+                idl_filepath,
                 non_canonical,
             } => {
-                args.extend(["write", "idl", program_id, filepath]);
+                let mut parts = vec!["write", "idl", program_id, idl_filepath];
                 if *non_canonical {
-                    args.push("--non-canonical");
+                    parts.push("--non-canonical");
                 }
+                parts
             }
-            FundedIdlSubcommand::Close { program_id, seed } => {
-                args.extend(["close", seed, program_id]);
-            }
-            FundedIdlSubcommand::CreateBuffer { filepath } => {
-                args.extend(["create-buffer", filepath]);
-            }
+            FundedIdlSubcommand::Close { program_id, seed } => vec!["close", seed, program_id],
+            FundedIdlSubcommand::CreateBuffer { filepath } => vec!["create-buffer", filepath],
             FundedIdlSubcommand::SetBufferAuthority {
                 buffer,
                 new_authority,
-            } => {
-                args.extend([
-                    "set-buffer-authority",
-                    buffer,
-                    "--new-authority",
-                    new_authority,
-                ]);
-            }
+            } => vec![
+                "set-buffer-authority",
+                buffer,
+                "--new-authority",
+                new_authority,
+            ],
             FundedIdlSubcommand::WriteBuffer {
                 program_id,
                 buffer,
                 seed,
                 close_buffer,
             } => {
-                args.extend(["write", seed, program_id, "--buffer", buffer]);
+                let mut parts = vec!["write", seed, program_id, "--buffer", buffer];
                 if *close_buffer {
-                    args.push("--close-buffer");
+                    parts.push("--close-buffer");
                 }
+                parts
             }
-            FundedIdlSubcommand::WriteSecurityMetadata {
-                program_id,
-                security_path,
-                payer,
-            } => {
-                args.extend([
-                    "write",
-                    "security",
-                    program_id,
-                    security_path.to_str().unwrap(),
-                    "--payer",
-                    payer,
-                ]);
-            }
-        }
-        args
+        };
+        parts.into_iter().map(String::from).collect()
     }
 }
 
@@ -184,23 +253,23 @@ pub enum UnfundedIdlSubcommand {
 }
 
 impl UnfundedIdlSubcommand {
-    fn args(&self) -> Vec<&str> {
-        let mut args = vec![];
-        match self {
+    fn args(&self) -> Vec<String> {
+        let parts: Vec<&str> = match self {
             UnfundedIdlSubcommand::Fetch {
                 program_id,
                 out,
                 non_canonical,
             } => {
-                args.extend(["fetch", "idl", program_id]);
+                let mut parts = vec!["fetch", "idl", program_id];
                 if let Some(o) = out.as_ref() {
-                    args.extend(["-o", o]);
+                    parts.extend(["-o", o]);
                 }
                 if *non_canonical {
-                    args.push("--non-canonical");
+                    parts.push("--non-canonical");
                 }
+                parts
             }
-        }
-        args
+        };
+        parts.into_iter().map(String::from).collect()
     }
 }

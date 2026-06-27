@@ -1,7 +1,7 @@
 use {
     crate::{
         config::{Config, Program, WithPath},
-        metadata::{FundedIdlSubcommand, IdlCommand},
+        metadata::SecurityCommand,
         target_dir, ConfigOverride, ProgramCommand, DEFAULT_MAX_SIGN_ATTEMPTS,
     },
     anchor_lang_idl::types::Idl,
@@ -766,18 +766,20 @@ fn upload_security_metadata(
     let security_path = security_metadata_path(config)?;
     let (cluster_url, _) = crate::get_cluster_and_wallet(cfg_override)?;
 
-    let command = IdlCommand::funded(
-        cluster_url,
-        upgrade_authority_path.to_string(),
-        None, // priority fees
-        FundedIdlSubcommand::WriteSecurityMetadata {
-            program_id: program_id.to_string(),
-            security_path,
-            payer: payer_path,
-        },
-    );
+    let security_path = security_path
+        .to_str()
+        .ok_or_else(|| anyhow!("Security metadata filepath is not valid UTF-8"))?
+        .to_string();
 
-    if !command.status()?.success() {
+    let command = SecurityCommand::Write {
+        program_id: program_id.to_string(),
+        security_path,
+        keypair_path: upgrade_authority_path.to_string(),
+        payer: payer_path,
+        priority_fees: None,
+    };
+
+    if !command.status(&cluster_url)?.success() {
         bail!("Security metadata upload failed");
     }
 
