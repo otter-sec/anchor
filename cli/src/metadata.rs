@@ -12,6 +12,8 @@ const PMP_CLIENT_VERSION: &str = "0.5.1";
 pub enum MetadataCommand {
     Funded {
         keypair_path: String,
+        /// Separate fee/storage payer (`--payer`); `None` uses the keypair as payer.
+        payer: Option<String>,
         priority_fees: Option<String>,
         args: Vec<String>,
     },
@@ -35,10 +37,15 @@ impl MetadataCommand {
         match self {
             MetadataCommand::Funded {
                 keypair_path,
+                payer,
                 priority_fees,
                 args,
             } => {
                 command.args(["--keypair", &keypair_path]);
+
+                if let Some(payer) = payer {
+                    command.args(["--payer", &payer]);
+                }
 
                 if let Some(priority_fee) = priority_fees {
                     command.args(["--priority-fees", &priority_fee]);
@@ -116,32 +123,27 @@ impl SecurityCommand {
         match self {
             Self::Write {
                 keypair_path,
+                payer,
                 priority_fees,
                 ..
             } => MetadataCommand::Funded {
                 keypair_path,
+                payer: Some(payer),
                 priority_fees,
                 args,
             },
         }
     }
 
-    /// The domain-specific tail only (`write security <id> <file> --payer <payer>`)
+    /// The domain-specific tail only (`write security <id> <file>`). Funding flags
+    /// (`--keypair` / `--payer` / `--priority-fees`) are added by `MetadataCommand::Funded`.
     fn args(&self) -> Vec<String> {
         let parts: Vec<&str> = match self {
             Self::Write {
                 program_id,
                 security_path,
-                payer,
                 ..
-            } => vec![
-                "write",
-                "security",
-                program_id,
-                security_path,
-                "--payer",
-                payer,
-            ],
+            } => vec!["write", "security", program_id, security_path],
         };
         parts.into_iter().map(String::from).collect()
     }
@@ -167,6 +169,7 @@ impl IdlSubcommandKind {
                 cmd,
             } => MetadataCommand::Funded {
                 keypair_path,
+                payer: None,
                 priority_fees: priority_fees_str,
                 args: cmd.args(),
             },
