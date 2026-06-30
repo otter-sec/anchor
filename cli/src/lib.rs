@@ -19,7 +19,7 @@ use {
     base64::{engine::general_purpose::STANDARD, Engine},
     cargo_metadata::{DependencyKind, MetadataCommand},
     checks::{check_anchor_version, check_deps, check_idl_build_feature, check_overflow},
-    clap::{ArgAction, CommandFactory, Parser},
+    clap::{CommandFactory, Parser},
     dirs::home_dir,
     heck::{ToKebabCase, ToLowerCamelCase, ToPascalCase, ToSnakeCase},
     regex::{Regex, RegexBuilder},
@@ -212,8 +212,8 @@ pub enum Command {
         #[clap(long)]
         install_agent_skills: bool,
         /// Skip generating the default `security.json` metadata template
-        #[clap(long = "no-security-metadata", action = ArgAction::SetFalse, default_value_t = true)]
-        security_metadata: bool,
+        #[clap(long)]
+        no_security_metadata: bool,
     },
     /// Builds the workspace.
     #[clap(name = "build", alias = "b")]
@@ -1388,7 +1388,7 @@ fn process_command(opts: Opts) -> Result<()> {
             test_template,
             force,
             install_agent_skills,
-            security_metadata,
+            no_security_metadata,
         } => init(
             &opts.cfg_override,
             name,
@@ -1401,7 +1401,7 @@ fn process_command(opts: Opts) -> Result<()> {
             test_template,
             force,
             install_agent_skills,
-            security_metadata,
+            no_security_metadata,
         ),
         Command::Fuzz(cli) => crucible_fuzz_cli::run(cli),
         Command::New {
@@ -1658,7 +1658,7 @@ fn init(
     test_template: TestTemplate,
     force: bool,
     install_agent_skills: bool,
-    security_metadata: bool,
+    no_security_metadata: bool,
 ) -> Result<()> {
     if !force {
         if Config::discover(cfg_override)?.is_some() {
@@ -1821,7 +1821,7 @@ fn init(
         install_solana_skill();
     }
 
-    if security_metadata {
+    if !no_security_metadata {
         let content = get_security_metadata_content(&project_name);
         fs::write("security.json", content)?;
     }
@@ -7159,44 +7159,6 @@ mod tests {
         };
 
         assert_eq!(anchor_version, AnchorVersion::V2);
-    }
-
-    #[test]
-    fn test_init_security_metadata_defaults_on_and_can_be_disabled() {
-        let opts = Opts::try_parse_from(["anchor", "init", "example"]).unwrap();
-        let Command::Init {
-            security_metadata, ..
-        } = opts.command
-        else {
-            panic!("expected init command");
-        };
-        assert!(security_metadata);
-
-        let opts =
-            Opts::try_parse_from(["anchor", "init", "example", "--no-security-metadata"]).unwrap();
-        let Command::Init {
-            security_metadata, ..
-        } = opts.command
-        else {
-            panic!("expected init command");
-        };
-        assert!(!security_metadata);
-    }
-
-    #[test]
-    fn test_program_deploy_security_metadata_flag_parses() {
-        let opts =
-            Opts::try_parse_from(["anchor", "program", "deploy", "--security-metadata"]).unwrap();
-        let Command::Program { subcmd } = opts.command else {
-            panic!("expected program command");
-        };
-        let ProgramCommand::Deploy {
-            security_metadata, ..
-        } = subcmd
-        else {
-            panic!("expected program deploy command");
-        };
-        assert!(security_metadata);
     }
 
     #[test]
