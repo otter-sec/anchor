@@ -19,20 +19,25 @@ pub enum Cluster {
 impl FromStr for Cluster {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Cluster> {
-        let cluster = s.to_lowercase();
-        match cluster.as_str() {
+        match s.to_lowercase().as_str() {
             "t" | "testnet" => Ok(Cluster::Testnet),
             "m" | "mainnet" => Ok(Cluster::Mainnet),
             "d" | "devnet" => Ok(Cluster::Devnet),
             "l" | "localnet" => Ok(Cluster::Localnet),
             "g" | "debug" => Ok(Cluster::Debug),
-            _ if cluster.starts_with("http://") || cluster.starts_with("https://") => {
+            _ => {
                 let http_url = s;
 
                 // Taken from:
                 // https://github.com/solana-labs/solana/blob/aea8f0df1610248d29d8ca3bc0d60e9fabc99e31/web3.js/src/util/url.ts
 
                 let mut ws_url = Url::parse(http_url)?;
+                if !matches!(ws_url.scheme(), "http" | "https") {
+                    return Err(anyhow::Error::msg(
+                        "Cluster must be one of [localnet, testnet, mainnet, devnet] or be an \
+                         http or https url\n",
+                    ));
+                }
                 if let Some(port) = ws_url.port() {
                     let ws_port = port
                         .checked_add(1)
@@ -53,10 +58,6 @@ impl FromStr for Cluster {
 
                 Ok(Cluster::Custom(http_url.to_string(), ws_url.to_string()))
             }
-            _ => Err(anyhow::Error::msg(
-                "Cluster must be one of [localnet, testnet, mainnet, devnet] or be an http or \
-                 https url\n",
-            )),
         }
     }
 }
