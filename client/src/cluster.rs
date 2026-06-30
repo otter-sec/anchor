@@ -19,13 +19,14 @@ pub enum Cluster {
 impl FromStr for Cluster {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Cluster> {
-        match s.to_lowercase().as_str() {
+        let cluster = s.to_lowercase();
+        match cluster.as_str() {
             "t" | "testnet" => Ok(Cluster::Testnet),
             "m" | "mainnet" => Ok(Cluster::Mainnet),
             "d" | "devnet" => Ok(Cluster::Devnet),
             "l" | "localnet" => Ok(Cluster::Localnet),
             "g" | "debug" => Ok(Cluster::Debug),
-            _ if s.starts_with("http") => {
+            _ if cluster.starts_with("http://") || cluster.starts_with("https://") => {
                 let http_url = s;
 
                 // Taken from:
@@ -122,6 +123,12 @@ mod tests {
     }
 
     #[test]
+    fn test_reject_non_http_scheme_with_http_prefix() {
+        let bad_url = "httpx://my_custom_url.test.net";
+        assert!(Cluster::from_str(bad_url).is_err());
+    }
+
+    #[test]
     fn test_http_port() {
         let url = "http://my-url.com:7000/";
         let cluster = Cluster::from_str(url).unwrap();
@@ -173,6 +180,16 @@ mod tests {
         let cluster = Cluster::from_str(url).unwrap();
         assert_eq!(
             Cluster::Custom(url.to_string(), "ws://my-url.com/FooBar".to_string()),
+            cluster
+        );
+    }
+
+    #[test]
+    fn test_upper_case_scheme() {
+        let url = "HTTPS://my-url.com/";
+        let cluster = Cluster::from_str(url).unwrap();
+        assert_eq!(
+            Cluster::Custom(url.to_string(), "wss://my-url.com/".to_string()),
             cluster
         );
     }
