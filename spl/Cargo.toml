@@ -19,7 +19,12 @@ devnet = []
 governance = []
 idl-build = ["anchor-lang/idl-build"]
 memo = ["spl-memo-interface"]
-metadata = ["mpl-token-metadata", "dep:solana-sysvar"]
+metadata = [
+    "mpl-token-metadata",
+    "dep:solana-sysvar",
+    "spl-token-interface",
+    "spl-associated-token-account-interface",
+]
 mint = []
 stake = ["dep:borsh", "dep:solana-stake-interface"]
 token = ["spl-token-interface"]
