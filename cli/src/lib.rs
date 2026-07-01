@@ -5846,17 +5846,18 @@ fn wait_for_validator_ready(
     // Wait for programs to be deployed and executable
     let mut pending: Vec<Pubkey> = program_ids.to_vec();
     while !pending.is_empty() {
-        if let Ok(accounts) = client.get_multiple_accounts(&pending) {
-            pending = pending
-                .iter()
-                .zip(accounts.iter())
-                .filter(|(_, acc)| !acc.as_ref().is_some_and(|a| a.executable))
-                .map(|(pk, _)| *pk)
-                .collect();
-            if pending.is_empty() {
-                break;
-            }
-        }
+        pending = pending
+            .chunks(100)
+            .flat_map(|chunk| match client.get_multiple_accounts(chunk) {
+                Ok(accounts) => chunk
+                    .iter()
+                    .zip(accounts.iter())
+                    .filter(|(_, acc)| !acc.as_ref().is_some_and(|a| a.executable))
+                    .map(|(pk, _)| *pk)
+                    .collect::<Vec<_>>(),
+                Err(_) => chunk.to_vec(),
+            })
+            .collect();
         if start.elapsed() >= max_wait {
             return Err(anyhow!("Timeout waiting for programs to deploy"));
         }
