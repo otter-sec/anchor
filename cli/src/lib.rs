@@ -5786,7 +5786,7 @@ fn start_solana_test_validator(
     let program_ids: Vec<Pubkey> = flags
         .as_deref()
         .unwrap_or(&[])
-        .windows(3)
+        .windows(2)
         .filter_map(|w| {
             if w[0] == "--bpf-program" || w[0] == "--upgradeable-program" {
                 w[1].parse::<Pubkey>().ok()
@@ -5844,16 +5844,18 @@ fn wait_for_validator_ready(
     }
 
     // Wait for programs to be deployed and executable
-    loop {
-        match client.get_multiple_accounts(program_ids) {
-            Ok(accounts)
-                if accounts
-                    .iter()
-                    .all(|a| a.as_ref().is_some_and(|acc| acc.executable)) =>
-            {
-                break
+    let mut pending: Vec<Pubkey> = program_ids.to_vec();
+    while !pending.is_empty() {
+        if let Ok(accounts) = client.get_multiple_accounts(&pending) {
+            pending = pending
+                .iter()
+                .zip(accounts.iter())
+                .filter(|(_, acc)| !acc.as_ref().is_some_and(|a| a.executable))
+                .map(|(pk, _)| *pk)
+                .collect();
+            if pending.is_empty() {
+                break;
             }
-            _ => {}
         }
         if start.elapsed() >= max_wait {
             return Err(anyhow!("Timeout waiting for programs to deploy"));
