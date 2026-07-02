@@ -29,6 +29,7 @@ use {
         path::{Path, PathBuf},
         process::Command,
         str::FromStr,
+        sync::Once,
     },
     walkdir::WalkDir,
 };
@@ -770,6 +771,8 @@ struct _Config {
     skip_local_validator: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     clients: Option<ClientsConfig>,
+    #[serde(flatten)]
+    unused: HashMap<String, toml::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -881,6 +884,7 @@ impl fmt::Display for Config {
                     && clients.go.is_none();
                 (!empty).then(|| clients.clone())
             },
+            unused: Default::default(),
         };
 
         let cfg = toml::to_string(&cfg).expect("Must be well formed");
@@ -894,6 +898,27 @@ impl FromStr for Config {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let cfg: _Config =
             toml::from_str(s).map_err(|e| anyhow!("Unable to deserialize config: {e}"))?;
+
+        static WARN_UNUSED: Once = Once::new();
+        WARN_UNUSED.call_once(|| {
+            let s = match cfg.unused.len() {
+                0 => return,
+                1 => "",
+                _ => "s",
+            };
+            let keys = cfg.unused.keys().fold(String::new(), |mut acc, key| {
+                if !acc.is_empty() {
+                    acc.push_str(", ");
+                }
+
+                acc.push('`');
+                acc.push_str(key);
+                acc.push('`');
+                acc
+            });
+            eprintln!("Warning: Unused Anchor.toml field{s}: {keys}");
+        });
+
         Ok(Config {
             toolchain: cfg.toolchain.unwrap_or_default(),
             features: cfg.features.unwrap_or_default(),
