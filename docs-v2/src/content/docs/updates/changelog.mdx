@@ -38,7 +38,6 @@ Version 0 of Semantic Versioning is handled differently from version 1 and above
 - Skip on-curve check for program-owned PDAs (~1,000 CU saved per verify).
 - `const-rent` feature folds `Rent::get(){:rs}` to a compile-time constant (~85 CU per `create_account{:rs}`).
 - `guardrails{:rs}` feature gates runtime safety nets behind a default-on flag. Disabling drops ~300 bytes binary, ~1-2 CU per account.
-- `account-resize` feature gates `realloc_account{:rs}` and the pinocchio resize hook.
 - Lazy-cached `remaining_accounts(){:rs}`. Instructions that don't touch it pay zero cost.
 - Typed `CpiHandle{:rs}` enables `invoke_signed_unchecked{:rs}` safely. One fewer runtime check per CPI.
 - Drop `#[inline(never)]{:rs}` on cold error helpers.

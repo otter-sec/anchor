@@ -64,8 +64,6 @@ pub struct Grow {
 
 The `8` is the Anchor discriminator. The `4` is the borsh length prefix for `Vec<u8>{:rs}`.
 
-Realloc support is always compiled in — `anchor-lang-v2` enables pinocchio's `account-resize{:toml}` feature unconditionally.
-
 ## CPI re-entry
 
 `BorshAccount<T>{:rs}` holds a borrow guard. If a CPI will mutate the same account, release the borrow before the CPI and reacquire it after:
