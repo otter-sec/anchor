@@ -203,7 +203,7 @@ In this release, file system related errors also include the path of the file.
 
 ### Using legacy IDLs with `declare_program!`
 
-[`declare_program!`](https://www.anchor-lang.com/release-notes/0.30.0#dependency-free-program-declaration)
+[`declare_program!`](https://www.anchor-lang.com/docs/updates/release-notes/0-30-0#dependency-free-program-declaration)
 macro can now be used with legacy IDLs (pre Anchor v0.30).
 
 This works great as long as the program can be described correctly with the
@@ -284,7 +284,7 @@ the same as `ID`, but is declared as `const` instead of `static`.
 ### Stack usage of token extensions
 
 Stack usage of the new
-[token extensions constraints](https://www.anchor-lang.com/release-notes/0.30.0#token-extensions)
+[token extensions constraints](https://www.anchor-lang.com/docs/updates/release-notes/0-30-0#token-extensions)
 has been improved.
 
 ### Error propagation from integer conversion errors
@@ -303,7 +303,7 @@ let n: i32 = u32::MAX.try_into()?;
 crate is now re-exported from `anchor_spl::associated_token`.
 
 Similar to how you can
-[remove](https://www.anchor-lang.com/release-notes/0.29.0#export-mpl-token-metadata)
+[remove](https://www.anchor-lang.com/docs/updates/release-notes/0-29-0#export-mpl-token-metadata)
 the `mpl-token-metadata` crate from your dependency list, you can also remove
 `spl-associated-token-accounts` crate.
 
@@ -318,7 +318,7 @@ anchor-spl = "0.30.1"
 ### ATA resolution
 
 The
-[account resolution](https://www.anchor-lang.com/release-notes/0.30.0#account-resolution)
+[account resolution](https://www.anchor-lang.com/docs/updates/release-notes/0-30-0#account-resolution)
 support has been extended to support associated token accounts in this release.
 
 If you use ATAs in your instruction, you'll get a type error if you call the
