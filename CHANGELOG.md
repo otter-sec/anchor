@@ -18,6 +18,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Add `AccountLoader::new_unchecked` for constructing an `AccountLoader` without performing owner or discriminator checks ([#4162](https://github.com/solana-foundation/anchor/pull/4162)).
 - lang: Provide better error messages for `token` constraints ([#4698](https://github.com/solana-foundation/anchor/pull/4698)).
 - ts: Improve account resolution error of self-referencing PDAs ([#4711](https://github.com/solana-foundation/anchor/pull/4711)).
+- cli: Warn unused `Anchor.toml` fields ([#4749](https://github.com/solana-foundation/anchor/pull/4749)).
 
 ### Fixes
 
