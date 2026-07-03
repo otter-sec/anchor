@@ -70,7 +70,7 @@ The remaining helpers re-expose v1 names so existing call sites compile without 
 
 ## `testing{:toml}` (off)
 
-The `testing{:toml}` feature exposes the `anchor_lang_v2::testing{:rs}` module, which provides stack-backed mock pinocchio types (such as `AccountView{:rs}` and the SBF input buffer) that the `lang-v2/tests/{:dir}` integration tests and Miri witnesses depend on. Enabling `testing{:toml}` also turns on `const-rent{:toml}` so host-side tests can exercise rent-dependent helpers without needing SVM sysvar support:
+The `testing{:toml}` feature exposes the `anchor_lang_v2::testing{:rs}` module, which provides stack-backed mock pinocchio types (such as `AccountView{:rs}` and the SBF input buffer) that the `lang-v2/tests/{:dir}` integration tests and Miri witnesses depend on. Enabling `testing{:toml}` also turns on `const-rent{:toml}` (so host-side tests can exercise rent-dependent helpers without needing SVM sysvar support) and `compat{:toml}` (so tests can cover the v1-style raw remaining-account shims):
 
 ```console showLineNumbers=false
 $ <blue>cargo</blue> test <dim>-p</dim> anchor-lang-v2 <dim>--features</dim> testing
