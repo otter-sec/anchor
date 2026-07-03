@@ -112,10 +112,6 @@ callee::cpi::set_data(cpi_ctx, value)?;
 
 The generated CPI account structs contain one `CpiHandle<'a>{:rs}` per account and implement `ToCpiAccounts<'a>{:rs}`. Wrapper functions pack instruction args and call `CpiContext::invoke{:rs}`.
 
-<Callout variant="note" title="Current caveat">
-  Generated CPI account wrappers currently skip accounts structs that contain `Option<_>{:rs}` or `Nested<_>{:rs}`. Those shapes need extra flattening and fallback logic. Runtime validation still supports them. This caveat is only about generated CPI wrappers.
-</Callout>
-
 ## PDA signer seeds
 
 A program can sign a CPI for a PDA derived from its own program ID. Program-owned vaults, authorities, and other accounts with no private key rely on this.
