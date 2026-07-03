@@ -312,7 +312,7 @@ fn test_set_clock() {
     let msg = Message::new_with_blockhash(&ixs, Some(&payer_address), &blockhash);
     let versioned_msg = VersionedMessage::Legacy(msg);
     let tx = VersionedTransaction::try_new(versioned_msg, &[&payer]).unwrap();
-    // set the time to January 1st 2000
+    // set the time to January 1st 2025
     let mut initial_clock = svm.get_sysvar::<Clock>();
     initial_clock.unix_timestamp = 1735689600;
     svm.set_sysvar::<Clock>(&initial_clock);
@@ -360,7 +360,7 @@ test('clock', () => {
   tx.recentBlockhash = blockhash
   tx.add(...ixs)
   tx.sign(payer)
-  // set the time to January 1st 2000
+  // set the time to January 1st 2025
   const initialClock = svm.getClock()
   initialClock.unixTimestamp = 1735689600n
   svm.setClock(initialClock)
@@ -419,7 +419,7 @@ def test_set_clock() -> None:
     ixs = [Instruction(program_id=program_id, data=b"", accounts=[])]
     msg = Message.new_with_blockhash(ixs, payer.pubkey(), blockhash)
     tx = VersionedTransaction(msg, [payer])
-    # set the time to January 1st 2000
+    # set the time to January 1st 2025
     initial_clock = client.get_clock()
     initial_clock.unix_timestamp = 1735689600
     client.set_clock(initial_clock)
