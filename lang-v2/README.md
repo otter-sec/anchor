@@ -9,7 +9,7 @@ v2 is a drop-in speedup for Anchor v1, but up to **94% smaller** and **3× faste
 **And most importantly, v2 is secure by default for users.** Safer APIs steer you away from common v1 footguns, promoting whole classes of runtime bugs into compile errors. [Fuzzing](https://github.com/asymmetric-research/crucible-harnesses), static analysis, and formal verification are builtin with first-class support.
 
 > [!WARNING]
-> **Alpha.** Not audited, not on crates.io. APIs may break between commits. Depend via git on the [`anchor-next`](https://github.com/solana-foundation/anchor/tree/anchor-next) branch.
+> **Alpha.** Not audited, not on crates.io. APIs may break between commits. Depend via git on the [`anchor-next`](https://github.com/otter-sec/anchor/tree/anchor-next) branch.
 
 ## Examples
 
@@ -26,7 +26,7 @@ Worked programs live under [`bench/programs/`](../bench/programs/), paired with 
 ## Getting started
 
 ```bash
-$ cargo install --git https://github.com/solana-foundation/anchor.git --branch anchor-next anchor-cli --force
+$ cargo install --git https://github.com/otter-sec/anchor.git --branch anchor-next anchor-cli --force
 $ anchor init --no-install counter && cd counter
 $ anchor build && anchor test
 $ anchor debugger                    # optional: step through the SBF trace in a TUI
@@ -39,7 +39,7 @@ $ anchor debugger                    # optional: step through the SBF trace in a
 > On macOS you may hit `ld: could not parse bitcode object file … Unknown attribute kind` during the final link. Turn LTO off for the install:
 >
 > ```bash
-> $ CARGO_PROFILE_RELEASE_LTO=off cargo install --git https://github.com/solana-foundation/anchor.git --branch anchor-next anchor-cli --force
+> $ CARGO_PROFILE_RELEASE_LTO=off cargo install --git https://github.com/otter-sec/anchor.git --branch anchor-next anchor-cli --force
 > ```
 
 ### Building from source
@@ -47,7 +47,7 @@ $ anchor debugger                    # optional: step through the SBF trace in a
 Same codebase, but built from a local checkout — useful if you want to tweak v2 internals or try `anchor debugger` on one of the bench programs without leaving the repo:
 
 ```bash
-$ git clone https://github.com/solana-foundation/anchor.git && cd anchor && git checkout anchor-next
+$ git clone https://github.com/otter-sec/anchor.git && cd anchor && git checkout anchor-next
 $ cargo install --path cli --force   # prepend `CARGO_PROFILE_RELEASE_LTO=off` on macOS
 $ cd bench/programs/prop-amm/anchor-v2   # or: vault, multisig, nested, helloworld
 $ anchor debugger
@@ -162,4 +162,4 @@ impl AnchorAccount for DynamicAccount<Post> {
 
 ## Contributing
 
-File issues at [solana-foundation/anchor](https://github.com/solana-foundation/anchor/issues), tagged with `v2` where applicable. Working branch: `anchor-next`. See the top-level [CONTRIBUTING.md](../CONTRIBUTING.md).
+File issues at [otter-sec/anchor](https://github.com/otter-sec/anchor/issues), tagged with `v2` where applicable. Working branch: `anchor-next`. See the top-level [CONTRIBUTING.md](../CONTRIBUTING.md).

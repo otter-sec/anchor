@@ -281,7 +281,7 @@ bytemuck = "1"
         Some(TestTemplate::Litesvm) => {
             r#"
 [dev-dependencies]
-anchor-v2-testing = { git = "https://github.com/solana-foundation/anchor.git", branch = "anchor-next" }
+anchor-v2-testing = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }
 "#
         }
         _ => "",
@@ -309,7 +309,7 @@ idl-build = []
 
 [dependencies]
 # Once anchor-lang-v2 is published to crates.io, swap to: anchor-lang-v2 = "{3}"
-anchor-lang-v2 = {{ git = "https://github.com/solana-foundation/anchor.git", branch = "anchor-next" }}
+anchor-lang-v2 = {{ git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }}
 solana-program-log = {{ version = "1.1", features = ["macro"] }}
 wincode = {{ version = "0.5", features = ["derive"] }}
 {4}
@@ -898,7 +898,7 @@ rust-version = "{ANCHOR_MSRV}"
 
 [dependencies]
 # Once anchor-client v2 is published to crates.io, swap to: anchor-client = "{VERSION}"
-anchor-client = {{ git = "https://github.com/solana-foundation/anchor.git", branch = "anchor-next" }}
+anchor-client = {{ git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }}
 {name} = {{ version = "0.1.0", path = "../programs/{name}" }}
 solana-keypair = "3.0.0"
 solana-pubkey = "3.0.0"
