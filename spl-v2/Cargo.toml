@@ -2,6 +2,7 @@
 name = "anchor-spl-v2"
 version.workspace = true
 edition = "2021"
+repository = "https://github.com/otter-sec/anchor"
 description = "Anchor v2 SPL account types and constraint markers"
 license = "Apache-2.0"
 
