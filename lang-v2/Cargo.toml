@@ -38,7 +38,7 @@ const-rent = []
 testing = ["const-rent", "compat"]
 
 [dependencies]
-anchor-derive-accounts-v2 = { path = "./derive", version = "2.0.0" }
+anchor-derive-accounts-v2 = { workspace = true }
 # "copy" makes AccountView Copy — saves 2 CU per account (avoids memcpy on access).
 # "account-resize" lets AccountView::resize enforce MAX_PERMITTED_DATA_INCREASE.
 pinocchio = { workspace = true, features = ["copy", "account-resize"] }

@@ -16,7 +16,7 @@ guardrails = []
 metadata = ["dep:mpl-token-metadata"]
 
 [dependencies]
-anchor-lang-v2 = { path = "../lang-v2", version = "2.0.0" }
+anchor-lang-v2 = { workspace = true }
 pinocchio = { workspace = true }
 pinocchio-token = "0.6"
 pinocchio-token-2022 = "0.3"
@@ -33,7 +33,7 @@ spl-token-metadata-interface = "0.8"
 mpl-token-metadata = { version = "=5.1.2-alpha.2", optional = true }
 
 [dev-dependencies]
-anchor-lang-v2 = { path = "../lang-v2", version = "2.0.0", features = ["testing"] }
+anchor-lang-v2 = { workspace = true, features = ["testing"] }
 borsh = "1.6.1"
 # Cross-checks `Mint` / `TokenAccount` layout against the canonical
 # `spl-token-interface` types (see `tests/miri_spl_pod.rs`). Dev-only.

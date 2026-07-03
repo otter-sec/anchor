@@ -115,6 +115,14 @@ solana-transaction = "3.0.1"
 # Non solana crates
 cargo_toml = "0.22.3"
 
+# Internal anchor crates
+anchor-lang-v2 = { path = "lang-v2", version = "=2.0.0" }
+anchor-derive-accounts-v2 = { path = "lang-v2/derive", version = "=2.0.0" }
+anchor-lang = { path = "lang", version = "=2.0.0" }
+anchor-client = { path = "client", version = "=2.0.0" }
+anchor-cli-macros = { path = "cli/cli-macros", version = "=2.0.0" }
+anchor-lang-idl = { path = "idl", version = "=0.1.2" }
+
 [profile.release]
 lto = true
 
