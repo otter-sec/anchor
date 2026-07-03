@@ -53,6 +53,7 @@ Import the mint and token account wrappers together:
 use {
     anchor_lang_v2::prelude::*,
     anchor_spl_v2::{
+        associated_token::AssociatedToken,
         mint::Mint,
         token::{self, TokenAccount},
     },
@@ -181,7 +182,10 @@ Later CPI calls can transfer or burn from the token account by signing with the 
 `Account<TokenAccount>{:rs}` accepts legacy Token Program accounts with the exact 165-byte base layout. Use `InterfaceAccount<TokenAccount>{:rs}` when a read or validation path should accept Token-2022 accounts with TLV extension data after the base state:
 
 ```rust showLineNumbers=false
-use anchor_spl_v2::token_interface::InterfaceAccount;
+use {
+    anchor_lang_v2::prelude::*,
+    anchor_spl_v2::token_interface::{Mint, TokenAccount},
+};
 
 #[derive(Accounts)]
 pub struct UseEitherTokenProgram {

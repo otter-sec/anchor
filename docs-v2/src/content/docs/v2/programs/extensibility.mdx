@@ -20,6 +20,7 @@ Implementing `AnchorAccount{:rs}` on a wrapper type is what makes it usable as a
 
 ```rust title="my_wrapper.rs" showLineNumbers=false
 use anchor_lang_v2::prelude::*;
+use anchor_lang_v2::bytemuck::Pod;
 use core::ops::Deref;
 
 pub struct MyWrapper<T: Pod> {

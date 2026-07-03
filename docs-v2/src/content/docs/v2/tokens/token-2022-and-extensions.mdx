@@ -23,11 +23,7 @@ Use `InterfaceAccount<Mint>{:rs}` or `InterfaceAccount<TokenAccount>{:rs}` when 
 ```rust showLineNumbers=false
 use {
     anchor_lang_v2::prelude::*,
-    anchor_spl_v2::{
-        mint::Mint,
-        token::TokenAccount,
-        token_interface::InterfaceAccount,
-    },
+    anchor_spl_v2::token_interface::{Mint, TokenAccount},
 };
 
 #[derive(Accounts)]
