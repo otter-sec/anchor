@@ -8,10 +8,10 @@
   </p>
 
   <p>
-    <a href="https://github.com/solana-foundation/anchor/actions"><img alt="Build Status" src="https://github.com/solana-foundation/anchor/actions/workflows/tests.yaml/badge.svg" /></a>
+    <a href="https://github.com/otter-sec/anchor/actions"><img alt="Build Status" src="https://github.com/otter-sec/anchor/actions/workflows/tests.yaml/badge.svg" /></a>
     <a href="https://anchor-lang.com"><img alt="Tutorials" src="https://img.shields.io/badge/docs-tutorials-blueviolet" /></a>
     <a href="https://discord.gg/NHHGSXAnXk"><img alt="Discord Chat" src="https://img.shields.io/discord/889577356681945098?color=blueviolet" /></a>
-    <a href="https://opensource.org/licenses/Apache-2.0"><img alt="License" src="https://img.shields.io/github/license/solana-foundation/anchor?color=blueviolet" /></a>
+    <a href="https://opensource.org/licenses/Apache-2.0"><img alt="License" src="https://img.shields.io/github/license/otter-sec/anchor?color=blueviolet" /></a>
   </p>
 </div>
 
@@ -23,7 +23,7 @@
 
 ## Getting started
 
-See the [Anchor book](https://book.anchor-lang.com), the [docs site](https://anchor-lang.com), and the [examples](https://github.com/solana-foundation/anchor/tree/master/examples). Rust API on [docs.rs](https://docs.rs/anchor-lang), TypeScript API in the [typedoc](https://www.anchor-lang.com/docs/clients/typescript).
+See the [Anchor book](https://book.anchor-lang.com), the [docs site](https://anchor-lang.com), and the [examples](https://github.com/otter-sec/anchor/tree/master/examples). Rust API on [docs.rs](https://docs.rs/anchor-lang), TypeScript API in the [typedoc](https://www.anchor-lang.com/docs/clients/typescript).
 
 ## Packages
 
@@ -32,7 +32,7 @@ See the [Anchor book](https://book.anchor-lang.com), the [docs site](https://anc
 | `anchor-lang`           | Rust primitives for writing programs on Solana           | [![Crates.io](https://img.shields.io/crates/v/anchor-lang?color=blue)](https://crates.io/crates/anchor-lang)                     | [![Docs.rs](https://docs.rs/anchor-lang/badge.svg)](https://docs.rs/anchor-lang)                                |
 | `anchor-spl`            | CPI clients for SPL programs on Solana                   | [![crates](https://img.shields.io/crates/v/anchor-spl?color=blue)](https://crates.io/crates/anchor-spl)                          | [![Docs.rs](https://docs.rs/anchor-spl/badge.svg)](https://docs.rs/anchor-spl)                                  |
 | `anchor-client`         | Rust client for Anchor programs                          | [![crates](https://img.shields.io/crates/v/anchor-client?color=blue)](https://crates.io/crates/anchor-client)                    | [![Docs.rs](https://docs.rs/anchor-client/badge.svg)](https://docs.rs/anchor-client)                            |
-| `@anchor-lang/core`     | TypeScript client for Anchor programs                    | [![npm](https://img.shields.io/npm/v/@anchor-lang/core.svg?color=blue)](https://www.npmjs.com/package/@anchor-lang/core)         | [![Docs](https://img.shields.io/badge/docs-typedoc-blue)](https://solana-foundation.github.io/anchor/ts/index.html)     |
+| `@anchor-lang/core`     | TypeScript client for Anchor programs                    | [![npm](https://img.shields.io/npm/v/@anchor-lang/core.svg?color=blue)](https://www.npmjs.com/package/@anchor-lang/core)         | [![Docs](https://img.shields.io/badge/docs-typedoc-blue)](https://otter-sec.github.io/anchor/ts/index.html)     |
 | `@anchor-lang/cli`      | CLI for building and managing an Anchor workspace        | [![npm](https://img.shields.io/npm/v/@anchor-lang/cli.svg?color=blue)](https://www.npmjs.com/package/@anchor-lang/cli)           | [![Docs](https://img.shields.io/badge/docs-typedoc-blue)](https://www.anchor-lang.com/docs/references/cli)      |
 
 ## Notes
@@ -46,7 +46,7 @@ Anchor is licensed under [Apache 2.0](./LICENSE). Contributions are accepted und
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for contribution guidelines.
 
 <div align="center">
-  <a href="https://github.com/solana-foundation/anchor/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=solana-foundation/anchor" width="100%" />
+  <a href="https://github.com/otter-sec/anchor/graphs/contributors">
+    <img src="https://contrib.rocks/image?repo=otter-sec/anchor" width="100%" />
   </a>
 </div>
