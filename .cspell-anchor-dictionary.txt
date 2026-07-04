@@ -8,6 +8,7 @@ arrayref
 autoload
 backpackapp
 behaviour
+bitcode
 blockhash
 Blockhash
 borsh
@@ -46,6 +47,7 @@ litesvm
 localnet
 Localnet
 localnetwork
+memcpy
 metas
 Metas
 millis
@@ -55,6 +57,8 @@ namespacing
 nonblocking
 openbook
 orderbooks
+osec
+otter-sec
 pathlib
 pdas
 pdksh
@@ -64,6 +68,8 @@ programdata
 projectserum
 pubkeys
 publickey
+Quicknode
+realizor
 reallocs
 repr
 reqwest
@@ -91,9 +97,16 @@ syscalls
 sysvar
 Sysvar
 sysvars
+timelock
+toolsuite
+unbonding
 underyling
 unsized
 Unsized
+unstaked
+unstakes
+unstaking
 unverify
+Wincode
 Zeroable
 Znext
