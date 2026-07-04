@@ -118,7 +118,7 @@ jobs:
           patch_block() {
             cat <<EOF >> "$1"
 
-          [patch."https://github.com/solana-foundation/anchor.git"]
+          [patch."https://github.com/otter-sec/anchor.git"]
           anchor-lang-v2 = { path = "$REPO/lang-v2" }
           anchor-derive-accounts-v2 = { path = "$REPO/lang-v2/derive" }
           anchor-client = { path = "$REPO/client" }
@@ -218,7 +218,7 @@ jobs:
         run: |
           cat <<EOF >> /tmp/my_program/Cargo.toml
 
-          [patch."https://github.com/solana-foundation/anchor.git"]
+          [patch."https://github.com/otter-sec/anchor.git"]
           anchor-lang-v2 = { path = "$REPO/lang-v2" }
           anchor-derive-accounts-v2 = { path = "$REPO/lang-v2/derive" }
           anchor-client = { path = "$REPO/client" }
