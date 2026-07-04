@@ -10,7 +10,7 @@ runs:
         path: /usr/local/bin/surfpool
         # TODO: currently this value is only used to invalidate the cache and install latest, it is not
         # actually installing the specified version.
-        # Issue: https://github.com/solana-foundation/anchor/issues/4160
+        # Issue: https://github.com/otter-sec/anchor/issues/4160
         key: surfpool-${{ runner.os }}-v${{ env.SURFPOOL_CLI_VERSION }}
 
     - uses: nick-fields/retry@v2
@@ -28,6 +28,3 @@ runs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           echo "$PATH"
           ls -al $HOME/.local/bin
-
-    
-
