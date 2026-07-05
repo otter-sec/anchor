@@ -19,7 +19,7 @@ use {
     solana_pubkey::Pubkey,
     solana_signer::Signer,
     std::{
-        collections::{BTreeMap, HashMap},
+        collections::{BTreeMap, BTreeSet, HashMap},
         convert::TryFrom,
         fmt,
         fs::{self, File},
@@ -29,7 +29,6 @@ use {
         path::{Path, PathBuf},
         process::Command,
         str::FromStr,
-        sync::Once,
     },
     walkdir::WalkDir,
 };
@@ -719,10 +718,31 @@ impl Config {
         Ok(None)
     }
 
-    fn from_path(p: impl AsRef<Path>) -> Result<Self> {
-        fs::read_to_string(&p)
-            .with_context(|| format!("Error reading the file with path: {}", p.as_ref().display()))?
-            .parse::<Self>()
+    fn from_path(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let cfg = fs::read_to_string(path)
+            .with_context(|| format!("Error reading configuration file: {path:?}"))?;
+
+        let mut unused = BTreeSet::new();
+        let de = toml::Deserializer::new(&cfg);
+        let cfg: _Config = serde_ignored::deserialize(de, |path| {
+            unused.insert(path.to_string());
+        })?;
+
+        if let Some(paths) = unused.into_iter().reduce(|mut acc, path| {
+            if !acc.is_empty() {
+                acc.push_str(", ");
+            }
+
+            acc.push('`');
+            acc.push_str(&path);
+            acc.push('`');
+            acc
+        }) {
+            eprintln!("Warning: Unused Anchor.toml field(s): {paths}");
+        }
+
+        Self::try_from(cfg)
     }
 
     pub fn wallet_kp(&self) -> Result<Keypair> {
@@ -771,8 +791,6 @@ struct _Config {
     skip_local_validator: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     clients: Option<ClientsConfig>,
-    #[serde(flatten)]
-    unused: HashMap<String, toml::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -884,7 +902,6 @@ impl fmt::Display for Config {
                     && clients.go.is_none();
                 (!empty).then(|| clients.clone())
             },
-            unused: Default::default(),
         };
 
         let cfg = toml::to_string(&cfg).expect("Must be well formed");
@@ -892,33 +909,10 @@ impl fmt::Display for Config {
     }
 }
 
-impl FromStr for Config {
-    type Err = Error;
+impl TryFrom<_Config> for Config {
+    type Error = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let cfg: _Config =
-            toml::from_str(s).map_err(|e| anyhow!("Unable to deserialize config: {e}"))?;
-
-        static WARN_UNUSED: Once = Once::new();
-        WARN_UNUSED.call_once(|| {
-            let s = match cfg.unused.len() {
-                0 => return,
-                1 => "",
-                _ => "s",
-            };
-            let keys = cfg.unused.keys().fold(String::new(), |mut acc, key| {
-                if !acc.is_empty() {
-                    acc.push_str(", ");
-                }
-
-                acc.push('`');
-                acc.push_str(key);
-                acc.push('`');
-                acc
-            });
-            eprintln!("Warning: Unused Anchor.toml field{s}: {keys}");
-        });
-
+    fn try_from(cfg: _Config) -> std::result::Result<Self, Self::Error> {
         Ok(Config {
             toolchain: cfg.toolchain.unwrap_or_default(),
             features: cfg.features.unwrap_or_default(),
@@ -937,6 +931,16 @@ impl FromStr for Config {
             skip_local_validator: cfg.skip_local_validator,
             clients: cfg.clients.unwrap_or_default(),
         })
+    }
+}
+
+impl FromStr for Config {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        toml::from_str::<_Config>(s)
+            .map_err(|e| anyhow!("Unable to deserialize config: {e}"))
+            .map(TryInto::<Self>::try_into)?
     }
 }
 
