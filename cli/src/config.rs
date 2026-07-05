@@ -940,7 +940,7 @@ impl FromStr for Config {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         toml::from_str::<_Config>(s)
             .map_err(|e| anyhow!("Unable to deserialize config: {e}"))
-            .map(TryInto::<Self>::try_into)?
+            .map(TryFrom::try_from)?
     }
 }
 
