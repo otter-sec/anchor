@@ -48,11 +48,11 @@ export class BorshAccountsCoder<A extends string = string>
   }
 
   public async encode<T = any>(accountName: A, account: T): Promise<Buffer> {
-    const buffer = Buffer.alloc(1000); // TODO: use a tighter buffer.
     const layout = this.accountLayouts.get(accountName);
     if (!layout) {
       throw new Error(`Unknown account: ${accountName}`);
     }
+    const buffer = Buffer.alloc(layout.layout.span > 0 ? layout.layout.span : 1000);
     const len = layout.layout.encode(account, buffer);
     const accountData = buffer.slice(0, len);
     const discriminator = this.accountDiscriminator(accountName);

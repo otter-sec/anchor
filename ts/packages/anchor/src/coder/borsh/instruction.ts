@@ -48,11 +48,11 @@ export class BorshInstructionCoder implements InstructionCoder {
    * Encodes a program instruction.
    */
   public encode(ixName: string, ix: any): Buffer {
-    const buffer = Buffer.alloc(1000); // TODO: use a tighter buffer.
     const encoder = this.ixLayouts.get(ixName);
     if (!encoder) {
       throw new Error(`Unknown method: ${ixName}`);
     }
+    const buffer = Buffer.alloc(encoder.layout.span > 0 ? encoder.layout.span : 1000);
 
     // Validate arg shape so silent zero-encoding of typos / wrong-shape
     // payloads can't slip through. The borsh struct encoder happily writes

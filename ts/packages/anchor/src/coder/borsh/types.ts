@@ -30,11 +30,11 @@ export class BorshTypesCoder<N extends string = string> implements TypesCoder {
   }
 
   public encode<T = any>(name: N, type: T): Buffer {
-    const buffer = Buffer.alloc(1000); // TODO: use a tighter buffer.
     const layout = this.typeLayouts.get(name);
     if (!layout) {
       throw new Error(`Unknown type: ${name}`);
     }
+    const buffer = Buffer.alloc(layout.span > 0 ? layout.span : 1000);
     const len = layout.encode(type, buffer);
 
     return buffer.slice(0, len);
