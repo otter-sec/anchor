@@ -29,6 +29,7 @@ use {
         path::{Path, PathBuf},
         process::Command,
         str::FromStr,
+        sync::{LazyLock, Mutex},
     },
     walkdir::WalkDir,
 };
@@ -728,6 +729,17 @@ impl Config {
         let cfg: _Config = serde_ignored::deserialize(de, |path| {
             unused.insert(path.to_string());
         })?;
+
+        // File path -> unused field paths
+        static CACHE: LazyLock<Mutex<HashMap<PathBuf, BTreeSet<String>>>> =
+            LazyLock::new(|| Default::default());
+        let mut cache = CACHE
+            .lock()
+            .map_err(|e| anyhow!("Failed to acquire the cache lock ({path:?}): {e}"))?;
+        match cache.get(path) {
+            Some(cached_unused) if *cached_unused == unused => return Self::try_from(cfg),
+            _ => cache.insert(path.to_path_buf(), unused.clone()),
+        };
 
         if let Some(paths) = unused.into_iter().reduce(|mut acc, path| {
             if !acc.is_empty() {
