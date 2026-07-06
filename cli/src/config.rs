@@ -732,7 +732,7 @@ impl Config {
 
         // File path -> unused field paths
         static CACHE: LazyLock<Mutex<HashMap<PathBuf, BTreeSet<String>>>> =
-            LazyLock::new(|| Default::default());
+            LazyLock::new(Default::default);
         let mut cache = CACHE
             .lock()
             .map_err(|e| anyhow!("Failed to acquire the cache lock ({path:?}): {e}"))?;
