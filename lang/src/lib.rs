@@ -971,3 +971,22 @@ macro_rules! source {
         }
     };
 }
+
+/// Helper macro for conditional compilation of debug code in anchor macros.
+#[cfg(feature = "anchor-debug")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! anchor_debug {
+    ($($arg:tt)*) => {
+        $($arg)*
+    };
+}
+
+/// Helper macro for conditional compilation of debug code in anchor macros.
+#[cfg(not(feature = "anchor-debug"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! anchor_debug {
+    ($($arg:tt)*) => {};
+}
+

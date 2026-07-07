@@ -54,9 +54,8 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
             accounts: &'info [AccountInfo<'info>],
             data: &'info [u8]
         ) -> anchor_lang::Result<()> {
-            #[cfg(feature = "anchor-debug")]
-            {
-                msg!("anchor-debug is active");
+            anchor_lang::anchor_debug! {
+                anchor_lang::solana_program::log::msg!("anchor-debug is active");
             }
             if *program_id != ID {
                 return Err(anchor_lang::error::ErrorCode::DeclaredProgramIdMismatch.into());
