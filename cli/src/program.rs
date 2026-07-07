@@ -294,20 +294,25 @@ fn close_buffer_for_resize(
     Ok(())
 }
 
+fn find_nearest_manifest_path(start_dir: &Path) -> Option<PathBuf> {
+    start_dir
+        .ancestors()
+        .map(|path| path.join("Cargo.toml"))
+        .find(|manifest_path| manifest_path.is_file())
+}
+
 fn discover_cargo_metadata(start_dir: &Path) -> Result<Option<Metadata>> {
+    let Some(manifest_path) = find_nearest_manifest_path(start_dir) else {
+        return Ok(None);
+    };
+
     match MetadataCommand::new()
-        .current_dir(start_dir)
+        .manifest_path(manifest_path)
         .no_deps()
         .exec()
     {
         Ok(metadata) => Ok(Some(metadata)),
-        Err(cargo_metadata::Error::CargoMetadata { stderr }) => {
-            if stderr.contains("could not find `Cargo.toml`") {
-                Ok(None)
-            } else {
-                bail!(stderr);
-            }
-        }
+        Err(cargo_metadata::Error::CargoMetadata { stderr }) => bail!(stderr),
         Err(err) => Err(err.into()),
     }
 }
@@ -2783,6 +2788,20 @@ resolver = "2"
         );
         create_program(&root.join("programs").join("foo"), "foo");
         create_program(&root.join("programs").join("bar"), "bar");
+    }
+
+    #[test]
+    fn find_nearest_manifest_path_finds_closest_cargo_toml() {
+        let dir = tempdir().unwrap();
+        create_workspace(dir.path());
+
+        let program_dir = dir.path().join("programs").join("foo");
+        let nested_dir = program_dir.join("src");
+
+        assert_eq!(
+            find_nearest_manifest_path(&nested_dir),
+            Some(program_dir.join("Cargo.toml"))
+        );
     }
 
     #[test]
