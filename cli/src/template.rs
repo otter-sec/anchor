@@ -18,7 +18,7 @@ use {
     },
 };
 
-const ANCHOR_MSRV: &str = "1.89.0";
+const ANCHOR_MSRV: &str = "1.84.0";
 const ANCHOR_V2_TEMPLATE_VERSION: &str = "2.0.0";
 
 /// Anchor template version to generate.
@@ -52,6 +52,7 @@ pub fn create_program(
     let lib_rs_path = program_path.join("src").join("lib.rs");
     let common_files = vec![
         ("Cargo.toml".into(), workspace_manifest()),
+        (".cargo/config.toml".into(), cargo_config()),
         ("rust-toolchain.toml".into(), rust_toolchain_toml()),
         (
             program_path.join("Cargo.toml"),
@@ -547,6 +548,14 @@ pub struct Counter {
             .into(),
         ),
     ]
+}
+
+/// Cargo config enabling MSRV-aware dependency resolution.
+fn cargo_config() -> String {
+    r#"[resolver]
+incompatible-rust-versions = "fallback"
+"#
+    .into()
 }
 
 fn workspace_manifest() -> String {
