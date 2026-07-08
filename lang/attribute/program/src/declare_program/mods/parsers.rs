@@ -24,16 +24,19 @@ pub fn gen_parsers_mod(idl: &Idl) -> proc_macro2::TokenStream {
 }
 
 fn gen_account(idl: &Idl) -> proc_macro2::TokenStream {
+    // Account types are referenced by explicit path, never bare: an IDL
+    // account named like a prelude item (e.g. `Key`) must not be resolved
+    // through the prelude glob that is in scope here.
     let variants = idl
         .accounts
         .iter()
         .map(|acc| format_ident!("{}", acc.name))
-        .map(|name| quote! { #name(#name) });
+        .map(|name| quote! { #name(super::accounts::#name) });
     let if_statements = idl.accounts.iter().map(|acc| {
         let name = format_ident!("{}", acc.name);
         quote! {
-            if value.starts_with(#name::DISCRIMINATOR) {
-                return #name::try_deserialize_unchecked(&mut &value[..])
+            if value.starts_with(super::accounts::#name::DISCRIMINATOR) {
+                return super::accounts::#name::try_deserialize_unchecked(&mut &value[..])
                     .map(Self::#name)
                     .map_err(Into::into)
             }
@@ -70,16 +73,18 @@ fn gen_account(idl: &Idl) -> proc_macro2::TokenStream {
 }
 
 fn gen_event(idl: &Idl) -> proc_macro2::TokenStream {
+    // Same rationale as accounts: explicit paths keep event names out of the
+    // prelude glob's reach.
     let variants = idl
         .events
         .iter()
         .map(|ev| format_ident!("{}", ev.name))
-        .map(|name| quote! { #name(#name) });
+        .map(|name| quote! { #name(super::events::#name) });
     let if_statements = idl.events.iter().map(|ev| {
         let name = format_ident!("{}", ev.name);
         quote! {
-            if value.starts_with(#name::DISCRIMINATOR) {
-                return #name::try_from_slice(&value[#name::DISCRIMINATOR.len()..])
+            if value.starts_with(super::events::#name::DISCRIMINATOR) {
+                return super::events::#name::try_from_slice(&value[super::events::#name::DISCRIMINATOR.len()..])
                     .map(Self::#name)
                     .map_err(Into::into)
             }
