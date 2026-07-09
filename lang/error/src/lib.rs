@@ -235,8 +235,8 @@ pub enum ErrorCode {
     /// 3000 - The account discriminator was already set on this account
     #[msg("The account discriminator was already set on this account")]
     AccountDiscriminatorAlreadySet = 3000,
-    /// 3001 - No discriminator was found on the account
-    #[msg("No discriminator was found on the account")]
+    /// 3001 - The account data is too small to contain a discriminator
+    #[msg("The account data is too small to contain a discriminator")]
     AccountDiscriminatorNotFound,
     /// 3002 - Account discriminator did not match what was expected
     #[msg("Account discriminator did not match what was expected")]

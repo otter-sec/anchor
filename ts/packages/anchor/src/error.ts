@@ -614,7 +614,7 @@ export const LangErrorMessage = new Map<number, string>([
   ],
   [
     LangErrorCode.AccountDiscriminatorNotFound,
-    "No discriminator was found on the account",
+    "The account data is too small to contain a discriminator",
   ],
   [
     LangErrorCode.AccountDiscriminatorMismatch,

@@ -127,7 +127,7 @@ export const ANCHOR_ERROR__REQUIRE_GTE_VIOLATED = 2506;
 
 /** The account discriminator was already set on this account. */
 export const ANCHOR_ERROR__ACCOUNT_DISCRIMINATOR_ALREADY_SET = 3000;
-/** No 8 byte discriminator was found on the account. */
+/** The account data is too small to contain a discriminator. */
 export const ANCHOR_ERROR__ACCOUNT_DISCRIMINATOR_NOT_FOUND = 3001;
 /** 8 byte discriminator did not match what was expected. */
 export const ANCHOR_ERROR__ACCOUNT_DISCRIMINATOR_MISMATCH = 3002;
