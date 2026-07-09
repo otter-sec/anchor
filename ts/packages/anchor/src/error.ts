@@ -441,7 +441,7 @@ export const LangErrorMessage = new Map<number, string>([
   [LangErrorCode.InstructionMissing, "Instruction discriminator not provided"],
   [
     LangErrorCode.InstructionFallbackNotFound,
-    "Fallback functions are not supported",
+    "The instruction discriminator did not match any instruction, and no fallback function is defined",
   ],
   [
     LangErrorCode.InstructionDidNotDeserialize,
@@ -549,7 +549,7 @@ export const LangErrorMessage = new Map<number, string>([
   ],
   [
     LangErrorCode.ConstraintMintGroupMemberPointerExtensionMemberAddress,
-    "A group member pointer extension group address constraint was violated",
+    "A group member pointer extension member address constraint was violated",
   ],
   [
     LangErrorCode.ConstraintMintMetadataPointerExtension,
@@ -620,8 +620,14 @@ export const LangErrorMessage = new Map<number, string>([
     LangErrorCode.AccountDiscriminatorMismatch,
     "Account discriminator did not match what was expected",
   ],
-  [LangErrorCode.AccountDidNotDeserialize, "Failed to deserialize the account"],
-  [LangErrorCode.AccountDidNotSerialize, "Failed to serialize the account"],
+  [
+    LangErrorCode.AccountDidNotDeserialize,
+    "Failed to deserialize the account because the account data may be too small for the expected type",
+  ],
+  [
+    LangErrorCode.AccountDidNotSerialize,
+    "Failed to serialize the account because the account may be too small to hold the data",
+  ],
   [
     LangErrorCode.AccountNotEnoughKeys,
     "Not enough account keys given to the instruction",

@@ -2,7 +2,7 @@
 
 /** 8 byte instruction identifier not provided. */
 export const ANCHOR_ERROR__INSTRUCTION_MISSING = 100;
-/** Fallback functions are not supported. */
+/** The instruction discriminator did not match any instruction, and no fallback function is defined. */
 export const ANCHOR_ERROR__INSTRUCTION_FALLBACK_NOT_FOUND = 101;
 /** The program could not deserialize the given instruction. */
 export const ANCHOR_ERROR__INSTRUCTION_DID_NOT_DESERIALIZE = 102;
@@ -83,7 +83,7 @@ export const ANCHOR_ERROR__CONSTRAINT_MINT_GROUP_POINTER_EXTENSION_GROUP_ADDRESS
 export const ANCHOR_ERROR__CONSTRAINT_MINT_GROUP_MEMBER_POINTER_EXTENSION = 2027;
 /** A group member pointer extension authority constraint was violated. */
 export const ANCHOR_ERROR__CONSTRAINT_MINT_GROUP_MEMBER_POINTER_EXTENSION_AUTHORITY = 2028;
-/** A group member pointer extension group address constraint was violated. */
+/** A group member pointer extension member address constraint was violated. */
 export const ANCHOR_ERROR__CONSTRAINT_MINT_GROUP_MEMBER_POINTER_EXTENSION_MEMBER_ADDRESS = 2029;
 /** A metadata pointer extension constraint was violated. */
 export const ANCHOR_ERROR__CONSTRAINT_MINT_METADATA_POINTER_EXTENSION = 2030;
@@ -131,9 +131,9 @@ export const ANCHOR_ERROR__ACCOUNT_DISCRIMINATOR_ALREADY_SET = 3000;
 export const ANCHOR_ERROR__ACCOUNT_DISCRIMINATOR_NOT_FOUND = 3001;
 /** 8 byte discriminator did not match what was expected. */
 export const ANCHOR_ERROR__ACCOUNT_DISCRIMINATOR_MISMATCH = 3002;
-/** Failed to deserialize the account. */
+/** Failed to deserialize the account because the account data may be too small for the expected type. */
 export const ANCHOR_ERROR__ACCOUNT_DID_NOT_DESERIALIZE = 3003;
-/** Failed to serialize the account. */
+/** Failed to serialize the account because the account may be too small to hold the data. */
 export const ANCHOR_ERROR__ACCOUNT_DID_NOT_SERIALIZE = 3004;
 /** Not enough account keys given to the instruction. */
 export const ANCHOR_ERROR__ACCOUNT_NOT_ENOUGH_KEYS = 3005;

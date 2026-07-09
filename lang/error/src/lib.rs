@@ -36,8 +36,8 @@ pub enum ErrorCode {
     /// 100 - Instruction discriminator not provided
     #[msg("Instruction discriminator not provided")]
     InstructionMissing = 100,
-    /// 101 - Fallback functions are not supported
-    #[msg("Fallback functions are not supported")]
+    /// 101 - The instruction discriminator did not match any instruction, and no fallback function is defined
+    #[msg("The instruction discriminator did not match any instruction, and no fallback function is defined")]
     InstructionFallbackNotFound,
     /// 102 - The program could not deserialize the given instruction
     #[msg("The program could not deserialize the given instruction")]
@@ -136,7 +136,7 @@ pub enum ErrorCode {
     /// 2022 - A mint token program constraint was violated
     #[msg("A mint token program constraint was violated")]
     ConstraintMintTokenProgram,
-    /// 2023 - A mint token program constraint was violated
+    /// 2023 - An associated token account token program constraint was violated
     #[msg("An associated token account token program constraint was violated")]
     ConstraintAssociatedTokenTokenProgram,
     /// Extension constraints
@@ -157,7 +157,7 @@ pub enum ErrorCode {
     #[msg("A group member pointer extension authority constraint was violated")]
     ConstraintMintGroupMemberPointerExtensionAuthority,
     /// 2029 - A group member pointer extension member address constraint was violated
-    #[msg("A group member pointer extension group address constraint was violated")]
+    #[msg("A group member pointer extension member address constraint was violated")]
     ConstraintMintGroupMemberPointerExtensionMemberAddress,
     /// 2030 - A metadata pointer extension constraint was violated
     #[msg("A metadata pointer extension constraint was violated")]
@@ -177,7 +177,7 @@ pub enum ErrorCode {
     /// 2035 - A permanent delegate extension constraint was violated
     #[msg("A permanent delegate extension constraint was violated")]
     ConstraintMintPermanentDelegateExtension,
-    /// 2036 - A permanent delegate extension authority constraint was violated
+    /// 2036 - A permanent delegate extension delegate constraint was violated
     #[msg("A permanent delegate extension delegate constraint was violated")]
     ConstraintMintPermanentDelegateExtensionDelegate,
     /// 2037 - A transfer hook extension constraint was violated
@@ -241,11 +241,11 @@ pub enum ErrorCode {
     /// 3002 - Account discriminator did not match what was expected
     #[msg("Account discriminator did not match what was expected")]
     AccountDiscriminatorMismatch,
-    /// 3003 - Failed to deserialize the account
-    #[msg("Failed to deserialize the account")]
+    /// 3003 - Failed to deserialize the account because the account data may be too small for the expected type
+    #[msg("Failed to deserialize the account because the account data may be too small for the expected type")]
     AccountDidNotDeserialize,
-    /// 3004 - Failed to serialize the account
-    #[msg("Failed to serialize the account")]
+    /// 3004 - Failed to serialize the account because the account may be too small to hold the data
+    #[msg("Failed to serialize the account because the account may be too small to hold the data")]
     AccountDidNotSerialize,
     /// 3005 - Not enough account keys given to the instruction
     #[msg("Not enough account keys given to the instruction")]
