@@ -37,7 +37,10 @@ pub enum ErrorCode {
     #[msg("Instruction discriminator not provided")]
     InstructionMissing = 100,
     /// 101 - The instruction discriminator did not match any instruction, and no fallback function is defined
-    #[msg("The instruction discriminator did not match any instruction, and no fallback function is defined")]
+    #[msg(
+        "The instruction discriminator did not match any instruction, and no fallback function is \
+         defined"
+    )]
     InstructionFallbackNotFound,
     /// 102 - The program could not deserialize the given instruction
     #[msg("The program could not deserialize the given instruction")]
@@ -242,7 +245,10 @@ pub enum ErrorCode {
     #[msg("Account discriminator did not match what was expected")]
     AccountDiscriminatorMismatch,
     /// 3003 - Failed to deserialize the account because the account data may be too small for the expected type
-    #[msg("Failed to deserialize the account because the account data may be too small for the expected type")]
+    #[msg(
+        "Failed to deserialize the account because the account data may be too small for the \
+         expected type"
+    )]
     AccountDidNotDeserialize,
     /// 3004 - Failed to serialize the account because the account may be too small to hold the data
     #[msg("Failed to serialize the account because the account may be too small to hold the data")]
