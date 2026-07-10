@@ -17,7 +17,6 @@ Prefix the command:
 NO_DNA=1 anchor test --detach
 NO_DNA=1 anchor localnet
 NO_DNA=1 anchor program close <ACCOUNT> --bypass-warning
-NO_DNA=1 anchor legacy-idl erase-authority --program-id <PROGRAM_ID> --bypass-warning
 ```
 
 Or export it for a session:
@@ -29,8 +28,7 @@ anchor test --detach
 
 <Callout type="info" title="Destructive commands stay explicit">
 `NO_DNA` does not auto-confirm destructive actions. For commands such as
-`anchor program close` and `anchor legacy-idl erase-authority`, pass the
-existing explicit bypass flag yourself.
+`anchor program close`, pass the existing explicit bypass flag yourself.
 </Callout>
 
 ## Checking support from the CLI
@@ -42,7 +40,6 @@ anchor --help
 anchor test --help
 anchor localnet --help
 anchor program close --help
-anchor legacy-idl erase-authority --help
 ```
 
 ## Notes
