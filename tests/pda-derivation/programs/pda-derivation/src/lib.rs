@@ -56,6 +56,10 @@ pub mod pda_derivation {
         Ok(())
     }
 
+    pub fn self_referencing_seed(_ctx: Context<SelfReferencingSeed>) -> Result<()> {
+        Ok(())
+    }
+
     pub fn unsupported_program_seed(_ctx: Context<UnsupportedProgramSeed>) -> Result<()> {
         Ok(())
     }
@@ -209,6 +213,12 @@ pub struct ResolutionError<'info> {
     pub pda: UncheckedAccount<'info>,
     #[account(seeds = [pda.key.as_ref()], bump)]
     pub another_pda: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct SelfReferencingSeed<'info> {
+    #[account(seeds = [&self_referencing_pda.data.to_le_bytes()], bump)]
+    pub self_referencing_pda: Account<'info, MyAccount>,
 }
 
 #[derive(Accounts)]

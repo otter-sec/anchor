@@ -11,7 +11,7 @@ describe("cashiers-check", () => {
   provider.send = provider.sendAndConfirm;
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.CashiersCheck;
+  const program = anchor.workspace.cashiersCheck;
 
   let mint = null;
   let god = null;

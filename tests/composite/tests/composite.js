@@ -8,7 +8,7 @@ describe("composite", () => {
   anchor.setProvider(provider);
 
   it("Is initialized!", async () => {
-    const program = anchor.workspace.Composite;
+    const program = anchor.workspace.composite;
 
     const dummyA = anchor.web3.Keypair.generate();
     const dummyB = anchor.web3.Keypair.generate();

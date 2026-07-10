@@ -1,5 +1,5 @@
-import { Buffer } from "buffer";
-import { AnchorProvider, BN, Program, web3 } from "@anchor-lang/core";
+import { AnchorProvider, Program, web3 } from "@anchor-lang/core";
+import BN from "bn.js";
 
 export const Magic = 0xa1b2c3d4;
 export const Version1 = 1;

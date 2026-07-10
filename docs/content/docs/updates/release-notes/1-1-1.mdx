@@ -1,0 +1,63 @@
+---
+title: 1.1.1
+description: Anchor - Release Notes 1.1.1
+---
+
+See the full 
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.1.1/CHANGELOG.md#111---2026-06-25).
+
+## How to upgrade
+
+### Common steps
+
+1. Update Anchor crate(s) to `1.0.1`.
+
+2. Update TS package(s) to `1.0.1`.
+
+## Recommended Solana Version
+
+The recommended Solana version is `3.1.10`, unchanged from `1.0.0`.
+
+---
+
+## Lang
+
+### Fix `#[event_cpi]` deprecation warnings
+
+`#[event_cpi]` was making use of deprecated `AccountInfo` accounts internally.
+This has been updated to use the recommended `UncheckedAccount` instead, silencing the noisy warnings.
+
+### Re-add the legacy IDL handlers
+
+In 1.0.0, we changed the mechanism for storing the IDL on chain from automatically generated instruction handlers to the [Solana Program Metadata Program](https://github.com/solana-program/program-metadata).
+This resulted in large binary size and security wins, but caused breakage for developers relying on this mechanism.
+This functionality has been re-added. You can opt in with:
+
+```rust
+#[program(legacy_idl)]
+pub mod my_program {
+    // ...
+}
+```
+
+And interact with it using `anchor legacy-idl`.
+
+## CLI
+
+### Remove hard build error with mismatched keys
+
+Previously, `anchor build` verified that the program's private keypair matched the `declare_id` pubkey.
+This was a pain point for developers collaborating on Anchor projects, as private keys would typically not be checked into version control.
+
+This has been made into a soft error; the warning is still printed, but does not block builds.
+`--ignore-keys` can still be used to silence this.
+
+### More reliable handling of relative paths
+
+The CLI now performs more reliable normalization of input paths.
+This means that relative paths (including when invoking `anchor` in a subdirecory) will be handled more predictably.
+
+### Optimized build times
+
+Previously, the CLI built programs in a naiive order, which resulted in bottlenecking on certain dependencies.
+The CLI will now attempt to be smarter when building packages, which can provide compile-time speedups of up to 50%.

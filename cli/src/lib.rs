@@ -2201,7 +2201,20 @@ pub fn build(
 
     // Check for program ID mismatches before building (skip if --ignore-keys is used), Always skipped in anchor test
     if !ignore_keys {
-        check_program_id_mismatch(&cfg, program_name.clone())?;
+        // FIXME: Consider making this a hard error in `deploy` instead
+        if let ProgramIdComparison::Mismatch {
+            lib_name,
+            actual_id,
+            declared_id,
+        } = check_program_id_mismatch(&cfg, program_name.clone())?
+        {
+            eprintln!(
+                "Program ID mismatch detected for program '{lib_name}':\n  Keypair file has: \
+                 {actual_id}\n  Source code has:  {declared_id}\n\nPlease run 'anchor keys sync' \
+                 to update the program ID in your source code or use the '--ignore-keys' flag to \
+                 skip this check.",
+            );
+        }
     }
 
     let idl_out = match idl {
@@ -5721,7 +5734,7 @@ fn start_surfpool_validator(
 }
 
 fn start_solana_test_validator(
-    cfg: &Config,
+    cfg: &WithPath<Config>,
     test_validator: &Option<TestValidator>,
     flags: Option<Vec<String>>,
     test_log_stdout: bool,
@@ -5770,6 +5783,18 @@ fn start_solana_test_validator(
             "Your configured faucet port: {faucet_port} is already in use"
         ));
     }
+    let program_ids: Vec<Pubkey> = flags
+        .as_deref()
+        .unwrap_or(&[])
+        .windows(2)
+        .filter_map(|w| {
+            if w[0] == "--bpf-program" || w[0] == "--upgradeable-program" {
+                w[1].parse::<Pubkey>().ok()
+            } else {
+                None
+            }
+        })
+        .collect();
 
     let mut validator_handle = std::process::Command::new("solana-test-validator")
         .arg("--ledger")
@@ -5784,29 +5809,62 @@ fn start_solana_test_validator(
 
     // Wait for the validator to be ready.
     let client = create_client(rpc_url);
-    let mut count = 0;
     let ms_wait = test_validator
         .as_ref()
         .map(|test| test.startup_wait)
         .unwrap_or(STARTUP_WAIT);
-    while count < ms_wait {
-        let r = client.get_latest_blockhash();
-        if r.is_ok() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        count += 100;
-    }
-    if count >= ms_wait {
+
+    if let Err(e) = wait_for_validator_ready(&client, ms_wait, &program_ids) {
         eprintln!(
-            "Unable to get latest blockhash. Test validator does not look started. Check \
-             {test_ledger_log_filename:?} for errors. Consider increasing [test.startup_wait] in \
-             Anchor.toml."
+            "Test validator setup failed: {e}. Check {test_ledger_log_filename:?} for errors. \
+             Consider increasing [test.startup_wait] in Anchor.toml."
         );
         validator_handle.kill()?;
         std::process::exit(1);
     }
     Ok(validator_handle)
+}
+
+fn wait_for_validator_ready(
+    client: &RpcClient,
+    ms_wait: u64,
+    program_ids: &[Pubkey],
+) -> Result<()> {
+    let start = std::time::Instant::now();
+    let max_wait = std::time::Duration::from_millis(ms_wait);
+
+    // Wait for RPC to be up
+    while client.get_latest_blockhash().is_err() {
+        if start.elapsed() >= max_wait {
+            return Err(anyhow!(
+                "Timeout waiting for validator to start (RPC not ready)"
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    // Wait for programs to be deployed and executable
+    let mut pending: Vec<Pubkey> = program_ids.to_vec();
+    while !pending.is_empty() {
+        pending = pending
+            .chunks(100)
+            .flat_map(|chunk| match client.get_multiple_accounts(chunk) {
+                Ok(accounts) => chunk
+                    .iter()
+                    .zip(accounts.iter())
+                    .filter(|(_, acc)| !acc.as_ref().is_some_and(|a| a.executable))
+                    .map(|(pk, _)| *pk)
+                    .collect::<Vec<_>>(),
+                Err(_) => chunk.to_vec(),
+            })
+            .collect();
+        if start.elapsed() >= max_wait {
+            return Err(anyhow!("Timeout waiting for programs to deploy"));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    Ok(())
 }
 
 // Return the URL that solana-test-validator should be running on given the
@@ -6504,9 +6562,21 @@ fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Res
     })?
 }
 
+enum ProgramIdComparison {
+    Same,
+    Mismatch {
+        lib_name: String,
+        actual_id: String,
+        declared_id: String,
+    },
+}
+
 /// Check if there's a mismatch between the program keypair and the `declare_id!` in the source code.
-/// Returns an error if a mismatch is detected, prompting the user to run `anchor keys sync`.
-fn check_program_id_mismatch(cfg: &WithPath<Config>, program_name: Option<String>) -> Result<()> {
+/// Returns `false` if there is a mismatch.
+fn check_program_id_mismatch(
+    cfg: &WithPath<Config>,
+    program_name: Option<String>,
+) -> Result<ProgramIdComparison> {
     let declare_id_regex = RegexBuilder::new(r#"^(([\w]+::)*)declare_id!\("(\w*)"\)"#)
         .multi_line(true)
         .build()
@@ -6532,20 +6602,16 @@ fn check_program_id_mismatch(cfg: &WithPath<Config>, program_name: Option<String
                 .filter(|program_id_match| program_id_match.as_str() != actual_program_id);
 
             if let Some(program_id_match) = incorrect_program_id {
-                let declared_id = program_id_match.as_str();
-                return Err(anyhow!(
-                    "Program ID mismatch detected for program '{}':\n  Keypair file has: {}\n  \
-                     Source code has:  {}\n\nPlease run 'anchor keys sync' to update the program \
-                     ID in your source code or use the '--ignore-keys' flag to skip this check.",
-                    program.lib_name,
-                    actual_program_id,
-                    declared_id
-                ));
+                return Ok(ProgramIdComparison::Mismatch {
+                    lib_name: program.lib_name,
+                    actual_id: actual_program_id,
+                    declared_id: program_id_match.as_str().to_string(),
+                });
             }
         }
     }
 
-    Ok(())
+    Ok(ProgramIdComparison::Same)
 }
 
 #[allow(clippy::too_many_arguments)]

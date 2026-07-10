@@ -98,13 +98,3 @@ pub struct Cpi<'info> {
     pub cpi_my_account: Account<'info, external::accounts::MyAccount>,
     pub external_program: Program<'info, External>,
 }
-
-#[derive(Accounts)]
-pub struct Utils<'info> {
-    pub authority: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct Proxy<'info> {
-    pub program: Program<'info, External>,
-}

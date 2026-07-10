@@ -2,37 +2,35 @@
 # yarn lockfile v1
 
 
-"@anchor-lang/borsh@^1.0.2":
-  version "1.0.2"
-  resolved "https://registry.yarnpkg.com/@anchor-lang/borsh/-/borsh-1.0.2.tgz#00a4999907ec3daa83f370b2774ba84488f55d61"
-  integrity sha512-QQYhe6vaUwdLYndjFpbmmskRVoj49RoXsxRPrYtpkviuKFfWfii7bb3ziVi1bMBfl0rVMRFSVnJPKSo+EHWrmg==
+"@anchor-lang/borsh@^1.1.1":
+  version "1.1.1"
+  resolved "https://registry.yarnpkg.com/@anchor-lang/borsh/-/borsh-1.1.1.tgz#9c11db0cd571f941b01c96a9c822e6b857584632"
+  integrity sha512-1nwvv0Qku9LHThew4Q6fMYu0iarYQkxuMr09sjVOL2dHc+3ngWXpImQGuiTU2Fp1gnK7B4+1kY91oFr8qGl4PQ==
   dependencies:
-    bn.js "^5.1.2"
+    bn.js "^5.2.3"
     buffer-layout "^1.2.0"
 
-"@anchor-lang/core@^1.0.2":
-  version "1.0.2"
-  resolved "https://registry.yarnpkg.com/@anchor-lang/core/-/core-1.0.2.tgz#37b46c2b2bb79a8f8650b0169204e15bf75f230e"
-  integrity sha512-XZy430qI7s3iJsT46GAcbqyJdxk2MmUo7m0fJUDYmDZSIngI5cbtNo/MAEQ3WC9YqXxesAw7KFKlOkiqNW3e9w==
+"@anchor-lang/core@^1.1.1":
+  version "1.1.1"
+  resolved "https://registry.yarnpkg.com/@anchor-lang/core/-/core-1.1.1.tgz#9856d71fe713d6a9d02fc9c872fc824ca6e105fc"
+  integrity sha512-nnLTht3KTD4bC+uCpuzcXYYmSF7it09gNoQxI4m1EYnYw0xzi40xQ3ZizZ/Knek+Cn2D6zD2JPQFBnmJF06IGQ==
   dependencies:
-    "@anchor-lang/borsh" "^1.0.2"
-    "@anchor-lang/errors" "^1.0.2"
+    "@anchor-lang/borsh" "^1.1.1"
+    "@anchor-lang/errors" "^1.1.1"
     "@noble/hashes" "^1.3.1"
-    "@solana/web3.js" "^1.69.0"
-    bn.js "^5.1.2"
+    "@solana/web3.js" "^1.69.1"
+    bn.js "^5.2.3"
     bs58 "^4.0.1"
     buffer-layout "^1.2.2"
-    camelcase "^6.3.0"
-    cross-fetch "^3.1.5"
     eventemitter3 "^4.0.7"
     pako "^2.0.3"
     superstruct "^0.15.4"
     toml "^3.0.0"
 
-"@anchor-lang/errors@^1.0.2":
-  version "1.0.2"
-  resolved "https://registry.yarnpkg.com/@anchor-lang/errors/-/errors-1.0.2.tgz#eff0c851502229b5db91854a67b976a78471c9fb"
-  integrity sha512-OZ9kpdUFdSnPzUeUnkeFYsjJbsgq26Sqv6yUljPVynuMJEADNJKL6ORL8Tb8YSVOPqHxoqggiDAelcVogGjKWg==
+"@anchor-lang/errors@^1.1.1":
+  version "1.1.1"
+  resolved "https://registry.yarnpkg.com/@anchor-lang/errors/-/errors-1.1.1.tgz#6667662bec0db92e30e9fefb5574f57cc9d70747"
+  integrity sha512-cz4fZ88vBHN1qhIup8Mo/zGFndhslbQG1Ddh5dkrORG+sxmLvz+1B6XBwlWMG8FTFTiGzr4d3dsisjh57u1wBw==
 
 "@babel/runtime@^7.12.5", "@babel/runtime@^7.26.10":
   version "7.29.7"
@@ -61,7 +59,7 @@
   dependencies:
     buffer "~6.0.3"
 
-"@solana/web3.js@1.69.1", "@solana/web3.js@^1.69.0":
+"@solana/web3.js@1.69.1", "@solana/web3.js@^1.69.1":
   version "1.69.1"
   resolved "https://registry.yarnpkg.com/@solana/web3.js/-/web3.js-1.69.1.tgz#4a6a4a4c6019522deea1f01f3348db77ea7134f8"
   integrity sha512-xdRJf6NPtMfWICM7707E+jPiYlUqqifprxsW6sxC4Y/i40of4TFaGhTKIDOy8uQ+zQVwSvWGt5buk96BsdPQaQ==
@@ -197,7 +195,7 @@ bindings@^1.3.0:
   dependencies:
     file-uri-to-path "1.0.0"
 
-bn.js@^5.0.0, bn.js@^5.1.2, bn.js@^5.2.0:
+bn.js@^5.0.0, bn.js@^5.2.0, bn.js@^5.2.3:
   version "5.2.3"
   resolved "https://registry.yarnpkg.com/bn.js/-/bn.js-5.2.3.tgz#16a9e409616b23fef3ccbedb8d42f13bff80295e"
   integrity sha512-EAcmnPkxpntVL+DS7bO1zhcZNvCkxqtkd0ZY53h06GNQ3DEkkGZ/gKgmDv6DdZQGj9BgfSPKtJJ7Dp1GPP8f7w==
@@ -275,11 +273,6 @@ camelcase@^6.0.0:
   resolved "https://registry.yarnpkg.com/camelcase/-/camelcase-6.2.0.tgz#924af881c9d525ac9d87f40d964e5cea982a1809"
   integrity sha512-c7wVvbw3f37nuobQNtgsgG9POC9qMbNuMQmTCqZv23b6MIz0fcYpBiOlv9gEN/hdLdnZTDQhg6e9Dq5M1vKvfg==
 
-camelcase@^6.3.0:
-  version "6.3.0"
-  resolved "https://registry.yarnpkg.com/camelcase/-/camelcase-6.3.0.tgz#5685b95eb209ac9c0c177467778c9c84df58ba9a"
-  integrity sha512-Gmy6FhYlCY7uOElZUSbxo2UCDH8owEk996gkbrpsgGtrJLM3J7jGxl9Ic7Qwwj4ivOE5AWZWRMecDdF7hqGjFA==
-
 chalk@^4.1.0:
   version "4.1.2"
   resolved "https://registry.yarnpkg.com/chalk/-/chalk-4.1.2.tgz#aac4e2b7734a740867aeb16bf02aad556a1e7a01"
@@ -328,13 +321,6 @@ commander@^2.20.3:
   version "2.20.3"
   resolved "https://registry.yarnpkg.com/commander/-/commander-2.20.3.tgz#fd485e84c03eb4881c20722ba48035e8531aeb33"
   integrity sha512-GpVkmM8vF2vQUkj2LvZmD35JxeJOLCwJ9cUkugyk2nuhbv3+mJvpLYYt+0+USMxE+oj+ey/lJEnhZw75x/OMcQ==
-
-cross-fetch@^3.1.5:
-  version "3.2.0"
-  resolved "https://registry.yarnpkg.com/cross-fetch/-/cross-fetch-3.2.0.tgz#34e9192f53bc757d6614304d9e5e6fb4edb782e3"
-  integrity sha512-Q+xVJLoGOeIMXZmbUK4HYk+69cQH6LudR0Vu/pRm2YlU/hDV9CiS0gKUMaWY5f2NeUH9C1nV3bsTlCo0FsTV1Q==
-  dependencies:
-    node-fetch "^2.7.0"
 
 debug@^4.3.5:
   version "4.4.3"
@@ -648,7 +634,7 @@ ms@^2.1.3:
   resolved "https://registry.yarnpkg.com/ms/-/ms-2.1.3.tgz#574c8138ce1d2b5861f0b44579dbadd60c6615b2"
   integrity sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==
 
-node-fetch@2, node-fetch@^2.7.0:
+node-fetch@2:
   version "2.7.0"
   resolved "https://registry.yarnpkg.com/node-fetch/-/node-fetch-2.7.0.tgz#d0f0fa6e3e2dc1d27efcd8ad99d550bda94d187d"
   integrity sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==

@@ -508,7 +508,6 @@ fn generate_constraint_init_group(
         quote! {false}
     };
     let space = &c.space;
-
     let payer = &c.payer;
 
     // Convert from account info to account context wrapper type.
@@ -1358,38 +1357,67 @@ fn generate_constraint_token_account(
     accs: &AccountsStruct,
 ) -> proc_macro2::TokenStream {
     let name = &f.ident;
+    let name_str = name.to_string();
     let account_ref = generate_account_ref(f);
     let mut optional_check_scope = OptionalCheckScope::new_with_field(accs, name);
+
     let authority_check = match &c.authority {
         Some(authority) => {
             let authority_optional_check = optional_check_scope.generate_check(authority);
             quote! {
                 #authority_optional_check
-                if #name.owner != #authority.key() { return Err(anchor_lang::error::ErrorCode::ConstraintTokenOwner.into()); }
+                if #name.owner != #authority.key() {
+                    return Err(
+                        anchor_lang::error::Error::from(
+                            anchor_lang::error::ErrorCode::ConstraintTokenOwner
+                        )
+                        .with_account_name(#name_str)
+                        .with_pubkeys((#name.owner, #authority.key()))
+                    );
+                }
             }
         }
         None => quote! {},
     };
+
     let mint_check = match &c.mint {
         Some(mint) => {
             let mint_optional_check = optional_check_scope.generate_check(mint);
             quote! {
                 #mint_optional_check
-                if #name.mint != #mint.key() { return Err(anchor_lang::error::ErrorCode::ConstraintTokenMint.into()); }
+                if #name.mint != #mint.key() {
+                    return Err(
+                        anchor_lang::error::Error::from(
+                            anchor_lang::error::ErrorCode::ConstraintTokenMint
+                        )
+                        .with_account_name(#name_str)
+                        .with_pubkeys((#name.mint, #mint.key()))
+                    );
+                }
             }
         }
         None => quote! {},
     };
+
     let token_program_check = match &c.token_program {
         Some(token_program) => {
             let token_program_optional_check = optional_check_scope.generate_check(token_program);
             quote! {
                 #token_program_optional_check
-                if #account_ref.owner != &#token_program.key() { return Err(anchor_lang::error::ErrorCode::ConstraintTokenTokenProgram.into()); }
+                if #account_ref.owner != &#token_program.key() {
+                    return Err(
+                        anchor_lang::error::Error::from(
+                            anchor_lang::error::ErrorCode::ConstraintTokenTokenProgram
+                        )
+                        .with_account_name(#name_str)
+                        .with_pubkeys((*#account_ref.owner, #token_program.key()))
+                    );
+                }
             }
         }
         None => quote! {},
     };
+
     quote! {
         {
             #authority_check

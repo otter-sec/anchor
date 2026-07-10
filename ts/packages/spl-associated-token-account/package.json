@@ -1,12 +1,12 @@
 {
   "name": "@anchor-lang/spl-associated-token-account",
   "description": "Anchor client for Solana Program Library Associated Token Account",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": "acheron <acheroncrypto@gmail.com>",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/otter-sec/anchor.git"
+    "url": "git+https://github.com/otter-sec/anchor.git"
   },
   "files": [
     "dist"
@@ -27,7 +27,7 @@
     "watch": "tsc -p tsconfig.cjs.json --watch"
   },
   "dependencies": {
-    "@anchor-lang/core": "=1.0.2",
+    "@anchor-lang/core": "=1.1.2",
     "@native-to-anchor/buffer-layout": "=0.1.0"
   },
   "devDependencies": {

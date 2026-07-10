@@ -5,7 +5,7 @@ describe("multisig", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.Multisig;
+  const program = anchor.workspace.multisig;
 
   it("Tests the multisig program", async () => {
     const multisig = anchor.web3.Keypair.generate();

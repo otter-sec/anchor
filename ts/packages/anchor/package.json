@@ -1,6 +1,6 @@
 {
   "name": "@anchor-lang/core",
-  "version": "1.0.2",
+  "version": "1.1.2",
   "description": "Anchor client",
   "module": "./dist/esm/index.js",
   "main": "./dist/cjs/index.js",
@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/otter-sec/anchor.git"
+    "url": "git+https://github.com/otter-sec/anchor.git"
   },
   "publishConfig": {
     "access": "public"
@@ -33,8 +33,8 @@
     "test": "jest tests --detectOpenHandles"
   },
   "dependencies": {
-    "@anchor-lang/borsh": "^1.0.2",
-    "@anchor-lang/errors": "^1.0.2",
+    "@anchor-lang/borsh": "^1.1.2",
+    "@anchor-lang/errors": "^1.1.2",
     "@noble/hashes": "^1.3.1",
     "@solana/web3.js": "^1.69.1",
     "bn.js": "^5.2.3",

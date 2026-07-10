@@ -27,19 +27,62 @@ env:
 jobs:
   publish-crates-dryrun:
     name: Publish crates (dry-run)
-    uses: ./.github/workflows/publish-crates.yaml
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-    with:
-      dry_run: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+
+      - name: Install cargo-release
+        run: cargo install cargo-release --version 1.1.1 --locked
+
+      - name: Publish crates
+        run: |
+          set -xeuo pipefail
+
+          echo "Publishing crates as a dry-run"
+          out_file=$(mktemp)
+          if cargo release publish --workspace --allow-branch "*" --no-confirm 2>&1 | tee "$out_file"; then
+            exit 0
+          fi
+          # cargo-release 1.1.1 exits non-zero with "no packages selected" when every
+          # workspace crate is skipped due to a previous publish. Treat that as success.
+          if grep -q "no packages selected" "$out_file" \
+             && grep -q "disabled due to previous publish" "$out_file"; then
+            echo "All crates already published at current versions; nothing to do."
+            exit 0
+          fi
+          exit 1
 
   publish-npmjs-dryrun:
     name: Publish npmjs packages (dry-run)
-    uses: ./.github/workflows/publish-npmjs.yaml
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-    with:
-      dry_run: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Enable corepack (yarn)
+        run: corepack enable
+
+      - name: Publish npmjs packages
+        env:
+          DRY_RUN: "true"
+        run: bash .github/scripts/publish-npmjs.sh
 
   # We skip checking if the Docker image builds for now as it depends on the version tag already existing,
   # though as we already have the `build-cli-dryrun` step below there should be rarely any reason for the

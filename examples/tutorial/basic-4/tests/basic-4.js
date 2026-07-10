@@ -7,7 +7,7 @@ describe("basic-4", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.Basic4,
+  const program = anchor.workspace.basic4,
     counterSeed = anchor.utils.bytes.utf8.encode("counter");
 
   let counterPubkey;

@@ -269,7 +269,7 @@ Example:
 
 ```toml
 [surfpool]
-startup_wait = 5000                                       # Time (ms) to wait for Surfpool to start. Default: 5000.
+startup_wait = 30000                                       # Time (ms) to wait for Surfpool to start. Default: 30000.
 shutdown_wait = 2000                                      # Time (ms) to wait for Surfpool to shut down. Default: 2000.
 rpc_port = 8899                                           # JSON RPC port. Default: 8899.
 ws_port = 8900                                            # WebSocket port. If not set, derived automatically.
@@ -287,7 +287,7 @@ block_production_mode = "clock"                            # Block production mo
 ### startup_wait
 
 Time in milliseconds to wait for Surfpool to start up. This is useful when
-loading many accounts or running runbooks at startup. Default: `5000`.
+loading many accounts or running runbooks at startup. Default: `30000`.
 
 ### shutdown_wait
 
@@ -393,7 +393,7 @@ Override toolchain data in the workspace similar to
 
 ```toml
 [toolchain]
-anchor_version = "1.0.2"    # `anchor-cli` version to use(requires `avm`)
+anchor_version = "1.1.2"    # `anchor-cli` version to use(requires `avm`)
 solana_version = "3.1.10"   # Solana version requirement to use(applies to all Solana tools)
 package_manager = "yarn"     # JS package manager to use
 ```

@@ -98,7 +98,7 @@ import { MyProject } from '../target/types/my_project'
 
 describe('my-project', () => {
   anchor.setProvider(anchor.AnchorProvider.env())
-  const program = anchor.workspace.MyProject as Program<MyProject>
+  const program = anchor.workspace.myProject as Program<MyProject>
 
   it('Is initialized!', async () => {
     const tx = await program.methods.initialize().rpc()

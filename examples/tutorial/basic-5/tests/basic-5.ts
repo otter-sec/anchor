@@ -7,7 +7,7 @@ describe("basic-5", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.Basic5 as anchor.Program<Basic5>;
+  const program = anchor.workspace.basic5 as anchor.Program<Basic5>;
   const user = provider.wallet.publicKey;
 
   let [actionState] = anchor.web3.PublicKey.findProgramAddressSync(

@@ -187,6 +187,15 @@ Custom constraint that checks whether the given expression evaluates to `true{:r
 
 Reallocates program account space at the start of an instruction. `realloc::zero{:rs}` controls whether new bytes are zeroed:
 
+If the change is additive, lamports are transferred from `realloc::payer{:rs}`
+to maintain rent exemption. If the change is subtractive, all lamports above
+the new rent-exempt minimum are transferred back to `realloc::payer{:rs}`.
+
+Warning: Do not use subtractive realloc on accounts that intentionally hold
+extra lamports, such as vaults. Those extra lamports will also be transferred
+to `realloc::payer{:rs}`; the current v1 behavior does not limit refunds to
+rent savings alone.
+
 ```rust showLineNumbers=false
 #[account(
     realloc = <space>,

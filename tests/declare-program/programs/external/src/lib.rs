@@ -132,6 +132,14 @@ pub mod external {
     ) -> Result<()> {
         Ok(())
     }
+
+    // Compilation test for generic types (both arguments and account fields)
+    pub fn test_compilation_generic_types(
+        _ctx: Context<TestCompilationGeneric>,
+        generic_struct: GenericStruct<u32, 8>,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[error_code]
@@ -154,6 +162,11 @@ pub struct TestCompilationPackedAccount<'info> {
 
 #[derive(Accounts)]
 pub struct TestCompilationNoAccounts {}
+
+#[derive(Accounts)]
+pub struct TestCompilationGeneric<'info> {
+    pub account_with_generic_field: Account<'info, AccountWithGenericField>,
+}
 
 #[derive(Accounts)]
 pub struct Init<'info> {
@@ -231,7 +244,17 @@ pub struct PackedAccount {
     pub b: [u16; 8],
 }
 
+#[account]
+pub struct AccountWithGenericField {
+    pub field: GenericStruct<u32, 8>,
+}
+
 #[event]
 pub struct MyEvent {
     pub value: u32,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct GenericStruct<T, const N: usize> {
+    pub field: [T; N],
 }

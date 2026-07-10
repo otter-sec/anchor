@@ -18,7 +18,7 @@ declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 pub mod tictactoe {
     use super::*;
 
-    pub fn initialize_dashboard(ctx: Context<Initializedashboard>) -> Result<()> {
+    pub fn initialize_dashboard(ctx: Context<InitializeDashboard>) -> Result<()> {
         let dashboard = &mut ctx.accounts.dashboard;
         dashboard.game_count = 0;
         dashboard.address = *dashboard.to_account_info().key;
@@ -34,15 +34,15 @@ pub mod tictactoe {
         Ok(())
     }
 
-    pub fn player_join(ctx: Context<Playerjoin>) -> Result<()> {
+    pub fn player_join(ctx: Context<PlayerJoin>) -> Result<()> {
         let game = &mut ctx.accounts.game;
         game.player_o = *ctx.accounts.player_o.key;
         game.game_state = 1;
         Ok(())
     }
 
-    #[access_control(Playermove::accounts(&ctx, x_or_o, player_move))]
-    pub fn player_move(ctx: Context<Playermove>, x_or_o: u8, player_move: u8) -> Result<()> {
+    #[access_control(PlayerMove::accounts(&ctx, x_or_o, player_move))]
+    pub fn player_move(ctx: Context<PlayerMove>, x_or_o: u8, player_move: u8) -> Result<()> {
         let game = &mut ctx.accounts.game;
         game.board[player_move as usize] = x_or_o;
         game.status(x_or_o);
@@ -55,13 +55,7 @@ pub mod tictactoe {
 }
 
 #[derive(Accounts)]
-pub struct Status<'info> {
-    dashboard: Account<'info, Dashboard>,
-    game: Account<'info, Game>,
-}
-
-#[derive(Accounts)]
-pub struct Initializedashboard<'info> {
+pub struct InitializeDashboard<'info> {
     #[account(zero)]
     dashboard: Account<'info, Dashboard>,
     authority: Signer<'info>,
@@ -77,34 +71,40 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
-pub struct Playerjoin<'info> {
+pub struct PlayerJoin<'info> {
     player_o: Signer<'info>,
-    #[account(mut, constraint = game.game_state != 0 && game.player_x != Pubkey::default())]
+    #[account(mut, constraint = game.game_state == 0 && game.player_x != Pubkey::default())]
     game: Account<'info, Game>,
 }
 
 #[derive(Accounts)]
-pub struct Playermove<'info> {
+pub struct PlayerMove<'info> {
     player: Signer<'info>,
     #[account(mut)]
     game: Account<'info, Game>,
 }
 
-impl<'info> Playermove<'info> {
-    pub fn accounts(ctx: &Context<Playermove>, x_or_o: u8, player_move: u8) -> Result<()> {
+#[derive(Accounts)]
+pub struct Status<'info> {
+    dashboard: Account<'info, Dashboard>,
+    game: Account<'info, Game>,
+}
+
+impl<'info> PlayerMove<'info> {
+    pub fn accounts(ctx: &Context<PlayerMove>, x_or_o: u8, player_move: u8) -> Result<()> {
         if ctx.accounts.game.board[player_move as usize] != 0 {
             return Err(ErrorCode::Illegalmove.into());
         }
         if x_or_o == BOARD_ITEM_X {
-            return Playermove::player_x_checks(ctx);
+            return PlayerMove::player_x_checks(ctx);
         } else if x_or_o == BOARD_ITEM_O {
-            return Playermove::player_o_checks(ctx);
+            return PlayerMove::player_o_checks(ctx);
         } else {
             return Err(ErrorCode::UnexpectedValue.into());
         }
     }
 
-    pub fn player_x_checks(ctx: &Context<Playermove>) -> Result<()> {
+    pub fn player_x_checks(ctx: &Context<PlayerMove>) -> Result<()> {
         if ctx.accounts.game.player_x != *ctx.accounts.player.key {
             return Err(ErrorCode::Unauthorized.into());
         }
@@ -114,7 +114,7 @@ impl<'info> Playermove<'info> {
         Ok(())
     }
 
-    pub fn player_o_checks(ctx: &Context<Playermove>) -> Result<()> {
+    pub fn player_o_checks(ctx: &Context<PlayerMove>) -> Result<()> {
         if ctx.accounts.game.player_o != *ctx.accounts.player.key {
             return Err(ErrorCode::Unauthorized.into());
         }
@@ -196,7 +196,7 @@ impl Game {
     }
 }
 
-#[error]
+#[error_code]
 pub enum ErrorCode {
     #[msg("You are not authorized to perform this action.")]
     Unauthorized,

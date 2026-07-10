@@ -309,7 +309,7 @@ To use the `init_if_needed` constraint, enable the `init-if-needed` feature in
 
 ```toml title="Cargo.toml"
 [dependencies]
-anchor-lang = { version = "1.0.2", features = ["init-if-needed"] }
+anchor-lang = { version = "1.1.2", features = ["init-if-needed"] }
 ```
 
 ## Examples
@@ -416,7 +416,7 @@ import {
 describe("token-example", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.TokenExample as Program<TokenExample>;
+  const program = anchor.workspace.tokenExample as Program<TokenExample>;
   const [mint, bump] = anchor.web3.PublicKey.findProgramAddressSync(
     [Buffer.from("mint")],
     program.programId,
@@ -562,7 +562,7 @@ import {
 describe("token-example", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.TokenExample as Program<TokenExample>;
+  const program = anchor.workspace.tokenExample as Program<TokenExample>;
   const [mint, mintBump] = anchor.web3.PublicKey.findProgramAddressSync(
     [Buffer.from("mint")],
     program.programId,

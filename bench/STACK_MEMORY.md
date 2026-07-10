@@ -110,6 +110,398 @@ Solana version: 3.1.10
 
 ---
 
+## [1.1.2]
+
+Solana version: 3.1.10
+
+| Instruction                    | Stack Memory | -   |
+| ------------------------------ | ------------ | --- |
+| account_info1                  | 46           | -   |
+| account_info2                  | 88           | -   |
+| account_info4                  | 88           | -   |
+| account_info8                  | 88           | -   |
+| account_empty_init1            | 88           | -   |
+| account_empty_init2            | 88           | -   |
+| account_empty_init4            | 88           | -   |
+| account_empty_init8            | 88           | -   |
+| account_empty1                 | 88           | -   |
+| account_empty2                 | 88           | -   |
+| account_empty4                 | 88           | -   |
+| account_empty8                 | 88           | -   |
+| account_sized_init1            | 88           | -   |
+| account_sized_init2            | 88           | -   |
+| account_sized_init4            | 88           | -   |
+| account_sized_init8            | 88           | -   |
+| account_sized1                 | 88           | -   |
+| account_sized2                 | 88           | -   |
+| account_sized4                 | 88           | -   |
+| account_sized8                 | 88           | -   |
+| account_unsized_init1          | 88           | -   |
+| account_unsized_init2          | 88           | -   |
+| account_unsized_init4          | 88           | -   |
+| account_unsized_init8          | 88           | -   |
+| account_unsized1               | 88           | -   |
+| account_unsized2               | 88           | -   |
+| account_unsized4               | 88           | -   |
+| account_unsized8               | 88           | -   |
+| boxed_account_empty_init1      | 88           | -   |
+| boxed_account_empty_init2      | 88           | -   |
+| boxed_account_empty_init4      | 88           | -   |
+| boxed_account_empty_init8      | 88           | -   |
+| boxed_account_empty1           | 88           | -   |
+| boxed_account_empty2           | 88           | -   |
+| boxed_account_empty4           | 88           | -   |
+| boxed_account_empty8           | 96           | -   |
+| boxed_account_sized_init1      | 88           | -   |
+| boxed_account_sized_init2      | 88           | -   |
+| boxed_account_sized_init4      | 88           | -   |
+| boxed_account_sized_init8      | 88           | -   |
+| boxed_account_sized1           | 88           | -   |
+| boxed_account_sized2           | 88           | -   |
+| boxed_account_sized4           | 88           | -   |
+| boxed_account_sized8           | 96           | -   |
+| boxed_account_unsized_init1    | 88           | -   |
+| boxed_account_unsized_init2    | 88           | -   |
+| boxed_account_unsized_init4    | 88           | -   |
+| boxed_account_unsized_init8    | 88           | -   |
+| boxed_account_unsized1         | 88           | -   |
+| boxed_account_unsized2         | 88           | -   |
+| boxed_account_unsized4         | 88           | -   |
+| boxed_account_unsized8         | 96           | -   |
+| boxed_interface_account_mint1  | 88           | -   |
+| boxed_interface_account_mint2  | 88           | -   |
+| boxed_interface_account_mint4  | 88           | -   |
+| boxed_interface_account_mint8  | 96           | -   |
+| boxed_interface_account_token1 | 88           | -   |
+| boxed_interface_account_token2 | 88           | -   |
+| boxed_interface_account_token4 | 88           | -   |
+| boxed_interface_account_token8 | 96           | -   |
+| interface_account_mint1        | 88           | -   |
+| interface_account_mint2        | 88           | -   |
+| interface_account_mint4        | 88           | -   |
+| interface_account_mint8        | 88           | -   |
+| interface_account_token1       | 104          | -   |
+| interface_account_token2       | 104          | -   |
+| interface_account_token4       | 104          | -   |
+| interface1                     | 88           | -   |
+| interface2                     | 88           | -   |
+| interface4                     | 88           | -   |
+| interface8                     | 88           | -   |
+| program1                       | 88           | -   |
+| program2                       | 88           | -   |
+| program4                       | 88           | -   |
+| program8                       | 88           | -   |
+| signer1                        | 88           | -   |
+| signer2                        | 88           | -   |
+| signer4                        | 88           | -   |
+| signer8                        | 88           | -   |
+| system_account1                | 88           | -   |
+| system_account2                | 88           | -   |
+| system_account4                | 88           | -   |
+| system_account8                | 88           | -   |
+| unchecked_account1             | 88           | -   |
+| unchecked_account2             | 88           | -   |
+| unchecked_account4             | 88           | -   |
+| unchecked_account8             | 88           | -   |
+
+### Notable changes
+
+---
+
+## [1.1.1]
+
+Solana version: 3.1.10
+
+| Instruction                    | Stack Memory | -   |
+| ------------------------------ | ------------ | --- |
+| account_info1                  | 46           | -   |
+| account_info2                  | 88           | -   |
+| account_info4                  | 88           | -   |
+| account_info8                  | 88           | -   |
+| account_empty_init1            | 88           | -   |
+| account_empty_init2            | 88           | -   |
+| account_empty_init4            | 88           | -   |
+| account_empty_init8            | 88           | -   |
+| account_empty1                 | 88           | -   |
+| account_empty2                 | 88           | -   |
+| account_empty4                 | 88           | -   |
+| account_empty8                 | 88           | -   |
+| account_sized_init1            | 88           | -   |
+| account_sized_init2            | 88           | -   |
+| account_sized_init4            | 88           | -   |
+| account_sized_init8            | 88           | -   |
+| account_sized1                 | 88           | -   |
+| account_sized2                 | 88           | -   |
+| account_sized4                 | 88           | -   |
+| account_sized8                 | 88           | -   |
+| account_unsized_init1          | 88           | -   |
+| account_unsized_init2          | 88           | -   |
+| account_unsized_init4          | 88           | -   |
+| account_unsized_init8          | 88           | -   |
+| account_unsized1               | 88           | -   |
+| account_unsized2               | 88           | -   |
+| account_unsized4               | 88           | -   |
+| account_unsized8               | 88           | -   |
+| boxed_account_empty_init1      | 88           | -   |
+| boxed_account_empty_init2      | 88           | -   |
+| boxed_account_empty_init4      | 88           | -   |
+| boxed_account_empty_init8      | 88           | -   |
+| boxed_account_empty1           | 88           | -   |
+| boxed_account_empty2           | 88           | -   |
+| boxed_account_empty4           | 88           | -   |
+| boxed_account_empty8           | 96           | -   |
+| boxed_account_sized_init1      | 88           | -   |
+| boxed_account_sized_init2      | 88           | -   |
+| boxed_account_sized_init4      | 88           | -   |
+| boxed_account_sized_init8      | 88           | -   |
+| boxed_account_sized1           | 88           | -   |
+| boxed_account_sized2           | 88           | -   |
+| boxed_account_sized4           | 88           | -   |
+| boxed_account_sized8           | 96           | -   |
+| boxed_account_unsized_init1    | 88           | -   |
+| boxed_account_unsized_init2    | 88           | -   |
+| boxed_account_unsized_init4    | 88           | -   |
+| boxed_account_unsized_init8    | 88           | -   |
+| boxed_account_unsized1         | 88           | -   |
+| boxed_account_unsized2         | 88           | -   |
+| boxed_account_unsized4         | 88           | -   |
+| boxed_account_unsized8         | 96           | -   |
+| boxed_interface_account_mint1  | 88           | -   |
+| boxed_interface_account_mint2  | 88           | -   |
+| boxed_interface_account_mint4  | 88           | -   |
+| boxed_interface_account_mint8  | 96           | -   |
+| boxed_interface_account_token1 | 88           | -   |
+| boxed_interface_account_token2 | 88           | -   |
+| boxed_interface_account_token4 | 88           | -   |
+| boxed_interface_account_token8 | 96           | -   |
+| interface_account_mint1        | 88           | -   |
+| interface_account_mint2        | 88           | -   |
+| interface_account_mint4        | 88           | -   |
+| interface_account_mint8        | 88           | -   |
+| interface_account_token1       | 104          | -   |
+| interface_account_token2       | 104          | -   |
+| interface_account_token4       | 104          | -   |
+| interface1                     | 88           | -   |
+| interface2                     | 88           | -   |
+| interface4                     | 88           | -   |
+| interface8                     | 88           | -   |
+| program1                       | 88           | -   |
+| program2                       | 88           | -   |
+| program4                       | 88           | -   |
+| program8                       | 88           | -   |
+| signer1                        | 88           | -   |
+| signer2                        | 88           | -   |
+| signer4                        | 88           | -   |
+| signer8                        | 88           | -   |
+| system_account1                | 88           | -   |
+| system_account2                | 88           | -   |
+| system_account4                | 88           | -   |
+| system_account8                | 88           | -   |
+| unchecked_account1             | 88           | -   |
+| unchecked_account2             | 88           | -   |
+| unchecked_account4             | 88           | -   |
+| unchecked_account8             | 88           | -   |
+
+### Notable changes
+
+---
+
+## [1.1.0]
+
+Solana version: 3.1.10
+
+| Instruction                    | Stack Memory | -   |
+| ------------------------------ | ------------ | --- |
+| account_info1                  | 46           | -   |
+| account_info2                  | 88           | -   |
+| account_info4                  | 88           | -   |
+| account_info8                  | 88           | -   |
+| account_empty_init1            | 88           | -   |
+| account_empty_init2            | 88           | -   |
+| account_empty_init4            | 88           | -   |
+| account_empty_init8            | 88           | -   |
+| account_empty1                 | 88           | -   |
+| account_empty2                 | 88           | -   |
+| account_empty4                 | 88           | -   |
+| account_empty8                 | 88           | -   |
+| account_sized_init1            | 88           | -   |
+| account_sized_init2            | 88           | -   |
+| account_sized_init4            | 88           | -   |
+| account_sized_init8            | 88           | -   |
+| account_sized1                 | 88           | -   |
+| account_sized2                 | 88           | -   |
+| account_sized4                 | 88           | -   |
+| account_sized8                 | 88           | -   |
+| account_unsized_init1          | 88           | -   |
+| account_unsized_init2          | 88           | -   |
+| account_unsized_init4          | 88           | -   |
+| account_unsized_init8          | 88           | -   |
+| account_unsized1               | 88           | -   |
+| account_unsized2               | 88           | -   |
+| account_unsized4               | 88           | -   |
+| account_unsized8               | 88           | -   |
+| boxed_account_empty_init1      | 88           | -   |
+| boxed_account_empty_init2      | 88           | -   |
+| boxed_account_empty_init4      | 88           | -   |
+| boxed_account_empty_init8      | 88           | -   |
+| boxed_account_empty1           | 88           | -   |
+| boxed_account_empty2           | 88           | -   |
+| boxed_account_empty4           | 88           | -   |
+| boxed_account_empty8           | 96           | -   |
+| boxed_account_sized_init1      | 88           | -   |
+| boxed_account_sized_init2      | 88           | -   |
+| boxed_account_sized_init4      | 88           | -   |
+| boxed_account_sized_init8      | 88           | -   |
+| boxed_account_sized1           | 88           | -   |
+| boxed_account_sized2           | 88           | -   |
+| boxed_account_sized4           | 88           | -   |
+| boxed_account_sized8           | 96           | -   |
+| boxed_account_unsized_init1    | 88           | -   |
+| boxed_account_unsized_init2    | 88           | -   |
+| boxed_account_unsized_init4    | 88           | -   |
+| boxed_account_unsized_init8    | 88           | -   |
+| boxed_account_unsized1         | 88           | -   |
+| boxed_account_unsized2         | 88           | -   |
+| boxed_account_unsized4         | 88           | -   |
+| boxed_account_unsized8         | 96           | -   |
+| boxed_interface_account_mint1  | 88           | -   |
+| boxed_interface_account_mint2  | 88           | -   |
+| boxed_interface_account_mint4  | 88           | -   |
+| boxed_interface_account_mint8  | 96           | -   |
+| boxed_interface_account_token1 | 88           | -   |
+| boxed_interface_account_token2 | 88           | -   |
+| boxed_interface_account_token4 | 88           | -   |
+| boxed_interface_account_token8 | 96           | -   |
+| interface_account_mint1        | 88           | -   |
+| interface_account_mint2        | 88           | -   |
+| interface_account_mint4        | 88           | -   |
+| interface_account_mint8        | 88           | -   |
+| interface_account_token1       | 104          | -   |
+| interface_account_token2       | 104          | -   |
+| interface_account_token4       | 104          | -   |
+| interface1                     | 88           | -   |
+| interface2                     | 88           | -   |
+| interface4                     | 88           | -   |
+| interface8                     | 88           | -   |
+| program1                       | 88           | -   |
+| program2                       | 88           | -   |
+| program4                       | 88           | -   |
+| program8                       | 88           | -   |
+| signer1                        | 88           | -   |
+| signer2                        | 88           | -   |
+| signer4                        | 88           | -   |
+| signer8                        | 88           | -   |
+| system_account1                | 88           | -   |
+| system_account2                | 88           | -   |
+| system_account4                | 88           | -   |
+| system_account8                | 88           | -   |
+| unchecked_account1             | 88           | -   |
+| unchecked_account2             | 88           | -   |
+| unchecked_account4             | 88           | -   |
+| unchecked_account8             | 88           | -   |
+
+### Notable changes
+
+---
+
+## [1.0.3]
+
+Solana version: 3.1.10
+
+| Instruction                    | Stack Memory | -   |
+| ------------------------------ | ------------ | --- |
+| account_info1                  | 46           | -   |
+| account_info2                  | 88           | -   |
+| account_info4                  | 88           | -   |
+| account_info8                  | 88           | -   |
+| account_empty_init1            | 88           | -   |
+| account_empty_init2            | 88           | -   |
+| account_empty_init4            | 88           | -   |
+| account_empty_init8            | 88           | -   |
+| account_empty1                 | 88           | -   |
+| account_empty2                 | 88           | -   |
+| account_empty4                 | 88           | -   |
+| account_empty8                 | 88           | -   |
+| account_sized_init1            | 88           | -   |
+| account_sized_init2            | 88           | -   |
+| account_sized_init4            | 88           | -   |
+| account_sized_init8            | 88           | -   |
+| account_sized1                 | 88           | -   |
+| account_sized2                 | 88           | -   |
+| account_sized4                 | 88           | -   |
+| account_sized8                 | 88           | -   |
+| account_unsized_init1          | 88           | -   |
+| account_unsized_init2          | 88           | -   |
+| account_unsized_init4          | 88           | -   |
+| account_unsized_init8          | 88           | -   |
+| account_unsized1               | 88           | -   |
+| account_unsized2               | 88           | -   |
+| account_unsized4               | 88           | -   |
+| account_unsized8               | 88           | -   |
+| boxed_account_empty_init1      | 88           | -   |
+| boxed_account_empty_init2      | 88           | -   |
+| boxed_account_empty_init4      | 88           | -   |
+| boxed_account_empty_init8      | 88           | -   |
+| boxed_account_empty1           | 88           | -   |
+| boxed_account_empty2           | 88           | -   |
+| boxed_account_empty4           | 88           | -   |
+| boxed_account_empty8           | 96           | -   |
+| boxed_account_sized_init1      | 88           | -   |
+| boxed_account_sized_init2      | 88           | -   |
+| boxed_account_sized_init4      | 88           | -   |
+| boxed_account_sized_init8      | 88           | -   |
+| boxed_account_sized1           | 88           | -   |
+| boxed_account_sized2           | 88           | -   |
+| boxed_account_sized4           | 88           | -   |
+| boxed_account_sized8           | 96           | -   |
+| boxed_account_unsized_init1    | 88           | -   |
+| boxed_account_unsized_init2    | 88           | -   |
+| boxed_account_unsized_init4    | 88           | -   |
+| boxed_account_unsized_init8    | 88           | -   |
+| boxed_account_unsized1         | 88           | -   |
+| boxed_account_unsized2         | 88           | -   |
+| boxed_account_unsized4         | 88           | -   |
+| boxed_account_unsized8         | 96           | -   |
+| boxed_interface_account_mint1  | 88           | -   |
+| boxed_interface_account_mint2  | 88           | -   |
+| boxed_interface_account_mint4  | 88           | -   |
+| boxed_interface_account_mint8  | 96           | -   |
+| boxed_interface_account_token1 | 88           | -   |
+| boxed_interface_account_token2 | 88           | -   |
+| boxed_interface_account_token4 | 88           | -   |
+| boxed_interface_account_token8 | 96           | -   |
+| interface_account_mint1        | 88           | -   |
+| interface_account_mint2        | 88           | -   |
+| interface_account_mint4        | 88           | -   |
+| interface_account_mint8        | 88           | -   |
+| interface_account_token1       | 104          | -   |
+| interface_account_token2       | 104          | -   |
+| interface_account_token4       | 104          | -   |
+| interface1                     | 88           | -   |
+| interface2                     | 88           | -   |
+| interface4                     | 88           | -   |
+| interface8                     | 88           | -   |
+| program1                       | 88           | -   |
+| program2                       | 88           | -   |
+| program4                       | 88           | -   |
+| program8                       | 88           | -   |
+| signer1                        | 88           | -   |
+| signer2                        | 88           | -   |
+| signer4                        | 88           | -   |
+| signer8                        | 88           | -   |
+| system_account1                | 88           | -   |
+| system_account2                | 88           | -   |
+| system_account4                | 88           | -   |
+| system_account8                | 88           | -   |
+| unchecked_account1             | 88           | -   |
+| unchecked_account2             | 88           | -   |
+| unchecked_account4             | 88           | -   |
+| unchecked_account8             | 88           | -   |
+
+### Notable changes
+
+---
+
 ## [1.0.2]
 
 Solana version: 3.1.10

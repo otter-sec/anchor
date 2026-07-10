@@ -13,9 +13,9 @@ describe("CPI return", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
-  const callerProgram = anchor.workspace.Caller as Program<Caller>;
-  const calleeProgram = anchor.workspace.Callee as Program<Callee>;
-  const maliciousProgram = anchor.workspace.Malicious as Program<Malicious>;
+  const callerProgram = anchor.workspace.caller as Program<Caller>;
+  const calleeProgram = anchor.workspace.callee as Program<Callee>;
+  const maliciousProgram = anchor.workspace.malicious as Program<Malicious>;
 
   const getReturnLog = (confirmedTransaction) => {
     const prefix = "Program return: ";

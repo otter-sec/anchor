@@ -3328,9 +3328,9 @@ const miscTest = (
 
 export default miscTest;
 
-describe("misc", miscTest(anchor.workspace.Misc as Program<Misc>));
+describe("misc", miscTest(anchor.workspace.misc as Program<Misc>));
 
 describe(
   "misc-optional",
-  miscTest(anchor.workspace.MiscOptional as Program<MiscOptional>)
+  miscTest(anchor.workspace.miscOptional as Program<MiscOptional>)
 );

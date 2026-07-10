@@ -38,7 +38,7 @@ To jump straight to examples, go [here](https://github.com/otter-sec/anchor/tree
 The recommended way to install the Anchor CLI is with the Anchor Version Manager (AVM).
 
 ```sh
-curl -sSfL https://raw.githubusercontent.com/solana-foundation/anchor/master/avm/install | sh
+curl -sSfL https://raw.githubusercontent.com/otter-sec/anchor/master/avm/install | sh
 ```
 
 The installer downloads the latest nightly AVM and Anchor CLI binaries, enables

@@ -22,7 +22,7 @@ describe("program", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.TokenProxy;
+  const program = anchor.workspace.tokenProxy;
 
   TOKEN_PROGRAMS.forEach((tokenProgram) => {
     const name = tokenProgram.programId.equals(SPL_TOKEN_PROGRAM_ID)

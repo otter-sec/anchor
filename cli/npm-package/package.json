@@ -1,6 +1,6 @@
 {
   "name": "@anchor-lang/cli",
-  "version": "1.0.2",
+  "version": "1.1.2",
   "description": "Anchor CLI tool",
   "homepage": "https://github.com/otter-sec/anchor#readme",
   "bugs": {
@@ -8,11 +8,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/otter-sec/anchor.git"
+    "url": "git+https://github.com/otter-sec/anchor.git"
   },
   "license": "(MIT OR Apache-2.0)",
   "bin": {
-    "anchor": "./anchor.js"
+    "anchor": "anchor.js"
   },
   "scripts": {
     "prepack": "[ \"$(uname -op)\" != \"x86_64 GNU/Linux\" ] && (echo Can be packed only on x86_64 GNU/Linux && exit 1) || ([ \"$(./anchor --version)\" != \"anchor-cli $(jq -r .version package.json)\" ] && (echo Check anchor binary version && exit 2) || exit 0)"

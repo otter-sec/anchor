@@ -25,9 +25,9 @@ The `anchor build` command generates an IDL file located at
 </Callout>
 
 <Callout type="info">
-On-chain IDL storage uses the Program Metadata system. This reduces program
-binary sizes and provides a standardized approach to on-chain metadata. Use
-`anchor idl init` to upload your IDL to the blockchain.
+  On-chain IDL storage uses the Program Metadata system. This reduces program
+  binary sizes and provides a standardized approach to on-chain metadata. Use
+  `anchor idl init` to upload your IDL to the blockchain.
 </Callout>
 
 The code snippets in the sections below highlight how the program, IDL, and
@@ -170,7 +170,7 @@ describe("hello_anchor", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   const wallet = provider.wallet as anchor.Wallet;
-  const program = anchor.workspace.HelloAnchor as Program<HelloAnchor>;
+  const program = anchor.workspace.helloAnchor as Program<HelloAnchor>;
 
   it("initialize", async () => {
     // Generate keypair for the new account
@@ -335,7 +335,7 @@ describe("hello_anchor", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   const wallet = provider.wallet as anchor.Wallet;
-  const program = anchor.workspace.HelloAnchor as Program<HelloAnchor>;
+  const program = anchor.workspace.helloAnchor as Program<HelloAnchor>;
 
   it("initialize", async () => {
     // Generate keypair for the new account
@@ -438,7 +438,8 @@ ed = 237
 You can find the implementation of the discriminator generation in the Anchor
 codebase
 [here](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/program/common.rs#L5-L22),
-for the [`gen_discriminator` method here](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/program/common.rs#L19-L22),
+for the
+[`gen_discriminator` method here](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/program/common.rs#L19-L22),
 which is used
 [here](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/syn/src/codegen/program/instruction.rs#L33).
 
