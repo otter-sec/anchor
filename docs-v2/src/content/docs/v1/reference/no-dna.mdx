@@ -1,0 +1,81 @@
+---
+title: NO_DNA
+description: Reference documentation for Anchor's NO_DNA support
+---
+
+Anchor supports the `NO_DNA` convention for non-human CLI usage. See
+[no-dna.org](https://no-dna.org/). Set `NO_DNA` to any non-empty value when
+invoking Anchor from an agent, automation, or another non-interactive
+workflow that should not block on supported stdin waits. `NO_DNA=1` is the
+standard example.
+
+## Usage
+
+Prefix the command:
+
+```bash
+NO_DNA=1 anchor test --detach
+NO_DNA=1 anchor localnet
+NO_DNA=1 anchor program close <ACCOUNT> --bypass-warning
+```
+
+Or export it for a session:
+
+```bash
+export NO_DNA=1
+anchor test --detach
+```
+
+## Supported behavior
+
+Anchor currently supports `NO_DNA` in the following CLI flows:
+
+- `anchor test --detach` returns immediately instead of waiting for Enter after
+  tests complete. The validator is left running.
+- `anchor localnet` returns immediately instead of waiting for Enter after the
+  local validator starts. The validator is left running.
+- `anchor program close` disables the interactive confirmation prompt. This
+  command fails unless `--bypass-warning` is passed explicitly.
+- Child processes launched from the touched test workflow inherit `NO_DNA=1`,
+  including the test script shell and Surfpool validator startup.
+
+<Callout type="info" title="Destructive commands stay explicit">
+`NO_DNA` does not auto-confirm destructive actions. For commands such as
+`anchor program close`, pass the existing explicit bypass flag yourself.
+</Callout>
+
+## Behavior contract
+
+- Any present, non-empty `NO_DNA` value enables this mode.
+- `NO_DNA=1` is the standard example and the value Anchor forwards to supported
+  child tools.
+- When enabled, Anchor forwards `NO_DNA=1` to supported child tools so the same
+  non-interactive mode is visible downstream.
+- Default human-driven CLI behavior is unchanged when `NO_DNA` is unset.
+
+## Checking support from the CLI
+
+The CLI help text documents `NO_DNA` where it applies:
+
+```bash
+anchor --help
+anchor test --help
+anchor localnet --help
+anchor program close --help
+```
+
+## Notes
+
+`NO_DNA` support is additive and currently scoped to the supported flows above.
+If a command is not documented as `NO_DNA`-aware, do not assume it has
+non-interactive behavior beyond its existing flags.
+
+## Current limitations
+
+Dangerous operations still require extra explicit confirmation in automation
+flows.
+
+- `anchor program close` does not auto-confirm under `NO_DNA`. For automation,
+  you must still pass `--bypass-warning` explicitly.
+- `anchor legacy-idl erase-authority` is not yet `NO_DNA`-aware. If you need
+  to automate it, you must still provide the confirmation input yourself.
