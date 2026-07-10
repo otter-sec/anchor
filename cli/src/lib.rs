@@ -142,7 +142,7 @@ fn env_var_present(value: Option<&str>) -> bool {
 }
 
 pub(crate) fn no_dna_enabled() -> bool {
-    env_var_present(std::env::var(NO_DNA_ENV).ok().as_deref())
+    std::env::var(NO_DNA_ENV).is_ok()
 }
 
 pub(crate) fn propagate_no_dna(
