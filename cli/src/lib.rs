@@ -79,7 +79,7 @@ pub const DOCKER_BUILDER_VERSION: &str = VERSION;
 /// Default RPC port
 pub const DEFAULT_RPC_PORT: u16 = 8899;
 const DEFAULT_FAUCET_PORT: u16 = 9900;
-/// Environment variable for NO_DNA mode & Relevent Help Messages.
+/// Environment variable for NO_DNA mode & relevant help messages.
 pub(crate) const NO_DNA_ENV: &str = "NO_DNA";
 const NO_DNA_TOP_LEVEL_HELP: &str =
     "Set NO_DNA=1 when running Anchor in CI, scripts, or AI agents. This disables supported \
@@ -4648,6 +4648,7 @@ fn run_test_suite(
         };
         let cmd = cmd.clone();
         let script_args = format!("{cmd} {}", extra_args.join(" "));
+
         std::process::Command::new("bash")
             .arg("-c")
             .arg(script_args)
