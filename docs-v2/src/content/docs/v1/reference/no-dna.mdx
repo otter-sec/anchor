@@ -44,14 +44,6 @@ Anchor currently supports `NO_DNA` in the following CLI flows:
 `anchor program close`, pass the existing explicit bypass flag yourself.
 </Callout>
 
-## Behavior contract
-
-- Any present, non-empty `NO_DNA` value enables this mode.
-- `NO_DNA=1` is the standard example and the value Anchor forwards to supported
-  child tools.
-- When enabled, Anchor forwards `NO_DNA=1` to supported child tools so the same
-  non-interactive mode is visible downstream.
-- Default human-driven CLI behavior is unchanged when `NO_DNA` is unset.
 
 ## Checking support from the CLI
 
