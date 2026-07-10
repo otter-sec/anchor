@@ -36,6 +36,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Reduce cloning in `realloc` constraint when shrinking ([#4642](https://github.com/solana-foundation/anchor/pull/4642)).
 - syn: Remove `anyhow` ([#4640](https://github.com/solana-foundation/anchor/pull/4640)).
 - lang: Sync type derives and simplify internal args creation in `declare_program!` ([#4667](https://github.com/solana-foundation/anchor/pull/4667)).
+- lang: Improve `std` hygiene inside macros ([#4700](https://github.com/solana-foundation/anchor/pull/4700)).
 
 ### Breaking
 
