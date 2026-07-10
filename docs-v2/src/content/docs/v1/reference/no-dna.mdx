@@ -28,16 +28,6 @@ anchor test --detach
 
 ## Supported behavior
 
-Anchor currently supports `NO_DNA` in the following CLI flows:
-
-- `anchor test --detach` returns immediately instead of waiting for Enter after
-  tests complete. The validator is left running.
-- `anchor localnet` returns immediately instead of waiting for Enter after the
-  local validator starts. The validator is left running.
-- `anchor program close` disables the interactive confirmation prompt. This
-  command fails unless `--bypass-warning` is passed explicitly.
-- Child processes launched from the touched test workflow inherit `NO_DNA=1`,
-  including the test script shell and Surfpool validator startup.
 
 <Callout type="info" title="Destructive commands stay explicit">
 `NO_DNA` does not auto-confirm destructive actions. For commands such as
