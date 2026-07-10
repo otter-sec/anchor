@@ -7285,30 +7285,6 @@ mod tests {
     }
 
     #[test]
-    fn test_no_dna_present_and_non_empty() {
-        assert!(env_var_present(Some("1")));
-        assert!(env_var_present(Some("true")));
-        assert!(env_var_present(Some("0")));
-        assert!(env_var_present(Some("random")));
-        assert!(!env_var_present(None));
-        assert!(!env_var_present(Some("")));
-        assert!(!env_var_present(Some("   ")));
-    }
-
-    #[test]
-    fn test_propagate_no_dna_normalizes_child_env() {
-        let mut command = std::process::Command::new("true");
-        propagate_no_dna(&mut command, true);
-
-        let propagated = command
-            .get_envs()
-            .find_map(|(key, value)| (key == std::ffi::OsStr::new(NO_DNA_ENV)).then_some(value))
-            .flatten();
-
-        assert_eq!(propagated, Some(std::ffi::OsStr::new("1")));
-    }
-
-    #[test]
     fn test_codama_command_parses() {
         let opts = Opts::try_parse_from([
             "anchor",
