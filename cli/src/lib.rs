@@ -79,6 +79,17 @@ pub const DOCKER_BUILDER_VERSION: &str = VERSION;
 /// Default RPC port
 pub const DEFAULT_RPC_PORT: u16 = 8899;
 const DEFAULT_FAUCET_PORT: u16 = 9900;
+/// Environment variable for NO_DNA mode & Relevent Help Messages.
+pub(crate) const NO_DNA_ENV: &str = "NO_DNA";
+const NO_DNA_TOP_LEVEL_HELP: &str =
+    "Set NO_DNA=1 when running Anchor in CI, scripts, or AI agents. This disables supported \
+     interactive prompts, but destructive commands still require their explicit bypass flags.";
+const NO_DNA_TEST_HELP: &str =
+    "Set NO_DNA=1 to run tests without waiting for supported interactive input.";
+const NO_DNA_LOCALNET_HELP: &str = "With NO_DNA=1, Anchor starts the local validator and \
+                                    continues immediately without waiting for interactive input.";
+const NO_DNA_PROGRAM_CLOSE_HELP: &str = "NO_DNA disables the interactive confirmation. Pass \
+                                         --bypass-warning explicitly to close non-interactively.";
 
 /// WebSocket port offset for solana-test-validator (RPC port + 1)
 pub const WEBSOCKET_PORT_OFFSET: u16 = 1;
@@ -126,6 +137,24 @@ fn command_output(command: &str, args: &[&str]) -> Option<String> {
         .filter(|line| !line.is_empty())
 }
 
+fn env_var_present(value: Option<&str>) -> bool {
+    value.is_some_and(|value| !value.trim().is_empty())
+}
+
+pub(crate) fn no_dna_enabled() -> bool {
+    env_var_present(std::env::var(NO_DNA_ENV).ok().as_deref())
+}
+
+pub(crate) fn propagate_no_dna(
+    cmd: &mut std::process::Command,
+    enabled: bool,
+) -> &mut std::process::Command {
+    if enabled {
+        cmd.env(NO_DNA_ENV, "1");
+    }
+    cmd
+}
+
 fn os_version() -> String {
     #[cfg(target_os = "macos")]
     if let Some(version) = macos_version() {
@@ -168,7 +197,7 @@ fn linux_os_release() -> Option<String> {
 }
 
 #[derive(Debug, Parser, AbsolutePath)]
-#[clap(version = VERSION)]
+#[clap(version = VERSION, after_help = NO_DNA_TOP_LEVEL_HELP)]
 pub struct Opts {
     #[clap(flatten)]
     pub cfg_override: ConfigOverride,
@@ -296,7 +325,7 @@ pub enum Command {
         #[clap(raw = true)]
         args: Vec<String>,
     },
-    #[clap(name = "test", alias = "t")]
+    #[clap(name = "test", alias = "t", after_help = NO_DNA_TEST_HELP)]
     /// Runs integration tests.
     Test {
         /// Build and test only this program
@@ -483,6 +512,7 @@ pub enum Command {
         subcmd: KeysCommand,
     },
     /// Localnet commands.
+    #[clap(after_help = NO_DNA_LOCALNET_HELP)]
     Localnet {
         /// Flag to skip building the program in the workspace,
         /// use this to save time when running test and the program code is not altered.
@@ -771,6 +801,7 @@ pub enum ProgramCommand {
         output_file: String,
     },
     /// Close a program or buffer account and withdraw all lamports
+    #[clap(after_help = NO_DNA_PROGRAM_CLOSE_HELP)]
     Close {
         /// Account address to close (buffer or program).
         /// If not provided, discovers program from workspace using program_name
@@ -4631,8 +4662,9 @@ fn run_test_suite(
         };
         let cmd = cmd.clone();
         let script_args = format!("{cmd} {}", extra_args.join(" "));
-
-        std::process::Command::new("bash")
+        let mut command = std::process::Command::new("bash");
+        propagate_no_dna(&mut command, no_dna_enabled());
+        command
             .arg("-c")
             .arg(script_args)
             .env("ANCHOR_PROVIDER_URL", url)
@@ -4647,7 +4679,17 @@ fn run_test_suite(
 
     // Keep validator running if needed.
     if test_result.is_ok() && detach {
-        println!("Local validator still running. Press Ctrl + C quit.");
+        if no_dna_enabled() {
+            println!("Local validator still running.");
+            if let Some(log_streams) = log_streams {
+                for handle in log_streams {
+                    handle.shutdown();
+                }
+            }
+            return Ok(());
+        } else {
+            println!("Local validator still running. Press Ctrl + C quit.");
+        }
         std::io::stdin().lock().lines().next().unwrap().unwrap();
     }
 
@@ -5667,7 +5709,9 @@ fn start_surfpool_validator(
         false => Stdio::null(),
     };
 
-    let mut validator_handle = std::process::Command::new("surfpool")
+    let mut validator_command = std::process::Command::new("surfpool");
+    propagate_no_dna(&mut validator_command, no_dna_enabled());
+    let mut validator_handle = validator_command
         .arg("start")
         .args(flags.unwrap_or_default())
         .stdout(test_validator_stdout)
@@ -6699,6 +6743,17 @@ fn localnet(
             }
         };
 
+        if no_dna_enabled() {
+            println!("Local validator still running.");
+            if let Some(log_streams) = log_streams {
+                for handle in log_streams {
+                    handle.shutdown();
+                }
+            }
+            return Ok(());
+        } else {
+            println!("Local validator still running. Press Ctrl + C quit.");
+        }
         std::io::stdin().lock().lines().next().unwrap().unwrap();
 
         // Check all errors and shut down.
@@ -7227,6 +7282,30 @@ mod tests {
             panic!("expected localnet command");
         };
         assert_eq!(validator, ValidatorType::Surfpool);
+    }
+
+    #[test]
+    fn test_no_dna_present_and_non_empty() {
+        assert!(env_var_present(Some("1")));
+        assert!(env_var_present(Some("true")));
+        assert!(env_var_present(Some("0")));
+        assert!(env_var_present(Some("random")));
+        assert!(!env_var_present(None));
+        assert!(!env_var_present(Some("")));
+        assert!(!env_var_present(Some("   ")));
+    }
+
+    #[test]
+    fn test_propagate_no_dna_normalizes_child_env() {
+        let mut command = std::process::Command::new("true");
+        propagate_no_dna(&mut command, true);
+
+        let propagated = command
+            .get_envs()
+            .find_map(|(key, value)| (key == std::ffi::OsStr::new(NO_DNA_ENV)).then_some(value))
+            .flatten();
+
+        assert_eq!(propagated, Some(std::ffi::OsStr::new("1")));
     }
 
     #[test]
