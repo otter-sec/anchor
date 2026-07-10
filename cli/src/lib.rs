@@ -137,10 +137,6 @@ fn command_output(command: &str, args: &[&str]) -> Option<String> {
         .filter(|line| !line.is_empty())
 }
 
-fn env_var_present(value: Option<&str>) -> bool {
-    value.is_some_and(|value| !value.trim().is_empty())
-}
-
 pub(crate) fn no_dna_enabled() -> bool {
     std::env::var(NO_DNA_ENV).is_ok()
 }
