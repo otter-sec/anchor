@@ -141,16 +141,6 @@ pub(crate) fn no_dna_enabled() -> bool {
     std::env::var(NO_DNA_ENV).is_ok()
 }
 
-pub(crate) fn propagate_no_dna(
-    cmd: &mut std::process::Command,
-    enabled: bool,
-) -> &mut std::process::Command {
-    if enabled {
-        cmd.env(NO_DNA_ENV, "1");
-    }
-    cmd
-}
-
 fn os_version() -> String {
     #[cfg(target_os = "macos")]
     if let Some(version) = macos_version() {
@@ -4658,9 +4648,7 @@ fn run_test_suite(
         };
         let cmd = cmd.clone();
         let script_args = format!("{cmd} {}", extra_args.join(" "));
-        let mut command = std::process::Command::new("bash");
-        propagate_no_dna(&mut command, no_dna_enabled());
-        command
+        std::process::Command::new("bash")
             .arg("-c")
             .arg(script_args)
             .env("ANCHOR_PROVIDER_URL", url)
@@ -5705,9 +5693,7 @@ fn start_surfpool_validator(
         false => Stdio::null(),
     };
 
-    let mut validator_command = std::process::Command::new("surfpool");
-    propagate_no_dna(&mut validator_command, no_dna_enabled());
-    let mut validator_handle = validator_command
+    let mut validator_handle = std::process::Command::new("surfpool")
         .arg("start")
         .args(flags.unwrap_or_default())
         .stdout(test_validator_stdout)
