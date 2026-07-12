@@ -1,6 +1,6 @@
 // Instruction errors.
 
-/** 8 byte instruction identifier not provided. */
+/** Instruction discriminator not provided. */
 export const ANCHOR_ERROR__INSTRUCTION_MISSING = 100;
 /** The instruction discriminator did not match any instruction, and no fallback function is defined. */
 export const ANCHOR_ERROR__INSTRUCTION_FALLBACK_NOT_FOUND = 101;
@@ -129,7 +129,7 @@ export const ANCHOR_ERROR__REQUIRE_GTE_VIOLATED = 2506;
 export const ANCHOR_ERROR__ACCOUNT_DISCRIMINATOR_ALREADY_SET = 3000;
 /** The account data is too small to contain a discriminator. */
 export const ANCHOR_ERROR__ACCOUNT_DISCRIMINATOR_NOT_FOUND = 3001;
-/** 8 byte discriminator did not match what was expected. */
+/** Account discriminator did not match what was expected. */
 export const ANCHOR_ERROR__ACCOUNT_DISCRIMINATOR_MISMATCH = 3002;
 /** Failed to deserialize the account because the account data may be too small for the expected type. */
 export const ANCHOR_ERROR__ACCOUNT_DID_NOT_DESERIALIZE = 3003;
