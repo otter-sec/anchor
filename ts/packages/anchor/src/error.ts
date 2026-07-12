@@ -565,7 +565,7 @@ export const LangErrorMessage = new Map<number, string>([
   ],
   [
     LangErrorCode.ConstraintMintCloseAuthorityExtension,
-    "A close authority constraint was violated",
+    "A close authority extension constraint was violated",
   ],
   [
     LangErrorCode.ConstraintMintCloseAuthorityExtensionAuthority,

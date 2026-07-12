@@ -172,7 +172,7 @@ pub enum ErrorCode {
     #[msg("A metadata pointer extension metadata address constraint was violated")]
     ConstraintMintMetadataPointerExtensionMetadataAddress,
     /// 2033 - A close authority extension constraint was violated
-    #[msg("A close authority constraint was violated")]
+    #[msg("A close authority extension constraint was violated")]
     ConstraintMintCloseAuthorityExtension,
     /// 2034 - A close authority extension authority constraint was violated
     #[msg("A close authority extension authority constraint was violated")]
