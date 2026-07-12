@@ -390,6 +390,14 @@ export const LangErrorCode = {
     errors.ANCHOR_ERROR__CONSTRAINT_MINT_TRANSFER_HOOK_EXTENSION_AUTHORITY,
   ConstraintMintTransferHookExtensionProgramId:
     errors.ANCHOR_ERROR__CONSTRAINT_MINT_TRANSFER_HOOK_EXTENSION_PROGRAM_ID,
+  ConstraintDuplicateMutableAccount:
+    errors.ANCHOR_ERROR__CONSTRAINT_DUPLICATE_MUTABLE_ACCOUNT,
+  AccountAlreadyMigrated: errors.ANCHOR_ERROR__ACCOUNT_ALREADY_MIGRATED,
+  AccountNotMigrated: errors.ANCHOR_ERROR__ACCOUNT_NOT_MIGRATED,
+  ConstraintMintPausableExtension:
+    errors.ANCHOR_ERROR__CONSTRAINT_MINT_PAUSABLE_EXTENSION,
+  ConstraintMintPausableAuthority:
+    errors.ANCHOR_ERROR__CONSTRAINT_MINT_PAUSABLE_AUTHORITY,
 
   // Require.
   RequireViolated: errors.ANCHOR_ERROR__REQUIRE_VIOLATED,
@@ -590,6 +598,23 @@ export const LangErrorMessage = new Map<number, string>([
   [
     LangErrorCode.ConstraintMintTransferHookExtensionProgramId,
     "A transfer hook extension transfer hook program id constraint was violated",
+  ],
+  [
+    LangErrorCode.ConstraintDuplicateMutableAccount,
+    "A duplicate mutable account constraint was violated",
+  ],
+  [LangErrorCode.AccountAlreadyMigrated, "Account is already migrated"],
+  [
+    LangErrorCode.AccountNotMigrated,
+    "Account must be migrated before exiting",
+  ],
+  [
+    LangErrorCode.ConstraintMintPausableExtension,
+    "A pausable extension constraint was violated",
+  ],
+  [
+    LangErrorCode.ConstraintMintPausableAuthority,
+    "A pausable extension authority constraint was violated",
   ],
 
   // Require.
