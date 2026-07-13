@@ -604,10 +604,7 @@ export const LangErrorMessage = new Map<number, string>([
     "A duplicate mutable account constraint was violated",
   ],
   [LangErrorCode.AccountAlreadyMigrated, "Account is already migrated"],
-  [
-    LangErrorCode.AccountNotMigrated,
-    "Account must be migrated before exiting",
-  ],
+  [LangErrorCode.AccountNotMigrated, "Account must be migrated before exiting"],
   [
     LangErrorCode.ConstraintMintPausableExtension,
     "A pausable extension constraint was violated",
