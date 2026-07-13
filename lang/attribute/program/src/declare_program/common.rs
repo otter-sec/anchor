@@ -156,7 +156,7 @@ pub fn convert_idl_type_def_to_ts(
     };
 
     let attrs = {
-        let debug_attr = can_derive_debug(ty_def, ty_defs).then_some(quote!(#[derive(Debug)]));
+        let debug_attr = quote!(#[derive(Debug)]);
         let default_attr =
             can_derive_default(ty_def, ty_defs).then_some(quote!(#[derive(Default)]));
 
@@ -175,8 +175,7 @@ pub fn convert_idl_type_def_to_ts(
         };
 
         let clone_attr = matches!(ty_def.serialization, IdlSerialization::Borsh)
-            .then(|| can_derive_clone(ty_def, ty_defs).then_some(quote!(#[derive(Clone)])))
-            .flatten()
+            .then(|| quote!(#[derive(Clone)]))
             .unwrap_or_default();
 
         let copy_attr = matches!(ty_def.serialization, IdlSerialization::Borsh)
@@ -327,30 +326,6 @@ fn can_derive_copy(ty_def: &IdlTypeDef, ty_defs: &[IdlTypeDef]) -> bool {
     }
 }
 
-fn can_derive_clone(ty_def: &IdlTypeDef, ty_defs: &[IdlTypeDef]) -> bool {
-    match &ty_def.ty {
-        IdlTypeDefTy::Struct { fields } => {
-            can_derive_common(fields.as_ref(), ty_defs, can_derive_clone_ty)
-        }
-        IdlTypeDefTy::Enum { variants } => variants.iter().all(|variant| {
-            can_derive_common(variant.fields.as_ref(), ty_defs, can_derive_clone_ty)
-        }),
-        IdlTypeDefTy::Type { alias } => can_derive_clone_ty(alias, ty_defs),
-    }
-}
-
-fn can_derive_debug(ty_def: &IdlTypeDef, ty_defs: &[IdlTypeDef]) -> bool {
-    match &ty_def.ty {
-        IdlTypeDefTy::Struct { fields } => {
-            can_derive_common(fields.as_ref(), ty_defs, can_derive_debug_ty)
-        }
-        IdlTypeDefTy::Enum { variants } => variants.iter().all(|variant| {
-            can_derive_common(variant.fields.as_ref(), ty_defs, can_derive_debug_ty)
-        }),
-        IdlTypeDefTy::Type { alias } => can_derive_debug_ty(alias, ty_defs),
-    }
-}
-
 fn can_derive_default(ty_def: &IdlTypeDef, ty_defs: &[IdlTypeDef]) -> bool {
     match &ty_def.ty {
         IdlTypeDefTy::Struct { fields } => {
@@ -385,44 +360,6 @@ pub fn can_derive_copy_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
             .map(|ty_def| can_derive_copy(ty_def, ty_defs))
             .expect("Type def must exist"),
         IdlType::Bytes | IdlType::String | IdlType::Vec(_) | IdlType::Generic(_) => false,
-        _ => true,
-    }
-}
-
-fn can_derive_clone_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
-    match ty {
-        IdlType::Option(inner) => can_derive_clone_ty(inner, ty_defs),
-        IdlType::Vec(inner) => can_derive_clone_ty(inner, ty_defs),
-        IdlType::Array(inner, _) => can_derive_clone_ty(inner, ty_defs),
-        #[allow(
-            clippy::expect_used,
-            reason = "IDL cross-references are guaranteed consistent by Anchor tooling"
-        )]
-        IdlType::Defined { name, .. } => ty_defs
-            .iter()
-            .find(|ty_def| &ty_def.name == name)
-            .map(|ty_def| can_derive_clone(ty_def, ty_defs))
-            .expect("Type def must exist"),
-        IdlType::Generic(_) => false,
-        _ => true,
-    }
-}
-
-fn can_derive_debug_ty(ty: &IdlType, ty_defs: &[IdlTypeDef]) -> bool {
-    match ty {
-        IdlType::Option(inner) => can_derive_debug_ty(inner, ty_defs),
-        IdlType::Vec(inner) => can_derive_debug_ty(inner, ty_defs),
-        IdlType::Array(inner, _) => can_derive_debug_ty(inner, ty_defs),
-        #[allow(
-            clippy::expect_used,
-            reason = "IDL cross-references are guaranteed consistent by Anchor tooling"
-        )]
-        IdlType::Defined { name, .. } => ty_defs
-            .iter()
-            .find(|ty_def| &ty_def.name == name)
-            .map(|ty_def| can_derive_debug(ty_def, ty_defs))
-            .expect("Type def must exist"),
-        IdlType::Generic(_) => false,
         _ => true,
     }
 }
@@ -734,110 +671,6 @@ mod tests {
     }
 
     #[test]
-    fn test_can_derive_clone_ty() {
-        let ty_defs = create_test_idl_types();
-
-        // Test basic cloneable types
-        assert!(can_derive_clone_ty(&IdlType::U8, &ty_defs));
-        assert!(can_derive_clone_ty(&IdlType::String, &ty_defs));
-        assert!(can_derive_clone_ty(&IdlType::Bytes, &ty_defs));
-
-        // Test Vec with cloneable inner type
-        assert!(can_derive_clone_ty(
-            &IdlType::Vec(Box::new(IdlType::U8)),
-            &ty_defs
-        ));
-        assert!(can_derive_clone_ty(
-            &IdlType::Vec(Box::new(IdlType::String)),
-            &ty_defs
-        ));
-
-        // Test Array with cloneable inner type
-        assert!(can_derive_clone_ty(
-            &IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Value(10)),
-            &ty_defs
-        ));
-
-        // Test Option with cloneable inner type
-        assert!(can_derive_clone_ty(
-            &IdlType::Option(Box::new(IdlType::String)),
-            &ty_defs
-        ));
-
-        // Test defined types
-        assert!(can_derive_clone_ty(
-            &IdlType::Defined {
-                name: "SimpleStruct".to_string(),
-                generics: vec![],
-            },
-            &ty_defs
-        ));
-        assert!(can_derive_clone_ty(
-            &IdlType::Defined {
-                name: "NonCopyStruct".to_string(),
-                generics: vec![],
-            },
-            &ty_defs
-        ));
-
-        // Test generic types (should not be cloneable)
-        assert!(!can_derive_clone_ty(
-            &IdlType::Generic("T".to_string()),
-            &ty_defs
-        ));
-    }
-
-    #[test]
-    fn test_can_derive_debug_ty() {
-        let ty_defs = create_test_idl_types();
-
-        // Test basic debuggable types
-        assert!(can_derive_debug_ty(&IdlType::U8, &ty_defs));
-        assert!(can_derive_debug_ty(&IdlType::String, &ty_defs));
-        assert!(can_derive_debug_ty(&IdlType::Bytes, &ty_defs));
-
-        // Test Vec with debuggable inner type
-        assert!(can_derive_debug_ty(
-            &IdlType::Vec(Box::new(IdlType::U8)),
-            &ty_defs
-        ));
-
-        // Test Array with debuggable inner type
-        assert!(can_derive_debug_ty(
-            &IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Value(10)),
-            &ty_defs
-        ));
-
-        // Test Option with debuggable inner type
-        assert!(can_derive_debug_ty(
-            &IdlType::Option(Box::new(IdlType::String)),
-            &ty_defs
-        ));
-
-        // Test defined types
-        assert!(can_derive_debug_ty(
-            &IdlType::Defined {
-                name: "SimpleStruct".to_string(),
-                generics: vec![],
-            },
-            &ty_defs
-        ));
-        assert!(can_derive_debug_ty(
-            &IdlType::Defined {
-                name: "NonCopyStruct".to_string(),
-                generics: vec![],
-            },
-            &ty_defs
-        ));
-
-        // Test generic types (should not be debuggable)
-        assert!(!can_derive_debug_ty(
-            &IdlType::Generic("T".to_string()),
-            &ty_defs
-        ));
-    }
-
-    #[test]
     fn test_can_derive_default_ty() {
         let ty_defs = create_test_idl_types();
 
@@ -921,48 +754,6 @@ mod tests {
     }
 
     #[test]
-    fn test_can_derive_clone() {
-        let ty_defs = create_test_idl_types();
-
-        // Test struct with cloneable fields
-        let simple_struct = &ty_defs[0];
-        assert!(can_derive_clone(simple_struct, &ty_defs));
-
-        // Test struct with cloneable fields (String is cloneable)
-        let non_copy_struct = &ty_defs[1];
-        assert!(can_derive_clone(non_copy_struct, &ty_defs));
-
-        // Test enum with cloneable variants
-        let simple_enum = &ty_defs[2];
-        assert!(can_derive_clone(simple_enum, &ty_defs));
-
-        // Test type alias
-        let type_alias = &ty_defs[3];
-        assert!(can_derive_clone(type_alias, &ty_defs));
-    }
-
-    #[test]
-    fn test_can_derive_debug() {
-        let ty_defs = create_test_idl_types();
-
-        // Test struct with debuggable fields
-        let simple_struct = &ty_defs[0];
-        assert!(can_derive_debug(simple_struct, &ty_defs));
-
-        // Test struct with debuggable fields
-        let non_copy_struct = &ty_defs[1];
-        assert!(can_derive_debug(non_copy_struct, &ty_defs));
-
-        // Test enum with debuggable variants
-        let simple_enum = &ty_defs[2];
-        assert!(can_derive_debug(simple_enum, &ty_defs));
-
-        // Test type alias
-        let type_alias = &ty_defs[3];
-        assert!(can_derive_debug(type_alias, &ty_defs));
-    }
-
-    #[test]
     fn test_can_derive_default() {
         let ty_defs = create_test_idl_types();
 
@@ -996,15 +787,13 @@ mod tests {
     }
 
     #[test]
-    fn test_generic_struct_rejects_clone_debug_copy() {
+    fn test_generic_struct_rejects_copy() {
         // Regression coverage: a defined type whose field is `IdlType::Generic("T")`
         // can't safely derive Clone/Debug/Copy from a procedural macro because the
         // derive expansion would need a `T: Clone` bound we don't synthesise.
         let ty_defs = create_test_idl_types();
         let generic_struct = &ty_defs[4];
 
-        assert!(!can_derive_clone(generic_struct, &ty_defs));
-        assert!(!can_derive_debug(generic_struct, &ty_defs));
         assert!(!can_derive_copy(generic_struct, &ty_defs));
     }
 
@@ -1014,8 +803,6 @@ mod tests {
         let ty_defs = create_test_idl_types();
         let wrapper = &ty_defs[6];
 
-        assert!(can_derive_clone(wrapper, &ty_defs));
-        assert!(can_derive_debug(wrapper, &ty_defs));
         assert!(can_derive_default(wrapper, &ty_defs));
         assert!(!can_derive_copy(wrapper, &ty_defs));
     }
@@ -1030,8 +817,6 @@ mod tests {
             name: "WrapperStruct".to_string(),
             generics: vec![],
         };
-        assert!(can_derive_clone_ty(&wrapper_ref, &ty_defs));
-        assert!(can_derive_debug_ty(&wrapper_ref, &ty_defs));
         assert!(!can_derive_copy_ty(&wrapper_ref, &ty_defs));
 
         let large_array_ref = IdlType::Defined {

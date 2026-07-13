@@ -106,10 +106,10 @@ pub fn gen_idl_print_fn_program(program: &Program) -> TokenStream {
     let fn_body = gen_print_section(
         "program",
         quote! {
-            let mut accounts: std::collections::BTreeMap<String, #idl::IdlAccount> =
-                std::collections::BTreeMap::new();
-            let mut types: std::collections::BTreeMap<String, #idl::IdlTypeDef> =
-                std::collections::BTreeMap::new();
+            let mut accounts: ::std::collections::BTreeMap<String, #idl::IdlAccount> =
+                ::std::collections::BTreeMap::new();
+            let mut types: ::std::collections::BTreeMap<String, #idl::IdlTypeDef> =
+                ::std::collections::BTreeMap::new();
 
             #(
                 if let Some(ty) = <#defined>::create_type() {

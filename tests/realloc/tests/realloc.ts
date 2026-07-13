@@ -7,7 +7,7 @@ describe("realloc", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.Realloc as Program<Realloc>;
+  const program = anchor.workspace.realloc as Program<Realloc>;
   const authority = (program.provider as any).wallet
     .payer as anchor.web3.Keypair;
 

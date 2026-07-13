@@ -35,7 +35,7 @@ describe("token extensions", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.TokenExtensions as Program<TokenExtensions>;
+  const program = anchor.workspace.tokenExtensions as Program<TokenExtensions>;
 
   const payer = Keypair.generate();
 

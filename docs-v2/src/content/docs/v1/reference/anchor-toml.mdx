@@ -196,7 +196,7 @@ Configures the [Surfpool](https://github.com/solana-foundation/surfpool) validat
 
 ```toml
 [surfpool]
-startup_wait = 5000                                # Time (ms) to wait for Surfpool to start. Default: 5000.
+startup_wait = 30000                               # Time (ms) to wait for Surfpool to start. Default: 30000.
 shutdown_wait = 2000                               # Time (ms) to wait for Surfpool to shut down. Default: 2000.
 rpc_port = 8899                                    # JSON RPC port. Default: 8899.
 ws_port = 8900                                     # WebSocket port. If not set, derived automatically.
@@ -213,7 +213,7 @@ block_production_mode = "clock"                    # Block production mode. Defa
 
 ### `startup_wait`
 
-Time in milliseconds to wait for Surfpool to start up. Useful when loading many accounts or running runbooks at startup. Default: `5000`.
+Time in milliseconds to wait for Surfpool to start up. Useful when loading many accounts or running runbooks at startup. Default: `30000`.
 
 ### `shutdown_wait`
 

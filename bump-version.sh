@@ -77,19 +77,60 @@ if [[ "$is_prerelease" -eq 0 ]]; then
     # If the release notes are missing from the website, we should at the minimum create a placeholder linking to the github release notes
     VERSION_URL=$(echo $version | sed 's/\./-/g')
     VERSION_CHANGELOG=$(echo $version | sed 's/\.//g')
-    if [[ ! -f "docs/content/docs/updates/release-notes/${VERSION_URL}.mdx" ]]; then
-        cat <<EOF > "docs/content/docs/updates/release-notes/${VERSION_URL}.mdx"
+    RELEASE_NOTE_PATH="docs/content/docs/updates/release-notes/${VERSION_URL}.mdx"
+    RELEASE_NOTE_META_PATH="docs/content/docs/updates/release-notes/meta.json"
+    CHANGELOG_TEXT="See the full [CHANGELOG](https://github.com/otter-sec/anchor/blob/v${version}/CHANGELOG.md#${VERSION_CHANGELOG}---$(date '+%Y-%m-%d'))."
+    if [[ ! -f "$RELEASE_NOTE_PATH" ]]; then
+        cat <<EOF > "$RELEASE_NOTE_PATH"
 ---
 title: $version
 description: Anchor - Release Notes $version
 ---
 
-See the full 
-[CHANGELOG](https://github.com/otter-sec/anchor/blob/v${version}/CHANGELOG.md#${VERSION_CHANGELOG}---$(date '+%Y-%m-%d')).
+$CHANGELOG_TEXT
 EOF
 
         # Insert the version into release notes meta, and sort the versions so the order is correct
-        jq --arg v "$VERSION_URL" '.pages |= (. + [$v] | sort_by(split("-") | map(tonumber)))' docs/content/docs/updates/release-notes/meta.json
+        tmp=$(mktemp)
+        jq --arg v "$VERSION_URL" '
+            .pages |= (
+                . + [$v]
+                | unique
+                | sort_by(split("-") | map(tonumber))
+                | reverse
+            )
+        ' "$RELEASE_NOTE_META_PATH" > "$tmp"
+        mv "$tmp" "$RELEASE_NOTE_META_PATH"
+    fi
+
+    # Additionally, add to the changelog the version if it's missing
+    CHANGELOG_PATH="docs/content/docs/updates/changelog.mdx"
+    if ! grep -qF "## [$version]" "$CHANGELOG_PATH"; then
+        PREVIOUS_VERSION_URL=$(
+            jq -r --arg v "$VERSION_URL" '
+                .pages
+                | map(select(. != $v))
+                | sort_by(split("-") | map(tonumber))
+                | reverse
+                | .[0]
+            ' "$RELEASE_NOTE_META_PATH"
+        )
+        PREVIOUS_VERSION=$(echo "$PREVIOUS_VERSION_URL" | sed 's/-/./g')
+        CHANGELOG_ENTRY=$(cat <<EOF
+## [$version]
+
+$CHANGELOG_TEXT
+EOF
+)
+
+        tmp=$(mktemp)
+        awk -v entry="$CHANGELOG_ENTRY" -v prev="## [$PREVIOUS_VERSION]" '
+            $0 == prev {
+                print entry
+                print ""
+            }
+            { print }
+        ' "$CHANGELOG_PATH" > "$tmp" && mv "$tmp" "$CHANGELOG_PATH"
     fi
 fi
 

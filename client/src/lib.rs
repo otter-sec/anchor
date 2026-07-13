@@ -45,7 +45,7 @@
 //!
 //! More examples can be found in [here].
 //!
-//! [here]: https://github.com/otter-sec/anchor/tree/v1.1.1/client/example/src
+//! [here]: https://github.com/otter-sec/anchor/tree/v1.1.2/client/example/src
 //!
 //! # Features
 //!
@@ -54,7 +54,7 @@
 //! The client is blocking by default. To enable asynchronous client, add `async` feature:
 //!
 //! ```toml
-//! anchor-client = { version = "1.1.1", features = ["async"] }
+//! anchor-client = { version = "1.1.2", features = ["async"] }
 //! ````
 //!
 //! ## `mock`
@@ -100,6 +100,7 @@ use {
             RpcTransactionLogsFilter,
         },
         filter::Memcmp,
+        request::RpcError,
         response::{Response as RpcResponse, RpcLogsResponse},
     },
     solana_signature::Signature,
@@ -274,7 +275,7 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
     ) -> Result<T, ClientError> {
         let account = self
             .internal_rpc_client
-            .get_account_with_commitment(&address, CommitmentConfig::processed())
+            .get_account_with_commitment(&address, self.internal_rpc_client.commitment())
             .await
             .map_err(Box::new)?
             .value
@@ -791,25 +792,68 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     ) -> Result<solana_transaction::versioned::VersionedTransaction, ClientError> {
         let latest_hash = self
             .internal_rpc_client
-            .get_latest_blockhash()
+            .get_latest_blockhash_with_commitment(self.options)
             .await
-            .map_err(Box::new)?;
+            .map_err(Box::new)?
+            .0;
 
         self.signed_transaction_with_blockhash_versioned(version, latest_hash)
     }
 
     async fn send_internal(&self, version: TxVersion<'_>) -> Result<Signature, ClientError> {
-        let latest_hash = self
+        let (latest_hash, _) = self
             .internal_rpc_client
-            .get_latest_blockhash()
+            .get_latest_blockhash_with_commitment(self.options)
             .await
             .map_err(Box::new)?;
         let tx = self.signed_transaction_with_blockhash_versioned(version, latest_hash)?;
 
-        self.internal_rpc_client
-            .send_and_confirm_transaction(&tx)
+        // FIXME: Inline a no-spinner version of `RpcClient::send_and_confirm_transaction`
+        // that honors the configured commitment level (`self.options`). The built-in
+        // non-spinner methods ignore the commitment, and the only commitment-aware
+        // confirmation helper (`send_and_confirm_transaction_with_spinner_and_commitment`)
+        // forces a spinner onto callers. Replace this with the non-spinner,
+        // commitment-aware method once we upgrade to Solana 4.0, which adds it.
+        let signature = self
+            .internal_rpc_client
+            .send_transaction(&tx)
             .await
-            .map_err(|e| Box::new(e).into())
+            .map_err(Box::new)?;
+
+        loop {
+            match self
+                .internal_rpc_client
+                .get_signature_status_with_commitment(&signature, self.options)
+                .await
+                .map_err(Box::new)?
+            {
+                Some(Ok(())) => return Ok(signature),
+                Some(Err(e)) => return Err(ClientError::SolanaClientError(Box::new(e.into()))),
+                None => {
+                    if !self
+                        .internal_rpc_client
+                        .is_blockhash_valid(&latest_hash, CommitmentConfig::processed())
+                        .await
+                        .map_err(Box::new)?
+                    {
+                        // Block hash is not found by some reason
+                        break;
+                    } else if cfg!(not(test)) {
+                        // Retry twice a second
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    }
+                }
+            }
+        }
+
+        Err(ClientError::SolanaClientError(Box::new(
+            RpcError::ForUser(
+                "unable to confirm transaction. This can happen in situations such as transaction \
+                 expiration and insufficient fee-payer funds"
+                    .to_string(),
+            )
+            .into(),
+        )))
     }
 
     async fn send_with_spinner_and_config_internal(
@@ -817,19 +861,15 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
         version: TxVersion<'_>,
         config: RpcSendTransactionConfig,
     ) -> Result<Signature, ClientError> {
-        let latest_hash = self
+        let (latest_hash, _) = self
             .internal_rpc_client
-            .get_latest_blockhash()
+            .get_latest_blockhash_with_commitment(self.options)
             .await
             .map_err(Box::new)?;
         let tx = self.signed_transaction_with_blockhash_versioned(version, latest_hash)?;
 
         self.internal_rpc_client
-            .send_and_confirm_transaction_with_spinner_and_config(
-                &tx,
-                self.internal_rpc_client.commitment(),
-                config,
-            )
+            .send_and_confirm_transaction_with_spinner_and_config(&tx, self.options, config)
             .await
             .map_err(|e| Box::new(e).into())
     }

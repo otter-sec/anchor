@@ -126,7 +126,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "anchor-attribute-access-control"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -135,7 +135,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-account"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anchor-syn",
  "proc-macro2",
@@ -145,7 +145,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-constant"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -154,7 +154,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-error"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -163,7 +163,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-event"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anchor-syn",
  "proc-macro2",
@@ -173,7 +173,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-program"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anchor-lang-idl",
  "anchor-syn",
@@ -186,7 +186,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-cli"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "addr2line",
  "anchor-cli-macros",
@@ -220,6 +220,7 @@ dependencies = [
  "rustc-demangle",
  "semver",
  "serde",
+ "serde_ignored",
  "serde_json",
  "sha2 0.10.9",
  "shellexpand",
@@ -257,7 +258,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-cli-macros"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -266,7 +267,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-client"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anchor-lang",
  "anyhow",
@@ -294,7 +295,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-accounts"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -303,7 +304,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-serde"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anchor-lang",
  "anchor-syn",
@@ -315,7 +316,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-space"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -324,7 +325,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-lang"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anchor-attribute-access-control",
  "anchor-attribute-account",
@@ -368,7 +369,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-lang-error"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anchor-attribute-error",
  "borsh 1.6.1",
@@ -400,7 +401,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-spl"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anchor-lang",
  "borsh 1.6.1",
@@ -418,7 +419,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-syn"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "bs58",
  "cargo_toml",
@@ -673,7 +674,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "avm"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anyhow",
  "cargo_metadata",
@@ -4192,6 +4193,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "serde_ignored"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "115dffd5f3853e06e746965a20dcbae6ee747ae30b543d91b0e089668bb07798"
+dependencies = [
+ "serde",
+ "serde_core",
 ]
 
 [[package]]

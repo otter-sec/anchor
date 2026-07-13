@@ -144,8 +144,8 @@ pub fn gen_idl_build_impl_accounts_struct(accounts: &AccountsStruct) -> TokenStr
     quote! {
         impl #impl_generics #ident #ty_generics #where_clause {
             pub fn __anchor_private_gen_idl_accounts(
-                accounts: &mut std::collections::BTreeMap<String, #idl::IdlAccount>,
-                types: &mut std::collections::BTreeMap<String, #idl::IdlTypeDef>,
+                accounts: &mut ::std::collections::BTreeMap<String, #idl::IdlAccount>,
+                types: &mut ::std::collections::BTreeMap<String, #idl::IdlTypeDef>,
             ) -> Vec<#idl::IdlInstructionAccountItem> {
                 #(
                     if let Some(ty) = <#defined>::create_type() {

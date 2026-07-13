@@ -4,7 +4,7 @@ const { assert } = require("chai");
 
 describe("system_accounts", () => {
   anchor.setProvider(anchor.AnchorProvider.local());
-  const program = anchor.workspace.SystemAccounts;
+  const program = anchor.workspace.systemAccounts;
   const authority = program.provider.wallet.payer;
   const wallet = anchor.web3.Keypair.generate();
 

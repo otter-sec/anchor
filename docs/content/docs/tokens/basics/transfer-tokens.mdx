@@ -273,7 +273,7 @@ import {
 describe("token-example", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.TokenExample as Program<TokenExample>;
+  const program = anchor.workspace.tokenExample as Program<TokenExample>;
   const [mint, mintBump] = anchor.web3.PublicKey.findProgramAddressSync(
     [Buffer.from("mint")],
     program.programId,

@@ -234,6 +234,16 @@ Examples: [Github](https://github.com/solana-developers/anchor-examples/tree/mai
 
 Description: Used to realloc program account space at the beginning of an
 instruction.
+
+If the change is additive, lamports are transferred from `realloc::payer` to
+maintain rent exemption. If the change is subtractive, all lamports above the
+new rent-exempt minimum are transferred back to `realloc::payer`.
+
+Warning: Do not use subtractive realloc on accounts that intentionally hold
+extra lamports, such as vaults. Those extra lamports will also be transferred
+to `realloc::payer`; the current v1 behavior does not limit refunds to rent
+savings alone.
+
 Examples: [Github](https://github.com/solana-developers/anchor-examples/tree/main/account-constraints/realloc)
 |
 [Solpg](https://beta.solpg.io/https://github.com/solana-developers/anchor-examples/tree/main/account-constraints/realloc)

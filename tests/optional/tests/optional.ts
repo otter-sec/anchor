@@ -17,7 +17,7 @@ describe("Optional", () => {
   // configure the client to use the local cluster
   anchor.setProvider(anchor.AnchorProvider.env());
   const anchorProvider = anchor.AnchorProvider.env();
-  const program = anchor.workspace.Optional as Program<Optional>;
+  const program = anchor.workspace.optional as Program<Optional>;
 
   const DATA_PDA_PREFIX = "data_pda";
 

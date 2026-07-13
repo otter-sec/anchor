@@ -9,7 +9,7 @@ describe("floats", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.Floats as Program<Floats>;
+  const program = anchor.workspace.floats as Program<Floats>;
 
   it("Creates an account with float data", async () => {
     const accountKeypair = Keypair.generate();

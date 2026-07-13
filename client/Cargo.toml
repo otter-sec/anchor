@@ -2,8 +2,7 @@
 name = "anchor-client"
 version.workspace = true
 publish = true
-authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/otter-sec/anchor"
+repository.workspace = true
 edition = "2021"
 license = "Apache-2.0"
 description = "An RPC client to interact with Anchor programs"

@@ -8,7 +8,7 @@ describe("init-if-needed", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.InitIfNeeded as Program<InitIfNeeded>;
+  const program = anchor.workspace.initIfNeeded as Program<InitIfNeeded>;
 
   it("init_if_needed should reject a CLOSED discriminator if init is NOT NEEDED", async () => {
     const account = anchor.web3.Keypair.generate();

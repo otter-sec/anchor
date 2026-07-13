@@ -12,14 +12,18 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+- lang: Always derive `Clone` and `Debug` for generated types in `declare_program!` ([#4723](https://github.com/solana-foundation/anchor/pull/4723)).
 - spl: Add pausable mint extension support ([#4092](https://github.com/solana-foundation/anchor/pull/4092)).
 - spl: Added `token_metadata_remove_key` to support removing keys from token metadata extension ([#3717](https://github.com/solana-foundation/anchor/pull/3717)).
 - lang: Add `AccountLoader::new_unchecked` for constructing an `AccountLoader` without performing owner or discriminator checks ([#4162](https://github.com/solana-foundation/anchor/pull/4162)).
 - lang: Provide better error messages for `token` constraints ([#4698](https://github.com/solana-foundation/anchor/pull/4698)).
+- ts: Improve account resolution error of self-referencing PDAs ([#4711](https://github.com/solana-foundation/anchor/pull/4711)).
+- cli: Warn unused `Anchor.toml` fields ([#4749](https://github.com/solana-foundation/anchor/pull/4749)).
 
 ### Fixes
 
-- deps: Tighten dependencies between `anchor-*` crates to reduce breakage ([#4726](https://github.com/otter-sec/anchor/pull/4726)).
+- spl: Fix `anchor-spl` failing to build with only the `metadata` feature ([#4742](https://github.com/solana-foundation/anchor/pull/4742)).
+- client: Fix ignored commitment level ([#4666](https://github.com/solana-foundation/anchor/pull/4666)).
 - lang: Remove cloning `AccountInfo` to read lamports in `init_if_needed` codegen ([#4675](https://github.com/solana-foundation/anchor/pull/4675)).
 - lang: Guard `AccountLoader<T>::exit` against zero-copy buffer truncation and bail with `AccountDidNotDeserialize` instead of rewriting the discriminator over an undersized buffer ([#4633](https://github.com/otter-sec/anchor/pull/4633)).
 - lang: Shorten invariant lifetimes during `Context` creation ([#4363](https://github.com/solana-foundation/anchor/pull/4363)).
@@ -32,7 +36,6 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Reduce cloning in `realloc` constraint when shrinking ([#4642](https://github.com/solana-foundation/anchor/pull/4642)).
 - syn: Remove `anyhow` ([#4640](https://github.com/solana-foundation/anchor/pull/4640)).
 - lang: Sync type derives and simplify internal args creation in `declare_program!` ([#4667](https://github.com/solana-foundation/anchor/pull/4667)).
-- lang: Fix path hygiene in `#[derive(Accounts)]` for composite fields using segmented paths.
 
 ### Breaking
 
@@ -75,6 +78,16 @@ The minor version will be incremented upon a breaking change and the patch versi
 - ts: Align TS `camelCase` conversion with Rust `heck` for digit-letter identifiers so generated client names match Rust identifiers ([#4571](https://github.com/solana-foundation/anchor/pull/4571)).
 - cli: Warn if `event-cpi` instruction is unreachable with custom discriminators ([#4614](https://github.com/solana-foundation/anchor/pull/4614)).
 - ts: Update `engines.node` to `>= 20.18` ([#4647](https://github.com/solana-foundation/anchor/pull/4647)).
+
+### Breaking
+
+## [1.0.3] - 2026-06-26
+
+### Features
+
+### Fixes
+
+- deps: Tighten dependencies between `anchor-*` crates to reduce breakage ([#4726](https://github.com/otter-sec/anchor/pull/4726)).
 
 ### Breaking
 

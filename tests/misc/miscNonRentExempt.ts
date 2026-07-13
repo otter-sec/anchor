@@ -14,7 +14,7 @@ describe("miscNonRentExempt", () => {
   // Configure the client to use the local cluster.
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace.Misc as Program<Misc>;
+  const program = anchor.workspace.misc as Program<Misc>;
 
   it("init_if_needed checks rent_exemption if init is not needed", async () => {
     const data = Keypair.generate();

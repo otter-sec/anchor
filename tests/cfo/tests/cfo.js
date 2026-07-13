@@ -26,7 +26,7 @@ describe("cfo", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.Cfo;
+  const program = anchor.workspace.cfo;
   // hack so we don't have to update serum-common library
   // to the new AnchorProvider class and Provider interface
   program.provider.send = provider.sendAndConfirm;

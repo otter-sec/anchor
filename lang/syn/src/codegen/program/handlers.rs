@@ -121,7 +121,7 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                     // Bump collector.
                     let mut __bumps = <#accounts_struct_name as anchor_lang::Bumps>::Bumps::default();
 
-                    let mut __reallocs = std::collections::BTreeSet::new();
+                    let mut __reallocs = ::std::collections::BTreeSet::new();
 
                     // Deserialize accounts.
                     let mut __remaining_accounts = __accounts;
@@ -218,7 +218,7 @@ fn generate_legacy_idl_mod() -> proc_macro2::TokenStream {
             match ix {
                 anchor_lang::idl::IdlInstruction::Create { data_len } => {
                     let mut bumps = <IdlCreateAccounts as anchor_lang::Bumps>::Bumps::default();
-                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut reallocs = ::std::collections::BTreeSet::new();
                     let mut accounts =
                         IdlCreateAccounts::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
                     __idl_create_account(program_id, &mut accounts, data_len)?;
@@ -226,7 +226,7 @@ fn generate_legacy_idl_mod() -> proc_macro2::TokenStream {
                 },
                 anchor_lang::idl::IdlInstruction::Resize { data_len } => {
                     let mut bumps = <IdlResizeAccount as anchor_lang::Bumps>::Bumps::default();
-                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut reallocs = ::std::collections::BTreeSet::new();
                     let mut accounts =
                         IdlResizeAccount::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
                     __idl_resize_account(program_id, &mut accounts, data_len)?;
@@ -234,7 +234,7 @@ fn generate_legacy_idl_mod() -> proc_macro2::TokenStream {
                 },
                 anchor_lang::idl::IdlInstruction::Close => {
                     let mut bumps = <IdlCloseAccount as anchor_lang::Bumps>::Bumps::default();
-                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut reallocs = ::std::collections::BTreeSet::new();
                     let mut accounts =
                         IdlCloseAccount::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
                     __idl_close_account(program_id, &mut accounts)?;
@@ -242,7 +242,7 @@ fn generate_legacy_idl_mod() -> proc_macro2::TokenStream {
                 },
                 anchor_lang::idl::IdlInstruction::CreateBuffer => {
                     let mut bumps = <IdlCreateBuffer as anchor_lang::Bumps>::Bumps::default();
-                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut reallocs = ::std::collections::BTreeSet::new();
                     let mut accounts =
                         IdlCreateBuffer::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
                     __idl_create_buffer(program_id, &mut accounts)?;
@@ -250,7 +250,7 @@ fn generate_legacy_idl_mod() -> proc_macro2::TokenStream {
                 },
                 anchor_lang::idl::IdlInstruction::Write { data } => {
                     let mut bumps = <IdlAccounts as anchor_lang::Bumps>::Bumps::default();
-                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut reallocs = ::std::collections::BTreeSet::new();
                     let mut accounts =
                         IdlAccounts::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
                     __idl_write(program_id, &mut accounts, data)?;
@@ -258,7 +258,7 @@ fn generate_legacy_idl_mod() -> proc_macro2::TokenStream {
                 },
                 anchor_lang::idl::IdlInstruction::SetAuthority { new_authority } => {
                     let mut bumps = <IdlAccounts as anchor_lang::Bumps>::Bumps::default();
-                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut reallocs = ::std::collections::BTreeSet::new();
                     let mut accounts =
                         IdlAccounts::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
                     __idl_set_authority(program_id, &mut accounts, new_authority)?;
@@ -266,7 +266,7 @@ fn generate_legacy_idl_mod() -> proc_macro2::TokenStream {
                 },
                 anchor_lang::idl::IdlInstruction::SetBuffer => {
                     let mut bumps = <IdlSetBuffer as anchor_lang::Bumps>::Bumps::default();
-                    let mut reallocs = std::collections::BTreeSet::new();
+                    let mut reallocs = ::std::collections::BTreeSet::new();
                     let mut accounts =
                         IdlSetBuffer::try_accounts(program_id, &mut accounts, &[], &mut bumps, &mut reallocs)?;
                     __idl_set_buffer(program_id, &mut accounts)?;

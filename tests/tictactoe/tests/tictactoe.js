@@ -2,7 +2,7 @@ const anchor = require("@anchor-lang/core");
 
 describe("tictactoe", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
-  const program = anchor.workspace.Tictactoe;
+  const program = anchor.workspace.tictactoe;
 
   const dashboard = anchor.web3.Keypair.generate();
   const game = anchor.web3.Keypair.generate();

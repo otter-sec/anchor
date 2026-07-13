@@ -2,12 +2,13 @@
 name = "anchor-lang"
 version.workspace = true
 publish = true
-authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/otter-sec/anchor"
+repository.workspace = true
 edition = "2021"
 rust-version = "1.89"
 license = "Apache-2.0"
 description = "Solana Sealevel eDSL"
+readme.workspace = true
+homepage = "https://anchor-lang.com"
 
 [package.metadata.docs.rs]
 workspace = true

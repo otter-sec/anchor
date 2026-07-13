@@ -93,12 +93,12 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
         #[cfg(feature = "cpi")]
         pub mod cpi {
             use super::*;
-            use std::marker::PhantomData;
+            use ::std::marker::PhantomData;
 
 
             #[derive(Debug, Clone, Copy)]
             pub struct Return<T> {
-                phantom: std::marker::PhantomData<T>,
+                phantom: ::std::marker::PhantomData<T>,
                 program_id: anchor_lang::solana_program::pubkey::Pubkey,
                 return_data: anchor_lang::__private::CpiReturnData,
             }

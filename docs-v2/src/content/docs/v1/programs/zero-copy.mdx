@@ -460,7 +460,7 @@ describe('zero-copy', () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env())
 
-  const program = anchor.workspace.ZeroCopy as Program<ZeroCopy>
+  const program = anchor.workspace.zeroCopy as Program<ZeroCopy>
   const dataAccount = anchor.web3.Keypair.generate()
 
   it('Is initialized!', async () => {
@@ -547,7 +547,7 @@ describe('zero-copy-two', () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env())
 
-  const program = anchor.workspace.ZeroCopyTwo as Program<ZeroCopyTwo>
+  const program = anchor.workspace.zeroCopyTwo as Program<ZeroCopyTwo>
   const dataAccount = anchor.web3.Keypair.generate()
 
   it('Is initialized!', async () => {
