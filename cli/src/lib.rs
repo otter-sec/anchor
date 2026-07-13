@@ -138,7 +138,7 @@ fn command_output(command: &str, args: &[&str]) -> Option<String> {
 }
 
 pub(crate) fn no_dna_enabled() -> bool {
-    std::env::var(NO_DNA_ENV).is_ok()
+    std::env::var(NO_DNA_ENV).is_ok_and(|value| !value.trim().is_empty())
 }
 
 fn os_version() -> String {
