@@ -4,7 +4,7 @@ description: Reference documentation for Anchor's NO_DNA support
 ---
 
 Anchor supports the `NO_DNA` convention for non-human CLI usage. See
-[no-dna.org](https://no-dna.org/). Set `NO_DNA` to any value when
+[no-dna.org](https://no-dna.org/). Set `NO_DNA` to a non-empty value when
 invoking Anchor from an agent, automation, or another non-interactive
 workflow that should not block on supported interactive waits or confirmation
 prompts. `NO_DNA=1` is the standard example.
@@ -44,7 +44,7 @@ anchor program close --help
 
 ## Notes
 
-- Any present `NO_DNA` value enables this mode.
+- A non-empty `NO_DNA` value enables this mode.
 - Default human-driven CLI behavior is unchanged when `NO_DNA` is unset.
 - If a command is not documented as `NO_DNA`-aware, do not assume it has
   non-interactive behavior beyond its existing flags.
