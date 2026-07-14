@@ -37,13 +37,8 @@ echo '{
   ]
 }' > testLargeIdl.json
 
-# Dump the Program Metadata Program from mainnet for local testing
-PMP_SO="target/deploy/program_metadata.so"
-if [ ! -f "$PMP_SO" ]; then
-  echo "Dumping Program Metadata Program from mainnet"
-  solana program dump ProgM6JCCvbYkfKqJYHePx4xxSUSqJp7rh8Lyv7nk7S "$PMP_SO" --url https://api.mainnet-beta.solana.com
-fi
-
+# Program Metadata program@v1.0.0.
+PMP_SO="fixtures/program_metadata.so"
 echo "Building programs"
 
 anchor build --ignore-keys
