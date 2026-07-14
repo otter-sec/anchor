@@ -81,15 +81,8 @@ fn gen_program(idl: &Idl, name: &syn::Ident) -> proc_macro2::TokenStream {
 
             use anchor_lang::prelude::*;
 
-            /// Where the IDL's own definitions live, from the generated code's
-            /// point of view. IDL names come from a foreign program and may
-            /// shadow prelude items (e.g. mpl-core's `Key` enum vs the prelude
-            /// `Key` trait), so they must never be glob-flattened into a scope
-            /// that also holds the prelude; generated code references them as
-            /// `__defined::Name` instead. The three globs below cannot be
-            /// ambiguous with each other because `types` excludes names that
-            /// are accounts or events.
-            #[doc(hidden)]
+            /// IDL-generated re-exports.
+            /// These are placed in a separate module to avoid name collisions with the prelude glob import
             mod __defined {
                 pub use super::accounts::*;
                 pub use super::events::*;
