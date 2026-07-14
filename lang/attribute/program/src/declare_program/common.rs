@@ -103,12 +103,6 @@ pub fn convert_idl_type_to_str(ty: &IdlType, is_const: bool) -> Result<String, s
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
-            // Qualified through the generated `__defined` module rather than
-            // bare: an IDL is free to define a type named like a prelude item
-            // (mpl-core's `Key`), and a bare reference in a scope that globs
-            // the prelude would be ambiguous or, worse, resolve to the wrong
-            // item. `__defined` re-exports all IDL definitions and is in scope
-            // in every generated module via the `use super::*` chains.
             generic_strs
                 .into_iter()
                 .reduce(|mut acc, cur| {
