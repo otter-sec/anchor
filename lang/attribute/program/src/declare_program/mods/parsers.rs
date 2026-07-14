@@ -70,8 +70,6 @@ fn gen_account(idl: &Idl) -> proc_macro2::TokenStream {
 }
 
 fn gen_event(idl: &Idl) -> proc_macro2::TokenStream {
-    // Same rationale as accounts: explicit paths keep event names out of the
-    // prelude glob's reach.
     let variants = idl
         .events
         .iter()
