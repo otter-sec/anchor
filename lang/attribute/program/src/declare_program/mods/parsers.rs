@@ -24,9 +24,6 @@ pub fn gen_parsers_mod(idl: &Idl) -> proc_macro2::TokenStream {
 }
 
 fn gen_account(idl: &Idl) -> proc_macro2::TokenStream {
-    // Account types are referenced by explicit path, never bare: an IDL
-    // account named like a prelude item (e.g. `Key`) must not be resolved
-    // through the prelude glob that is in scope here.
     let variants = idl
         .accounts
         .iter()
