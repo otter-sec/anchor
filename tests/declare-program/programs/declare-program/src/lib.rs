@@ -12,6 +12,11 @@ declare_program!(external_legacy);
 // https://github.com/raydium-io/raydium-idl/blob/6123104304ebcb42be175cc297a2c221ac96bb96/raydium_clmm/amm_v3.json
 declare_program!(amm_v3);
 
+// Compilation check for an IDL type named after a prelude item: `Key` mirrors
+// mpl-core's account discriminator, which any IDL for a program that CPIs
+// into mpl-core embeds, and collides with the `anchor_lang::Key` trait (#4775)
+declare_program!(mpl_core_shape);
+
 #[program]
 pub mod declare_program {
     use super::*;
