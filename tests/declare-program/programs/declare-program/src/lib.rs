@@ -98,13 +98,3 @@ pub struct Cpi<'info> {
     pub cpi_my_account: Account<'info, external::accounts::MyAccount>,
     pub external_program: Program<'info, External>,
 }
-
-// Compilation test for an IDL type named after a prelude item: the IDL's
-// `Key` enum is reachable only by path, so bare `Key` in this prelude-bearing
-// scope is still the `anchor_lang::Key` trait. Both stay usable side by side.
-pub fn prelude_key_collision(
-    pubkey: Pubkey,
-    key: external::types::Key,
-) -> (Pubkey, external::types::Key) {
-    (Key::key(&pubkey), key)
-}

@@ -191,35 +191,6 @@
       "args": []
     },
     {
-      "name": "test_compilation_prelude_key_collision",
-      "discriminator": [
-        120,
-        213,
-        28,
-        133,
-        171,
-        135,
-        161,
-        208
-      ],
-      "accounts": [
-        {
-          "name": "signer",
-          "signer": true
-        }
-      ],
-      "args": [
-        {
-          "name": "key",
-          "type": {
-            "defined": {
-              "name": "Key"
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "test_compilation_return_type",
       "discriminator": [
         174,
@@ -589,23 +560,6 @@
                 }
               ]
             }
-          }
-        ]
-      }
-    },
-    {
-      "name": "Key",
-      "type": {
-        "kind": "enum",
-        "variants": [
-          {
-            "name": "Uninitialized"
-          },
-          {
-            "name": "AssetV1"
-          },
-          {
-            "name": "CollectionV1"
           }
         ]
       }

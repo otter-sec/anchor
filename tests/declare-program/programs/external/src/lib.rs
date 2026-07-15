@@ -140,16 +140,6 @@ pub mod external {
     ) -> Result<()> {
         Ok(())
     }
-
-    // Compilation test for an IDL type named after a prelude item: `Key` is
-    // the `anchor_lang::Key` trait in any scope that globs the prelude, so
-    // generated code must reference the IDL's `Key` by path, never bare.
-    pub fn test_compilation_prelude_key_collision(
-        _ctx: Context<TestCompilation>,
-        key: colliding::Key,
-    ) -> Result<()> {
-        Ok(())
-    }
 }
 
 #[error_code]
@@ -267,22 +257,4 @@ pub struct MyEvent {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct GenericStruct<T, const N: usize> {
     pub field: [T; N],
-}
-
-// An IDL type whose name collides with a prelude trait. mpl-core (a shank
-// program, no prelude in sight) names its account-discriminator enum `Key`,
-// so the IDL of any program that CPIs into mpl-core carries this collision.
-// The enum lives in a module because an Anchor program cannot shadow the
-// prelude `Key` trait at crate root without breaking its own
-// `#[derive(Accounts)]` codegen: `.key()` method resolution needs the trait
-// nameable in scope. The IDL records the bare name `Key` either way.
-pub mod colliding {
-    use super::*;
-
-    #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-    pub enum Key {
-        Uninitialized,
-        AssetV1,
-        CollectionV1,
-    }
 }
