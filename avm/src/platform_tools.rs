@@ -420,6 +420,21 @@ pub fn platform_tools_version_path(version: &str) -> PathBuf {
     get_platform_tools_dir_path().join(version)
 }
 
+fn normalize_platform_tools_version(version: &str) -> Result<String> {
+    let stripped = version.strip_prefix('v').unwrap_or(version);
+    let Some((major, minor)) = stripped.split_once('.') else {
+        bail!("Invalid platform-tools version `{version}`; expected `v<major>.<minor>` or `<major>.<minor>`");
+    };
+    if major.is_empty()
+        || minor.is_empty()
+        || !major.bytes().all(|b| b.is_ascii_digit())
+        || !minor.bytes().all(|b| b.is_ascii_digit())
+    {
+        bail!("Invalid platform-tools version `{version}`; expected `v<major>.<minor>` or `<major>.<minor>`");
+    }
+    Ok(format!("v{stripped}"))
+}
+
 /// List installed platform-tools versions, lexicographically ordered.
 pub fn read_installed_platform_tools() -> Result<Vec<String>> {
     let dir = get_platform_tools_dir_path();
@@ -490,18 +505,15 @@ pub fn download_url(version: &str) -> String {
 /// and atomically renamed on success so a failed install never leaves a
 /// half-populated directory at the canonical path.
 pub fn install_platform_tools(version: &str, force: bool) -> Result<()> {
-    let target = platform_tools_version_path(version);
-    install_platform_tools_at(version, &target, force)
+    let version = normalize_platform_tools_version(version)?;
+    let target = platform_tools_version_path(&version);
+    install_platform_tools_at(&version, &target, force)
 }
 
 /// Path used by every generation of `cargo-build-sbf` for a cached
 /// platform-tools release.
 pub fn solana_cache_platform_tools_path(version: &str) -> Result<PathBuf> {
-    let version = if version.starts_with('v') {
-        version.to_string()
-    } else {
-        format!("v{version}")
-    };
+    let version = normalize_platform_tools_version(version)?;
 
     Ok(dirs::home_dir()
         .ok_or_else(|| anyhow!("Could not find home directory"))?
@@ -522,8 +534,9 @@ pub fn cargo_build_sbf_platform_tools_installed(version: &str) -> Result<bool> {
 /// This is the compatibility path for Solana releases whose bundled
 /// `cargo-build-sbf` predates `--install-only`.
 pub fn install_platform_tools_in_solana_cache(version: &str, force: bool) -> Result<()> {
-    let target = solana_cache_platform_tools_path(version)?;
-    install_platform_tools_at(version, &target, force)
+    let version = normalize_platform_tools_version(version)?;
+    let target = solana_cache_platform_tools_path(&version)?;
+    install_platform_tools_at(&version, &target, force)
 }
 
 /// Return whether `target` contains an extracted platform-tools Rust sysroot.
@@ -532,11 +545,7 @@ pub fn platform_tools_are_installed_at(target: &Path) -> bool {
 }
 
 fn install_platform_tools_at(version: &str, target: &Path, force: bool) -> Result<()> {
-    let version = if version.starts_with('v') {
-        version.to_string()
-    } else {
-        format!("v{version}")
-    };
+    let version = normalize_platform_tools_version(version)?;
     if !force && looks_installed(target) {
         println!(
             "platform-tools {version} is already installed at {}",
@@ -608,11 +617,7 @@ fn replace_install_dir(staging: &Path, target: &Path) -> Result<()> {
 
 /// Remove an installed platform-tools version.
 pub fn uninstall_platform_tools(version: &str) -> Result<()> {
-    let version = if version.starts_with('v') {
-        version.to_string()
-    } else {
-        format!("v{version}")
-    };
+    let version = normalize_platform_tools_version(version)?;
     let target = platform_tools_version_path(&version);
     if !target.exists() {
         bail!(
@@ -932,6 +937,27 @@ mod tests {
         let url = download_url("v1.54");
         assert!(url.starts_with("https://github.com/anza-xyz/platform-tools/releases/download/"));
         assert!(url.ends_with(host_asset_name()));
+    }
+
+    #[test]
+    fn platform_tools_versions_are_validated_and_normalized() {
+        assert_eq!(normalize_platform_tools_version("v1.54").unwrap(), "v1.54");
+        assert_eq!(normalize_platform_tools_version("1.54").unwrap(), "v1.54");
+
+        for version in [
+            "v1.54/../../../victim",
+            r"v1.54\..\victim",
+            "/v1.54",
+            ".",
+            "..",
+            "v1",
+            "v1.54.0",
+        ] {
+            assert!(
+                normalize_platform_tools_version(version).is_err(),
+                "{version} should be rejected"
+            );
+        }
     }
 
     // ── looks_installed ─────────────────────────────────────────────────────
