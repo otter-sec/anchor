@@ -79,6 +79,17 @@ pub const DOCKER_BUILDER_VERSION: &str = VERSION;
 /// Default RPC port
 pub const DEFAULT_RPC_PORT: u16 = 8899;
 const DEFAULT_FAUCET_PORT: u16 = 9900;
+/// Environment variable for NO_DNA mode & relevant help messages.
+pub(crate) const NO_DNA_ENV: &str = "NO_DNA";
+const NO_DNA_TOP_LEVEL_HELP: &str =
+    "Set NO_DNA=1 when running Anchor in CI, scripts, or AI agents. This disables supported \
+     interactive prompts, but destructive commands still require their explicit bypass flags.";
+const NO_DNA_TEST_HELP: &str =
+    "Set NO_DNA=1 to run tests without waiting for supported interactive input.";
+const NO_DNA_LOCALNET_HELP: &str = "With NO_DNA=1, Anchor starts the local validator and \
+                                    continues immediately without waiting for interactive input.";
+const NO_DNA_PROGRAM_CLOSE_HELP: &str = "NO_DNA disables the interactive confirmation. Pass \
+                                         --bypass-warning explicitly to close non-interactively.";
 
 /// WebSocket port offset for solana-test-validator (RPC port + 1)
 pub const WEBSOCKET_PORT_OFFSET: u16 = 1;
@@ -126,6 +137,10 @@ fn command_output(command: &str, args: &[&str]) -> Option<String> {
         .filter(|line| !line.is_empty())
 }
 
+pub(crate) fn no_dna_enabled() -> bool {
+    std::env::var(NO_DNA_ENV).is_ok_and(|value| !value.trim().is_empty())
+}
+
 fn os_version() -> String {
     #[cfg(target_os = "macos")]
     if let Some(version) = macos_version() {
@@ -168,7 +183,7 @@ fn linux_os_release() -> Option<String> {
 }
 
 #[derive(Debug, Parser, AbsolutePath)]
-#[clap(version = VERSION)]
+#[clap(version = VERSION, after_help = NO_DNA_TOP_LEVEL_HELP)]
 pub struct Opts {
     #[clap(flatten)]
     pub cfg_override: ConfigOverride,
@@ -296,7 +311,7 @@ pub enum Command {
         #[clap(raw = true)]
         args: Vec<String>,
     },
-    #[clap(name = "test", alias = "t")]
+    #[clap(name = "test", alias = "t", after_help = NO_DNA_TEST_HELP)]
     /// Runs integration tests.
     Test {
         /// Build and test only this program
@@ -483,6 +498,7 @@ pub enum Command {
         subcmd: KeysCommand,
     },
     /// Localnet commands.
+    #[clap(after_help = NO_DNA_LOCALNET_HELP)]
     Localnet {
         /// Flag to skip building the program in the workspace,
         /// use this to save time when running test and the program code is not altered.
@@ -771,6 +787,7 @@ pub enum ProgramCommand {
         output_file: String,
     },
     /// Close a program or buffer account and withdraw all lamports
+    #[clap(after_help = NO_DNA_PROGRAM_CLOSE_HELP)]
     Close {
         /// Account address to close (buffer or program).
         /// If not provided, discovers program from workspace using program_name
@@ -4647,7 +4664,17 @@ fn run_test_suite(
 
     // Keep validator running if needed.
     if test_result.is_ok() && detach {
-        println!("Local validator still running. Press Ctrl + C quit.");
+        if no_dna_enabled() {
+            println!("Local validator still running.");
+            if let Some(log_streams) = log_streams {
+                for handle in log_streams {
+                    handle.shutdown();
+                }
+            }
+            return Ok(());
+        } else {
+            println!("Local validator still running. Press Ctrl + C quit.");
+        }
         std::io::stdin().lock().lines().next().unwrap().unwrap();
     }
 
@@ -6699,6 +6726,17 @@ fn localnet(
             }
         };
 
+        if no_dna_enabled() {
+            println!("Local validator still running.");
+            if let Some(log_streams) = log_streams {
+                for handle in log_streams {
+                    handle.shutdown();
+                }
+            }
+            return Ok(());
+        } else {
+            println!("Local validator still running. Press Ctrl + C quit.");
+        }
         std::io::stdin().lock().lines().next().unwrap().unwrap();
 
         // Check all errors and shut down.
