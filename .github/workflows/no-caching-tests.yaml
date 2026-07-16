@@ -16,8 +16,8 @@ jobs:
     uses: ./.github/workflows/reusable-tests.yaml
     with:
       cache: false
-      solana_version: 3.1.10
+      solana_version: 4.1.2
       node_version: 22.22.3
       cargo_profile: release
       anchor_binary_name: anchor-binary-no-caching
-      surfpool_cli_version: 1.2.0
+      surfpool_cli_version: 1.5.0

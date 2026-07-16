@@ -279,7 +279,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            SOLANA_CLI=v3.1.10
+            SOLANA_CLI=v4.1.2
             ANCHOR_CLI=${{ github.ref_name }}
           provenance: mode=max
           sbom: true

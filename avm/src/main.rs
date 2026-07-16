@@ -103,7 +103,7 @@ pub enum SolanaCommand {
     /// Install and activate a Solana CLI version. With no argument, installs
     /// the project-resolved version.
     Install {
-        /// Solana CLI version, e.g. `3.1.10`.
+        /// Solana CLI version, e.g. `4.1.2`.
         version: Option<String>,
         /// Run the installer even if the requested version is already active.
         #[clap(long)]

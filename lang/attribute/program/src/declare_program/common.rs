@@ -112,8 +112,8 @@ pub fn convert_idl_type_to_str(ty: &IdlType, is_const: bool) -> Result<String, s
                     acc.push_str(&cur);
                     acc
                 })
-                .map(|generics| format!("{name}<{generics}>"))
-                .unwrap_or_else(|| name.clone())
+                .map(|generics| format!("__defined::{name}<{generics}>"))
+                .unwrap_or_else(|| format!("__defined::{name}"))
         }
         IdlType::Generic(ty) => ty.into(),
         _ => {
@@ -861,7 +861,7 @@ mod tests {
                 name: "MyStruct".to_string(),
                 generics: vec![],
             }),
-            "MyStruct"
+            "__defined::MyStruct"
         );
         assert_eq!(
             s(&IdlType::Defined {
@@ -873,7 +873,7 @@ mod tests {
                     },
                 ],
             }),
-            "MyStruct<u64,10>"
+            "__defined::MyStruct<u64,10>"
         );
 
         assert_eq!(s(&IdlType::Generic("T".to_string())), "T");

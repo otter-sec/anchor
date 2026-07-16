@@ -1,7 +1,7 @@
 # Anchor version.
 ANCHOR_CLI=v1.1.2
 # Solana toolchain.
-SOLANA_CLI=v3.1.10
+SOLANA_CLI=v4.1.2
 # Build version should match the Anchor cli version.
 VERSIONED_IMG_NAME=quay.io/ottersec/anchor:$(ANCHOR_CLI)
 

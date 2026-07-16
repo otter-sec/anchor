@@ -15,9 +15,9 @@ permissions:
   contents: read
 
 env:
-  SOLANA_VERSION: "3.1.10"
+  SOLANA_VERSION: "4.1.2"
   NODE_VERSION: "20"
-  SURFPOOL_CLI_VERSION: "1.2.0"
+  SURFPOOL_CLI_VERSION: "1.5.0"
 
 jobs:
   # Build CLI once to share across test jobs
