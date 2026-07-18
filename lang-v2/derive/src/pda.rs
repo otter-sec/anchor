@@ -232,4 +232,26 @@ mod tests {
         assert!(seeds_as_byte_literals(&refs).is_none());
     }
 
+    #[test]
+    fn precompute_pda_rejects_more_than_fifteen_user_seeds() {
+        let program_id = [3u8; 32];
+        let seeds = vec![b"x".as_ref(); MAX_PDA_SEEDS_TOTAL];
+
+        assert!(
+            precompute_pda(&seeds, &program_id).is_none(),
+            "precompute_pda must mirror runtime finder limits and reserve one slot for the bump"
+        );
+    }
+
+    #[test]
+    fn precompute_pda_rejects_seed_longer_than_thirty_two_bytes() {
+        let program_id = [4u8; 32];
+        let long_seed = [7u8; MAX_PDA_SEED_LEN + 1];
+
+        assert!(
+            precompute_pda(&[&long_seed], &program_id).is_none(),
+            "precompute_pda must reject literal seeds that runtime PDA derivation would reject"
+        );
+    }
+
 }

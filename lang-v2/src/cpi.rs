@@ -419,6 +419,69 @@ fn hash_pda_seeds(seeds: &[&[u8]], program_id: &Address) -> Result<Address, Prog
     Ok(Address::new_from_array(unsafe { hash.assume_init() }))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+
+    fn program_id() -> Address {
+        Address::new_from_array([7; 32])
+    }
+
+    #[test]
+    fn finder_paths_reject_more_than_fifteen_user_seeds() {
+        let program_id = program_id();
+        let seeds = vec![b"x".as_ref(); MAX_PDA_SEEDS_TOTAL];
+
+        let err = try_find_program_address(&seeds, &program_id).unwrap_err();
+        assert_eq!(err, ProgramError::InvalidSeeds);
+
+        let err =
+            find_and_verify_program_address(&seeds, &program_id, &Address::new_from_array([0; 32]))
+                .unwrap_err();
+        assert_eq!(err, ProgramError::InvalidSeeds);
+
+        let err = find_and_verify_program_address_skip_curve(
+            &seeds,
+            &program_id,
+            &Address::new_from_array([0; 32]),
+        )
+        .unwrap_err();
+        assert_eq!(err, ProgramError::InvalidSeeds);
+    }
+
+    #[test]
+    fn explicit_bump_paths_reject_more_than_sixteen_total_seeds() {
+        let program_id = program_id();
+        let seeds = vec![b"x".as_ref(); MAX_PDA_SEEDS_TOTAL + 1];
+
+        let err = create_program_address(&seeds, &program_id).unwrap_err();
+        assert_eq!(err, ProgramError::InvalidSeeds);
+
+        let err = verify_program_address(&seeds, &program_id, &Address::new_from_array([0; 32]))
+            .unwrap_err();
+        assert_eq!(err, ProgramError::InvalidSeeds);
+    }
+
+    #[test]
+    fn pda_helpers_reject_seed_longer_than_thirty_two_bytes() {
+        let program_id = program_id();
+        let long_seed = [9u8; MAX_PDA_SEED_LEN + 1];
+        let explicit = [&long_seed[..]];
+        let finder = [&long_seed[..]];
+
+        let err = create_program_address(&explicit, &program_id).unwrap_err();
+        assert_eq!(err, ProgramError::InvalidSeeds);
+
+        let err = verify_program_address(&explicit, &program_id, &Address::new_from_array([0; 32]))
+            .unwrap_err();
+        assert_eq!(err, ProgramError::InvalidSeeds);
+
+        let err = try_find_program_address(&finder, &program_id).unwrap_err();
+        assert_eq!(err, ProgramError::InvalidSeeds);
+    }
+}
+
 /// Create a new account via system program CPI (no PDA signing).
 #[inline(always)]
 fn signer_from_seeds<'a>(seeds: &'a [&'a [u8]]) -> pinocchio::cpi::Signer<'a, 'a> {
