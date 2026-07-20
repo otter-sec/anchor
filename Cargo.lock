@@ -684,6 +684,7 @@ dependencies = [
  "clap 4.6.1",
  "clap_complete",
  "dirs",
+ "indicatif",
  "reqwest",
  "semver",
  "serde",
