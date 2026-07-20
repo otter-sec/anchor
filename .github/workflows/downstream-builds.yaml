@@ -177,6 +177,9 @@ jobs:
       - run: solana-keygen new --no-bip39-passphrase
       - run: solana config set --url localhost
 
+      - name: Install pinned IDL Rust toolchain
+        run: rustup toolchain install nightly-2026-07-14 --profile minimal
+
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         name: Cache ${{ matrix.name }} target
         with:
@@ -192,6 +195,7 @@ jobs:
           BUILD_COMMAND: ${{ matrix.build_command }}
           BUILD_NAME: ${{ matrix.name }}
           NO_COLOR: "1"
+          RUSTUP_TOOLCHAIN: nightly-2026-07-14
           TERM: dumb
         run: |
           # Preinstall the downstream-pinned Anchor CLI without relying on an
