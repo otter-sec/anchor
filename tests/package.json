@@ -50,6 +50,7 @@
     "lazy-account",
     "lockup",
     "misc",
+    "modularized-program",
     "multisig",
     "optional",
     "permissioned-markets",
