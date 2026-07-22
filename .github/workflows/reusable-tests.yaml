@@ -490,6 +490,8 @@ jobs:
             path: tests/custom-coder
           - cmd: cd tests/custom-discriminator && anchor test --skip-lint && npx tsc --noEmit
             path: tests/custom-discriminator
+          - cmd: cd tests/modularized-program && anchor test --skip-lint && npx tsc --noEmit
+            path: tests/modularized-program
           # FIXME: Return to using Surfpool once https://github.com/solana-foundation/surfpool/pull/733 is released
           - cmd: cd tests/validator-clone && anchor test --skip-lint --validator legacy && npx tsc --noEmit
             path: tests/validator-clone
