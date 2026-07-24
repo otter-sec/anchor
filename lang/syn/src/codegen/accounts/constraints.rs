@@ -1085,25 +1085,7 @@ fn generate_constraint_init_group(
                         ::anchor_spl::token_interface::initialize_mint2(cpi_ctx, #decimals, &#owner.key(), #freeze_authority)?;
                     }
 
-                    let pa: #ty_decl = #from_account_info_unchecked;
-                    if #if_needed {
-                        if pa.mint_authority != anchor_lang::solana_program::program_option::COption::Some(#owner.key()) {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintMintMintAuthority).with_account_name(#name_str));
-                        }
-                        if pa.freeze_authority
-                            .as_ref()
-                            .map(|fa| #freeze_authority.as_ref().map(|expected_fa| fa != *expected_fa).unwrap_or(true))
-                            .unwrap_or(#freeze_authority.is_some()) {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintMintFreezeAuthority).with_account_name(#name_str));
-                        }
-                        if pa.decimals != #decimals {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintMintDecimals).with_account_name(#name_str).with_values((pa.decimals, #decimals)));
-                        }
-                        if owner_program != &#token_program.key() {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintMintTokenProgram).with_account_name(#name_str).with_pubkeys((*owner_program, #token_program.key())));
-                        }
-                    }
-                    Ok(pa)
+                    Ok(#from_account_info_unchecked)
                 }})()?;
             }
         }

@@ -872,6 +872,7 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
         }
 
         let is_init = init.is_some();
+        let is_init_if_needed = init.as_ref().is_some_and(|init| init.if_needed);
         #[allow(
             clippy::expect_used,
             reason = "bump presence validated earlier in constraint parsing"
@@ -1138,7 +1139,11 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             associated_token: if !is_init { associated_token } else { None },
             seeds,
             token_account: if !is_init { token_account } else { None },
-            mint: if !is_init { mint } else { None },
+            mint: if !is_init || is_init_if_needed {
+                mint
+            } else {
+                None
+            },
             dup: into_inner!(dup),
         })
     }
