@@ -1866,7 +1866,8 @@ mod tests {
     };
 
     #[test]
-    fn init_if_needed_mint_codegen_revalidates_extension_constraints() {
+    fn init_if_needed_mint_codegen_revalidates_extension_constraints(
+    ) -> std::result::Result<(), String> {
         let accounts_struct = parse_quote! {
             pub struct InitIfNeededMintWithExtensions<'info> {
                 #[account(mut)]
@@ -1889,15 +1890,12 @@ mod tests {
             }
         };
 
-        let accounts = accounts::parse(&accounts_struct).unwrap();
-        let mint = accounts
-            .fields
-            .get(2)
-            .and_then(|field| match field {
-                AccountField::Field(field) => Some(field),
-                _ => None,
-            })
-            .expect("expected third account field to be a mint field");
+        let accounts = accounts::parse(&accounts_struct).map_err(|err| err.to_string())?;
+        let mint = if let Some(AccountField::Field(field)) = accounts.fields.get(2) {
+            field
+        } else {
+            return Err("expected third account field to be a mint field".into());
+        };
 
         let generated = generate(mint, &accounts).to_string();
 
@@ -1906,5 +1904,7 @@ mod tests {
             "expected init_if_needed mint codegen to retain group member pointer checks on reused \
              mints, got: {generated}",
         );
+
+        Ok(())
     }
 }

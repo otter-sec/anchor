@@ -26,7 +26,8 @@ mod init_if_needed_tests {
     };
 
     #[test]
-    fn init_if_needed_mint_keeps_extension_constraints_for_reuse_validation() {
+    fn init_if_needed_mint_keeps_extension_constraints_for_reuse_validation(
+    ) -> std::result::Result<(), String> {
         let accounts_struct = parse_quote! {
             pub struct InitIfNeededMintWithExtensions<'info> {
                 #[account(mut)]
@@ -49,15 +50,12 @@ mod init_if_needed_tests {
             }
         };
 
-        let accounts = accounts::parse(&accounts_struct).unwrap();
-        let mint = accounts
-            .fields
-            .get(2)
-            .and_then(|field| match field {
-                AccountField::Field(field) => Some(field),
-                _ => None,
-            })
-            .expect("expected third account field to be a mint field");
+        let accounts = accounts::parse(&accounts_struct).map_err(|err| err.to_string())?;
+        let mint = if let Some(AccountField::Field(field)) = accounts.fields.get(2) {
+            field
+        } else {
+            return Err("expected third account field to be a mint field".into());
+        };
 
         assert!(mint
             .constraints
@@ -69,6 +67,8 @@ mod init_if_needed_tests {
             "init_if_needed mint fields must retain mint constraints so reused mints re-run \
              extension validation",
         );
+
+        Ok(())
     }
 }
 
