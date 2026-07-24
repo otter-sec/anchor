@@ -1856,3 +1856,48 @@ fn generate_account_ref(field: &Field) -> proc_macro2::TokenStream {
         _ => quote!(AsRef::<AccountInfo>::as_ref(&#name)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{parser::accounts, AccountField};
+    use syn::parse_quote;
+
+    #[test]
+    fn init_if_needed_mint_codegen_revalidates_extension_constraints() {
+        let accounts_struct = parse_quote! {
+            pub struct InitIfNeededMintWithExtensions<'info> {
+                #[account(mut)]
+                pub payer: Signer<'info>,
+                pub authority: Signer<'info>,
+                #[account(
+                    init_if_needed,
+                    signer,
+                    payer = payer,
+                    mint::token_program = token_program,
+                    mint::decimals = 0,
+                    mint::authority = authority,
+                    mint::freeze_authority = authority,
+                    extensions::group_member_pointer::authority = authority,
+                    extensions::group_member_pointer::member_address = mint,
+                )]
+                pub mint: Box<InterfaceAccount<'info, Mint>>,
+                pub system_program: Program<'info, System>,
+                pub token_program: Program<'info, Token2022>,
+            }
+        };
+
+        let accounts = accounts::parse(&accounts_struct).unwrap();
+        let mint = match &accounts.fields[2] {
+            AccountField::Field(field) => field,
+            field => panic!("expected account field, got {field:?}"),
+        };
+
+        let generated = generate(mint, &accounts).to_string();
+
+        assert!(
+            generated.contains("ConstraintMintGroupMemberPointerExtension"),
+            "expected init_if_needed mint codegen to retain group member pointer checks on reused mints, got: {generated}",
+        );
+    }
+}
