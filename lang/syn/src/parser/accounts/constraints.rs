@@ -20,8 +20,10 @@ pub fn parse(f: &syn::Field, f_ty: Option<&Ty>) -> ParseResult<ConstraintGroup> 
 
 #[cfg(test)]
 mod init_if_needed_tests {
-    use crate::{parser::accounts, AccountField};
-    use syn::parse_quote;
+    use {
+        crate::{parser::accounts, AccountField},
+        syn::parse_quote,
+    };
 
     #[test]
     fn init_if_needed_mint_keeps_extension_constraints_for_reuse_validation() {
@@ -53,10 +55,15 @@ mod init_if_needed_tests {
             field => panic!("expected account field, got {field:?}"),
         };
 
-        assert!(mint.constraints.init.as_ref().is_some_and(|init| init.if_needed));
+        assert!(mint
+            .constraints
+            .init
+            .as_ref()
+            .is_some_and(|init| init.if_needed));
         assert!(
             mint.constraints.mint.is_some(),
-            "init_if_needed mint fields must retain mint constraints so reused mints re-run extension validation",
+            "init_if_needed mint fields must retain mint constraints so reused mints re-run \
+             extension validation",
         );
     }
 }

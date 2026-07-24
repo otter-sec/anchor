@@ -1859,9 +1859,11 @@ fn generate_account_ref(field: &Field) -> proc_macro2::TokenStream {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{parser::accounts, AccountField};
-    use syn::parse_quote;
+    use {
+        super::*,
+        crate::{parser::accounts, AccountField},
+        syn::parse_quote,
+    };
 
     #[test]
     fn init_if_needed_mint_codegen_revalidates_extension_constraints() {
@@ -1897,7 +1899,8 @@ mod tests {
 
         assert!(
             generated.contains("ConstraintMintGroupMemberPointerExtension"),
-            "expected init_if_needed mint codegen to retain group member pointer checks on reused mints, got: {generated}",
+            "expected init_if_needed mint codegen to retain group member pointer checks on reused \
+             mints, got: {generated}",
         );
     }
 }
