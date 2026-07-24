@@ -50,10 +50,14 @@ mod init_if_needed_tests {
         };
 
         let accounts = accounts::parse(&accounts_struct).unwrap();
-        let mint = match &accounts.fields[2] {
-            AccountField::Field(field) => field,
-            field => panic!("expected account field, got {field:?}"),
-        };
+        let mint = accounts
+            .fields
+            .get(2)
+            .and_then(|field| match field {
+                AccountField::Field(field) => Some(field),
+                _ => None,
+            })
+            .expect("expected third account field to be a mint field");
 
         assert!(mint
             .constraints
