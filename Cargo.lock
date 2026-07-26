@@ -410,6 +410,7 @@ dependencies = [
  "quote",
  "serde_json",
  "sha2 0.10.9",
+ "solana-address 2.6.0",
  "syn 2.0.117",
 ]
 
