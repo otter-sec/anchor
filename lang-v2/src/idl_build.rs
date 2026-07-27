@@ -35,7 +35,10 @@ extern crate alloc;
 /// pushes its own pair of strings, then recurses into field types so a
 /// nested `#[derive(IdlType)] struct Inner` referenced from an `#[account]`
 /// data type lands in `types[]` too.
-#[diagnostic::on_unimplemented(message = "Ensure that `{Self}` has an `#[account]` attribute")]
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` has no IDL type information",
+    note = "plain structs used as instruction arguments or nested fields need `#[derive(IdlType)]`; account and event types get this automatically from `#[account]` / `#[event]`"
+)]
 pub trait IdlAccountType {
     /// `{"name":"X","discriminator":[…]}` for the program-level `accounts[]`.
     /// `None` for types that don't appear there (`IdlType` plain types,

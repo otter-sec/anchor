@@ -3,6 +3,10 @@ use std::{fs, path::PathBuf, process::Command};
 #[derive(Clone, Copy)]
 enum CargoMode {
     Check,
+    /// `cargo check --tests` — compiles the lib's unit-test target so
+    /// `#[cfg(all(test, feature = "idl-build"))]` codegen (the hidden
+    /// `__anchor_private_idl` module) gets type-checked.
+    CheckTests,
     Build,
 }
 
@@ -37,6 +41,11 @@ impl<'a> CompileCase<'a> {
 
     fn build(mut self) -> Self {
         self.mode = CargoMode::Build;
+        self
+    }
+
+    fn check_tests(mut self) -> Self {
+        self.mode = CargoMode::CheckTests;
         self
     }
 
@@ -78,6 +87,7 @@ wincode = {{ version = "0.5", features = ["derive"] }}
 
 [features]
 cpi = []
+idl-build = []
 
 [workspace]
 "#,
@@ -98,6 +108,7 @@ cpi = []
         let mut command = Command::new("cargo");
         match self.mode {
             CargoMode::Check => command.arg("check"),
+            CargoMode::CheckTests => command.args(["check", "--tests"]),
             CargoMode::Build => command.arg("build"),
         };
         command.args(["--offline", "--manifest-path"]);
@@ -1449,4 +1460,61 @@ pub struct Resize {
 "#,
     )
     .expect_pass();
+}
+
+// otter-sec/anchor#4850 — a plain arg struct with only the wincode schema
+// derives has no `IdlAccountType` impl, so idl-build compilation must fail
+// with a diagnostic that points at `#[derive(IdlType)]` (the old message
+// suggested `#[account]`, which drags in Pod/discriminator baggage).
+const DEFINED_ARGS_PROGRAM: &str = r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(Clone, Copy, DERIVE_LIST)]
+pub struct MyArgs {
+    pub amount: u64,
+    pub tag: [u8; 3],
+}
+
+#[derive(Accounts)]
+pub struct Apply {
+    pub authority: Signer,
+}
+
+#[program]
+pub mod defined_args {
+    use super::*;
+
+    #[discrim = 0]
+    pub fn apply(ctx: &mut Context<Apply>, args: MyArgs) -> Result<()> {
+        let _ = (ctx, args);
+        Ok(())
+    }
+}
+"#;
+
+#[test]
+fn idl_build_rejects_arg_struct_without_idl_type_derive() {
+    let source =
+        DEFINED_ARGS_PROGRAM.replace("DERIVE_LIST", "wincode::SchemaRead, wincode::SchemaWrite");
+    CompileCase::new("idl_build_arg_struct_missing_idl_type", &source)
+        .features(&["idl-build"])
+        .check_tests()
+        .expect_fail(&[
+            "`MyArgs` has no IDL type information",
+            "`#[derive(IdlType)]`",
+        ]);
+}
+
+#[test]
+fn idl_build_accepts_arg_struct_with_idl_type_derive() {
+    let source = DEFINED_ARGS_PROGRAM.replace(
+        "DERIVE_LIST",
+        "IdlType, wincode::SchemaRead, wincode::SchemaWrite",
+    );
+    CompileCase::new("idl_build_arg_struct_with_idl_type", &source)
+        .features(&["idl-build"])
+        .check_tests()
+        .expect_pass();
 }

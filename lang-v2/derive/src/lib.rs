@@ -2110,6 +2110,12 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// but has no corresponding entry in `types[]` — TS clients then fail to
 /// decode the nested field.
 ///
+/// The same applies to custom structs passed as `#[program]` instruction
+/// arguments: the IDL build resolves every arg type through
+/// `IdlAccountType`, so a plain args struct (typically deriving
+/// `wincode::SchemaRead` / `wincode::SchemaWrite` for the wire format)
+/// additionally needs this derive or `anchor idl build` fails to compile.
+///
 /// Unlike `#[account]`, this derive carries **none** of the account-kind
 /// baggage: no discriminator, no `Owner`, no `Discriminator` trait, no
 /// forced `#[repr(C)]`, no Pod/Zeroable derives. It only emits the
@@ -2138,6 +2144,22 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///     Spot,
 ///     Futures(u64),
 ///     Margin { leverage: u8, symbol: [u8; 8] },
+/// }
+///
+/// // Custom instruction-argument struct.
+/// #[derive(Clone, Copy, IdlType, wincode::SchemaRead, wincode::SchemaWrite)]
+/// pub struct MyArgs {
+///     pub amount: u64,
+///     pub tag: [u8; 3],
+/// }
+///
+/// #[program]
+/// pub mod my_program {
+///     use super::*;
+///     pub fn defined_args(ctx: &mut Context<SetValue>, args: MyArgs) -> Result<()> {
+///         /* ... */
+///         Ok(())
+///     }
 /// }
 /// ```
 #[proc_macro_derive(IdlType)]

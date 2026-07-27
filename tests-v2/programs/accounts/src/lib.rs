@@ -45,6 +45,15 @@ pub struct LedgerEntry {
     pub amount: u64,
 }
 
+/// Plain instruction-argument struct — not an account, not an event. The
+/// `IdlType` derive is what lets the idl-build arg-type walk resolve it
+/// (`IdlAccountType`); without it `--features idl-build` fails to compile.
+#[derive(Clone, Copy, IdlType, wincode::SchemaRead, wincode::SchemaWrite)]
+pub struct BumpArgs {
+    pub amount: u64,
+    pub tag: [u8; 4],
+}
+
 type LedgerAccount = Slab<Ledger, LedgerEntry>;
 
 #[program]
@@ -734,6 +743,15 @@ pub mod accounts_test {
 
         ledger.checksum = ledger.as_slice().iter().map(|entry| entry.amount).sum();
         ledger.last_space = ledger.current_space() as u64;
+        Ok(())
+    }
+
+    /// Bumps the counter by a caller-provided amount passed in a plain
+    /// `#[derive(IdlType)]` struct, so the idl-build pass exercises the
+    /// instruction-arg `IdlAccountType` walk on a user-defined type.
+    #[discrim = 37]
+    pub fn bump_boxed_by(ctx: &mut Context<BumpBoxed>, args: BumpArgs) -> Result<()> {
+        ctx.accounts.counter.value = ctx.accounts.counter.value.wrapping_add(args.amount);
         Ok(())
     }
 }

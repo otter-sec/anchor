@@ -16,7 +16,7 @@ pub struct Store {
     pub last_tag: [u8; 3],
 }
 
-#[derive(Clone, Copy, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(Clone, Copy, IdlType, wincode::SchemaRead, wincode::SchemaWrite)]
 pub struct MyArgs {
     pub amount: u64,
     pub tag: [u8; 3],
