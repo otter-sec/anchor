@@ -6,7 +6,7 @@ pub mod solana;
 use {
     anyhow::{anyhow, bail, Context, Error, Result},
     cargo_toml::Manifest,
-    chrono::{TimeZone, Utc},
+    chrono::{Days, NaiveDate, TimeZone, Utc},
     reqwest::{header::USER_AGENT, StatusCode},
     semver::{Prerelease, Version},
     serde::{de, Deserialize},
@@ -37,6 +37,8 @@ const UPDATE_CHECK_INTERVAL_SECS: i64 = 60 * 60;
 const NIGHTLY_MANIFEST_URL: &str =
     "https://anchor-releases.s3-eu-west-1.amazonaws.com/nightly/latest/manifest.json";
 const NIGHTLY_S3_BASE_URL: &str = "https://anchor-releases.s3-eu-west-1.amazonaws.com/";
+const NIGHTLY_WORKFLOW_RUNS_URL: &str =
+    "https://api.github.com/repos/otter-sec/anchor/actions/workflows/nightly-attested-binaries.yaml/runs";
 /// Shorter HTTP timeout so a slow or unreachable GitHub does not stall the CLI for long.
 const HTTP_CLIENT_TIMEOUT_SECS: u64 = 5;
 /// Longer timeout for release asset downloads, which can take longer than metadata requests.
@@ -126,7 +128,7 @@ pub fn ensure_paths() {
     let avm_in_bin = bin_dir.join("avm");
     if let Ok(current_avm) = std::env::current_exe() {
         // Only copy if the paths are different
-        if current_avm != avm_in_bin && !nightly_enabled() {
+        if current_avm != avm_in_bin {
             if let Err(e) = fs::copy(current_avm, &avm_in_bin) {
                 eprintln!("Failed to copy avm binary: {e}");
             }
@@ -851,14 +853,6 @@ fn anchor_stub_path() -> PathBuf {
     })
 }
 
-fn nightly_avm_binary_path() -> PathBuf {
-    get_bin_dir_path().join("avm-nightly")
-}
-
-fn stable_avm_backup_path() -> PathBuf {
-    get_bin_dir_path().join("avm-stable")
-}
-
 pub fn nightly_anchor_binary_path() -> PathBuf {
     get_bin_dir_path().join(if cfg!(target_os = "windows") {
         "anchor-nightly.exe"
@@ -869,13 +863,8 @@ pub fn nightly_anchor_binary_path() -> PathBuf {
 
 pub fn enable_nightly(skip_attestation: bool) -> Result<()> {
     ensure_paths();
-    if !nightly_enabled() {
-        backup_stable_avm()?;
-    }
-
     let version = ensure_nightly_installed(skip_attestation)?;
-    point_anchor_stub_to(&stable_avm_backup_path())
-        .context("Pointing anchor stub at nightly proxy")?;
+    point_anchor_stub_to(&avm_binary_path()).context("Pointing anchor stub at nightly proxy")?;
     fs::write(nightly_enabled_file_path(), b"enabled\n").context("Writing Anchor nightly state")?;
     println!("Now using Anchor nightly {version}.");
     Ok(())
@@ -888,7 +877,6 @@ pub fn disable_nightly() -> Result<()> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
         Err(err) => return Err(err).context("Removing Anchor nightly state"),
     }
-    restore_stable_avm()?;
     point_anchor_stub_to(&avm_binary_path()).context("Restoring anchor stub")?;
     println!("Anchor nightly disabled. AVM will use normal version resolution.");
     Ok(())
@@ -918,6 +906,22 @@ struct NightlyArtifact {
     file: String,
     s3_key: String,
     sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LatestNightly {
+    date: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct NightlyWorkflowRuns {
+    workflow_runs: Vec<NightlyWorkflowRun>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NightlyWorkflowRun {
+    id: u64,
+    head_sha: String,
 }
 
 enum NightlyCacheState {
@@ -965,8 +969,8 @@ fn write_nightly_cache_error() {
     );
 }
 
-fn nightly_binaries_exist() -> bool {
-    nightly_anchor_binary_path().is_file() && nightly_avm_binary_path().is_file()
+fn nightly_anchor_exists() -> bool {
+    nightly_anchor_binary_path().is_file()
 }
 
 fn ensure_nightly_installed(skip_attestation: bool) -> Result<String> {
@@ -974,17 +978,15 @@ fn ensure_nightly_installed(skip_attestation: bool) -> Result<String> {
 
     let now = Utc::now().timestamp();
     if let NightlyCacheState::Success(ts, version) = read_nightly_cache() {
-        if now - ts < UPDATE_CHECK_INTERVAL_SECS && nightly_binaries_exist() {
-            activate_nightly_avm()?;
+        if now - ts < UPDATE_CHECK_INTERVAL_SECS && nightly_anchor_exists() {
             return Ok(version);
         }
     }
 
     if let Some(ts) = read_nightly_error_cache() {
-        if now - ts < UPDATE_CHECK_INTERVAL_SECS && nightly_binaries_exist() {
+        if now - ts < UPDATE_CHECK_INTERVAL_SECS && nightly_anchor_exists() {
             let next_attempt_secs = (ts + UPDATE_CHECK_INTERVAL_SECS) - now;
             eprintln!("Anchor nightly update check failed. Next attempt in {next_attempt_secs}s.");
-            activate_nightly_avm()?;
             return Ok(cached_nightly_version().unwrap_or_else(|| "cached".to_string()));
         }
     }
@@ -993,30 +995,27 @@ fn ensure_nightly_installed(skip_attestation: bool) -> Result<String> {
         Ok(manifest) => {
             if let Err(err) = install_nightly_manifest(&manifest, skip_attestation) {
                 write_nightly_cache_error();
-                if nightly_binaries_exist() {
+                if nightly_anchor_exists() {
                     let version = cached_nightly_version().unwrap_or_else(|| "cached".to_string());
                     eprintln!(
                         "Anchor nightly install failed; using cached nightly {version}. Next \
                          attempt in {UPDATE_CHECK_INTERVAL_SECS}s."
                     );
-                    activate_nightly_avm()?;
                     return Ok(version);
                 }
-                return Err(err).context("Installing Anchor nightly binaries");
+                return Err(err).context("Installing Anchor nightly binary");
             }
             write_nightly_cache_success(&manifest.version);
-            activate_nightly_avm()?;
             Ok(manifest.version)
         }
         Err(err) => {
             write_nightly_cache_error();
-            if nightly_binaries_exist() {
+            if nightly_anchor_exists() {
                 let version = cached_nightly_version().unwrap_or_else(|| "cached".to_string());
                 eprintln!(
                     "Anchor nightly update check failed; using cached nightly {version}. Next \
                      attempt in {UPDATE_CHECK_INTERVAL_SECS}s."
                 );
-                activate_nightly_avm()?;
                 return Ok(version);
             }
             Err(err).context("Fetching Anchor nightly manifest")
@@ -1025,39 +1024,93 @@ fn ensure_nightly_installed(skip_attestation: bool) -> Result<String> {
 }
 
 fn fetch_nightly_manifest() -> Result<NightlyManifest> {
-    let response = HTTP_CLIENT
-        .get(NIGHTLY_MANIFEST_URL)
+    let latest = fetch_nightly_json(NIGHTLY_MANIFEST_URL)?
+        .json::<LatestNightly>()
+        .context("Parsing latest Anchor nightly manifest")?;
+    let date = previous_nightly_date(&latest.date)?;
+    let date_string = date.format("%Y-%m-%d").to_string();
+    let runs = HTTP_CLIENT
+        .get(NIGHTLY_WORKFLOW_RUNS_URL)
+        .query(&[
+            ("branch", "master"),
+            ("status", "success"),
+            ("created", date_string.as_str()),
+            ("per_page", "1"),
+        ])
         .header(
             USER_AGENT,
             "avm https://github.com/solana-foundation/anchor",
         )
         .send()
-        .with_context(|| format!("Sending GET {NIGHTLY_MANIFEST_URL}"))?;
+        .with_context(|| format!("Sending GET {NIGHTLY_WORKFLOW_RUNS_URL}"))?;
+    if !runs.status().is_success() {
+        bail!(
+            "Failed to fetch Anchor nightly workflow runs for {date} (status {})",
+            runs.status()
+        );
+    }
+    let runs = runs
+        .json::<NightlyWorkflowRuns>()
+        .context("Parsing Anchor nightly workflow runs")?;
+    let run = runs
+        .workflow_runs
+        .first()
+        .ok_or_else(|| anyhow!("No successful Anchor nightly workflow run found for {date}"))?;
+    let manifest_url = previous_nightly_manifest_url(date, run);
+
+    fetch_nightly_json(&manifest_url)?
+        .json::<NightlyManifest>()
+        .with_context(|| format!("Parsing Anchor nightly manifest for {date}"))
+}
+
+fn fetch_nightly_json(url: &str) -> Result<reqwest::blocking::Response> {
+    let response = HTTP_CLIENT
+        .get(url)
+        .header(
+            USER_AGENT,
+            "avm https://github.com/solana-foundation/anchor",
+        )
+        .send()
+        .with_context(|| format!("Sending GET {url}"))?;
     if !response.status().is_success() {
         bail!(
-            "Failed to fetch Anchor nightly manifest (status {})",
+            "Failed to fetch Anchor nightly manifest `{url}` (status {})",
             response.status()
         );
     }
-    response
-        .json::<NightlyManifest>()
-        .context("Parsing Anchor nightly manifest")
+    Ok(response)
+}
+
+fn previous_nightly_date(latest: &str) -> Result<NaiveDate> {
+    NaiveDate::parse_from_str(latest, "%Y-%m-%d")
+        .with_context(|| format!("Parsing latest Anchor nightly date `{latest}`"))?
+        .checked_sub_days(Days::new(1))
+        .ok_or_else(|| anyhow!("Anchor nightly date `{latest}` has no previous day"))
+}
+
+fn previous_nightly_manifest_url(date: NaiveDate, run: &NightlyWorkflowRun) -> String {
+    format!(
+        "{NIGHTLY_S3_BASE_URL}nightly/builds/{}/{}/{}/{}/{}/manifest.json",
+        date.format("%Y"),
+        date.format("%m"),
+        date.format("%d"),
+        run.head_sha,
+        run.id
+    )
 }
 
 fn install_nightly_manifest(manifest: &NightlyManifest, skip_attestation: bool) -> Result<()> {
     let target = rustc_host_target()?;
     let anchor = nightly_artifact(manifest, "anchor", &target)?;
-    let avm = nightly_artifact(manifest, "avm", &target)?;
     let cached_version = cached_nightly_version();
     let needs_download =
-        cached_version.as_deref() != Some(manifest.version.as_str()) || !nightly_binaries_exist();
+        cached_version.as_deref() != Some(manifest.version.as_str()) || !nightly_anchor_exists();
 
     if needs_download {
         if skip_attestation {
             warn_attestation_skipped();
         }
         install_nightly_artifact(&anchor, &nightly_anchor_binary_path(), skip_attestation)?;
-        install_nightly_artifact(&avm, &nightly_avm_binary_path(), skip_attestation)?;
     }
     Ok(())
 }
@@ -1211,35 +1264,6 @@ fn rustc_host_target() -> Result<String> {
         .ok_or_else(|| anyhow!("`host` not found from `rustc -vV` output"))
 }
 
-fn backup_stable_avm() -> Result<()> {
-    let backup = stable_avm_backup_path();
-    let source = if avm_binary_path().is_file() {
-        avm_binary_path()
-    } else {
-        std::env::current_exe().context("Resolving current avm executable")?
-    };
-    install_binary_atomic(&source, &backup)
-        .with_context(|| format!("Backing up stable avm to {}", backup.display()))
-}
-
-fn restore_stable_avm() -> Result<()> {
-    let backup = stable_avm_backup_path();
-    if !backup.is_file() {
-        eprintln!(
-            "No stable avm backup found at {}. Run `avm self-update` to reinstall stable avm.",
-            backup.display()
-        );
-        return Ok(());
-    }
-    install_binary_atomic(&backup, &avm_binary_path())
-        .with_context(|| format!("Restoring stable avm from {}", backup.display()))
-}
-
-fn activate_nightly_avm() -> Result<()> {
-    install_binary_atomic(&nightly_avm_binary_path(), &avm_binary_path())
-        .context("Activating nightly avm")
-}
-
 fn point_anchor_stub_to(target: &Path) -> Result<()> {
     let anchor = anchor_stub_path();
     if fs::symlink_metadata(&anchor).is_ok() {
@@ -1314,6 +1338,31 @@ fn update_check_file_path() -> PathBuf {
     AVM_HOME.join(".update-check")
 }
 
+fn auto_update_file_path() -> PathBuf {
+    AVM_HOME.join(".auto-update")
+}
+
+fn auto_update_enabled() -> bool {
+    auto_update_file_path().is_file()
+}
+
+pub fn set_auto_update(enabled: bool) -> Result<()> {
+    ensure_paths();
+    if enabled {
+        fs::write(auto_update_file_path(), b"enabled\n")
+            .context("Enabling automatic AVM updates")?;
+        println!("Automatic AVM updates enabled.");
+    } else {
+        match fs::remove_file(auto_update_file_path()) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err).context("Disabling automatic AVM updates"),
+        }
+        println!("Automatic AVM updates disabled.");
+    }
+    Ok(())
+}
+
 /// The cache file stores one of two states:
 ///   Success: `{unix_ts}\n{semver}`   — a successful check at `unix_ts` that found `semver`.
 ///   Error:   `{unix_ts}\n0`          — a failed check at `unix_ts` (`"0"` is not valid semver).
@@ -1348,7 +1397,8 @@ fn write_update_cache_error() {
     let _ = fs::write(update_check_file_path(), content);
 }
 
-/// Check whether a newer AVM release is available and print a warning to stderr if so.
+/// Check whether a newer AVM release is available, installing it when automatic updates are
+/// enabled or printing a warning to stderr otherwise.
 /// Results (including failures) are cached in `$AVM_HOME/.update-check` so the network
 /// is hit at most once per hour.
 pub fn check_avm_version_and_warn() {
@@ -1361,12 +1411,7 @@ pub fn check_avm_version_and_warn() {
     match read_update_cache() {
         // Fresh successful cache: just compare and maybe warn.
         UpdateCacheState::Success(ts, latest) if now - ts < UPDATE_CHECK_INTERVAL_SECS => {
-            if latest > current {
-                eprintln!(
-                    "A new version of avm is available: {latest} (you have {current}). Run `avm \
-                     self-update` to upgrade."
-                );
-            }
+            handle_available_avm_update(&current, &latest);
         }
         // Previous check failed recently: tell the user and skip.
         UpdateCacheState::Error(ts) if now - ts < UPDATE_CHECK_INTERVAL_SECS => {
@@ -1377,12 +1422,7 @@ pub fn check_avm_version_and_warn() {
         _ => match get_latest_version_with_client(&HTTP_CLIENT, false) {
             Ok(latest) => {
                 write_update_cache_success(&latest);
-                if latest > current {
-                    eprintln!(
-                        "A new version of avm is available: {latest} (you have {current}). Run \
-                         `avm self-update` to upgrade."
-                    );
-                }
+                handle_available_avm_update(&current, &latest);
             }
             Err(_) => {
                 write_update_cache_error();
@@ -1391,6 +1431,24 @@ pub fn check_avm_version_and_warn() {
                 );
             }
         },
+    }
+}
+
+fn handle_available_avm_update(current: &Version, latest: &Version) {
+    if latest <= current {
+        return;
+    }
+
+    if auto_update_enabled() {
+        if let Err(err) = install_avm_release(current, latest) {
+            write_update_cache_error();
+            eprintln!("Automatic AVM update failed: {err}");
+        }
+    } else {
+        eprintln!(
+            "A new version of avm is available: {latest} (you have {current}). Run `avm \
+             self-update` to upgrade."
+        );
     }
 }
 
@@ -1403,26 +1461,32 @@ pub fn self_update(include_pre_release: bool, bleeding_edge: bool) -> Result<()>
     let current = Version::parse(env!("CARGO_PKG_VERSION"))
         .map_err(|e| anyhow!("Failed to parse current avm version: {e}"))?;
 
+    if bleeding_edge {
+        println!("Updating avm to the latest commit on master...");
+        return run_avm_install(&["--branch".to_string(), "master".to_string()]);
+    }
+
+    let latest = get_latest_version(include_pre_release)?;
+    if latest <= current {
+        println!("avm is already up to date ({current})");
+        return Ok(());
+    }
+    install_avm_release(&current, &latest)
+}
+
+fn install_avm_release(current: &Version, latest: &Version) -> Result<()> {
+    println!("Updating avm from {current} to {latest}...");
+    run_avm_install(&["--tag".to_string(), format!("v{latest}")])
+}
+
+fn run_avm_install(source_args: &[String]) -> Result<()> {
     let mut args = vec![
         "install".to_string(),
         "--git".to_string(),
         "https://github.com/otter-sec/anchor".to_string(),
         "--locked".to_string(),
     ];
-
-    if bleeding_edge {
-        println!("Updating avm to the latest commit on master...");
-        args.extend_from_slice(&["--branch".to_string(), "master".to_string()]);
-    } else {
-        let latest = get_latest_version(include_pre_release)?;
-        if latest <= current {
-            println!("avm is already up to date ({current})");
-            return Ok(());
-        }
-        println!("Updating avm from {current} to {latest}...");
-        args.extend_from_slice(&["--tag".to_string(), format!("v{latest}")]);
-    }
-
+    args.extend_from_slice(source_args);
     args.extend_from_slice(&["avm".to_string(), "--force".to_string()]);
 
     let status = Command::new("cargo")
@@ -1456,6 +1520,15 @@ mod tests {
         assert!(bin_dir.exists());
         let current_version_file = current_version_file_path();
         assert!(current_version_file.exists());
+    }
+
+    #[test]
+    fn test_set_auto_update() {
+        set_auto_update(true).unwrap();
+        assert!(auto_update_enabled());
+
+        set_auto_update(false).unwrap();
+        assert!(!auto_update_enabled());
     }
 
     #[test]
@@ -1560,6 +1633,42 @@ mod tests {
             nightly_artifact_url(&artifact),
             "https://anchor-releases.s3-eu-west-1.amazonaws.com/nightly/latest/x86_64-unknown-linux-gnu/avm.tar.gz"
         );
+    }
+
+    #[test]
+    fn test_previous_nightly_date_and_manifest_url() {
+        let date = previous_nightly_date("2026-03-01").unwrap();
+        assert_eq!(date, NaiveDate::from_ymd_opt(2026, 2, 28).unwrap());
+
+        let run = NightlyWorkflowRun {
+            id: 12345,
+            head_sha: "abc123".to_string(),
+        };
+        assert_eq!(
+            previous_nightly_manifest_url(date, &run),
+            "https://anchor-releases.s3-eu-west-1.amazonaws.com/nightly/builds/2026/02/28/abc123/12345/manifest.json"
+        );
+    }
+
+    #[test]
+    fn test_nightly_manifest_does_not_require_avm_artifact() {
+        ensure_paths();
+        let version = "nightly-anchor-only";
+        fs::write(nightly_anchor_binary_path(), b"cached anchor").unwrap();
+        write_nightly_cache_success(version);
+
+        let manifest = NightlyManifest {
+            version: version.to_string(),
+            artifacts: vec![NightlyArtifact {
+                tool: "anchor".to_string(),
+                target: rustc_host_target().unwrap(),
+                file: "anchor.tar.gz".to_string(),
+                s3_key: "nightly/latest/anchor.tar.gz".to_string(),
+                sha256: "abc".to_string(),
+            }],
+        };
+
+        install_nightly_manifest(&manifest, false).unwrap();
     }
 
     #[test]

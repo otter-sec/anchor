@@ -3,12 +3,13 @@ set -eu
 
 MANIFEST_URL="${AVM_NIGHTLY_MANIFEST_URL:-https://anchor-releases.s3-eu-west-1.amazonaws.com/nightly/latest/manifest.json}"
 BASE_URL="${AVM_NIGHTLY_BASE_URL:-https://anchor-releases.s3-eu-west-1.amazonaws.com/}"
+WORKFLOW_RUNS_URL="${AVM_NIGHTLY_WORKFLOW_RUNS_URL:-https://api.github.com/repos/otter-sec/anchor/actions/workflows/nightly-attested-binaries.yaml/runs}"
 TARGET="${AVM_INSTALL_TARGET:-}"
 NO_PATH_LINKS="${AVM_INSTALL_NO_PATH_LINKS:-0}"
 
 usage() {
     cat <<'USAGE'
-Install the latest Anchor nightly AVM binary.
+Install AVM and the latest stable Anchor CLI.
 
 Usage:
   curl -sSfL https://raw.githubusercontent.com/solana-foundation/anchor/master/avm/install | sh
@@ -20,6 +21,8 @@ Environment:
   AVM_INSTALL_NO_PATH_LINKS   Set to 1 to skip ~/.cargo/bin symlinks.
   AVM_NIGHTLY_MANIFEST_URL    Override the nightly manifest URL.
   AVM_NIGHTLY_BASE_URL        Override the artifact base URL.
+  AVM_NIGHTLY_WORKFLOW_RUNS_URL
+                              Override the nightly workflow runs API URL.
 USAGE
 }
 
@@ -165,6 +168,44 @@ PY
     fi
 }
 
+previous_date() {
+    if command -v python3 >/dev/null 2>&1; then
+        python3 - "$1" <<'PY'
+import datetime
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    latest = datetime.date.fromisoformat(json.load(fh)["date"])
+print(latest - datetime.timedelta(days=1))
+PY
+    elif command -v jq >/dev/null 2>&1; then
+        jq -r '.date + "T00:00:00Z" | fromdateiso8601 - 86400 | strftime("%Y-%m-%d")' "$1"
+    else
+        fail "python3 or jq is required to parse the nightly manifest"
+    fi
+}
+
+extract_workflow_run() {
+    if command -v python3 >/dev/null 2>&1; then
+        python3 - "$1" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    runs = json.load(fh).get("workflow_runs", [])
+if not runs:
+    sys.stderr.write("no successful nightly workflow run found\n")
+    sys.exit(1)
+print(f"{runs[0]['id']}\t{runs[0]['head_sha']}")
+PY
+    elif command -v jq >/dev/null 2>&1; then
+        jq -er '.workflow_runs[0] | [.id, .head_sha] | @tsv' "$1"
+    else
+        fail "python3 or jq is required to parse the nightly workflow run"
+    fi
+}
+
 field() {
     printf '%s\n' "$1" | awk -F '	' -v n="$2" '{print $n}'
 }
@@ -194,23 +235,6 @@ path_contains() {
         *":$1:"*) return 0 ;;
         *) return 1 ;;
     esac
-}
-
-backup_stable_avm() {
-    backup="$BIN_DIR/avm-stable"
-
-    [ ! -f "$NIGHTLY_FILE" ] || return 0
-    [ ! -e "$backup" ] || return 0
-
-    if [ -f "$BIN_DIR/avm" ]; then
-        install_binary "$BIN_DIR/avm" "$backup"
-        return 0
-    fi
-
-    if existing_avm="$(command -v avm 2>/dev/null)"; then
-        [ -n "$existing_avm" ] || return 0
-        install_binary "$existing_avm" "$backup"
-    fi
 }
 
 install_artifact() {
@@ -272,35 +296,45 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 HOST_TARGET="$(detect_target)"
+LATEST_MANIFEST_FILE="$TMP_DIR/latest-manifest.json"
+WORKFLOW_RUNS_FILE="$TMP_DIR/workflow-runs.json"
 MANIFEST_FILE="$TMP_DIR/manifest.json"
 
 mkdir -p "$BIN_DIR"
 
-say "Fetching Anchor nightly manifest"
-download "$MANIFEST_URL" "$MANIFEST_FILE"
+say "Fetching latest Anchor nightly manifest"
+download "$MANIFEST_URL" "$LATEST_MANIFEST_FILE"
+
+PREVIOUS_DATE="$(previous_date "$LATEST_MANIFEST_FILE")"
+RUNS_QUERY="${WORKFLOW_RUNS_URL}?branch=master&status=success&created=${PREVIOUS_DATE}&per_page=1"
+say "Resolving Anchor nightly workflow run for $PREVIOUS_DATE"
+download "$RUNS_QUERY" "$WORKFLOW_RUNS_FILE"
+run_line="$(extract_workflow_run "$WORKFLOW_RUNS_FILE")"
+run_id="$(field "$run_line" 1)"
+git_sha="$(field "$run_line" 2)"
+year="$(printf '%s\n' "$PREVIOUS_DATE" | cut -d- -f1)"
+month="$(printf '%s\n' "$PREVIOUS_DATE" | cut -d- -f2)"
+day="$(printf '%s\n' "$PREVIOUS_DATE" | cut -d- -f3)"
+previous_manifest_url="${BASE_URL}nightly/builds/${year}/${month}/${day}/${git_sha}/${run_id}/manifest.json"
+
+say "Fetching Anchor nightly manifest for $PREVIOUS_DATE"
+download "$previous_manifest_url" "$MANIFEST_FILE"
 
 avm_line="$(extract_artifact avm)"
-anchor_line="$(extract_artifact anchor)"
-nightly_version="$(field "$avm_line" 1)"
+avm_version="$(field "$avm_line" 1)"
 
-anchor_version="$(field "$anchor_line" 1)"
-[ "$nightly_version" = "$anchor_version" ] || fail "manifest has mismatched avm and anchor versions"
-
-backup_stable_avm
-install_artifact avm "$avm_line" "$BIN_DIR/avm-nightly"
-install_artifact anchor "$anchor_line" "$BIN_DIR/anchor-nightly"
-install_binary "$BIN_DIR/avm-nightly" "$BIN_DIR/avm"
+install_artifact avm "$avm_line" "$BIN_DIR/avm"
 link_or_copy "$BIN_DIR/avm" "$BIN_DIR/anchor"
 
-printf 'enabled\n' > "$NIGHTLY_FILE"
-printf '%s\n%s\n' "$(date +%s)" "$nightly_version" > "$NIGHTLY_CACHE_FILE"
-rm -f "$NIGHTLY_ERROR_CACHE_FILE"
+rm -f "$NIGHTLY_FILE" "$NIGHTLY_CACHE_FILE" "$NIGHTLY_ERROR_CACHE_FILE"
 
 install_path_links
 
-say "Installed Anchor nightly $nightly_version"
+say "Installed AVM nightly $avm_version"
 say "AVM: $BIN_DIR/avm"
 say "Anchor: $BIN_DIR/anchor"
+say "Installing the latest stable Anchor CLI"
+"$BIN_DIR/avm" install latest
 
 if ! path_contains "$BIN_DIR"; then
     say "Add this to your shell profile if avm is not already on PATH:"

@@ -29,6 +29,7 @@ SUBCOMMANDS:
     solana         Resolve or install the Solana CLI for the current project
     platform-tools Inspect or manage the Solana platform-tools toolchain
     self-update    Update avm itself to the latest version
+    nightly        Enable or disable the Anchor nightly channel
 ```
 
 ## Install
@@ -147,10 +148,30 @@ requirement, AVM considers hosted Solana CLI versions satisfying that
 requirement and prefers one whose platform-tools rustc can compile the locked
 program dependency graph.
 
+## Nightly
+
+```shell
+avm nightly [--disable]
+```
+
+Enable the Anchor nightly channel. AVM reads the latest nightly date and uses
+the successful Anchor build from the preceding calendar day. While nightly mode
+is enabled, invoking `anchor` checks for a newer eligible build at most once per
+hour. These checks only replace the nightly Anchor binary; the installed AVM is
+left unchanged.
+
+```shell
+# Enable Anchor nightly
+avm nightly
+
+# Return to normal Anchor version resolution
+avm nightly --disable
+```
+
 ## Self-update
 
 ```shell
-avm self-update [--pre-release] [--bleeding-edge]
+avm self-update [--pre-release] [--bleeding-edge] [--enable-auto | --disable-auto]
 ```
 
 Update `avm` itself. By default installs the latest stable release of `avm`.
@@ -159,6 +180,8 @@ Update `avm` itself. By default installs the latest stable release of `avm`.
 |------|-------------|
 | `--pre-release` | Update to the latest pre-release version instead of the latest stable |
 | `--bleeding-edge` | Build and install from the latest commit on the master branch (conflicts with `--pre-release`) |
+| `--enable-auto` | Enable automatic stable AVM updates and update immediately |
+| `--disable-auto` | Disable automatic AVM updates without updating |
 
 ```shell
 # Update avm to latest stable
@@ -169,7 +192,14 @@ avm self-update --pre-release
 
 # Install from the tip of master
 avm self-update --bleeding-edge
+
+# Automatically install future stable AVM updates
+avm self-update --enable-auto
+
+# Return to warning-only update checks
+avm self-update --disable-auto
 ```
 
-`avm` will also passively warn you when it detects that a newer version of
-itself is available.
+By default, `avm` passively warns when it detects a newer stable version. With
+automatic updates enabled, the same periodic check installs that release
+instead.

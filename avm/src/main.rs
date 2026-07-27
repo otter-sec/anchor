@@ -76,6 +76,18 @@ pub enum Commands {
         #[clap(long, conflicts_with = "pre_release")]
         /// Build and install from the latest commit on the master branch
         bleeding_edge: bool,
+        #[clap(
+            long,
+            conflicts_with_all = ["disable_auto", "pre_release", "bleeding_edge"]
+        )]
+        /// Enable automatic installation of stable AVM updates
+        enable_auto: bool,
+        #[clap(
+            long,
+            conflicts_with_all = ["enable_auto", "pre_release", "bleeding_edge"]
+        )]
+        /// Disable automatic AVM updates
+        disable_auto: bool,
     },
     #[clap(about = "Enable or disable the Anchor nightly channel")]
     Nightly {
@@ -235,7 +247,17 @@ pub fn entry(opts: Cli) -> Result<()> {
         Commands::SelfUpdate {
             pre_release,
             bleeding_edge,
-        } => avm::self_update(pre_release, bleeding_edge),
+            enable_auto,
+            disable_auto,
+        } => {
+            if disable_auto {
+                return avm::set_auto_update(false);
+            }
+            if enable_auto {
+                avm::set_auto_update(true)?;
+            }
+            avm::self_update(pre_release, bleeding_edge)
+        }
         Commands::Nightly {
             disable,
             skip_attestation,
@@ -627,5 +649,35 @@ mod tests {
             assert!(help.contains("--skip-attestation"));
             assert!(help.contains("potentially dangerous"));
         }
+    }
+
+    #[test]
+    fn test_parse_self_update_auto_flags() {
+        let enable = Cli::try_parse_from(["avm", "self-update", "--enable-auto"]).unwrap();
+        assert!(matches!(
+            enable.command,
+            Commands::SelfUpdate {
+                enable_auto: true,
+                disable_auto: false,
+                ..
+            }
+        ));
+
+        let disable = Cli::try_parse_from(["avm", "self-update", "--disable-auto"]).unwrap();
+        assert!(matches!(
+            disable.command,
+            Commands::SelfUpdate {
+                enable_auto: false,
+                disable_auto: true,
+                ..
+            }
+        ));
+
+        assert!(
+            Cli::try_parse_from(["avm", "self-update", "--enable-auto", "--disable-auto"]).is_err()
+        );
+        assert!(
+            Cli::try_parse_from(["avm", "self-update", "--enable-auto", "--pre-release"]).is_err()
+        );
     }
 }

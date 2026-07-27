@@ -335,24 +335,31 @@ Anchor versions on your system and easily update Anchor versions in the future.
 Install AVM with the following command:
 
 ```shell title="Terminal"
-cargo install --git https://github.com/otter-sec/anchor avm --force
+curl -sSfL https://raw.githubusercontent.com/otter-sec/anchor/master/avm/install | sh
 ```
 
-Check that AVM was installed successfully:
+The installer sets up AVM and installs the latest stable Anchor CLI. It does not
+enable the Anchor nightly channel.
+
+Check that AVM and Anchor CLI were installed successfully:
 
 ```shell title="Terminal"
 avm --version
+anchor --version
 ```
 
-Install the latest version of Anchor CLI using AVM:
+To opt in to Anchor nightly builds, run:
 
 ```shell title="Terminal"
-avm install latest
-avm use latest
+avm nightly
 ```
 
-Alternatively, you can install a specific version of Anchor CLI by specifying
-the version number:
+Nightly mode uses the successful Anchor build from the day before the latest
+nightly and leaves the installed AVM unchanged. Disable it with
+`avm nightly --disable`.
+
+You can install and select a specific Anchor CLI version by specifying the
+version number:
 
 ```shell title="Terminal"
 avm install 1.1.2
@@ -361,11 +368,10 @@ avm use 1.1.2
 
 <Callout type="info">
 
-Don't forget to run the `avm use` command to declare which Anchor CLI version
-should be used on your system.
-
-- If you installed the `latest` version, run `avm use latest`.
-- If you installed the version `1.1.2`, run `avm use 1.1.2`.
+AVM warns when a newer stable version of itself is available. Run
+`avm self-update --enable-auto` to install future stable AVM updates
+automatically, or `avm self-update --disable-auto` to return to warning-only
+checks.
 
 </Callout>
 

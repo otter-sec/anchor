@@ -41,10 +41,10 @@ The recommended way to install the Anchor CLI is with the Anchor Version Manager
 curl -sSfL https://raw.githubusercontent.com/otter-sec/anchor/master/avm/install | sh
 ```
 
-The installer downloads the latest nightly AVM and Anchor CLI binaries, enables
-the nightly channel, and links the `avm` and `anchor` commands into
-`~/.cargo/bin` when possible. After that, `anchor` will use the latest cached
-nightly build and periodically check for updates.
+The installer downloads the AVM build from the day before the latest nightly,
+links the `avm` and `anchor` commands into `~/.cargo/bin` when possible, and
+installs the latest stable Anchor CLI. Anchor nightly mode is not enabled by
+default.
 
 If you already have AVM installed, you can enable the nightly channel directly:
 
@@ -52,11 +52,24 @@ If you already have AVM installed, you can enable the nightly channel directly:
 avm nightly
 ```
 
+Nightly mode uses the successful Anchor build from the day before the latest
+nightly. It periodically checks for a newer eligible Anchor build without
+replacing AVM itself.
+
 To leave nightly mode and return to normal AVM version resolution, run:
 
 ```sh
 avm nightly --disable
 ```
+
+AVM checks for new stable releases and warns by default. To install those
+updates automatically, run:
+
+```sh
+avm self-update --enable-auto
+```
+
+Run `avm self-update --disable-auto` to return to warning-only checks.
 
 ## Packages
 

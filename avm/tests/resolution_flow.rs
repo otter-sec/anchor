@@ -71,7 +71,7 @@ echo "resolver=${{CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS:-}}" >> "$AVM_TEST_A
         );
     }
 
-    fn install_nightly_anchor_via_script(&self) {
+    fn install_avm_via_script(&self) {
         let installer = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("install");
         assert!(
             installer.is_file(),
@@ -81,30 +81,31 @@ echo "resolver=${{CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS:-}}" >> "$AVM_TEST_A
 
         let nightly_dir = self._temp.path().join("nightly");
         let avm_src = nightly_dir.join("avm-src");
-        let anchor_src = nightly_dir.join("anchor-src");
         fs::create_dir_all(&avm_src).expect("avm src");
-        fs::create_dir_all(&anchor_src).expect("anchor src");
+        let avm_log = nightly_dir.join("avm.log");
 
         write_executable(
             &avm_src.join("avm"),
             r#"#!/bin/sh
-echo "fake nightly avm"
-"#,
-        );
-        write_executable(
-            &anchor_src.join("anchor"),
-            r#"#!/bin/sh
-echo "version=nightly" > "$AVM_TEST_ANCHOR_LOG"
-echo "args=$*" >> "$AVM_TEST_ANCHOR_LOG"
+echo "args=$*" > "$AVM_TEST_AVM_LOG"
 "#,
         );
 
         let avm_archive = nightly_dir.join("avm.tar.gz");
-        let anchor_archive = nightly_dir.join("anchor.tar.gz");
         create_tar_gz(&avm_archive, &avm_src, "avm");
-        create_tar_gz(&anchor_archive, &anchor_src, "anchor");
 
-        let manifest = nightly_dir.join("manifest.json");
+        let latest_manifest = nightly_dir.join("latest-manifest.json");
+        fs::write(&latest_manifest, r#"{"date":"2026-07-27"}"#).expect("latest manifest");
+        let workflow_runs = nightly_dir.join("workflow-runs.json");
+        fs::write(
+            &workflow_runs,
+            r#"{"workflow_runs":[{"id":12345,"head_sha":"abc123"}]}"#,
+        )
+        .expect("workflow runs");
+        let manifest = nightly_dir
+            .join("nightly/builds/2026/07/26/abc123/12345")
+            .join("manifest.json");
+        fs::create_dir_all(manifest.parent().unwrap()).expect("manifest parent");
         fs::write(
             &manifest,
             format!(
@@ -117,21 +118,12 @@ echo "args=$*" >> "$AVM_TEST_ANCHOR_LOG"
       "file": "avm.tar.gz",
       "s3_key": "avm.tar.gz",
       "sha256": "{}"
-    }},
-    {{
-      "tool": "anchor",
-      "target": "{}",
-      "file": "anchor.tar.gz",
-      "s3_key": "anchor.tar.gz",
-      "sha256": "{}"
     }}
   ]
 }}
 "#,
                 nightly_target(),
-                sha256_file(&avm_archive),
-                nightly_target(),
-                sha256_file(&anchor_archive)
+                sha256_file(&avm_archive)
             ),
         )
         .expect("manifest");
@@ -153,13 +145,18 @@ echo "fake stable avm"
             .env("CARGO_HOME", &cargo_home)
             .env("HOME", &home)
             .env("AVM_INSTALL_TARGET", nightly_target())
+            .env("AVM_TEST_AVM_LOG", &avm_log)
             .env(
                 "AVM_NIGHTLY_MANIFEST_URL",
-                format!("file://{}", manifest.display()),
+                format!("file://{}", latest_manifest.display()),
             )
             .env(
                 "AVM_NIGHTLY_BASE_URL",
                 format!("file://{}/", nightly_dir.display()),
+            )
+            .env(
+                "AVM_NIGHTLY_WORKFLOW_RUNS_URL",
+                format!("file://{}", workflow_runs.display()),
             )
             .output()
             .expect("run checkout installer");
@@ -167,7 +164,15 @@ echo "fake stable avm"
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            stdout.contains("Installed Anchor nightly checkout-nightly-test"),
+            stdout.contains("Fetching Anchor nightly manifest for 2026-07-26"),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains("Installed AVM nightly checkout-nightly-test"),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains("Installing the latest stable Anchor CLI"),
             "{stdout}"
         );
         assert!(
@@ -181,25 +186,13 @@ echo "fake stable avm"
             )),
             "{stdout}"
         );
-        assert!(
-            self.avm_home_bin().join("avm-nightly").is_file(),
-            "avm-nightly should be installed"
-        );
-        assert!(
-            self.avm_home_bin().join("anchor-nightly").is_file(),
-            "anchor-nightly should be installed"
-        );
-        assert!(
-            self.avm_home_bin().join("avm-stable").is_file(),
-            "stable AVM should be backed up"
-        );
         assert_eq!(
-            fs::read_to_string(self.avm_home.join(".nightly")).expect(".nightly"),
-            "enabled\n"
+            fs::read_to_string(&avm_log).expect("avm log"),
+            "args=install latest\n"
         );
-        assert!(fs::read_to_string(self.avm_home.join(".nightly-check"))
-            .expect(".nightly-check")
-            .contains("checkout-nightly-test"));
+        assert!(!self.avm_home.join(".nightly").exists());
+        assert!(!self.avm_home.join(".nightly-check").exists());
+        assert!(!self.avm_home.join(".nightly-check-error").exists());
         assert!(
             !cargo_home.join("bin").exists(),
             "missing CARGO_HOME/bin should be a no-op, not an early exit"
@@ -335,23 +328,9 @@ fn anchor_stub_falls_back_to_anchorversion_cargo_and_global_sources() {
 }
 
 #[test]
-fn nightly_stub_takes_precedence_after_installer_bootstrap() {
+fn installer_bootstrap_does_not_enable_nightly() {
     let fixture = Fixture::new();
-    let project = fixture.project("nightly");
-    fixture.install_anchor("1.0.2");
-    fixture.install_nightly_anchor_via_script();
-    fs::write(
-        project.join("Anchor.toml"),
-        "[toolchain]\nanchor_version = \"1.0.2\"\nsolana_version = \"3.1.10\"\n",
-    )
-    .unwrap();
-
-    assert_success(&fixture.run_anchor(&project, ["build"]));
-
-    let log = fixture.anchor_log();
-    assert!(log.contains("version=nightly"), "{log}");
-    assert!(log.contains("args=build"), "{log}");
-    assert!(!fixture.solana_log_path.exists());
+    fixture.install_avm_via_script();
 }
 
 #[test]
