@@ -781,6 +781,38 @@ fn bump_boxed_accumulates_across_calls() {
 }
 
 #[test]
+fn bump_boxed_by_applies_amount_from_arg_struct() {
+    let (mut svm, payer) = setup();
+    let counter = do_initialize(&mut svm, &payer);
+
+    // bump_boxed_by (discrim = 37) — BumpArgs { amount, tag } serializes as
+    // amount (u64 LE) followed by the raw 4-byte tag.
+    let mut data = vec![37];
+    data.extend_from_slice(&5u64.to_le_bytes());
+    data.extend_from_slice(b"idl!");
+    let metas = vec![AccountMeta::new(counter, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("bump_boxed_by should succeed");
+
+    let account = svm.get_account(&counter).expect("counter exists");
+    let value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
+    assert_eq!(value, 6, "counter starts at 1 and bumps by the arg amount");
+
+    // A second bump with u64::MAX must wrap, not panic — the handler uses
+    // wrapping_add.
+    let mut data = vec![37];
+    data.extend_from_slice(&u64::MAX.to_le_bytes());
+    data.extend_from_slice(b"idl!");
+    let metas = vec![AccountMeta::new(counter, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("bump_boxed_by with u64::MAX should succeed");
+
+    let account = svm.get_account(&counter).expect("counter exists");
+    let value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
+    assert_eq!(value, 5, "6 + u64::MAX wraps to 5");
+}
+
+#[test]
 fn bump_boxed_rejects_wrong_owner() {
     let (mut svm, payer) = setup();
 
