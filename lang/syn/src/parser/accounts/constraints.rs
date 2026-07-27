@@ -18,7 +18,7 @@ pub fn parse(f: &syn::Field, f_ty: Option<&Ty>) -> ParseResult<ConstraintGroup> 
     Ok(account_constraints)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "init-if-needed"))]
 mod init_if_needed_tests {
     use {
         crate::{parser::accounts, AccountField},
@@ -66,6 +66,53 @@ mod init_if_needed_tests {
             mint.constraints.mint.is_some(),
             "init_if_needed mint fields must retain mint constraints so reused mints re-run \
              extension validation",
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn init_if_needed_mint_keeps_implicit_reuse_checks_for_validation(
+    ) -> std::result::Result<(), String> {
+        let accounts_struct = parse_quote! {
+            pub struct InitIfNeededMintWithImplicitChecks<'info> {
+                #[account(mut)]
+                pub payer: Signer<'info>,
+                pub authority: Signer<'info>,
+                #[account(
+                    init_if_needed,
+                    signer,
+                    payer = payer,
+                    mint::decimals = 0,
+                    mint::authority = authority,
+                    extensions::group_member_pointer::authority = authority,
+                    extensions::group_member_pointer::member_address = mint,
+                )]
+                pub mint: Box<InterfaceAccount<'info, Mint>>,
+                pub system_program: Program<'info, System>,
+                pub token_program: Program<'info, Token2022>,
+            }
+        };
+
+        let accounts = accounts::parse(&accounts_struct).map_err(|err| err.to_string())?;
+        let mint = if let Some(AccountField::Field(field)) = accounts.fields.get(2) {
+            field
+        } else {
+            return Err("expected third account field to be a mint field".into());
+        };
+
+        let mint_constraints = mint.constraints.mint.as_ref().ok_or_else(|| {
+            "expected init_if_needed mint constraints to be preserved".to_string()
+        })?;
+
+        assert!(
+            mint_constraints.freeze_authority.is_none(),
+            "implicit None freeze authority should remain representable in the preserved mint \
+             constraints",
+        );
+        assert!(
+            mint_constraints.token_program.is_none(),
+            "implicit token_program should remain representable in the preserved mint constraints",
         );
 
         Ok(())
