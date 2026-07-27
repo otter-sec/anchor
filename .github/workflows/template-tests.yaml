@@ -78,7 +78,24 @@ jobs:
 
       # Match `tests-v2/src/lib.rs::build_program`. Pre-install so concurrent
       # `cargo build-sbf` invocations don't race on the platform-tools rename.
-      - run: cargo build-sbf --tools-version v1.52 --install-only
+      # Cache platform-tools so the matrix cells don't each re-download it via
+      # the GitHub releases API (unauthenticated, so shared runner IPs get
+      # rate-limited and the install dies with "Failed to parse Github
+      # response"); retry the cold-cache install for the same reason.
+      - uses: actions/cache@v4
+        name: Cache SBF platform tools
+        with:
+          path: ~/.cache/solana/v1.52/platform-tools
+          key: solana-platform-tools-${{ runner.os }}-v1.52
+      - uses: nick-fields/retry@v2
+        name: Install SBF platform tools
+        with:
+          retry_wait_seconds: 60
+          timeout_minutes: 10
+          max_attempts: 5
+          retry_on: error
+          shell: bash
+          command: cargo build-sbf --tools-version v1.52 --install-only
 
       # Cache the generated project's `target/` so subsequent runs reuse
       # compiled deps. Restored before `anchor init` (which is invoked with
@@ -179,7 +196,22 @@ jobs:
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/anchor
 
-      - run: cargo build-sbf --tools-version v1.52 --install-only
+      # Cache + retry for the same GitHub releases API rate-limit flake as in
+      # `template-rust-tests` above.
+      - uses: actions/cache@v4
+        name: Cache SBF platform tools
+        with:
+          path: ~/.cache/solana/v1.52/platform-tools
+          key: solana-platform-tools-${{ runner.os }}-v1.52
+      - uses: nick-fields/retry@v2
+        name: Install SBF platform tools
+        with:
+          retry_wait_seconds: 60
+          timeout_minutes: 10
+          max_attempts: 5
+          retry_on: error
+          shell: bash
+          command: cargo build-sbf --tools-version v1.52 --install-only
 
       # Cache cargo `target/` and `node_modules/` for the generated project.
       # `anchor init --force` leaves both alone, so the dirs survive a fresh
