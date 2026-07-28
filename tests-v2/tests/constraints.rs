@@ -201,8 +201,8 @@ fn address_mismatch_rejected() {
         vec![AccountMeta::new_readonly(wrong, false)],
         &[],
     );
-    // Default `ConstraintAddress` maps to `ProgramError::InvalidAccountData`.
-    assert_err_contains(&result, "InvalidAccountData");
+    // Default `ConstraintAddress` maps to `Custom(2012)`, v1's code.
+    assert_err_contains(&result, "Custom(2012)");
 }
 
 // ---- 2. address = expr @ MyErr --------------------------------------------
@@ -268,8 +268,8 @@ fn has_one_mismatch_rejected() {
         ],
         &[],
     );
-    // Default `ConstraintHasOne` -> `ProgramError::InvalidAccountData`.
-    assert_err_contains(&result, "InvalidAccountData");
+    // Default `ConstraintHasOne` -> `Custom(2001)`, v1's code.
+    assert_err_contains(&result, "Custom(2001)");
 }
 
 // ---- 4. has_one = field @ MyErr -------------------------------------------
@@ -330,8 +330,8 @@ fn address_field_path_mismatch_rejected() {
         ],
         &[],
     );
-    // Default `ConstraintAddress` -> `ProgramError::InvalidAccountData`.
-    assert_err_contains(&result, "InvalidAccountData");
+    // Default `ConstraintAddress` -> `Custom(2012)`, v1's code.
+    assert_err_contains(&result, "Custom(2012)");
 }
 
 // ---- 5. owner = expr -------------------------------------------------------
@@ -579,7 +579,7 @@ fn close_self_close_rejected() {
     );
     let rendered = format!("{:?}", result.as_ref().err().expect("should fail").err);
     assert!(
-        rendered.contains("Custom(2040)") || rendered.contains("InvalidAccountData"),
+        rendered.contains("Custom(2040)") || rendered.contains("Custom(2011)"),
         "expected dup-mut or ConstraintClose rejection, got: {rendered}",
     );
 }
@@ -859,7 +859,7 @@ fn address_into_from_byte_array_mismatch_rejected() {
         vec![AccountMeta::new_readonly(Pubkey::new_unique(), false)],
         &[],
     );
-    assert_err_contains(&result, "InvalidAccountData");
+    assert_err_contains(&result, "Custom(2012)");
 }
 
 #[test]
@@ -885,7 +885,7 @@ fn address_into_from_ref_mismatch_rejected() {
         vec![AccountMeta::new_readonly(Pubkey::new_unique(), false)],
         &[],
     );
-    assert_err_contains(&result, "InvalidAccountData");
+    assert_err_contains(&result, "Custom(2012)");
 }
 
 // ---- 16. Multiple constraints on a single field --------------------------

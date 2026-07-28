@@ -6,10 +6,15 @@
 //! can't tell which constraint failed.
 //!
 //! Note: multiple variants mapping to the same *built-in*
-//! `ProgramError` (e.g., `ConstraintHasOne`, `ConstraintAddress`,
-//! `ConstraintClose` all → `InvalidAccountData`) is acceptable — those
-//! are semantic groupings. The invariant is specifically "no two
-//! variants share a `Custom(u32)` code".
+//! `ProgramError` is acceptable only when the variants mean the same
+//! thing to a caller (e.g., `InstructionDidNotDeserialize` and
+//! `InstructionFallbackNotFound` both → `InvalidInstructionData`:
+//! either way the instruction data was wrong). Account-relation
+//! constraints (`has_one`, `address`, `close`) instead get distinct
+//! v1-aligned `Custom` codes — sharing `InvalidAccountData` made
+//! their failures indistinguishable from each other and from
+//! discriminator/deserialization errors (#4849). The invariant is
+//! specifically "no two variants share a `Custom(u32)` code".
 //!
 //! Exhaustiveness: the helper below uses an `#[allow(dead_code)]`
 //! match on a fresh `ErrorCode` parameter with explicit arms for
@@ -115,7 +120,7 @@ fn no_two_variants_share_a_custom_code() {
     }
     // Snapshot — adding a new Custom variant forces a review of this number.
     assert_eq!(
-        custom_count, 12,
+        custom_count, 15,
         "Number of Custom error codes changed; update this snapshot after review"
     );
 }
@@ -183,23 +188,6 @@ fn builtin_groupings_are_stable() {
         IncorrectProgramId,
     );
 
-    // Grouped under InvalidAccountData
-    check(
-        "ConstraintHasOne",
-        ErrorCode::ConstraintHasOne.into(),
-        InvalidAccountData,
-    );
-    check(
-        "ConstraintAddress",
-        ErrorCode::ConstraintAddress.into(),
-        InvalidAccountData,
-    );
-    check(
-        "ConstraintClose",
-        ErrorCode::ConstraintClose.into(),
-        InvalidAccountData,
-    );
-
     // Grouped under InvalidInstructionData
     check(
         "InstructionDidNotDeserialize",
@@ -211,4 +199,57 @@ fn builtin_groupings_are_stable() {
         ErrorCode::InstructionFallbackNotFound.into(),
         InvalidInstructionData,
     );
+}
+
+#[test]
+fn custom_codes_match_v1_numbering() {
+    // Every `Custom` code must equal the discriminant of the same-named
+    // variant in v1's `ErrorCode` (lang/src/error.rs), so clients and
+    // explorers that already decode v1 codes read v2 errors correctly.
+    // Snapshot test — a mismatch here is a breaking API change.
+    let expected: Vec<(&'static str, ErrorCode, u32)> = vec![
+        ("ConstraintMut", ErrorCode::ConstraintMut, 2000),
+        ("ConstraintHasOne", ErrorCode::ConstraintHasOne, 2001),
+        ("ConstraintRaw", ErrorCode::ConstraintRaw, 2003),
+        (
+            "ConstraintExecutable",
+            ErrorCode::ConstraintExecutable,
+            2007,
+        ),
+        ("ConstraintClose", ErrorCode::ConstraintClose, 2011),
+        ("ConstraintAddress", ErrorCode::ConstraintAddress, 2012),
+        ("ConstraintZero", ErrorCode::ConstraintZero, 2013),
+        (
+            "ConstraintDuplicateMutableAccount",
+            ErrorCode::ConstraintDuplicateMutableAccount,
+            2040,
+        ),
+        ("RequireViolated", ErrorCode::RequireViolated, 2500),
+        ("RequireEqViolated", ErrorCode::RequireEqViolated, 2501),
+        ("RequireNeqViolated", ErrorCode::RequireNeqViolated, 2502),
+        (
+            "RequireKeysEqViolated",
+            ErrorCode::RequireKeysEqViolated,
+            2503,
+        ),
+        (
+            "RequireKeysNeqViolated",
+            ErrorCode::RequireKeysNeqViolated,
+            2504,
+        ),
+        ("RequireGtViolated", ErrorCode::RequireGtViolated, 2505),
+        ("RequireGteViolated", ErrorCode::RequireGteViolated, 2506),
+    ];
+    // Keep this list in sync with the Custom-code count snapshot above.
+    assert_eq!(expected.len(), 15);
+    for (label, code, expected_code) in expected {
+        let err: ProgramError = code.into();
+        assert_eq!(
+            err,
+            ProgramError::Custom(expected_code),
+            "ErrorCode::{} should map to Custom({}) to match v1 numbering",
+            label,
+            expected_code
+        );
+    }
 }
