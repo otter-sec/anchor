@@ -309,6 +309,9 @@ describe("duplicate-mutable-accounts", () => {
   };
 
   it("Should block the same fresh account used for `zero` then `init`", async () => {
+    // Flat structs are handled by the `zero` constraint's own uniqueness scan
+    // (the duplicate-mutable check only includes `init` accounts when composites
+    // are present), so the error surfaces as ConstraintZero.
     const aliased = anchor.web3.Keypair.generate();
     await expectBlocked(
       program.methods
@@ -321,7 +324,8 @@ describe("duplicate-mutable-accounts", () => {
         })
         .signers([user_wallet, aliased])
         .rpc(),
-      "`zero` before `init` with one account"
+      "`zero` before `init` with one account",
+      "ConstraintZero"
     );
   });
 
@@ -338,7 +342,8 @@ describe("duplicate-mutable-accounts", () => {
         })
         .signers([user_wallet, aliased])
         .rpc(),
-      "`init` before `zero` with one account"
+      "`init` before `zero` with one account",
+      "ConstraintZero"
     );
   });
 

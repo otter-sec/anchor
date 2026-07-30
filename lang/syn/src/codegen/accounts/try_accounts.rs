@@ -337,18 +337,38 @@ fn is_init(af: &AccountField) -> bool {
 
 // Generates duplicate mutable account validation logic
 fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::TokenStream {
+    // Collect composite field idents (nested account structs)
+    let composite_fields: Vec<_> = accs
+        .fields
+        .iter()
+        .filter_map(|af| match af {
+            AccountField::CompositeField(s) => Some(&s.ident),
+            _ => None,
+        })
+        .collect();
+    let has_composites = !composite_fields.is_empty();
+
     // Collect all mutable account fields without `dup` constraint that serialize on exit.
     // Only types that serialize on exit are included, as duplicate mutable accounts
     // are problematic due to double serialization (the second write overwrites the first).
     // Types like UncheckedAccount, Signer, SystemAccount, AccountLoader, etc. don't serialize on exit
-    // `init` accounts participate too. A pure-`init` account cannot collide with an account that
-    // was already initialized, but it can collide with a `zero` account: `init` runs first and
-    // leaves the account program-owned and zero-filled, which is exactly what `zero` accepts.
+    //
+    // Pure-`init` accounts participate only when the struct has composite fields. A fresh
+    // `init` account cannot collide with an already-initialized account, but it can collide
+    // with a `zero` account: `init` runs first and leaves the account program-owned and
+    // zero-filled, which is exactly what `zero` accepts. Within a single struct that alias is
+    // already rejected by the `zero` constraint's own uniqueness scan, so flat structs skip
+    // the per-key hashing cost here; across composite boundaries only this check can see the
+    // collision.
     let candidates: Vec<_> = accs
         .fields
         .iter()
         .filter_map(|af| match af {
-            AccountField::Field(f) if f.constraints.is_mutable() && !f.constraints.is_dup() => {
+            AccountField::Field(f)
+                if f.constraints.is_mutable()
+                    && !f.constraints.is_dup()
+                    && (has_composites || !f.constraints.is_pure_init()) =>
+            {
                 match &f.ty {
                     // Only include types that serialize on exit
                     crate::Ty::Account(_)
@@ -358,16 +378,6 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
                     _ => None,
                 }
             }
-            _ => None,
-        })
-        .collect();
-
-    // Collect composite field idents (nested account structs)
-    let composite_fields: Vec<_> = accs
-        .fields
-        .iter()
-        .filter_map(|af| match af {
-            AccountField::CompositeField(s) => Some(&s.ident),
             _ => None,
         })
         .collect();

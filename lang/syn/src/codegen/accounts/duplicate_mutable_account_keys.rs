@@ -81,7 +81,9 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
             // Direct fields that are mut and not dup. `init` accounts are reported too: a freshly
             // created account cannot collide with an already-initialized one, but it can collide
             // with a `zero` account in an enclosing struct, since `init` leaves the account
-            // program-owned and zero-filled and `zero` accepts exactly that.
+            // program-owned and zero-filled and `zero` accepts exactly that. This impl is only
+            // invoked from an enclosing struct that has composite fields, so flat structs never
+            // pay for the reporting.
             AccountField::Field(f) if f.constraints.is_mutable() && !f.constraints.is_dup() => {
                 // Only types that serialize on exit (not Signer, Program, etc.).
                 match &f.ty {
