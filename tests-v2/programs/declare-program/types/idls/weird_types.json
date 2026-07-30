@@ -13,14 +13,6 @@
       "accounts": [],
       "args": [
         {
-          "name": "float32",
-          "type": "f32"
-        },
-        {
-          "name": "float64",
-          "type": "f64"
-        },
-        {
           "name": "unit",
           "type": {
             "defined": {

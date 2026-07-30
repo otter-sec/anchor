@@ -418,6 +418,89 @@ pub struct Bad {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn floats_are_rejected_on_borsh_compatible_surfaces() {
+    compile_fail_case(
+        "float_instruction_arg",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+pub mod float_instruction_arg {
+    use super::*;
+
+    pub fn set(_ctx: &mut Context<Noop>, value: f64) -> Result<()> {
+        let _ = value;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Noop {}
+"#,
+        &[
+            "`f32` and `f64` instruction arguments are not supported",
+            "use an integer or fixed-point representation",
+        ],
+    );
+
+    compile_fail_case(
+        "float_borsh_account",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account(borsh)]
+pub struct Price {
+    pub value: Option<f32>,
+}
+"#,
+        &[
+            "`f32` and `f64` are not supported on `#[account(borsh)]`",
+            "use an integer or fixed-point representation",
+        ],
+    );
+
+    compile_fail_case(
+        "float_event",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+#[event]
+pub struct PriceChanged {
+    pub value: f64,
+}
+"#,
+        &[
+            "`f32` and `f64` are not supported on `#[event]`",
+            "use an integer or fixed-point representation",
+        ],
+    );
+
+    compile_fail_case(
+        "float_idl_type",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+#[derive(IdlType)]
+pub struct Price {
+    pub value: Vec<f64>,
+}
+"#,
+        &[
+            "`f32` and `f64` are not supported on `#[derive(IdlType)]`",
+            "use an integer or fixed-point representation",
+        ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn cfg_gated_public_handlers_do_not_emit_missing_wrappers() {
     compile_pass_case(
         "cfg_gated_handler",

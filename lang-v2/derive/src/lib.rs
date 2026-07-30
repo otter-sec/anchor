@@ -1942,6 +1942,11 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .into()
         }
     };
+    if is_borsh {
+        if let Err(err) = reject_float_fields("`#[account(borsh)]`", fields) {
+            return err.to_compile_error().into();
+        }
+    }
     use sha2::Digest;
     let hash = sha2::Sha256::digest(format!("account:{name_str}").as_bytes());
     let disc_bytes = &hash[..8];
@@ -2257,6 +2262,9 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
     // `"bytemuck"` tag here would lie in the IDL for non-Pod types.
     let (idl_type_def, field_dep_walkers, idl_validation_tokens) = match &input.data {
         Data::Struct(data) => {
+            if let Err(err) = reject_float_fields("`#[derive(IdlType)]`", &data.fields) {
+                return err.to_compile_error().into();
+            }
             (
                 idl::build_struct_type_def_emission(
                     &name_str,
@@ -2269,6 +2277,11 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
             )
         }
         Data::Enum(data) => {
+            for variant in &data.variants {
+                if let Err(err) = reject_float_fields("`#[derive(IdlType)]`", &variant.fields) {
+                    return err.to_compile_error().into();
+                }
+            }
             (
                 idl::build_enum_type_def_emission(
                     &name_str,
@@ -4297,6 +4310,60 @@ fn extract_result_return_type(output: &syn::ReturnType) -> syn::Result<Option<Ty
     }
 }
 
+fn type_contains_float(ty: &Type) -> bool {
+    fn path_arguments_contain_float(arguments: &syn::PathArguments) -> bool {
+        let syn::PathArguments::AngleBracketed(arguments) = arguments else {
+            return false;
+        };
+        arguments.args.iter().any(|argument| match argument {
+            syn::GenericArgument::Type(ty) => type_contains_float(ty),
+            syn::GenericArgument::AssocType(binding) => type_contains_float(&binding.ty),
+            _ => false,
+        })
+    }
+
+    match ty {
+        Type::Path(path) => path.path.segments.iter().any(|segment| {
+            matches!(segment.ident.to_string().as_str(), "f32" | "f64")
+                || path_arguments_contain_float(&segment.arguments)
+        }),
+        Type::Array(array) => type_contains_float(&array.elem),
+        Type::Slice(slice) => type_contains_float(&slice.elem),
+        Type::Reference(reference) => type_contains_float(&reference.elem),
+        Type::Ptr(pointer) => type_contains_float(&pointer.elem),
+        Type::Tuple(tuple) => tuple.elems.iter().any(type_contains_float),
+        Type::Paren(paren) => type_contains_float(&paren.elem),
+        Type::Group(group) => type_contains_float(&group.elem),
+        Type::BareFn(function) => {
+            function
+                .inputs
+                .iter()
+                .any(|argument| type_contains_float(&argument.ty))
+                || matches!(
+                    &function.output,
+                    syn::ReturnType::Type(_, ty) if type_contains_float(ty)
+                )
+        }
+        _ => false,
+    }
+}
+
+fn reject_float_fields(surface: &str, fields: &Fields) -> syn::Result<()> {
+    for field in fields {
+        if type_contains_float(&field.ty) {
+            return Err(syn::Error::new(
+                field.ty.span(),
+                format!(
+                    "`f32` and `f64` are not supported on {surface} because its \
+                     Borsh-compatible decoder would accept NaN; use an integer or fixed-point \
+                     representation"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn process_handler(
     handler: &syn::ItemFn,
     mod_name: &Ident,
@@ -4310,6 +4377,16 @@ fn process_handler(
         Ok(return_ty) => return_ty,
         Err(err) => return HandlerCodegen::error(handler, err),
     };
+    if let Some(return_ty) = return_type.as_ref().filter(|ty| type_contains_float(ty)) {
+        return HandlerCodegen::error(
+            handler,
+            syn::Error::new(
+                return_ty.span(),
+                "`f32` and `f64` return values are not supported because the Borsh-compatible \
+                 encoder would accept NaN; use an integer or fixed-point representation",
+            ),
+        );
+    }
     let return_ty = return_type
         .as_ref()
         .map(|return_ty| quote! { #return_ty })
@@ -4377,6 +4454,17 @@ fn process_handler(
             None
         })
         .collect();
+    if let Some((_, ty)) = extra_args.iter().find(|(_, ty)| type_contains_float(ty)) {
+        return HandlerCodegen::error(
+            handler,
+            syn::Error::new(
+                ty.span(),
+                "`f32` and `f64` instruction arguments are not supported because the \
+                 Borsh-compatible decoder would accept NaN; use an integer or fixed-point \
+                 representation",
+            ),
+        );
+    }
 
     let extra_arg_names: Vec<_> = extra_args.iter().map(|(n, _)| *n).collect();
     let (extra_arg_types, has_ref_args) = args_meta(&extra_args);
@@ -5272,6 +5360,11 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .into()
         }
     };
+    if matches!(mode, EventMode::Wincode) {
+        if let Err(err) = reject_float_fields("`#[event]`", fields) {
+            return err.to_compile_error().into();
+        }
+    }
     use sha2::Digest;
     let hash = sha2::Sha256::digest(format!("event:{name_str}").as_bytes());
     let disc_bytes = &hash[..8];
