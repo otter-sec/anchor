@@ -406,7 +406,9 @@ describe("duplicate-mutable-accounts", () => {
 
     await program.methods
       .zeroThenInit()
-      .preInstructions([await program.account.counter.createInstruction(zeroKp)])
+      .preInstructions([
+        await program.account.counter.createInstruction(zeroKp),
+      ])
       .accounts({
         zeroAccount: zeroKp.publicKey,
         initAccount: initKp.publicKey,
@@ -428,7 +430,9 @@ describe("duplicate-mutable-accounts", () => {
 
     await program.methods
       .compositeInitAndZero()
-      .preInstructions([await program.account.counter.createInstruction(zeroKp)])
+      .preInstructions([
+        await program.account.counter.createInstruction(zeroKp),
+      ])
       .accounts({
         initPart: {
           counter: initKp.publicKey,

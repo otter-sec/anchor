@@ -71,7 +71,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
         .iter()
         .filter_map(|af: &AccountField| match af {
             // Composite fields — delegate to inner struct's trait impl.
-            // The inner struct applies its own mut/dup/init filters.
+            // The inner struct applies its own mut/dup filters.
             AccountField::CompositeField(s) => {
                 let field_name = &s.ident;
                 Some(quote! {
