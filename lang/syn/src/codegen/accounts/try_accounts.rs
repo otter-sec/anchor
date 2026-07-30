@@ -341,15 +341,14 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
     // Only types that serialize on exit are included, as duplicate mutable accounts
     // are problematic due to double serialization (the second write overwrites the first).
     // Types like UncheckedAccount, Signer, SystemAccount, AccountLoader, etc. don't serialize on exit
+    // `init` accounts participate too. A pure-`init` account cannot collide with an account that
+    // was already initialized, but it can collide with a `zero` account: `init` runs first and
+    // leaves the account program-owned and zero-filled, which is exactly what `zero` accepts.
     let candidates: Vec<_> = accs
         .fields
         .iter()
         .filter_map(|af| match af {
-            AccountField::Field(f)
-                if f.constraints.is_mutable()
-                    && !f.constraints.is_dup()
-                    && !f.constraints.is_pure_init() =>
-            {
+            AccountField::Field(f) if f.constraints.is_mutable() && !f.constraints.is_dup() => {
                 match &f.ty {
                     // Only include types that serialize on exit
                     crate::Ty::Account(_)
