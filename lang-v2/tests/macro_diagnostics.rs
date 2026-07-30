@@ -418,6 +418,41 @@ pub struct Bad {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn close_target_cannot_also_be_closed() {
+    compile_fail_case(
+        "close_chain",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account(borsh)]
+pub struct Data {
+    pub value: u64,
+}
+
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(mut, close = receiver)]
+    pub first: BorshAccount<Data>,
+    #[account(mut, close = first)]
+    pub second: BorshAccount<Data>,
+    #[account(mut)]
+    pub receiver: SystemAccount,
+}
+"#,
+        &[
+            "close target `first` is also scheduled to close",
+            "close chains can revive an account that was already closed",
+        ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn cfg_gated_public_handlers_do_not_emit_missing_wrappers() {
     compile_pass_case(
         "cfg_gated_handler",

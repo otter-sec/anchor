@@ -962,6 +962,28 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         Err(err) => return err.to_compile_error(),
     };
 
+    for field in &field_summaries {
+        let Some(close_target) = field.attrs.close.as_ref() else {
+            continue;
+        };
+        let Some(target) = field_summaries
+            .iter()
+            .find(|candidate| candidate.name == *close_target)
+        else {
+            continue;
+        };
+        if target.attrs.close.is_some() {
+            return syn::Error::new(
+                close_target.span(),
+                format!(
+                    "close target `{close_target}` is also scheduled to close; close chains can \
+                     revive an account that was already closed"
+                ),
+            )
+            .to_compile_error();
+        }
+    }
+
     let fields: Vec<parse::AccountField> = match named_fields
         .named
         .iter()
