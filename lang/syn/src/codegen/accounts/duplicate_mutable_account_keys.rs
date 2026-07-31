@@ -12,9 +12,9 @@ use {
 /// to detect duplicate mutable accounts across composite (nested) account struct boundaries.
 ///
 /// Each `#[derive(Accounts)]` struct implements this trait to report the pubkeys of its
-/// mutable accounts that serialize on exit. The outer struct's duplicate check collects
-/// keys from both its direct fields and composite fields (via this trait) into a single
-/// HashSet to detect duplicates.
+/// mutable accounts that serialize on exit. The outer struct's duplicate check compares
+/// the reported keys against its direct field keys and against the keys of the other
+/// composite fields to detect duplicates.
 ///
 /// ## Example
 ///
