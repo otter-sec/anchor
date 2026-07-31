@@ -8,6 +8,14 @@ use {
     solana_program_error::ProgramError,
 };
 
+/// Type-level identity for an instruction argument.
+///
+/// Generated code uses `NAME_HASH` together with `T` to ensure an Accounts
+/// constraint and its handler agree on both the semantic name and type of
+/// every instruction argument.
+#[doc(hidden)]
+pub struct InstructionArg<T, const NAME_HASH: u128>(core::marker::PhantomData<T>);
+
 /// Trait that `#[derive(Accounts)]` implements on account structs.
 ///
 /// `try_accounts` receives a pre-walked `&[AccountView]` slice (from a
@@ -44,6 +52,12 @@ pub trait TryAccounts: Bumps + Sized {
     /// Parsed instruction args carried alongside validated accounts.
     /// Accounts structs without `#[instruction(...)]` use `()`.
     type IxArgs<'ix>;
+
+    /// Type-level instruction argument names and types. Generated handler
+    /// dispatch accepts either `()` (no constraint arguments) or the exact
+    /// handler schema.
+    #[doc(hidden)]
+    type IxArgSchema<'ix>;
 
     /// `base_offset` is the index of the first view in the global bitvec.
     /// Top-level callers pass 0; `Nested<T>` passes its field's offset so

@@ -394,6 +394,74 @@ pub struct Bad {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn instruction_arg_names_must_match_handler_order() {
+    compile_fail_case(
+        "instruction_arg_name_mismatch",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+pub mod instruction_arg_name_mismatch {
+    use super::*;
+
+    pub fn ix(
+        _ctx: &mut Context<Bad>,
+        max_amount: u64,
+        requested_amount: u64,
+    ) -> Result<()> {
+        let _ = (max_amount, requested_amount);
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+#[instruction(requested_amount: u64, max_amount: u64)]
+pub struct Bad {
+    #[account(constraint = requested_amount <= max_amount)]
+    pub data: UncheckedAccount,
+}
+"#,
+        &["__AnchorIxArgSchema", "is not implemented"],
+    );
+
+    compile_pass_case(
+        "instruction_arg_names_match",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+pub mod instruction_arg_names_match {
+    use super::*;
+
+    pub fn ix(
+        _ctx: &mut Context<Good>,
+        max_amount: u64,
+        requested_amount: u64,
+    ) -> Result<()> {
+        let _ = (max_amount, requested_amount);
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+#[instruction(max_amount: u64, requested_amount: u64)]
+pub struct Good {
+    #[account(constraint = requested_amount <= max_amount)]
+    pub data: UncheckedAccount,
+}
+"#,
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn cfg_gated_public_handlers_do_not_emit_missing_wrappers() {
     compile_pass_case(
         "cfg_gated_handler",

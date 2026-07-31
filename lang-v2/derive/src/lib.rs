@@ -737,6 +737,13 @@ struct ArgsDeser {
     arg_types: Vec<Type>,
 }
 
+fn instruction_arg_name_hash(name: &Ident) -> u128 {
+    use sha2::Digest;
+
+    let digest = sha2::Sha256::digest(name.to_string().as_bytes());
+    u128::from_le_bytes(digest[..16].try_into().unwrap())
+}
+
 /// Compute lifetime-rewritten argument types plus a flag indicating whether
 /// any argument carries an instruction-data borrow.
 fn args_meta(args: &[(&Ident, &Type)]) -> (Vec<Type>, bool) {
@@ -1227,15 +1234,31 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     let (ix_deser, ix_args_assoc, ix_args_return) = if ix_args.is_empty() {
-        (quote! {}, quote! { type IxArgs<'ix> = (); }, quote! { () })
+        (
+            quote! {},
+            quote! {
+                type IxArgs<'ix> = ();
+                type IxArgSchema<'ix> = ();
+            },
+            quote! { () },
+        )
     } else {
         let pairs: Vec<(&Ident, &Type)> = ix_args.iter().map(|(n, t)| (n, t)).collect();
         let ix_args_deser = emit_args_deser(&pairs, "__IxArgs", false);
         let ix_arg_types = ix_args_deser.arg_types;
         let ix_arg_names: Vec<&Ident> = ix_args.iter().map(|(n, _)| n).collect();
+        let ix_arg_name_hashes: Vec<u128> = ix_arg_names
+            .iter()
+            .map(|name| instruction_arg_name_hash(name))
+            .collect();
         (
             ix_args_deser.deser,
-            quote! { type IxArgs<'ix> = (#(#ix_arg_types,)*); },
+            quote! {
+                type IxArgs<'ix> = (#(#ix_arg_types,)*);
+                type IxArgSchema<'ix> = (
+                    #(anchor_lang_v2::InstructionArg<#ix_arg_types, #ix_arg_name_hashes>,)*
+                );
+            },
             quote! { (#(#ix_arg_names,)*) },
         )
     };
@@ -4462,6 +4485,15 @@ fn process_handler(
         }
     } else {
         let tuple_ty = quote! { (#(#extra_arg_types,)*) };
+        let extra_arg_name_hashes: Vec<u128> = extra_arg_names
+            .iter()
+            .map(|name| instruction_arg_name_hash(name))
+            .collect();
+        let arg_schema_ty = quote! {
+            (
+                #(anchor_lang_v2::InstructionArg<#extra_arg_types, #extra_arg_name_hashes>,)*
+            )
+        };
         let args_deser = emit_args_deser(&extra_args, "__Args", false);
         let deser_args = args_deser.deser;
         quote! {
@@ -4494,6 +4526,16 @@ fn process_handler(
                         Ok(self)
                     }
                 }
+
+                trait __AnchorIxArgSchema {}
+                impl __AnchorIxArgSchema for () {}
+                impl __AnchorIxArgSchema for #arg_schema_ty {}
+
+                #[inline(always)]
+                fn __anchor_assert_ix_arg_schema<T: __AnchorIxArgSchema>() {}
+                __anchor_assert_ix_arg_schema::<
+                    <#accounts_path as anchor_lang_v2::TryAccounts>::IxArgSchema<'a>
+                >();
 
                 match anchor_lang_v2::run_handler::<#accounts_path, #return_ty>(
                     __program_id,

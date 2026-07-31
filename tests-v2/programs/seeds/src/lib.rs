@@ -106,24 +106,27 @@ pub mod seeds {
     #[discrim = 11]
     pub fn init_wrapped_arg_seed(
         _ctx: &mut Context<InitWrappedArgSeed>,
-        _next_oracle_id: u64,
+        next_oracle_id: u64,
     ) -> Result<()> {
+        let _ = next_oracle_id;
         Ok(())
     }
 
     #[discrim = 12]
     pub fn check_literal_untrusted_bump(
         _ctx: &mut Context<CheckLiteralUntrustedBump>,
-        _untrusted_bump: u8,
+        untrusted_bump: u8,
     ) -> Result<()> {
+        let _ = untrusted_bump;
         Ok(())
     }
 
     #[discrim = 13]
     pub fn check_fn_seeds_untrusted_bump(
         _ctx: &mut Context<CheckFnSeedsUntrustedBump>,
-        _untrusted_bump: u8,
+        untrusted_bump: u8,
     ) -> Result<()> {
+        let _ = untrusted_bump;
         Ok(())
     }
 }

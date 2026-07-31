@@ -183,7 +183,7 @@ pub use {
         find_program_address, verify_program_address,
     },
     cursor::{mut_mask_or_shifted, mut_mask_set_bit, AccountBitvec, AccountCursor},
-    dispatch::{run_handler, TryAccounts},
+    dispatch::{run_handler, InstructionArg, TryAccounts},
     event::{sol_log_data, Event},
     hash::sha256,
     loader::AccountLoader,
