@@ -48,6 +48,10 @@ export type CustomAccountResolver<IDL extends Idl> = (params: {
 // Populates a given accounts context with PDAs and common missing accounts.
 export class AccountsResolver<IDL extends Idl> {
   private _accountStore: AccountStore<IDL>;
+  // Errors swallowed during PDA / relations resolution, keyed by account path.
+  // Only errors for accounts that are still unresolved at max depth are surfaced
+  // so a stale failure from an account that later resolved is not reported.
+  private _resolutionErrors = new Map<string, unknown>();
 
   constructor(
     private _args: any[],
@@ -74,6 +78,7 @@ export class AccountsResolver<IDL extends Idl> {
   //       in parallel because there can be dependencies between
   //       addresses. That is, one PDA can be used as a seed in another.
   public async resolve() {
+    this._resolutionErrors.clear();
     this.resolveEventCpi(this._idlIx.accounts);
     this.resolveConst(this._idlIx.accounts);
 
@@ -106,19 +111,69 @@ export class AccountsResolver<IDL extends Idl> {
         const resolvableAccs = this._idlIx.accounts.filter(
           this.isResolvable.bind(this)
         );
-        const unresolvedAccs = this.getUnresolvedAccounts(resolvableAccs);
-        throw new Error(
-          [
-            `Reached maximum depth for account resolution.`,
-            `Unresolved accounts: ${this.formatAccountPaths(unresolvedAccs)}`,
-          ].join(" ")
-        );
+        const unresolvedPaths = this.getUnresolvedAccounts(resolvableAccs);
+        const unresolvedAccs = this.formatAccountPaths(unresolvedPaths);
+
+        const parts = [
+          `Reached maximum depth for account resolution.`,
+          `Unresolved accounts: ${unresolvedAccs}`,
+        ];
+        const relevantErrors = unresolvedPaths
+          .map((path) => ({
+            path: this.pathKey(path),
+            error: this._resolutionErrors.get(this.pathKey(path)),
+          }))
+          .filter(
+            (entry): entry is { path: string; error: unknown } =>
+              entry.error !== undefined
+          );
+
+        if (relevantErrors.length > 0) {
+          const causeMsgs = this.formatResolutionErrorDetails(relevantErrors);
+          parts.push(
+            `Errors encountered while resolving: ${causeMsgs.join("; ")}`
+          );
+        }
+        const err = new Error(parts.join(" "));
+        const cause = this.resolutionCause(relevantErrors);
+        if (cause !== undefined) {
+          (err as Error & { cause?: unknown }).cause = cause;
+        }
+        throw err;
       }
     }
   }
 
   private getUnresolvedAccounts(accs: IdlInstructionAccountItem[]) {
     return this.getPaths(accs).filter((path) => !this.get(path));
+  }
+
+  private formatResolutionErrorDetails(
+    relevantErrors: { path: string; error: unknown }[]
+  ): string[] {
+    return relevantErrors.map(({ path, error }) => {
+      const msg = error instanceof Error ? error.message : String(error);
+      return `\`${path}\`: ${msg}`;
+    });
+  }
+
+  private resolutionCause(
+    relevantErrors: { path: string; error: unknown }[]
+  ): unknown | undefined {
+    if (relevantErrors.length === 0) {
+      return undefined;
+    }
+    if (relevantErrors.length === 1) {
+      return relevantErrors[0].error;
+    }
+
+    return new Error(
+      this.formatResolutionErrorDetails(relevantErrors).join("; ")
+    );
+  }
+
+  private pathKey(path: string[]): string {
+    return path.join(".");
   }
 
   private formatAccountPaths(paths: string[][]): string {
@@ -385,7 +440,10 @@ export class AccountsResolver<IDL extends Idl> {
       );
 
       this.set([...path, name], pubkey);
-    } catch {}
+      this._resolutionErrors.delete(this.pathKey([...path, name]));
+    } catch (err) {
+      this._resolutionErrors.set(this.pathKey([...path, name]), err);
+    }
     return false;
   }
 
@@ -402,8 +460,11 @@ export class AccountsResolver<IDL extends Idl> {
           publicKey: accountKey,
         });
         this.set([...path, name], accountData[name]);
+        this._resolutionErrors.delete(this.pathKey([...path, name]));
       }
-    } catch {}
+    } catch (err) {
+      this._resolutionErrors.set(this.pathKey([...path, name]), err);
+    }
   }
 
   private async parseProgramId(

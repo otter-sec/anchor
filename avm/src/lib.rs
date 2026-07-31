@@ -1,3 +1,4 @@
+mod attestation;
 pub mod platform_tools;
 pub mod resolve;
 pub mod solana;
@@ -14,7 +15,7 @@ use {
         fmt::Write as FmtWrite,
         fs,
         io::{BufRead, Write},
-        path::{Path, PathBuf},
+        path::{Component, Path, PathBuf},
         process::{Command, Stdio},
         sync::LazyLock,
     },
@@ -259,7 +260,7 @@ pub fn use_version(opt_version: Option<Version>) -> Result<()> {
             .expect("Expected input")?;
         match input.as_str() {
             "y" | "yes" => {
-                return install_version(InstallTarget::Version(version), false, false, false)
+                return install_version(InstallTarget::Version(version), false, false, false, false)
             }
             _ => return Err(anyhow!("Installation rejected.")),
         };
@@ -278,10 +279,23 @@ pub enum InstallTarget {
     Path(PathBuf),
 }
 
+fn warn_attestation_skipped() {
+    eprintln!(
+        "WARNING: Skipping build provenance attestation verification. Installing unauthenticated \
+         binaries is potentially dangerous."
+    );
+}
+
 /// Update to the latest version
-pub fn update(include_pre_release: bool) -> Result<()> {
+pub fn update(include_pre_release: bool, skip_attestation: bool) -> Result<()> {
     let latest_version = get_latest_version(include_pre_release)?;
-    install_version(InstallTarget::Version(latest_version), false, false, false)
+    install_version(
+        InstallTarget::Version(latest_version),
+        false,
+        false,
+        false,
+        skip_attestation,
+    )
 }
 
 /// The commit sha provided can be shortened,
@@ -373,6 +387,7 @@ pub fn install_version(
     force: bool,
     from_source: bool,
     with_solana_verify: bool,
+    skip_attestation: bool,
 ) -> Result<()> {
     let (version, from_source) = match &install_target {
         InstallTarget::Version(version) => (version.to_owned(), from_source),
@@ -502,11 +517,10 @@ pub fn install_version(
         } else {
             ""
         };
-        let res = DOWNLOAD_CLIENT
-            .get(format!(
-                "https://github.com/otter-sec/anchor/releases/download/v{version}/anchor-{version}-{target}{ext}"
-            ))
-            .send()?;
+        let url = format!(
+            "https://github.com/otter-sec/anchor/releases/download/v{version}/anchor-{version}-{target}{ext}"
+        );
+        let res = DOWNLOAD_CLIENT.get(&url).send()?;
         match res.status() {
             StatusCode::NOT_FOUND => bail!(
                 "No prebuilt binary found for version `{version}` (HTTP 404). Try `avm install \
@@ -519,15 +533,36 @@ pub fn install_version(
             _ => (),
         }
 
-        let bin_path = version_binary_path(&version);
-        fs::write(&bin_path, res.bytes()?)?;
+        let staging_dir = get_tmp_install_dir_path();
+        fs::create_dir_all(&staging_dir)
+            .with_context(|| format!("Creating {}", staging_dir.display()))?;
+        let staging_path =
+            staging_dir.join(format!(".anchor-{version}-download-{}", std::process::id()));
+        if staging_path.exists() {
+            fs::remove_file(&staging_path)
+                .with_context(|| format!("Removing stale {}", staging_path.display()))?;
+        }
 
-        // Set file to executable on UNIX
-        #[cfg(unix)]
-        fs::set_permissions(
-            bin_path,
-            <fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o775),
-        )?;
+        let result = (|| -> Result<()> {
+            fs::write(&staging_path, res.bytes()?).with_context(|| {
+                format!("Writing downloaded binary to {}", staging_path.display())
+            })?;
+            if skip_attestation {
+                warn_attestation_skipped();
+            } else {
+                attestation::verify_release(&staging_path, &version).with_context(|| {
+                    format!(
+                        "Downloaded Anchor {version} binary from `{url}` failed build provenance \
+                         verification. Refusing to install it; use `avm install {version} \
+                         --from-source` to build from source instead."
+                    )
+                })?;
+            }
+            install_binary_atomic(&staging_path, &version_binary_path(&version))
+        })();
+
+        let _ = fs::remove_file(&staging_path);
+        result?;
     }
 
     let is_at_least_0_32 = version >= Version::new(0, 32, 0);
@@ -832,13 +867,13 @@ pub fn nightly_anchor_binary_path() -> PathBuf {
     })
 }
 
-pub fn enable_nightly() -> Result<()> {
+pub fn enable_nightly(skip_attestation: bool) -> Result<()> {
     ensure_paths();
     if !nightly_enabled() {
         backup_stable_avm()?;
     }
 
-    let version = ensure_nightly_installed()?;
+    let version = ensure_nightly_installed(skip_attestation)?;
     point_anchor_stub_to(&stable_avm_backup_path())
         .context("Pointing anchor stub at nightly proxy")?;
     fs::write(nightly_enabled_file_path(), b"enabled\n").context("Writing Anchor nightly state")?;
@@ -863,7 +898,7 @@ pub fn ensure_nightly_active() -> Result<Option<String>> {
     if !nightly_enabled() {
         return Ok(None);
     }
-    ensure_nightly_installed().map(Some)
+    ensure_nightly_installed(false).map(Some)
 }
 
 fn nightly_enabled() -> bool {
@@ -934,7 +969,7 @@ fn nightly_binaries_exist() -> bool {
     nightly_anchor_binary_path().is_file() && nightly_avm_binary_path().is_file()
 }
 
-fn ensure_nightly_installed() -> Result<String> {
+fn ensure_nightly_installed(skip_attestation: bool) -> Result<String> {
     ensure_paths();
 
     let now = Utc::now().timestamp();
@@ -956,7 +991,7 @@ fn ensure_nightly_installed() -> Result<String> {
 
     match fetch_nightly_manifest() {
         Ok(manifest) => {
-            if let Err(err) = install_nightly_manifest(&manifest) {
+            if let Err(err) = install_nightly_manifest(&manifest, skip_attestation) {
                 write_nightly_cache_error();
                 if nightly_binaries_exist() {
                     let version = cached_nightly_version().unwrap_or_else(|| "cached".to_string());
@@ -1006,7 +1041,7 @@ fn fetch_nightly_manifest() -> Result<NightlyManifest> {
         .context("Parsing Anchor nightly manifest")
 }
 
-fn install_nightly_manifest(manifest: &NightlyManifest) -> Result<()> {
+fn install_nightly_manifest(manifest: &NightlyManifest, skip_attestation: bool) -> Result<()> {
     let target = rustc_host_target()?;
     let anchor = nightly_artifact(manifest, "anchor", &target)?;
     let avm = nightly_artifact(manifest, "avm", &target)?;
@@ -1015,8 +1050,11 @@ fn install_nightly_manifest(manifest: &NightlyManifest) -> Result<()> {
         cached_version.as_deref() != Some(manifest.version.as_str()) || !nightly_binaries_exist();
 
     if needs_download {
-        install_nightly_artifact(&anchor, &nightly_anchor_binary_path())?;
-        install_nightly_artifact(&avm, &nightly_avm_binary_path())?;
+        if skip_attestation {
+            warn_attestation_skipped();
+        }
+        install_nightly_artifact(&anchor, &nightly_anchor_binary_path(), skip_attestation)?;
+        install_nightly_artifact(&avm, &nightly_avm_binary_path(), skip_attestation)?;
     }
     Ok(())
 }
@@ -1039,7 +1077,12 @@ fn nightly_artifact(
         })
 }
 
-fn install_nightly_artifact(artifact: &NightlyArtifact, destination: &Path) -> Result<()> {
+fn install_nightly_artifact(
+    artifact: &NightlyArtifact,
+    destination: &Path,
+    skip_attestation: bool,
+) -> Result<()> {
+    let archive_name = nightly_archive_name(&artifact.file)?;
     let staging = get_tmp_install_dir_path().join(format!(
         "nightly-{}-{}",
         artifact.tool,
@@ -1052,8 +1095,8 @@ fn install_nightly_artifact(artifact: &NightlyArtifact, destination: &Path) -> R
     fs::create_dir_all(&staging).with_context(|| format!("Creating {}", staging.display()))?;
 
     let result = (|| -> Result<()> {
-        let archive_path = staging.join(&artifact.file);
-        download_nightly_artifact(artifact, &archive_path)?;
+        let archive_path = staging.join(archive_name);
+        download_nightly_artifact(artifact, &archive_path, skip_attestation)?;
         extract_tar_gz(&archive_path, &staging)?;
         let extracted = extracted_nightly_binary(&staging, &artifact.tool)?;
         install_binary_atomic(&extracted, destination)?;
@@ -1064,7 +1107,20 @@ fn install_nightly_artifact(artifact: &NightlyArtifact, destination: &Path) -> R
     result
 }
 
-fn download_nightly_artifact(artifact: &NightlyArtifact, dest: &Path) -> Result<()> {
+fn nightly_archive_name(file: &str) -> Result<&Path> {
+    let path = Path::new(file);
+    let mut components = path.components();
+    match (components.next(), components.next()) {
+        (Some(Component::Normal(_)), None) => Ok(path),
+        _ => bail!("Invalid nightly artifact filename `{file}`"),
+    }
+}
+
+fn download_nightly_artifact(
+    artifact: &NightlyArtifact,
+    dest: &Path,
+    skip_attestation: bool,
+) -> Result<()> {
     let url = nightly_artifact_url(artifact);
     let response = DOWNLOAD_CLIENT
         .get(&url)
@@ -1084,6 +1140,14 @@ fn download_nightly_artifact(artifact: &NightlyArtifact, dest: &Path) -> Result<
         );
     }
     fs::write(dest, bytes.as_ref()).with_context(|| format!("Writing {}", dest.display()))?;
+    if !skip_attestation {
+        attestation::verify_nightly(dest).with_context(|| {
+            format!(
+                "Downloaded nightly artifact `{url}` failed build provenance verification. \
+                 Refusing to install it."
+            )
+        })?;
+    }
     Ok(())
 }
 
@@ -1506,6 +1570,25 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("does not include `anchor` for target `x86_64-unknown-linux-gnu`"));
+    }
+
+    #[test]
+    fn test_nightly_archive_name_rejects_path_traversal() {
+        assert_eq!(
+            nightly_archive_name("anchor.tar.gz").unwrap(),
+            Path::new("anchor.tar.gz")
+        );
+
+        for file in [
+            "../outside.tar.gz",
+            "nested/archive.tar.gz",
+            "/tmp/outside.tar.gz",
+            ".",
+            "..",
+            "",
+        ] {
+            assert!(nightly_archive_name(file).is_err(), "accepted `{file}`");
+        }
     }
 
     #[test]

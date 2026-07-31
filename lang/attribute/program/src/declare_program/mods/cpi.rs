@@ -57,7 +57,7 @@ fn gen_cpi_instructions(idl: &Idl) -> proc_macro2::TokenStream {
                     quote! { anchor_lang::Result<Return::<#ty>> },
                     quote! {
                         Ok(Return::<#ty> {
-                            phantom: std::marker::PhantomData,
+                            phantom: ::std::marker::PhantomData,
                             program_id: ctx.program_id,
                             return_data: anchor_lang::__private::CpiReturnData::snapshot(),
                         })
@@ -112,7 +112,7 @@ fn gen_cpi_return_type() -> proc_macro2::TokenStream {
     quote! {
         #[derive(Debug, Clone, Copy)]
         pub struct Return<T> {
-            phantom: std::marker::PhantomData<T>,
+            phantom: ::std::marker::PhantomData<T>,
             program_id: anchor_lang::solana_program::pubkey::Pubkey,
             return_data: anchor_lang::__private::CpiReturnData,
         }

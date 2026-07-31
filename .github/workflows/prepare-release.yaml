@@ -43,11 +43,11 @@ jobs:
 
       - uses: ./.github/actions/setup-solana/
         env:
-          SOLANA_VERSION: "3.1.10"
+          SOLANA_VERSION: "4.1.2"
 
       - uses: ./.github/actions/setup-surfpool/
         env:
-          SURFPOOL_CLI_VERSION: "1.2.0"
+          SURFPOOL_CLI_VERSION: "1.5.0"
 
       - name: Install cargo-release
         run: cargo install cargo-release --version 1.1.1 --locked

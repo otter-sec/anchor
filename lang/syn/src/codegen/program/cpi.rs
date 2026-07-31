@@ -14,7 +14,7 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
         .iter()
         .map(|ix| {
             #[allow(clippy::unwrap_used, reason = "computed from valid Rust identifier as module path")]
-            let accounts_ident: proc_macro2::TokenStream = format!("crate::cpi::accounts::{}", &ix.anchor_ident.to_string()).parse().unwrap();
+            let accounts_ident: proc_macro2::TokenStream = format!("crate::cpi::accounts::{}", ix.anchor_ident).parse().unwrap();
             let cpi_method = {
                 let name = &ix.raw_method.sig.ident;
                 let name_str = name.to_string();
@@ -93,12 +93,12 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
         #[cfg(feature = "cpi")]
         pub mod cpi {
             use super::*;
-            use std::marker::PhantomData;
+            use ::std::marker::PhantomData;
 
 
             #[derive(Debug, Clone, Copy)]
             pub struct Return<T> {
-                phantom: std::marker::PhantomData<T>,
+                phantom: ::std::marker::PhantomData<T>,
                 program_id: anchor_lang::solana_program::pubkey::Pubkey,
                 return_data: anchor_lang::__private::CpiReturnData,
             }

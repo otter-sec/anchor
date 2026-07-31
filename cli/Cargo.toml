@@ -2,9 +2,8 @@
 name = "anchor-cli"
 version.workspace = true
 publish = true
-authors = ["Anchor Maintainers <accounts@200ms.io>"]
 edition = "2021"
-repository = "https://github.com/otter-sec/anchor"
+repository.workspace = true
 description = "Anchor CLI"
 license = "Apache-2.0"
 
@@ -49,6 +48,7 @@ reqwest = { workspace = true, default-features = false, features = [
 ] }
 semver = "1.0.4"
 serde = { version = "1.0.130", features = ["derive"] }
+serde_ignored = "0.1.14"
 serde_json = "1.0"
 shellexpand = "2.1.0"
 solana-cli-config.workspace = true

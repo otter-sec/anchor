@@ -251,7 +251,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                 __accounts: &mut &#trait_generics [anchor_lang::solana_program::account_info::AccountInfo<#trait_generics>],
                 __ix_data: &[u8],
                 __bumps: &mut #bumps_struct_name,
-                __reallocs: &mut std::collections::BTreeSet<anchor_lang::solana_program::pubkey::Pubkey>,
+                __reallocs: &mut ::std::collections::BTreeSet<anchor_lang::solana_program::pubkey::Pubkey>,
             ) -> anchor_lang::Result<Self> {
                 // Deserialize instruction, if declared.
                 #ix_de
@@ -412,7 +412,7 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
     quote! {
         // Duplicate mutable account validation - using HashSet
         {
-            let mut __mutable_accounts = std::collections::HashSet::new();
+            let mut __mutable_accounts = ::std::collections::HashSet::new();
 
             // Check declared mutable accounts for duplicates among themselves
             #(

@@ -19,7 +19,7 @@ use {
     solana_pubkey::Pubkey,
     solana_signer::Signer,
     std::{
-        collections::{BTreeMap, HashMap},
+        collections::{BTreeMap, BTreeSet, HashMap},
         convert::TryFrom,
         fmt,
         fs::{self, File},
@@ -29,6 +29,7 @@ use {
         path::{Path, PathBuf},
         process::Command,
         str::FromStr,
+        sync::{LazyLock, Mutex},
     },
     walkdir::WalkDir,
 };
@@ -718,10 +719,42 @@ impl Config {
         Ok(None)
     }
 
-    fn from_path(p: impl AsRef<Path>) -> Result<Self> {
-        fs::read_to_string(&p)
-            .with_context(|| format!("Error reading the file with path: {}", p.as_ref().display()))?
-            .parse::<Self>()
+    fn from_path(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let cfg = fs::read_to_string(path)
+            .with_context(|| format!("Error reading configuration file: {path:?}"))?;
+
+        let mut unused = BTreeSet::new();
+        let de = toml::Deserializer::new(&cfg);
+        let cfg: _Config = serde_ignored::deserialize(de, |path| {
+            unused.insert(path.to_string());
+        })?;
+
+        // File path -> unused field paths
+        static CACHE: LazyLock<Mutex<HashMap<PathBuf, BTreeSet<String>>>> =
+            LazyLock::new(Default::default);
+        let mut cache = CACHE
+            .lock()
+            .map_err(|e| anyhow!("Failed to acquire the cache lock ({path:?}): {e}"))?;
+        match cache.get(path) {
+            Some(cached_unused) if *cached_unused == unused => return Self::try_from(cfg),
+            _ => cache.insert(path.to_path_buf(), unused.clone()),
+        };
+
+        if let Some(paths) = unused.into_iter().reduce(|mut acc, path| {
+            if !acc.is_empty() {
+                acc.push_str(", ");
+            }
+
+            acc.push('`');
+            acc.push_str(&path);
+            acc.push('`');
+            acc
+        }) {
+            eprintln!("Warning: Unused Anchor.toml field(s): {paths}");
+        }
+
+        Self::try_from(cfg)
     }
 
     pub fn wallet_kp(&self) -> Result<Keypair> {
@@ -888,12 +921,10 @@ impl fmt::Display for Config {
     }
 }
 
-impl FromStr for Config {
-    type Err = Error;
+impl TryFrom<_Config> for Config {
+    type Error = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let cfg: _Config =
-            toml::from_str(s).map_err(|e| anyhow!("Unable to deserialize config: {e}"))?;
+    fn try_from(cfg: _Config) -> std::result::Result<Self, Self::Error> {
         Ok(Config {
             toolchain: cfg.toolchain.unwrap_or_default(),
             features: cfg.features.unwrap_or_default(),
@@ -912,6 +943,16 @@ impl FromStr for Config {
             skip_local_validator: cfg.skip_local_validator,
             clients: cfg.clients.unwrap_or_default(),
         })
+    }
+}
+
+impl FromStr for Config {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        toml::from_str::<_Config>(s)
+            .map_err(|e| anyhow!("Unable to deserialize config: {e}"))
+            .map(TryFrom::try_from)?
     }
 }
 
@@ -990,14 +1031,14 @@ fn deser_programs(
 pub struct TestValidator {
     pub genesis: Option<Vec<GenesisEntry>>,
     pub validator: Option<Validator>,
-    pub startup_wait: i32,
+    pub startup_wait: u64,
     pub shutdown_wait: i32,
     pub upgradeable: bool,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct SurfpoolConfig {
-    pub startup_wait: i32,
+    pub startup_wait: u64,
     pub shutdown_wait: i32,
     pub rpc_port: u16,
     pub ws_port: Option<u16>,
@@ -1019,7 +1060,7 @@ pub struct _TestValidator {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validator: Option<_Validator>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub startup_wait: Option<i32>,
+    pub startup_wait: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shutdown_wait: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1029,7 +1070,7 @@ pub struct _TestValidator {
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct _SurfpoolConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub startup_wait: Option<i32>,
+    pub startup_wait: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shutdown_wait: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1095,7 +1136,7 @@ impl From<SurfpoolConfig> for _SurfpoolConfig {
         }
     }
 }
-pub const STARTUP_WAIT: i32 = 5000;
+pub const STARTUP_WAIT: u64 = 30000;
 pub const SHUTDOWN_WAIT: i32 = 2000;
 
 impl From<_TestValidator> for TestValidator {
@@ -1223,8 +1264,8 @@ fn canonicalize_filepath_from_origin(
             format!(
                 "Error reading (possibly relative) path: {}. If relative, this is the path that \
                  was used as the current path: {}",
-                &file_path.as_ref().display(),
-                &origin.as_ref().display()
+                file_path.as_ref().display(),
+                origin.as_ref().display()
             )
         })?
         .display()
@@ -1784,7 +1825,7 @@ impl Program {
         let program_kp = Keypair::new();
         let mut file = File::create(&path)
             .with_context(|| format!("Error creating file with path: {}", path.display()))?;
-        file.write_all(format!("{:?}", &program_kp.to_bytes()).as_bytes())?;
+        file.write_all(format!("{:?}", program_kp.to_bytes()).as_bytes())?;
         Ok(WithPath::new(file, path))
     }
 

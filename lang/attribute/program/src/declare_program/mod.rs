@@ -80,9 +80,14 @@ fn gen_program(idl: &Idl, name: &syn::Ident) -> proc_macro2::TokenStream {
             use super::anchor_lang;
 
             use anchor_lang::prelude::*;
-            use accounts::*;
-            use events::*;
-            use types::*;
+
+            /// IDL-generated re-exports.
+            /// These are placed in a separate module to avoid name collisions with the prelude glob import
+            mod __defined {
+                pub use super::accounts::*;
+                pub use super::events::*;
+                pub use super::types::*;
+            }
 
             #id
             #program_mod

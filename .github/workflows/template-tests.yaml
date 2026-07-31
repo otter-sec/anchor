@@ -15,9 +15,9 @@ permissions:
   contents: read
 
 env:
-  SOLANA_VERSION: "3.1.10"
+  SOLANA_VERSION: "4.1.2"
   NODE_VERSION: "20"
-  SURFPOOL_CLI_VERSION: "1.2.0"
+  SURFPOOL_CLI_VERSION: "1.5.0"
 
 jobs:
   # Build CLI once to share across test jobs
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup/
@@ -70,7 +70,7 @@ jobs:
         template: [single, multiple]
         test_template: [rust, mollusk, litesvm]
     steps:
-      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup/
@@ -151,7 +151,7 @@ jobs:
         language: [typescript, javascript]
         package_manager: [npm, yarn, pnpm, bun]
     steps:
-      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup/

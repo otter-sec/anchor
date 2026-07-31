@@ -239,7 +239,8 @@ where
 
     /// Unload the deserialized account value by resetting the cache.
     ///
-    /// This is useful when observing side-effects of CPIs.
+    /// This is useful when observing side-effects of CPIs, and will re-check the account
+    /// owner and discriminator.
     ///
     /// # Usage
     ///
@@ -260,6 +261,8 @@ where
     ///
     /// If there is an existing reference (mutable or not) created by any of the `load` methods.
     pub fn unload(&self) -> Result<&Self> {
+        // Re-run load-time checks (owner, discriminator)
+        drop(Self::try_from(self.__info)?);
         // TODO: Should we drop the initialized fields manually?
         *self.__account.borrow_mut() = MaybeUninit::uninit();
         *self.__fields.borrow_mut() = None;

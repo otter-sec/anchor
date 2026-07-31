@@ -21,6 +21,15 @@ describe("lazy-account", () => {
     await program.methods.read().rpc();
   });
 
+  it("Checks the discriminator when unloading after account data changes", async () => {
+    await assert.rejects(
+      program.methods.unloadAfterAccountChange().rpc(),
+      (err: anchor.AnchorError) =>
+        err.error.errorCode.number ===
+        anchor.LangErrorCode.AccountDiscriminatorMismatch
+    );
+  });
+
   it("Can write", async () => {
     const newAuthority = anchor.web3.PublicKey.default;
     const { pubkeys, signature } = await program.methods

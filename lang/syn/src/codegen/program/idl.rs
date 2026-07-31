@@ -107,7 +107,7 @@ pub fn idl_accounts_and_functions() -> proc_macro2::TokenStream {
         }
 
 
-        use std::cell::{Ref, RefMut};
+        use ::std::cell::{Ref, RefMut};
 
         pub trait IdlTrailingData<'info> {
             fn trailing_data(self) -> Ref<'info, [u8]>;
@@ -147,7 +147,7 @@ pub fn idl_accounts_and_functions() -> proc_macro2::TokenStream {
             let owner = accounts.program.key;
             let to = Pubkey::create_with_seed(&base, seed, owner).unwrap();
             // Space: account discriminator || authority pubkey || vec len || vec data
-            let space = std::cmp::min(
+            let space = ::std::cmp::min(
                 IdlAccount::DISCRIMINATOR.len() + 32 + 4 + data_len as usize,
                 10_000
             );
@@ -189,7 +189,7 @@ pub fn idl_accounts_and_functions() -> proc_macro2::TokenStream {
             // Store the new account data.
             let mut data = accounts.to.try_borrow_mut_data()?;
             let dst: &mut [u8] = &mut data;
-            let mut cursor = std::io::Cursor::new(dst);
+            let mut cursor = ::std::io::Cursor::new(dst);
             idl_account.try_serialize(&mut cursor)?;
 
             Ok(())
@@ -213,7 +213,7 @@ pub fn idl_accounts_and_functions() -> proc_macro2::TokenStream {
             }
 
             let idl_ref = AsRef::<AccountInfo>::as_ref(&accounts.idl);
-            let new_account_space = idl_ref.data_len().checked_add(std::cmp::min(
+            let new_account_space = idl_ref.data_len().checked_add(::std::cmp::min(
                 data_len
                     .checked_sub(idl_ref.data_len())
                     .expect("data_len should always be >= the current account space"),

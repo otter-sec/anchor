@@ -36,6 +36,19 @@ pub mod lazy_account {
         *ctx.accounts.my_account.load_mut_authority()? = new_authority;
         Ok(())
     }
+
+    pub fn unload_after_account_change(ctx: Context<UnloadAfterAccountChange>) -> Result<()> {
+        // Populate the cache before imitating a CPI changing the account data.
+        drop(ctx.accounts.my_account.load_authority()?);
+
+        ctx.accounts
+            .my_account
+            .to_account_info()
+            .try_borrow_mut_data()?[0] ^= 0xff;
+
+        ctx.accounts.my_account.unload()?;
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -91,6 +104,12 @@ pub struct Write<'info> {
     /// This account imitates heavy stack usage in more complex programs
     #[account(seeds = [b"stack_heavy_account"], bump)]
     pub stack_heavy_account: Account<'info, StackHeavyAccount>,
+}
+
+#[derive(Accounts)]
+pub struct UnloadAfterAccountChange<'info> {
+    #[account(mut, seeds = [b"my_account"], bump)]
+    pub my_account: LazyAccount<'info, MyAccount>,
 }
 
 const MAX_DATA_LEN: usize = 256;

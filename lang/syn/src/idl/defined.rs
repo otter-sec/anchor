@@ -59,7 +59,7 @@ fn impl_idl_build(
             }
 
             fn insert_types(
-                types: &mut std::collections::BTreeMap<String, #idl::IdlTypeDef>
+                types: &mut ::std::collections::BTreeMap<String, #idl::IdlTypeDef>
             ) {
                 #insert_defined
             }

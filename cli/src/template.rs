@@ -1514,10 +1514,10 @@ impl TestTemplate {
                 fs::create_dir_all("tests")?;
 
                 if js {
-                    let mut test = File::create(format!("tests/{}.js", &project_name))?;
+                    let mut test = File::create(format!("tests/{}.js", project_name))?;
                     test.write_all(mocha(project_name, anchor_version).as_bytes())?;
                 } else {
-                    let mut mocha = File::create(format!("tests/{}.ts", &project_name))?;
+                    let mut mocha = File::create(format!("tests/{}.ts", project_name))?;
                     mocha.write_all(ts_mocha(project_name, anchor_version).as_bytes())?;
                 }
             }
@@ -1526,10 +1526,10 @@ impl TestTemplate {
                 fs::create_dir_all("tests")?;
 
                 if js {
-                    let mut test = File::create(format!("tests/{}.test.js", &project_name))?;
+                    let mut test = File::create(format!("tests/{}.test.js", project_name))?;
                     test.write_all(js_jest(project_name, anchor_version).as_bytes())?;
                 } else {
-                    let mut test = File::create(format!("tests/{}.test.ts", &project_name))?;
+                    let mut test = File::create(format!("tests/{}.test.ts", project_name))?;
                     test.write_all(ts_jest(project_name, anchor_version).as_bytes())?;
                 }
             }
@@ -1565,7 +1565,7 @@ impl TestTemplate {
             }
             Self::Mollusk => {
                 // Build the test suite.
-                let tests_path_str = format!("programs/{}/tests", &project_name);
+                let tests_path_str = format!("programs/{}/tests", project_name);
                 let tests_path = Path::new(&tests_path_str);
                 fs::create_dir_all(tests_path)?;
 
@@ -1579,7 +1579,7 @@ impl TestTemplate {
             }
 
             Self::Litesvm => {
-                let tests_path_str = format!("programs/{}/tests", &project_name);
+                let tests_path_str = format!("programs/{}/tests", project_name);
                 let tests_path = Path::new(&tests_path_str);
                 fs::create_dir_all(tests_path)?;
                 let mut files = Vec::new();

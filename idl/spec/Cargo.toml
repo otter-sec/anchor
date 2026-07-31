@@ -2,8 +2,7 @@
 name = "anchor-lang-idl-spec"
 version = "0.1.0"
 publish = false
-authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/otter-sec/anchor"
+repository.workspace = true
 edition = "2021"
 license = "Apache-2.0"
 description = "Anchor framework IDL spec"
