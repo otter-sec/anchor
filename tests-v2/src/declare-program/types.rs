@@ -42,8 +42,6 @@ fn declared_weird_types_compile_and_serialize() {
     assert!(documented_type_def.contains("\"repr\":{\"kind\":\"c\"}"));
 
     let data = weird_types::instruction::UseWeirdTypes {
-        float32: 1.5,
-        float64: -2.25,
         unit: weird_types::UnitMarker,
         empty: weird_types::EmptyNamed {},
         tuple: weird_types::PairTuple(7, true),
