@@ -1568,6 +1568,9 @@ pub fn parse_field(
                 )?;
             let #field_name = anchor_lang_v2::Nested(__nested_inner);
         };
+        let updates = vec![quote! {
+            self.#field_name.0.update_accounts()?;
+        }];
         let exit = Some(quote! {
             self.#field_name.0.exit_accounts()?;
         });
@@ -1577,7 +1580,7 @@ pub fn parse_field(
             load,
             deferred_load: None,
             constraints: vec![],
-            updates: vec![],
+            updates,
             exit,
             has_bump: false,
             is_optional: false,
@@ -2151,8 +2154,8 @@ pub fn parse_field(
     // The `init` dispatch is embedded inline into the init body by
     // `wrap_init_body_with_constraints` above so the hook only fires on
     // actual creation. `check` emits into the validation phase here;
-    // `update` is deferred into a later post-validation phase so sibling
-    // field constraints still observe the pre-update state.
+    // `update` is deferred until after handler-level access control so both
+    // account constraints and authorization observe the pre-update state.
     //
     // Field refs thread through `AsRef::as_ref` so the call-site's
     // `V` is inferred from the `AccountConstraint::Value` associated
@@ -2168,6 +2171,48 @@ pub fn parse_field(
         // specific marker module.
         let ns = syn::Ident::new(&nc.namespace, proc_macro2::Span::call_site());
         let key = syn::Ident::new(&nc.key, proc_macro2::Span::call_site());
+        if nc.is_update {
+            let value = &nc.value;
+            let expected = if let Some(value_field) =
+                expr_as_field_ident(value).filter(|ident| field_names.contains(&ident.to_string()))
+            {
+                if nc.namespace == "mint" || nc.namespace == "token" {
+                    quote! {
+                        anchor_lang_v2::AccountAddress::account_address(&self.#value_field)
+                    }
+                } else {
+                    quote! { AsRef::as_ref(&self.#value_field) }
+                }
+            } else if let Some(ix_arg) =
+                expr_as_field_ident(value).filter(|ident| ix_arg_names.contains(&ident.to_string()))
+            {
+                return Err(syn::Error::new(
+                    ix_arg.span(),
+                    "instruction arguments are not supported in `update(...)` because deferred \
+                     updates do not retain instruction arguments; store the value in an account \
+                     or update it in the handler",
+                ));
+            } else {
+                quote! { &#value }
+            };
+            if is_optional {
+                updates.push(quote! {
+                    if let Some(__inner) = self.#field_name.as_mut() {
+                        <#ns::#key as anchor_lang_v2::AccountConstraint<_>>::update(
+                            __inner, #expected,
+                        )?;
+                    }
+                });
+            } else {
+                updates.push(quote! {
+                    <#ns::#key as anchor_lang_v2::AccountConstraint<_>>::update(
+                        &mut self.#field_name, #expected,
+                    )?;
+                });
+            }
+            continue;
+        }
+
         let value = &nc.value;
         let expected = if nc.is_field_ref && (nc.namespace == "mint" || nc.namespace == "token") {
             quote! { anchor_lang_v2::AccountAddress::account_address(&#value) }
@@ -2176,22 +2221,6 @@ pub fn parse_field(
         } else {
             quote! { &#value }
         };
-
-        if nc.is_update {
-            let update_target = if is_optional {
-                quote! { #field_name }
-            } else {
-                quote! { &mut #field_name }
-            };
-            // `update(...)` — fires regardless of init state, but only after
-            // all account validations have completed.
-            updates.push(quote! {
-                <#ns::#key as anchor_lang_v2::AccountConstraint<_>>::update(
-                    #update_target, #expected,
-                )?;
-            });
-            continue;
-        }
 
         // `check` fires for:
         //   - non-init fields,
@@ -2344,17 +2373,6 @@ pub fn parse_field(
                             let _ = &#field_name;
                             #c
                         }
-                    }
-                }
-            })
-            .collect();
-        let updates = updates
-            .into_iter()
-            .map(|u| {
-                quote! {
-                    if let Some(ref mut #field_name) = #field_name {
-                        let _ = &#field_name;
-                        #u
                     }
                 }
             })

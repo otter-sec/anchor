@@ -57,6 +57,17 @@ pub trait TryAccounts: Bumps + Sized {
         ix_data: &'ix [u8],
     ) -> Result<(Self, Self::Bumps, Self::IxArgs<'ix>), ProgramError>;
 
+    /// Apply generated `update(...)` hooks after handler-level
+    /// `#[access_control]` checks and before the user-written handler body.
+    ///
+    /// The `#[program]` macro inserts this phase into each executable handler.
+    /// Keeping it separate from `try_accounts` ensures authorization observes
+    /// the validated, pre-update account state.
+    #[inline(always)]
+    fn update_accounts(&mut self) -> Result<(), ProgramError> {
+        Ok(())
+    }
+
     fn exit_accounts(&mut self) -> Result<(), ProgramError>;
 }
 

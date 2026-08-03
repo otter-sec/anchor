@@ -1,11 +1,9 @@
 //! Integration tests for user-defined `AccountConstraint` impls.
 //!
-//! The `custom-constraints` test program defines four constraint markers
-//! in `counter_ns`, each overriding exactly one of the four trait methods
-//! (`init`, `check`, `update`, `exit`). These tests drive each handler
-//! and inspect the persisted `Counter.value` to prove that the derive
-//! routed each call to the correct method at the correct lifecycle
-//! phase.
+//! The `custom-constraints` test program defines constraint markers covering
+//! all four trait methods (`init`, `check`, `update`, `exit`). These tests
+//! inspect persisted state to prove both method routing and lifecycle order,
+//! including the security boundary between `#[access_control]` and `update`.
 
 use {
     anchor_lang_v2::{solana_program::instruction::AccountMeta, InstructionData},
@@ -24,6 +22,10 @@ fn program_id() -> Pubkey {
 
 fn counter_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"counter"], &program_id()).0
+}
+
+fn authority_counter_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"authority-counter"], &program_id()).0
 }
 
 fn boxed_counter_pda() -> Pubkey {
@@ -83,6 +85,24 @@ fn init_counter(svm: &mut LiteSVM, payer: &Keypair) {
     ];
     send_instruction(svm, program_id(), data, metas, payer, &[])
         .expect("handle_init should succeed");
+}
+
+fn init_authority_counter(svm: &mut LiteSVM, payer: &Keypair) {
+    let data = custom_constraints::instruction::HandleAuthorityInit {}.data();
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(authority_counter_pda(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), data, metas, payer, &[])
+        .expect("handle_authority_init should succeed");
+}
+
+fn address_tag(address: &Pubkey) -> u64 {
+    let bytes = address.as_array();
+    u64::from_le_bytes([
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+    ])
 }
 
 fn init_boxed_counter(svm: &mut LiteSVM, payer: &Keypair) {
@@ -226,8 +246,57 @@ fn update_hook_writes_new_value() {
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("handle_update should succeed");
 
-    // `SetValueConstraint::update` overwrote the value.
+    // Access control saw `5`; the handler body and persisted account saw `42`.
     assert_eq!(read_counter_value(&svm, &counter_pda()), 42);
+}
+
+#[test]
+fn update_hook_cannot_self_authorize_protected_handler() {
+    let (mut svm, payer) = setup();
+    init_authority_counter(&mut svm, &payer);
+
+    let attacker = keypair_for("custom-constraints-attacker");
+    svm.airdrop(&attacker.pubkey(), 1_000_000_000).unwrap();
+
+    assert_eq!(
+        read_counter_value(&svm, &authority_counter_pda()),
+        address_tag(&payer.pubkey()),
+    );
+
+    // The attacker asks the update hook to install its own identity. If the
+    // hook ran before access control, the comparison would become
+    // attacker == attacker and this protected instruction would succeed.
+    let data = custom_constraints::instruction::HandleAuthorityUpdate {}.data();
+    let metas = vec![
+        AccountMeta::new(authority_counter_pda(), false),
+        AccountMeta::new_readonly(attacker.pubkey(), true),
+        AccountMeta::new_readonly(attacker.pubkey(), false),
+    ];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[&attacker]);
+    assert!(
+        result.is_err(),
+        "attacker-controlled update must not run before access control",
+    );
+    assert_eq!(
+        read_counter_value(&svm, &authority_counter_pda()),
+        address_tag(&payer.pubkey()),
+        "failed access control must leave the original authority intact",
+    );
+
+    // The current authority can rotate successfully. Access control observes
+    // the payer, then the update runs, and the handler body observes attacker.
+    let data = custom_constraints::instruction::HandleAuthorityUpdate {}.data();
+    let metas = vec![
+        AccountMeta::new(authority_counter_pda(), false),
+        AccountMeta::new_readonly(payer.pubkey(), true),
+        AccountMeta::new_readonly(attacker.pubkey(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("current authority should be able to rotate authority");
+    assert_eq!(
+        read_counter_value(&svm, &authority_counter_pda()),
+        address_tag(&attacker.pubkey()),
+    );
 }
 
 #[test]

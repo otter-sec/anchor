@@ -30,9 +30,30 @@ pub mod custom_constraints {
         Ok(())
     }
 
-    /// `update(counter_ns::set_value = 42)` on a `mut` field.
-    /// `SetValueConstraint::update` writes `counter.value = 42`.
-    pub fn handle_update(_ctx: &mut Context<HandleUpdate>) -> Result<()> {
+    /// Access control observes the initialized value (`5`), then
+    /// `update(counter_ns::set_value = 42)` runs before this body.
+    #[access_control(require_counter_before_update(ctx))]
+    pub fn handle_update(ctx: &mut Context<HandleUpdate>) -> Result<()> {
+        require!(ctx.accounts.counter.value == 42, WErr::BadValue);
+        Ok(())
+    }
+
+    /// Initialize the authority record used by the update/access-control
+    /// regression. The payer is the initial authorized signer.
+    pub fn handle_authority_init(ctx: &mut Context<HandleAuthorityInit>) -> Result<()> {
+        ctx.accounts.counter.value = address_tag(ctx.accounts.payer.address());
+        Ok(())
+    }
+
+    /// Rotate the stored authority. Access control must compare `actor`
+    /// against the original stored authority before the generated update
+    /// writes `next_authority`; the body must then observe the new authority.
+    #[access_control(require_current_authority(ctx))]
+    pub fn handle_authority_update(ctx: &mut Context<HandleAuthorityUpdate>) -> Result<()> {
+        require!(
+            ctx.accounts.counter.value == address_tag(ctx.accounts.next_authority.address()),
+            WErr::BadValue
+        );
         Ok(())
     }
 
@@ -100,6 +121,26 @@ pub mod custom_constraints {
     }
 }
 
+fn address_tag(address: &Address) -> u64 {
+    let bytes = address.as_array();
+    u64::from_le_bytes([
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+    ])
+}
+
+fn require_counter_before_update(ctx: &Context<HandleUpdate>) -> Result<()> {
+    require!(ctx.accounts.counter.value == 5, WErr::Unauthorized);
+    Ok(())
+}
+
+fn require_current_authority(ctx: &Context<HandleAuthorityUpdate>) -> Result<()> {
+    require!(
+        ctx.accounts.counter.value == address_tag(ctx.accounts.actor.address()),
+        WErr::Unauthorized
+    );
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Account data type — a plain Borsh-serialised counter.
 // ---------------------------------------------------------------------------
@@ -116,8 +157,8 @@ pub struct Counter {
 
 pub mod counter_ns {
     use {
-        super::Counter,
-        anchor_lang_v2::{accounts::BorshAccount, AccountConstraint},
+        super::{address_tag, Counter},
+        anchor_lang_v2::{accounts::BorshAccount, AccountConstraint, AccountView},
         solana_program_error::ProgramError,
     };
 
@@ -158,6 +199,23 @@ pub mod counter_ns {
 
         fn update(account: &mut BorshAccount<Counter>, value: &u64) -> Result<(), ProgramError> {
             account.value = *value;
+            Ok(())
+        }
+    }
+
+    /// `counter_ns::set_authority = account` — stores a compact identity tag
+    /// for the supplied account. Used to prove access control runs before an
+    /// attacker-controlled authority update.
+    pub struct SetAuthorityConstraint;
+
+    impl AccountConstraint<BorshAccount<Counter>> for SetAuthorityConstraint {
+        type Value = AccountView;
+
+        fn update(
+            account: &mut BorshAccount<Counter>,
+            value: &AccountView,
+        ) -> Result<(), ProgramError> {
+            account.value = address_tag(value.address());
             Ok(())
         }
     }
@@ -216,6 +274,34 @@ pub struct HandleUpdate {
         update(counter_ns::set_value = 42u64),
     )]
     pub counter: BorshAccount<Counter>,
+}
+
+#[derive(Accounts)]
+pub struct HandleAuthorityInit {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + 8,
+        seeds = [b"authority-counter"],
+        bump,
+    )]
+    pub counter: BorshAccount<Counter>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct HandleAuthorityUpdate {
+    #[account(
+        mut,
+        seeds = [b"authority-counter"],
+        bump,
+        update(counter_ns::set_authority = next_authority),
+    )]
+    pub counter: BorshAccount<Counter>,
+    pub actor: Signer,
+    pub next_authority: UncheckedAccount,
 }
 
 #[derive(Accounts)]
@@ -346,4 +432,6 @@ pub struct HandleUpdateAfterLaterValidation {
 pub enum WErr {
     #[msg("bad value")]
     BadValue,
+    #[msg("unauthorized")]
+    Unauthorized,
 }

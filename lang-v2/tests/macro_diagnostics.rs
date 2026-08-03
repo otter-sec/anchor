@@ -418,6 +418,31 @@ pub struct Bad {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn update_hooks_reject_instruction_argument_values() {
+    compile_fail_case(
+        "update_instruction_arg",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+#[derive(Accounts)]
+#[instruction(value: u64)]
+pub struct Bad {
+    #[account(update(custom::value = value))]
+    pub data: UncheckedAccount,
+}
+"#,
+        &[
+            "instruction arguments are not supported in `update(...)` because deferred updates do \
+             not retain instruction arguments",
+        ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn cfg_gated_public_handlers_do_not_emit_missing_wrappers() {
     compile_pass_case(
         "cfg_gated_handler",

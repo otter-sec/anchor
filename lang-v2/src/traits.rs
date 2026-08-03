@@ -572,7 +572,7 @@ pub trait ForeignOwnerInit: AccountInitialize {}
 /// | `init, ns::key = v`                                | `init`                |
 /// | `init_if_needed, ns::key = v` (creating)           | `init`, then `check`  |
 /// | `init_if_needed, ns::key = v` (already exists)     | `check`               |
-/// | `update(ns::key = v)`                              | `update` (post-validation) |
+/// | `update(ns::key = v)`                              | `update` (after access control, before handler body) |
 /// | Any of the above                                    | `exit` (exit phase)  |
 ///
 /// There is deliberately **no blanket `impl<T: AccountConstraint<A>>
@@ -643,8 +643,11 @@ pub trait AccountConstraint<A> {
     /// inside an `update(...)` wrapper, e.g.
     /// `#[account(update(my_ns::field = value))]`. Intended for
     /// constraints that set / rewrite on-chain state rather than
-    /// validating it. Runs after `try_accounts` has finished all
-    /// account validations, but before the instruction handler.
+    /// validating it. Runs after `try_accounts` has finished all account
+    /// validations and after handler-level `#[access_control]` checks, but
+    /// before the user-written handler body. Consequently, access control
+    /// observes the original validated state while the handler body observes
+    /// the updated state.
     #[inline(always)]
     fn update(_account: &mut A, _value: &Self::Value) -> core::result::Result<(), ProgramError> {
         Ok(())

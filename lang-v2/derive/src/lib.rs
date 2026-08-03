@@ -1881,8 +1881,13 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 #(#loads)*
                 #(#deferred_loads)*
                 #(#constraints)*
-                #(#updates)*
                 Ok((Self { #(#field_names),* }, __bumps, #ix_args_return))
+            }
+
+            #[inline(always)]
+            fn update_accounts(&mut self) -> anchor_lang_v2::Result<()> {
+                #(#updates)*
+                Ok(())
             }
 
             //
@@ -4297,6 +4302,46 @@ fn extract_result_return_type(output: &syn::ReturnType) -> syn::Result<Option<Ty
     }
 }
 
+/// Prepare an executable handler for the framework's post-authorization
+/// update phase.
+///
+/// The update is inserted as the first handler statement. Any
+/// `#[access_control(...)]` attribute remains on the handler and expands by
+/// prepending its checks, so authorization runs before this update without
+/// duplicating the attribute macro's behavior here.
+fn prepare_executable_handler(handler: &syn::ItemFn) -> syn::Result<syn::ItemFn> {
+    let mut handler = handler.clone();
+    handler.attrs.retain(|attr| {
+        !matches!(
+            &attr.meta,
+            syn::Meta::NameValue(nv) if nv.path.is_ident("discrim")
+        )
+    });
+
+    let Some(FnArg::Typed(ctx_arg)) = handler.sig.inputs.first() else {
+        return Err(syn::Error::new(
+            handler.sig.ident.span(),
+            "handler must have a `ctx: &mut Context<T>` parameter",
+        ));
+    };
+    let Pat::Ident(ctx_pat) = &*ctx_arg.pat else {
+        return Err(syn::Error::new(
+            ctx_arg.pat.span(),
+            "handler context parameter must be an identifier",
+        ));
+    };
+    let ctx = &ctx_pat.ident;
+
+    handler.block.stmts.insert(
+        0,
+        syn::parse_quote! {
+            anchor_lang_v2::TryAccounts::update_accounts(&mut #ctx.accounts)?;
+        },
+    );
+
+    Ok(handler)
+}
+
 fn process_handler(
     handler: &syn::ItemFn,
     mod_name: &Ident,
@@ -4916,22 +4961,32 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         }
     };
 
-    // Strip #[discrim = N] attributes from handler outputs so rustc
-    // doesn't complain about an unknown attribute.
-    let handlers: Vec<_> = handlers
+    // Executable handlers receive their generated account updates here.
+    // `#[access_control]` remains on the function and expands by prepending its
+    // checks, producing validation -> access control -> update -> handler.
+    // Interface-only modules only need their dispatch-only `#[discrim]` marker
+    // stripped.
+    let handlers: Vec<_> = match handlers
         .iter()
         .map(|func| {
-            let mut func = (*func).clone();
-            func.attrs.retain(|attr| {
-                if let syn::Meta::NameValue(nv) = &attr.meta {
-                    !nv.path.is_ident("discrim")
-                } else {
-                    true
-                }
-            });
-            func
+            if config.mode == ProgramMode::Executable {
+                prepare_executable_handler(func)
+            } else {
+                let mut func = (*func).clone();
+                func.attrs.retain(|attr| {
+                    !matches!(
+                        &attr.meta,
+                        syn::Meta::NameValue(nv) if nv.path.is_ident("discrim")
+                    )
+                });
+                Ok(func)
+            }
         })
-        .collect();
+        .collect::<syn::Result<Vec<_>>>()
+    {
+        Ok(handlers) => handlers,
+        Err(err) => return err.to_compile_error(),
+    };
 
     let interface_account_reexports = if config.mode == ProgramMode::Interface {
         quote! { pub use super::*; }
@@ -5836,6 +5891,11 @@ pub fn event_cpi(_attr: TokenStream, input: TokenStream) -> TokenStream {
 /// Executes the given access control method before running the decorated
 /// instruction handler. Any method in scope of the attribute can be invoked
 /// with any arguments from the associated instruction handler.
+///
+/// Within an executable `#[program]` module, generated account `update(...)`
+/// hooks run after these checks succeed and before the first user-written
+/// handler statement. This ensures access control reads the validated,
+/// pre-update account state.
 ///
 /// # Example
 ///
