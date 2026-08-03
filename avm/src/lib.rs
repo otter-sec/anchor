@@ -908,6 +908,7 @@ fn nightly_enabled() -> bool {
 #[derive(Debug, Deserialize)]
 struct NightlyManifest {
     version: String,
+    git_sha: String,
     artifacts: Vec<NightlyArtifact>,
 }
 
@@ -1056,8 +1057,13 @@ fn install_nightly_manifest(manifest: &NightlyManifest, skip_attestation: bool) 
         if skip_attestation {
             warn_attestation_skipped();
         }
-        install_nightly_artifact(&anchor, &nightly_anchor_binary_path(), skip_attestation)?;
-        install_nightly_artifact(&avm, &nightly_avm_binary_path(), skip_attestation)?;
+        install_nightly_artifact(
+            manifest,
+            &anchor,
+            &nightly_anchor_binary_path(),
+            skip_attestation,
+        )?;
+        install_nightly_artifact(manifest, &avm, &nightly_avm_binary_path(), skip_attestation)?;
     }
     Ok(())
 }
@@ -1081,6 +1087,7 @@ fn nightly_artifact(
 }
 
 fn install_nightly_artifact(
+    manifest: &NightlyManifest,
     artifact: &NightlyArtifact,
     destination: &Path,
     skip_attestation: bool,
@@ -1099,7 +1106,7 @@ fn install_nightly_artifact(
 
     let result = (|| -> Result<()> {
         let archive_path = staging.join(archive_name);
-        download_nightly_artifact(artifact, &archive_path, skip_attestation)?;
+        download_nightly_artifact(manifest, artifact, &archive_path, skip_attestation)?;
         extract_tar_gz(&archive_path, &staging)?;
         let extracted = extracted_nightly_binary(&staging, &artifact.tool)?;
         install_binary_atomic(&extracted, destination)?;
@@ -1120,6 +1127,7 @@ fn nightly_archive_name(file: &str) -> Result<&Path> {
 }
 
 fn download_nightly_artifact(
+    manifest: &NightlyManifest,
     artifact: &NightlyArtifact,
     dest: &Path,
     skip_attestation: bool,
@@ -1144,7 +1152,11 @@ fn download_nightly_artifact(
     }
     fs::write(dest, bytes.as_ref()).with_context(|| format!("Writing {}", dest.display()))?;
     if !skip_attestation {
-        attestation::verify_nightly(dest).with_context(|| {
+        let subject = format!(
+            "{}-{}-{}.tar.gz",
+            artifact.tool, manifest.version, artifact.target
+        );
+        attestation::verify_nightly(dest, &manifest.git_sha, &subject).with_context(|| {
             format!(
                 "Downloaded nightly artifact `{url}` failed build provenance verification. \
                  Refusing to install it."
@@ -1536,6 +1548,7 @@ mod tests {
     fn test_nightly_artifact_selects_tool_and_target() {
         let manifest = NightlyManifest {
             version: "nightly-20260522-f693b0f".to_string(),
+            git_sha: "f693b0f823fccaf947914956ff4b460eab9e366e".to_string(),
             artifacts: vec![
                 NightlyArtifact {
                     tool: "anchor".to_string(),
@@ -1566,6 +1579,7 @@ mod tests {
     fn test_nightly_artifact_errors_for_missing_target() {
         let manifest = NightlyManifest {
             version: "nightly-20260522-f693b0f".to_string(),
+            git_sha: "f693b0f823fccaf947914956ff4b460eab9e366e".to_string(),
             artifacts: vec![],
         };
 

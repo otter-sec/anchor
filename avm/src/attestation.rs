@@ -36,11 +36,18 @@ pub(crate) fn verify_release(path: &Path, version: &Version) -> Result<()> {
         eprintln!("Anchor v{version} does not have signed releases, skipping checks");
         return Ok(());
     }
-    verify(path, &release_identity(version))
+    verify(path, &release_identity(version), None)
 }
 
-pub(crate) fn verify_nightly(path: &Path) -> Result<()> {
-    verify(path, &nightly_identity())
+pub(crate) fn verify_nightly(path: &Path, source_commit: &str, subject: &str) -> Result<()> {
+    verify(
+        path,
+        &nightly_identity(),
+        Some(ExpectedNightlyProvenance {
+            source_commit,
+            subject,
+        }),
+    )
 }
 
 fn release_identity(version: &Version) -> String {
@@ -60,7 +67,17 @@ fn workflow_identity(workflow: &str, git_ref: &str) -> String {
     format!("https://github.com/{GITHUB_REPOSITORY}/{workflow}@{git_ref}")
 }
 
-fn verify(path: &Path, expected_identity: &str) -> Result<()> {
+#[derive(Clone, Copy)]
+struct ExpectedNightlyProvenance<'a> {
+    source_commit: &'a str,
+    subject: &'a str,
+}
+
+fn verify(
+    path: &Path,
+    expected_identity: &str,
+    expected_nightly: Option<ExpectedNightlyProvenance<'_>>,
+) -> Result<()> {
     let digest = sha256_file(path)?;
     let attestations = fetch_attestations(digest).with_context(|| {
         format!(
@@ -68,7 +85,7 @@ fn verify(path: &Path, expected_identity: &str) -> Result<()> {
             path.display()
         )
     })?;
-    verify_attestations(&attestations, digest, expected_identity)
+    verify_attestations(&attestations, digest, expected_identity, expected_nightly)
 }
 
 fn fetch_attestations(digest: Sha256Hash) -> Result<Vec<GitHubAttestation>> {
@@ -109,6 +126,7 @@ fn verify_attestations(
     attestations: &[GitHubAttestation],
     digest: Sha256Hash,
     expected_identity: &str,
+    expected_nightly: Option<ExpectedNightlyProvenance<'_>>,
 ) -> Result<()> {
     if attestations.is_empty() {
         bail!(
@@ -130,10 +148,13 @@ fn verify_attestations(
             let json = serde_json::to_string(&attestation.bundle)
                 .context("Serializing Sigstore bundle")?;
             let bundle = Bundle::from_json(&json).context("Parsing Sigstore bundle")?;
-            require_slsa_provenance(&bundle)?;
+            let statement = require_slsa_provenance(&bundle)?;
             verifier
                 .verify(digest, &bundle, &policy)
                 .context("Verifying Sigstore bundle")?;
+            if let Some(expected) = expected_nightly {
+                require_nightly_provenance(&statement, digest, expected)?;
+            }
             Ok(())
         })();
 
@@ -154,7 +175,7 @@ fn verify_attestations(
     )
 }
 
-fn require_slsa_provenance(bundle: &Bundle) -> Result<()> {
+fn require_slsa_provenance(bundle: &Bundle) -> Result<Statement> {
     let SignatureContent::DsseEnvelope(envelope) = &bundle.content else {
         bail!("Build provenance attestation is not a DSSE envelope");
     };
@@ -173,6 +194,40 @@ fn require_slsa_provenance(bundle: &Bundle) -> Result<()> {
             statement.predicate_type
         );
     }
+    Ok(statement)
+}
+
+fn require_nightly_provenance(
+    statement: &Statement,
+    digest: Sha256Hash,
+    expected: ExpectedNightlyProvenance<'_>,
+) -> Result<()> {
+    let source_commit = statement
+        .predicate
+        .pointer("/buildDefinition/resolvedDependencies/0/digest/gitCommit")
+        .and_then(Value::as_str)
+        .context("Build provenance attestation is missing the source commit")?;
+    if source_commit != expected.source_commit {
+        bail!(
+            "Build provenance source commit mismatch: expected `{}`, got `{source_commit}`",
+            expected.source_commit
+        );
+    }
+
+    let digest = digest.to_hex();
+    let subject = statement
+        .subject
+        .iter()
+        .find(|subject| subject.digest.sha256.as_deref() == Some(digest.as_str()))
+        .context("Build provenance attestation is missing the downloaded artifact subject")?;
+    if subject.name != expected.subject {
+        bail!(
+            "Build provenance subject mismatch: expected `{}`, got `{}`",
+            expected.subject,
+            subject.name
+        );
+    }
+
     Ok(())
 }
 
@@ -233,15 +288,74 @@ mod tests {
         )
         .unwrap();
         let attestations = fetch_attestations(digest).unwrap();
+        let expected = ExpectedNightlyProvenance {
+            source_commit: "6b0175552f1ca5ef3055be7f517ca589cd96485f",
+            subject: "anchor-nightly-20260714-6b01755-x86_64-unknown-linux-gnu.tar.gz",
+        };
 
-        verify_attestations(&attestations, digest, &nightly_identity()).unwrap();
+        verify_attestations(&attestations, digest, &nightly_identity(), Some(expected)).unwrap();
 
         let wrong_digest = Sha256Hash::from_bytes([0; 32]);
-        assert!(verify_attestations(&attestations, wrong_digest, &nightly_identity()).is_err());
+        assert!(verify_attestations(
+            &attestations,
+            wrong_digest,
+            &nightly_identity(),
+            Some(expected)
+        )
+        .is_err());
         assert!(verify_attestations(
             &attestations,
             digest,
-            &release_identity(&Version::new(1, 1, 2))
+            &release_identity(&Version::new(1, 1, 2)),
+            Some(expected),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn nightly_provenance_must_match_source_commit_and_subject() {
+        let digest = Sha256Hash::from_bytes([7; 32]);
+        let digest_hex = digest.to_hex();
+        let statement = serde_json::from_value::<Statement>(serde_json::json!({
+            "_type": "https://in-toto.io/Statement/v1",
+            "subject": [{
+                "name": "anchor-nightly-20260803-abcdef0-aarch64-apple-darwin.tar.gz",
+                "digest": { "sha256": digest_hex }
+            }],
+            "predicateType": SLSA_PROVENANCE_V1,
+            "predicate": {
+                "buildDefinition": {
+                    "resolvedDependencies": [{
+                        "uri": "git+https://github.com/otter-sec/anchor@refs/heads/master",
+                        "digest": { "gitCommit": "abcdef0123456789" }
+                    }]
+                }
+            }
+        }))
+        .unwrap();
+        let expected = ExpectedNightlyProvenance {
+            source_commit: "abcdef0123456789",
+            subject: "anchor-nightly-20260803-abcdef0-aarch64-apple-darwin.tar.gz",
+        };
+
+        require_nightly_provenance(&statement, digest, expected).unwrap();
+
+        assert!(require_nightly_provenance(
+            &statement,
+            digest,
+            ExpectedNightlyProvenance {
+                source_commit: "0000000000000000",
+                ..expected
+            }
+        )
+        .is_err());
+        assert!(require_nightly_provenance(
+            &statement,
+            digest,
+            ExpectedNightlyProvenance {
+                subject: "anchor-nightly-20260802-0000000-aarch64-apple-darwin.tar.gz",
+                ..expected
+            }
         )
         .is_err());
     }
