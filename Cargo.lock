@@ -1487,9 +1487,9 @@ dependencies = [
 
 [[package]]
 name = "crucible-fuzz-cli"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4958f4ea2b8611aed7ed087c7d6856cd46398b2c4f0c9bd1a3a85eabd7bef3a"
+checksum = "3fd18509ebe29e733b43042adc8aec09d89bdfb5ab01ad1d2a0ef3d62691295a"
 dependencies = [
  "anyhow",
  "clap 4.6.1",
