@@ -72,17 +72,20 @@ jobs:
         shell: bash
         env:
           DIST: ${{ inputs.dist }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          MATRIX_OS: ${{ matrix.os }}
+          MATRIX_TARGET: ${{ matrix.target }}
         run: |
-          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+          if [[ "$DRY_RUN" == "true" ]]; then
             version="dry-run"
           else
             version=$(echo $GITHUB_REF_NAME | cut -dv -f2)
           fi
           ext=""
-          [[ "${{ matrix.os }}" == windows-latest ]] && ext=".exe"
+          [[ "$MATRIX_OS" == windows-latest ]] && ext=".exe"
 
           mkdir "$DIST"
-          mv "target/${{ matrix.target }}/release/anchor$ext" "$DIST/anchor-$version-${{ matrix.target }}$ext"
+          mv "target/${MATRIX_TARGET}/release/anchor$ext" "$DIST/anchor-$version-${MATRIX_TARGET}$ext"
 
           echo "version=$version" >> $GITHUB_OUTPUT
 
