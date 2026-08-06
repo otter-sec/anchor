@@ -2,7 +2,7 @@ extern crate alloc;
 
 use {
     crate::{address_eq, require, CpiHandle, ToCpiAccounts},
-    alloc::vec::Vec,
+    alloc::{collections::BTreeSet, vec::Vec},
     core::mem::MaybeUninit,
     pinocchio::{
         address::Address,
@@ -176,14 +176,21 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
 
         let mut handles = self.accounts.to_cpi_handles();
 
-        for handle in &self.remaining_accounts {
-            let meta = if handle.is_writable() {
-                AccountMeta::new(*handle.address(), handle.is_signer())
-            } else {
-                AccountMeta::new_readonly(*handle.address(), handle.is_signer())
-            };
-            ix.accounts.push(meta);
-            handles.push(*handle);
+        if !self.remaining_accounts.is_empty() {
+            // Ignore duplicates by tracking seen addresses in a `BTreeSet`.
+            let mut seen: BTreeSet<Address> = ix.accounts.iter().map(|meta| meta.pubkey).collect();
+
+            for handle in &self.remaining_accounts {
+                if seen.insert(*handle.address()) {
+                    let meta = if handle.is_writable() {
+                        AccountMeta::new(*handle.address(), handle.is_signer())
+                    } else {
+                        AccountMeta::new_readonly(*handle.address(), handle.is_signer())
+                    };
+                    ix.accounts.push(meta);
+                }
+                handles.push(*handle);
+            }
         }
 
         let mut optional_sentinel_flags = self.accounts.optional_account_sentinel_flags();
