@@ -265,6 +265,24 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
         Self::load(view)
     }
 
+    /// Load an account for mutable access by the currently executing program.
+    ///
+    /// The default preserves the behavior of wrappers without locally
+    /// mutable data. Data-carrying wrappers override this to distinguish
+    /// transaction writability (which is sufficient for CPI forwarding)
+    /// from authority to mutate the account's data in the current program.
+    ///
+    /// # Safety
+    ///
+    /// Same aliasing requirements as [`load_mut`].
+    #[inline(always)]
+    unsafe fn load_mut_for_program(
+        view: AccountView,
+        _program_id: &Address,
+    ) -> core::result::Result<Self, ProgramError> {
+        Self::load_mut(view)
+    }
+
     /// Like [`load_mut`], but called right after
     /// `AccountInitialize::create_and_initialize`. Owner, discriminator,
     /// and min-length checks are tautologies on this path, so data-carrying

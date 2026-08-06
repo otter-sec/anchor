@@ -2150,7 +2150,12 @@ pub fn parse_field(
                     #init_if_needed_space_check
                     // SAFETY: the bitvec duplicate-account check below ensures
                     // no other mutable reference to this account's data exists.
-                    unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target)? }
+                    unsafe {
+                        <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut_for_program(
+                            __target,
+                            __program_id,
+                        )?
+                    }
                 } else {
                     // Create branch: run `AccountConstraint::init` for every
                     // runtime-only constraint AFTER the account's typed
@@ -2167,6 +2172,9 @@ pub fn parse_field(
         quote! {
             let mut #field_name: #field_ty = {
                 let __target = __views[#offset_expr];
+                if !__target.owned_by(__program_id) {
+                    return Err(anchor_lang_v2::Error::IllegalOwner);
+                }
                 let __disc = <#field_ty as anchor_lang_v2::Discriminator>::DISCRIMINATOR;
                 {
                     let __data = __target.try_borrow()?;
@@ -2181,14 +2189,24 @@ pub fn parse_field(
                 }
                 // SAFETY: the bitvec duplicate-account check below ensures
                 // no other mutable reference to this account's data exists.
-                unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target)? }
+                unsafe {
+                    <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut_for_program(
+                        __target,
+                        __program_id,
+                    )?
+                }
             };
         }
     } else if attrs.is_mut {
         quote! {
             // SAFETY: the bitvec duplicate-account check below ensures no
             // other mutable reference to this account's data exists.
-            let mut #field_name = unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__views[#offset_expr])? };
+            let mut #field_name = unsafe {
+                <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut_for_program(
+                    __views[#offset_expr],
+                    __program_id,
+                )?
+            };
         }
     } else {
         quote! {

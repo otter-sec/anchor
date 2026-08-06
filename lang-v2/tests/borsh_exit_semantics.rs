@@ -21,7 +21,7 @@ use {
         prelude::BorshAccount,
         testing::AccountBuffer,
         wincode::{SchemaRead, SchemaWrite},
-        AnchorAccount, Discriminator, Owner,
+        AnchorAccount, Discriminator, Owner, ToCpiHandleMut,
     },
     pinocchio::{account::RuntimeAccount, address::Address},
     solana_program_error::ProgramError,
@@ -190,6 +190,53 @@ fn release_borrow_serializes_mutably_loaded_foreign_owned_account() {
 
     let bytes = read_data_bytes(&buf, 8, 8);
     assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 999);
+}
+
+#[test]
+fn program_scoped_mutable_load_keeps_foreign_accounts_read_only() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_foreign_counter_buf(&mut buf, 42);
+
+    let view = unsafe { buf.view() };
+    let mut acct = unsafe {
+        BorshAccount::<ForeignCounter>::load_mut_for_program(
+            view,
+            &Address::new_from_array(PROGRAM_ID),
+        )
+    }
+    .unwrap();
+
+    assert_eq!(acct.value, 42);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| acct.value = 999)).is_err(),
+        "foreign-owned typed data must not be locally mutable"
+    );
+    assert!(
+        acct.try_to_cpi_handle_mut().is_ok(),
+        "transaction writability must remain available for CPI forwarding"
+    );
+    assert_eq!(u64::from_le_bytes(read_data_bytes(&buf, 8, 8).try_into().unwrap()), 42);
+}
+
+#[test]
+fn program_scoped_mutable_load_allows_owned_accounts() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf, 42);
+
+    {
+        let view = unsafe { buf.view() };
+        let mut acct = unsafe {
+            BorshAccount::<Counter>::load_mut_for_program(
+                view,
+                &Address::new_from_array(PROGRAM_ID),
+            )
+        }
+        .unwrap();
+        acct.value = 999;
+        acct.exit().unwrap();
+    }
+
+    assert_eq!(u64::from_le_bytes(read_data_bytes(&buf, 8, 8).try_into().unwrap()), 999);
 }
 
 // -- 2. Stale detection: content-only change is NOT detected ---------
