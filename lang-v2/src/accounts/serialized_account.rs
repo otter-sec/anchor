@@ -330,6 +330,12 @@ where
     S: AnchorAccountSerialize<T>,
 {
     fn close(&mut self, mut destination: AccountView) -> pinocchio::ProgramResult {
+        // Guardrail: catches "forgot `#[account(mut)]`" on the close
+        // destination early with a clear error.
+        #[cfg(feature = "guardrails")]
+        if !destination.is_writable() {
+            return Err(super::slab::cold_not_writable());
+        }
         self.assert_mutable_loaded();
         let mut self_view = self.view;
         let dest_lamports = destination
