@@ -910,6 +910,33 @@ fn validate_init_constraint_refs(
 
     Ok(())
 }
+
+/// `close = dest` must name a sibling account field marked `mut`, matching the
+/// init-payer mutability check.
+fn validate_close_destination(
+    attrs: &AccountAttrs,
+    field_summaries: &[FieldSummary],
+) -> syn::Result<()> {
+    let Some(ref destination) = attrs.close else {
+        return Ok(());
+    };
+
+    match field_summaries
+        .iter()
+        .find(|summary| summary.name == *destination)
+    {
+        Some(dest) if dest.attrs.is_mut => Ok(()),
+        Some(_) => Err(syn::Error::new(
+            destination.span(),
+            "the destination specified for a close constraint must be mutable",
+        )),
+        None => Err(syn::Error::new(
+            destination.span(),
+            "the destination specified for a close constraint does not exist",
+        )),
+    }
+}
+
 fn field_offset_expr(
     field_offsets: &[(String, TokenStream2)],
     ident: &Ident,
@@ -2227,6 +2254,7 @@ pub fn parse_field(
             "mut must be provided when using close",
         ));
     }
+    validate_close_destination(&attrs, field_summaries)?;
     let option_inner = extract_option_inner(field_ty);
     let associated_token = parse_associated_token_init(&attrs, field_names)?;
     let init_if_needed_reuse_validation = if attrs.is_init_if_needed {
@@ -3377,6 +3405,53 @@ mod tests {
         let parsed_attrs = parse_account_attrs(&attrs).unwrap();
         assert!(!parsed_attrs.is_mut);
         assert_eq!(parsed_attrs.close.unwrap().to_string(), "receiver");
+    }
+
+    #[test]
+    fn close_destination_must_be_mutable() {
+        use syn::parse::Parser;
+
+        let closed: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                #[account(mut, close = receiver)]
+                pub data: Account<Data>
+            })
+            .unwrap();
+        let receiver: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                pub receiver: SystemAccount
+            })
+            .unwrap();
+        let summaries = vec![
+            FieldSummary {
+                name: syn::parse_quote!(data),
+                ty: syn::parse_quote!(Account<Data>),
+                attrs: parse_account_attrs(&closed.attrs).unwrap(),
+            },
+            FieldSummary {
+                name: syn::parse_quote!(receiver),
+                ty: syn::parse_quote!(SystemAccount),
+                attrs: parse_account_attrs(&receiver.attrs).unwrap(),
+            },
+        ];
+        let closed_attrs = parse_account_attrs(&closed.attrs).unwrap();
+        let err = match parse_field(
+            &closed,
+            &closed_attrs,
+            &["data".into(), "receiver".into()],
+            &[],
+            quote::quote!(0usize),
+            &[],
+            &summaries,
+        ) {
+            Ok(_) => panic!("non-mut close destination must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("the destination specified for a close constraint must be mutable"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
