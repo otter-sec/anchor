@@ -2907,6 +2907,51 @@ mod tests {
     }
 
     #[test]
+    fn close_destination_must_be_mutable() {
+        use syn::parse::Parser;
+
+        let closed: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                #[account(mut, close = receiver)]
+                pub data: Account<Data>
+            })
+            .unwrap();
+        let receiver: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                pub receiver: SystemAccount
+            })
+            .unwrap();
+        let summaries = vec![
+            FieldSummary {
+                name: syn::parse_quote!(data),
+                ty: syn::parse_quote!(Account<Data>),
+                attrs: parse_account_attrs(&closed.attrs).unwrap(),
+            },
+            FieldSummary {
+                name: syn::parse_quote!(receiver),
+                ty: syn::parse_quote!(SystemAccount),
+                attrs: parse_account_attrs(&receiver.attrs).unwrap(),
+            },
+        ];
+        let err = match parse_field(
+            &closed,
+            &["data".into(), "receiver".into()],
+            &[],
+            quote::quote!(0usize),
+            &[],
+            &summaries,
+        ) {
+            Ok(_) => panic!("non-mut close destination must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("the destination specified for a close constraint must be mutable"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn account_attrs_on_nested_field_are_rejected() {
         use syn::parse::Parser;
 
