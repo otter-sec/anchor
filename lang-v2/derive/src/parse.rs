@@ -679,6 +679,32 @@ fn validate_init_constraint_refs(
     Ok(())
 }
 
+/// `close = dest` must name a sibling account field marked `mut`, matching the
+/// init-payer mutability check.
+fn validate_close_destination(
+    attrs: &AccountAttrs,
+    field_summaries: &[FieldSummary],
+) -> syn::Result<()> {
+    let Some(ref destination) = attrs.close else {
+        return Ok(());
+    };
+
+    match field_summaries
+        .iter()
+        .find(|summary| summary.name == *destination)
+    {
+        Some(dest) if dest.attrs.is_mut => Ok(()),
+        Some(_) => Err(syn::Error::new(
+            destination.span(),
+            "the destination specified for a close constraint must be mutable",
+        )),
+        None => Err(syn::Error::new(
+            destination.span(),
+            "the destination specified for a close constraint does not exist",
+        )),
+    }
+}
+
 fn field_offset_expr(
     field_offsets: &[(String, TokenStream2)],
     ident: &Ident,
@@ -1773,6 +1799,7 @@ pub fn parse_field(
             "mut must be provided when using close",
         ));
     }
+    validate_close_destination(&attrs, field_summaries)?;
     let associated_token = parse_associated_token_init(&attrs, field_names)?;
 
     let option_inner = extract_option_inner(field_ty);
