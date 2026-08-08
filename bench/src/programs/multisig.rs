@@ -230,6 +230,7 @@ pub mod anchor_v2 {
         ctx.airdrop(&creator.pubkey(), 1_000_000_000)?;
         setup_multisig_v2(ctx, &creator, &[&signer_one, &signer_two], 2)?;
 
+        let (config, _) = config_address(&creator.pubkey());
         let label_bytes = b"bench-multisig";
         let mut label = [0u8; 32];
         label[..label_bytes.len()].copy_from_slice(label_bytes);
@@ -239,8 +240,11 @@ pub mod anchor_v2 {
                 label,
             }
             .data(),
-            multisig_v2::accounts::SetLabelResolved { creator: creator.pubkey() }
-                .to_account_metas(None),
+            multisig_v2::accounts::SetLabelResolved {
+                creator: creator.pubkey(),
+                config,
+            }
+            .to_account_metas(None),
         )
         .with_signer(creator))
     }
@@ -266,6 +270,7 @@ pub mod anchor_v2 {
         )?;
 
         let mut metas = multisig_v2::accounts::ExecuteTransferResolved {
+            config,
             creator: creator.pubkey(),
             recipient: recipient.pubkey(),
         }
