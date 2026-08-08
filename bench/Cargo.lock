@@ -364,6 +364,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "anchor-derive-accounts-v2"
+version = "2.0.0"
+dependencies = [
+ "anchor-lang-idl",
+ "bs58",
+ "curve25519-dalek",
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "sha2 0.10.9",
+ "solana-address 2.6.0",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "anchor-derive-serde"
 version = "2.0.0-rc.1"
 dependencies = [
@@ -465,6 +480,48 @@ dependencies = [
  "solana-sysvar",
  "solana-sysvar-id",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "anchor-lang-idl"
+version = "0.1.2"
+dependencies = [
+ "anchor-lang-idl-spec",
+ "anyhow",
+ "heck",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "anchor-lang-idl-spec"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "anchor-lang-v2"
+version = "2.0.0"
+dependencies = [
+ "anchor-derive-accounts-v2",
+ "bytemuck",
+ "pinocchio",
+ "pinocchio-system",
+ "sha2 0.10.9",
+ "solana-address 2.6.0",
+ "solana-define-syscall 5.0.0",
+ "solana-instruction",
+ "solana-msg",
+ "solana-program-error",
+ "solana-program-memory",
+ "solana-sha256-hasher",
+ "solana-system-interface 2.0.0",
+ "solana-sysvar",
+ "wincode",
 ]
 
 [[package]]
