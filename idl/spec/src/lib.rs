@@ -236,6 +236,8 @@ pub enum IdlTypeDefTy {
         fields: Option<IdlDefinedFields>,
     },
     Enum {
+        #[serde(default, rename = "tagEncoding", skip_serializing_if = "is_default")]
+        tag_encoding: Option<String>,
         variants: Vec<IdlEnumVariant>,
     },
     Type {
@@ -248,6 +250,8 @@ pub struct IdlEnumVariant {
     pub name: String,
     #[serde(skip_serializing_if = "is_default")]
     pub fields: Option<IdlDefinedFields>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub tag: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

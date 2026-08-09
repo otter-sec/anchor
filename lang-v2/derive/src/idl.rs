@@ -573,17 +573,22 @@ pub fn build_enum_type_strings(
     name: &str,
     disc: &[u8],
     docs: &[String],
+    enum_attrs: &[syn::Attribute],
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::token::Comma>,
     kind: TypeKind,
     generics: &Generics,
-) -> IdlTypeStrings {
+) -> syn::Result<IdlTypeStrings> {
     let mut lowerer = TypeLowerer::with_generics(generics);
     let mut type_def_obj = build_type_def_header(name, docs, kind, generics);
+    let tag_encoding = crate::wincode_attrs::enum_tag_encoding_string(enum_attrs)?;
     let variant_values: Vec<Value> = variants
         .iter()
         .map(|v| {
             let mut obj = serde_json::Map::new();
             obj.insert("name".into(), Value::String(v.ident.to_string()));
+            if let Some(tag) = crate::wincode_attrs::variant_tag_string(&v.attrs)? {
+                obj.insert("tag".into(), Value::String(tag));
+            }
             match &v.fields {
                 syn::Fields::Unit => {}
                 syn::Fields::Named(named) => {
@@ -603,32 +608,57 @@ pub fn build_enum_type_strings(
                     obj.insert("fields".into(), Value::Array(tys));
                 }
             }
-            Value::Object(obj)
+            Ok(Value::Object(obj))
         })
-        .collect();
-    type_def_obj.insert(
-        "type".into(),
-        json!({ "kind": "enum", "variants": variant_values }),
-    );
-    IdlTypeStrings {
+        .collect::<syn::Result<_>>()?;
+    let mut type_obj = serde_json::Map::new();
+    type_obj.insert("kind".into(), Value::String("enum".into()));
+    if let Some(tag_encoding) = tag_encoding {
+        type_obj.insert("tagEncoding".into(), Value::String(tag_encoding));
+    }
+    type_obj.insert("variants".into(), Value::Array(variant_values));
+    type_def_obj.insert("type".into(), Value::Object(type_obj));
+    Ok(IdlTypeStrings {
         account_entry: build_account_entry(name, disc),
         type_def: lowerer.finish(Value::Object(type_def_obj)),
-    }
+    })
 }
 
 pub fn build_enum_type_def_emission(
     name: &str,
     docs: &[String],
+    enum_attrs: &[syn::Attribute],
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::token::Comma>,
     kind: TypeKind,
     generics: &Generics,
-) -> TokenStream2 {
-    let (header, suffix) = type_def_header_parts(name, docs, kind, generics, "enum");
+) -> syn::Result<TokenStream2> {
+    const VARIANT_MARKER: &str = "__anchor_private_variants__";
+    let mut type_def_obj = build_type_def_header(name, docs, kind, generics);
+    let mut type_obj = serde_json::Map::new();
+    type_obj.insert("kind".into(), Value::String("enum".into()));
+    if let Some(tag_encoding) = crate::wincode_attrs::enum_tag_encoding_string(enum_attrs)? {
+        type_obj.insert("tagEncoding".into(), Value::String(tag_encoding));
+    }
+    type_obj.insert(
+        "variants".into(),
+        Value::Array(vec![Value::String(VARIANT_MARKER.to_owned())]),
+    );
+    type_def_obj.insert("type".into(), Value::Object(type_obj));
+
+    let header = Value::Object(type_def_obj).to_string();
+    let marker = Value::String(VARIANT_MARKER.to_owned()).to_string();
+    let (header, suffix) = header
+        .split_once(&marker)
+        .expect("enum type definition should contain the variant marker");
     let variant_pushes: Vec<_> = variants
         .iter()
         .map(|variant| variant_push_stmt(variant, generics))
-        .collect();
-    build_joined_type_def_emission(header, suffix, &variant_pushes)
+        .collect::<syn::Result<_>>()?;
+    Ok(build_joined_type_def_emission(
+        header.to_owned(),
+        suffix.to_owned(),
+        &variant_pushes,
+    ))
 }
 
 /// Compose the program-level `accounts[]` entry. Returns `None` when the
@@ -729,13 +759,13 @@ fn field_push_stmt(field: &syn::Field, generics: &Generics) -> TokenStream2 {
     }
 }
 
-fn variant_push_stmt(variant: &syn::Variant, generics: &Generics) -> TokenStream2 {
-    let variant_json = variant_emission(variant, generics);
+fn variant_push_stmt(variant: &syn::Variant, generics: &Generics) -> syn::Result<TokenStream2> {
+    let variant_json = variant_emission(variant, generics)?;
     let cfg_attrs = crate::cfg_attrs(&variant.attrs);
-    quote! {
+    Ok(quote! {
         #(#cfg_attrs)*
         __entries.push(#variant_json);
-    }
+    })
 }
 
 fn named_field_emission(field: &syn::Field, generics: &Generics) -> TokenStream2 {
@@ -750,16 +780,24 @@ fn unnamed_field_emission(field: &syn::Field, generics: &Generics) -> TokenStrea
     lowerer.finish(value)
 }
 
-fn variant_emission(variant: &syn::Variant, generics: &Generics) -> TokenStream2 {
-    let name = variant.ident.to_string();
+fn variant_emission(variant: &syn::Variant, generics: &Generics) -> syn::Result<TokenStream2> {
+    let mut header_obj = serde_json::Map::new();
+    header_obj.insert("name".into(), Value::String(variant.ident.to_string()));
+    if let Some(tag) = crate::wincode_attrs::variant_tag_string(&variant.attrs)? {
+        header_obj.insert("tag".into(), Value::String(tag));
+    }
     match &variant.fields {
         syn::Fields::Unit => {
-            let variant_json = json!({ "name": name }).to_string();
-            quote! { #variant_json }
+            let variant_json = Value::Object(header_obj).to_string();
+            Ok(quote! { #variant_json })
         }
         syn::Fields::Named(named) => {
             const FIELD_MARKER: &str = "__anchor_private_variant_fields__";
-            let header = json!({ "name": name, "fields": [FIELD_MARKER] }).to_string();
+            header_obj.insert(
+                "fields".into(),
+                Value::Array(vec![Value::String(FIELD_MARKER.to_owned())]),
+            );
+            let header = Value::Object(header_obj).to_string();
             let marker = Value::String(FIELD_MARKER.to_owned()).to_string();
             let (header, suffix) = header
                 .split_once(&marker)
@@ -769,11 +807,19 @@ fn variant_emission(variant: &syn::Variant, generics: &Generics) -> TokenStream2
                 .iter()
                 .map(|field| field_push_stmt(field, generics))
                 .collect();
-            build_joined_entry_emission(header.to_owned(), &field_pushes, suffix.to_owned())
+            Ok(build_joined_entry_emission(
+                header.to_owned(),
+                &field_pushes,
+                suffix.to_owned(),
+            ))
         }
         syn::Fields::Unnamed(unnamed) => {
             const FIELD_MARKER: &str = "__anchor_private_variant_fields__";
-            let header = json!({ "name": name, "fields": [FIELD_MARKER] }).to_string();
+            header_obj.insert(
+                "fields".into(),
+                Value::Array(vec![Value::String(FIELD_MARKER.to_owned())]),
+            );
+            let header = Value::Object(header_obj).to_string();
             let marker = Value::String(FIELD_MARKER.to_owned()).to_string();
             let (header, suffix) = header
                 .split_once(&marker)
@@ -790,7 +836,11 @@ fn variant_emission(variant: &syn::Variant, generics: &Generics) -> TokenStream2
                     }
                 })
                 .collect();
-            build_joined_entry_emission(header.to_owned(), &field_pushes, suffix.to_owned())
+            Ok(build_joined_entry_emission(
+                header.to_owned(),
+                &field_pushes,
+                suffix.to_owned(),
+            ))
         }
     }
 }

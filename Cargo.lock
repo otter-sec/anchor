@@ -9336,6 +9336,7 @@ dependencies = [
  "spl-token-group-interface",
  "spl-token-metadata-interface",
  "token-interface-test",
+ "wincode 0.5.4",
 ]
 
 [[package]]

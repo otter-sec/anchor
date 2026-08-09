@@ -201,9 +201,17 @@ mod legacy {
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     #[serde(rename_all = "lowercase", tag = "kind")]
     pub enum IdlTypeDefinitionTy {
-        Struct { fields: Vec<IdlField> },
-        Enum { variants: Vec<IdlEnumVariant> },
-        Alias { value: IdlType },
+        Struct {
+            fields: Vec<IdlField>,
+        },
+        Enum {
+            #[serde(default, rename = "tagEncoding")]
+            tag_encoding: Option<String>,
+            variants: Vec<IdlEnumVariant>,
+        },
+        Alias {
+            value: IdlType,
+        },
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -211,6 +219,8 @@ mod legacy {
         pub name: String,
         #[serde(skip_serializing_if = "Option::is_none", default)]
         pub fields: Option<EnumFields>,
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        pub tag: Option<String>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -443,7 +453,11 @@ mod legacy {
                         ))
                     },
                 },
-                IdlTypeDefinitionTy::Enum { variants } => Self::Enum {
+                IdlTypeDefinitionTy::Enum {
+                    variants,
+                    tag_encoding,
+                } => Self::Enum {
+                    tag_encoding,
                     variants: variants
                         .into_iter()
                         .map(|variant| t::IdlEnumVariant {
@@ -456,6 +470,7 @@ mod legacy {
                                     tys.into_iter().map(Into::into).collect(),
                                 ),
                             }),
+                            tag: variant.tag,
                         })
                         .collect(),
                 },

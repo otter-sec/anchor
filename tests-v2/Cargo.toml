@@ -84,3 +84,4 @@ serde_json = "1"
 spl-token-2022-interface = "2.1"
 spl-token-group-interface = "0.7"
 spl-token-metadata-interface = "0.8"
+wincode = { version = "0.5", features = ["derive"] }

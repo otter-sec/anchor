@@ -140,6 +140,19 @@ fn enum_picks_largest_variant_plus_discriminator() {
     assert_eq!(Variant::INIT_SPACE, 1 + 16);
 }
 
+#[derive(InitSpace, wincode::SchemaRead, wincode::SchemaWrite)]
+#[wincode(tag_encoding = "u32")]
+enum WideTagVariant {
+    A,
+    B(u64),
+    C { _x: u16 },
+}
+
+#[test]
+fn enum_honors_wincode_tag_encoding_size() {
+    assert_eq!(WideTagVariant::INIT_SPACE, 4 + 8);
+}
+
 #[derive(InitSpace)]
 struct Unit;
 

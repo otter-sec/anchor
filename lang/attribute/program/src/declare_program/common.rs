@@ -227,7 +227,7 @@ pub fn convert_idl_type_def_to_ts(
                 #ty
             }
         }
-        IdlTypeDefTy::Enum { variants } => {
+        IdlTypeDefTy::Enum { variants, .. } => {
             let variants = variants.iter().map(|variant| {
                 let variant_name = format_ident!("{}", variant.name);
                 handle_defined_fields(
@@ -278,7 +278,7 @@ fn can_derive_copy(ty_def: &IdlTypeDef, ty_defs: &[IdlTypeDef]) -> bool {
         IdlTypeDefTy::Struct { fields } => {
             can_derive_common(fields.as_ref(), ty_defs, can_derive_copy_ty)
         }
-        IdlTypeDefTy::Enum { variants } => variants
+        IdlTypeDefTy::Enum { variants, .. } => variants
             .iter()
             .all(|variant| can_derive_common(variant.fields.as_ref(), ty_defs, can_derive_copy_ty)),
         IdlTypeDefTy::Type { alias } => can_derive_copy_ty(alias, ty_defs),

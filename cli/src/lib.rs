@@ -3363,7 +3363,7 @@ fn deserialize_idl_defined_type_to_json(
                 }
             }
         }
-        IdlTypeDefTy::Enum { variants } => {
+        IdlTypeDefTy::Enum { variants, .. } => {
             let repr = <u8 as AnchorDeserialize>::deserialize(data)?;
 
             let variant = variants

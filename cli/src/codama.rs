@@ -20,6 +20,7 @@ use {
         path::{Path, PathBuf},
         process::{Command, Stdio},
     },
+    syn::{Expr, ExprLit, Lit},
 };
 
 /// The `@codama/nodes` package version we target. The Codama IDL is versioned
@@ -732,10 +733,11 @@ fn type_node_from_anchor(ty: &JsonValue, generics: &Generics) -> Result<JsonValu
             .iter()
             .map(|v| enum_variant_from_anchor(v, generics))
             .collect::<Result<_>>()?;
+        let size = enum_tag_size_from_anchor(obj)?;
         return Ok(json!({
             "kind": "enumTypeNode",
             "variants": variant_nodes,
-            "size": number_node("u8"),
+            "size": size,
         }));
     }
 
@@ -822,37 +824,105 @@ fn enum_variant_from_anchor(variant: &JsonValue, generics: &Generics) -> Result<
         .ok_or_else(|| anyhow!("Enum variant must be an object: {variant}"))?;
     let name = obj.get("name").and_then(JsonValue::as_str).unwrap_or("");
     let fields = obj.get("fields").and_then(JsonValue::as_array);
+    let discriminator = enum_variant_discriminator_from_anchor(obj)?;
     match fields {
-        None => Ok(json!({
-            "kind": "enumEmptyVariantTypeNode",
-            "name": camel_case(name),
-        })),
-        Some(fs) if fs.is_empty() => Ok(json!({
-            "kind": "enumEmptyVariantTypeNode",
-            "name": camel_case(name),
-        })),
+        None => Ok(enum_variant_node(
+            "enumEmptyVariantTypeNode",
+            name,
+            discriminator,
+            None,
+        )),
+        Some(fs) if fs.is_empty() => Ok(enum_variant_node(
+            "enumEmptyVariantTypeNode",
+            name,
+            discriminator,
+            None,
+        )),
         Some(fs) if is_struct_field_array(fs) => {
             let nodes: Vec<JsonValue> = fs
                 .iter()
                 .map(|f| struct_field_from_anchor(f, generics))
                 .collect::<Result<_>>()?;
-            Ok(json!({
-                "kind": "enumStructVariantTypeNode",
-                "name": camel_case(name),
-                "struct": { "kind": "structTypeNode", "fields": nodes },
-            }))
+            Ok(enum_variant_node(
+                "enumStructVariantTypeNode",
+                name,
+                discriminator,
+                Some((
+                    "struct",
+                    json!({ "kind": "structTypeNode", "fields": nodes }),
+                )),
+            ))
         }
         Some(fs) => {
             let items: Vec<JsonValue> = fs
                 .iter()
                 .map(|f| type_node_from_anchor(f, generics))
                 .collect::<Result<_>>()?;
-            Ok(json!({
-                "kind": "enumTupleVariantTypeNode",
-                "name": camel_case(name),
-                "tuple": { "kind": "tupleTypeNode", "items": items },
-            }))
+            Ok(enum_variant_node(
+                "enumTupleVariantTypeNode",
+                name,
+                discriminator,
+                Some(("tuple", json!({ "kind": "tupleTypeNode", "items": items }))),
+            ))
         }
+    }
+}
+
+fn enum_variant_node(
+    kind: &str,
+    name: &str,
+    discriminator: Option<u32>,
+    payload: Option<(&str, JsonValue)>,
+) -> JsonValue {
+    let mut node = Map::new();
+    node.insert("kind".into(), JsonValue::String(kind.into()));
+    node.insert("name".into(), JsonValue::String(camel_case(name)));
+    if let Some(discriminator) = discriminator {
+        node.insert("discriminator".into(), json!(discriminator));
+    }
+    if let Some((key, value)) = payload {
+        node.insert(key.into(), value);
+    }
+    JsonValue::Object(node)
+}
+
+fn enum_tag_size_from_anchor(obj: &Map<String, JsonValue>) -> Result<JsonValue> {
+    match obj.get("tagEncoding").and_then(JsonValue::as_str) {
+        None => Ok(number_node("u8")),
+        Some(format) if NUMBER_LEAVES.contains(&format) => Ok(number_node(format)),
+        Some(format) => bail!("Unsupported enum `tagEncoding` for Codama: `{format}`"),
+    }
+}
+
+fn enum_variant_discriminator_from_anchor(obj: &Map<String, JsonValue>) -> Result<Option<u32>> {
+    let Some(tag) = obj.get("tag") else {
+        return Ok(None);
+    };
+    match tag {
+        JsonValue::Number(number) => number
+            .as_u64()
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or_else(|| anyhow!("Enum variant `tag` must fit in u32: {number}"))
+            .map(Some),
+        JsonValue::String(tag) => parse_variant_tag_str(tag).map(Some),
+        other => bail!("Enum variant `tag` must be a string or number, got {other}"),
+    }
+}
+
+fn parse_variant_tag_str(tag: &str) -> Result<u32> {
+    if let Ok(value) = tag.parse::<u32>() {
+        return Ok(value);
+    }
+
+    let expr = syn::parse_str::<Expr>(tag)
+        .with_context(|| format!("Enum variant `tag` is not valid Rust: `{tag}`"))?;
+    match expr {
+        Expr::Lit(ExprLit {
+            lit: Lit::Int(int), ..
+        }) => int
+            .base10_parse::<u32>()
+            .with_context(|| format!("Enum variant `tag` must be a u32 literal: `{tag}`")),
+        _ => bail!("Enum variant `tag` must be a numeric literal for Codama: `{tag}`"),
     }
 }
 
@@ -1617,22 +1687,26 @@ mod tests {
                 "name": "E",
                 "type": {
                     "kind": "enum",
+                    "tagEncoding": "u32",
                     "variants": [
-                        { "name": "Empty" },
-                        { "name": "Tup", "fields": ["u8", "u16"] },
-                        { "name": "Stru", "fields": [{ "name": "x", "type": "bool" }] }
+                        { "name": "Empty", "tag": "5" },
+                        { "name": "Tup", "tag": "8", "fields": ["u8", "u16"] },
+                        { "name": "Stru", "tag": "13", "fields": [{ "name": "x", "type": "bool" }] }
                     ]
                 }
             }]
         });
         let root = convert_str(&serde_json::to_string(&idl).unwrap());
-        let variants = root["program"]["definedTypes"][0]["type"]["variants"]
-            .as_array()
-            .unwrap();
+        let enum_node = &root["program"]["definedTypes"][0]["type"];
+        assert_eq!(enum_node["size"]["format"], "u32");
+        let variants = enum_node["variants"].as_array().unwrap();
         assert_eq!(variants[0]["kind"], "enumEmptyVariantTypeNode");
+        assert_eq!(variants[0]["discriminator"], 5);
         assert_eq!(variants[1]["kind"], "enumTupleVariantTypeNode");
+        assert_eq!(variants[1]["discriminator"], 8);
         assert_eq!(variants[1]["tuple"]["items"][0]["format"], "u8");
         assert_eq!(variants[2]["kind"], "enumStructVariantTypeNode");
+        assert_eq!(variants[2]["discriminator"], 13);
     }
 
     #[test]

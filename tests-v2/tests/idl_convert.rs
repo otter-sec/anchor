@@ -210,7 +210,7 @@ fn legacy_idl_conversion_preserves_surface_and_generates_discriminators() {
         .iter()
         .find(|ty| ty.name == "Choice")
         .expect("legacy type should convert");
-    let IdlTypeDefTy::Enum { variants } = &choice.ty else {
+    let IdlTypeDefTy::Enum { variants, .. } = &choice.ty else {
         panic!("legacy enum should remain an enum");
     };
     assert_eq!(variants[1].name, "Tuple");

@@ -20,6 +20,11 @@ pub fn expand(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let name = input.ident;
+    let enum_tag_len = match enum_tag_len_tokens(&input.attrs) {
+        Ok(Some(tag_len)) => tag_len,
+        Ok(None) => quote!(1),
+        Err(err) => return err.to_compile_error().into(),
+    };
 
     let process_struct_fields = |fields: Punctuated<Field, Comma>| {
         let recurse = fields.into_iter().map(field_len_tokens);
@@ -57,7 +62,7 @@ pub fn expand(item: TokenStream) -> TokenStream {
             quote! {
                 #[automatically_derived]
                 impl anchor_lang_v2::Space for #name {
-                    const INIT_SPACE: usize = 1 + #max;
+                    const INIT_SPACE: usize = #enum_tag_len + #max;
                 }
             }
         }
@@ -101,6 +106,44 @@ fn field_len_tokens(field: Field) -> TokenStream2 {
 
     let mut max_len_args = get_max_len_args(&field.attrs);
     len_from_type(field.ty, &mut max_len_args)
+}
+
+fn enum_tag_len_tokens(attrs: &[Attribute]) -> syn::Result<Option<TokenStream2>> {
+    let Some(tag_encoding) = crate::wincode_attrs::enum_tag_encoding_type(attrs)? else {
+        return Ok(None);
+    };
+
+    let Type::Path(tag_path) = &tag_encoding else {
+        return Err(syn::Error::new_spanned(
+            &tag_encoding,
+            "#[derive(InitSpace)] only supports primitive integer `#[wincode(tag_encoding = ...)]` \
+             overrides; compute the enum size manually for custom tag encodings",
+        ));
+    };
+
+    let Some(segment) = tag_path.path.segments.last() else {
+        return Err(syn::Error::new_spanned(
+            &tag_encoding,
+            "invalid `#[wincode(tag_encoding = ...)]` type",
+        ));
+    };
+
+    let len = match segment.ident.to_string().as_str() {
+        "i8" | "u8" => quote!(1),
+        "i16" | "u16" => quote!(2),
+        "i32" | "u32" => quote!(4),
+        "i64" | "u64" => quote!(8),
+        "i128" | "u128" => quote!(16),
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &tag_encoding,
+                "#[derive(InitSpace)] only supports primitive integer `#[wincode(tag_encoding = ...)]` \
+                 overrides; compute the enum size manually for custom tag encodings",
+            ))
+        }
+    };
+
+    Ok(Some(len))
 }
 
 fn gen_max<T: Iterator<Item = TokenStream2>>(mut iter: T) -> TokenStream2 {

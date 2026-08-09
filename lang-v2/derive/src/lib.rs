@@ -8,6 +8,7 @@ mod init_space;
 mod parse;
 mod pda;
 mod pod_wrapper;
+mod wincode_attrs;
 
 use {
     proc_macro::TokenStream,
@@ -2246,25 +2247,18 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///     }
 /// }
 /// ```
-#[proc_macro_derive(IdlType)]
+#[proc_macro_derive(IdlType, attributes(wincode))]
 pub fn derive_idl_type(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
     let name_str = name.to_string();
 
     let docs = idl::extract_doc_lines(&input.attrs);
-    // `IdlType` items have no discriminator — they're just plain type
-    // definitions referenced from other structs. `build_*_type_json` still
-    // expect a discriminator for shape uniformity with `#[account]` /
-    // `#[event]`; we pass an empty slice and strip the discriminator field
-    // downstream when splitting accounts vs types entries. The spec's
-    // `IdlTypeDef` doesn't carry `discriminator`, so the program-level
-    // assembly already elides it when reconstructing types entries.
-    // Default to `Borsh` serialization (no `serialization` / `repr` fields).
-    // `IdlType` is layout-agnostic — users opt into Pod separately via
-    // their own `bytemuck::Pod` derive if they need zero-copy. Forcing a
-    // `"bytemuck"` tag here would lie in the IDL for non-Pod types.
-    let empty_disc: [u8; 0] = [];
+    // `IdlType` items are plain type definitions that only contribute to the
+    // program-level `types[]` array. Default to `Borsh` serialization (no
+    // `serialization` / `repr` fields). `IdlType` is layout-agnostic — users
+    // opt into Pod separately via their own `bytemuck::Pod` derive if they
+    // need zero-copy.
     let (idl_type_def, field_dep_walkers, idl_validation_tokens) = match &input.data {
         Data::Struct(data) => (
             idl::build_struct_type_def_emission(
@@ -2277,17 +2271,24 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
             cfg_field_dep_walkers(&data.fields),
             wincode_idl_override_tokens_for_fields("`#[derive(IdlType)]`", &data.fields),
         ),
-        Data::Enum(data) => (
-            idl::build_enum_type_def_emission(
+        Data::Enum(data) => {
+            let idl_type_def = match idl::build_enum_type_def_emission(
                 &name_str,
                 &docs,
+                &input.attrs,
                 &data.variants,
                 idl::TypeKind::Borsh,
                 &input.generics,
-            ),
-            cfg_variant_dep_walkers(&data.variants),
-            wincode_idl_override_tokens_for_variants("`#[derive(IdlType)]`", &data.variants),
-        ),
+            ) {
+                Ok(idl_type_def) => idl_type_def,
+                Err(err) => return err.to_compile_error().into(),
+            };
+            (
+                idl_type_def,
+                cfg_variant_dep_walkers(&data.variants),
+                wincode_idl_override_tokens_for_variants("`#[derive(IdlType)]`", &data.variants),
+            )
+        }
         Data::Union(_) => {
             return syn::Error::new(
                 name.span(),
@@ -2297,7 +2298,6 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
             .into();
         }
     };
-    let _ = empty_disc;
 
     // Thread any generic / lifetime params from the input type through
     // the impl so `#[derive(IdlType)] struct Foo<'a>` lowers to
@@ -3231,6 +3231,20 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                         format!("declare_program! does not support bytemuck enum type `{name}`"),
                     ));
                 }
+                let tag_encoding_attr = type_obj
+                    .get("tagEncoding")
+                    .or_else(|| type_obj.get("tag_encoding"))
+                    .map(|tag_encoding| match tag_encoding {
+                        serde_json::Value::String(tag_encoding) => {
+                            let tag_encoding = syn::LitStr::new(tag_encoding, ident.span());
+                            Ok(quote! { #[wincode(tag_encoding = #tag_encoding)] })
+                        }
+                        other => Err(syn::Error::new(
+                            ident.span(),
+                            format!("enum type `{name}` has non-string `tagEncoding`: {other}"),
+                        )),
+                    })
+                    .transpose()?;
                 let variants = type_obj
                     .get("variants")
                     .and_then(serde_json::Value::as_array)
@@ -3245,8 +3259,41 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                 for variant in variants {
                     let variant_name = json_str(variant, "name", ident.span())?;
                     let variant_ident = Ident::new(variant_name, ident.span());
+                    let tag_attr = variant
+                        .get("tag")
+                        .map(|tag| match tag {
+                            serde_json::Value::String(tag) => {
+                                let tag = tag.parse::<TokenStream2>().map_err(|err| {
+                                    syn::Error::new(
+                                        ident.span(),
+                                        format!(
+                                            "variant `{variant_name}` has invalid `tag` tokens `{tag}`: {err}"
+                                        ),
+                                    )
+                                })?;
+                                Ok(quote! { #[wincode(tag = #tag)] })
+                            }
+                            serde_json::Value::Number(tag) => {
+                                let tag = tag.to_string().parse::<TokenStream2>().map_err(|err| {
+                                    syn::Error::new(
+                                        ident.span(),
+                                        format!(
+                                            "variant `{variant_name}` has invalid numeric `tag`: {err}"
+                                        ),
+                                    )
+                                })?;
+                                Ok(quote! { #[wincode(tag = #tag)] })
+                            }
+                            other => Err(syn::Error::new(
+                                ident.span(),
+                                format!(
+                                    "variant `{variant_name}` has unsupported `tag` value `{other}`"
+                                ),
+                            )),
+                        })
+                        .transpose()?;
                     let Some(fields) = variant.get("fields") else {
-                        variant_tokens.push(quote! { #variant_ident, });
+                        variant_tokens.push(quote! { #tag_attr #variant_ident, });
                         continue;
                     };
                     let fields = fields.as_array().ok_or_else(|| {
@@ -3259,13 +3306,14 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                     idl_field_tys.extend(fields.tys().iter().cloned());
                     match fields {
                         DeclareTypeFields::Named { fields, .. } => {
-                            variant_tokens.push(quote! { #variant_ident { #(#fields)* }, });
+                            variant_tokens
+                                .push(quote! { #tag_attr #variant_ident { #(#fields)* }, });
                         }
                         DeclareTypeFields::Tuple { fields, .. } => {
-                            variant_tokens.push(quote! { #variant_ident(#(#fields),*), });
+                            variant_tokens.push(quote! { #tag_attr #variant_ident(#(#fields),*), });
                         }
                         DeclareTypeFields::Unit => {
-                            variant_tokens.push(quote! { #variant_ident, });
+                            variant_tokens.push(quote! { #tag_attr #variant_ident, });
                         }
                     }
                 }
@@ -3281,6 +3329,7 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                     #(#docs)*
                     #repr
                     #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+                    #tag_encoding_attr
                     pub enum #ident #impl_generics {
                         #(#variant_tokens)*
                     }
@@ -5982,7 +6031,7 @@ pub fn constant(_attr: TokenStream, input: TokenStream) -> TokenStream {
 ///     pub name: String,
 /// }
 /// ```
-#[proc_macro_derive(InitSpace, attributes(max_len))]
+#[proc_macro_derive(InitSpace, attributes(max_len, wincode))]
 pub fn derive_init_space(item: TokenStream) -> TokenStream {
     init_space::expand(item)
 }
