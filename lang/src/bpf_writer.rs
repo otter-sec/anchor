@@ -26,7 +26,7 @@ impl Write for BpfWriter<&mut [u8]> {
         };
 
         let amt = cmp::min(remaining_inner.len(), buf.len());
-        // SAFETY: `amt` is guarenteed by the above line to be in bounds for both slices
+        // SAFETY: `amt` is guaranteed by the above line to be in bounds for both slices
         unsafe {
             sol_memcpy(remaining_inner, buf, amt);
         }
