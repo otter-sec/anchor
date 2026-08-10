@@ -159,7 +159,14 @@ name = "to_cpi_accounts_derive"
 required-features = ["testing"]
 
 [[test]]
+name = "account_deserialize_surface"
+required-features = ["testing"]
+
+[[test]]
 name = "address_idl_surface"
+
+[[test]]
+name = "update_hook_order"
 required-features = ["testing"]
 
 [[test]]
@@ -168,4 +175,8 @@ required-features = ["testing"]
 
 [[test]]
 name = "slab_min_data_len_realloc"
+required-features = ["testing"]
+
+[[test]]
+name = "init_if_needed_reuse_validation"
 required-features = ["testing"]

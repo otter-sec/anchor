@@ -98,7 +98,7 @@ struct AssociatedTokenInit {
 /// mirrors the optional `seeds::program = expr` override.
 #[derive(Clone)]
 pub struct IdlPdaMeta {
-    pub seeds: Vec<crate::idl::SeedJson>,
+    pub seeds: crate::idl::SeedListJson,
     pub program: Option<crate::idl::SeedJson>,
 }
 
@@ -952,7 +952,7 @@ pub struct AccountField {
     pub load: TokenStream2,
     pub deferred_load: Option<TokenStream2>,
     pub constraints: Vec<TokenStream2>,
-    pub updates: Vec<TokenStream2>,
+    pub update: Option<TokenStream2>,
     pub exit: Option<TokenStream2>,
     pub has_bump: bool,
     /// True when the field type is `Option<T>` (optional account).
@@ -1202,16 +1202,6 @@ fn rewrite_seed_value_expr(expr: &Expr, field_names: &[String]) -> proc_macro2::
                     return quote! { #ident.address() };
                 }
             }
-        }
-    }
-    if let Expr::MethodCall(method_call) = expr {
-        if method_call.method == "as_ref"
-            && method_call.args.is_empty()
-            && method_call.turbofish.is_none()
-            && !matches!(method_call.receiver.as_ref(), Expr::Path(_))
-        {
-            let receiver = &method_call.receiver;
-            return quote! { #receiver };
         }
     }
     quote! { #expr }
@@ -1590,10 +1580,11 @@ fn emit_init_body(
                         __seed_ref, #pda_program, &__target.address(),
                     ).map_err(|_| anchor_lang_v2::ErrorCode::ConstraintSeeds)?;
                 __bumps.#field_name = #bump_assign;
+                let __bump_bytes = [__bump];
                 let mut __seed_buf: [&[u8]; 17] = [&[]; 17];
                 let __n = __seed_ref.len();
                 __seed_buf[..__n].copy_from_slice(__seed_ref);
-                __seed_buf[__n] = &[__bump];
+                __seed_buf[__n] = &__bump_bytes;
                 let __seeds: Option<&[&[u8]]> = Some(&__seed_buf[..__n + 1]);
             }
         }
@@ -1627,27 +1618,6 @@ fn init_space_expr(field_ty: &Type, attrs: &AccountAttrs) -> TokenStream2 {
     match attrs.space.as_ref() {
         Some(expr) => quote! { #expr },
         None => quote! { <#field_ty as anchor_lang_v2::Space>::INIT_SPACE },
-    }
-}
-
-fn init_if_needed_space_check(
-    field_ty: &Type,
-    attrs: &AccountAttrs,
-    associated_token: Option<&AssociatedTokenInit>,
-) -> TokenStream2 {
-    // Exact-length reuse validation is meant for Anchor-managed account
-    // layouts. SPL-style init flows validate their own account shape and
-    // may legitimately reuse variable-sized accounts such as Token-2022
-    // ATAs or extension-bearing token accounts.
-    if associated_token.is_some() || !attrs.namespaced.is_empty() {
-        quote! {}
-    } else {
-        let expected_space = init_space_expr(field_ty, attrs);
-        quote! {
-            if __target.data_len() != #expected_space {
-                return Err(anchor_lang_v2::ErrorCode::ConstraintSpace.into());
-            }
-        }
     }
 }
 
@@ -1767,6 +1737,68 @@ fn emit_associated_token_init_body(
     })
 }
 
+fn has_namespaced_constraint(attrs: &AccountAttrs, namespace: &str, key: Option<&str>) -> bool {
+    attrs.namespaced.iter().any(|nc| {
+        nc.namespace == namespace && key.is_none_or(|expected_key| nc.raw_key == expected_key)
+    })
+}
+
+fn emit_init_if_needed_signer_check(
+    attrs: &AccountAttrs,
+    associated_token: Option<&AssociatedTokenInit>,
+) -> TokenStream2 {
+    if attrs.seeds.is_none() && !attrs.is_signer && associated_token.is_none() {
+        quote! {
+            if !__target.is_signer() {
+                return Err(anchor_lang_v2::ErrorCode::ConstraintSigner.into());
+            }
+        }
+    } else {
+        quote! {}
+    }
+}
+
+fn emit_init_if_needed_reuse_validation(
+    field_ty: &Type,
+    attrs: &AccountAttrs,
+    associated_token: Option<&AssociatedTokenInit>,
+) -> syn::Result<TokenStream2> {
+    let has_mint_constraints = has_namespaced_constraint(attrs, "mint", None);
+    let has_token_constraints = has_namespaced_constraint(attrs, "token", None);
+    let needs_generic_reuse_validation =
+        associated_token.is_none() && !has_mint_constraints && !has_token_constraints;
+    let signer_check = emit_init_if_needed_signer_check(attrs, associated_token);
+    if !needs_generic_reuse_validation {
+        return Ok(signer_check);
+    }
+
+    let space = match attrs.space.as_ref() {
+        Some(expr) => quote! { #expr },
+        None => quote! { <#field_ty as anchor_lang_v2::Space>::INIT_SPACE },
+    };
+    let owner = if let Some(expr) = attrs.owner.as_ref() {
+        quote! { #expr }
+    } else {
+        quote! { *__program_id }
+    };
+
+    Ok(quote! {
+        let __expected_space = #space;
+        #signer_check
+        if __target.data_len() != __expected_space {
+            return Err(anchor_lang_v2::ErrorCode::ConstraintSpace.into());
+        }
+        let __expected_owner = #owner;
+        if !__target.owned_by(&__expected_owner) {
+            return Err(anchor_lang_v2::ErrorCode::ConstraintOwner.into());
+        }
+        let __required_lamports = anchor_lang_v2::cpi::rent_exempt_lamports(__expected_space)?;
+        if __target.lamports() < __required_lamports {
+            return Err(anchor_lang_v2::ErrorCode::ConstraintRentExempt.into());
+        }
+    })
+}
+
 pub fn parse_field(
     field: &syn::Field,
     field_names: &[String],
@@ -1803,6 +1835,15 @@ pub fn parse_field(
     let associated_token = parse_associated_token_init(&attrs, field_names)?;
 
     let option_inner = extract_option_inner(field_ty);
+    let init_if_needed_reuse_validation = if attrs.is_init_if_needed {
+        Some(emit_init_if_needed_reuse_validation(
+            option_inner.unwrap_or(field_ty),
+            &attrs,
+            associated_token.as_ref(),
+        )?)
+    } else {
+        None
+    };
     let is_optional = option_inner.is_some();
     // Explicit signer constraint or fresh-keypair init (no seeds) — caller
     // signs the tx. Distinct from `Signer`-type fields, which the IDL picks
@@ -1848,26 +1889,17 @@ pub fn parse_field(
         None => (None, None, None),
     };
     let idl_docs = crate::idl::extract_doc_lines(&field.attrs);
-    let idl_pda = attrs.seeds.as_ref().map(|seeds_expr| {
-        let seed_entries: Vec<crate::idl::SeedJson> = if let Expr::Array(arr) = seeds_expr {
-            arr.elems
-                .iter()
-                .map(|s| crate::idl::classify_seed(s, field_names, ix_arg_names))
-                .collect()
-        } else {
-            // Non-array seed expr — surface as the placeholder `{"kind":"expr"}`
-            // shape. Static because it doesn't depend on the user's expr value.
-            vec![crate::idl::SeedJson::Static(
-                r#"{"kind":"expr"}"#.to_string(),
-            )]
+    let idl_pda = attrs.seeds.as_ref().and_then(|seeds_expr| {
+        let seeds = crate::idl::classify_seed_list(seeds_expr, field_names, ix_arg_names)?;
+        let program = match attrs.seeds_program.as_ref() {
+            Some(program_expr) => Some(crate::idl::classify_program_seed(
+                program_expr,
+                field_names,
+                ix_arg_names,
+            )?),
+            None => None,
         };
-        IdlPdaMeta {
-            seeds: seed_entries,
-            program: attrs
-                .seeds_program
-                .as_ref()
-                .map(|p| crate::idl::classify_program_seed(p, field_names, ix_arg_names)),
-        }
+        Some(IdlPdaMeta { seeds, program })
     });
     let idl_field_ty: Option<syn::Type> = {
         let base_ty = option_inner.unwrap_or(field_ty);
@@ -1902,13 +1934,15 @@ pub fn parse_field(
 
         let inner_ty = extract_nested_inner_type(field_ty)
             .expect("is_nested_type was true but extract_nested_inner_type returned None");
-        // Nested<Inner> — delegate to Inner::try_accounts, which advances the
-        // shared cursor by Inner::HEADER_SIZE. The outer walk_n covers only
-        // direct (non-nested) fields; the nested try_accounts picks up where
-        // the outer left off.
+        // Nested<Inner> — delegate to Inner::validate_accounts, which advances
+        // the shared cursor by Inner::HEADER_SIZE without firing inner
+        // update-hooks yet. The outer walk_n covers only direct
+        // (non-nested) fields; the nested validate_accounts picks up where
+        // the outer left off, and the outer update phase later calls
+        // Inner::update_accounts exactly once.
         //
         // Constraint processing and exit are handled by the inner struct's own
-        // try_accounts / exit_accounts — the outer derives don't need to
+        // validate_accounts / exit_accounts — the outer derives don't need to
         // re-check them.
         // TODO: passing `__base_offset + #offset_expr` means the nested
         // struct's bitvec lookups hit the correct global indices. This is
@@ -1917,7 +1951,7 @@ pub fn parse_field(
         // or use a wrapper that offsets transparently.
         let load = quote! {
             let (__nested_inner, _, _) =
-                <#inner_ty as anchor_lang_v2::TryAccounts>::try_accounts(
+                <#inner_ty as anchor_lang_v2::TryAccounts>::validate_accounts(
                     __program_id,
                     &__views[#offset_expr .. #offset_expr + <#inner_ty as anchor_lang_v2::TryAccounts>::HEADER_SIZE],
                     __duplicates,
@@ -1935,7 +1969,9 @@ pub fn parse_field(
             load,
             deferred_load: None,
             constraints: vec![],
-            updates: vec![],
+            update: Some(quote! {
+                self.#field_name.0.update_accounts()?;
+            }),
             exit,
             has_bump: false,
             is_optional: false,
@@ -1992,8 +2028,6 @@ pub fn parse_field(
                 wrap_init_body_with_constraints(inner_ty, &attrs, field_names, &init_body);
             quote! { Some({ #init_body_with_constraints }) }
         } else if attrs.is_init_if_needed {
-            let init_if_needed_space_check =
-                init_if_needed_space_check(inner_ty, &attrs, associated_token.as_ref());
             let init_body = if let Some(ref at) = associated_token {
                 emit_associated_token_init_body(
                     inner_ty,
@@ -2017,10 +2051,8 @@ pub fn parse_field(
             let init_body_with_constraints =
                 wrap_init_body_with_constraints(inner_ty, &attrs, field_names, &init_body);
             quote! {
-                if __target.data_len() > 0
-                    && !__target.owned_by(&anchor_lang_v2::programs::System::id())
-                {
-                    #init_if_needed_space_check
+                if !__target.owned_by(&anchor_lang_v2::programs::System::id()) {
+                        #init_if_needed_reuse_validation
                     // SAFETY: the bitvec duplicate-account check below ensures
                     // no other mutable reference to this account's data exists.
                     Some(unsafe {
@@ -2072,7 +2104,6 @@ pub fn parse_field(
                 let #existed = {
                     let __target = __views[#offset_expr];
                     !anchor_lang_v2::address_eq(__target.address(), __program_id)
-                        && __target.data_len() > 0
                         && !__target.owned_by(&anchor_lang_v2::programs::System::id())
                 };
             }
@@ -2140,8 +2171,6 @@ pub fn parse_field(
         });
         quote! {}
     } else if attrs.is_init_if_needed {
-        let init_if_needed_space_check =
-            init_if_needed_space_check(field_ty, &attrs, associated_token.as_ref());
         let init_body = if let Some(ref at) = associated_token {
             emit_associated_token_init_body(
                 field_ty,
@@ -2168,13 +2197,12 @@ pub fn parse_field(
         deferred_load = Some(quote! {
             let #existed = {
                 let __target = __views[#offset_expr];
-                __target.data_len() > 0
-                    && !__target.owned_by(&anchor_lang_v2::programs::System::id())
+                !__target.owned_by(&anchor_lang_v2::programs::System::id())
             };
             let mut #field_name: #field_ty = {
                 let __target = __views[#offset_expr];
                 if #existed {
-                    #init_if_needed_space_check
+                    #init_if_needed_reuse_validation
                     // SAFETY: the bitvec duplicate-account check below ensures
                     // no other mutable reference to this account's data exists.
                     unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut(__target)? }
@@ -2242,6 +2270,27 @@ pub fn parse_field(
                 return Err(anchor_lang_v2::ErrorCode::ConstraintSigner.into());
             }
         });
+    }
+
+    if attrs.is_init_if_needed
+        && has_namespaced_constraint(&attrs, "mint", None)
+        && !has_namespaced_constraint(&attrs, "mint", Some("freeze_authority"))
+    {
+        if is_optional {
+            constraints.push(quote! {
+                if let Some(__mint) = &#field_name {
+                    if __mint.freeze_authority().is_some() {
+                        return Err(anchor_lang_v2::Error::InvalidAccountData);
+                    }
+                }
+            });
+        } else {
+            constraints.push(quote! {
+                if #field_name.freeze_authority().is_some() {
+                    return Err(anchor_lang_v2::Error::InvalidAccountData);
+                }
+            });
+        }
     }
 
     // executable check
@@ -2547,9 +2596,8 @@ pub fn parse_field(
     //
     // The `init` dispatch is embedded inline into the init body by
     // `wrap_init_body_with_constraints` above so the hook only fires on
-    // actual creation. `check` emits into the validation phase here;
-    // `update` is deferred into a later post-validation phase so sibling
-    // field constraints still observe the pre-update state.
+    // actual creation. Only `check` and `update` emit out here in the
+    // constraint phase.
     //
     // Field refs thread through `AsRef::as_ref` so the call-site's
     // `V` is inferred from the `AccountConstraint::Value` associated
@@ -2572,15 +2620,22 @@ pub fn parse_field(
             let update_target = if is_optional {
                 quote! { #field_name }
             } else {
-                quote! { &mut #field_name }
+                quote! { &mut self.#field_name }
             };
-            // `update(...)` — fires regardless of init state, but only after
-            // all account validations have completed.
+            let (update_expected_binding, update_expected_arg) = emit_constraint_expected_binding(
+                &ns,
+                &key,
+                nc,
+                field_names,
+                field_summaries,
+                true,
+            );
+            // `update(...)` runs after validation + access-control.
             updates.push(quote! {
                 {
-                    #expected_binding
+                    #update_expected_binding
                     <#ns::#key as anchor_lang_v2::AccountConstraint<_>>::update(
-                        #update_target, #expected_arg,
+                        #update_target, #update_expected_arg,
                     )?;
                 }
             });
@@ -2714,7 +2769,7 @@ pub fn parse_field(
     // Mutable fields use `ref mut` so constraint bodies that need `&mut self`
     // (e.g. BorshAccount::release_borrow in the realloc path) can work.
     // Read-only methods still resolve via auto-deref from `&mut T` to `&T`.
-    let (constraints, updates, exit) = if is_optional {
+    let (constraints, update, exit) = if is_optional {
         let constraints = constraints
             .into_iter()
             .map(|c| {
@@ -2743,17 +2798,16 @@ pub fn parse_field(
                 }
             })
             .collect();
-        let updates = updates
-            .into_iter()
-            .map(|u| {
-                quote! {
-                    if let Some(ref mut #field_name) = #field_name {
-                        let _ = &#field_name;
-                        #u
-                    }
+        let update = if updates.is_empty() {
+            None
+        } else {
+            Some(quote! {
+                if let Some(ref mut #field_name) = self.#field_name {
+                    let _ = &#field_name;
+                    #(#updates)*
                 }
             })
-            .collect();
+        };
         let exit = exit.map(|e| {
             // `e` was built against `self.#field_name` (e.g.
             // `AnchorAccount::exit(&mut self.#field_name)`). For optional
@@ -2814,9 +2868,14 @@ pub fn parse_field(
                 }
             }
         });
-        (constraints, updates, exit)
+        (constraints, update, exit)
     } else {
-        (constraints, updates, exit)
+        let update = if updates.is_empty() {
+            None
+        } else {
+            Some(quote! { #(#updates)* })
+        };
+        (constraints, update, exit)
     };
 
     let contributes_mut_bit = attrs.is_mut && !attrs.is_dup && !is_optional;
@@ -2831,7 +2890,7 @@ pub fn parse_field(
         load,
         deferred_load,
         constraints,
-        updates,
+        update,
         exit,
         has_bump,
         is_optional,
@@ -3004,6 +3063,16 @@ mod tests {
     }
 
     #[test]
+    fn rewrite_seed_value_expr_preserves_nontrivial_as_ref_receivers() {
+        let expr: Expr = syn::parse_quote!(config.seed.as_ref());
+        let fields = vec!["config".to_string()];
+
+        let rewritten = rewrite_seed_value_expr(&expr, &fields);
+
+        assert_eq!(rewritten.to_string(), "config . seed . as_ref ()");
+    }
+
+    #[test]
     fn init_with_explicit_bump_is_rejected() {
         // Mirrors Anchor v1: `init` requires the canonical bump (off-curve
         // guarantee), so caller-supplied bumps must be rejected at parse
@@ -3077,6 +3146,49 @@ mod tests {
             err.to_string()
                 .contains("`realloc` requires `realloc_payer = <target>`"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn built_in_init_namespaces_skip_runtime_init_hooks() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(init, payer = payer, mint::authority = mint_authority)]
+        )];
+        let parsed = parse_account_attrs(&attrs).expect("built-in init namespace should parse");
+        let init_body = quote::quote! { __init_body()? };
+        let field_names = vec!["mint_authority".to_string()];
+        let wrapped = wrap_init_body_with_constraints(
+            &syn::parse_quote!(Account<Data>),
+            &parsed,
+            &field_names,
+            &init_body,
+        );
+
+        assert_eq!(wrapped.to_string(), init_body.to_string());
+    }
+
+    #[test]
+    fn runtime_only_init_namespaces_use_as_ref_for_field_refs() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(init, payer = payer, custom::foo = authority)]
+        )];
+        let parsed = parse_account_attrs(&attrs).expect("runtime-only init namespace should parse");
+        let field_names = vec!["authority".to_string()];
+        let wrapped = wrap_init_body_with_constraints(
+            &syn::parse_quote!(Account<Data>),
+            &parsed,
+            &field_names,
+            &quote::quote! { __init_body()? },
+        )
+        .to_string();
+
+        assert!(
+            wrapped.contains("AsRef :: as_ref (& authority)"),
+            "expected field-ref coercion via AsRef, got: {wrapped}"
+        );
+        assert!(
+            !wrapped.contains("AccountAddress :: account_address"),
+            "unexpected account-address coercion in runtime-only init hook: {wrapped}"
         );
     }
 

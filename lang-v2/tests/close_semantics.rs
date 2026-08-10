@@ -287,13 +287,13 @@ fn load_after_close_rejects_with_data_too_small() {
     }
 
     // Even though data bytes retain the disc, the framework rejects
-    // because `data_len = 0` (< DISC_LEN=8 → AccountDataTooSmall).
+    // because `data_len = 0` (< discriminator length → AccountDataTooSmall).
     let view = unsafe { buf.view() };
     let result = BorshAccount::<Vault>::load(view);
     assert!(
         result.is_err(),
         "BorshAccount::load must reject a closed account (owner is [0;32] != program_id, AND \
-         data_len=0 < DISC_LEN)"
+         data_len=0 < discriminator length)"
     );
 }
 
@@ -478,6 +478,36 @@ fn slab_close_rejects_non_writable_destination() {
         dest_raw.lamports, 100,
         "rejected close must not credit the non-writable destination"
     );
+}
+
+#[test]
+#[should_panic(expected = "Tried to mutate `Slab<H, T>` through a read-only load")]
+fn slab_close_panics_when_loaded_read_only() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf);
+
+    let mut dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
+
+    let view = unsafe { buf.view() };
+    let dest_view = unsafe { dest_buf.view() };
+    let mut counter = Slab::<CounterHeader>::load(view).unwrap();
+    counter.close(dest_view).unwrap();
+}
+
+#[test]
+#[should_panic(expected = "SerializedAccount mutated through a read-only load")]
+fn borsh_close_panics_when_loaded_read_only() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_vault_buf(&mut buf);
+
+    let dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
+
+    let view = unsafe { buf.view() };
+    let dest_view = unsafe { dest_buf.view() };
+    let mut vault = BorshAccount::<Vault>::load(view).unwrap();
+    vault.close(dest_view).unwrap();
 }
 
 #[test]

@@ -601,8 +601,9 @@ pub trait Discriminator {
 
 /// Client-side account deserialization. Mirrors v1 anchor-lang's trait so
 /// `anchor-client` can fetch raw account bytes and decode them into the
-/// user's `#[account]` struct. The `#[account]` macro emits two impl
-/// bodies:
+/// user's `#[account]` struct. Generated account impls expect `buf` to start
+/// at the full account bytes, including the reserved discriminator prefix. The
+/// `#[account]` macro emits two impl bodies:
 ///
 ///   - Borsh mode (`#[account(borsh)]`): check disc, run `BorshDeserialize`.
 ///   - Pod mode (default): check disc, `bytemuck::pod_read_unaligned` on
@@ -619,8 +620,11 @@ pub trait AccountDeserialize: Sized {
         Self::try_deserialize_unchecked(buf)
     }
 
-    /// Decode without verifying the discriminator. Used during initialization
-    /// when the bytes are zero or otherwise not yet stamped with the disc.
+    /// Decode without verifying the discriminator. Generated account impls
+    /// still skip over the reserved discriminator region before decoding the
+    /// payload, but they do not check the prefix bytes. Used during
+    /// initialization when the bytes are zero or otherwise not yet stamped
+    /// with the disc.
     fn try_deserialize_unchecked(buf: &mut &[u8]) -> Result<Self, ProgramError>;
 }
 

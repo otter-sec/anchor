@@ -12,10 +12,6 @@ use {
     solana_program_memory::sol_memset,
 };
 
-/// Discriminator length in bytes. All `#[account]` types use an 8-byte
-/// discriminator; serialized accounts prefix their data with it.
-pub(crate) const DISC_LEN: usize = 8;
-
 /// Pluggable codec for [`SerializedAccount`].
 ///
 /// Implementors are zero-sized tag types (e.g. [`super::BorshSerializer`])
@@ -57,6 +53,7 @@ where
 {
     view: AccountView,
     data: T,
+    is_mutable: bool,
     borrow: SerializedAccountBorrow,
     serialized_len: usize,
     _serializer: PhantomData<S>,
@@ -68,15 +65,16 @@ enum SerializedAccountBorrow {
     Released,
 }
 
-// Forward `Space::INIT_SPACE` from the inner type and add 8 for the
-// discriminator. Lets `#[account(init)]` default to the correct size
-// when `space` is omitted.
+// Forward `Space::INIT_SPACE` from the inner type and add the type's
+// discriminator width. Lets `#[account(init)]` default to the correct
+// size when `space` is omitted — including `declare_program!` / imported
+// accounts whose discs are not eight bytes.
 impl<T, S> crate::Space for SerializedAccount<T, S>
 where
     T: Owner + Discriminator + crate::Space,
     S: AnchorAccountSerialize<T>,
 {
-    const INIT_SPACE: usize = 8 + T::INIT_SPACE;
+    const INIT_SPACE: usize = T::DISCRIMINATOR.len() + T::INIT_SPACE;
 }
 
 impl<T, S> SerializedAccount<T, S>
@@ -84,6 +82,16 @@ where
     T: Owner + Discriminator,
     S: AnchorAccountSerialize<T>,
 {
+    #[inline(always)]
+    fn assert_mutable_loaded(&self) {
+        if !self.is_mutable {
+            panic!(
+                "SerializedAccount mutated through a read-only load. Add #[account(mut)] to your \
+                 accounts struct."
+            );
+        }
+    }
+
     /// Returns the account's on-chain address. Inherent method so
     /// `.address()` works uniformly on all wrapper types — `Signer`,
     /// `Account<T>`, `BorshAccount<T>`, `UncheckedAccount`, etc. — without
@@ -106,14 +114,20 @@ where
         Ok(())
     }
 
+    #[inline(always)]
+    const fn disc_len() -> usize {
+        T::DISCRIMINATOR.len()
+    }
+
     fn serialize_mutable_borrow(
         data: &T,
         borrow: &mut SerializedAccountBorrow,
         serialized_len: &mut usize,
     ) -> Result<(), ProgramError> {
         if let SerializedAccountBorrow::Mutable { ref mut guard } = borrow {
-            let payload_len = guard.len() - DISC_LEN;
-            let mut payload = &mut guard[DISC_LEN..];
+            let disc_len = Self::disc_len();
+            let payload_len = guard.len() - disc_len;
+            let mut payload = &mut guard[disc_len..];
             S::serialize(data, &mut payload)?;
 
             let new_serialized_len = payload_len - payload.len();
@@ -139,6 +153,7 @@ where
     /// Returns `IllegalOwner` / `AccountDataTooSmall` /
     /// `InvalidAccountData` if the account no longer validates as `T`.
     pub fn reacquire_borrow_mut(&mut self) -> Result<(), ProgramError> {
+        self.assert_mutable_loaded();
         // Re-run the load-time invariants. A CPI in the release window
         // could have mutated owner, discriminator, or payload in any
         // combination — without re-checking, we'd accept an account that
@@ -146,15 +161,16 @@ where
         require!(self.view.owned_by(&T::OWNER), ProgramError::IllegalOwner);
         let mut view_mut = self.view;
         let data_ref = view_mut.try_borrow_mut()?;
-        if data_ref.len() < DISC_LEN {
+        let disc_len = Self::disc_len();
+        if data_ref.len() < disc_len {
             return Err(ProgramError::AccountDataTooSmall);
         }
         require_eq!(
-            &data_ref[..DISC_LEN],
+            &data_ref[..disc_len],
             T::DISCRIMINATOR,
             ProgramError::InvalidAccountData
         );
-        let (data, serialized_len) = Self::deserialize_payload_with_len(&data_ref[DISC_LEN..])?;
+        let (data, serialized_len) = Self::deserialize_payload_with_len(&data_ref[disc_len..])?;
         self.data = data;
         self.serialized_len = serialized_len;
         let guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
@@ -174,14 +190,15 @@ where
     /// For post-CPI use (where CPI may have mutated owner, disc, or
     /// payload), use [`reacquire_borrow_mut`] instead.
     pub fn reacquire_guard_only(&mut self) -> Result<(), ProgramError> {
+        self.assert_mutable_loaded();
         let mut view_mut = self.view;
         let data_ref = view_mut.try_borrow_mut()?;
         // A resize that left the buffer shorter than the discriminator
         // means the on-chain `T` discriminator was just truncated. Reject
         // here so the realloc gets rolled back rather than leaving the
-        // account permanently un-loadable (and panicking exit() at
-        // `guard[DISC_LEN..]`).
-        if data_ref.len() < DISC_LEN {
+        // account permanently un-loadable (and panicking exit() at the
+        // post-discriminator payload slice).
+        if data_ref.len() < Self::disc_len() {
             return Err(ProgramError::AccountDataTooSmall);
         }
         let guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
@@ -204,15 +221,16 @@ where
             view.owned_by(&T::OWNER),
             super::slab::cold_owner_error(&view)
         );
-        if data.len() < DISC_LEN {
+        let disc_len = Self::disc_len();
+        if data.len() < disc_len {
             return Err(ProgramError::AccountDataTooSmall);
         }
         require_eq!(
-            &data[..DISC_LEN],
+            &data[..disc_len],
             T::DISCRIMINATOR,
             ProgramError::InvalidAccountData
         );
-        Self::deserialize_payload_with_len(&data[DISC_LEN..])
+        Self::deserialize_payload_with_len(&data[disc_len..])
     }
 }
 
@@ -223,7 +241,7 @@ where
 {
     type Data = T;
     const RELAX_READONLY_CPI_BORROW_FROM_MUT: bool = true;
-    const MIN_DATA_LEN: usize = 8;
+    const MIN_DATA_LEN: usize = T::DISCRIMINATOR.len();
 
     fn load(view: AccountView) -> Result<Self, ProgramError> {
         let data_ref = view.try_borrow()?;
@@ -235,6 +253,7 @@ where
         Ok(Self {
             view,
             data,
+            is_mutable: false,
             borrow: SerializedAccountBorrow::Immutable { _guard: guard },
             serialized_len,
             _serializer: PhantomData,
@@ -263,6 +282,7 @@ where
         Ok(Self {
             view,
             data,
+            is_mutable: true,
             borrow: SerializedAccountBorrow::Mutable { guard },
             serialized_len,
             _serializer: PhantomData,
@@ -316,6 +336,7 @@ where
         if !destination.is_writable() {
             return Err(super::slab::cold_not_writable());
         }
+        self.assert_mutable_loaded();
         let mut self_view = self.view;
         let dest_lamports = destination
             .lamports()
@@ -330,7 +351,7 @@ where
         // and close), this is a no-op.
         self.borrow = SerializedAccountBorrow::Released;
 
-        // Defense-in-depth: write a closed-account sentinel ([u8::MAX; 8])
+        // Defense-in-depth: write a closed-account sentinel (`u8::MAX`)
         // over the discriminator before pinocchio's close() zeros the
         // 48-byte header (lamports + data_len + owner). pinocchio's
         // close does not zero the data region — verified by the
@@ -347,8 +368,11 @@ where
         // other live borrow on this account; the view's data is valid
         // until pinocchio's `close()` reassigns ownership below.
         let data = unsafe { self_view.borrow_unchecked_mut() };
-        if data.len() >= 8 {
-            data[..8].copy_from_slice(&[u8::MAX; 8]);
+        let disc_len = Self::disc_len();
+        if disc_len > 0 && data.len() >= disc_len {
+            // `sol_memset` matches the rest of this module's scrubbing
+            // style and works for any discriminator width.
+            unsafe { sol_memset(&mut data[..disc_len], u8::MAX, disc_len) };
         }
 
         self_view.close()?;
@@ -368,6 +392,7 @@ where
         payer: AccountView,
         zero: bool,
     ) -> pinocchio::ProgramResult {
+        self.assert_mutable_loaded();
         let mut view = *self.account();
         if new_space != view.data_len() {
             self.release_borrow()?;
@@ -507,9 +532,11 @@ where
         signer_seeds: Option<&[&[u8]]>,
         payer_signer_seeds: Option<&[&[u8]]>,
     ) -> Result<Self, ProgramError> {
-        let disc: &[u8; 8] = T::DISCRIMINATOR
-            .try_into()
-            .map_err(|_| ProgramError::InvalidAccountData)?;
+        let disc = T::DISCRIMINATOR;
+        let disc_len = disc.len();
+        if space < disc_len {
+            return Err(ProgramError::AccountDataTooSmall);
+        }
         crate::create_account_with_signers(
             payer,
             account,
@@ -521,14 +548,15 @@ where
         let mut view_mut = *account;
         let data_ref = view_mut.try_borrow_mut()?;
         let mut guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
-        match guard.first_chunk_mut::<DISC_LEN>() {
-            Some(dst) => *dst = *disc,
-            None => return Err(ProgramError::AccountDataTooSmall),
+        if guard.len() < disc_len {
+            return Err(ProgramError::AccountDataTooSmall);
         }
-        let (data, serialized_len) = Self::deserialize_payload_with_len(&guard[DISC_LEN..])?;
+        guard[..disc_len].copy_from_slice(disc);
+        let (data, serialized_len) = Self::deserialize_payload_with_len(&guard[disc_len..])?;
         Ok(Self {
             view: *account,
             data,
+            is_mutable: true,
             borrow: SerializedAccountBorrow::Mutable { guard },
             serialized_len,
             _serializer: PhantomData,

@@ -226,3 +226,21 @@ pub fn __idl_const_seed_json(value: impl AsRef<[u8]>) -> alloc::string::String {
     s.push_str("]}");
     s
 }
+
+pub fn __idl_const_seeds_json<I, B>(values: I) -> alloc::string::String
+where
+    I: IntoIterator<Item = B>,
+    B: AsRef<[u8]>,
+{
+    let mut s = alloc::string::String::from("[");
+    let mut first = true;
+    for value in values {
+        if !first {
+            s.push(',');
+        }
+        first = false;
+        s.push_str(&__idl_const_seed_json(value));
+    }
+    s.push(']');
+    s
+}

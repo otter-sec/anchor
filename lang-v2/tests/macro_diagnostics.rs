@@ -623,6 +623,109 @@ pub mod qualified_paths {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn seeds_preserve_nontrivial_as_ref_receivers() {
+    compile_pass_case(
+        "seed_nontrivial_as_ref",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+pub struct SeedBuf(Vec<u8>);
+
+impl SeedBuf {
+    pub fn as_ref(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+}
+
+#[derive(anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+pub struct SeedConfig {
+    pub seed: SeedBuf,
+}
+
+impl Owner for SeedConfig {
+    const OWNER: Address = crate::ID;
+}
+
+impl Discriminator for SeedConfig {
+    const DISCRIMINATOR: &'static [u8] = &[0x63, 0x66, 0x67, 0x2d, 0x73, 0x65, 0x65, 0x64];
+}
+
+#[derive(Accounts)]
+pub struct Good {
+    pub config: BorshAccount<SeedConfig>,
+    #[account(seeds = [config.seed.as_ref()], bump)]
+    pub target: UncheckedAccount,
+}
+"#,
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn init_opaque_seed_expressions_keep_bump_bytes_alive() {
+    compile_pass_case(
+        "init_opaque_seed_expr",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+pub struct Data {
+    pub value: u64,
+}
+
+impl Owner for Data {
+    const OWNER: Address = crate::ID;
+}
+
+impl Discriminator for Data {
+    const DISCRIMINATOR: &'static [u8] = &[0x64, 0x61, 0x74, 0x61, 0x2d, 0x62, 0x6f, 0x72];
+}
+
+pub struct SeedBundle<'a>([&'a [u8]; 1]);
+
+impl<'a> SeedBundle<'a> {
+    pub fn for_payer(payer: &'a [u8]) -> Self {
+        Self([payer])
+    }
+}
+
+impl<'a> AsRef<[&'a [u8]]> for SeedBundle<'a> {
+    fn as_ref(&self) -> &[&'a [u8]] {
+        &self.0
+    }
+}
+
+#[derive(Accounts)]
+pub struct Good {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + core::mem::size_of::<Data>(),
+        seeds = SeedBundle::for_payer(payer.address().as_ref()),
+        bump
+    )]
+    pub data: BorshAccount<Data>,
+    pub system_program: Program<System>,
+}
+"#,
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn init_payer_must_be_mutable() {
     compile_fail_case(
         "init_payer_must_be_mutable",

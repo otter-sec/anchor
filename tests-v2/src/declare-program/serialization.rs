@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{Discriminator, Id, InstructionData},
+    anchor_lang_v2::{AccountDeserialize, Discriminator, Id, InstructionData, BORSH_CONFIG},
     declare_program_serialization::serialization,
     solana_pubkey::Pubkey,
 };
@@ -25,6 +25,7 @@ fn declared_program_type_serialization_controls_account_traits() {
     where
         T: anchor_lang_v2::Owner
             + anchor_lang_v2::Discriminator
+            + anchor_lang_v2::AccountDeserialize
             + anchor_lang_v2::IdlAccountType
             + anchor_lang_v2::wincode::SchemaWrite<anchor_lang_v2::BorshConfig, Src = T>
             + for<'de> anchor_lang_v2::wincode::SchemaRead<'de, anchor_lang_v2::BorshConfig, Dst = T>,
@@ -122,4 +123,45 @@ fn declared_program_type_serialization_controls_account_traits() {
     assert_eq!(&zero_bytes[..8], &0x0102_0304_0506_0708u64.to_le_bytes());
     assert_eq!(&zero_bytes[8..12], &0x1112_1314u32.to_le_bytes());
     assert_eq!(&zero_bytes[12..16], b"zero");
+}
+
+#[test]
+fn declared_account_deserialize_unchecked_skips_discriminator_prefix() {
+    let original = serialization::ImplicitBorshAccount {
+        count: 9,
+        label: "decoded".to_string(),
+        items: vec![5, 6, 7],
+    };
+    let payload =
+        anchor_lang_v2::wincode::config::serialize(&original, BORSH_CONFIG).unwrap();
+    let mut bytes = Vec::from(serialization::ImplicitBorshAccount::DISCRIMINATOR);
+    bytes.extend_from_slice(&payload);
+
+    let mut buf = bytes.as_slice();
+    let decoded = serialization::ImplicitBorshAccount::try_deserialize_unchecked(&mut buf)
+        .expect("full account bytes should deserialize without checking the discriminator");
+
+    assert_eq!(decoded.count, original.count);
+    assert_eq!(decoded.label, original.label);
+    assert_eq!(decoded.items, original.items);
+    assert!(buf.is_empty(), "decoder should consume the full account buffer");
+}
+
+#[test]
+fn declared_account_deserialize_rejects_wrong_discriminator() {
+    let original = serialization::ImplicitBorshAccount {
+        count: 1,
+        label: "wrong-disc".to_string(),
+        items: vec![8, 9],
+    };
+    let payload =
+        anchor_lang_v2::wincode::config::serialize(&original, BORSH_CONFIG).unwrap();
+    let mut bytes = vec![0u8; serialization::ImplicitBorshAccount::DISCRIMINATOR.len()];
+    bytes.extend_from_slice(&payload);
+
+    let mut buf = bytes.as_slice();
+    assert!(
+        serialization::ImplicitBorshAccount::try_deserialize(&mut buf).is_err(),
+        "checked deserialize must reject a wrong discriminator"
+    );
 }

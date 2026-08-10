@@ -191,6 +191,21 @@ fn le_codec_reacquire_refreshes_from_buffer() {
     assert_eq!(acct.flags, 0x1111_2222);
 }
 
+#[test]
+#[should_panic(
+    expected = "SerializedAccount mutated through a read-only load. Add #[account(mut)] to your \
+                accounts struct."
+)]
+fn le_codec_reacquire_mut_panics_when_loaded_read_only() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_stats_buf(&mut buf, 1, 0);
+
+    let view = unsafe { buf.view() };
+    let mut acct = StatsAccount::load(view).unwrap();
+    acct.release_borrow().unwrap();
+    acct.reacquire_borrow_mut().unwrap();
+}
+
 // -- 1.5 load fails on wrong discriminator -------------------------------
 
 #[test]
@@ -422,3 +437,194 @@ fn wincode_codec_release_reacquire_picks_up_cpi_write() {
     assert_eq!(acct.balance, 12_345);
     assert_eq!(acct.nonce, 99);
 }
+
+// =========================================================================
+// Variable-length discriminators (Finding #103)
+//
+// `Discriminator` is a byte slice and `declare_program!` / imported accounts
+// may use non-8-byte discs. SerializedAccount must size/load/serialize from
+// `T::DISCRIMINATOR.len()`, not a hardcoded 8.
+// =========================================================================
+
+#[derive(Default, Clone, PartialEq, Debug)]
+struct Compact {
+    value: u32,
+}
+
+const COMPACT_DISC: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
+
+impl Owner for Compact {
+    const OWNER: Address = Address::new_from_array(PROGRAM_ID);
+}
+
+impl Discriminator for Compact {
+    const DISCRIMINATOR: &'static [u8] = &COMPACT_DISC;
+}
+
+impl AnchorAccountSerialize<Compact> for LeCodec {
+    fn serialize(value: &Compact, buf: &mut &mut [u8]) -> Result<(), ProgramError> {
+        if buf.len() < 4 {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        let tmp = core::mem::take(buf);
+        let (payload, rest) = tmp.split_at_mut(4);
+        payload.copy_from_slice(&value.value.to_le_bytes());
+        *buf = rest;
+        Ok(())
+    }
+
+    fn deserialize(buf: &mut &[u8]) -> Result<Compact, ProgramError> {
+        if buf.len() < 4 {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        let (payload, rest) = buf.split_at(4);
+        *buf = rest;
+        Ok(Compact {
+            value: u32::from_le_bytes(payload.try_into().unwrap()),
+        })
+    }
+}
+
+type CompactAccount = SerializedAccount<Compact, LeCodec>;
+
+fn setup_compact_buf(buf: &mut AccountBuffer<256>, value: u32) {
+    let data_len = COMPACT_DISC.len() + 4;
+    buf.init([0xAA; 32], PROGRAM_ID, data_len, false, true, false);
+    let mut data = [0u8; 8];
+    data[..4].copy_from_slice(&COMPACT_DISC);
+    data[4..8].copy_from_slice(&value.to_le_bytes());
+    buf.write_data(&data);
+    buf.set_lamports(1_000_000_000);
+}
+
+#[derive(Default, Clone, PartialEq, Debug)]
+struct Wide {
+    value: u32,
+}
+
+const WIDE_DISC: [u8; 16] = [
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+];
+
+impl Owner for Wide {
+    const OWNER: Address = Address::new_from_array(PROGRAM_ID);
+}
+
+impl Discriminator for Wide {
+    const DISCRIMINATOR: &'static [u8] = &WIDE_DISC;
+}
+
+impl AnchorAccountSerialize<Wide> for LeCodec {
+    fn serialize(value: &Wide, buf: &mut &mut [u8]) -> Result<(), ProgramError> {
+        if buf.len() < 4 {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        let tmp = core::mem::take(buf);
+        let (payload, rest) = tmp.split_at_mut(4);
+        payload.copy_from_slice(&value.value.to_le_bytes());
+        *buf = rest;
+        Ok(())
+    }
+
+    fn deserialize(buf: &mut &[u8]) -> Result<Wide, ProgramError> {
+        if buf.len() < 4 {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        let (payload, rest) = buf.split_at(4);
+        *buf = rest;
+        Ok(Wide {
+            value: u32::from_le_bytes(payload.try_into().unwrap()),
+        })
+    }
+}
+
+type WideAccount = SerializedAccount<Wide, LeCodec>;
+
+fn setup_wide_buf(buf: &mut AccountBuffer<256>, value: u32) {
+    let data_len = WIDE_DISC.len() + 4;
+    buf.init([0xAA; 32], PROGRAM_ID, data_len, false, true, false);
+    let mut data = [0u8; 20];
+    data[..16].copy_from_slice(&WIDE_DISC);
+    data[16..20].copy_from_slice(&value.to_le_bytes());
+    buf.write_data(&data);
+    buf.set_lamports(1_000_000_000);
+}
+
+#[test]
+fn four_byte_discriminator_load_and_exit_round_trip() {
+    assert_eq!(
+        <CompactAccount as AnchorAccount>::MIN_DATA_LEN,
+        COMPACT_DISC.len()
+    );
+
+    let mut buf = AccountBuffer::<256>::new();
+    setup_compact_buf(&mut buf, 7);
+
+    {
+        let view = unsafe { buf.view() };
+        let mut acct = unsafe { CompactAccount::load_mut(view) }.unwrap();
+        assert_eq!(acct.value, 7);
+        acct.value = 99;
+        acct.exit().unwrap();
+    }
+
+    assert_eq!(read_data_bytes(&buf, 0, 4), COMPACT_DISC);
+    let payload = read_data_bytes(&buf, 4, 4);
+    assert_eq!(u32::from_le_bytes(payload.try_into().unwrap()), 99);
+}
+
+#[test]
+fn sixteen_byte_discriminator_load_and_exit_round_trip() {
+    assert_eq!(
+        <WideAccount as AnchorAccount>::MIN_DATA_LEN,
+        WIDE_DISC.len()
+    );
+
+    let mut buf = AccountBuffer::<256>::new();
+    setup_wide_buf(&mut buf, 11);
+
+    {
+        let view = unsafe { buf.view() };
+        let mut acct = unsafe { WideAccount::load_mut(view) }.unwrap();
+        assert_eq!(acct.value, 11);
+        acct.value = 55;
+        acct.exit().unwrap();
+    }
+
+    assert_eq!(read_data_bytes(&buf, 0, 16), WIDE_DISC);
+    let payload = read_data_bytes(&buf, 16, 4);
+    assert_eq!(u32::from_le_bytes(payload.try_into().unwrap()), 55);
+}
+
+#[test]
+fn four_byte_discriminator_rejects_buffer_shorter_than_disc() {
+    let mut buf = AccountBuffer::<256>::new();
+    // Eight-byte buffer would have passed the old hardcoded DISC_LEN=8 floor
+    // for a four-byte disc type, but still be short of a real 8-byte payload
+    // layout. A three-byte buffer is unambiguously below Compact's disc.
+    buf.init([0xAA; 32], PROGRAM_ID, 3, false, true, false);
+    buf.write_data(&[0xde, 0xad, 0xbe]);
+    buf.set_lamports(1_000_000_000);
+
+    let view = unsafe { buf.view() };
+    let err = CompactAccount::load(view).err();
+    assert_eq!(err, Some(ProgramError::AccountDataTooSmall));
+}
+
+#[test]
+fn sixteen_byte_discriminator_rejects_classic_eight_byte_prefix() {
+    // Pre-fix SerializedAccount would slice only eight bytes and compare
+    // them to a sixteen-byte DISCRIMINATOR (length mismatch → reject). Post-
+    // fix it still rejects an eight-byte buffer as too small for a 16-byte
+    // disc — the important case is that a correctly laid-out 16+payload
+    // account loads (covered above).
+    let mut buf = AccountBuffer::<256>::new();
+    buf.init([0xAA; 32], PROGRAM_ID, 8, false, true, false);
+    buf.write_data(&WIDE_DISC[..8]);
+    buf.set_lamports(1_000_000_000);
+
+    let view = unsafe { buf.view() };
+    let err = WideAccount::load(view).err();
+    assert_eq!(err, Some(ProgramError::AccountDataTooSmall));
+}
+

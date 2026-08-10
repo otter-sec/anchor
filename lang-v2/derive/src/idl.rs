@@ -905,16 +905,28 @@ fn docs_value(docs: &[String]) -> Value {
 // Seed classification (Part E — `pda: {...}` emission)
 // ---------------------------------------------------------------------------
 
-/// Classified seed expression. Only explicitly recognized shapes carry
-/// structured IDL metadata; unsupported regular seed expressions are emitted
-/// as opaque `{"kind":"expr"}` placeholders. Program seed expressions can use
-/// the runtime variant because `seeds::program` must evaluate to address bytes.
+/// Classified seed expression. Only supported IDL seed shapes survive to the
+/// final JSON: statically-known shapes stay `Static`, constant-only runtime
+/// expressions become `Runtime`, and runtime-only unsupported expressions are
+/// filtered out as `Unsupported`.
 #[derive(Clone)]
 pub enum SeedJson {
     /// Pre-serialized JSON object — known at macro time.
     Static(String),
     /// Token expression evaluating to `alloc::string::String` at IDL-build
     /// time.
+    Runtime(TokenStream2),
+    /// Expression depends on runtime-only values and cannot be represented in
+    /// the current IDL seed spec.
+    Unsupported,
+}
+
+#[derive(Clone)]
+pub enum SeedListJson {
+    /// Per-seed JSON objects already split into the spec's supported variants.
+    Listed(Vec<SeedJson>),
+    /// Token expression evaluating to a full JSON seed array string (including
+    /// the surrounding `[...]`) at IDL-build time.
     Runtime(TokenStream2),
 }
 
@@ -926,6 +938,9 @@ impl SeedJson {
                 anchor_lang_v2::__alloc::string::String::from(#s)
             },
             SeedJson::Runtime(ts) => ts,
+            SeedJson::Unsupported => unreachable!(
+                "unsupported seed must be filtered out before IDL emission"
+            ),
         }
     }
 }
@@ -947,12 +962,41 @@ impl SeedJson {
 ///   with `nonce` in `ix_arg_names`
 ///   → `{"kind":"arg","path":"nonce"}`
 ///
-/// Anything else (a constant ref like `MY_PREFIX`, a const-fn call like
-/// `<Marker as Id>::id()`, wrapped account/arg field access, etc.) is opaque:
-/// `{"kind":"expr"}`. Runtime constraints still evaluate the original Rust
-/// expression; this only avoids over-promising IDL/client metadata.
+/// Constant-only expressions that aren't structurally recognized are evaluated
+/// at IDL-build time into `{"kind":"const","value":[...]}`. Expressions that
+/// depend on runtime account/arg values remain `Unsupported` and should cause
+/// PDA metadata omission rather than invalid IDL output.
 pub fn classify_seed(expr: &Expr, field_names: &[String], ix_arg_names: &[String]) -> SeedJson {
-    classify_seed_inner(expr, field_names, ix_arg_names)
+    if let Some(seed) = classify_seed_inner(expr, field_names, ix_arg_names) {
+        seed
+    } else if expr_references_runtime_seed_inputs(expr, field_names, ix_arg_names) {
+        SeedJson::Unsupported
+    } else {
+        runtime_seed(expr)
+    }
+}
+
+pub fn classify_seed_list(
+    expr: &Expr,
+    field_names: &[String],
+    ix_arg_names: &[String],
+) -> Option<SeedListJson> {
+    match expr {
+        Expr::Array(arr) => {
+            let seeds: Vec<_> = arr
+                .elems
+                .iter()
+                .map(|seed| classify_seed(seed, field_names, ix_arg_names))
+                .collect();
+            seeds
+                .iter()
+                .all(|seed| !matches!(seed, SeedJson::Unsupported))
+                .then_some(SeedListJson::Listed(seeds))
+        }
+        _ => (!expr_references_runtime_seed_inputs(expr, field_names, ix_arg_names)).then_some(
+            SeedListJson::Runtime(runtime_seeds(expr)),
+        ),
+    }
 }
 
 /// Classify `seeds::program = <expr>` into an IDL seed. Unlike arbitrary PDA
@@ -962,21 +1006,11 @@ pub fn classify_program_seed(
     expr: &Expr,
     field_names: &[String],
     ix_arg_names: &[String],
-) -> SeedJson {
-    let seed = classify_seed_inner(expr, field_names, ix_arg_names);
+) -> Option<SeedJson> {
+    let seed = classify_seed(expr, field_names, ix_arg_names);
     match seed {
-        SeedJson::Static(ref s) if s == r#"{"kind":"expr"}"# => {
-            if expr_contains_macro(expr)
-                || expr_references_local_binding(expr, field_names, ix_arg_names)
-            {
-                seed
-            } else {
-                SeedJson::Runtime(quote! {
-                    anchor_lang_v2::idl_build::__idl_const_seed_json(#expr)
-                })
-            }
-        }
-        _ => seed,
+        SeedJson::Unsupported => None,
+        other => Some(other),
     }
 }
 
@@ -1045,7 +1079,23 @@ fn static_seed(value: Value) -> SeedJson {
     SeedJson::Static(value.to_string())
 }
 
-fn classify_seed_inner(expr: &Expr, field_names: &[String], ix_arg_names: &[String]) -> SeedJson {
+fn runtime_seed(expr: &Expr) -> SeedJson {
+    SeedJson::Runtime(quote! {
+        anchor_lang_v2::idl_build::__idl_const_seed_json(#expr)
+    })
+}
+
+fn runtime_seeds(expr: &Expr) -> TokenStream2 {
+    quote! {
+        anchor_lang_v2::idl_build::__idl_const_seeds_json(#expr)
+    }
+}
+
+fn classify_seed_inner(
+    expr: &Expr,
+    field_names: &[String],
+    ix_arg_names: &[String],
+) -> Option<SeedJson> {
     // Peel `&<inner>` wrappers — they're common in seed expressions and
     // always transparent to classification.
     let mut cur = expr;
@@ -1055,9 +1105,9 @@ fn classify_seed_inner(expr: &Expr, field_names: &[String], ix_arg_names: &[Stri
 
     if let Expr::Lit(lit) = cur {
         match &lit.lit {
-            Lit::ByteStr(bs) => return static_seed(const_seed_value(&bs.value())),
-            Lit::Str(s) => return static_seed(const_seed_value(s.value().as_bytes())),
-            Lit::Byte(b) => return static_seed(const_seed_value(&[b.value()])),
+            Lit::ByteStr(bs) => return Some(static_seed(const_seed_value(&bs.value()))),
+            Lit::Str(s) => return Some(static_seed(const_seed_value(s.value().as_bytes()))),
+            Lit::Byte(b) => return Some(static_seed(const_seed_value(&[b.value()]))),
             _ => {}
         }
     }
@@ -1079,27 +1129,27 @@ fn classify_seed_inner(expr: &Expr, field_names: &[String], ix_arg_names: &[Stri
             break;
         }
         if let Some(b) = bytes {
-            return static_seed(const_seed_value(&b));
+            return Some(static_seed(const_seed_value(&b)));
         }
     }
 
     if let Some(root) = account_seed_root_ident(cur) {
         if field_names.contains(&root) {
-            return static_seed(account_seed_value(&root));
+            return Some(static_seed(account_seed_value(&root)));
         }
     }
 
     if let Some(root) = arg_seed_root_ident(cur) {
         if ix_arg_names.contains(&root) {
-            return static_seed(arg_seed_value(&root));
+            return Some(static_seed(arg_seed_value(&root)));
         }
     }
 
     if let Some(s) = string_as_bytes(cur) {
-        return static_seed(const_seed_value(s.value().as_bytes()));
+        return Some(static_seed(const_seed_value(s.value().as_bytes())));
     }
 
-    static_seed(json!({ "kind": "expr" }))
+    None
 }
 
 /// Return the bare root ident for simple, client-derivable seed expressions.
@@ -1139,6 +1189,44 @@ fn method_receiver<'a>(expr: &'a Expr, method: &str) -> Option<&'a Expr> {
         return None;
     };
     (mc.method == method && mc.args.is_empty()).then_some(&*mc.receiver)
+}
+
+fn expr_references_runtime_seed_inputs(
+    expr: &Expr,
+    field_names: &[String],
+    ix_arg_names: &[String],
+) -> bool {
+    struct RuntimeSeedInputVisitor<'a> {
+        names: Vec<&'a str>,
+        found: bool,
+    }
+
+    impl<'ast> Visit<'ast> for RuntimeSeedInputVisitor<'_> {
+        fn visit_expr_path(&mut self, node: &'ast syn::ExprPath) {
+            if self.found {
+                return;
+            }
+            if let Some(ident) = node.path.get_ident() {
+                let ident = ident.to_string();
+                if self.names.iter().any(|name| *name == ident) {
+                    self.found = true;
+                    return;
+                }
+            }
+            syn::visit::visit_expr_path(self, node);
+        }
+    }
+
+    let mut visitor = RuntimeSeedInputVisitor {
+        names: field_names
+            .iter()
+            .chain(ix_arg_names.iter())
+            .map(String::as_str)
+            .collect(),
+        found: false,
+    };
+    visitor.visit_expr(expr);
+    visitor.found
 }
 
 fn account_seed_root_ident(expr: &Expr) -> Option<String> {
@@ -1200,19 +1288,32 @@ fn arg_seed_value(path: &str) -> Value {
 /// Static seeds become string-literal pushes. The whole expression assembles a
 /// single `String` via `push_str`, avoiding intermediate `Vec` /
 /// `serde_json::Value` round-trips.
-pub fn pda_object_emission(seeds: &[SeedJson], program: Option<&SeedJson>) -> TokenStream2 {
-    let seed_pushes: Vec<TokenStream2> = seeds
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            let expr = s.clone().into_string_expr();
-            let comma = if i == 0 { "" } else { "," };
+pub fn pda_object_emission(seeds: &SeedListJson, program: Option<&SeedJson>) -> TokenStream2 {
+    let seeds_expr = match seeds {
+        SeedListJson::Listed(seeds) => {
+            let seed_pushes: Vec<TokenStream2> = seeds
+                .iter()
+                .enumerate()
+                .map(|(i, s)| {
+                    let expr = s.clone().into_string_expr();
+                    let comma = if i == 0 { "" } else { "," };
+                    quote! {
+                        __seeds.push_str(#comma);
+                        __seeds.push_str(&{ #expr });
+                    }
+                })
+                .collect();
             quote! {
-                __pda.push_str(#comma);
-                __pda.push_str(&{ #expr });
+                {
+                    let mut __seeds = anchor_lang_v2::__alloc::string::String::from("[");
+                    #(#seed_pushes)*
+                    __seeds.push(']');
+                    __seeds
+                }
             }
-        })
-        .collect();
+        }
+        SeedListJson::Runtime(ts) => quote! { { #ts } },
+    };
     let program_part = match program {
         None => quote! {},
         Some(p) => {
@@ -1225,9 +1326,8 @@ pub fn pda_object_emission(seeds: &[SeedJson], program: Option<&SeedJson>) -> To
     };
     quote! {
         {
-            let mut __pda = anchor_lang_v2::__alloc::string::String::from("{\"seeds\":[");
-            #(#seed_pushes)*
-            __pda.push(']');
+            let mut __pda = anchor_lang_v2::__alloc::string::String::from("{\"seeds\":");
+            __pda.push_str(&{ #seeds_expr });
             #program_part
             __pda.push('}');
             __pda
