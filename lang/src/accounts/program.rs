@@ -160,7 +160,7 @@ impl<'a, T: Id> TryFrom<&'a AccountInfo<'a>> for Program<'a, T> {
     }
 }
 
-/// `Progam<'info>` with no type parameter (or `Program<'info, ()>`) is a special shorthand for
+/// `Program<'info>` with no type parameter (or `Program<'info, ()>`) is a special shorthand for
 /// 'any program account'.
 impl<'a> TryFrom<&'a AccountInfo<'a>> for Program<'a, ()> {
     type Error = Error;
