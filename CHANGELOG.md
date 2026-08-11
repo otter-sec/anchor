@@ -22,6 +22,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- client: Fix event-subscription panic with transactions containing multiple instructions; never index an empty execution stack ([#1941](https://github.com/otter-sec/anchor/issues/1941)).
 - spl: Fix `anchor-spl` failing to build with only the `metadata` feature ([#4742](https://github.com/solana-foundation/anchor/pull/4742)).
 - client: Fix ignored commitment level ([#4666](https://github.com/solana-foundation/anchor/pull/4666)).
 - lang: Remove cloning `AccountInfo` to read lamports in `init_if_needed` codegen ([#4675](https://github.com/solana-foundation/anchor/pull/4675)).
