@@ -854,6 +854,12 @@ where
 {
     fn close(&mut self, mut destination: AccountView) -> pinocchio::ProgramResult {
         self.assert_mutable();
+        // Guardrail: catches "forgot `#[account(mut)]`" on the close
+        // destination early with a clear error. 
+        #[cfg(feature = "guardrails")]
+        if !destination.is_writable() {
+            return Err(cold_not_writable());
+        }
         let mut self_view = self.view;
         let dest_lamports = destination
             .lamports()
