@@ -2,13 +2,13 @@ extern crate alloc;
 
 use {
     crate::{address_eq, require, CpiHandle, ToCpiAccounts},
-    alloc::vec::Vec,
+    alloc::{collections::BTreeSet, vec::Vec},
     core::mem::MaybeUninit,
     pinocchio::{
         address::Address,
         instruction::{InstructionAccount, InstructionView},
     },
-    solana_instruction::Instruction,
+    solana_instruction::{AccountMeta, Instruction},
     solana_program_error::{ProgramError, ProgramResult},
 };
 
@@ -155,16 +155,34 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
     /// Invoke a fully built instruction using this context's CPI handles.
     ///
     /// The instruction's program id must match this context's program. Account
-    /// metas are taken from the instruction, while account handles are collected
-    /// from [`ToCpiAccounts`] and `remaining_accounts`.
-    pub fn invoke_ix(&self, ix: Instruction) -> ProgramResult {
+    /// metas for the fixed [`ToCpiAccounts`] fields are taken from the
+    /// instruction as supplied; `remaining_accounts` are appended to both the
+    /// instruction's metas and the CPI handles, so the two stay in sync.
+    pub fn invoke_ix(&self, mut ix: Instruction) -> ProgramResult {
         require!(
             address_eq(self.program, &ix.program_id),
             ProgramError::IncorrectProgramId
         );
 
         let mut handles = self.accounts.to_cpi_handles();
-        handles.extend(self.remaining_accounts.iter().copied());
+
+        if !self.remaining_accounts.is_empty() {
+            // Ignore duplicates by tracking seen addresses in a `BTreeSet`.
+            let mut seen: BTreeSet<Address> = ix.accounts.iter().map(|meta| meta.pubkey).collect();
+
+            for handle in &self.remaining_accounts {
+                if seen.insert(*handle.address()) {
+                    let meta = if handle.is_writable() {
+                        AccountMeta::new(*handle.address(), handle.is_signer())
+                    } else {
+                        AccountMeta::new_readonly(*handle.address(), handle.is_signer())
+                    };
+                    ix.accounts.push(meta);
+                }
+                handles.push(*handle);
+            }
+        }
+
         crate::program::invoke_signed(&ix, &handles, self.signer_seeds)
     }
 }
