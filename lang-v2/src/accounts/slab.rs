@@ -105,8 +105,9 @@ where
     const DISCRIMINATOR: &'static [u8] = H::DISCRIMINATOR;
 }
 
-// Header-only accounts use the schema's minimum size. Tail-carrying Slabs use
-// the zero-capacity tail layout (`[header][len]`) as their minimum.
+// Header-only accounts init to `[header]`; tail-carrying Slabs to
+// `[header][len]`. Both floor at `H::MIN_DATA_LEN` so the schema contract
+// holds — see `Slab::<H, T>::MIN_DATA_LEN`.
 impl<H, T> crate::Space for Slab<H, T>
 where
     H: Pod + Zeroable + SlabSchema,
@@ -221,10 +222,13 @@ where
         }
     };
 
-    const MIN_DATA_LEN: usize = if Self::HAS_TAIL {
-        Self::ITEMS_OFFSET
-    } else {
+    // Two floors on `data_len`: `ITEMS_OFFSET` (physical layout) and
+    // `H::MIN_DATA_LEN` (what `H::validate` checks on load). A resize
+    // that clears only one leaves the account unloadable.
+    const MIN_DATA_LEN: usize = if H::MIN_DATA_LEN > Self::ITEMS_OFFSET {
         H::MIN_DATA_LEN
+    } else {
+        Self::ITEMS_OFFSET
     };
 
     #[inline(always)]
@@ -534,6 +538,9 @@ where
 
     /// Fallible runtime version of [`space_for`](Self::space_for). Use this for
     /// user-supplied capacities so arithmetic failures become program errors.
+    ///
+    /// Floors at [`Self::MIN_DATA_LEN`] so small capacities still satisfy
+    /// `H::validate`, keeping `resize_to_capacity(0)` from bricking the account.
     #[inline(always)]
     pub const fn try_space_for(capacity: u32) -> Result<usize, ProgramError> {
         let _ = Self::_NONZERO_TAIL;
@@ -541,10 +548,15 @@ where
             Some(value) => value,
             None => return Err(ProgramError::ArithmeticOverflow),
         };
-        match Self::ITEMS_OFFSET.checked_add(item_bytes) {
-            Some(value) => Ok(value),
-            None => Err(ProgramError::ArithmeticOverflow),
-        }
+        let structural = match Self::ITEMS_OFFSET.checked_add(item_bytes) {
+            Some(value) => value,
+            None => return Err(ProgramError::ArithmeticOverflow),
+        };
+        Ok(if structural > Self::MIN_DATA_LEN {
+            structural
+        } else {
+            Self::MIN_DATA_LEN
+        })
     }
 
     /// Current number of items in the tail region.
