@@ -1,6 +1,6 @@
 {
   "name": "@anchor-lang/errors",
-  "version": "1.0.0",
+  "version": "2.0.0-rc1",
   "description": "Anchor error codes",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

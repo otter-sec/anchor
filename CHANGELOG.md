@@ -12,6 +12,14 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+### Fixes
+
+### Breaking
+
+## [2.0.0-rc1] - 2026-08-12
+
+### Features
+
 - cli: Write `anchor expand` output to stdout instead of a file ([#4269](https://github.com/solana-foundation/anchor/pull/4269)).
 
 ### Fixes

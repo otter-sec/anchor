@@ -45,7 +45,7 @@
 //!
 //! More examples can be found in [here].
 //!
-//! [here]: https://github.com/solana-foundation/anchor/tree/v1.0.0/client/example/src
+//! [here]: https://github.com/solana-foundation/anchor/tree/v2.0.0-rc1/client/example/src
 //!
 //! # Features
 //!
@@ -54,7 +54,7 @@
 //! The client is blocking by default. To enable asynchronous client, add `async` feature:
 //!
 //! ```toml
-//! anchor-client = { version = "1.0.0 ", features = ["async"] }
+//! anchor-client = { version = "2.0.0-rc1 ", features = ["async"] }
 //! ````
 //!
 //! ## `mock`
