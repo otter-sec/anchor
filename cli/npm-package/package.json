@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/otter-sec/anchor.git"
+    "url": "git+https://github.com/otter-sec/anchor.git"
   },
   "license": "(MIT OR Apache-2.0)",
   "bin": {
