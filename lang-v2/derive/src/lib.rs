@@ -1493,6 +1493,11 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             let attrs = parse::parse_account_attrs(&raw_field.attrs)
                 .expect("parse_field already validated account attributes");
             if let Some(ref seeds_expr) = attrs.seeds {
+                // `bump = <expr>` is verified on-chain; client auto-derive
+                // would use the canonical bump and can mismatch.
+                if matches!(attrs.bump, Some(Some(_))) {
+                    return (f, FieldKind::Required);
+                }
                 // Client-side PDA derivation only works when we can
                 // inspect individual seed expressions — requires the
                 // array-bracket form `seeds = [...]`. Expression-form
@@ -1723,6 +1728,10 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             )
             .expect("parse_field already validated account attributes");
             let seeds_expr = attrs.seeds.as_ref()?;
+            // Don't emit a canonical-bump helper for `bump = <expr>`.
+            if matches!(attrs.bump, Some(Some(_))) {
+                return None;
+            }
             // Expression-form seeds (e.g. `seeds = Counter::seeds()`) don't
             // support client-side PDA helpers — skip.
             let seed_arr = match seeds_expr {
