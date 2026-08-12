@@ -18,6 +18,6 @@ idl-build = ["anchor-syn/idl-build"]
 init-if-needed = ["anchor-syn/init-if-needed"]
 
 [dependencies]
-anchor-syn = { path = "../../syn", version = "1.99.0" }
+anchor-syn = { path = "../../syn", version = "2.0.0-rc.1" }
 quote = "1"
 syn = { version = "1", features = ["full"] }
