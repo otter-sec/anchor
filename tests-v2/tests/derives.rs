@@ -338,7 +338,7 @@ fn emit_bytemuck_event_copies_repr_c_bytes() {
     do_bump(&mut svm, &payer, counter, 99, 0);
 
     // snapshot (discrim=5) emits a bytemuck-mode event.
-    let metas = vec![AccountMeta::new_readonly(counter, false)];
+    let metas = vec![AccountMeta::new(counter, false)];
     let meta = send_instruction(&mut svm, program_id(), vec![5], metas, &payer, &[])
         .expect("snapshot should succeed");
 

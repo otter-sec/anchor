@@ -22,7 +22,8 @@ use {
         programs::{System, Token},
         testing::AccountBuffer,
         wincode::{SchemaRead, SchemaWrite},
-        Accounts, AnchorAccount, Discriminator, ErrorCode, Ids, Owner, TryAccounts,
+        Accounts, AnchorAccount, Discriminator, ErrorCode, Ids, Owner, ToCpiHandleMut,
+        TryAccounts,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::address::Address,
@@ -30,6 +31,7 @@ use {
 };
 
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
+const FOREIGN_PROGRAM_ID: [u8; 32] = [0x24; 32];
 const SYSTEM_PROGRAM_ID: [u8; 32] = [0u8; 32];
 
 struct TestInterface;
@@ -68,6 +70,20 @@ impl Owner for PodCounter {
 impl Discriminator for PodCounter {
     // sha256("account:PodCounter")[..8]
     const DISCRIMINATOR: &'static [u8] = &[0x4c, 0xde, 0x7f, 0x28, 0x61, 0x2f, 0x07, 0x73];
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ForeignPodCounter {
+    value: u64,
+}
+
+impl Owner for ForeignPodCounter {
+    const OWNER: Address = Address::new_from_array(FOREIGN_PROGRAM_ID);
+}
+
+impl Discriminator for ForeignPodCounter {
+    const DISCRIMINATOR: &'static [u8] = &[0xa4, 0x95, 0x5a, 0x12, 0xb3, 0x8e, 0x74, 0x31];
 }
 
 #[repr(C)]
@@ -123,6 +139,21 @@ fn setup_pod_counter_buf(
     buf.init([0x45; 32], owner, 16, false, writable, false);
     let mut data = [0u8; 16];
     data[..8].copy_from_slice(PodCounter::DISCRIMINATOR);
+    data[8..16].copy_from_slice(&value.to_le_bytes());
+    buf.write_data(&data);
+}
+
+fn setup_foreign_pod_counter_buf(buf: &mut AccountBuffer<128>, value: u64) {
+    buf.init(
+        [0x48; 32],
+        FOREIGN_PROGRAM_ID,
+        16,
+        false,
+        true,
+        false,
+    );
+    let mut data = [0u8; 16];
+    data[..8].copy_from_slice(ForeignPodCounter::DISCRIMINATOR);
     data[8..16].copy_from_slice(&value.to_le_bytes());
     buf.write_data(&data);
 }
@@ -481,6 +512,58 @@ fn account_deref_mut_panics_when_loaded_read_only() {
     let view = unsafe { buf.view() };
     let mut acct = Account::<PodCounter>::load(view).unwrap();
     acct.value = 18;
+}
+
+#[test]
+fn program_scoped_slab_load_keeps_foreign_accounts_read_only() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_foreign_pod_counter_buf(&mut buf, 17);
+
+    let view = unsafe { buf.view() };
+    let mut acct = unsafe {
+        Account::<ForeignPodCounter>::load_mut_for_program(
+            view,
+            &Address::new_from_array(PROGRAM_ID),
+        )
+    }
+    .unwrap();
+
+    assert_eq!(acct.value, 17);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| acct.value = 18)).is_err(),
+        "foreign-owned typed data must not be locally mutable"
+    );
+    assert!(
+        acct.try_to_cpi_handle_mut().is_ok(),
+        "transaction writability must remain available for CPI forwarding"
+    );
+    assert_eq!(
+        u64::from_le_bytes(buf.read_data()[8..16].try_into().unwrap()),
+        17
+    );
+}
+
+#[test]
+fn program_scoped_slab_load_allows_owned_accounts() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_pod_counter_buf(&mut buf, PROGRAM_ID, true, 17);
+
+    {
+        let view = unsafe { buf.view() };
+        let mut acct = unsafe {
+            Account::<PodCounter>::load_mut_for_program(
+                view,
+                &Address::new_from_array(PROGRAM_ID),
+            )
+        }
+        .unwrap();
+        acct.value = 18;
+    }
+
+    assert_eq!(
+        u64::from_le_bytes(buf.read_data()[8..16].try_into().unwrap()),
+        18
+    );
 }
 
 // -- BorshAccount<T> ---------------------------------------------------

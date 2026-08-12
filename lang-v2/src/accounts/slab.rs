@@ -807,6 +807,21 @@ where
         Ok(slab)
     }
 
+    #[inline(always)]
+    unsafe fn load_mut_for_program(
+        view: AccountView,
+        program_id: &Address,
+    ) -> Result<Self, ProgramError> {
+        if !view.is_writable() {
+            return Err(crate::ErrorCode::ConstraintMut.into());
+        }
+        if view.owned_by(program_id) {
+            Self::load_mut(view)
+        } else {
+            Self::load(view)
+        }
+    }
+
     /// Fast-path `load_mut` after `create_and_initialize`. Skips
     /// `H::validate` and `validate_tail` (all tautologies post-init).
     ///
