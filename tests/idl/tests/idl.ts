@@ -636,4 +636,31 @@ describe("IDL", () => {
       });
     });
   });
+
+  // The fixture program declares two handlers exercising the two affected
+  // pattern shapes (`Context { .. }:` and `_:`); if either is missing
+  // from the generated IDL, the parser regressed.
+  describe("Context argument patterns (#3838)", () => {
+    it("includes a handler that destructures its Context argument", () => {
+      const ix = program.rawIdl.instructions.find(
+        (ix) => ix.name === "destructured_context"
+      );
+      assert.isDefined(
+        ix,
+        "`destructured_context` should appear in the IDL — the parser must accept `Context { .. }: Context<T>`"
+      );
+      assert.deepEqual(ix!.args, [{ name: "value", type: "u64" }]);
+    });
+
+    it("includes a handler that uses a wildcard for its Context argument", () => {
+      const ix = program.rawIdl.instructions.find(
+        (ix) => ix.name === "wildcard_context"
+      );
+      assert.isDefined(
+        ix,
+        "`wildcard_context` should appear in the IDL — the parser must accept `_: Context<T>`"
+      );
+      assert.deepEqual(ix!.args, [{ name: "value", type: "u64" }]);
+    });
+  });
 });

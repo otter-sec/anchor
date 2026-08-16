@@ -95,6 +95,26 @@
       ]
     },
     {
+      "name": "destructured_context",
+      "discriminator": [
+        50,
+        11,
+        179,
+        128,
+        141,
+        194,
+        248,
+        238
+      ],
+      "accounts": [],
+      "args": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "empty",
       "discriminator": [
         214,
@@ -739,6 +759,26 @@
         {
           "name": "bytes",
           "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "wildcard_context",
+      "discriminator": [
+        253,
+        94,
+        104,
+        91,
+        56,
+        253,
+        94,
+        95
+      ],
+      "accounts": [],
+      "args": [
+        {
+          "name": "value",
+          "type": "u64"
         }
       ]
     }
