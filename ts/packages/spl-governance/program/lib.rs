@@ -163,36 +163,36 @@ pub mod spl_governance {
 #[derive(Accounts)]
 pub struct CreateRealm<'info> {
     #[account(mut)]
-    realm_address: AccountInfo<'info>,
-    realm_authority: AccountInfo<'info>,
-    community_token_mint: AccountInfo<'info>,
+    realm_address: UncheckedAccount<'info>,
+    realm_authority: UncheckedAccount<'info>,
+    community_token_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    community_token_holding_address: AccountInfo<'info>,
+    community_token_holding_address: UncheckedAccount<'info>,
     #[account(mut)]
     payer: Signer<'info>,
     system_program: Program<'info, System>,
     token_program: Program<'info, Token>,
     rent: Sysvar<'info, Rent>,
-    // optional_council_token_mint: AccountInfo<'info>,
+    // optional_council_token_mint: UncheckedAccount<'info>,
     // #[account(mut)]
-    // optional_council_token_holding_address: AccountInfo<'info>,
+    // optional_council_token_holding_address: UncheckedAccount<'info>,
     // optional_community_voter_weight_addin: Signer<'info>,
     // optional_max_community_voter_weight_addin: Signer<'info>,
     // #[account(mut)]
-    // optional_realm_config_address: AccountInfo<'info>,
+    // optional_realm_config_address: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct DepositGoverningTokens<'info> {
-    realm: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
     #[account(mut)]
-    governing_token_holding_address: AccountInfo<'info>,
+    governing_token_holding_address: UncheckedAccount<'info>,
     #[account(mut)]
-    governing_token_source: AccountInfo<'info>,
+    governing_token_source: UncheckedAccount<'info>,
     governing_token_owner: Signer<'info>,
     governing_token_transfer_authority: Signer<'info>,
     #[account(mut)]
-    token_owner_record_address: AccountInfo<'info>,
+    token_owner_record_address: UncheckedAccount<'info>,
     #[account(mut)]
     payer: Signer<'info>,
     system_program: Program<'info, System>,
@@ -201,14 +201,14 @@ pub struct DepositGoverningTokens<'info> {
 
 #[derive(Accounts)]
 pub struct WithdrawGoverningTokens<'info> {
-    realm: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
     #[account(mut)]
-    governing_token_holding_address: AccountInfo<'info>,
+    governing_token_holding_address: UncheckedAccount<'info>,
     #[account(mut)]
-    governing_token_destination: AccountInfo<'info>,
+    governing_token_destination: UncheckedAccount<'info>,
     governing_token_owner: Signer<'info>,
     #[account(mut)]
-    token_owner_record_address: AccountInfo<'info>,
+    token_owner_record_address: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
 }
 
@@ -216,16 +216,16 @@ pub struct WithdrawGoverningTokens<'info> {
 pub struct SetGovernanceDelegate<'info> {
     governance_authority: Signer<'info>,
     #[account(mut)]
-    vote_record_address: AccountInfo<'info>,
+    vote_record_address: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct CreateGovernance<'info> {
-    realm: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
     #[account(mut)]
-    governance_address: AccountInfo<'info>,
-    governed_account_address: AccountInfo<'info>,
-    token_owner_record: AccountInfo<'info>,
+    governance_address: UncheckedAccount<'info>,
+    governed_account_address: UncheckedAccount<'info>,
+    token_owner_record: UncheckedAccount<'info>,
     #[account(mut)]
     payer: Signer<'info>,
     system_program: Program<'info, System>,
@@ -234,31 +234,31 @@ pub struct CreateGovernance<'info> {
 
 #[derive(Accounts)]
 pub struct CreateProgramGovernance<'info> {
-    realm: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
     #[account(mut)]
-    program_governance_address: AccountInfo<'info>,
-    governed_program: AccountInfo<'info>,
+    program_governance_address: UncheckedAccount<'info>,
+    governed_program: UncheckedAccount<'info>,
     #[account(mut)]
-    governed_program_data_address: AccountInfo<'info>,
+    governed_program_data_address: UncheckedAccount<'info>,
     governed_program_upgrade_authority: Signer<'info>,
-    token_owner_record: AccountInfo<'info>,
+    token_owner_record: UncheckedAccount<'info>,
     #[account(mut)]
     payer: Signer<'info>,
-    bpf_loader_upgradeable: AccountInfo<'info>,
+    bpf_loader_upgradeable: UncheckedAccount<'info>,
     system_program: Program<'info, System>,
     create_authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct CreateProposal<'info> {
-    realm: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
     #[account(mut)]
-    proposal_address: AccountInfo<'info>,
+    proposal_address: UncheckedAccount<'info>,
     #[account(mut)]
-    governance: AccountInfo<'info>,
+    governance: UncheckedAccount<'info>,
     #[account(mut)]
-    proposal_owner_record: AccountInfo<'info>,
-    governing_token_mint: AccountInfo<'info>,
+    proposal_owner_record: UncheckedAccount<'info>,
+    governing_token_mint: UncheckedAccount<'info>,
     governance_authority: Signer<'info>,
     #[account(mut)]
     payer: Signer<'info>,
@@ -268,11 +268,11 @@ pub struct CreateProposal<'info> {
 #[derive(Accounts)]
 pub struct AddSignatory<'info> {
     #[account(mut)]
-    proposal: AccountInfo<'info>,
-    token_owner_record: AccountInfo<'info>,
+    proposal: UncheckedAccount<'info>,
+    token_owner_record: UncheckedAccount<'info>,
     governance_authority: Signer<'info>,
     #[account(mut)]
-    signatory_record_address: AccountInfo<'info>,
+    signatory_record_address: UncheckedAccount<'info>,
     #[account(mut)]
     payer: Signer<'info>,
     system_program: Program<'info, System>,
@@ -281,24 +281,24 @@ pub struct AddSignatory<'info> {
 #[derive(Accounts)]
 pub struct RemoveSignatory<'info> {
     #[account(mut)]
-    proposal: AccountInfo<'info>,
-    token_owner_record: AccountInfo<'info>,
+    proposal: UncheckedAccount<'info>,
+    token_owner_record: UncheckedAccount<'info>,
     governance_authority: Signer<'info>,
     #[account(mut)]
-    signatory_record_address: AccountInfo<'info>,
+    signatory_record_address: UncheckedAccount<'info>,
     #[account(mut)]
-    beneficiary: AccountInfo<'info>,
+    beneficiary: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct InsertTransaction<'info> {
-    governance: AccountInfo<'info>,
+    governance: UncheckedAccount<'info>,
     #[account(mut)]
-    proposal: AccountInfo<'info>,
-    token_owner_record: AccountInfo<'info>,
+    proposal: UncheckedAccount<'info>,
+    token_owner_record: UncheckedAccount<'info>,
     governance_authority: Signer<'info>,
     #[account(mut)]
-    proposal_transaction_address: AccountInfo<'info>,
+    proposal_transaction_address: UncheckedAccount<'info>,
     #[account(mut)]
     payer: Signer<'info>,
     system_program: Program<'info, System>,
@@ -308,58 +308,58 @@ pub struct InsertTransaction<'info> {
 #[derive(Accounts)]
 pub struct RemoveTransaction<'info> {
     #[account(mut)]
-    proposal: AccountInfo<'info>,
-    token_owner_record: AccountInfo<'info>,
+    proposal: UncheckedAccount<'info>,
+    token_owner_record: UncheckedAccount<'info>,
     governance_authority: Signer<'info>,
     #[account(mut)]
-    proposal_transaction: AccountInfo<'info>,
+    proposal_transaction: UncheckedAccount<'info>,
     #[account(mut)]
-    beneficiary: AccountInfo<'info>,
+    beneficiary: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct CancelProposal<'info> {
     #[account(mut)]
-    realm: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
     #[account(mut)]
-    governance: AccountInfo<'info>,
+    governance: UncheckedAccount<'info>,
     #[account(mut)]
-    proposal: AccountInfo<'info>,
+    proposal: UncheckedAccount<'info>,
     #[account(mut)]
-    proposal_owner_record: AccountInfo<'info>,
+    proposal_owner_record: UncheckedAccount<'info>,
     governance_authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct SignOffProposal<'info> {
     #[account(mut)]
-    realm: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
     #[account(mut)]
-    governance: AccountInfo<'info>,
+    governance: UncheckedAccount<'info>,
     #[account(mut)]
-    proposal: AccountInfo<'info>,
+    proposal: UncheckedAccount<'info>,
     signatory: Signer<'info>,
-    // optional_proposal_owner_record: AccountInfo<'info>,
+    // optional_proposal_owner_record: UncheckedAccount<'info>,
     // #[account(mut)]
-    // optional_signatory_record_address: AccountInfo<'info>,
+    // optional_signatory_record_address: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct CastVote<'info> {
     #[account(mut)]
-    realm: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
     #[account(mut)]
-    governance: AccountInfo<'info>,
+    governance: UncheckedAccount<'info>,
     #[account(mut)]
-    proposal: AccountInfo<'info>,
+    proposal: UncheckedAccount<'info>,
     #[account(mut)]
-    proposal_owner_record: AccountInfo<'info>,
+    proposal_owner_record: UncheckedAccount<'info>,
     #[account(mut)]
-    voter_token_owner_record: AccountInfo<'info>,
+    voter_token_owner_record: UncheckedAccount<'info>,
     governance_authority: Signer<'info>,
     #[account(mut)]
-    vote_record_address: AccountInfo<'info>,
-    vote_governing_token_mint: AccountInfo<'info>,
+    vote_record_address: UncheckedAccount<'info>,
+    vote_governing_token_mint: UncheckedAccount<'info>,
     #[account(mut)]
     payer: Signer<'info>,
     system_program: Program<'info, System>,
@@ -368,51 +368,51 @@ pub struct CastVote<'info> {
 #[derive(Accounts)]
 pub struct FinalizeVote<'info> {
     #[account(mut)]
-    realm: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
     #[account(mut)]
-    governance: AccountInfo<'info>,
+    governance: UncheckedAccount<'info>,
     #[account(mut)]
-    proposal: AccountInfo<'info>,
+    proposal: UncheckedAccount<'info>,
     #[account(mut)]
-    proposal_owner_record: AccountInfo<'info>,
-    governing_token_mint: AccountInfo<'info>,
+    proposal_owner_record: UncheckedAccount<'info>,
+    governing_token_mint: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct RelinquishVote<'info> {
-    realm: AccountInfo<'info>,
-    governance: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
+    governance: UncheckedAccount<'info>,
     #[account(mut)]
-    proposal: AccountInfo<'info>,
+    proposal: UncheckedAccount<'info>,
     #[account(mut)]
-    token_owner_record: AccountInfo<'info>,
+    token_owner_record: UncheckedAccount<'info>,
     #[account(mut)]
-    vote_record_address: AccountInfo<'info>,
-    vote_governing_token_mint: AccountInfo<'info>,
+    vote_record_address: UncheckedAccount<'info>,
+    vote_governing_token_mint: UncheckedAccount<'info>,
     // optional_governance_authority: Signer<'info>,
     // #[account(mut)]
-    // optional_beneficiary: AccountInfo<'info>,
+    // optional_beneficiary: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct ExecuteTransaction<'info> {
-    governance: AccountInfo<'info>,
+    governance: UncheckedAccount<'info>,
     #[account(mut)]
-    proposal: AccountInfo<'info>,
+    proposal: UncheckedAccount<'info>,
     #[account(mut)]
-    proposal_transaction: AccountInfo<'info>,
-    instruction_program: AccountInfo<'info>,
+    proposal_transaction: UncheckedAccount<'info>,
+    instruction_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct CreateMintGovernance<'info> {
-    realm: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
     #[account(mut)]
-    mint_governance_address: AccountInfo<'info>,
+    mint_governance_address: UncheckedAccount<'info>,
     #[account(mut)]
-    governed_mint: AccountInfo<'info>,
+    governed_mint: UncheckedAccount<'info>,
     governed_mint_authority: Signer<'info>,
-    token_owner_record: AccountInfo<'info>,
+    token_owner_record: UncheckedAccount<'info>,
     #[account(mut)]
     payer: Signer<'info>,
     token_program: Program<'info, Token>,
@@ -422,13 +422,13 @@ pub struct CreateMintGovernance<'info> {
 
 #[derive(Accounts)]
 pub struct CreateTokenGovernance<'info> {
-    realm: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
     #[account(mut)]
-    token_governance_address: AccountInfo<'info>,
+    token_governance_address: UncheckedAccount<'info>,
     #[account(mut)]
-    governed_token: AccountInfo<'info>,
+    governed_token: UncheckedAccount<'info>,
     governed_token_owner: Signer<'info>,
-    token_owner_record: AccountInfo<'info>,
+    token_owner_record: UncheckedAccount<'info>,
     #[account(mut)]
     payer: Signer<'info>,
     token_program: Program<'info, Token>,
@@ -445,17 +445,17 @@ pub struct SetGovernanceConfig<'info> {
 #[derive(Accounts)]
 pub struct FlagTransactionError<'info> {
     #[account(mut)]
-    proposal: AccountInfo<'info>,
-    token_owner_record: AccountInfo<'info>,
+    proposal: UncheckedAccount<'info>,
+    token_owner_record: UncheckedAccount<'info>,
     governance_authority: Signer<'info>,
     #[account(mut)]
-    proposal_transaction: AccountInfo<'info>,
+    proposal_transaction: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct SetRealmAuthority<'info> {
     #[account(mut)]
-    realm: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
     realm_authority: Signer<'info>,
     // optional_new_realm_authority: Signer<'info>,
 }
@@ -463,14 +463,14 @@ pub struct SetRealmAuthority<'info> {
 #[derive(Accounts)]
 pub struct SetRealmConfig<'info> {
     #[account(mut)]
-    realm: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
     realm_authority: Signer<'info>,
-    // optional_council_token_mint: AccountInfo<'info>,
+    // optional_council_token_mint: UncheckedAccount<'info>,
     // #[account(mut)]
-    // optional_council_token_holding_address: AccountInfo<'info>,
+    // optional_council_token_holding_address: UncheckedAccount<'info>,
     // optional_system_program: Program<'info, System>,
     // #[account(mut)]
-    // optional_realm_config_address: AccountInfo<'info>,
+    // optional_realm_config_address: UncheckedAccount<'info>,
     // optional_community_voter_weight_addin: Signer<'info>,
     // optional_max_community_voter_weight_addin: Signer<'info>,
     // #[account(mut)]
@@ -479,11 +479,11 @@ pub struct SetRealmConfig<'info> {
 
 #[derive(Accounts)]
 pub struct CreateTokenOwnerRecord<'info> {
-    realm: AccountInfo<'info>,
-    governing_token_owner: AccountInfo<'info>,
+    realm: UncheckedAccount<'info>,
+    governing_token_owner: UncheckedAccount<'info>,
     #[account(mut)]
-    token_owner_record_address: AccountInfo<'info>,
-    governing_token_mint: AccountInfo<'info>,
+    token_owner_record_address: UncheckedAccount<'info>,
+    governing_token_mint: UncheckedAccount<'info>,
     #[account(mut)]
     payer: Signer<'info>,
     system_program: Program<'info, System>,
@@ -492,7 +492,7 @@ pub struct CreateTokenOwnerRecord<'info> {
 #[derive(Accounts)]
 pub struct UpdateProgramMetadata<'info> {
     #[account(mut)]
-    program_metadata_address: AccountInfo<'info>,
+    program_metadata_address: UncheckedAccount<'info>,
     #[account(mut)]
     payer: Signer<'info>,
     system_program: Program<'info, System>,
@@ -500,9 +500,9 @@ pub struct UpdateProgramMetadata<'info> {
 
 #[derive(Accounts)]
 pub struct CreateNativeTreasury<'info> {
-    governance: AccountInfo<'info>,
+    governance: UncheckedAccount<'info>,
     #[account(mut)]
-    native_treasury_address: AccountInfo<'info>,
+    native_treasury_address: UncheckedAccount<'info>,
     #[account(mut)]
     payer: Signer<'info>,
     system_program: Program<'info, System>,

@@ -135,9 +135,9 @@ fn gen_internal_accounts_common(
                     };
 
                     let acc_expr = if acc.optional {
-                        quote! { Option<AccountInfo #generics> }
+                        quote! { Option<UncheckedAccount #generics> }
                     } else {
-                        quote! { AccountInfo #generics }
+                        quote! { UncheckedAccount #generics }
                     };
 
                     quote! {

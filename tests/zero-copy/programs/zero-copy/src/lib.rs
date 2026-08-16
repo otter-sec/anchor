@@ -104,7 +104,7 @@ pub struct CreateBar<'info> {
     #[account(mut)]
     authority: Signer<'info>,
     foo: AccountLoader<'info, Foo>,
-    system_program: AccountInfo<'info>,
+    system_program: UncheckedAccount<'info>,
 }
 #[derive(Accounts)]
 pub struct UpdateBar<'info> {

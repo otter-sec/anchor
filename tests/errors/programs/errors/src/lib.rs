@@ -143,14 +143,14 @@ pub struct Hello {}
 #[derive(Accounts)]
 pub struct MutError<'info> {
     #[account(mut)]
-    my_account: AccountInfo<'info>,
+    my_account: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct HasOneError<'info> {
     #[account(zero, has_one = owner)]
     my_account: Account<'info, HasOneAccount>,
-    owner: AccountInfo<'info>,
+    owner: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -166,7 +166,7 @@ pub struct HasOneAccount {
 #[derive(Accounts)]
 pub struct RawCustomError<'info> {
     #[account(constraint = *my_account.key == ID @ MyError::HelloCustom)]
-    my_account: AccountInfo<'info>,
+    my_account: UncheckedAccount<'info>,
 }
 
 #[account]

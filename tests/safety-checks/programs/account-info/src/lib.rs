@@ -12,5 +12,5 @@ pub mod account_info {
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    unchecked: AccountInfo<'info>,
+    unchecked: UncheckedAccount<'info>,
 }
