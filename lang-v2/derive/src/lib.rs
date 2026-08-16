@@ -2123,6 +2123,16 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .into()
         }
     };
+    // Tuple (`struct Foo(u64)`) and unit (`struct Foo;`) structs are rejected outright
+    if !matches!(fields, Fields::Named(_)) {
+        return syn::Error::new(
+            name.span(),
+            "`#[account]` only supports structs with named fields (tuple and unit structs are \
+             not supported)",
+        )
+        .to_compile_error()
+        .into();
+    }
     use sha2::Digest;
     let hash = sha2::Sha256::digest(format!("account:{name_str}").as_bytes());
     let disc_bytes = &hash[..8];

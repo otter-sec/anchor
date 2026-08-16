@@ -1252,3 +1252,49 @@ pub struct Bad {{
         "Box<BorshAccount<Data>>",
     );
 }
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn account_rejects_tuple_and_unit_structs() {
+    compile_fail_case(
+        "account_tuple_struct_rejected",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct TupleData(pub u64, pub u32);
+"#,
+        &["`#[account]` only supports structs with named fields"],
+    );
+
+    compile_fail_case(
+        "account_unit_struct_rejected",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct UnitData;
+"#,
+        &["`#[account]` only supports structs with named fields"],
+    );
+
+    compile_fail_case(
+        "account_borsh_tuple_struct_rejected",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account(borsh)]
+pub struct BorshTupleData(pub u64, pub u32);
+"#,
+        &["`#[account]` only supports structs with named fields"],
+    );
+}
