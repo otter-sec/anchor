@@ -811,13 +811,21 @@ fn parse_sysvar(path: &syn::Path) -> ParseResult<SysvarTy> {
             ))
         }
     };
+    const UNSUPPORTED_SLOT_HASHES_SYSVAR: &str =
+        "SlotHashes cannot be used as a Sysvar account because it cannot be deserialized on chain";
+
     let ty = match account_ident.to_string().as_str() {
         "Clock" => SysvarTy::Clock,
         "Rent" => SysvarTy::Rent,
         "EpochSchedule" => SysvarTy::EpochSchedule,
         "Fees" => SysvarTy::Fees,
         "RecentBlockhashes" => SysvarTy::RecentBlockhashes,
-        "SlotHashes" => SysvarTy::SlotHashes,
+        "SlotHashes" => {
+            return Err(ParseError::new(
+                account_ident.span(),
+                UNSUPPORTED_SLOT_HASHES_SYSVAR,
+            ))
+        }
         "SlotHistory" => SysvarTy::SlotHistory,
         "StakeHistory" => SysvarTy::StakeHistory,
         "Instructions" => SysvarTy::Instructions,
@@ -830,4 +838,35 @@ fn parse_sysvar(path: &syn::Path) -> ParseResult<SysvarTy> {
         }
     };
     Ok(ty)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::AccountsStruct;
+
+    #[test]
+    fn parses_supported_sysvar_account() {
+        syn::parse_str::<AccountsStruct>(
+            r#"
+            pub struct Test<'info> {
+                pub clock: Sysvar<'info, Clock>,
+            }
+            "#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn rejects_slot_hashes_as_sysvar_account() {
+        let err = syn::parse_str::<AccountsStruct>(
+            r#"
+            pub struct Test<'info> {
+                pub slot_hashes: Sysvar<'info, SlotHashes>,
+            }
+            "#,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("cannot be deserialized on chain"));
+    }
 }
