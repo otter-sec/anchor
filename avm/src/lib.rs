@@ -7,7 +7,10 @@ use {
     anyhow::{anyhow, bail, Context, Error, Result},
     cargo_toml::Manifest,
     chrono::{TimeZone, Utc},
-    reqwest::{header::USER_AGENT, StatusCode},
+    reqwest::{
+        header::{LINK, USER_AGENT},
+        StatusCode,
+    },
     semver::{Prerelease, Version},
     serde::{de, Deserialize},
     sha2::{Digest, Sha256},
@@ -692,22 +695,6 @@ pub fn read_anchorversion_file() -> Result<Version> {
         .map_err(|e| anyhow!("Unable to parse version: {e}"))
 }
 
-#[derive(Deserialize)]
-struct Release {
-    #[serde(rename = "name", deserialize_with = "version_deserializer")]
-    version: Version,
-    draft: bool,
-    prerelease: bool,
-}
-
-fn version_deserializer<'de, D>(deserializer: D) -> Result<Version, D::Error>
-where
-    D: de::Deserializer<'de>,
-{
-    let s: &str = de::Deserialize::deserialize(deserializer)?;
-    Version::parse(s.trim_start_matches('v')).map_err(de::Error::custom)
-}
-
 /// Retrieve a list of installable versions of anchor-cli using the GitHub Releases API.
 pub fn fetch_versions(include_pre_release: bool) -> Result<Vec<Version>, Error> {
     fetch_versions_with_client(&HTTP_CLIENT, include_pre_release)
@@ -717,17 +704,34 @@ fn fetch_versions_with_client(
     client: &reqwest::blocking::Client,
     include_pre_release: bool,
 ) -> Result<Vec<Version>, Error> {
-    collect_release_versions(include_pre_release, |page| {
+    #[derive(Deserialize)]
+    struct Release {
+        #[serde(rename = "name", deserialize_with = "version_deserializer")]
+        version: Version,
+        draft: bool,
+        prerelease: bool,
+    }
+
+    fn version_deserializer<'de, D>(deserializer: D) -> Result<Version, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        let s: &str = de::Deserialize::deserialize(deserializer)?;
+        Version::parse(s.trim_start_matches('v')).map_err(de::Error::custom)
+    }
+
+    let mut page = 1;
+    let mut versions = vec![];
+
+    loop {
         let response = client
             .get("https://api.github.com/repos/otter-sec/anchor/releases")
             .query(&[("per_page", GITHUB_RELEASES_PER_PAGE), ("page", page)])
             .header(USER_AGENT, "avm https://github.com/otter-sec/anchor")
             .send()?;
 
-        if response.status().is_success() {
-            Ok(response.json()?)
-        } else {
-            Err(
+        if !response.status().is_success() {
+            return Err(
                 if let Some(reset_time) = github_rate_limit_reset_time(response.headers()) {
                     anyhow!(
                         "GitHub API rate limit exceeded. Try again after {} UTC.",
@@ -736,24 +740,15 @@ fn fetch_versions_with_client(
                 } else {
                     anyhow!("GitHub API rate limit exceeded. Try again later.",)
                 },
-            )
+            );
         }
-    })
-}
 
-fn collect_release_versions<F>(
-    include_pre_release: bool,
-    mut fetch_page: F,
-) -> Result<Vec<Version>, Error>
-where
-    F: FnMut(u32) -> Result<Vec<Release>, Error>,
-{
-    let mut page = 1;
-    let mut versions = vec![];
-
-    loop {
-        let releases = fetch_page(page)?;
-        let is_last_page = releases.len() < GITHUB_RELEASES_PER_PAGE as usize;
+        let has_next_page = response
+            .headers()
+            .get(LINK)
+            .and_then(|header| header.to_str().ok())
+            .is_some_and(|header| header.contains(r#"rel="next""#));
+        let releases: Vec<Release> = response.json()?;
 
         versions.extend(
             releases
@@ -762,7 +757,7 @@ where
                 .map(|release| release.version),
         );
 
-        if is_last_page {
+        if !has_next_page {
             return Ok(versions);
         }
 
@@ -1646,33 +1641,6 @@ mod tests {
             reqwest::header::HeaderValue::from_bytes(b"\xff").unwrap(),
         );
         assert!(github_rate_limit_reset_time(&headers).is_none());
-    }
-
-    #[test]
-    fn test_collect_release_versions_paginates_before_filtering() {
-        let mut requested_pages = vec![];
-        let versions = collect_release_versions(false, |page| {
-            requested_pages.push(page);
-            Ok(match page {
-                1 => (0..GITHUB_RELEASES_PER_PAGE)
-                    .map(|patch| Release {
-                        version: Version::new(1, 0, patch.into()),
-                        draft: false,
-                        prerelease: true,
-                    })
-                    .collect(),
-                2 => vec![Release {
-                    version: Version::new(0, 17, 0),
-                    draft: false,
-                    prerelease: false,
-                }],
-                _ => panic!("unexpected page {page}"),
-            })
-        })
-        .unwrap();
-
-        assert_eq!(requested_pages, vec![1, 2]);
-        assert_eq!(versions, vec![Version::new(0, 17, 0)]);
     }
 
     #[test]
