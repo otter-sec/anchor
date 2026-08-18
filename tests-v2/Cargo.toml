@@ -55,7 +55,7 @@ spl-ata-test = { path = "programs/spl-ata", features = ["cpi"] }
 token-interface-test = { path = "programs/token-interface", features = ["cpi"] }
 accounts-test = { path = "programs/accounts", features = ["idl-build"] }
 derives-test = { path = "programs/derives" }
-litesvm = { version = "0.11.0", features = ["register-tracing"] }
+litesvm = { version = "0.13.1", features = ["register-tracing"] }
 pinocchio = { version = "0.11", default-features = false }
 solana-account = "3.2.0"
 solana-keypair = "3.0.1"
