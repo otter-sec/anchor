@@ -9,8 +9,8 @@ pub use crate::{
     account,
     // Account types
     accounts::{
-        Account, BorshAccount, Interface, InterfaceAccount, Program, Signer, SlabSchema,
-        SystemAccount, Sysvar, SysvarId, UncheckedAccount,
+        Account, BorshAccount, Instructions, Interface, InterfaceAccount, Program, Signer,
+        SlabSchema, SystemAccount, Sysvar, SysvarId, SysvarLoad, UncheckedAccount,
     },
     constant,
     create_account,

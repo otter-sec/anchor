@@ -20,7 +20,7 @@ pub use {
     slab::{HeaderOnly, Slab},
     slab_hooks::{SlabInit, SlabSchema},
     system_account::SystemAccount,
-    sysvar::{Sysvar, SysvarId},
+    sysvar::{Instructions, Sysvar, SysvarId, SysvarLoad},
     unchecked_account::UncheckedAccount,
 };
 

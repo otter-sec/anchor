@@ -10,7 +10,7 @@
 use anchor_lang::testing::AccountBuffer;
 
 use anchor_lang::{
-    accounts::{SystemAccount, UncheckedAccount},
+    accounts::{Instructions, SystemAccount, Sysvar, UncheckedAccount},
     prelude::{Program, Signer},
     programs::{System, Token},
     AnchorAccount,
@@ -132,4 +132,59 @@ fn distinct_wrapper_types_on_distinct_buffers() {
     let unchecked = UncheckedAccount::load(view2).unwrap();
 
     assert_ne!(sys.address().to_bytes(), unchecked.address().to_bytes());
+}
+
+// -- Sysvar<Instructions> --------------------------------------------
+//
+// The one wrapper here that stores a `'static`-transmuted borrow guard
+// alongside its `AccountView` (`SysvarLoad for Instructions` in
+// `accounts/sysvar.rs`). The claim under test: `Ref` holds raw pointers into
+// the account's runtime memory, not into the `AccountView`, so moving the view
+// into `Sysvar<T>` after taking the borrow keeps the guard's provenance valid
+// — and dropping the wrapper releases the borrow flag exactly once.
+
+/// Minimal well-formed sysvar blob: one instruction owned by `PROGRAM_ID`
+/// with a single readonly account and one data byte, `current_index = 0`.
+fn one_instruction_sysvar() -> [u8; 43] {
+    let mut blob = [0u8; 43];
+    blob[0..2].copy_from_slice(&1u16.to_le_bytes()); // num_instructions
+    blob[2..4].copy_from_slice(&4u16.to_le_bytes()); // offset of ix 0
+    blob[4..6].copy_from_slice(&1u16.to_le_bytes()); // num_accounts
+    blob[6] = 0b10; // writable, not signer
+    blob[7..39].copy_from_slice(&[0x77; 32]); // account key
+    blob[39..41].copy_from_slice(&PROGRAM_ID[0..2]); // program id (truncated)
+    blob[41..43].copy_from_slice(&0u16.to_le_bytes()); // current_index
+    blob
+}
+
+#[test]
+fn sysvar_instructions_guard_survives_the_view_move() {
+    let buf = AccountBuffer::<256>::new();
+    let blob = one_instruction_sysvar();
+    buf.init(
+        pinocchio::sysvars::instructions::INSTRUCTIONS_ID.to_bytes(),
+        [0; 32],
+        blob.len(),
+        false,
+        false,
+        false,
+    );
+    buf.write_data(&blob);
+
+    let view = unsafe { buf.view() };
+    let sysvar = Sysvar::<Instructions>::load(view).unwrap();
+
+    // Reading through the transmuted guard must stay in-bounds of the
+    // provenance established by `try_borrow()`.
+    assert_eq!(sysvar.num_instructions(), 1);
+    assert_eq!(sysvar.load_current_index(), 0);
+
+    // The guard is shared, not exclusive.
+    assert!(sysvar.account().check_borrow().is_ok());
+    assert!(sysvar.account().check_borrow_mut().is_err());
+
+    // ... and dropping releases it, leaving the borrow state where it started.
+    drop(sysvar);
+    let view = unsafe { buf.view() };
+    assert!(view.check_borrow_mut().is_ok());
 }

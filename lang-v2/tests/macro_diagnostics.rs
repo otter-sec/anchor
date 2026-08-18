@@ -682,7 +682,13 @@ fn check() {
     assert_anchor_account::<Sysvar<SlotHashes>>();
 }
 "#,
-        &["SlotHashes", "SysvarId"],
+        // `SysvarLoad` is the bound `Sysvar<T>` actually requires; the
+        // `on_unimplemented` note names `SysvarId` alongside it.
+        &[
+            "SlotHashes",
+            "SysvarLoad",
+            "is not a sysvar Anchor can load",
+        ],
     );
 }
 
