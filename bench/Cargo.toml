@@ -14,7 +14,7 @@ anchor-lang-v1 = { path = "../lang" }
 anchor-lang = { path = "../lang-v2" }
 hello-world = { path = "programs/helloworld/anchor-v1", features = ["no-entrypoint"] }
 hello-world-v2 = { path = "programs/helloworld/anchor-v2", features = ["cpi"], package = "hello-world-v2" }
-litesvm = "0.11.0"
+litesvm = "0.13.1"
 solana-account = "3.0"
 solana-compute-budget = "3.1.12"
 solana-rent = "3.0"

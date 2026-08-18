@@ -316,7 +316,7 @@ dependencies = [
  "anyhow",
  "hello-world",
  "hello-world-v2",
- "litesvm 0.11.0",
+ "litesvm 0.13.1",
  "multisig-v1",
  "multisig-v2",
  "nested-v1",

@@ -461,14 +461,15 @@ pub fn create_account_with_signers(
 
     let required = rent_exempt_lamports(space)?;
     let current = target.lamports();
-
-    if current == 0 {
-        let create = pinocchio_system::instructions::CreateAccount {
-            from: payer,
+    if current < required {
+        let create = pinocchio_system::instructions::CreateAccountAllowPrefund {
             to: target,
-            lamports: required,
             space: space as u64,
             owner,
+            funding: Some(pinocchio_system::instructions::Funding {
+                from: payer,
+                lamports: required - current,
+            }),
         };
         match (payer_signer_seeds, target_signer_seeds) {
             (None, None) => create.invoke()?,
@@ -487,16 +488,19 @@ pub fn create_account_with_signers(
             }
         }
     } else {
-        create_prefunded(
-            payer,
-            target,
-            space,
+        let create = pinocchio_system::instructions::CreateAccountAllowPrefund {
+            to: target,
+            space: space as u64,
             owner,
-            required,
-            current,
-            target_signer_seeds,
-            payer_signer_seeds,
-        )?;
+            funding: None,
+        };
+        match target_signer_seeds {
+            None => create.invoke()?,
+            Some(target_seeds) => {
+                let target_signer = signer_from_seeds(target_seeds);
+                create.invoke_signed(&[target_signer])?;
+            }
+        }
     }
     Ok(())
 }
@@ -524,58 +528,6 @@ pub fn create_account_signed(
     seeds: &[&[u8]],
 ) -> Result<(), ProgramError> {
     create_account_with_signers(payer, target, space, owner, Some(seeds), None)
-}
-
-/// Rare-path fallback for when the target account already holds lamports
-/// at creation time (e.g. airdropped PDAs or `init_if_needed`).
-#[cold]
-fn create_prefunded(
-    payer: &AccountView,
-    target: &AccountView,
-    space: usize,
-    owner: &Address,
-    required: u64,
-    current: u64,
-    target_signer_seeds: Option<&[&[u8]]>,
-    payer_signer_seeds: Option<&[&[u8]]>,
-) -> Result<(), ProgramError> {
-    let top_up = required.saturating_sub(current);
-    if top_up > 0 {
-        let transfer = pinocchio_system::instructions::Transfer {
-            from: payer,
-            to: target,
-            lamports: top_up,
-        };
-        match payer_signer_seeds {
-            Some(seeds) => {
-                let payer_signer = signer_from_seeds(seeds);
-                transfer.invoke_signed(&[payer_signer])?;
-            }
-            None => transfer.invoke()?,
-        }
-    }
-
-    let allocate = pinocchio_system::instructions::Allocate {
-        account: target,
-        space: space as u64,
-    };
-    let assign = pinocchio_system::instructions::Assign {
-        account: target,
-        owner,
-    };
-    match target_signer_seeds {
-        Some(seeds) => {
-            let target_signer = signer_from_seeds(seeds);
-            allocate.invoke_signed(&[target_signer])?;
-            let target_signer = signer_from_seeds(seeds);
-            assign.invoke_signed(&[target_signer])?;
-        }
-        None => {
-            allocate.invoke()?;
-            assign.invoke()?;
-        }
-    }
-    Ok(())
 }
 
 /// Realloc an account to a new size, adjusting rent as needed.
