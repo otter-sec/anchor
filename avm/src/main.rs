@@ -2,13 +2,20 @@ use {
     anyhow::{anyhow, Context, Error, Result},
     avm::{InstallTarget, Resolution},
     clap::{CommandFactory, Parser, Subcommand},
+    fs2::FileExt,
     semver::Version,
     std::{
-        ffi::OsStr,
+        env,
+        ffi::{OsStr, OsString},
+        fs,
         io::IsTerminal,
         path::{Path, PathBuf},
+        process::Command,
     },
 };
+
+const REAL_CARGO_ENV: &str = "AVM_REAL_CARGO";
+const CARGO_NEXT_LOCKFILE_BUMP_ENV: &str = "CARGO_UNSTABLE_NEXT_LOCKFILE_BUMP";
 
 #[derive(Parser)]
 #[clap(name = "avm", about = "Anchor version manager", version)]
@@ -338,7 +345,7 @@ fn anchor_proxy() -> Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<String>>();
 
     if avm::ensure_nightly_active()?.is_some() {
-        return spawn_anchor(avm::nightly_anchor_binary_path(), args);
+        return spawn_anchor(avm::nightly_anchor_binary_path(), args, false);
     }
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -350,26 +357,54 @@ fn anchor_proxy() -> Result<()> {
     })?;
 
     let binary_path = ensure_resolved_binary(&resolution)?;
-    ensure_resolved_solana(&cwd, &resolution)?;
+    prepend_solana_bin_to_path()?;
+    let platform_tools_guard = ensure_resolved_solana(&cwd, &resolution)?
+        .map(|solana| ensure_resolved_platform_tools(&cwd, &solana))
+        .transpose()?;
 
-    spawn_anchor(binary_path, args)
+    spawn_anchor(
+        binary_path,
+        args,
+        platform_tools_guard
+            .as_ref()
+            .is_some_and(|guard| guard.enable_next_lockfile_bump),
+    )
 }
 
-fn spawn_anchor(binary_path: PathBuf, args: Vec<String>) -> Result<()> {
-    let exit = std::process::Command::new(binary_path)
+/// Spawn the resolved Anchor CLI with a temporary Cargo proxy first on `PATH`.
+///
+/// The proxy lives until the child exits and receives the absolute path to the
+/// real Cargo executable through [`REAL_CARGO_ENV`], avoiding recursive proxy
+/// invocation when it delegates the command.
+fn spawn_anchor(
+    binary_path: PathBuf,
+    args: Vec<String>,
+    enable_next_lockfile_bump: bool,
+) -> Result<()> {
+    let cargo_proxy = CargoProxy::new()?;
+    let path = env::join_paths(
+        [
+            cargo_proxy.dir.path().to_path_buf(),
+            avm::get_bin_dir_path(),
+        ]
+        .into_iter()
+        .chain(env::split_paths(&env::var_os("PATH").unwrap_or_default())),
+    )?;
+
+    let mut command = Command::new(binary_path);
+    command
         .args(args)
-        .env(
-            "PATH",
-            format!(
-                "{}:{}",
-                avm::get_bin_dir_path().to_string_lossy(),
-                std::env::var("PATH").unwrap_or_default()
-            ),
-        )
+        .env("PATH", path)
+        .env(REAL_CARGO_ENV, &cargo_proxy.real_cargo)
         // Signal to the spawned anchor-cli that AVM has already resolved the
         // toolchain version, so it must not re-exec via `[toolchain] anchor_version`.
         .env("AVM_ACTIVE", "1")
-        .env("CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS", "fallback")
+        .env("CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS", "fallback");
+    if enable_next_lockfile_bump {
+        command.env(CARGO_NEXT_LOCKFILE_BUMP_ENV, "true");
+    }
+
+    let exit = command
         .spawn()?
         .wait_with_output()
         .expect("Failed to run anchor-cli");
@@ -381,12 +416,137 @@ fn spawn_anchor(binary_path: PathBuf, args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+/// Owns the temporary `cargo` entry point and the Cargo executable it delegates to.
+///
+/// The entry point is the current AVM executable under Cargo's filename, making
+/// AVM a multi-call binary without installing another executable permanently.
+struct CargoProxy {
+    dir: tempfile::TempDir,
+    real_cargo: PathBuf,
+}
+
+impl CargoProxy {
+    fn new() -> Result<Self> {
+        let current_exe = env::current_exe().context("resolving AVM executable")?;
+        let real_cargo = find_real_cargo(&current_exe)?;
+        let dir = tempfile::tempdir().context("creating temporary Cargo proxy directory")?;
+        let proxy = dir
+            .path()
+            .join(if cfg!(windows) { "cargo.exe" } else { "cargo" });
+
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&current_exe, &proxy)
+            .context("creating temporary Cargo proxy")?;
+        #[cfg(windows)]
+        fs::copy(&current_exe, &proxy).context("creating temporary Cargo proxy")?;
+
+        Ok(Self { dir, real_cargo })
+    }
+}
+
+/// Find Cargo on the original `PATH`, skipping entries that resolve back to AVM.
+fn find_real_cargo(current_exe: &Path) -> Result<PathBuf> {
+    let cargo_name = if cfg!(windows) { "cargo.exe" } else { "cargo" };
+    let current_exe = fs::canonicalize(current_exe).context("canonicalizing AVM executable")?;
+
+    env::split_paths(&env::var_os("PATH").unwrap_or_default())
+        .map(|dir| dir.join(cargo_name))
+        .find(|candidate| {
+            candidate.is_file()
+                && fs::canonicalize(candidate)
+                    .map(|candidate| candidate != current_exe)
+                    .unwrap_or(false)
+        })
+        .ok_or_else(|| anyhow!("Could not find `cargo` on PATH"))
+}
+
+/// Handle an AVM invocation whose executable name is `cargo`.
+///
+/// Only an unversioned `+nightly` selector is pinned. Every other invocation,
+/// including `cargo build-sbf` and explicitly dated toolchains, is forwarded
+/// unchanged to the real Cargo executable.
+fn cargo_proxy() -> Result<()> {
+    let real_cargo =
+        env::var_os(REAL_CARGO_ENV).ok_or_else(|| anyhow!("{REAL_CARGO_ENV} is not set"))?;
+    let mut args = env::args_os().skip(1).collect::<Vec<_>>();
+
+    if args
+        .first()
+        .is_some_and(|toolchain| toolchain == "+nightly")
+    {
+        let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let resolution = avm::idl_nightly::resolve_idl_nightly(&cwd)?;
+        pin_idl_nightly(&mut args, &resolution.version);
+        ensure_idl_nightly_installed(&resolution.version)?;
+    }
+
+    let status = Command::new(real_cargo)
+        .args(args)
+        .status()
+        .context("running Cargo through AVM proxy")?;
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    Ok(())
+}
+
+/// Rewrite `+nightly` to the pinned IDL nightly and report whether it changed.
+fn pin_idl_nightly(args: &mut [OsString], idl_nightly: &str) -> bool {
+    let Some(toolchain) = args.first_mut() else {
+        return false;
+    };
+    if toolchain != "+nightly" {
+        return false;
+    }
+
+    *toolchain = format!("+{idl_nightly}").into();
+    true
+}
+
+fn ensure_idl_nightly_installed(idl_nightly: &str) -> Result<()> {
+    let output = Command::new("rustup")
+        .args(["toolchain", "list"])
+        .output()
+        .context("listing installed Rust toolchains")?;
+    let installed = String::from_utf8(output.stdout)?
+        .lines()
+        .any(|line| line.starts_with(idl_nightly));
+    if installed {
+        return Ok(());
+    }
+
+    let status = Command::new("rustup")
+        .args(["toolchain", "install", idl_nightly, "--profile", "minimal"])
+        .status()
+        .context("installing pinned IDL Rust toolchain")?;
+    if !status.success() {
+        anyhow::bail!("Failed to install Rust toolchain {idl_nightly}");
+    }
+
+    Ok(())
+}
+
+/// Make freshly installed Solana executables visible to AVM and the Anchor
+/// process without relying on shell-profile changes.
+fn prepend_solana_bin_to_path() -> Result<()> {
+    let path = env::join_paths(
+        std::iter::once(avm::solana::active_release_bin_path()?)
+            .chain(env::split_paths(&env::var_os("PATH").unwrap_or_default())),
+    )?;
+    env::set_var("PATH", path);
+    Ok(())
+}
+
 /// Ensure the Solana CLI requested by the same project context is active
 /// before spawning the resolved Anchor binary.
-fn ensure_resolved_solana(cwd: &Path, resolution: &Resolution) -> Result<()> {
+fn ensure_resolved_solana(
+    cwd: &Path,
+    resolution: &Resolution,
+) -> Result<Option<avm::SolanaCliResolution>> {
     let Some(solana) = avm::solana::resolve_solana_cli_for_anchor_resolution(cwd, resolution)?
     else {
-        return Ok(());
+        return Ok(None);
     };
 
     avm::solana::ensure_solana_cli(&solana.version).with_context(|| {
@@ -395,7 +555,178 @@ fn ensure_resolved_solana(cwd: &Path, resolution: &Resolution) -> Result<()> {
             solana.version,
             solana.source.describe()
         )
+    })?;
+    Ok(Some(solana))
+}
+
+/// Holds the cross-process lock protecting Rustup's mutable Solana toolchain
+/// aliases for the duration of the Anchor invocation.
+struct PlatformToolsGuard {
+    _lock: fs::File,
+    enable_next_lockfile_bump: bool,
+}
+
+/// Ensure the platform-tools requested by the project are installed in
+/// `cargo-build-sbf`'s shared cache and linked under the Rustup name expected by
+/// the active Solana generation.
+fn ensure_resolved_platform_tools(
+    cwd: &Path,
+    solana: &avm::SolanaCliResolution,
+) -> Result<PlatformToolsGuard> {
+    let lock = acquire_platform_tools_lock()?;
+    let resolution = avm::platform_tools::resolve_platform_tools_for_solana_cli(cwd, solana)?;
+    let platform_tools_path =
+        avm::platform_tools::solana_cache_platform_tools_path(&resolution.version)?;
+
+    if !avm::platform_tools::platform_tools_are_installed_at(&platform_tools_path) {
+        if cargo_build_sbf_supports_install_only()? {
+            let status = Command::new("cargo")
+                .args([
+                    "build-sbf",
+                    "--install-only",
+                    "--tools-version",
+                    &resolution.version,
+                ])
+                .status()
+                .with_context(|| {
+                    format!(
+                        "installing platform-tools {} resolved from {}",
+                        resolution.version,
+                        resolution.source.describe()
+                    )
+                })?;
+            if !status.success() {
+                anyhow::bail!(
+                    "Failed to install platform-tools {} resolved from {}",
+                    resolution.version,
+                    resolution.source.describe()
+                );
+            }
+        } else {
+            avm::platform_tools::install_platform_tools_in_solana_cache(
+                &resolution.version,
+                false,
+            )?;
+        }
+    }
+
+    if !avm::platform_tools::platform_tools_are_installed_at(&platform_tools_path) {
+        anyhow::bail!(
+            "platform-tools {} installation did not create a Rust sysroot at {}",
+            resolution.version,
+            platform_tools_path.display()
+        );
+    }
+
+    let toolchain_name = platform_tools_toolchain_name(solana, &resolution);
+    ensure_rustup_toolchain_link(&toolchain_name, &platform_tools_path.join("rust"))?;
+
+    let enable_next_lockfile_bump =
+        avm::platform_tools::cargo_lock_v4_requires_opt_in(cwd, &resolution)?;
+
+    Ok(PlatformToolsGuard {
+        _lock: lock,
+        enable_next_lockfile_bump,
     })
+}
+
+fn acquire_platform_tools_lock() -> Result<fs::File> {
+    fs::create_dir_all(&*avm::AVM_HOME)
+        .with_context(|| format!("creating {}", avm::AVM_HOME.display()))?;
+    let lock_path = avm::AVM_HOME.join(".platform-tools.lock");
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .with_context(|| format!("opening {}", lock_path.display()))?;
+    FileExt::lock_exclusive(&lock).with_context(|| format!("locking {}", lock_path.display()))?;
+    Ok(lock)
+}
+
+fn cargo_build_sbf_supports_install_only() -> Result<bool> {
+    let output = match Command::new("cargo-build-sbf").arg("--help").output() {
+        Ok(output) => output,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(err) => return Err(err).context("checking cargo-build-sbf capabilities"),
+    };
+    if !output.status.success() {
+        return Ok(false);
+    }
+
+    Ok(
+        String::from_utf8_lossy(&output.stdout).contains("--install-only")
+            || String::from_utf8_lossy(&output.stderr).contains("--install-only"),
+    )
+}
+
+fn platform_tools_toolchain_name(
+    solana: &avm::SolanaCliResolution,
+    platform_tools: &avm::PlatformToolsResolution,
+) -> String {
+    if solana.version.major < 3 {
+        "solana".to_string()
+    } else {
+        format!(
+            "{}-sbpf-solana-{}",
+            platform_tools.rustc, platform_tools.version
+        )
+    }
+}
+
+fn ensure_rustup_toolchain_link(name: &str, rust_path: &Path) -> Result<()> {
+    let output = Command::new("rustup")
+        .args(["toolchain", "list", "-v"])
+        .output()
+        .context("listing linked Rust toolchains")?;
+    if !output.status.success() {
+        anyhow::bail!("Failed to list linked Rust toolchains");
+    }
+
+    let installed_path = String::from_utf8(output.stdout)?.lines().find_map(|line| {
+        let mut fields = line.split_whitespace();
+        (fields.next() == Some(name))
+            .then(|| line.split_whitespace().last().map(PathBuf::from))
+            .flatten()
+    });
+
+    if installed_path
+        .as_deref()
+        .is_some_and(|installed| paths_refer_to_same_directory(installed, rust_path))
+    {
+        return Ok(());
+    }
+
+    if installed_path.is_some() {
+        let status = Command::new("rustup")
+            .args(["toolchain", "uninstall", name])
+            .status()
+            .with_context(|| format!("unlinking Rust toolchain {name}"))?;
+        if !status.success() {
+            anyhow::bail!("Failed to unlink Rust toolchain {name}");
+        }
+    }
+
+    let status = Command::new("rustup")
+        .arg("toolchain")
+        .arg("link")
+        .arg(name)
+        .arg(rust_path)
+        .status()
+        .with_context(|| format!("linking Rust toolchain {name}"))?;
+    if !status.success() {
+        anyhow::bail!("Failed to link Rust toolchain {name}");
+    }
+
+    Ok(())
+}
+
+fn paths_refer_to_same_directory(left: &Path, right: &Path) -> bool {
+    match (fs::canonicalize(left), fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left == right,
+    }
 }
 
 /// Ensure the binary for `resolution.version` exists on disk, prompting the user
@@ -448,7 +779,7 @@ fn ensure_resolved_binary(resolution: &Resolution) -> Result<PathBuf> {
 }
 
 fn main() -> Result<()> {
-    // If the binary is named `anchor` then run the proxy.
+    // If the binary is named `anchor` or `cargo` then run the relevant proxy.
     if let Some(stem) = std::env::args()
         .next()
         .as_ref()
@@ -456,6 +787,9 @@ fn main() -> Result<()> {
     {
         if stem == "anchor" {
             return anchor_proxy();
+        }
+        if stem == "cargo" {
+            return cargo_proxy();
         }
     }
 
@@ -469,6 +803,21 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use {super::*, avm::InstallTarget};
+
+    #[test]
+    fn pins_only_unversioned_nightly_cargo_invocations() {
+        let mut nightly = vec![OsString::from("+nightly"), OsString::from("test")];
+        assert!(pin_idl_nightly(&mut nightly, "nightly-2025-04-15"));
+        assert_eq!(nightly[0], "+nightly-2025-04-15");
+
+        let mut build_sbf = vec![OsString::from("build-sbf")];
+        assert!(!pin_idl_nightly(&mut build_sbf, "nightly-2025-04-15"));
+        assert_eq!(build_sbf[0], "build-sbf");
+
+        let mut dated = vec![OsString::from("+nightly-2026-07-01")];
+        assert!(!pin_idl_nightly(&mut dated, "nightly-2025-04-15"));
+        assert_eq!(dated[0], "+nightly-2026-07-01");
+    }
 
     // --- is_pre_release ---
 

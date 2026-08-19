@@ -493,7 +493,7 @@ fn checked_inc(value: u64, req_str: &str) -> Result<u64> {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn find_ancestor_file(start: &Path, name: &str) -> Option<PathBuf> {
+pub(crate) fn find_ancestor_file(start: &Path, name: &str) -> Option<PathBuf> {
     let mut cur: Option<&Path> = Some(start);
     while let Some(dir) = cur {
         let candidate = dir.join(name);
