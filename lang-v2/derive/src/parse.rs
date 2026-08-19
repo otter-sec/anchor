@@ -868,7 +868,9 @@ fn validate_init_constraint_refs(
             return Err(syn::Error::new(
                 nc.value.span(),
                 format!(
-                    "SPL init constraint `{}::{}` needs an AccountView, not a pubkey. Use a sibling account field of your Accounts struct instead of a const or field access",
+                    "SPL init constraint `{}::{}` needs an AccountView, not a pubkey. Use a \
+                     sibling account field of your Accounts struct instead of a const or field \
+                     access",
                     nc.namespace, nc.raw_key
                 ),
             ));
@@ -1422,18 +1424,19 @@ pub fn validate_account_fields(fields: &[FieldSummary]) -> syn::Result<()> {
                 } else {
                     for constraint in token_program_constraints {
                         let token_program =
-                            expr_as_known_field_ident(&constraint.value, &field_names)
-                                .ok_or_else(|| {
-                                syn::Error::new(
-                                    constraint.value.span(),
-                                    format!(
-                                        "SPL init constraint `{}::{}` needs an AccountView, not \
-                                         a pubkey. Use a sibling account field of your Accounts \
-                                         struct instead of a const or field access",
-                                        constraint.namespace, constraint.raw_key
-                                    ),
-                                )
-                            })?;
+                            expr_as_known_field_ident(&constraint.value, &field_names).ok_or_else(
+                                || {
+                                    syn::Error::new(
+                                        constraint.value.span(),
+                                        format!(
+                                            "SPL init constraint `{}::{}` needs an AccountView, \
+                                             not a pubkey. Use a sibling account field of your \
+                                             Accounts struct instead of a const or field access",
+                                            constraint.namespace, constraint.raw_key
+                                        ),
+                                    )
+                                },
+                            )?;
                         require_summary_field(
                             fields,
                             &token_program,
@@ -1449,17 +1452,19 @@ pub fn validate_account_fields(fields: &[FieldSummary]) -> syn::Result<()> {
                 constraint.raw_key == "mint"
                     && matches!(constraint.namespace.as_str(), "token" | "associated_token")
             }) {
-                let mint = expr_as_known_field_ident(&constraint.value, &field_names).ok_or_else(|| {
-                    syn::Error::new(
-                        constraint.value.span(),
-                        format!(
-                            "SPL init constraint `{}::{}` needs an AccountView, not a pubkey. \
-                             Use a sibling account field of your Accounts struct instead of a \
-                             const or field access",
-                            constraint.namespace, constraint.raw_key
-                        ),
-                    )
-                })?;
+                let mint = expr_as_known_field_ident(&constraint.value, &field_names).ok_or_else(
+                    || {
+                        syn::Error::new(
+                            constraint.value.span(),
+                            format!(
+                                "SPL init constraint `{}::{}` needs an AccountView, not a pubkey. \
+                                 Use a sibling account field of your Accounts struct instead of a \
+                                 const or field access",
+                                constraint.namespace, constraint.raw_key
+                            ),
+                        )
+                    },
+                )?;
                 require_summary_field(fields, &mint, target, "token mint", false)?;
             }
 
@@ -3035,14 +3040,8 @@ pub fn parse_field(
             } else {
                 quote! { &mut self.#field_name }
             };
-            let (update_expected_binding, update_expected_arg) = emit_constraint_expected_binding(
-                &ns,
-                &key,
-                nc,
-                field_names,
-                field_summaries,
-                true,
-            );
+            let (update_expected_binding, update_expected_arg) =
+                emit_constraint_expected_binding(&ns, &key, nc, field_names, field_summaries, true);
             // `update(...)` runs after validation + access-control.
             updates.push(quote! {
                 {
@@ -3522,7 +3521,7 @@ mod tests {
     #[test]
     fn built_in_init_namespaces_skip_runtime_init_hooks() {
         let attrs: Vec<Attribute> = vec![syn::parse_quote!(
-            #[account(init, payer = payer, mint::authority = mint_authority)]
+            #[account(init, payer = payer, mint::decimals = 6, mint::authority = mint_authority)]
         )];
         let parsed = parse_account_attrs(&attrs).expect("built-in init namespace should parse");
         let init_body = quote::quote! { __init_body()? };

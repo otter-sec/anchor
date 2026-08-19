@@ -85,6 +85,10 @@ jobs:
         run: make coverage-v2-sbf-prune
       - name: v2 host coverage setup
         run: make coverage-v2-host-clean
+      - name: v2 host coverage for account derive macro
+        run: make coverage-v2-host-derive
+      - name: v2 host coverage for CLI
+        run: make coverage-v2-host-cli
       - name: v2 host coverage for anchor-lang
         run: make coverage-v2-host-lang
       - name: v2 host coverage for anchor-spl
@@ -99,6 +103,8 @@ jobs:
         run: |
           make coverage-v2-host-report
           make coverage-v2-report
+      - name: Check v2 test inventory
+        run: ./.github/scripts/check-v2-test-inventory.sh
 
       # Upload to Codecov. The action handles comment posting on PRs via
       # the Codecov GitHub App — including fork PRs, where the token

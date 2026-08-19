@@ -862,10 +862,23 @@ fn char_literal_starts_at(line: &str, idx: usize) -> bool {
         return false;
     }
     let before = line[..idx].chars().rev().find(|ch| !ch.is_whitespace());
-    if matches!(before, Some(ch) if ch == '&' || ch == '<' || ch == ',' || ch == '(' || ch == '[') {
+    if matches!(before, Some(ch) if ch == '&' || ch == '<') {
         return false;
     }
-    line[idx + 1..].contains('\'')
+    let Some(end) = line[idx + 1..].find('\'') else {
+        return false;
+    };
+    // A lifetime after a comma (for example `<'a, 'b>`) can have another
+    // apostrophe later on the same line. It is not a character literal.
+    if before == Some(',')
+        && line[idx + 1..idx + 1 + end]
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+    {
+        return false;
+    }
+    true
 }
 
 fn build_source_suppression(records: &[LcovRecord]) -> Result<BTreeMap<PathBuf, BTreeSet<u32>>> {
@@ -1115,6 +1128,26 @@ fn is_rust_delimiter_only(line: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use {super::*, std::fs, tempfile::tempdir};
+
+    #[test]
+    fn function_body_parser_ignores_braces_in_char_arrays() {
+        let source = [
+            "fn trim_delimiters(input: &str) -> &str {",
+            "    input.trim_start_matches(['(', '[', '{'])",
+            "}",
+            "",
+            "fn next() {}",
+        ];
+        let body = find_rust_function_body(
+            Path::new("fixture.rs"),
+            &source,
+            1,
+        )
+        .unwrap()
+        .expect("function should have a body");
+
+        assert_eq!((body.end_line, body.end_col), (3, 0));
+    }
 
     #[test]
     fn filter_host_lcov_removes_only_non_executable_noise() {

@@ -18,8 +18,8 @@ use {
     quote::quote,
     serde_json::{json, Value},
     syn::{
-        punctuated::Punctuated, spanned::Spanned, visit::Visit, Expr, GenericParam, Generics,
-        Lit, PathArguments, Token, Type, TypePath,
+        punctuated::Punctuated, spanned::Spanned, visit::Visit, Expr, GenericParam, Generics, Lit,
+        PathArguments, Token, Type, TypePath,
     },
 };
 
@@ -614,9 +614,8 @@ pub fn bytemuck_repr_from_attrs(attrs: &[syn::Attribute]) -> syn::Result<Bytemuc
                     if packed != 1 {
                         return Err(syn::Error::new(
                             list.span(),
-                            "Anchor IDL only supports `#[repr(..., packed)]` or \
-                             `#[repr(..., packed(1))]`; other packed widths \
-                             would produce a lossy IDL layout"
+                            "Anchor IDL only supports `#[repr(..., packed)]` or `#[repr(..., \
+                             packed(1))]`; other packed widths would produce a lossy IDL layout",
                         ));
                     }
                     repr.packed = true;
@@ -759,10 +758,15 @@ fn type_def_header_parts(
     kind_name: &str,
 ) -> (String, String) {
     const FIELD_MARKER: &str = "__anchor_private_fields__";
+    let entries_key = if kind_name == "enum" {
+        "variants"
+    } else {
+        "fields"
+    };
     let mut type_def_obj = build_type_def_header(name, docs, kind, generics);
     type_def_obj.insert(
         "type".into(),
-        json!({ "kind": kind_name, "fields": [FIELD_MARKER] }),
+        json!({ "kind": kind_name, entries_key: [FIELD_MARKER] }),
     );
     let header = Value::Object(type_def_obj).to_string();
     let marker = Value::String(FIELD_MARKER.to_owned()).to_string();
@@ -998,9 +1002,9 @@ impl SeedJson {
                 anchor_lang::__alloc::string::String::from(#s)
             },
             SeedJson::Runtime(ts) => ts,
-            SeedJson::Unsupported => unreachable!(
-                "unsupported seed must be filtered out before IDL emission"
-            ),
+            SeedJson::Unsupported => {
+                unreachable!("unsupported seed must be filtered out before IDL emission")
+            }
         }
     }
 }
@@ -1029,7 +1033,9 @@ impl SeedJson {
 pub fn classify_seed(expr: &Expr, field_names: &[String], ix_arg_names: &[String]) -> SeedJson {
     if let Some(seed) = classify_seed_inner(expr, field_names, ix_arg_names) {
         seed
-    } else if expr_references_runtime_seed_inputs(expr, field_names, ix_arg_names) {
+    } else if expr_contains_macro(expr)
+        || expr_references_runtime_seed_inputs(expr, field_names, ix_arg_names)
+    {
         SeedJson::Unsupported
     } else {
         runtime_seed(expr)
@@ -1053,9 +1059,8 @@ pub fn classify_seed_list(
                 .all(|seed| !matches!(seed, SeedJson::Unsupported))
                 .then_some(SeedListJson::Listed(seeds))
         }
-        _ => (!expr_references_runtime_seed_inputs(expr, field_names, ix_arg_names)).then_some(
-            SeedListJson::Runtime(runtime_seeds(expr)),
-        ),
+        _ => (!expr_references_runtime_seed_inputs(expr, field_names, ix_arg_names))
+            .then_some(SeedListJson::Runtime(runtime_seeds(expr))),
     }
 }
 
@@ -1407,6 +1412,7 @@ mod tests {
             SeedJson::Runtime(ts) => {
                 panic!("expected Static seed, got Runtime: {}", ts);
             }
+            SeedJson::Unsupported => panic!("expected Static seed, got Unsupported"),
         }
     }
 
@@ -1414,7 +1420,15 @@ mod tests {
         match seed {
             SeedJson::Static(s) => panic!("expected Runtime seed, got Static: {s}"),
             SeedJson::Runtime(ts) => ts.to_string(),
+            SeedJson::Unsupported => panic!("expected Runtime seed, got Unsupported"),
         }
+    }
+
+    fn expect_unsupported(seed: SeedJson) {
+        assert!(
+            matches!(seed, SeedJson::Unsupported),
+            "expected Unsupported seed"
+        );
     }
 
     fn classify(expr: syn::Expr, fields: &[&str], args: &[&str]) -> SeedJson {
@@ -1542,9 +1556,9 @@ mod tests {
     }
 
     #[test]
-    fn byte_array_with_non_u8_is_opaque_expr() {
-        let s = expect_static(classify(syn::parse_quote!([999, 2]), &[], &[]));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
+    fn byte_array_with_non_u8_is_evaluated_at_idl_build_time() {
+        let ts = expect_runtime(classify(syn::parse_quote!([999, 2]), &[], &[]));
+        assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
     }
 
     #[test]
@@ -1601,43 +1615,39 @@ mod tests {
     }
 
     #[test]
-    fn account_field_method_chain_is_opaque_expr() {
-        let s = expect_static(classify(
+    fn account_field_method_chain_is_unsupported() {
+        expect_unsupported(classify(
             syn::parse_quote!(manager.next_oracle_id.to_le_bytes()),
             &["manager"],
             &[],
         ));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
     }
 
     #[test]
-    fn nested_account_address_chain_is_opaque_expr() {
-        let s = expect_static(classify(
+    fn nested_account_address_chain_is_unsupported() {
+        expect_unsupported(classify(
             syn::parse_quote!(manager.account().address().as_ref()),
             &["manager"],
             &[],
         ));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
     }
 
     #[test]
-    fn wrapped_account_ref_is_opaque_expr() {
-        let s = expect_static(classify(
+    fn wrapped_account_ref_is_unsupported() {
+        expect_unsupported(classify(
             syn::parse_quote!(u64::from(manager.next_oracle_id).to_le_bytes()),
             &["manager"],
             &[],
         ));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
     }
 
     #[test]
     fn wrapped_arg_ref_is_opaque_expr() {
-        let s = expect_static(classify(
+        expect_unsupported(classify(
             syn::parse_quote!(u64::from(next_oracle_id).to_le_bytes()),
             &[],
             &["next_oracle_id"],
         ));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
     }
 
     #[test]
@@ -1647,52 +1657,48 @@ mod tests {
     }
 
     #[test]
-    fn const_path_is_opaque_expr() {
-        let s = expect_static(classify(syn::parse_quote!(MY_PREFIX), &[], &[]));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
+    fn const_path_is_evaluated_at_idl_build_time() {
+        let ts = expect_runtime(classify(syn::parse_quote!(MY_PREFIX), &[], &[]));
+        assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
     }
 
     #[test]
-    fn marker_id_call_is_opaque_expr() {
-        let s = expect_static(classify(syn::parse_quote!(System::id()), &[], &[]));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
+    fn marker_id_call_is_evaluated_at_idl_build_time() {
+        let ts = expect_runtime(classify(syn::parse_quote!(System::id()), &[], &[]));
+        assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
     }
 
     #[test]
     fn program_marker_id_call_flows_through_runtime_const_seed() {
         let fields = Vec::new();
         let args = Vec::new();
-        let ts = expect_runtime(classify_program_seed(
-            &syn::parse_quote!(System::id()),
-            &fields,
-            &args,
-        ));
+        let ts = expect_runtime(
+            classify_program_seed(&syn::parse_quote!(System::id()), &fields, &args)
+                .expect("program marker should be representable in the IDL"),
+        );
         assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
         assert!(ts.contains("System :: id"), "got: {ts}");
     }
 
     #[test]
-    fn local_field_program_seed_stays_opaque_expr() {
+    fn local_field_program_seed_is_omitted() {
         let fields = vec!["config".to_string()];
         let args = Vec::new();
-        let s = expect_static(classify_program_seed(
-            &syn::parse_quote!(config.program_id),
-            &fields,
-            &args,
-        ));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
+        assert!(
+            classify_program_seed(&syn::parse_quote!(config.program_id), &fields, &args).is_none()
+        );
     }
 
     #[test]
-    fn macro_wrapped_local_field_program_seed_stays_opaque_expr() {
+    fn macro_wrapped_local_field_program_seed_is_omitted() {
         let fields = vec!["config".to_string()];
         let args = Vec::new();
-        let s = expect_static(classify_program_seed(
+        assert!(classify_program_seed(
             &syn::parse_quote!(wrap!(config.program_id)),
             &fields,
-            &args,
-        ));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
+            &args
+        )
+        .is_none());
     }
 
     #[test]
@@ -1720,9 +1726,9 @@ mod tests {
     }
 
     #[test]
-    fn unknown_marker_id_call_is_opaque_expr() {
-        let s = expect_static(classify(syn::parse_quote!(MyCustomProgram::id()), &[], &[]));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
+    fn unknown_marker_id_call_is_evaluated_at_idl_build_time() {
+        let ts = expect_runtime(classify(syn::parse_quote!(MyCustomProgram::id()), &[], &[]));
+        assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
     }
 
     #[test]
@@ -1731,7 +1737,7 @@ mod tests {
             SeedJson::Static(r#"{"kind":"const","value":[1]}"#.to_string()),
             SeedJson::Static(r#"{"kind":"account","path":"user"}"#.to_string()),
         ];
-        let ts = pda_object_emission(&seeds, None).to_string();
+        let ts = pda_object_emission(&SeedListJson::Listed(seeds), None).to_string();
         // Both seed bodies are spliced in source order with the comma
         // separator between them.
         assert!(
@@ -1754,7 +1760,7 @@ mod tests {
             r#"{"kind":"const","value":[1]}"#.to_string(),
         )];
         let prog = SeedJson::Static(r#"{"kind":"const","value":[2]}"#.to_string());
-        let ts = pda_object_emission(&seeds, Some(&prog)).to_string();
+        let ts = pda_object_emission(&SeedListJson::Listed(seeds), Some(&prog)).to_string();
         // The program override gets its own runtime push under the
         // "program" key.
         assert!(ts.contains(r#",\"program\":"#), "missing program key: {ts}");

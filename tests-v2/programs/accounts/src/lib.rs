@@ -54,6 +54,14 @@ pub struct BumpArgs {
     pub tag: [u8; 4],
 }
 
+/// Plain enum used to verify that `IdlType` emits the spec's `variants`
+/// collection rather than a struct-style `fields` collection.
+#[derive(Clone, Copy, IdlType)]
+pub enum DepositType {
+    Protected,
+    Boosted,
+}
+
 type LedgerAccount = Slab<Ledger, LedgerEntry>;
 
 #[program]

@@ -178,9 +178,9 @@ fn update_accounts_stmt_for_handler_pat(pat: &mut Pat) -> syn::Result<syn::Stmt>
             Ok(update_stmt(quote! { &mut #ctx_ident.accounts }))
         }
         Pat::Struct(ps) => {
-            let accounts_ident = if let Some(accounts_field) = ps.fields.iter_mut().find(|field| {
-                matches!(&field.member, syn::Member::Named(ident) if ident == "accounts")
-            }) {
+            let accounts_ident = if let Some(accounts_field) = ps.fields.iter_mut().find(
+                |field| matches!(&field.member, syn::Member::Named(ident) if ident == "accounts"),
+            ) {
                 match accounts_field.pat.as_mut() {
                     Pat::Ident(pi) => pi.ident.clone(),
                     Pat::Wild(_) => {
@@ -191,7 +191,9 @@ fn update_accounts_stmt_for_handler_pat(pat: &mut Pat) -> syn::Result<syn::Stmt>
                     other => {
                         return Err(syn::Error::new_spanned(
                             other,
-                            "`update(...)` handlers that destructure `Context { .. }` must bind `accounts` as a name or `_`, for example `Context { accounts, .. }` or `Context { accounts: _, .. }`",
+                            "`update(...)` handlers that destructure `Context { .. }` must bind \
+                             `accounts` as a name or `_`, for example `Context { accounts, .. }` \
+                             or `Context { accounts: _, .. }`",
                         ));
                     }
                 }
@@ -215,7 +217,9 @@ fn update_accounts_stmt_for_handler_pat(pat: &mut Pat) -> syn::Result<syn::Stmt>
         }
         _ => Err(syn::Error::new_spanned(
             pat,
-            "`update(...)` handlers must take `&mut Context<T>` as an identifier like `ctx`, `_`, or `Context { .. }`, for example `ctx: &mut Context<T>` or `Context { accounts, .. }: &mut Context<T>`",
+            "`update(...)` handlers must take `&mut Context<T>` as an identifier like `ctx`, `_`, \
+             or `Context { .. }`, for example `ctx: &mut Context<T>` or `Context { accounts, .. \
+             }: &mut Context<T>`",
         )),
     }
 }
@@ -6872,8 +6876,8 @@ mod tests {
         );
         assert!(
             !generated.contains(
-                "< anchor_lang :: Nested < Inner > as anchor_lang :: IdlAccountType > \
-                 :: __register_idl_deps"
+                "< anchor_lang :: Nested < Inner > as anchor_lang :: IdlAccountType > :: \
+                 __register_idl_deps"
             ),
             "nested accounts should not require an IdlAccountType impl on Inner via Nested: \
              {generated}"
@@ -6949,7 +6953,8 @@ mod tests {
             generated.contains(
                 "anchor_lang :: TryAccounts :: update_accounts (& mut ctx . accounts) ? ;"
             ),
-            "expected handler body to call update_accounts after access-control expansion, got: {generated}"
+            "expected handler body to call update_accounts after access-control expansion, got: \
+             {generated}"
         );
         assert!(
             generated.contains("access_control"),
@@ -6978,7 +6983,8 @@ mod tests {
 
         assert!(
             generated.contains("anchor_lang :: TryAccounts :: update_accounts (accounts) ? ;"),
-            "expected destructured handler body to call update_accounts via accounts binding, got: {generated}"
+            "expected destructured handler body to call update_accounts via accounts binding, \
+             got: {generated}"
         );
     }
 
@@ -7002,14 +7008,15 @@ mod tests {
         let generated = impl_program(&module, &config).to_string();
 
         assert!(
-            generated.contains(
-                "anchor_lang :: TryAccounts :: update_accounts (__anchor_accounts) ? ;"
-            ),
-            "expected struct-pattern handler body to call update_accounts via synthesized accounts binding, got: {generated}"
+            generated
+                .contains("anchor_lang :: TryAccounts :: update_accounts (__anchor_accounts) ? ;"),
+            "expected struct-pattern handler body to call update_accounts via synthesized \
+             accounts binding, got: {generated}"
         );
         assert!(
             generated.contains("Context { bumps , accounts : __anchor_accounts , .. }"),
-            "expected struct-pattern handler signature to include synthesized accounts binding, got: {generated}"
+            "expected struct-pattern handler signature to include synthesized accounts binding, \
+             got: {generated}"
         );
     }
 
@@ -7036,11 +7043,13 @@ mod tests {
             generated.contains(
                 "anchor_lang :: TryAccounts :: update_accounts (& mut __anchor_ctx . accounts) ? ;"
             ),
-            "expected wildcard handler body to call update_accounts via synthesized ctx binding, got: {generated}"
+            "expected wildcard handler body to call update_accounts via synthesized ctx binding, \
+             got: {generated}"
         );
         assert!(
             generated.contains("fn rotate (__anchor_ctx : & mut Context < RotateAuthority >)"),
-            "expected wildcard handler signature to be rewritten to a concrete ctx binding, got: {generated}"
+            "expected wildcard handler signature to be rewritten to a concrete ctx binding, got: \
+             {generated}"
         );
     }
 
@@ -7067,7 +7076,8 @@ mod tests {
 
         assert!(
             generated.contains("compile_error"),
-            "expected unsupported nested accounts destructuring to emit a compile error, got: {generated}"
+            "expected unsupported nested accounts destructuring to emit a compile error, got: \
+             {generated}"
         );
         assert!(
             generated.contains("must bind `accounts` as a name or `_`"),
@@ -7098,10 +7108,13 @@ mod tests {
 
         assert!(
             generated.contains("compile_error"),
-            "expected unsupported reference-pattern context to emit a compile error, got: {generated}"
+            "expected unsupported reference-pattern context to emit a compile error, got: \
+             {generated}"
         );
         assert!(
-            generated.contains("must take `&mut Context<T>` as an identifier like `ctx`, `_`, or `Context { .. }`"),
+            generated.contains(
+                "must take `&mut Context<T>` as an identifier like `ctx`, `_`, or `Context { .. }`"
+            ),
             "expected targeted top-level pattern error, got: {generated}"
         );
     }
@@ -7126,13 +7139,14 @@ mod tests {
         });
         let name: syn::Ident = syn::parse_quote!(fixture);
 
-        let generated = gen_declared_program(&name, &idl)
+        let generated = gen_declared_program(&name, &idl, std::path::Path::new("fixture.json"))
             .expect("fixture IDL should generate")
             .to_string();
 
         assert!(
             generated.contains(
-                "const IDL_ADDRESS : & 'static str = \"Externa1111111111111111111111111111111111111\""
+                "const IDL_ADDRESS : & 'static str = \
+                 \"Externa1111111111111111111111111111111111111\""
             ),
             "declare_program markers should expose their known address for IDL emission: \
              {generated}"
@@ -7142,18 +7156,12 @@ mod tests {
     #[test]
     fn declare_idl_defined_pod_wrappers_use_runtime_types() {
         let span = proc_macro2::Span::call_site();
-        let pod_u64 = declare_idl_type_to_tokens(
-            &json!({ "defined": { "name": "PodU64" } }),
-            span,
-        )
-        .unwrap();
+        let pod_u64 =
+            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodU64" } }), span).unwrap();
         assert_eq!(pod_u64.to_string(), "anchor_lang :: pod :: PodU64");
 
-        let pod_bool = declare_idl_type_to_tokens(
-            &json!({ "defined": { "name": "PodBool" } }),
-            span,
-        )
-        .unwrap();
+        let pod_bool =
+            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodBool" } }), span).unwrap();
         assert_eq!(pod_bool.to_string(), "anchor_lang :: pod :: PodBool");
     }
 
@@ -7177,13 +7185,15 @@ mod tests {
         );
         assert!(
             generated.contains(
-                "let (__nested_inner , __anchor_bump_cache_inner , _) = < Inner as anchor_lang :: TryAccounts > :: validate_accounts"
+                "let (__nested_inner , __anchor_bump_cache_inner , _) = < Inner as anchor_lang :: \
+                 TryAccounts > :: validate_accounts"
             ),
             "expected nested validate_accounts call to keep the returned bumps value: {generated}"
         );
         assert!(
             generated.contains(
-                "let mut __anchor_bump_cache_inner : < Inner as anchor_lang :: Bumps > :: Bumps = :: core :: default :: Default :: default() ;"
+                "let mut __anchor_bump_cache_inner : < Inner as anchor_lang :: Bumps > :: Bumps = \
+                 :: core :: default :: Default :: default() ;"
             ),
             "expected nested bump cache local declaration: {generated}"
         );

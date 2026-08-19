@@ -11,7 +11,7 @@ use {
 
 #[test]
 fn plain_arg_struct_emits_type_def() {
-    let json = <accounts_test::BumpArgs as IdlAccountType>::__IDL_TYPE_DEF
+    let json = <accounts_test::BumpArgs as IdlAccountType>::__idl_type_def()
         .expect("IdlType derive should set __IDL_TYPE_DEF");
     let type_def: IdlTypeDef = serde_json::from_str(json)
         .unwrap_or_else(|err| panic!("failed to parse type def JSON: {err}\njson: {json}"));
@@ -34,6 +34,22 @@ fn plain_arg_struct_emits_type_def() {
         fields[1].ty,
         IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Value(4))
     );
+}
+
+#[test]
+fn plain_enum_emits_variants() {
+    let json = <accounts_test::DepositType as IdlAccountType>::__idl_type_def()
+        .expect("IdlType derive should set __IDL_TYPE_DEF");
+    let type_def: IdlTypeDef = serde_json::from_str(json)
+        .unwrap_or_else(|err| panic!("failed to parse type def JSON: {err}\njson: {json}"));
+
+    assert_eq!(type_def.name, "DepositType");
+    let IdlTypeDefTy::Enum { variants } = &type_def.ty else {
+        panic!("expected enum type def, got {:?}", type_def.ty);
+    };
+    assert_eq!(variants.len(), 2);
+    assert_eq!(variants[0].name, "Protected");
+    assert_eq!(variants[1].name, "Boosted");
 }
 
 #[test]
