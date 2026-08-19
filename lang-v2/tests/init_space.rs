@@ -141,6 +141,21 @@ fn enum_picks_largest_variant_plus_discriminator() {
 }
 
 #[derive(InitSpace)]
+enum GenericVariant<T: Space> {
+    Empty,
+    One(T),
+    Two(u64, T),
+}
+
+#[test]
+fn generic_enum_emits_space_impl_with_type_params() {
+    // 1 (disc) + max(0, 8, 8+8) = 17 when T = u64
+    assert_eq!(GenericVariant::<u64>::INIT_SPACE, 1 + 16);
+    // 1 + max(0, 32, 8+32) = 41 when T = Address
+    assert_eq!(GenericVariant::<Address>::INIT_SPACE, 1 + 40);
+}
+
+#[derive(InitSpace)]
 struct Unit;
 
 #[test]
