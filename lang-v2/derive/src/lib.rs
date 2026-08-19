@@ -5452,17 +5452,33 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                 >,
             {
                 pub fn get(&self) -> T {
-                    let __return_data =
-                        anchor_lang::pinocchio::cpi::get_return_data().unwrap();
-                    assert!(
-                        anchor_lang::address_eq(__return_data.program_id(), &self.program),
-                        "return data program id mismatch"
-                    );
-                    anchor_lang::wincode::config::deserialize(
-                        __return_data.as_slice(),
-                        anchor_lang::BORSH_CONFIG,
-                    )
-                        .unwrap()
+                    // Solana / Pinocchio report a zero-length return buffer as
+                    // `None` (`sol_get_return_data` size == 0). Empty structs
+                    // and other ZST returns serialize to zero bytes, so treat
+                    // missing return data as an empty slice. Non-empty `T`
+                    // still fails to deserialize from `[]`. When bytes are
+                    // present, keep the program-id authenticity check.
+                    match anchor_lang::pinocchio::cpi::get_return_data() {
+                        Some(__return_data) => {
+                            assert!(
+                                anchor_lang::address_eq(
+                                    __return_data.program_id(),
+                                    &self.program,
+                                ),
+                                "return data program id mismatch"
+                            );
+                            anchor_lang::wincode::config::deserialize(
+                                __return_data.as_slice(),
+                                anchor_lang::BORSH_CONFIG,
+                            )
+                            .unwrap()
+                        }
+                        None => anchor_lang::wincode::config::deserialize(
+                            &[][..],
+                            anchor_lang::BORSH_CONFIG,
+                        )
+                        .unwrap(),
+                    }
                 }
             }
 

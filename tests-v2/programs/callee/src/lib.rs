@@ -44,7 +44,18 @@ pub mod callee {
         ctx.accounts.data.value = ctx.accounts.data.value.saturating_add(delta);
         Ok(())
     }
+
+    /// Zero-byte return type — Finding #81: empty structs serialize to `[]`,
+    /// which the runtime exposes as `None` from `get_return_data`. CPI
+    /// callers must still be able to `Return<Ack>::get()`.
+    pub fn acknowledge(_ctx: &mut Context<Empty>) -> Result<Ack> {
+        Ok(Ack {})
+    }
 }
+
+/// Empty return payload with a valid zero-byte wincode schema.
+#[derive(Clone, Copy, wincode::SchemaRead, wincode::SchemaWrite)]
+pub struct Ack {}
 
 #[derive(Accounts)]
 pub struct Initialize {

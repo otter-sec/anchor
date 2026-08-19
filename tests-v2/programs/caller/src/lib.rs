@@ -75,6 +75,18 @@ pub mod caller {
         callee::cpi::touch(cpi_ctx, delta)?;
         Ok(())
     }
+
+    /// CPIs into `acknowledge` and reads the zero-byte `Ack` return via
+    /// `Return::get` — must not panic when the runtime reports empty
+    /// return data as `None`.
+    pub fn proxy_acknowledge(ctx: &mut Context<ProxyEmpty>) -> Result<()> {
+        let cpi_ctx = CpiContext::new(
+            ctx.accounts.callee_program.address(),
+            callee::cpi::accounts::Empty::new(),
+        );
+        let _ack = callee::cpi::acknowledge(cpi_ctx)?.get();
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]

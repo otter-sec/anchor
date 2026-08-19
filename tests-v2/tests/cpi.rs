@@ -85,6 +85,19 @@ fn test_cpi_empty_accounts() {
         .expect("caller::proxy_empty should succeed");
 }
 
+/// Finding #81: empty-struct returns serialize to zero bytes; the runtime
+/// exposes that as `get_return_data() == None`. `Return::get` must treat
+/// `None` as an empty slice so CPI callers don't panic.
+#[test]
+fn test_cpi_empty_struct_return() {
+    let (mut svm, payer) = setup();
+
+    let proxy = caller::instruction::ProxyAcknowledge {}.data();
+    let proxy_metas = vec![AccountMeta::new_readonly(callee_id(), false)];
+    send_instruction(&mut svm, caller_id(), proxy, proxy_metas, &payer, &[])
+        .expect("caller::proxy_acknowledge should succeed reading Ack via Return::get");
+}
+
 #[test]
 fn test_direct_set_data() {
     let (mut svm, payer) = setup();
