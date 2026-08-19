@@ -444,12 +444,21 @@ mod legacy {
 
     impl From<IdlTypeDefinition> for t::IdlTypeDef {
         fn from(value: IdlTypeDefinition) -> Self {
+            // Legacy IDL only declares type generics (plain name strings). Map
+            // them into v2 `IdlTypeDefGeneric::Type` so `declare_program!` still
+            // emits Rust type parameters for fields that use those generics.
+            let generics = value
+                .generics
+                .unwrap_or_default()
+                .into_iter()
+                .map(|name| t::IdlTypeDefGeneric::Type { name })
+                .collect();
             Self {
                 name: value.name,
                 docs: value.docs.unwrap_or_default(),
                 serialization: Default::default(),
                 repr: Default::default(),
-                generics: Default::default(),
+                generics,
                 ty: value.ty.into(),
             }
         }
@@ -1073,5 +1082,113 @@ mod tests {
         let actual: serde_json::Value = serde_json::from_slice(&legacy_bytes).unwrap();
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn legacy_type_generics_are_preserved() {
+        // Pre-fix: legacy `generics: ["T"]` was dropped during conversion while
+        // field uses of `{"generic":"T"}` were kept, so declare_program! emitted
+        // undeclared type parameters.
+        let legacy = br#"{
+            "version": "0.1.0",
+            "name": "generics_fixture",
+            "metadata": { "address": "11111111111111111111111111111111" },
+            "instructions": [],
+            "accounts": [],
+            "types": [
+                {
+                    "name": "Wrapper",
+                    "generics": ["T"],
+                    "type": {
+                        "kind": "struct",
+                        "fields": [
+                            { "name": "value", "type": { "generic": "T" } },
+                            {
+                                "name": "nested",
+                                "type": {
+                                    "definedWithTypeArgs": {
+                                        "name": "Inner",
+                                        "args": [{ "generic": "T" }]
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "LenArray",
+                    "generics": ["N"],
+                    "type": {
+                        "kind": "struct",
+                        "fields": [
+                            {
+                                "name": "data",
+                                "type": { "genericLenArray": ["u8", "N"] }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }"#;
+
+        let current = convert_idl(legacy).expect("legacy -> current");
+        let wrapper = current
+            .types
+            .iter()
+            .find(|ty| ty.name == "Wrapper")
+            .expect("Wrapper type");
+        assert_eq!(
+            wrapper.generics,
+            vec![anchor_lang_idl_spec::IdlTypeDefGeneric::Type {
+                name: "T".into()
+            }]
+        );
+        match &wrapper.ty {
+            anchor_lang_idl_spec::IdlTypeDefTy::Struct {
+                fields: Some(anchor_lang_idl_spec::IdlDefinedFields::Named(fields)),
+            } => {
+                assert_eq!(
+                    fields[0].ty,
+                    anchor_lang_idl_spec::IdlType::Generic("T".into())
+                );
+                assert_eq!(
+                    fields[1].ty,
+                    anchor_lang_idl_spec::IdlType::Defined {
+                        name: "Inner".into(),
+                        generics: vec![anchor_lang_idl_spec::IdlGenericArg::Type {
+                            ty: anchor_lang_idl_spec::IdlType::Generic("T".into()),
+                        }],
+                    }
+                );
+            }
+            other => panic!("unexpected Wrapper shape: {other:?}"),
+        }
+
+        let len_array = current
+            .types
+            .iter()
+            .find(|ty| ty.name == "LenArray")
+            .expect("LenArray type");
+        assert_eq!(
+            len_array.generics,
+            vec![anchor_lang_idl_spec::IdlTypeDefGeneric::Type {
+                name: "N".into()
+            }]
+        );
+
+        // Round-trip must keep the declarations so a later declare_program!
+        // path still sees them.
+        let legacy_bytes = convert_idl_to_legacy(&current).expect("current -> legacy");
+        let legacy_value: serde_json::Value = serde_json::from_slice(&legacy_bytes).unwrap();
+        let wrapper_legacy = legacy_value["types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|ty| ty["name"] == "Wrapper")
+            .unwrap();
+        assert_eq!(
+            wrapper_legacy["generics"],
+            serde_json::json!(["T"])
+        );
     }
 }
