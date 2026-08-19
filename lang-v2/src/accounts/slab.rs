@@ -169,6 +169,12 @@ where
     H: Pod + Zeroable + SlabSchema,
 {
     fn drop(&mut self) {
+        if self.is_mutable {
+            // If the account was externally shrunk while this wrapper was
+            // retained, persist a repaired tail length before we release the
+            // exclusive borrow so a later reload still validates.
+            self.repair_stale_len_after_external_shrink();
+        }
         let borrow_state = unsafe { &mut (*self.view.account_ptr().cast_mut()).borrow_state };
         if self.is_mutable {
             *borrow_state = NOT_BORROWED;
@@ -246,6 +252,30 @@ where
                 "Slab tail alignment exceeds Solana's 8-byte account data alignment",
             );
         };
+    }
+
+    /// Clamp a retained tail's stored `len` down to current capacity after an
+    /// external shrink. No-op for header-only slabs, read-only loads, or when
+    /// the shrink removed the `len` field entirely.
+    #[inline(always)]
+    fn repair_stale_len_after_external_shrink(&mut self) {
+        if !self.is_mutable || !Self::HAS_TAIL || self.view.data_len() < Self::LEN_OFFSET + 4 {
+            return;
+        }
+
+        let capacity = capacity_for(
+            self.view.data_len(),
+            Self::ITEMS_OFFSET,
+            core::mem::size_of::<T>(),
+        );
+        let bytes = unsafe { self.view.borrow_unchecked_mut() };
+        let mut len_bytes = [0u8; 4];
+        len_bytes.copy_from_slice(&bytes[Self::LEN_OFFSET..Self::LEN_OFFSET + 4]);
+        let len = u32::from_le_bytes(len_bytes) as usize;
+        if len > capacity {
+            bytes[Self::LEN_OFFSET..Self::LEN_OFFSET + 4]
+                .copy_from_slice(&(capacity as u32).to_le_bytes());
+        }
     }
 
     /// Returns the account's address. Always safe regardless of borrow state.
@@ -580,14 +610,23 @@ where
         self.len().min(self.capacity())
     }
 
+    /// Whether the live tail has no readable items.
+    ///
+    /// Uses [`effective_len`](Self::effective_len) so a retained slab whose
+    /// account was externally shrunk below the stored `len` still reports
+    /// empty when every live slot is gone (including zero-capacity shrinks).
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.effective_len() == 0
     }
 
+    /// Whether the live tail cannot accept another push without growing.
+    ///
+    /// Uses [`effective_len`](Self::effective_len) so a post-shrink state with
+    /// raw `len > capacity` reports full rather than neither-empty-nor-full.
     #[inline(always)]
     pub fn is_full(&self) -> bool {
-        self.len() == self.capacity()
+        self.effective_len() == self.capacity()
     }
 
     /// View the tail region as an immutable slice. Uses `effective_len` so
@@ -684,9 +723,17 @@ where
     /// `effective_len` so a post-shrink Slab (raw len > capacity) doesn't
     /// read past the live data buffer; the write-back also clamps the
     /// stored len to a value `<= capacity`.
+    ///
+    /// When an external shrink left `capacity == 0` but a nonzero stored
+    /// `len`, this still clears the stale length before returning `None`
+    /// so a later `load` does not reject `len > capacity`.
     pub fn pop(&mut self) -> Option<T> {
         let len = self.effective_len();
         if len == 0 {
+            // Repair a zero-capacity post-shrink that retained a stale len.
+            if self.len() != 0 {
+                self.write_len(0);
+            }
             return None;
         }
         let new_len = len - 1;
