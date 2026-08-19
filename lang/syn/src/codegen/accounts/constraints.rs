@@ -465,6 +465,15 @@ fn generate_constraint_realloc(
 
         if __delta_space != 0 {
             #payer_optional_check
+            if #payer.key() == #field.key() {
+                return Err(
+                    anchor_lang::error::Error::from(
+                        anchor_lang::solana_program::program_error::ProgramError::InvalidArgument,
+                    )
+                    .with_account_name(#account_name)
+                    .with_pubkeys((#payer.key(), #field.key())),
+                );
+            }
             if __delta_space > 0 {
                 #system_program_optional_check
                 if ::std::convert::TryInto::<usize>::try_into(__delta_space).unwrap() > anchor_lang::solana_program::entrypoint::MAX_PERMITTED_DATA_INCREASE {

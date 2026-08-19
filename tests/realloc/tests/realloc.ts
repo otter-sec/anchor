@@ -137,4 +137,21 @@ describe("realloc", () => {
       assert.strictEqual(err.error.errorCode.number, 3017);
     }
   });
+
+  it("fails when realloc payer matches target", async () => {
+    try {
+      await program.methods.reallocSelfPayer(5).accounts({ sample }).rpc();
+      assert.ok(false);
+    } catch (e) {
+      const err = e as Error & { logs?: string[] };
+      assert.include(err.message, "invalid program argument");
+      assert.isTrue(
+        err.logs?.some((log) =>
+          log.includes(
+            "ProgramError caused by account: sample. Error Code: InvalidArgument"
+          )
+        ) ?? false
+      );
+    }
+  });
 });
