@@ -1257,3 +1257,59 @@ pub struct Bad {{
         "Box<BorshAccount<Data>>",
     );
 }
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn optional_sibling_seed_is_rejected() {
+    // An optional sibling used as a bare PDA seed generates `sibling.address()`
+    // in the on-chain validation path; `Option<T>` has no `.address()` method,
+    // so the expansion never compiles. The derive should surface a clear
+    // diagnostic at attribute-parse time instead of a confusing type error
+    // inside the generated code.
+    compile_fail_case(
+        "optional_sibling_seed_non_init",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct Data { pub val: u64 }
+
+#[derive(Accounts)]
+pub struct Bad {
+    // `authority` is optional — using it bare as a seed is forbidden.
+    pub authority: Option<UncheckedAccount>,
+    #[account(seeds = [authority], bump)]
+    pub pda: Account<Data>,
+}
+"#,
+        &["optional account fields cannot be used as PDA seeds"],
+    );
+
+    compile_fail_case(
+        "optional_sibling_seed_init",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct Data { pub val: u64 }
+
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(mut)]
+    pub payer: Signer,
+    pub authority: Option<UncheckedAccount>,
+    #[account(init, payer = payer, space = 8 + 8, seeds = [authority], bump)]
+    pub pda: Account<Data>,
+    pub system_program: Program<System>,
+}
+"#,
+        &["optional account fields cannot be used as PDA seeds"],
+    );
+}

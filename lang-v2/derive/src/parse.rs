@@ -1564,6 +1564,42 @@ fn address_v1_relation_source(
     field_names.contains(&sibling).then_some(sibling)
 }
 
+/// Returns an error when any seed in `seeds` is a bare identifier that names
+/// an `Option<_>`-typed sibling field. Optional accounts carry no `.address()`
+/// method, so the generated `<sibling>.address()` call would not compile;
+/// surfacing a clear diagnostic here beats a type-error inside the generated
+/// expansion.
+fn reject_optional_sibling_seeds(
+    seeds: &[&Expr],
+    field_summaries: &[FieldSummary],
+) -> syn::Result<()> {
+    for seed in seeds {
+        let Expr::Path(ep) = seed else { continue };
+        if ep.qself.is_some()
+            || ep.path.leading_colon.is_some()
+            || ep.path.segments.len() != 1
+        {
+            continue;
+        }
+        let seg = &ep.path.segments[0];
+        if !seg.arguments.is_empty() {
+            continue;
+        }
+        let ident = &seg.ident;
+        if field_summaries
+            .iter()
+            .any(|s| s.name == *ident && extract_option_inner(&s.ty).is_some())
+        {
+            return Err(syn::Error::new(
+                ident.span(),
+                "optional account fields cannot be used as PDA seeds; \
+                 use a non-optional account for seed derivation",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Rewrite a single seed expression so that a bare field-name identifier
 /// (like `wallet` in `seeds = [b"vault", wallet]`) is replaced with the
 /// explicit address accessor `wallet.address()`.
@@ -1788,6 +1824,7 @@ fn emit_payer_signer_seeds_binding(
     let bump_cache = bump_cache_ident(bump_field);
     if let Expr::Array(arr) = seeds_expr {
         let seed_elems: Vec<&Expr> = arr.elems.iter().collect();
+        reject_optional_sibling_seeds(&seed_elems, field_summaries)?;
         let (seed_bindings, seed_refs) = materialize_seed_refs(&seed_elems, field_names);
         let seed_count = seed_refs.len();
         if let Some(Some(ref bump_expr)) = payer_field.attrs.bump {
@@ -1959,6 +1996,7 @@ fn emit_init_body(
         };
         if let Expr::Array(arr) = seeds_expr {
             let seed_elems: Vec<&Expr> = arr.elems.iter().collect();
+            reject_optional_sibling_seeds(&seed_elems, field_summaries)?;
             emit_seeds_check(
                 &seed_elems,
                 field_names,
@@ -2718,6 +2756,7 @@ pub fn parse_field(
             if let Expr::Array(arr) = seeds_expr {
                 // Array-literal seeds: `seeds = [b"vault", user.address().as_ref()]`
                 let seed_elems: Vec<&Expr> = arr.elems.iter().collect();
+                reject_optional_sibling_seeds(&seed_elems, field_summaries)?;
                 let seed_constraint = if let Some(Some(ref bump_expr)) = attrs.bump {
                     let bump_cache = bump_cache_ident(field_name);
                     let bump_assign = if is_optional {
