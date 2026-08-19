@@ -1049,6 +1049,32 @@ fn parse_associated_token_init(
     }))
 }
 
+fn validate_associated_token_init_refs(
+    attrs: &AccountAttrs,
+    associated_token: Option<&AssociatedTokenInit>,
+    field_summaries: &[FieldSummary],
+) -> syn::Result<()> {
+    let Some(at) = associated_token else {
+        return Ok(());
+    };
+    if !(attrs.is_init || attrs.is_init_if_needed) {
+        return Ok(());
+    }
+
+    for ident in [&at.mint, &at.authority, &at.token_program] {
+        if field_is_optional(field_summaries, ident) {
+            return Err(syn::Error::new(
+                ident.span(),
+                format!(
+                    "`associated_token` constraints cannot reference optional account `{ident}` during init"
+                ),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 /// Wrap the `Result<Self>`-yielding `init_body` so that each runtime-only
 /// namespaced constraint's `AccountConstraint::init` fires against the
 /// freshly-typed value, then return the typed value. Producing this
@@ -2224,6 +2250,7 @@ pub fn parse_field(
     }
     let option_inner = extract_option_inner(field_ty);
     let associated_token = parse_associated_token_init(&attrs, field_names)?;
+    validate_associated_token_init_refs(&attrs, associated_token.as_ref(), field_summaries)?;
     let init_if_needed_reuse_validation = if attrs.is_init_if_needed {
         Some(emit_init_if_needed_reuse_validation(
             option_inner.unwrap_or(field_ty),

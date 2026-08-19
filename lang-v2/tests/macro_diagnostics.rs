@@ -1144,6 +1144,50 @@ pub struct Bad {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn associated_token_init_rejects_optional_sibling_refs() {
+    compile_fail_case(
+        "associated_token_init_rejects_optional_sibling_refs",
+        r#"
+use anchor_lang_v2::prelude::*;
+use anchor_spl_v2::{
+    associated_token::AssociatedToken,
+    mint::Mint,
+    token::{Token, TokenAccount},
+};
+
+#[account]
+pub struct Holder {
+    pub value: u64,
+}
+
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(mut)]
+    pub payer: Signer,
+    pub mint: Option<Account<Mint>>,
+    pub authority: Option<Account<Holder>>,
+    pub token_program: Program<Token>,
+    #[account(
+        init,
+        payer = payer,
+        associated_token::mint = mint,
+        associated_token::authority = authority,
+        associated_token::token_program = token_program,
+    )]
+    pub token_account: Account<TokenAccount>,
+    pub associated_token_program: Program<AssociatedToken>,
+    pub system_program: Program<System>,
+}
+"#,
+        &["associated_token` constraints cannot reference optional account"],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn optional_pda_init_payer_is_rejected() {
     compile_fail_case(
         "optional_pda_init_payer_is_rejected",
