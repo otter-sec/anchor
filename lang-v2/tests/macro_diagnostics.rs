@@ -788,6 +788,58 @@ pub struct Good {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn empty_seeds_array_with_bump_compiles() {
+    // Pre-fix: `#(#seed_refs),* , bump` left a leading comma when
+    // `seeds = []`, producing invalid Rust. Post-fix: bump-only arrays.
+    compile_pass_case(
+        "empty_seeds_with_bump",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(anchor_lang::wincode::SchemaRead, anchor_lang::wincode::SchemaWrite)]
+pub struct Data {
+    pub value: u64,
+}
+
+impl Owner for Data {
+    const OWNER: Address = crate::ID;
+}
+
+impl Discriminator for Data {
+    const DISCRIMINATOR: &'static [u8] = &[0x65, 0x6d, 0x70, 0x74, 0x79, 0x73, 0x65, 0x64];
+}
+
+#[derive(Accounts)]
+pub struct VerifyEmptySeeds {
+    #[account(seeds = [], bump = 255)]
+    pub pda: BorshAccount<Data>,
+}
+
+#[derive(Accounts)]
+pub struct InitEmptySeeds {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + core::mem::size_of::<Data>(),
+        seeds = [],
+        bump
+    )]
+    pub pda: BorshAccount<Data>,
+    pub system_program: Program<System>,
+}
+"#,
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn init_opaque_seed_expressions_keep_bump_bytes_alive() {
     compile_pass_case(
         "init_opaque_seed_expr",

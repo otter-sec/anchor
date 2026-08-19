@@ -1690,7 +1690,7 @@ fn emit_seeds_check(
                             #(#seed_bindings)*
                             let __bump_seed = [#bump_const];
                             let __seeds: Option<&[&[u8]]> =
-                                Some(&[#(#seed_refs),* , __bump_seed.as_ref()]);
+                                Some(&[#(#seed_refs,)* __bump_seed.as_ref()]);
                         }
                     } else {
                         // Wrap non-init in a block so the consts are
@@ -1737,7 +1737,7 @@ fn emit_seeds_check(
             #find
             let __bump_seed = [__bump];
             let __seeds: Option<&[&[u8]]> =
-                Some(&[#(#seed_refs),* , __bump_seed.as_ref()]);
+                Some(&[#(#seed_refs,)* __bump_seed.as_ref()]);
         }
     } else {
         find
@@ -1798,14 +1798,14 @@ fn emit_payer_signer_seeds_binding(
                 }
                 let __payer_bump: u8 = #bump_expr;
                 anchor_lang::verify_program_address(
-                    &[#(#seed_refs),* , &[__payer_bump]],
+                    &[#(#seed_refs,)* &[__payer_bump]],
                     __program_id,
                     __payer.address(),
                 )?;
                 #bump_cache = __payer_bump;
                 let __payer_bump_seed = [__payer_bump];
                 let __payer_signer_seeds: Option<&[&[u8]]> =
-                    Some(&[#(#seed_refs),* , __payer_bump_seed.as_ref()]);
+                    Some(&[#(#seed_refs,)* __payer_bump_seed.as_ref()]);
             });
         }
 
@@ -1821,7 +1821,7 @@ fn emit_payer_signer_seeds_binding(
             #bump_cache = __payer_bump;
             let __payer_bump_seed = [__payer_bump];
             let __payer_signer_seeds: Option<&[&[u8]]> =
-                Some(&[#(#seed_refs),* , __payer_bump_seed.as_ref()]);
+                Some(&[#(#seed_refs,)* __payer_bump_seed.as_ref()]);
         });
     }
 
@@ -2732,7 +2732,7 @@ pub fn parse_field(
                             #(#seed_bindings)*
                             let __bump_val: u8 = #bump_expr;
                             anchor_lang::verify_program_address(
-                                &[#(#seed_refs),* , &[__bump_val]],
+                                &[#(#seed_refs,)* &[__bump_val]],
                                 #pda_program,
                                 #field_name.account().address(),
                             )?;
@@ -3368,6 +3368,16 @@ mod tests {
             err.to_string().contains("`seeds` requires `bump`"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn empty_seed_array_with_bump_is_accepted() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(seeds = [], bump = 255)]
+        )];
+        let parsed = parse_account_attrs(&attrs).expect("empty seeds with bump must parse");
+        assert!(parsed.seeds.is_some());
+        assert!(matches!(parsed.bump, Some(Some(_))));
     }
 
     #[test]
