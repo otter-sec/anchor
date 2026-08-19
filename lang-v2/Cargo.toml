@@ -167,6 +167,9 @@ required-features = ["testing"]
 name = "address_idl_surface"
 
 [[test]]
+name = "init_space"
+
+[[test]]
 name = "update_hook_order"
 required-features = ["testing"]
 
