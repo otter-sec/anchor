@@ -65,7 +65,7 @@ fn gen_internal_args_mod(idl: &Idl) -> proc_macro2::TokenStream {
         let program_id = get_canonical_program_id();
         let impl_owner = quote! {
             impl anchor_lang::Owner for #ix_struct_name {
-                fn owner() -> Pubkey {
+                fn owner() -> anchor_lang::prelude::Pubkey {
                     #program_id
                 }
             }

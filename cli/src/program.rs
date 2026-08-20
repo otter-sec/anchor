@@ -20,7 +20,8 @@ use {
     solana_instruction::Instruction,
     solana_keypair::Keypair,
     solana_loader_v3_interface::{
-        instruction as loader_v3_instruction, state::UpgradeableLoaderState,
+        instruction::{self as loader_v3_instruction, MINIMUM_EXTEND_PROGRAM_BYTES},
+        state::UpgradeableLoaderState,
     },
     solana_message::{Hash, Message},
     solana_packet::PACKET_DATA_SIZE,
@@ -36,6 +37,7 @@ use {
     },
     solana_signature::Signature,
     solana_signer::{EncodableKey, Signer},
+    solana_system_interface::MAX_PERMITTED_DATA_LENGTH,
     solana_transaction::Transaction,
     std::{
         collections::{BTreeMap, HashSet},
@@ -294,20 +296,25 @@ fn close_buffer_for_resize(
     Ok(())
 }
 
+fn find_nearest_manifest_path(start_dir: &Path) -> Option<PathBuf> {
+    start_dir
+        .ancestors()
+        .map(|path| path.join("Cargo.toml"))
+        .find(|manifest_path| manifest_path.is_file())
+}
+
 fn discover_cargo_metadata(start_dir: &Path) -> Result<Option<Metadata>> {
+    let Some(manifest_path) = find_nearest_manifest_path(start_dir) else {
+        return Ok(None);
+    };
+
     match MetadataCommand::new()
-        .current_dir(start_dir)
+        .manifest_path(manifest_path)
         .no_deps()
         .exec()
     {
         Ok(metadata) => Ok(Some(metadata)),
-        Err(cargo_metadata::Error::CargoMetadata { stderr }) => {
-            if stderr.contains("could not find `Cargo.toml`") {
-                Ok(None)
-            } else {
-                bail!(stderr);
-            }
-        }
+        Err(cargo_metadata::Error::CargoMetadata { stderr }) => bail!(stderr),
         Err(err) => Err(err.into()),
     }
 }
@@ -1302,6 +1309,18 @@ fn deploy_program(
     Ok(())
 }
 
+// SIMD-0431: Minimum Extend Program Size
+//
+// Raise `additional_bytes` to at least MINIMUM_EXTEND_PROGRAM_BYTES (10 KiB),
+// unless MAX_PERMITTED_DATA_LENGTH - current_total_len < 10 KiB, in which case
+// it may only grow to the remaining free space.
+fn adjust_extend_bytes(additional_bytes: u32, current_total_len: usize) -> u32 {
+    let headroom =
+        u32::try_from((MAX_PERMITTED_DATA_LENGTH as usize).saturating_sub(current_total_len))
+            .unwrap_or(u32::MAX);
+    additional_bytes.max(MINIMUM_EXTEND_PROGRAM_BYTES.min(headroom))
+}
+
 /// Extend programdata in-place if the new buffer exceeds the current allocation.
 fn auto_extend_program_data_if_needed(
     rpc_client: &RpcClient,
@@ -1336,9 +1355,12 @@ fn auto_extend_program_data_if_needed(
     }
 
     let additional_bytes = (required_programdata_body_len - programdata_body_len) as u32;
+    let additional_bytes = adjust_extend_bytes(additional_bytes, programdata_account.data.len());
     println!(
         "Auto-extending program data by {} bytes ({} → {}) before upgrade…",
-        additional_bytes, programdata_body_len, required_programdata_body_len
+        additional_bytes,
+        programdata_body_len,
+        programdata_body_len + additional_bytes as usize
     );
 
     let extend_ix =
@@ -2310,6 +2332,22 @@ fn program_extend(
         ));
     }
 
+    let headroom =
+        (MAX_PERMITTED_DATA_LENGTH as usize).saturating_sub(programdata_account.data.len());
+    if additional_bytes < MINIMUM_EXTEND_PROGRAM_BYTES as usize && additional_bytes != headroom {
+        return Err(if headroom < MINIMUM_EXTEND_PROGRAM_BYTES as usize {
+            anyhow!(
+                "Program is {headroom} bytes from maximum size, but {additional_bytes} were \
+                 requested. Please re-run the command with {headroom} additional bytes."
+            )
+        } else {
+            anyhow!(
+                "ExtendProgram requires a minimum of {MINIMUM_EXTEND_PROGRAM_BYTES} additional \
+                 bytes, but only {additional_bytes} were requested"
+            )
+        });
+    }
+
     let extend_ix = loader_v3_instruction::extend_program(
         &program_id,
         Some(&payer.pubkey()),
@@ -2786,6 +2824,20 @@ resolver = "2"
     }
 
     #[test]
+    fn find_nearest_manifest_path_finds_closest_cargo_toml() {
+        let dir = tempdir().unwrap();
+        create_workspace(dir.path());
+
+        let program_dir = dir.path().join("programs").join("foo");
+        let nested_dir = program_dir.join("src");
+
+        assert_eq!(
+            find_nearest_manifest_path(&nested_dir),
+            Some(program_dir.join("Cargo.toml"))
+        );
+    }
+
+    #[test]
     fn discover_solana_programs_finds_sibling_programs_from_nested_member() {
         let dir = tempdir().unwrap();
         create_workspace(dir.path());
@@ -2836,5 +2888,41 @@ resolver = "2"
             .to_string();
 
         assert!(err.contains("current package believes it's in a workspace when it's not"));
+    }
+
+    #[test]
+    fn test_adjust_extend_bytes() {
+        // Delta below the minimum, with ample headroom: bumped to the minimum.
+        assert_eq!(
+            adjust_extend_bytes(1, 100_000),
+            MINIMUM_EXTEND_PROGRAM_BYTES
+        );
+        assert_eq!(
+            adjust_extend_bytes(MINIMUM_EXTEND_PROGRAM_BYTES - 1, 100_000),
+            MINIMUM_EXTEND_PROGRAM_BYTES
+        );
+
+        // Delta at or above the minimum: returned untouched.
+        assert_eq!(
+            adjust_extend_bytes(MINIMUM_EXTEND_PROGRAM_BYTES, 100_000),
+            MINIMUM_EXTEND_PROGRAM_BYTES
+        );
+        assert_eq!(adjust_extend_bytes(50_000, 100_000), 50_000);
+
+        // Within 10 KiB of the max: a small delta grows only to the exact
+        // remaining headroom.
+        let headroom = 4_096usize;
+        let current_total_len = MAX_PERMITTED_DATA_LENGTH as usize - headroom;
+        assert_eq!(adjust_extend_bytes(1, current_total_len), headroom as u32);
+        // Requesting exactly the headroom stays unchanged.
+        assert_eq!(
+            adjust_extend_bytes(headroom as u32, current_total_len),
+            headroom as u32
+        );
+        // At the maximum there is zero headroom: never grow.
+        assert_eq!(
+            adjust_extend_bytes(1, MAX_PERMITTED_DATA_LENGTH as usize),
+            1
+        );
     }
 }

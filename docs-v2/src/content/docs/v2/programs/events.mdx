@@ -53,12 +53,7 @@ Default `#[event]{:rs}` is the right pick for expressive Rust data. `#[event(byt
 
 Transaction logs can be truncated by RPC providers, which makes log-only events unreliable for indexers that need to replay program history. The self-CPI event pattern emits an event as instruction data on a no-op CPI back to the program, so indexers can recover it from instruction history instead of logs.
 
-Opt in by enabling the `event-cpi{:toml}` feature on `anchor-lang-v2`, then mark the handler's accounts struct with `#[event_cpi]{:rs}` and emit with `emit_cpi!{:rs}`:
-
-```toml title="Cargo.toml" showLineNumbers=false
-[dependencies]
-anchor-lang-v2 = { git = "...", branch = "anchor-next", features = ["event-cpi"] }
-```
+Mark the handler's accounts struct with `#[event_cpi]{:rs}` and emit with `emit_cpi!{:rs}`:
 
 ```rust showLineNumbers=false
 #[event_cpi]

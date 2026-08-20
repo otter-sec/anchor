@@ -10,9 +10,9 @@ See the full
 
 ### Common steps
 
-1. Update Anchor crate(s) to `1.0.1`.
+1. Update Anchor crate(s) to `1.1.1`.
 
-2. Update TS package(s) to `1.0.1`.
+2. Update TS package(s) to `1.1.1`.
 
 ## Recommended Solana Version
 
@@ -55,9 +55,9 @@ This has been made into a soft error; the warning is still printed, but does not
 ### More reliable handling of relative paths
 
 The CLI now performs more reliable normalization of input paths.
-This means that relative paths (including when invoking `anchor` in a subdirecory) will be handled more predictably.
+This means that relative paths (including when invoking `anchor` in a subdirectory) will be handled more predictably.
 
 ### Optimized build times
 
-Previously, the CLI built programs in a naiive order, which resulted in bottlenecking on certain dependencies.
+Previously, the CLI built programs in a naive order, which resulted in bottlenecking on certain dependencies.
 The CLI will now attempt to be smarter when building packages, which can provide compile-time speedups of up to 50%.

@@ -2,7 +2,7 @@ export type DocsVersion = 'v1' | 'v2'
 
 export const DOCS_VERSION_LABELS: Record<DocsVersion, string> = {
   v2: '2.0-alpha',
-  v1: '1.0.1',
+  v1: '1.1.2',
 }
 
 const VERSION_ROUTE_ALIASES: Record<DocsVersion, Record<string, string>> = {

@@ -1264,8 +1264,8 @@ fn canonicalize_filepath_from_origin(
             format!(
                 "Error reading (possibly relative) path: {}. If relative, this is the path that \
                  was used as the current path: {}",
-                &file_path.as_ref().display(),
-                &origin.as_ref().display()
+                file_path.as_ref().display(),
+                origin.as_ref().display()
             )
         })?
         .display()
@@ -1825,7 +1825,7 @@ impl Program {
         let program_kp = Keypair::new();
         let mut file = File::create(&path)
             .with_context(|| format!("Error creating file with path: {}", path.display()))?;
-        file.write_all(format!("{:?}", &program_kp.to_bytes()).as_bytes())?;
+        file.write_all(format!("{:?}", program_kp.to_bytes()).as_bytes())?;
         Ok(WithPath::new(file, path))
     }
 

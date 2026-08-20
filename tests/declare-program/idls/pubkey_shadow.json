@@ -1,0 +1,49 @@
+{
+  "address": "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
+  "metadata": {
+    "name": "pubkey_shadow",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Regression coverage for declare_program! builtin type shadowing"
+  },
+  "instructions": [
+    {
+      "name": "accept_holder",
+      "discriminator": [1, 2, 3, 4, 5, 6, 7, 8],
+      "accounts": [],
+      "args": [
+        {
+          "name": "holder",
+          "type": {
+            "defined": {
+              "name": "Holder"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [],
+  "events": [],
+  "types": [
+    {
+      "name": "Pubkey",
+      "type": {
+        "kind": "type",
+        "alias": "u8"
+      }
+    },
+    {
+      "name": "Holder",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "key",
+            "type": "pubkey"
+          }
+        ]
+      }
+    }
+  ]
+}

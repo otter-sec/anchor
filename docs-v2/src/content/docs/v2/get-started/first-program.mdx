@@ -60,7 +60,7 @@ pub mod error;
 pub mod instructions;
 pub mod state;
 
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 pub use instructions::*;
 
@@ -78,10 +78,10 @@ pub mod counter {
 
 Your generated `declare_id!(){:rs}` value will be different. Anchor creates it from the program keypair under `target/deploy/{:dir}`.
 
-The first real instruction is in `programs/counter/src/instructions/initialize.rs{:file}`. It uses `anchor_lang_v2::prelude::*{:rs}`, `&mut Context<T>{:rs}`, and account wrappers without `<'info>{:rs}` lifetimes:
+The first real instruction is in `programs/counter/src/instructions/initialize.rs{:file}`. It uses `anchor_lang::prelude::*{:rs}`, `&mut Context<T>{:rs}`, and account wrappers without `<'info>{:rs}` lifetimes:
 
 ```rust title="programs/counter/src/instructions/initialize.rs" showLineNumbers=false
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 use crate::state::Counter;
 
@@ -105,7 +105,7 @@ pub fn handler(ctx: &mut Context<Initialize>) -> Result<()> {
 The account data is fixed-size, so it uses the default zero-copy account form:
 
 ```rust title="programs/counter/src/state.rs" showLineNumbers=false
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 #[account]
 pub struct Counter {
@@ -134,7 +134,7 @@ The LiteSVM test adds the deployed SBF program to an in-process VM, builds an in
 
 ```rust title="programs/counter/tests/test_initialize.rs" showLineNumbers=false
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         accounts::Account, bytemuck, programs::System,
         solana_program::instruction::Instruction, Id, InstructionData, Space, ToAccountMetas,
     },

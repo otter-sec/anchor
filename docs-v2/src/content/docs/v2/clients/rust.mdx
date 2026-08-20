@@ -34,7 +34,7 @@ The generated modules mirror the shape Anchor users expect:
 Every handler gets an instruction struct under `program::instruction{:rs}`. The struct implements `InstructionData{:rs}`, so calling `data(){:rs}` returns the discriminator plus serialized arguments:
 
 ```rust showLineNumbers=false
-use anchor_lang_v2::InstructionData;
+use anchor_lang::InstructionData;
 
 let data = vault::instruction::Deposit { amount: 1_000_000 }.data();
 ```
@@ -50,8 +50,8 @@ Full account structs include every account the instruction expects. This is the 
 
 ```rust showLineNumbers=false
 use {
-    anchor_lang_v2::{solana_program::instruction::Instruction, InstructionData, ToAccountMetas},
-    anchor_lang_v2::programs::System,
+    anchor_lang::{solana_program::instruction::Instruction, InstructionData, ToAccountMetas},
+    anchor_lang::programs::System,
 };
 
 let ix = Instruction::new_with_bytes(
@@ -74,7 +74,7 @@ Use this form when every address is already known, when an account cannot be der
 When the derive can infer account addresses, Anchor also emits a `Resolved{:rs}` struct. The resolved form asks only for accounts the caller must supply and fills in the rest:
 
 ```rust showLineNumbers=false
-use anchor_lang_v2::ToAccountMetas;
+use anchor_lang::ToAccountMetas;
 
 let metas = multisig_v2::accounts::CreateResolved {
     creator: creator.pubkey(),
@@ -108,9 +108,7 @@ Several bench tests use this shape because it keeps the test focused on the acco
 For PDA fields, the generated accounts module includes helper methods named from the account field:
 
 ```rust showLineNumbers=false
-let (counter, bump) = counter::accounts::Initialize::find_counter_address(
-    payer.pubkey().as_ref(),
-);
+let (counter, bump) = counter::accounts::Initialize::find_counter_address(&payer.pubkey());
 ```
 
 When seeds have no runtime inputs, the helper has no arguments:
@@ -127,7 +125,7 @@ The default scaffold uses Rust integration tests with LiteSVM through `anchor-v2
 
 ```rust showLineNumbers=false
 use anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction};
-use anchor_lang_v2::{
+use anchor_lang::{
     solana_program::instruction::Instruction,
     InstructionData,
     ToAccountMetas,
@@ -147,7 +145,7 @@ let ix = Instruction::new_with_bytes(
     counter::accounts::Initialize {
         payer: payer.pubkey(),
         counter: counter_account.pubkey(),
-        system_program: anchor_lang_v2::programs::System::id(),
+        system_program: anchor_lang::programs::System::id(),
     }
     .to_account_metas(None),
 );

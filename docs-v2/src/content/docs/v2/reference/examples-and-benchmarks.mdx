@@ -9,7 +9,7 @@ These examples do three things:
 
 - They show complete Anchor programs in realistic shapes.
 - They provide repeatable benchmark fixtures for binary size and compute units.
-- They act as source material for docs, since they compile with the current branch.
+- They act as source material for docs, since they compile on the [`anchor-next`](https://github.com/otter-sec/anchor/tree/anchor-next) branch.
 
 If you are learning the framework, read `helloworld` first, then `vault`, then `multisig`. That path moves from one instruction, to PDA-owned state, to a larger program with multiple handlers and shared validation.
 
@@ -32,11 +32,11 @@ The current overview numbers are directional, not a stability guarantee. This ve
 
 | Program | Description | Binary | CU range | Bin down | CU down |
 | --- | --- | --- | --- | --- | --- |
-| `helloworld` | Single-instruction counter | 6.5 KB | 1,395 | 19.2x | 4.2x |
-| `prop-amm` | Oracle feed with asm fast path | 8.3 KB | 26-1,379 | 16.8x | 3.1-50.4x |
-| `vault` | Single-depositor SOL vault | 5.4 KB | 393-1,905 | 19.8x | 3.0-6.3x |
-| `nested` | Shared validation via `Nested<T>{:rs}` | 13.3 KB | 476-2,872 | 11.9x | 6.9-10.0x |
-| `multisig` | Four-instruction SOL multisig | 31.2 KB | 475-3,039 | 5.4x | 3.0-9.1x |
+| `helloworld` | Single-instruction counter | 10.5 KB | 1,436 | 11.9x | 4.1x |
+| `prop-amm` | Oracle feed with asm fast path | 12.8 KB | 26-1,535 | 11x | 2.8-50.4x |
+| `vault` | Single-depositor SOL vault | 6.2 KB | 406-1,917 | 17.4x | 3.0-6.1x |
+| `nested` | Shared validation via `Nested<T>{:rs}` | 16.8 KB | 858-2,842 | 9.4x | 5.5-7.0x |
+| `multisig` | Four-instruction SOL multisig | 37.4 KB | 661-3,098 | 4.5x | 3.0-6.5x |
 
 `Binary` and `CU range` are from the current Anchor implementation in each family. `Bin down` and `CU down` compare against the older paired Anchor implementation used by the benchmark harness.
 
@@ -59,28 +59,28 @@ The non-Anchor variants help calibrate the benchmark against lower-level framewo
 From the repository root, run a specific benchmark integration test:
 
 ```console showLineNumbers=false
-$ <blue>cargo</blue> test <dim>-p</dim> anchor-bench helloworld_end_to_end <dim>--</dim> <dim>--nocapture</dim>
+$ <blue>cargo</blue> test <dim>--manifest-path</dim> bench/Cargo.toml helloworld_end_to_end <dim>--</dim> <dim>--nocapture</dim>
 ```
 
 Other benchmark tests are:
 
 ```console showLineNumbers=false
-$ <blue>cargo</blue> test <dim>-p</dim> anchor-bench vault_end_to_end <dim>--</dim> <dim>--nocapture</dim>
-$ <blue>cargo</blue> test <dim>-p</dim> anchor-bench nested_end_to_end <dim>--</dim> <dim>--nocapture</dim>
-$ <blue>cargo</blue> test <dim>-p</dim> anchor-bench multisig_end_to_end <dim>--</dim> <dim>--nocapture</dim>
-$ <blue>cargo</blue> test <dim>-p</dim> anchor-bench prop_amm_end_to_end <dim>--</dim> <dim>--nocapture</dim>
+$ <blue>cargo</blue> test <dim>--manifest-path</dim> bench/Cargo.toml vault_end_to_end <dim>--</dim> <dim>--nocapture</dim>
+$ <blue>cargo</blue> test <dim>--manifest-path</dim> bench/Cargo.toml nested_end_to_end <dim>--</dim> <dim>--nocapture</dim>
+$ <blue>cargo</blue> test <dim>--manifest-path</dim> bench/Cargo.toml multisig_end_to_end <dim>--</dim> <dim>--nocapture</dim>
+$ <blue>cargo</blue> test <dim>--manifest-path</dim> bench/Cargo.toml prop_amm_end_to_end <dim>--</dim> <dim>--nocapture</dim>
 ```
 
 Set `BENCH_SKIP_BUILD=1` in your shell to reuse existing `.so{:file}` artifacts:
 
 ```console showLineNumbers=false
-$ BENCH_SKIP_BUILD=1 <blue>cargo</blue> test <dim>-p</dim> anchor-bench helloworld_end_to_end <dim>--</dim> <dim>--nocapture</dim>
+$ BENCH_SKIP_BUILD=1 <blue>cargo</blue> test <dim>--manifest-path</dim> bench/Cargo.toml helloworld_end_to_end <dim>--</dim> <dim>--nocapture</dim>
 ```
 
 Run the full benchmark test suite when updating all headline numbers:
 
 ```console showLineNumbers=false
-$ <blue>cargo</blue> test <dim>-p</dim> anchor-bench <dim>--tests</dim> <dim>--</dim> <dim>--nocapture</dim>
+$ <blue>cargo</blue> test <dim>--manifest-path</dim> bench/Cargo.toml <dim>--tests</dim> <dim>--</dim> <dim>--nocapture</dim>
 ```
 
 ## Reading benchmark output
@@ -122,7 +122,7 @@ Use the examples as source material for real Anchor code:
 | `multisig/anchor-v2{:dir}` | Fixed-size state, `PodVec<T, MAX>{:rs}`, dynamic signer validation, and resolved account builders. |
 | `prop-amm/anchor-v2{:dir}` | Performance-oriented program structure and custom fast paths. |
 
-For SPL token examples, also read `tests-v2/programs/spl/src/lib.rs{:file}`. That test program exercises `anchor-spl-v2` init constraints, CPI helpers, interface accounts, and Token-2022 extension readers.
+For SPL token examples, also read `tests-v2/programs/spl/src/lib.rs{:file}`. That test program exercises `anchor-spl` init constraints, CPI helpers, interface accounts, and Token-2022 extension readers.
 
 ## Updating the docs
 

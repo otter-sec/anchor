@@ -14,7 +14,7 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
         .iter()
         .map(|ix| {
             #[allow(clippy::unwrap_used, reason = "computed from valid Rust identifier as module path")]
-            let accounts_ident: proc_macro2::TokenStream = format!("crate::cpi::accounts::{}", &ix.anchor_ident.to_string()).parse().unwrap();
+            let accounts_ident: proc_macro2::TokenStream = format!("crate::cpi::accounts::{}", ix.anchor_ident).parse().unwrap();
             let cpi_method = {
                 let name = &ix.raw_method.sig.ident;
                 let name_str = name.to_string();

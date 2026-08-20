@@ -60,17 +60,17 @@ Prepend `CARGO_PROFILE_RELEASE_LTO=off` on macOS if you hit the LTO error above.
 
 ## Program dependencies
 
-New workspaces created by `$ <blue>anchor</blue> init` already include the git dependency for `anchor-lang-v2`. Add `anchor-spl-v2` when the program uses SPL token helpers or Token-2022 interfaces:
+New workspaces created by `$ <blue>anchor</blue> init` already include the git dependency for `anchor-lang`. Add `anchor-spl` when the program uses SPL token helpers or Token-2022 interfaces:
 
 ```toml title="Cargo.toml" showLineNumbers=false
 [dependencies]
-anchor-lang-v2 = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }
-anchor-spl-v2 = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }
+anchor-lang = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }
+anchor-spl = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }
 ```
 
 Add these to the program crate at `programs/<program-name>/Cargo.toml{:file}`, not the workspace root `Cargo.toml{:file}`.
 
-The default `anchor-lang-v2` feature set is `alloc{:toml}`, `guardrails{:toml}`, and `account-resize{:toml}`. Optional features include `const-rent{:toml}`, `compat{:toml}`, and `testing{:toml}`. See [Feature flags](/docs/v2/reference/feature-flags/) for the tradeoffs.
+The default `anchor-lang` feature set is `alloc{:toml}` and `guardrails{:toml}`. Optional features include `const-rent{:toml}`, `compat{:toml}`, and `testing{:toml}`. See [Feature flags](/docs/v2/reference/feature-flags/) for the tradeoffs.
 
 ## Test dependencies
 

@@ -1,0 +1,52 @@
+{
+  "address": "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
+  "metadata": {
+    "name": "constants_namespace",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Regression coverage for declare_program! constant namespace qualification"
+  },
+  "instructions": [],
+  "accounts": [],
+  "events": [],
+  "types": [
+    {
+      "name": "Mode",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Ready"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mode",
+            "type": {
+              "defined": {
+                "name": "Mode"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "constants": [
+    {
+      "name": "CONFIG",
+      "type": {
+        "defined": {
+          "name": "Config"
+        }
+      },
+      "value": "Config { mode: Mode::Ready }"
+    }
+  ]
+}

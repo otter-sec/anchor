@@ -440,6 +440,7 @@ fn generate_constraint_realloc(
     let account_name = field.to_string();
     let new_space = &c.space;
     let payer = &c.payer;
+    let payer_ref = generate_realloc_payer_ref(payer, accs);
 
     let mut optional_check_scope = OptionalCheckScope::new_with_field(accs, field);
     let payer_optional_check = optional_check_scope.generate_check(payer);
@@ -484,7 +485,7 @@ fn generate_constraint_realloc(
                 }
             } else {
                 let __lamport_amt = __field_info.lamports().checked_sub(__new_rent_minimum).unwrap();
-                anchor_lang::Lamports::add_lamports(&#payer, __lamport_amt)?;
+                anchor_lang::Lamports::add_lamports(#payer_ref, __lamport_amt)?;
                 anchor_lang::Lamports::sub_lamports(&__field_info, __lamport_amt)?;
             }
 
@@ -1873,4 +1874,19 @@ fn generate_account_ref(field: &Field) -> proc_macro2::TokenStream {
         }
         _ => quote!(AsRef::<AccountInfo>::as_ref(&#name)),
     }
+}
+
+fn generate_realloc_payer_ref(
+    payer: &syn::Expr,
+    accs: &AccountsStruct,
+) -> proc_macro2::TokenStream {
+    accs.fields
+        .iter()
+        .find_map(|field| match field {
+            AccountField::Field(field) if field.ident == parser::tts_to_string(payer) => {
+                Some(generate_account_ref(field))
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| quote!(&#payer.to_account_info()))
 }

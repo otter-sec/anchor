@@ -73,4 +73,4 @@ pub struct Profile {
 
 ## External accounts
 
-SPL token state is not Anchor-discriminated. `anchor-spl-v2` models those accounts with `SlabSchema{:rs}` implementations whose data starts at offset `0`, so `Account<Mint>{:rs}` and `Account<TokenAccount>{:rs}` can zero-copy over SPL-owned account data.
+SPL token state is not Anchor-discriminated. `anchor-spl` models those accounts with `SlabSchema{:rs}` implementations whose data starts at offset `0`, so `Account<Mint>{:rs}` and `Account<TokenAccount>{:rs}` can zero-copy over SPL-owned account data.

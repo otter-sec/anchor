@@ -175,8 +175,8 @@ export default function PerformanceBenchmarks() {
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2">
-        <Stat value="95%" label="less deployed bytecode" />
-        <Stat value="9.9x" label="average CU reduction" />
+        <Stat value="94%" label="less deployed bytecode" />
+        <Stat value="8.8x" label="average CU reduction" />
         <Stat value="50.4x" label="largest CU reduction" />
       </div>
 

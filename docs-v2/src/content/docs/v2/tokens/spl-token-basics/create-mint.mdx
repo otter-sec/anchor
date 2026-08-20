@@ -5,7 +5,7 @@ description: Create and initialize SPL token mint accounts with namespaced mint 
 
 A mint account is the Token Program account that represents a token on Solana. The mint address is the token's unique identifier, and the account stores global token state such as supply, decimals, mint authority, and optional freeze authority.
 
-Anchor models the legacy SPL Token mint as `Account<Mint>{:rs}` from `anchor_spl_v2::mint{:rs}`. The wrapper is zero-copy over the SPL Token mint layout. It does not add an Anchor discriminator because the account is owned and initialized by the Token Program.
+Anchor models the legacy SPL Token mint as `Account<Mint>{:rs}` from `anchor_spl::mint{:rs}`. The wrapper is zero-copy over the SPL Token mint layout. It does not add an Anchor discriminator because the account is owned and initialized by the Token Program.
 
 ## Mint account data
 
@@ -23,7 +23,7 @@ pub struct Mint {
 }
 ```
 
-The fields are private in `anchor-spl-v2`. Read them through accessors such as `supply(){:rs}`, `decimals(){:rs}`, `is_initialized(){:rs}`, `mint_authority(){:rs}`, and `freeze_authority(){:rs}`.
+The fields are private in `anchor-spl`. Read them through accessors such as `supply(){:rs}`, `decimals(){:rs}`, `is_initialized(){:rs}`, `mint_authority(){:rs}`, and `freeze_authority(){:rs}`.
 
 ## Usage
 
@@ -31,8 +31,8 @@ The usual import shape is:
 
 ```rust showLineNumbers=false
 use {
-    anchor_lang_v2::prelude::*,
-    anchor_spl_v2::mint::{self, Mint},
+    anchor_lang::prelude::*,
+    anchor_spl::mint::{self, Mint},
 };
 ```
 
@@ -151,5 +151,5 @@ Later CPI calls can sign with the `mint_authority{:rs}` seeds to mint tokens. A 
 </Tabs>
 
 <Callout variant="note" title="Token-2022 and interface accounts">
-  `Account<Mint>{:rs}` is the legacy Token Program wrapper and validates exact legacy mint size. Use `InterfaceAccount<Mint>{:rs}` from `anchor_spl_v2::token_interface{:rs}` when a read or validation path should accept either Token or Token-2022-owned mints. Token-2022 extension parsing is covered in [Token-2022 and extensions](/docs/v2/tokens/token-2022-and-extensions/).
+  `Account<Mint>{:rs}` is the legacy Token Program wrapper and validates exact legacy mint size. Use `InterfaceAccount<Mint>{:rs}` from `anchor_spl::token_interface{:rs}` when a read or validation path should accept either Token or Token-2022-owned mints. Token-2022 extension parsing is covered in [Token-2022 and extensions](/docs/v2/tokens/token-2022-and-extensions/).
 </Callout>

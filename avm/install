@@ -11,7 +11,7 @@ usage() {
 Install the latest Anchor nightly AVM binary.
 
 Usage:
-  curl -sSfL https://raw.githubusercontent.com/solana-foundation/anchor/master/avm/install | sh
+  curl -sSfL https://raw.githubusercontent.com/otter-sec/anchor/master/avm/install | sh
   sh avm/install [--target <triple>] [--manifest-url <url>] [--no-path-links]
 
 Environment:

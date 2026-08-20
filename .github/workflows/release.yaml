@@ -124,11 +124,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
-        with:
-          # FIXME: https://github.com/rust-lang/cargo/issues/17093
-          # Stable cargo has a publishing bug. Switch back to stable when the fix is out
-          toolchain: nightly
+      # FIXME: https://github.com/rust-lang/cargo/issues/17093
+      # Stable cargo has a publishing bug. Switch back to stable when the fix is out
+      - uses: dtolnay/rust-toolchain@7c8d7d138f5c09cef361f8214cf96882cd029cdb # nightly
 
       - name: Install cargo-release
         run: cargo install cargo-release --version 1.1.1 --locked
@@ -347,9 +345,9 @@ jobs:
             --notes "$(cat <<EOF
           The $GITHUB_REF_NAME release is here.
 
-          Check out the release notes from [Anchor website](https://www.anchor-lang.com/docs/updates/release-notes/${RELEASE_URL}) or [GitHub](https://github.com/solana-foundation/anchor/blob/${GITHUB_REF_NAME}/docs/content/docs/updates/release-notes/${RELEASE_URL}.mdx).
+          Check out the release notes from [Anchor website](https://www.anchor-lang.com/docs/updates/release-notes/${RELEASE_URL}) or [GitHub](https://github.com/otter-sec/anchor/blob/${GITHUB_REF_NAME}/docs/content/docs/updates/release-notes/${RELEASE_URL}.mdx).
 
-          For a list of notable changes with their associated PRs, see the [CHANGELOG](https://github.com/solana-foundation/anchor/blob/${GITHUB_REF_NAME}/CHANGELOG.md#${RELEASE_CHANGELOG}).
+          For a list of notable changes with their associated PRs, see the [CHANGELOG](https://github.com/otter-sec/anchor/blob/${GITHUB_REF_NAME}/CHANGELOG.md#${RELEASE_CHANGELOG}).
           EOF
           )" \
             "${publish_args[@]}"

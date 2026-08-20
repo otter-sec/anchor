@@ -42,7 +42,7 @@ pub mod oracle {
 }
 ```
 
-The mode is all-or-nothing. Once one handler sets `#[discrim = N]{:rs}`, every handler needs a one-byte value, and duplicates fail at compile time. The `tests-v2/programs/spl{:dir}` program uses this across its whole surface, numbered `#[discrim = 0]{:rs}` through `#[discrim = 54]{:rs}`.
+The mode is all-or-nothing. Once one handler sets `#[discrim = N]{:rs}`, every handler needs a one-byte value, and duplicates fail at compile time. The `tests-v2/programs/spl{:dir}` program uses this across its whole surface, with distinct one-byte values spanning `#[discrim = 0]{:rs}` through `#[discrim = 101]{:rs}`.
 
 ## Taking over the entrypoint
 
@@ -53,9 +53,9 @@ To skip the dispatcher entirely on a hot path, own the entrypoint. This needs tw
 
 ```rust title="lib.rs" showLineNumbers=false
 #[cfg(target_os = "solana")]
-anchor_lang_v2::pinocchio::default_allocator!();
+anchor_lang::pinocchio::default_allocator!();
 #[cfg(target_os = "solana")]
-anchor_lang_v2::pinocchio::default_panic_handler!();
+anchor_lang::pinocchio::default_panic_handler!();
 
 #[cfg(target_os = "solana")]
 #[no_mangle]

@@ -34,7 +34,7 @@ Use LiteSVM tests through `anchor_v2_testing::svm(){:rs}` so the same tests can 
 
 | v1 | v2 |
 | --- | --- |
-| `use anchor_lang::prelude::*{:rs}` | `use anchor_lang_v2::prelude::*{:rs}` |
+| `use anchor_lang::prelude::*{:rs}` | `use anchor_lang::prelude::*{:rs}` |
 | `solana_program{:rs}` | `pinocchio{:rs}` or v2 re-exports |
 | `std{:rs}` required | `#![no_std]{:rs}` compatible, with `alloc{:toml}` on by default |
 | `<'info>{:rs}` lifetimes on wrappers | removed |
@@ -133,7 +133,7 @@ The `compat{:toml}` feature re-exposes a small set of v1-shaped helpers so exist
 
 ```toml title="Cargo.toml" showLineNumbers=false
 [dependencies]
-anchor-lang-v2 = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next", features = ["compat"] }
+anchor-lang = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next", features = ["compat"] }
 ```
 
 | v1 helper | Notes |
@@ -141,7 +141,7 @@ anchor-lang-v2 = { git = "https://github.com/otter-sec/anchor.git", branch = "an
 | `debug!{:rs}` | Logging macro that accepts any Rust format string by routing through `alloc::format!{:rs}`. |
 | `error!{:rs}`, `err!{:rs}` | Convert an error code into a `ProgramError{:rs}` (and an `Err(...){:rs}` wrapper). |
 | `pubkey!{:rs}` | Compile-time base58 decode that yields an `Address{:rs}`. |
-| `Pubkey{:rs}` | Type alias for `Address{:rs}` under `anchor_lang_v2::solana_program::pubkey{:rs}`. |
+| `Pubkey{:rs}` | Type alias for `Address{:rs}` under `anchor_lang::solana_program::pubkey{:rs}`. |
 | `AccountViewCompat{:rs}` | Extension trait that exposes v1-style accessors on pinocchio's `AccountView{:rs}`. |
 
 `error!{:rs}` is implemented as a thin shim in v2, not a proc-macro, so it does not allocate a rich `AnchorError{:rs}` with source and message metadata the way v1 did. v2 keeps runtime errors as `ProgramError{:rs}` and routes error text through the IDL.

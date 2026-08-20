@@ -9,8 +9,8 @@ describe("ambiguous-discriminator", () => {
     fs.writeFileSync(
       anchorTomlPath,
       anchorToml.replace(
-        'exclude = ["programs/ambiguous-discriminator"]',
-        (match) => "#" + match
+        'exclude = ["programs/ambiguous-discriminator", "programs/zeroed-discriminator"]',
+        'exclude = ["programs/zeroed-discriminator"]'
       )
     );
   });

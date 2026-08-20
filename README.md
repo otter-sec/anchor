@@ -29,7 +29,7 @@ Anchor is the most popular framework for Solana programs.
 
 ## Getting Started
 
-For a quickstart guide and in depth tutorials, see the [Anchor book](https://book.anchor-lang.com) and the [Anchor documentation](https://anchor-lang.com).
+For a quickstart guide and in depth tutorials, see the [Anchor documentation](https://www.anchor-lang.com/docs).
 
 To jump straight to examples, go [here](https://github.com/otter-sec/anchor/tree/master/examples). For the latest Rust and TypeScript API documentation, see [docs.rs](https://docs.rs/anchor-lang) and the [typedoc](https://www.anchor-lang.com/docs/clients/typescript).
 

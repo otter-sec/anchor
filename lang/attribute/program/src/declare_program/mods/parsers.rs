@@ -28,12 +28,12 @@ fn gen_account(idl: &Idl) -> proc_macro2::TokenStream {
         .accounts
         .iter()
         .map(|acc| format_ident!("{}", acc.name))
-        .map(|name| quote! { #name(#name) });
+        .map(|name| quote! { #name(super::accounts::#name) });
     let if_statements = idl.accounts.iter().map(|acc| {
         let name = format_ident!("{}", acc.name);
         quote! {
-            if value.starts_with(#name::DISCRIMINATOR) {
-                return #name::try_deserialize_unchecked(&mut &value[..])
+            if value.starts_with(super::accounts::#name::DISCRIMINATOR) {
+                return super::accounts::#name::try_deserialize_unchecked(&mut &value[..])
                     .map(Self::#name)
                     .map_err(Into::into)
             }
@@ -74,12 +74,12 @@ fn gen_event(idl: &Idl) -> proc_macro2::TokenStream {
         .events
         .iter()
         .map(|ev| format_ident!("{}", ev.name))
-        .map(|name| quote! { #name(#name) });
+        .map(|name| quote! { #name(super::events::#name) });
     let if_statements = idl.events.iter().map(|ev| {
         let name = format_ident!("{}", ev.name);
         quote! {
-            if value.starts_with(#name::DISCRIMINATOR) {
-                return #name::try_from_slice(&value[#name::DISCRIMINATOR.len()..])
+            if value.starts_with(super::events::#name::DISCRIMINATOR) {
+                return super::events::#name::try_from_slice(&value[super::events::#name::DISCRIMINATOR.len()..])
                     .map(Self::#name)
                     .map_err(Into::into)
             }

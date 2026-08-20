@@ -45,7 +45,7 @@ Common constraints include:
 | `address = expr{:rs}` | Requires the account address to equal an expression. |
 | `owner = expr{:rs}` | Requires the account owner to equal an expression. |
 | `close = dest{:rs}` | Transfers lamports and zeros data on successful exit. |
-| `realloc = expr{:rs}` | Resizes account data when `account-resize{:toml}` is enabled. |
+| `realloc = expr{:rs}` | Resizes account data. |
 
 `has_one{:rs}` is still accepted but deprecated. Put `address = parent.field{:rs}` on the sibling account instead.
 

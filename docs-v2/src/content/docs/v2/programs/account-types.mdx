@@ -53,7 +53,7 @@ It serializes on successful exit and provides `release_borrow(){:rs}` / `reacqui
 
 `Slab<H, Item>{:rs}` stores a Pod header followed by a dynamic item tail. It is useful for account-local ledgers, order books, ring buffers, and other bounded collections that should stay zero-copy.
 
-The wrapper exposes vector-style methods such as `try_push{:rs}`, `pop{:rs}`, `iter{:rs}`, indexing, and resize helpers behind the `account-resize{:toml}` feature.
+The wrapper exposes vector-style methods such as `try_push{:rs}`, `pop{:rs}`, `iter{:rs}`, indexing, and resize helpers.
 
 ## `Option<A>{:rs}`
 

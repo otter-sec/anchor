@@ -32,7 +32,7 @@ The default scaffold splits these pieces across a few files:
 For a small program, the pieces read more clearly as a single file. The example below exposes one `initialize(){:rs}` instruction that creates a counter account and stores an authority in it.
 
 ```rust title="programs/counter/src/lib.rs" showLineNumbers=false
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("3ynNB373Q3VAzKp7m4x238po36hjAGFXFJB4ybN2iTyg");
 
@@ -209,4 +209,4 @@ These modules are compile-time output from the macros, not source files checked 
 
 ## `#![no_std]{:rs}` by default
 
-`anchor-lang-v2` is `#![no_std]{:rs}`. The default `alloc{:toml}` feature is on, so user programs can still use `Vec{:rs}`, `String{:rs}`, and any generated macro code that needs allocation. Disabling `alloc{:toml}` is possible, but most programs should keep the default feature set.
+`anchor-lang` is `#![no_std]{:rs}`. The default `alloc{:toml}` feature is on, so user programs can still use `Vec{:rs}`, `String{:rs}`, and any generated macro code that needs allocation. Disabling `alloc{:toml}` is possible, but most programs should keep the default feature set.

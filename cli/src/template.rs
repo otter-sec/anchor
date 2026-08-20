@@ -674,7 +674,7 @@ bytemuck = "1"
         Some(TestTemplate::Litesvm) => {
             r#"
 [dev-dependencies]
-anchor-v2-testing = { git = "https://github.com/solana-foundation/anchor.git", branch = "anchor-next" }
+anchor-v2-testing = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }
 "#
         }
         _ => "",
@@ -702,7 +702,7 @@ idl-build = []
 
 [dependencies]
 # Once anchor-lang-v2 is published to crates.io, swap to: anchor-lang-v2 = "{3}"
-anchor-lang-v2 = {{ git = "https://github.com/solana-foundation/anchor.git", branch = "anchor-next" }}
+anchor-lang-v2 = {{ git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }}
 solana-program-log = {{ version = "1.1", features = ["macro"] }}
 wincode = {{ version = "0.5", features = ["derive"] }}
 {4}
@@ -1514,10 +1514,10 @@ impl TestTemplate {
                 fs::create_dir_all("tests")?;
 
                 if js {
-                    let mut test = File::create(format!("tests/{}.js", &project_name))?;
+                    let mut test = File::create(format!("tests/{}.js", project_name))?;
                     test.write_all(mocha(project_name, anchor_version).as_bytes())?;
                 } else {
-                    let mut mocha = File::create(format!("tests/{}.ts", &project_name))?;
+                    let mut mocha = File::create(format!("tests/{}.ts", project_name))?;
                     mocha.write_all(ts_mocha(project_name, anchor_version).as_bytes())?;
                 }
             }
@@ -1526,10 +1526,10 @@ impl TestTemplate {
                 fs::create_dir_all("tests")?;
 
                 if js {
-                    let mut test = File::create(format!("tests/{}.test.js", &project_name))?;
+                    let mut test = File::create(format!("tests/{}.test.js", project_name))?;
                     test.write_all(js_jest(project_name, anchor_version).as_bytes())?;
                 } else {
-                    let mut test = File::create(format!("tests/{}.test.ts", &project_name))?;
+                    let mut test = File::create(format!("tests/{}.test.ts", project_name))?;
                     test.write_all(ts_jest(project_name, anchor_version).as_bytes())?;
                 }
             }
@@ -1565,7 +1565,7 @@ impl TestTemplate {
             }
             Self::Mollusk => {
                 // Build the test suite.
-                let tests_path_str = format!("programs/{}/tests", &project_name);
+                let tests_path_str = format!("programs/{}/tests", project_name);
                 let tests_path = Path::new(&tests_path_str);
                 fs::create_dir_all(tests_path)?;
 
@@ -1579,7 +1579,7 @@ impl TestTemplate {
             }
 
             Self::Litesvm => {
-                let tests_path_str = format!("programs/{}/tests", &project_name);
+                let tests_path_str = format!("programs/{}/tests", project_name);
                 let tests_path = Path::new(&tests_path_str);
                 fs::create_dir_all(tests_path)?;
                 let mut files = Vec::new();
@@ -1634,7 +1634,7 @@ rust-version = "{ANCHOR_MSRV}"
 
 [dependencies]
 # Once anchor-client v2 is published to crates.io, swap to: anchor-client = "{ANCHOR_V2_TEMPLATE_VERSION}"
-anchor-client = {{ git = "https://github.com/solana-foundation/anchor.git", branch = "anchor-next" }}
+anchor-client = {{ git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }}
 {name} = {{ version = "0.1.0", path = "../programs/{name}" }}
 solana-keypair = "3.0.0"
 solana-pubkey = "3.0.0"

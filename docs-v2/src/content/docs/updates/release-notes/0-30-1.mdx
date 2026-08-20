@@ -152,7 +152,7 @@ Rust's default file-not-found error omits the offending path, which makes debugg
 
 ### Using legacy IDLs with `declare_program!{:rs}`
 
-[`declare_program!(){:rs}`](https://www.anchor-lang.com/release-notes/0.30.0#dependency-free-program-declaration) now accepts legacy (pre-v0.30) IDLs. The macro works as long as the legacy spec can describe the program faithfully. Programs that use non-default features (zero-copy, custom `repr{:rs}`, etc.) may produce a declaration that fails to compile or is silently incorrect.
+[`declare_program!(){:rs}`](https://www.anchor-lang.com/docs/updates/release-notes/0-30-0#dependency-free-program-declaration) now accepts legacy (pre-v0.30) IDLs. The macro works as long as the legacy spec can describe the program faithfully. Programs that use non-default features (zero-copy, custom `repr{:rs}`, etc.) may produce a declaration that fails to compile or is silently incorrect.
 
 There are two paths around this. The first is to run `$ <blue>anchor</blue> idl convert` and patch the result by hand. The second, preferred path is to upgrade the program to v0.30 and regenerate its IDL, since the new IDL spec was added precisely because the legacy spec couldn't describe modern programs reliably. If dependency upgrades are blocking, strip them. IDL generation only inspects signatures, so program logic and non-Anchor dependencies can be deleted from the temporary build. The [`spl-token` IDL stub](https://github.com/otter-sec/anchor/blob/cc43e67399ad50cf7d33466f7bcd7e6dcee88ae2/ts/packages/spl-token/program/lib.rs) demonstrates the minimal shape required.
 
@@ -190,7 +190,7 @@ The macro previously expanded to `::solana_program{:rs}`, so consumers had to in
 
 ### Stack usage of token extensions
 
-The [token extensions constraints](https://www.anchor-lang.com/release-notes/0.30.0#token-extensions) added in `0.30.0` use less stack.
+The [token extensions constraints](https://www.anchor-lang.com/docs/updates/release-notes/0-30-0#token-extensions) added in `0.30.0` use less stack.
 
 ### Error propagation from integer conversion errors
 
@@ -204,7 +204,7 @@ let n: i32 = u32::MAX.try_into()?;
 
 ### Export ATA crate
 
-[`spl-associated-token-account`](https://crates.io/crates/spl-associated-token-account) is now re-exported from `anchor_spl::associated_token{:rs}`. Drop the direct dependency the same way [`mpl-token-metadata`](https://www.anchor-lang.com/release-notes/0.29.0#export-mpl-token-metadata) was dropped in `0.29.0`:
+[`spl-associated-token-account`](https://crates.io/crates/spl-associated-token-account) is now re-exported from `anchor_spl::associated_token{:rs}`. Drop the direct dependency the same way [`mpl-token-metadata`](https://www.anchor-lang.com/docs/updates/release-notes/0-29-0#export-mpl-token-metadata) was dropped in `0.29.0`:
 
 ```toml title="Cargo.toml" del={3}
 [dependencies]
@@ -216,7 +216,7 @@ spl-associated-token-account = "3.0.2"
 
 ### ATA resolution
 
-[Account resolution](https://www.anchor-lang.com/release-notes/0.30.0#account-resolution) now also covers associated token accounts. Instructions that include ATAs now type-error when those accounts are passed to `.accounts(){:ts}`. Drop them from the call so the resolver can fill them in.
+[Account resolution](https://www.anchor-lang.com/docs/updates/release-notes/0-30-0#account-resolution) now also covers associated token accounts. Instructions that include ATAs now type-error when those accounts are passed to `.accounts(){:ts}`. Drop them from the call so the resolver can fill them in.
 
 ### Defined types in generics
 
@@ -232,7 +232,7 @@ param: GenericStruct<MyStruct>,
 
 ### New errors package
 
-Anchor's TS error definitions now live in their own package, [`@coral-xyz/anchor-errors`](https://www.npmjs.com/package/@coral-xyz/anchor-errors).
+Anchor's TS error definitions now live in their own package, [`@anchor-lang/errors`](https://www.npmjs.com/package/@anchor-lang/errors).
 
 ---
 

@@ -27,7 +27,15 @@ The `<lib-name>` is the library name defined in the program's `Cargo.toml{:file}
 
 ## Images
 
-A Docker image for each version of Anchor is published on [Docker Hub](https://hub.docker.com/r/solanafoundation/anchor) under tags of the form `solanafoundation/anchor:<dim><version></dim>`. To pull the image for Anchor `v1.0.1`:
+The Docker image lives in a different registry depending on the Anchor version.
+
+Anchor `v1.0.2` and later (OtterSec releases) are published on [Quay](https://quay.io/repository/ottersec/anchor) under tags of the form `quay.io/ottersec/anchor:<dim><version></dim>`. To pull the image for Anchor `v1.1.2`:
+
+```console
+$ <blue>docker</blue> pull quay.io/ottersec/anchor:v1.1.2
+```
+
+Earlier versions have not yet been mirrored to Quay and remain on Docker Hub under [`solanafoundation/anchor`](https://hub.docker.com/r/solanafoundation/anchor) (and [`backpackapp/build`](https://hub.docker.com/r/backpackapp/build) before `v0.31.1`). For example, to pull Anchor `v1.0.1`:
 
 ```console
 $ <blue>docker</blue> pull solanafoundation/anchor:v1.0.1

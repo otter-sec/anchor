@@ -55,7 +55,7 @@ pub fn handle(ctx: &mut Context<MaybeProfile>) -> Result<()> {
 
 ## Remaining accounts
 
-`ctx.remaining_accounts(){:rs}` returns a `Vec<AccountView>{:rs}`. It walks the cursor only on first access and caches the result for later calls in the same instruction.
+`ctx.remaining_accounts(){:rs}` returns `Result<Vec<AccountView>>{:rs}`, so unwrap it with `?{:rs}`. It walks the cursor only on first access and caches the result for later calls in the same instruction.
 
 Use remaining accounts for variable-length account lists, such as multisig signers. Prefer declared fields whenever the list length is fixed, because declared fields get generated IDL metadata, account resolution, and duplicate-mut checks.
 

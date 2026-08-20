@@ -162,7 +162,7 @@ You will not normally interact with discriminators directly. Anchor inserts them
 
 ## Account wrappers and IDL
 
-Core wrappers such as `Signer{:rs}`, `Program<T>{:rs}`, `SystemAccount{:rs}`, `UncheckedAccount{:rs}`, and `Sysvar<T>{:rs}` surface account metadata through trait impls. SPL wrappers in `anchor-spl-v2` do the same from the downstream crate.
+Core wrappers such as `Signer{:rs}`, `Program<T>{:rs}`, `SystemAccount{:rs}`, `UncheckedAccount{:rs}`, and `Sysvar<T>{:rs}` surface account metadata through trait impls. SPL wrappers in `anchor-spl` do the same from the downstream crate.
 
 Custom wrappers should implement the IDL traits so the generated account list remains meaningful to clients.
 

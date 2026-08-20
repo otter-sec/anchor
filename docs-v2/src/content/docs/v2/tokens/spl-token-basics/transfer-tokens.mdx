@@ -5,7 +5,7 @@ description: Transfer SPL tokens between token accounts through CPI helpers.
 
 Transferring tokens moves units between two token accounts for the same mint. The source token account's authority must authorize the CPI, and both token accounts must be writable because their balances change.
 
-Anchor exposes transfer helpers under `anchor_spl_v2::token::cpi{:rs}`. Prefer `transfer_checked{:rs}` for user-facing transfers because it includes the mint account and verifies the mint decimals.
+Anchor exposes transfer helpers under `anchor_spl::token{:rs}`. Prefer `transfer_checked{:rs}` for user-facing transfers because it includes the mint account and verifies the mint decimals.
 
 ## Imports
 
@@ -13,10 +13,10 @@ Import the token CPI module and account wrappers:
 
 ```rust showLineNumbers=false
 use {
-    anchor_lang_v2::prelude::*,
-    anchor_spl_v2::{
+    anchor_lang::prelude::*,
+    anchor_spl::{
         mint::Mint,
-        token::{self, cpi as token_cpi, TokenAccount},
+        token::{self, TokenAccount},
     },
 };
 ```
@@ -53,14 +53,14 @@ pub fn transfer_tokens(
     amount: u64,
     decimals: u8,
 ) -> Result<()> {
-    let accounts = token_cpi::accounts::TransferChecked {
+    let accounts = token::accounts::TransferChecked {
         from: ctx.accounts.from.cpi_handle_mut(),
         mint: ctx.accounts.mint.cpi_handle(),
         to: ctx.accounts.to.cpi_handle_mut(),
         authority: ctx.accounts.authority.cpi_handle(),
     };
     let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts);
-    token_cpi::transfer_checked(cpi, amount, decimals)
+    token::transfer_checked(cpi, amount, decimals)
 }
 ```
 
@@ -73,13 +73,13 @@ The plain `transfer{:rs}` helper omits the mint and decimals check:
 
 ```rust showLineNumbers=false
 pub fn transfer(ctx: &mut Context<TransferTokens>, amount: u64) -> Result<()> {
-    let accounts = token_cpi::accounts::Transfer {
+    let accounts = token::accounts::Transfer {
         from: ctx.accounts.from.cpi_handle_mut(),
         to: ctx.accounts.to.cpi_handle_mut(),
         authority: ctx.accounts.authority.cpi_handle(),
     };
     let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts);
-    token_cpi::transfer(cpi, amount)
+    token::transfer(cpi, amount)
 }
 ```
 
@@ -119,7 +119,7 @@ pub fn transfer_from_vault(
         ctx.accounts.mint.address().as_ref(),
         &[ctx.bumps.vault_authority],
     ]];
-    let accounts = token_cpi::accounts::TransferChecked {
+    let accounts = token::accounts::TransferChecked {
         from: ctx.accounts.vault.cpi_handle_mut(),
         mint: ctx.accounts.mint.cpi_handle(),
         to: ctx.accounts.recipient.cpi_handle_mut(),
@@ -127,7 +127,7 @@ pub fn transfer_from_vault(
     };
     let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts)
         .with_signer(signer_seeds);
-    token_cpi::transfer_checked(cpi, amount, decimals)
+    token::transfer_checked(cpi, amount, decimals)
 }
 ```
 

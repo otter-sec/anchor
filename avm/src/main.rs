@@ -40,6 +40,10 @@ pub enum Commands {
         /// Build from source code rather than downloading prebuilt binaries
         from_source: bool,
         #[clap(long)]
+        /// Skip build provenance attestation verification. This is potentially dangerous because
+        /// downloaded binaries will not be authenticated
+        skip_attestation: bool,
+        #[clap(long)]
         /// Install `solana-verify` as well
         verify: bool,
     },
@@ -59,6 +63,10 @@ pub enum Commands {
         #[clap(long)]
         /// Include pre-release versions when selecting the latest
         pre_release: bool,
+        #[clap(long)]
+        /// Skip build provenance attestation verification. This is potentially dangerous because
+        /// downloaded binaries will not be authenticated
+        skip_attestation: bool,
     },
     #[clap(about = "Update avm itself to the latest version via cargo install")]
     SelfUpdate {
@@ -74,6 +82,10 @@ pub enum Commands {
         #[clap(long)]
         /// Disable the nightly channel and restore normal version resolution
         disable: bool,
+        #[clap(long, conflicts_with = "disable")]
+        /// Skip build provenance attestation verification. This is potentially dangerous because
+        /// downloaded binaries will not be authenticated
+        skip_attestation: bool,
     },
     #[clap(about = "Generate shell completions for AVM")]
     Completions {
@@ -103,7 +115,7 @@ pub enum SolanaCommand {
     /// Install and activate a Solana CLI version. With no argument, installs
     /// the project-resolved version.
     Install {
-        /// Solana CLI version, e.g. `3.1.10`.
+        /// Solana CLI version, e.g. `4.1.2`.
         version: Option<String>,
         /// Run the installer even if the requested version is already active.
         #[clap(long)]
@@ -216,6 +228,7 @@ pub fn entry(opts: Cli) -> Result<()> {
             path,
             force,
             from_source,
+            skip_attestation,
             verify,
         } => {
             let install_target = if let Some(path) = path {
@@ -223,7 +236,7 @@ pub fn entry(opts: Cli) -> Result<()> {
             } else {
                 parse_install_target(&version_or_commit.unwrap())?
             };
-            avm::install_version(install_target, force, from_source, verify)
+            avm::install_version(install_target, force, from_source, verify, skip_attestation)
         }
         Commands::Uninstall { version } => {
             let v = Version::parse(&version)
@@ -231,16 +244,22 @@ pub fn entry(opts: Cli) -> Result<()> {
             avm::uninstall_version(&v)
         }
         Commands::List { pre_release } => avm::list_versions(pre_release),
-        Commands::Update { pre_release } => avm::update(pre_release),
+        Commands::Update {
+            pre_release,
+            skip_attestation,
+        } => avm::update(pre_release, skip_attestation),
         Commands::SelfUpdate {
             pre_release,
             bleeding_edge,
         } => avm::self_update(pre_release, bleeding_edge),
-        Commands::Nightly { disable } => {
+        Commands::Nightly {
+            disable,
+            skip_attestation,
+        } => {
             if disable {
                 avm::disable_nightly()
             } else {
-                avm::enable_nightly()
+                avm::enable_nightly(skip_attestation)
             }
         }
         Commands::Completions { shell } => {
@@ -453,7 +472,13 @@ fn ensure_resolved_binary(resolution: &Resolution) -> Result<PathBuf> {
         _ => anyhow::bail!("Installation declined."),
     }
 
-    avm::install_version(InstallTarget::Version(version.clone()), false, false, false)?;
+    avm::install_version(
+        InstallTarget::Version(version.clone()),
+        false,
+        false,
+        false,
+        false,
+    )?;
 
     if !binary_path.exists() {
         anyhow::bail!(
@@ -599,5 +624,50 @@ mod tests {
     #[test]
     fn test_resolve_use_version_invalid() {
         assert!(resolve_use_version(Some("not-a-version".to_string())).is_err());
+    }
+
+    #[test]
+    fn test_parse_skip_attestation_for_binary_install_commands() {
+        let install =
+            Cli::try_parse_from(["avm", "install", "1.1.2", "--skip-attestation"]).unwrap();
+        assert!(matches!(
+            install.command,
+            Commands::Install {
+                skip_attestation: true,
+                ..
+            }
+        ));
+
+        let update = Cli::try_parse_from(["avm", "update", "--skip-attestation"]).unwrap();
+        assert!(matches!(
+            update.command,
+            Commands::Update {
+                skip_attestation: true,
+                ..
+            }
+        ));
+
+        let nightly = Cli::try_parse_from(["avm", "nightly", "--skip-attestation"]).unwrap();
+        assert!(matches!(
+            nightly.command,
+            Commands::Nightly {
+                skip_attestation: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_skip_attestation_help_warns_that_it_is_dangerous() {
+        for subcommand in ["install", "update", "nightly"] {
+            let mut command = Cli::command();
+            let help = command
+                .find_subcommand_mut(subcommand)
+                .unwrap()
+                .render_long_help()
+                .to_string();
+            assert!(help.contains("--skip-attestation"));
+            assert!(help.contains("potentially dangerous"));
+        }
     }
 }

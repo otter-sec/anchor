@@ -1,0 +1,60 @@
+{
+  "address": "11111111111111111111111111111111",
+  "metadata": {
+    "name": "mpl_core_shape",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Hand-authored fixture: the IDL shape of a program that CPIs into mpl-core, whose `Key` account-discriminator enum collides with the `anchor_lang::Key` trait. Foreign IDL with no source program in this repo; never regenerated.",
+    "repository": "https://github.com/metaplex-foundation/mpl-core"
+  },
+  "instructions": [
+    {
+      "name": "create_asset",
+      "discriminator": [0, 0, 0, 0, 0, 0, 0, 0],
+      "accounts": [],
+      "args": [
+        {
+          "name": "key",
+          "type": {
+            "defined": {
+              "name": "Key"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [],
+  "events": [],
+  "types": [
+    {
+      "name": "Key",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Uninitialized"
+          },
+          {
+            "name": "AssetV1"
+          },
+          {
+            "name": "HashedAssetV1"
+          },
+          {
+            "name": "PluginHeaderV1"
+          },
+          {
+            "name": "PluginRegistryV1"
+          },
+          {
+            "name": "CollectionV1"
+          },
+          {
+            "name": "GroupV1"
+          }
+        ]
+      }
+    }
+  ]
+}

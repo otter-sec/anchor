@@ -15,10 +15,10 @@ Anchor's v2 CPI path keeps those pieces typed. `CpiContext<T>{:rs}` bundles the 
 
 ## System program CPI
 
-`anchor_lang_v2::system_program` provides typed wrappers for every System Program instruction. The wrappers take a `CpiContext{:rs}` whose accounts struct holds `CpiHandle<'a>{:rs}` values, so the call stays inside Anchor's borrow-tracked model.
+`anchor_lang::system_program` provides typed wrappers for every System Program instruction. The wrappers take a `CpiContext{:rs}` whose accounts struct holds `CpiHandle<'a>{:rs}` values, so the call stays inside Anchor's borrow-tracked model.
 
 ```rust showLineNumbers=false
-use anchor_lang_v2::system_program;
+use anchor_lang::system_program;
 
 #[derive(Accounts)]
 pub struct Deposit {
@@ -51,7 +51,7 @@ The module exposes typed wrappers for the System Program instructions:
 
 ## SPL token CPI
 
-`anchor-spl-v2` exposes account structs and helper functions for common SPL Token instructions. The example below transfers tokens with `transfer_checked{:rs}`.
+`anchor-spl` exposes account structs and helper functions for common SPL Token instructions. The example below transfers tokens with `transfer_checked{:rs}`.
 
 The instruction needs a source token account, mint, destination token account, authority, and token program:
 
@@ -75,14 +75,14 @@ pub struct TransferTokens {
 The handler builds the CPI accounts, wraps them in `CpiContext{:rs}`, then calls the SPL helper:
 
 ```rust showLineNumbers=false
-use anchor_spl_v2::token::{self, cpi as token_cpi};
+use anchor_spl::token;
 
 pub fn transfer_tokens(
     ctx: &mut Context<TransferTokens>,
     amount: u64,
     decimals: u8,
 ) -> Result<()> {
-    let accounts = token_cpi::accounts::TransferChecked {
+    let accounts = token::accounts::TransferChecked {
         from: ctx.accounts.from.cpi_handle_mut(),
         mint: ctx.accounts.mint.cpi_handle(),
         to: ctx.accounts.to.cpi_handle_mut(),
@@ -90,7 +90,7 @@ pub fn transfer_tokens(
     };
 
     let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts);
-    token_cpi::transfer_checked(cpi, amount, decimals)
+    token::transfer_checked(cpi, amount, decimals)
 }
 ```
 
@@ -111,10 +111,6 @@ callee::cpi::set_data(cpi_ctx, value)?;
 ```
 
 The generated CPI account structs contain one `CpiHandle<'a>{:rs}` per account and implement `ToCpiAccounts<'a>{:rs}`. Wrapper functions pack instruction args and call `CpiContext::invoke{:rs}`.
-
-<Callout variant="note" title="Current caveat">
-  Generated CPI account wrappers currently skip accounts structs that contain `Option<_>{:rs}` or `Nested<_>{:rs}`. Those shapes need extra flattening and fallback logic. Runtime validation still supports them. This caveat is only about generated CPI wrappers.
-</Callout>
 
 ## PDA signer seeds
 
@@ -142,7 +138,7 @@ If a CPI mutates an account that the current handler holds as `BorshAccount<T>{:
 ```rust showLineNumbers=false
 ctx.accounts.profile.release_borrow()?;
 some_program::cpi::update_profile(cpi_ctx)?;
-ctx.accounts.profile.reacquire_borrow_mut(ctx.program_id)?;
+ctx.accounts.profile.reacquire_borrow_mut()?;
 ```
 
 `Account<T>{:rs}` does not need this because its zero-copy fields read from the underlying buffer directly.

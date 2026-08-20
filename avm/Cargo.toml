@@ -20,14 +20,21 @@ chrono = "0.4"
 clap = { version = "4.5.17", features = ["derive"] }
 clap_complete = "4.5.26"
 dirs = "4.0.0"
-reqwest = { workspace = true, default-features = false, features = [
+
+# FIXME: `sigstore-verify` uses reqwest 0.13 whereas the workspace uses 0.12
+# to match the Solana crates. Use 0.13 here to avoid bundling two copies
+# in avm. Unify them once the workspace dependency is updated.
+reqwest = { version = "0.13.4", default-features = false, features = [
   "blocking",
   "json",
-  "rustls-tls",
+  "query",
+  "rustls",
 ] }
 semver = "1.0.4"
 serde = { version = "1.0.136", features = ["derive"] }
+serde_json = "1.0"
 sha2 = "0.10.9"
+sigstore-verify = { version = "0.11.0", default-features = false }
 toml = "0.7.6"
 
 [dev-dependencies]

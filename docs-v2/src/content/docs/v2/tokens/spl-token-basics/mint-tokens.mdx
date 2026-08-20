@@ -5,7 +5,7 @@ description: Mint SPL tokens through CPI helpers and PDA signer seeds.
 
 Minting creates new units of a token by invoking the Token Program's `MintTo{:rs}` instruction. The mint authority stored on the mint account must authorize the CPI, and the destination must be a token account for that mint.
 
-Minting uses typed CPI account structs. The account values passed into CPI structs are `CpiHandle<'a>{:rs}` values from `cpi_handle(){:rs}` or `cpi_handle_mut(){:rs}`. The helpers come from `anchor_spl_v2::token::cpi{:rs}`.
+Minting uses typed CPI account structs. The account values passed into CPI structs are `CpiHandle<'a>{:rs}` values from `cpi_handle(){:rs}` or `cpi_handle_mut(){:rs}`. The helpers come from `anchor_spl::token{:rs}`.
 
 ## How minting works
 
@@ -25,10 +25,10 @@ Import the CPI module with the mint and token account wrappers:
 
 ```rust showLineNumbers=false
 use {
-    anchor_lang_v2::prelude::*,
-    anchor_spl_v2::{
+    anchor_lang::prelude::*,
+    anchor_spl::{
         mint::Mint,
-        token::{self, cpi as token_cpi, TokenAccount},
+        token::{self, TokenAccount},
     },
 };
 ```
@@ -52,17 +52,17 @@ pub struct MintTokens {
 }
 ```
 
-The handler builds `token_cpi::accounts::MintTo{:rs}` and invokes the helper:
+The handler builds `token::accounts::MintTo{:rs}` and invokes the helper:
 
 ```rust showLineNumbers=false
 pub fn mint_tokens(ctx: &mut Context<MintTokens>, amount: u64) -> Result<()> {
-    let accounts = token_cpi::accounts::MintTo {
+    let accounts = token::accounts::MintTo {
         mint: ctx.accounts.mint.cpi_handle_mut(),
         to: ctx.accounts.token_account.cpi_handle_mut(),
         authority: ctx.accounts.authority.cpi_handle(),
     };
     let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts);
-    token_cpi::mint_to(cpi, amount)
+    token::mint_to(cpi, amount)
 }
 ```
 
@@ -93,14 +93,14 @@ The CPI passes the writable mint, writable destination, and read-only authority 
 ```rust showLineNumbers=false
 pub fn mint_tokens(ctx: &mut Context<MintTokens>, amount: u64) -> Result<()> {
     let signer_seeds: &[&[&[u8]]] = &[&[b"mint-authority", &[ctx.bumps.mint_authority]]];
-    let accounts = token_cpi::accounts::MintTo {
+    let accounts = token::accounts::MintTo {
         mint: ctx.accounts.mint.cpi_handle_mut(),
         to: ctx.accounts.token_account.cpi_handle_mut(),
         authority: ctx.accounts.mint_authority.cpi_handle(),
     };
     let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts)
         .with_signer(signer_seeds);
-    token_cpi::mint_to(cpi, amount)
+    token::mint_to(cpi, amount)
 }
 ```
 
@@ -119,13 +119,13 @@ pub fn mint_tokens_checked(
     amount: u64,
     decimals: u8,
 ) -> Result<()> {
-    let accounts = token_cpi::accounts::MintToChecked {
+    let accounts = token::accounts::MintToChecked {
         mint: ctx.accounts.mint.cpi_handle_mut(),
         to: ctx.accounts.token_account.cpi_handle_mut(),
         authority: ctx.accounts.authority.cpi_handle(),
     };
     let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts);
-    token_cpi::mint_to_checked(cpi, amount, decimals)
+    token::mint_to_checked(cpi, amount, decimals)
 }
 ```
 
@@ -160,11 +160,11 @@ Rust tests should verify both supply and destination balance after the instructi
 
 ```rust showLineNumbers=false
 let mint = svm.get_account(&mint_address).expect("mint");
-let mint_state: &anchor_spl_v2::mint::Mint = bytemuck::from_bytes(&mint.data);
+let mint_state: &anchor_spl::mint::Mint = bytemuck::from_bytes(&mint.data);
 assert_eq!(mint_state.supply(), amount);
 ```
 
-For Token-2022 or interface-account flows, use `InterfaceAccount<Mint>{:rs}` and `InterfaceAccount<TokenAccount>{:rs}` in the program accounts, then choose the token program explicitly with `mint::token_program{:rs}` or `token::token_program{:rs}`. The legacy `token_cpi::mint_to{:rs}` helper shown here targets the legacy Token Program surface.
+For Token-2022 or interface-account flows, use `InterfaceAccount<Mint>{:rs}` and `InterfaceAccount<TokenAccount>{:rs}` in the program accounts, then choose the token program explicitly with `mint::token_program{:rs}` or `token::token_program{:rs}`. The legacy `token::mint_to{:rs}` helper shown here targets the legacy Token Program surface.
 
 <Callout variant="note" title="Why `cpi_handle_mut(){:rs}` matters">
   CPI helpers use `CpiHandle<'a>{:rs}` instead of raw account views. A writable token or mint account should be passed with `cpi_handle_mut(){:rs}`, while read-only authority accounts use `cpi_handle(){:rs}`.

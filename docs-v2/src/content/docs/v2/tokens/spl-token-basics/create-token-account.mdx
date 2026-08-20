@@ -5,7 +5,7 @@ description: Create and initialize SPL token accounts with token constraints and
 
 A token account stores one authority's balance for one mint. Each token account records a mint, an authority, an amount, and optional delegate, wrapped-SOL, and close-authority state.
 
-Anchor models the legacy SPL Token account as `Account<TokenAccount>{:rs}` from `anchor_spl_v2::token{:rs}`. Like `Account<Mint>{:rs}`, it is zero-copy over the Token Program layout and starts at byte offset `0` instead of using an Anchor discriminator.
+Anchor models the legacy SPL Token account as `Account<TokenAccount>{:rs}` from `anchor_spl::token{:rs}`. Like `Account<Mint>{:rs}`, it is zero-copy over the Token Program layout and starts at byte offset `0` instead of using an Anchor discriminator.
 
 ## Token account data
 
@@ -43,7 +43,7 @@ There are three common ways to choose the token-account address:
 | Associated token account | PDA derived by the Associated Token Program | Canonical wallet account for a mint. |
 | Program PDA token account | PDA derived by your program | Vaults and program-controlled balances. |
 
-Anchor has high-level init support for keypair accounts and your program's PDAs through `token::*{:rs}` constraints. For associated token accounts, the current surface exposes address derivation and validation helpers. High-level `associated_token::*{:rs}` init constraints are still in progress.
+Anchor has high-level `init{:rs}` support for all three: `token::*{:rs}` constraints for keypair and program-PDA token accounts, and `associated_token::*{:rs}` constraints for associated token accounts. `get_associated_token_address{:rs}` also derives or validates a canonical ATA address.
 
 ## Imports
 
@@ -51,8 +51,9 @@ Import the mint and token account wrappers together:
 
 ```rust showLineNumbers=false
 use {
-    anchor_lang_v2::prelude::*,
-    anchor_spl_v2::{
+    anchor_lang::prelude::*,
+    anchor_spl::{
+        associated_token::AssociatedToken,
         mint::Mint,
         token::{self, TokenAccount},
     },
@@ -98,10 +99,34 @@ pub fn create_token_account(_ctx: &mut Context<CreateTokenAccount>) -> Result<()
 
 An associated token account is a token account at the canonical PDA derived from the wallet, token program, and mint under the Associated Token Program.
 
-Anchor currently exposes `get_associated_token_address{:rs}` for deriving and checking that address:
+Initialize one with the `associated_token::*{:rs}` constraints. Anchor CPIs the Associated Token Program (which signs for the PDA), so the handler can stay empty:
 
 ```rust showLineNumbers=false
-use anchor_spl_v2::associated_token::get_associated_token_address;
+#[derive(Accounts)]
+pub struct InitAta {
+    #[account(mut)]
+    pub payer: Signer,
+    pub mint: Account<Mint>,
+    pub authority: UncheckedAccount,
+    #[account(
+        init,
+        payer = payer,
+        associated_token::mint = mint,
+        associated_token::authority = authority,
+    )]
+    pub token_account: Account<TokenAccount>,
+    pub token_program: Program<Token>,
+    pub associated_token_program: Program<AssociatedToken>,
+    pub system_program: Program<System>,
+}
+```
+
+Swap `init{:rs}` for `init_if_needed{:rs}` to make the instruction idempotent.
+
+To validate an ATA created elsewhere instead of creating it, derive its address with `get_associated_token_address{:rs}` and check it with an `address = ...{:rs}` constraint:
+
+```rust showLineNumbers=false
+use anchor_spl::associated_token::get_associated_token_address;
 
 #[derive(Accounts)]
 pub struct UseAssociatedTokenAccount {
@@ -114,18 +139,11 @@ pub struct UseAssociatedTokenAccount {
         address = get_associated_token_address(
             authority.address(),
             mint.account().address(),
-            &Token::id(),
         ),
     )]
     pub token_account: Account<TokenAccount>,
 }
 ```
-
-Use this when the associated token account is created elsewhere, or when your instruction only needs to verify that the supplied account is the canonical ATA.
-
-<Callout variant="note" title="Creating ATAs during alpha">
-  The ATA address belongs to the Associated Token Program's PDA space, so a normal `init{:rs}` constraint from your program cannot sign for that address. Until the `associated_token::*{:rs}` init constraints are available, create ATAs outside this instruction or through a lower-level CPI to the Associated Token Program, then validate the resulting address with `get_associated_token_address{:rs}`.
-</Callout>
 
 </Tab>
 <Tab>
@@ -164,7 +182,10 @@ Later CPI calls can transfer or burn from the token account by signing with the 
 `Account<TokenAccount>{:rs}` accepts legacy Token Program accounts with the exact 165-byte base layout. Use `InterfaceAccount<TokenAccount>{:rs}` when a read or validation path should accept Token-2022 accounts with TLV extension data after the base state:
 
 ```rust showLineNumbers=false
-use anchor_spl_v2::token_interface::InterfaceAccount;
+use {
+    anchor_lang::prelude::*,
+    anchor_spl::token_interface::{Mint, TokenAccount},
+};
 
 #[derive(Accounts)]
 pub struct UseEitherTokenProgram {

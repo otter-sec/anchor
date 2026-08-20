@@ -10,11 +10,11 @@ Version 0 of Semantic Versioning is handled differently from version 1 and above
 
 <AccordionItem title="v2 alpha (anchor-next)" defaultOpen>
 
-`anchor-lang-v2` is the next-generation runtime, built on [pinocchio](https://github.com/anza-xyz/pinocchio) and `#![no_std]{:rs}` by default. It produces an order of magnitude smaller binaries and fewer CU per instruction than v1. See the [v2 docs](/docs/v2/) for the full reference and migration guide. The v1 (`lang/`) code in this repository remains the stable, published path.
+`anchor-lang` is the next-generation runtime, built on [pinocchio](https://github.com/anza-xyz/pinocchio) and `#![no_std]{:rs}` by default. It produces an order of magnitude smaller binaries and fewer CU per instruction than v1. See the [v2 docs](/docs/v2/) for the full reference and migration guide. The v1 (`lang/`) code in this repository remains the stable, published path.
 
 #### Major changes
 
-- lang: New `anchor-lang-v2` crate built on pinocchio with no `<'info>{:rs}` lifetimes ([#4393](https://github.com/otter-sec/anchor/pull/4393)).
+- lang: New `anchor-lang` crate built on pinocchio with no `<'info>{:rs}` lifetimes ([#4393](https://github.com/otter-sec/anchor/pull/4393)).
 - lang: `Account<T>{:rs}` is zero-copy by default and requires `T: Pod{:rs}`. Variable-length data uses `BorshAccount<T>{:rs}`.
 - lang: Drop `Pubkey{:rs}` for `Address{:rs}` (drop-in 32-byte type from pinocchio).
 - lang: Trait-based extensibility via `AnchorAccount{:rs}` and `AccountConstraint<A>{:rs}` lets third-party crates ship new account primitives without forking the derive ([#4414](https://github.com/otter-sec/anchor/pull/4414)).
@@ -38,14 +38,13 @@ Version 0 of Semantic Versioning is handled differently from version 1 and above
 - Skip on-curve check for program-owned PDAs (~1,000 CU saved per verify).
 - `const-rent` feature folds `Rent::get(){:rs}` to a compile-time constant (~85 CU per `create_account{:rs}`).
 - `guardrails{:rs}` feature gates runtime safety nets behind a default-on flag. Disabling drops ~300 bytes binary, ~1-2 CU per account.
-- `account-resize` feature gates `realloc_account{:rs}` and the pinocchio resize hook.
 - Lazy-cached `remaining_accounts(){:rs}`. Instructions that don't touch it pay zero cost.
 - Typed `CpiHandle{:rs}` enables `invoke_signed_unchecked{:rs}` safely. One fewer runtime check per CPI.
 - Drop `#[inline(never)]{:rs}` on cold error helpers.
 
 #### Spl
 
-- spl: New `anchor-spl-v2` crate with `Mint{:rs}`, `TokenAccount{:rs}`, `InterfaceAccount{:rs}` for both the Token Program and Token Extension Program.
+- spl: New `anchor-spl` crate with `Mint{:rs}`, `TokenAccount{:rs}`, `InterfaceAccount{:rs}` for both the Token Program and Token Extension Program.
 - spl: Token-2022 extension CPI re-exported via `pinocchio_token_2022`.
 
 #### Bug fixes
@@ -54,6 +53,28 @@ Version 0 of Semantic Versioning is handled differently from version 1 and above
 - v2: Validate discriminant in `PodWrapper{:rs}` `PartialEq{:rs}` ([#4442](https://github.com/otter-sec/anchor/pull/4442)).
 - v2: Deserialize instruction data once, share parsed args ([#4440](https://github.com/otter-sec/anchor/pull/4440)).
 - v2: Cover account wrapper checks and `remaining_accounts{:rs}` paths ([#4445](https://github.com/otter-sec/anchor/pull/4445)).
+
+</AccordionItem>
+
+<AccordionItem title="1.1.2 (2026-06-26)">
+
+See the full [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.1.2/CHANGELOG.md#112---2026-06-26).
+
+#### Fixes
+
+- deps: Tighten dependencies between `anchor-*` crates to reduce breakage ([#4726](https://github.com/otter-sec/anchor/pull/4726)).
+
+</AccordionItem>
+
+<AccordionItem title="1.1.1 (2026-06-25)">
+
+See the full [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.1.1/CHANGELOG.md#111---2026-06-25) and [release notes](/docs/updates/release-notes/1-1-1/).
+
+</AccordionItem>
+
+<AccordionItem title="1.0.3 (2026-06-26)">
+
+See the full [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.0.3/CHANGELOG.md#103---2026-06-26).
 
 </AccordionItem>
 

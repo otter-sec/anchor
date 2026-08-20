@@ -102,7 +102,7 @@ pub fn gen_accounts_mod(idl: &Idl) -> proc_macro2::TokenStream {
             }
 
             impl anchor_lang::Owner for #name {
-                fn owner() -> Pubkey {
+                fn owner() -> anchor_lang::prelude::Pubkey {
                     #program_id
                 }
             }

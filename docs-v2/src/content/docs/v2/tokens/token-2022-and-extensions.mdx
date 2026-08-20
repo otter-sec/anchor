@@ -1,6 +1,6 @@
 ---
 title: Token-2022 and extensions
-description: Accept Token-2022 accounts, read TLV extensions, and use anchor-spl-v2 interface accounts.
+description: Accept Token-2022 accounts, read TLV extensions, and use anchor-spl interface accounts.
 ---
 
 Token-2022 uses the same base mint and token-account layouts as the legacy Token Program, then appends extension data in a TLV section. A mint or token account can opt into features like transfer fees, metadata pointers, permanent delegates, and transfer hooks.
@@ -8,7 +8,7 @@ Token-2022 uses the same base mint and token-account layouts as the legacy Token
 Anchor handles Token-2022 in two layers:
 
 - `InterfaceAccount<T>{:rs}` accepts accounts owned by either the legacy Token Program or Token-2022.
-- `anchor_spl_v2::extensions{:rs}` parses supported fixed-size TLV extension structs from the account tail.
+- `anchor_spl::extensions{:rs}` parses supported fixed-size TLV extension structs from the account tail.
 
 <Callout variant="warning" title="Alpha surface">
   The Token-2022 surface is read and validation focused. Not every Token-2022 initialization or
@@ -22,12 +22,8 @@ Use `InterfaceAccount<Mint>{:rs}` or `InterfaceAccount<TokenAccount>{:rs}` when 
 
 ```rust showLineNumbers=false
 use {
-    anchor_lang_v2::prelude::*,
-    anchor_spl_v2::{
-        mint::Mint,
-        token::TokenAccount,
-        token_interface::InterfaceAccount,
-    },
+    anchor_lang::prelude::*,
+    anchor_spl::token_interface::{Mint, TokenAccount},
 };
 
 #[derive(Accounts)]
@@ -102,17 +98,16 @@ For Token-2022 account creation or extension selection, use lower-level Token-20
 
 ## Extension data
 
-Token-2022 stores extension data after the base mint or token-account layout. `anchor_spl_v2::extensions{:rs}` reads supported TLV entries by type:
+Token-2022 stores extension data after the base mint or token-account layout. `anchor_spl::extensions{:rs}` reads supported TLV entries by type:
 
 ```rust showLineNumbers=false
-use anchor_spl_v2::extensions::{self, TransferFeeConfig};
+use anchor_spl::{extensions::TransferFeeConfig, token_interface::TokenInterfaceAccountExtensions};
 
 pub fn read_fee_config(
     ctx: &mut Context<ReadFeeConfig>,
     expected_bps: u16,
 ) -> Result<()> {
-    let ext: &TransferFeeConfig =
-        extensions::get_mint_extension(ctx.accounts.mint.account())?;
+    let ext: &TransferFeeConfig = ctx.accounts.mint.get_extension()?;
     require_eq!(ext.newer_transfer_fee.basis_points(), expected_bps);
     Ok(())
 }
@@ -123,7 +118,7 @@ pub struct ReadFeeConfig {
 }
 ```
 
-Use `get_mint_extension::<T>(){:rs}` for mint extensions and `get_token_account_extension::<T>(){:rs}` for token-account extensions.
+Call `get_extension::<T>(){:rs}` (from the `TokenInterfaceAccountExtensions{:rs}` trait) on an `InterfaceAccount<Mint>{:rs}` for mint extensions or an `InterfaceAccount<TokenAccount>{:rs}` for token-account extensions.
 
 ## Supported extension structs
 

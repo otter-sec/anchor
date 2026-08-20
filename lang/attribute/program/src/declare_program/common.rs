@@ -81,11 +81,27 @@ pub fn convert_idl_type_to_str(ty: &IdlType, is_const: bool) -> Result<String, s
         IdlType::I128 => "i128".into(),
         IdlType::U256 => "u256".into(),
         IdlType::I256 => "i256".into(),
-        IdlType::Bytes => if is_const { "&[u8]" } else { "Vec<u8>" }.into(),
-        IdlType::String => if is_const { "&str" } else { "String" }.into(),
-        IdlType::Pubkey => "Pubkey".into(),
-        IdlType::Option(ty) => format!("Option<{}>", convert_idl_type_to_str(ty, is_const)?),
-        IdlType::Vec(ty) => format!("Vec<{}>", convert_idl_type_to_str(ty, is_const)?),
+        IdlType::Bytes => if is_const {
+            "&[u8]"
+        } else {
+            "::std::vec::Vec<u8>"
+        }
+        .into(),
+        IdlType::String => if is_const {
+            "&str"
+        } else {
+            "::std::string::String"
+        }
+        .into(),
+        IdlType::Pubkey => "anchor_lang::prelude::Pubkey".into(),
+        IdlType::Option(ty) => format!(
+            "::core::option::Option<{}>",
+            convert_idl_type_to_str(ty, is_const)?
+        ),
+        IdlType::Vec(ty) => format!(
+            "::std::vec::Vec<{}>",
+            convert_idl_type_to_str(ty, is_const)?
+        ),
         IdlType::Array(ty, len) => format!(
             "[{}; {}]",
             convert_idl_type_to_str(ty, is_const)?,
@@ -112,8 +128,8 @@ pub fn convert_idl_type_to_str(ty: &IdlType, is_const: bool) -> Result<String, s
                     acc.push_str(&cur);
                     acc
                 })
-                .map(|generics| format!("{name}<{generics}>"))
-                .unwrap_or_else(|| name.clone())
+                .map(|generics| format!("__defined::{name}<{generics}>"))
+                .unwrap_or_else(|| format!("__defined::{name}"))
         }
         IdlType::Generic(ty) => ty.into(),
         _ => {
@@ -835,11 +851,17 @@ mod tests {
         assert_eq!(s(&IdlType::Bool), "bool");
         assert_eq!(s(&IdlType::U8), "u8");
         assert_eq!(s(&IdlType::U64), "u64");
-        assert_eq!(s(&IdlType::String), "String");
-        assert_eq!(s(&IdlType::Pubkey), "Pubkey");
+        assert_eq!(s(&IdlType::String), "::std::string::String");
+        assert_eq!(s(&IdlType::Pubkey), "anchor_lang::prelude::Pubkey");
 
-        assert_eq!(s(&IdlType::Option(Box::new(IdlType::U64))), "Option<u64>");
-        assert_eq!(s(&IdlType::Vec(Box::new(IdlType::String))), "Vec<String>");
+        assert_eq!(
+            s(&IdlType::Option(Box::new(IdlType::U64))),
+            "::core::option::Option<u64>"
+        );
+        assert_eq!(
+            s(&IdlType::Vec(Box::new(IdlType::String))),
+            "::std::vec::Vec<::std::string::String>"
+        );
 
         assert_eq!(
             s(&IdlType::Array(
@@ -861,7 +883,7 @@ mod tests {
                 name: "MyStruct".to_string(),
                 generics: vec![],
             }),
-            "MyStruct"
+            "__defined::MyStruct"
         );
         assert_eq!(
             s(&IdlType::Defined {
@@ -873,7 +895,7 @@ mod tests {
                     },
                 ],
             }),
-            "MyStruct<u64,10>"
+            "__defined::MyStruct<u64,10>"
         );
 
         assert_eq!(s(&IdlType::Generic("T".to_string())), "T");
