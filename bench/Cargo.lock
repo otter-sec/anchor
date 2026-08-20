@@ -1882,7 +1882,7 @@ dependencies = [
  "anchor-v2-testing",
  "borsh",
  "bytemuck",
- "litesvm 0.11.0",
+ "litesvm 0.13.1",
  "pinocchio",
  "pinocchio-system",
 ]
@@ -2369,7 +2369,7 @@ dependencies = [
  "anchor-lang",
  "anchor-v2-testing",
  "borsh",
- "litesvm 0.11.0",
+ "litesvm 0.13.1",
  "pinocchio",
  "pinocchio-system",
 ]
@@ -2392,7 +2392,7 @@ dependencies = [
  "anchor-v2-testing",
  "borsh",
  "bytemuck",
- "litesvm 0.11.0",
+ "litesvm 0.13.1",
  "pinocchio",
 ]
 
@@ -2779,7 +2779,7 @@ dependencies = [
  "anchor-v2-testing",
  "borsh",
  "bytemuck",
- "litesvm 0.11.0",
+ "litesvm 0.13.1",
  "pinocchio",
 ]
 
@@ -5396,7 +5396,7 @@ dependencies = [
  "anchor-v2-testing",
  "borsh",
  "bytemuck",
- "litesvm 0.11.0",
+ "litesvm 0.13.1",
  "pinocchio",
  "pinocchio-system",
  "solana-account",
