@@ -10,9 +10,9 @@
 //! (instead of relying on a transaction-aborting panic) use the
 //! `try_*` variants exercised here.
 //!
-//! Paired with `pod_vec_max_overflow`'s compile-time `MAX > u16::MAX`
-//! guard, this closes the remaining runtime-validation gap documented
-//! in the PodVec API comments.
+//! Paired with the compile-time `MAX > u16::MAX` guard (`PodVec::CAPACITY` /
+//! `Default` / `#[account]` field diagnostics), this closes the remaining
+//! runtime-validation gap documented in the PodVec API comments.
 
 use anchor_lang::pod::{CapacityError, PodU64, PodVec};
 
