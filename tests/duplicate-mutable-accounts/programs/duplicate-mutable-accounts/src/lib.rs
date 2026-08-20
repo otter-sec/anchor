@@ -83,6 +83,44 @@ pub mod duplicate_mutable_accounts {
         ctx.accounts.account_mut.count += 1;
         Ok(())
     }
+
+    // Should FAIL if the same fresh account is passed for both the `zero` and the `init` field.
+    // `init` runs before every other constraint, so it leaves the account program-owned and
+    // zero-filled, which is exactly what `zero` accepts.
+    pub fn zero_then_init(ctx: Context<ZeroThenInit>) -> Result<()> {
+        ctx.accounts.zero_account.count = 1;
+        ctx.accounts.init_account.count = 2;
+        Ok(())
+    }
+
+    // Same rule, opposite declaration order.
+    pub fn init_then_zero(ctx: Context<InitThenZero>) -> Result<()> {
+        ctx.accounts.zero_account.count = 1;
+        ctx.accounts.init_account.count = 2;
+        Ok(())
+    }
+
+    // `dup` opts an account out of the duplicate-mutable check, but it must not re-open the
+    // `zero`/`init` alias: the `zero` uniqueness scan still has to reject this.
+    pub fn zero_dup_then_init(ctx: Context<ZeroDupThenInit>) -> Result<()> {
+        ctx.accounts.zero_account.count = 1;
+        ctx.accounts.init_account.count = 2;
+        Ok(())
+    }
+
+    // Should FAIL when the `init` and `zero` fields live in two different composite structs.
+    pub fn composite_init_and_zero(ctx: Context<CompositeInitAndZero>) -> Result<()> {
+        ctx.accounts.init_part.counter.count = 1;
+        ctx.accounts.zero_part.counter.count = 2;
+        Ok(())
+    }
+
+    // Should FAIL when a direct `zero` field aliases an `init` field inside a composite.
+    pub fn mixed_zero_and_composite_init(ctx: Context<MixedZeroAndCompositeInit>) -> Result<()> {
+        ctx.accounts.zero_account.count = 1;
+        ctx.accounts.init_part.counter.count = 2;
+        Ok(())
+    }
 }
 
 #[account]
@@ -175,4 +213,73 @@ pub struct InitIfNeededDuplicateMutable<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
+}
+
+// `zero` declared before `init`. The same fresh account must not satisfy both.
+#[derive(Accounts)]
+pub struct ZeroThenInit<'info> {
+    #[account(zero)]
+    pub zero_account: Account<'info, Counter>,
+    #[account(init, payer = payer, space = 8 + 8)]
+    pub init_account: Account<'info, Counter>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+// `init` declared before `zero`.
+#[derive(Accounts)]
+pub struct InitThenZero<'info> {
+    #[account(init, payer = payer, space = 8 + 8)]
+    pub init_account: Account<'info, Counter>,
+    #[account(zero)]
+    pub zero_account: Account<'info, Counter>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+// `dup` skips the duplicate-mutable check, so the `zero` uniqueness scan is the only thing
+// standing between this struct and an aliased account.
+#[derive(Accounts)]
+pub struct ZeroDupThenInit<'info> {
+    #[account(zero, dup)]
+    pub zero_account: Account<'info, Counter>,
+    #[account(init, payer = payer, space = 8 + 8)]
+    pub init_account: Account<'info, Counter>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+// Composite holding an `init` account.
+#[derive(Accounts)]
+pub struct InitWrapper<'info> {
+    #[account(init, payer = payer, space = 8 + 8)]
+    pub counter: Account<'info, Counter>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+// Composite holding a `zero` account.
+#[derive(Accounts)]
+pub struct ZeroWrapper<'info> {
+    #[account(zero)]
+    pub counter: Account<'info, Counter>,
+}
+
+// `init` and `zero` split across two composites.
+#[derive(Accounts)]
+pub struct CompositeInitAndZero<'info> {
+    pub init_part: InitWrapper<'info>,
+    pub zero_part: ZeroWrapper<'info>,
+}
+
+// Direct `zero` field aliasing an `init` account inside a composite.
+#[derive(Accounts)]
+pub struct MixedZeroAndCompositeInit<'info> {
+    #[account(zero)]
+    pub zero_account: Account<'info, Counter>,
+    pub init_part: InitWrapper<'info>,
 }

@@ -12,9 +12,9 @@ use {
 /// to detect duplicate mutable accounts across composite (nested) account struct boundaries.
 ///
 /// Each `#[derive(Accounts)]` struct implements this trait to report the pubkeys of its
-/// mutable accounts that serialize on exit. The outer struct's duplicate check collects
-/// keys from both its direct fields and composite fields (via this trait) into a single
-/// HashSet to detect duplicates.
+/// mutable accounts that serialize on exit. The outer struct's duplicate check compares
+/// the reported keys against its direct field keys and against the keys of the other
+/// composite fields to detect duplicates.
 ///
 /// ## Example
 ///
@@ -71,23 +71,20 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
         .iter()
         .filter_map(|af: &AccountField| match af {
             // Composite fields — delegate to inner struct's trait impl.
-            // The inner struct applies its own mut/dup/init filters.
+            // The inner struct applies its own mut/dup filters.
             AccountField::CompositeField(s) => {
                 let field_name = &s.ident;
                 Some(quote! {
                     keys.extend(self.#field_name.duplicate_mutable_account_keys());
                 })
             }
-            // Direct fields that are mut, not dup, and not pure init (init_if_needed is included).
-            // Pure-init accounts are always freshly created so they cannot collide
-            // with an existing mutable account. `init_if_needed` accounts, however,
-            // may already be initialized and therefore must participate in the
-            // duplicate-mutable-account check.
-            AccountField::Field(f)
-                if f.constraints.is_mutable()
-                    && !f.constraints.is_dup()
-                    && !f.constraints.is_pure_init() =>
-            {
+            // Direct fields that are mut and not dup. `init` accounts are reported too: a freshly
+            // created account cannot collide with an already-initialized one, but it can collide
+            // with a `zero` account in an enclosing struct, since `init` leaves the account
+            // program-owned and zero-filled and `zero` accepts exactly that. This impl is only
+            // invoked from an enclosing struct that has composite fields, so flat structs never
+            // pay for the reporting.
+            AccountField::Field(f) if f.constraints.is_mutable() && !f.constraints.is_dup() => {
                 // Only types that serialize on exit (not Signer, Program, etc.).
                 match &f.ty {
                     crate::Ty::Account(_)
