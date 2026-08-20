@@ -29,7 +29,7 @@ pinocchio-system = "0.6"
 
 [dev-dependencies]
 anchor-v2-testing = { path = "../../../../v2-testing" }
-litesvm = "0.11"
+litesvm = "0.13.1"
 solana-account = "3.0"
 
 [lints.rust.unexpected_cfgs]

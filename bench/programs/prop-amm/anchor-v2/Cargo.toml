@@ -37,7 +37,7 @@ anchor-asm-v2 = { path = "../../../../asm-v2" }
 
 [dev-dependencies]
 anchor-v2-testing = { path = "../../../../v2-testing" }
-litesvm = "0.11"
+litesvm = "0.13.1"
 
 [lints.rust.unexpected_cfgs]
 level = "allow"

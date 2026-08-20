@@ -26,7 +26,7 @@ pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
 
 [dev-dependencies]
 anchor-v2-testing = { path = "../../../../v2-testing" }
-litesvm = "0.11"
+litesvm = "0.13.1"
 
 [lints.rust.unexpected_cfgs]
 level = "allow"

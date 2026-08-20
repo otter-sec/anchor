@@ -461,45 +461,37 @@ pub fn create_account_with_signers(
 
     let required = rent_exempt_lamports(space)?;
     let current = target.lamports();
-    if current < required {
-        let create = pinocchio_system::instructions::CreateAccountAllowPrefund {
-            to: target,
-            space: space as u64,
-            owner,
-            funding: Some(pinocchio_system::instructions::Funding {
+    let (funding, payer_signer_seeds) = if current < required {
+        (
+            Some(pinocchio_system::instructions::Funding {
                 from: payer,
                 lamports: required - current,
             }),
-        };
-        match (payer_signer_seeds, target_signer_seeds) {
-            (None, None) => create.invoke()?,
-            (Some(payer_seeds), None) => {
-                let payer_signer = signer_from_seeds(payer_seeds);
-                create.invoke_signed(&[payer_signer])?;
-            }
-            (None, Some(target_seeds)) => {
-                let target_signer = signer_from_seeds(target_seeds);
-                create.invoke_signed(&[target_signer])?;
-            }
-            (Some(payer_seeds), Some(target_seeds)) => {
-                let payer_signer = signer_from_seeds(payer_seeds);
-                let target_signer = signer_from_seeds(target_seeds);
-                create.invoke_signed(&[payer_signer, target_signer])?;
-            }
-        }
+            payer_signer_seeds,
+        )
     } else {
-        let create = pinocchio_system::instructions::CreateAccountAllowPrefund {
-            to: target,
-            space: space as u64,
-            owner,
-            funding: None,
-        };
-        match target_signer_seeds {
-            None => create.invoke()?,
-            Some(target_seeds) => {
-                let target_signer = signer_from_seeds(target_seeds);
-                create.invoke_signed(&[target_signer])?;
-            }
+        (None, None)
+    };
+    let create = pinocchio_system::instructions::CreateAccountAllowPrefund {
+        to: target,
+        space: space as u64,
+        owner,
+        funding,
+    };
+    match (payer_signer_seeds, target_signer_seeds) {
+        (None, None) => create.invoke()?,
+        (Some(payer_seeds), None) => {
+            let payer_signer = signer_from_seeds(payer_seeds);
+            create.invoke_signed(&[payer_signer])?;
+        }
+        (None, Some(target_seeds)) => {
+            let target_signer = signer_from_seeds(target_seeds);
+            create.invoke_signed(&[target_signer])?;
+        }
+        (Some(payer_seeds), Some(target_seeds)) => {
+            let payer_signer = signer_from_seeds(payer_seeds);
+            let target_signer = signer_from_seeds(target_seeds);
+            create.invoke_signed(&[payer_signer, target_signer])?;
         }
     }
     Ok(())
