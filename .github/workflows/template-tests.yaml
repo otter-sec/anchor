@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  SOLANA_VERSION: "4.0.0"
+  SOLANA_VERSION: "4.1.2"
   NODE_VERSION: "20"
   SURFPOOL_CLI_VERSION: "1.2.0"
   ANCHOR_TEST_VALIDATOR: "legacy"

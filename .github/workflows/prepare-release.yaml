@@ -43,7 +43,7 @@ jobs:
 
       - uses: ./.github/actions/setup-solana/
         env:
-          SOLANA_VERSION: "4.0.0"
+          SOLANA_VERSION: "4.1.2"
 
       - uses: ./.github/actions/setup-surfpool/
         env:
