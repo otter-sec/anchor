@@ -23,7 +23,7 @@ fn sysvar_idl_addresses_match_well_known_accounts() {
 fn sysvar_wrappers_surface_their_idl_address() {
     // End of the chain the IDL builder actually reads:
     // `SysvarId::IDL_ADDRESS` -> `IdlAccountType::__IDL_ADDRESS`.
-    use anchor_lang::accounts::{Instructions as AnchorInstructions, Sysvar};
+    use anchor_lang::accounts::{Sysvar, SysvarInstructions as AnchorInstructions};
 
     assert_eq!(
         <Sysvar<Clock> as IdlAccountType>::__IDL_ADDRESS,

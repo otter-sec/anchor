@@ -980,7 +980,7 @@ pub struct ReadRent {
 
 #[derive(Accounts)]
 pub struct ReadInstructions {
-    pub instructions: Sysvar<Instructions>,
+    pub instructions: Sysvar<SysvarInstructions>,
 }
 
 #[derive(Accounts)]

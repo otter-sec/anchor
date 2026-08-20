@@ -16,13 +16,13 @@
 use {
     anchor_lang::{
         accounts::{
-            Account, BorshAccount, Instructions, Interface, Program, Signer, SlabSchema,
-            SystemAccount, Sysvar, UncheckedAccount,
+            Account, BorshAccount, Interface, Program, Signer, SlabSchema, SystemAccount, Sysvar,
+            SysvarInstructions, UncheckedAccount,
         },
         programs::{System, Token},
         testing::AccountBuffer,
-        Accounts, AnchorAccount, AnchorDeserialize, AnchorSerialize, Discriminator, ErrorCode,
-        Ids, Owner, TryAccounts,
+        Accounts, AnchorAccount, AnchorDeserialize, AnchorSerialize, Discriminator, ErrorCode, Ids,
+        Owner, TryAccounts,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::address::Address,
@@ -389,7 +389,7 @@ fn sysvar_load_rejects_wrong_address() {
     assert_eq!(err, ProgramError::InvalidArgument);
 }
 
-// -- Sysvar<Instructions> -----------------------------------------------
+// -- Sysvar<SysvarInstructions> -----------------------------------------------
 //
 // Unlike `Clock` / `Rent`, this sysvar has no `sol_get_sysvar` syscall — the
 // value is read out of the account's data buffer. These tests build a
@@ -482,7 +482,7 @@ fn sysvar_instructions_load_rejects_wrong_address() {
     buf.init([0x01; 32], [0u8; 32], blob.len(), false, false, false);
     buf.write_data(&blob);
     let view = unsafe { buf.view() };
-    let err = expect_err(Sysvar::<Instructions>::load(view));
+    let err = expect_err(Sysvar::<SysvarInstructions>::load(view));
     assert_eq!(err, ProgramError::InvalidArgument);
 }
 
@@ -500,7 +500,7 @@ fn sysvar_instructions_reads_synthetic_blob() {
     );
     buf.write_data(&blob);
     let view = unsafe { buf.view() };
-    let sysvar = Sysvar::<Instructions>::load(view).unwrap();
+    let sysvar = Sysvar::<SysvarInstructions>::load(view).unwrap();
 
     assert_eq!(sysvar.num_instructions(), 2);
     assert_eq!(sysvar.load_current_index(), 1);
@@ -544,7 +544,7 @@ fn sysvar_instructions_rejects_out_of_range_index() {
     );
     buf.write_data(&blob);
     let view = unsafe { buf.view() };
-    let sysvar = Sysvar::<Instructions>::load(view).unwrap();
+    let sysvar = Sysvar::<SysvarInstructions>::load(view).unwrap();
 
     assert_eq!(
         expect_err(sysvar.load_instruction_at(2)),
@@ -574,7 +574,7 @@ fn sysvar_instructions_holds_a_shared_borrow_not_an_exclusive_one() {
     );
     buf.write_data(&blob);
     let view = unsafe { buf.view() };
-    let sysvar = Sysvar::<Instructions>::load(view).unwrap();
+    let sysvar = Sysvar::<SysvarInstructions>::load(view).unwrap();
 
     assert!(sysvar.account().check_borrow().is_ok());
     assert!(sysvar.account().check_borrow_mut().is_err());
@@ -595,7 +595,7 @@ fn sysvar_instructions_rejects_undersized_data() {
     buf.init(instructions_sysvar_id(), [0u8; 32], 2, false, false, false);
     buf.write_data(&[0u8; 2]);
     let view = unsafe { buf.view() };
-    let err = expect_err(Sysvar::<Instructions>::load(view));
+    let err = expect_err(Sysvar::<SysvarInstructions>::load(view));
     assert_eq!(err, ProgramError::AccountDataTooSmall);
 }
 

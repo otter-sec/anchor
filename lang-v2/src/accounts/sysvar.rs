@@ -27,19 +27,18 @@ pub trait SysvarId {
 ///
 /// Split out of [`SysvarId`] because the two sysvar families read differently:
 /// `Clock` / `Rent` come from the `sol_get_sysvar` syscall and never touch
-/// account data, while `Instructions` has no syscall at all and must be read
+/// account data, while `SysvarInstructions` has no syscall at all and must be read
 /// out of the account's data buffer.
 ///
 /// A blanket `impl<T: PinocchioSysvar> SysvarLoad for T` is not possible: it
-/// would overlap the [`Instructions`] impl, and rustc cannot prove
-/// `Instructions: !PinocchioSysvar` (negative reasoning about a foreign trait
+/// would overlap the [`SysvarInstructions`] impl, and rustc cannot prove
+/// `SysvarInstructions: !PinocchioSysvar` (negative reasoning about a foreign trait
 /// on a foreign type). Syscall-backed sysvars therefore get an explicit impl
 /// each, via `impl_syscall_sysvar!`.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a sysvar Anchor can load",
     label = "unsupported sysvar",
-    note = "supported: `Clock`, `Rent`, `Instructions`. A sysvar needs both `SysvarId` (its \
-            well-known address) and `SysvarLoad` (how to read its value)."
+    note = "A sysvar needs both `SysvarId` (its well-known address) and `SysvarLoad` (how to read its value)."
 )]
 pub trait SysvarLoad: SysvarId + Sized {
     /// Read the sysvar's value.
@@ -88,7 +87,7 @@ impl_syscall_sysvar!(
 
 // Deliberately generic over `T`: the address and IDL string are the same for
 // every instantiation, and `tests-v2/tests/sysvar_idl.rs` asserts on
-// `Instructions<&'static [u8]>`. Only the `Instructions` alias below — the one
+// `Instructions<&'static [u8]>`. Only the `SysvarInstructions` alias below — the one
 // instantiation that can outlive `load` — gets a `SysvarLoad` impl.
 impl<T: Deref<Target = [u8]>> SysvarId for pinocchio::sysvars::instructions::Instructions<T> {
     const SYSVAR_ID: Address = pinocchio::sysvars::instructions::INSTRUCTIONS_ID;
@@ -100,25 +99,30 @@ impl<T: Deref<Target = [u8]>> SysvarId for pinocchio::sysvars::instructions::Ins
 /// Instantiates pinocchio's `Instructions<T>` at the one `T` that can outlive
 /// [`AnchorAccount::load`]: a `'static` borrow guard over the account's data.
 ///
-/// Use it as `Sysvar<Instructions>` in a `#[derive(Accounts)]` struct, then
+/// **Note on naming:** This type is intentionally named `SysvarInstructions` rather
+/// than `Instructions` to avoid namespace collisions in the prelude. Downstream programs
+/// commonly define their own `Instructions` type (e.g., an enum of program instructions),
+/// which would conflict when writing `Sysvar<Instructions>`.
+///
+/// Use it as `Sysvar<SysvarInstructions>` in a `#[derive(Accounts)]` struct, then
 /// reach the introspection methods through the wrapper's `Deref`:
 ///
 /// ```ignore
 /// #[derive(Accounts)]
 /// pub struct Introspect {
-///     pub instructions: Sysvar<Instructions>,
+///     pub sysvar_instructions: Sysvar<SysvarInstructions>,
 /// }
 ///
-/// let previous = ctx.accounts.instructions.get_instruction_relative(-1)?;
+/// let previous = ctx.accounts.sysvar_instructions.get_instruction_relative(-1)?;
 /// let caller = previous.get_program_id();
 /// ```
 ///
 /// Unlike `Clock` / `Rent`, there is no syscall for this sysvar: the account
 /// must be passed in the transaction, and the wrapper holds a shared borrow of
 /// its data for as long as it is alive.
-pub type Instructions = pinocchio::sysvars::instructions::Instructions<Ref<'static, [u8]>>;
+pub type SysvarInstructions = pinocchio::sysvars::instructions::Instructions<Ref<'static, [u8]>>;
 
-impl SysvarLoad for Instructions {
+impl SysvarLoad for SysvarInstructions {
     #[inline(always)]
     fn read(view: &AccountView) -> Result<Self, ProgramError> {
         // A well-formed instructions sysvar is at minimum `[u16 num = 0]` +
@@ -151,7 +155,7 @@ impl SysvarLoad for Instructions {
 /// Validates that the passed account address matches `T::SYSVAR_ID`, then
 /// defers to [`SysvarLoad::read`] for the value. For `Clock` / `Rent` that
 /// reads directly from the runtime via pinocchio's `Sysvar::get()` syscall and
-/// never touches account data; for [`Instructions`] it borrows the account's
+/// never touches account data; for [`SysvarInstructions`] it borrows the account's
 /// data and holds that shared borrow for the wrapper's lifetime.
 ///
 /// ## `#[account(address = X @ MyErr)]` does NOT surface `MyErr`
