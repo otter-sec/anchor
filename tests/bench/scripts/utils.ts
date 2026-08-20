@@ -5,6 +5,9 @@ import { execSync, spawnSync } from "child_process";
 /** Version that is used in bench data file */
 export type Version = "unreleased" | (`${number}.${number}.${number}` & {});
 
+/** Platform-tools version used to build benchmark programs. */
+export type PlatformToolsVersion = `v${number}.${number}`;
+
 /** Persistent benchmark data(mapping of `Version -> Data`) */
 type Bench = {
   [key: string]: {
@@ -14,6 +17,8 @@ type Bench = {
      * - Adjust for the changes in platform-tools
      */
     solanaVersion: Version;
+    /** Platform-tools version used to build the benchmark program */
+    platformToolsVersion: PlatformToolsVersion;
     /** Benchmark results for a version */
     result: BenchResult;
   };
@@ -50,6 +55,12 @@ export const BENCH_DIR_PATH = path.join("..", "..", "bench");
 
 /** Command line argument for Anchor version */
 export const ANCHOR_VERSION_ARG = "--anchor-version";
+
+/** Environment variable containing the benchmark result version. */
+export const BENCHMARK_VERSION_ENV = "ANCHOR_BENCHMARK_VERSION";
+
+/** Environment variable containing the current-format benchmark IDL path. */
+export const BENCHMARK_IDL_ENV = "ANCHOR_BENCHMARK_IDL";
 
 /** Utility class to handle benchmark data related operations */
 export class BenchData {
@@ -91,6 +102,14 @@ export class BenchData {
   /** Get all versions. */
   getVersions() {
     return Object.keys(this.#data) as Version[];
+  }
+
+  /** Record the platform-tools version used for a benchmark version. */
+  setPlatformToolsVersion(
+    version: Version,
+    platformToolsVersion: PlatformToolsVersion
+  ) {
+    this.#data[version].platformToolsVersion = platformToolsVersion;
   }
 
   /** Compare benchmark changes. */
@@ -493,20 +512,31 @@ export class LockFile {
 
 /** Utility class to manage versions */
 export class VersionManager {
-  /** Set the active Solana version with `solana-install init` command. */
+  /** Install and set the active Solana version. */
   static setSolanaVersion(version: Version) {
     const activeVersion = this.#getSolanaVersion();
     if (activeVersion === version) return;
 
-    // `solana-install` is renamed to `agave-install` in Solana v2
-    // https://github.com/anza-xyz/agave/wiki/Agave-Transition
-    const cmdName = activeVersion.startsWith("1")
-      ? "solana-install"
-      : "agave-install";
-    spawn(cmdName, ["init", version], {
-      logOutput: true,
-      throwOnError: { msg: `Failed to set Solana version to ${version}` },
-    });
+    const [major, minor] = version.split(".").map(Number);
+    const isSolanaLabs = major === 1 && minor < 18;
+    const repo = isSolanaLabs ? "solana-labs/solana" : "anza-xyz/agave";
+    const installer = isSolanaLabs ? "solana" : "agave";
+    const installUrl = `https://raw.githubusercontent.com/${repo}/v${version}/install/${installer}-install-init.sh`;
+    spawn(
+      "sh",
+      [
+        "-c",
+        'curl -sSfL "$1" | sh -s -- --no-modify-path "$2"',
+        "sh",
+        installUrl,
+        version,
+      ],
+      {
+        env: { ...process.env, SOLANA_RELEASE: `v${version}` },
+        logOutput: true,
+        throwOnError: { msg: `Failed to set Solana version to ${version}` },
+      }
+    );
   }
 
   /** Get the active Solana version. */
@@ -525,6 +555,9 @@ export class VersionManager {
  * Defaults to `unreleased`.
  */
 export const getVersionFromArgs = () => {
+  const benchmarkVersion = process.env[BENCHMARK_VERSION_ENV];
+  if (benchmarkVersion) return benchmarkVersion as Version;
+
   const args = process.argv;
   const anchorVersionArgIndex = args.indexOf(ANCHOR_VERSION_ARG);
   return anchorVersionArgIndex === -1
@@ -532,23 +565,39 @@ export const getVersionFromArgs = () => {
     : (args[anchorVersionArgIndex + 1] as Version);
 };
 
+/** Whether the version predates IDL generation through the `idl-build` feature. */
+export const usesLegacyIdlGeneration = (version: Version) =>
+  ["0.27.0", "0.28.0"].includes(version);
+
 /** Spawn a blocking process. */
 export const spawn = (
   cmd: string,
   args: string[],
-  opts?: { logOutput?: boolean; throwOnError?: { msg: string } }
+  opts?: {
+    env?: NodeJS.ProcessEnv;
+    logOutput?: boolean;
+    maxBuffer?: number;
+    throwOnError?: { msg: string };
+  }
 ) => {
-  const result = spawnSync(cmd, args);
+  const result = spawnSync(cmd, args, {
+    env: opts?.env,
+    maxBuffer: opts?.maxBuffer,
+  });
   const success = result.status === 0;
   if (opts?.logOutput || !success) {
     console.log(
       `Output of \`${cmd} ${args.join(" ")}\`:`,
-      result.output.toString()
+      result.error ?? result.output?.toString()
     );
   }
 
   if (opts?.throwOnError && !success) {
-    throw new Error(opts.throwOnError.msg);
+    throw new Error(
+      result.error
+        ? `${opts.throwOnError.msg} ${result.error.message}`
+        : opts.throwOnError.msg
+    );
   }
 
   return result;

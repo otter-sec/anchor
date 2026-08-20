@@ -31,6 +31,7 @@ env:
   CARGO_PROFILE: ${{ inputs.cargo_profile }}
   ANCHOR_BINARY_NAME: ${{ inputs.anchor_binary_name }}
   SURFPOOL_CLI_VERSION: ${{ inputs.surfpool_cli_version }}
+  ANCHOR_TEST_VALIDATOR: "legacy"
   CARGO_CACHE_PATH: |
     ~/.cargo/bin/
     ~/.cargo/registry/index/
@@ -258,6 +259,8 @@ jobs:
       - uses: ./.github/actions/setup-solana/
       - uses: ./.github/actions/setup-surfpool/
       - run: cd client/example && ./run-test.sh
+        env:
+          ANCHOR_BUILD_SBF_ARCH: "v2"
       - uses: ./.github/actions/git-diff/
 
   test-bpf-upgradeable-state:
@@ -301,6 +304,8 @@ jobs:
       - run: cd tests/bpf-upgradeable-state && yarn --frozen-lockfile
       - run: cd tests/bpf-upgradeable-state
       - run: cd tests/bpf-upgradeable-state && anchor build --skip-lint --ignore-keys
+        env:
+          ANCHOR_BUILD_SBF_ARCH: "v2"
       - run: cd tests/bpf-upgradeable-state && solana program deploy --program-id program_with_different_programdata.json --use-rpc target/deploy/bpf_upgradeable_state.so
       - run: cd tests/bpf-upgradeable-state && cp bpf_upgradeable_state-keypair.json target/deploy/bpf_upgradeable_state-keypair.json && anchor test --skip-local-validator --skip-build --skip-lint
       - run: cd tests/bpf-upgradeable-state && npx tsc --noEmit
@@ -416,8 +421,15 @@ jobs:
         run: yarn link @anchor-lang/core && yarn && anchor test && yarn lint:fix
 
       - name: Run generated Rust project tests
-        if: ${{ matrix.template == 'rust' || matrix.template == 'mollusk' || matrix.template == 'litesvm' }}
+        if: ${{ matrix.template == 'rust' || matrix.template == 'mollusk' }}
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
+        run: anchor test
+
+      - name: Run generated LiteSVM project tests
+        if: ${{ matrix.template == 'litesvm' }}
+        working-directory: /tmp/hello-anchor-${{ matrix.template }}
+        env:
+          ANCHOR_BUILD_SBF_ARCH: "v2"
         run: anchor test
 
       - uses: ./.github/actions/git-diff/
@@ -435,7 +447,7 @@ jobs:
             path: tests/sysvars
           - cmd: cd tests/composite && anchor test --skip-lint
             path: tests/composite
-          - cmd: cd tests/errors && ./test.sh && npx tsc --noEmit
+          - cmd: cd tests/errors && ANCHOR_TEST_VALIDATOR=surfpool ANCHOR_BUILD_SBF_ARCH=v2 ./test.sh && npx tsc --noEmit
             path: tests/errors
           - cmd: cd tests/spl/metadata && anchor test --skip-lint
             path: spl/metadata
@@ -445,7 +457,7 @@ jobs:
             path: spl/token-wrapper
           - cmd: cd tests/spl/transfer-hook && anchor test --skip-lint
             path: spl/transfer-hook
-          - cmd: cd tests/spl/token-extensions && anchor test --skip-lint
+          - cmd: cd tests/spl/token-extensions && ANCHOR_TEST_VALIDATOR=surfpool ANCHOR_BUILD_SBF_ARCH=v2 anchor test --skip-lint
             path: spl/token-extensions
           - cmd: cd tests/multisig && anchor test --skip-lint
             path: tests/multisig
@@ -464,7 +476,7 @@ jobs:
             path: tests/accountloader-realloc
           - cmd: cd tests/system-accounts && anchor test --skip-lint
             path: tests/system-accounts
-          - cmd: cd tests/misc && anchor test --skip-lint && npx tsc --noEmit
+          - cmd: cd tests/misc && ANCHOR_TEST_VALIDATOR=surfpool ANCHOR_BUILD_SBF_ARCH=v2 anchor test --skip-lint && npx tsc --noEmit
             path: tests/misc
           - cmd: cd tests/events && anchor test --skip-lint
             path: tests/events
@@ -518,11 +530,11 @@ jobs:
             path: tests/relations-derivation
           - cmd: cd tests/anchor-cli-idl && ./test.sh
             path: tests/anchor-cli-idl
-          - cmd: cd tests/anchor-cli-legacy-idl && anchor test
+          - cmd: cd tests/anchor-cli-legacy-idl && ANCHOR_TEST_VALIDATOR=surfpool ANCHOR_BUILD_SBF_ARCH=v2 anchor test
             path: tests/anchor-cli-legacy-idl
           - cmd: cd tests/anchor-cli-account && anchor test --skip-lint
             path: tests/anchor-cli-account
-          - cmd: cd tests/bench && anchor test --skip-lint
+          - cmd: cd tests/bench && ./test.sh
             path: tests/bench
           - cmd: cd tests/idl && ./test.sh
             path: tests/idl

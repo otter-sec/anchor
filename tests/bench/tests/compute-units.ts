@@ -1,14 +1,21 @@
+import fs from "fs";
+
 import * as anchor from "@anchor-lang/core";
 import * as token from "@anchor-lang/spl-token";
 
 import { Bench } from "../target/types/bench";
-import { BenchData, ComputeUnits } from "../scripts/utils";
+import { BENCHMARK_IDL_ENV, BenchData, ComputeUnits } from "../scripts/utils";
 
 describe("Compute units", () => {
   // Configure the client to use the local cluster
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.bench as anchor.Program<Bench>;
+  const benchmarkIdlPath = process.env[BENCHMARK_IDL_ENV];
+  const program = benchmarkIdlPath
+    ? new anchor.Program<Bench>(
+        JSON.parse(fs.readFileSync(benchmarkIdlPath, "utf8"))
+      )
+    : (anchor.workspace.bench as anchor.Program<Bench>);
   const owner = program.provider.publicKey!;
 
   let mintPk: anchor.web3.PublicKey;
