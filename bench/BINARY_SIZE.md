@@ -14,13 +14,15 @@ The programs and their tests are located in [/tests/bench](https://github.com/ot
 
 ## [Unreleased]
 
-Solana version: 3.1.10
+Solana version: 4.1.2
 
 | Program | Binary Size | -                        |
 | ------- | ----------- | ------------------------ |
 | bench   | 824,264     | 🟢 **-108,728 (11.65%)** |
 
 ### Notable changes
+
+- Update platform-tools to `v1.55`, reducing the benchmark program binary by 108,728 bytes (11.65%).
 
 ---
 

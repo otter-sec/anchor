@@ -14,7 +14,7 @@ The programs and their tests are located in [/tests/bench](https://github.com/ot
 
 ## [Unreleased]
 
-Solana version: 3.1.10
+Solana version: 4.1.2
 
 | Instruction                 | Compute Units | -                    |
 | --------------------------- | ------------- | -------------------- |
@@ -107,6 +107,8 @@ Solana version: 3.1.10
 | uncheckedAccount8           | 2,883         | 🟢 **-288 (9.08%)**  |
 
 ### Notable changes
+
+- Update platform-tools to `v1.55`, reducing compute-unit usage across the benchmark suite by 1.29% to 28.24%.
 
 ---
 

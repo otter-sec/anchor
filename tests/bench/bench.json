@@ -2992,7 +2992,7 @@
     }
   },
   "unreleased": {
-    "solanaVersion": "3.1.10",
+    "solanaVersion": "4.1.2",
     "platformToolsVersion": "v1.55",
     "result": {
       "binarySize": {
