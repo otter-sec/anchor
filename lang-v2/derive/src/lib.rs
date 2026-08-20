@@ -3336,8 +3336,14 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
         let docs = gen_declare_program_docs(ty_def, ident.span());
         let repr = gen_declare_program_repr(ty_def, ident.span())?;
         let serialization = declare_type_serialization(ty_def, ident.span())?;
-        let bytemuck_repr = if repr.is_none() && serialization.is_bytemuck() {
-            quote! { #[repr(C)] }
+        // Safe bytemuck defaults to repr(C). `bytemuckunsafe` matches v1
+        // `#[zero_copy(unsafe)]`: packed Rust layout when the IDL omits repr.
+        let bytemuck_repr = if repr.is_none() {
+            match serialization {
+                DeclareTypeSerialization::Bytemuck => quote! { #[repr(C)] },
+                DeclareTypeSerialization::BytemuckUnsafe => quote! { #[repr(Rust, packed)] },
+                DeclareTypeSerialization::Borsh => quote! {},
+            }
         } else {
             quote! { #repr }
         };
@@ -3421,7 +3427,9 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                     .unwrap_or_default();
                 let pod_impls = serialization
                     .is_bytemuck()
-                    .then(|| gen_declare_program_pod_impls(&ident, &generics, &fields))
+                    .then(|| {
+                        gen_declare_program_pod_impls(&ident, &generics, &fields, serialization)
+                    })
                     .unwrap_or_default();
                 let impl_generics = &generics.impl_generics;
                 out.push(match fields {
@@ -3590,6 +3598,10 @@ enum DeclareTypeSerialization {
 impl DeclareTypeSerialization {
     fn is_bytemuck(self) -> bool {
         matches!(self, Self::Bytemuck | Self::BytemuckUnsafe)
+    }
+
+    fn is_bytemuck_unsafe(self) -> bool {
+        matches!(self, Self::BytemuckUnsafe)
     }
 }
 
@@ -4195,10 +4207,21 @@ fn gen_declare_program_pod_impls(
     ident: &Ident,
     generics: &DeclareTypeGenerics,
     fields: &DeclareTypeFields,
+    serialization: DeclareTypeSerialization,
 ) -> TokenStream2 {
-    let field_types = fields.tys();
     let impl_generics = &generics.impl_generics;
     let ty_generics = &generics.ty_generics;
+    // `bytemuckunsafe` is an explicit opt-out of safe Pod derivability:
+    // imported layouts may include padding or non-Pod fields. Emit the
+    // unsafe impls without field-Pod / no-padding assertions.
+    if serialization.is_bytemuck_unsafe() {
+        return quote! {
+            unsafe impl #impl_generics anchor_lang::bytemuck::Pod for #ident #ty_generics {}
+            unsafe impl #impl_generics anchor_lang::bytemuck::Zeroable for #ident #ty_generics {}
+        };
+    }
+
+    let field_types = fields.tys();
     let generic_where_clause = &generics.pod_where_clause;
     let where_clause = if field_types.is_empty() {
         generic_where_clause.clone()
