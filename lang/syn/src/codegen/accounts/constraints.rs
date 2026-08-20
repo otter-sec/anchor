@@ -440,6 +440,7 @@ fn generate_constraint_realloc(
     let account_name = field.to_string();
     let new_space = &c.space;
     let payer = &c.payer;
+    let zero = &c.zero;
     let payer_ref = generate_realloc_payer_ref(payer, accs);
 
     let mut optional_check_scope = OptionalCheckScope::new_with_field(accs, field);
@@ -489,7 +490,7 @@ fn generate_constraint_realloc(
                 anchor_lang::Lamports::sub_lamports(&__field_info, __lamport_amt)?;
             }
 
-            __field_info.resize(#new_space)?;
+            __field_info.realloc(#new_space, #zero)?;
             __reallocs.insert(#field.key());
         }
     }
