@@ -1,7 +1,9 @@
 extern crate alloc;
 
 use {
-    crate::{AccountConstraint, AccountInitialize, AnchorAccount, Discriminator, Space},
+    crate::{
+        AccountConstraint, AccountInitialize, AnchorAccount, Discriminator, ForeignOwnerInit, Space,
+    },
     alloc::boxed::Box,
     pinocchio::{account::AccountView, address::Address},
     solana_program_error::ProgramError,
@@ -97,7 +99,8 @@ impl<T: crate::IdlAccountType> crate::IdlAccountType for Box<T> {
 // ---------------------------------------------------------------------------
 // Forward the init-time trait surface so `Box<Account<T>>` and
 // `Box<BorshAccount<T>>` work with `#[account(init, …)]`, `#[account(zeroed)]`,
-// `space = …` omitted, and namespaced constraints (`token::mint = …`, etc.).
+// `space = …` omitted, namespaced constraints (`token::mint = …`, etc.), and
+// `Box<UncheckedAccount>` with `owner = …` (`ForeignOwnerInit`).
 //
 // The derive reaches for these traits via UFCS on the field type — e.g.
 // `<Box<Account<T>> as AccountInitialize>::create_and_initialize(…)` — so
@@ -128,6 +131,10 @@ impl<T: AccountInitialize> AccountInitialize for Box<T> {
         .map(Box::new)
     }
 }
+
+/// Forward the foreign-owner init marker so `Box<UncheckedAccount>` works with
+/// `#[account(init, owner = …)]` the same way bare `UncheckedAccount` does.
+impl<T: ForeignOwnerInit> ForeignOwnerInit for Box<T> {}
 
 impl<T: Space> Space for Box<T> {
     const INIT_SPACE: usize = T::INIT_SPACE;

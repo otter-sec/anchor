@@ -1257,3 +1257,39 @@ pub struct Bad {{
         "Box<BorshAccount<Data>>",
     );
 }
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn boxed_unchecked_account_accepts_init_owner_override() {
+    // Finding #86: Box forwards AccountInitialize but omitted ForeignOwnerInit,
+    // so Box<UncheckedAccount> + owner = … failed the derive's marker assertion
+    // even though bare UncheckedAccount is the sanctioned escape hatch.
+    compile_pass_case(
+        "init_owner_override_boxed_unchecked_account",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+pub const OTHER_PROGRAM: Address =
+    Address::from_str_const("Gue5TpR6sstSyGhSvmVeH2TeKqBYYqmXpRCacB9jAk8u");
+
+#[derive(Accounts)]
+pub struct Ok {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init,
+        payer = payer,
+        space = 0,
+        owner = OTHER_PROGRAM,
+    )]
+    pub data: Box<UncheckedAccount>,
+    pub system_program: Program<System>,
+}
+"#,
+    );
+}
