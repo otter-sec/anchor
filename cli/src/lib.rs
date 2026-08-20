@@ -79,7 +79,7 @@ pub const DOCKER_BUILDER_VERSION: &str = VERSION;
 /// Default RPC port
 pub const DEFAULT_RPC_PORT: u16 = 8899;
 const DEFAULT_FAUCET_PORT: u16 = 9900;
-const DEFAULT_TOOLS_VERSION: &str = "v1.54";
+const DEFAULT_TOOLS_VERSION: &str = "v1.55";
 const DEFAULT_BUILD_ARCH: &str = "v3";
 const BUILD_ARCH_ENV: &str = "ANCHOR_BUILD_SBF_ARCH";
 
@@ -7348,8 +7348,8 @@ mod tests {
     #[test]
     fn build_sbf_options_from_build_command_uses_default_arch() {
         let default_arch = BuildSbfOptions::default_arch();
-        let build_sbf_options = BuildSbfOptions::from_build_command("v1.54".to_string(), None);
-        let mut expected = ["build-sbf", "--tools-version", "v1.54"]
+        let build_sbf_options = BuildSbfOptions::from_build_command("v1.55".to_string(), None);
+        let mut expected = ["build-sbf", "--tools-version", "v1.55"]
             .map(str::to_string)
             .to_vec();
         if let Some(default_arch) = default_arch {

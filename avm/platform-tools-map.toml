@@ -19,7 +19,7 @@
 # `fallback` is used when the project does not pin a Solana version at all.
 # Keep it equal to the platform-tools version of the newest entry below.
 
-fallback = "v1.54"
+fallback = "v1.55"
 
 [[entries]]
 solana = "1.14.16"
@@ -93,5 +93,5 @@ rustc = "1.89.0"
 
 [[entries]]
 solana = "4.0.0"
-platform_tools = "v1.54"
+platform_tools = "v1.55"
 rustc = "1.89.0"

@@ -153,7 +153,7 @@ impl PlatformToolsSource {
 
 #[derive(Debug, Clone)]
 pub struct PlatformToolsResolution {
-    /// e.g. `"v1.54"`. Kept as a string because upstream uses the `v`-prefixed
+    /// e.g. `"v1.55"`. Kept as a string because upstream uses the `v`-prefixed
     /// form everywhere (release tags, archive names, the `DEFAULT_…` constant).
     pub version: String,
     /// Rust compiler bundled in this platform-tools release.
@@ -547,7 +547,7 @@ pub fn get_platform_tools_dir_path() -> PathBuf {
     AVM_HOME.join("platform-tools")
 }
 
-/// Path where the given platform-tools `version` (e.g. `"v1.54"`) is installed.
+/// Path where the given platform-tools `version` (e.g. `"v1.55"`) is installed.
 pub fn platform_tools_version_path(version: &str) -> PathBuf {
     get_platform_tools_dir_path().join(version)
 }
@@ -905,7 +905,7 @@ mod tests {
     #[test]
     fn lookup_for_solana_version_works() {
         assert_eq!(lookup_for_solana_version(&v("3.0.0")).unwrap(), "v1.51");
-        assert_eq!(lookup_for_solana_version(&v("4.5.0")).unwrap(), "v1.54");
+        assert_eq!(lookup_for_solana_version(&v("4.5.0")).unwrap(), "v1.55");
         // Below earliest → error from this lower-level helper.
         assert!(lookup_for_solana_version(&v("0.1.0")).is_err());
     }
@@ -1020,15 +1020,15 @@ mod tests {
 
     #[test]
     fn download_url_prepends_v_when_missing() {
-        let with_v = download_url("v1.54");
-        let without_v = download_url("1.54");
+        let with_v = download_url("v1.55");
+        let without_v = download_url("1.55");
         assert_eq!(with_v, without_v);
-        assert!(with_v.contains("/releases/download/v1.54/"));
+        assert!(with_v.contains("/releases/download/v1.55/"));
     }
 
     #[test]
     fn download_url_targets_anza_platform_tools() {
-        let url = download_url("v1.54");
+        let url = download_url("v1.55");
         assert!(url.starts_with("https://github.com/anza-xyz/platform-tools/releases/download/"));
         assert!(url.ends_with(host_asset_name()));
     }
@@ -1050,8 +1050,8 @@ mod tests {
     #[test]
     fn replace_install_dir_swaps_existing_target_after_staging_is_ready() {
         let dir = tempfile::TempDir::new().unwrap();
-        let target = dir.path().join("v1.54");
-        let staging = dir.path().join("v1.54.partial");
+        let target = dir.path().join("v1.55");
+        let staging = dir.path().join("v1.55.partial");
 
         std::fs::create_dir_all(target.join("rust")).unwrap();
         std::fs::write(target.join("rust/old"), b"old").unwrap();
