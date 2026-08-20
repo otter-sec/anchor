@@ -139,6 +139,41 @@ pub struct Bad {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn nested_accounts_flattened_header_size_must_fit_u8_domain() {
+    // Top-level field count is only 2, but Nested expands to 128+128 = 256
+    // slots — past the 256-bit duplicate / u8 offset domain.
+    let chunk_fields: String = (0..128)
+        .map(|i| format!("    pub a{i}: UncheckedAccount,\n"))
+        .collect();
+    let source = format!(
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(Accounts)]
+pub struct Chunk {{
+{chunk_fields}}}
+
+#[derive(Accounts)]
+pub struct Outer {{
+    pub left: Nested<Chunk>,
+    pub right: Nested<Chunk>,
+}}
+"#
+    );
+    compile_fail_case(
+        "nested_header_size_overflow",
+        &source,
+        &["HEADER_SIZE must be <= 255"],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn invalid_account_arguments_are_targeted() {
     compile_fail_case(
         "invalid_account_argument",

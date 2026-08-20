@@ -1039,6 +1039,9 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     if named_fields.named.len() > 255 {
+        // Syntactic top-level field cap. Flattened Nested account counts are
+        // separately bounded by the HEADER_SIZE assert emitted on the
+        // TryAccounts impl (duplicate-tracking / u8 offset domain is 256 bits).
         return syn::Error::new(name.span(), "`Accounts` derive supports at most 255 fields")
             .to_compile_error();
     }
@@ -2119,6 +2122,14 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 Ok(())
             }
         }
+
+        // Flattened declared-account count must fit the 256-bit duplicate
+        // bitvec and u8 field-offset domain. Top-level field count alone is
+        // not enough: Nested<Inner> expands to Inner::HEADER_SIZE slots.
+        const _: () = assert!(
+            <#name as anchor_lang_v2::TryAccounts>::HEADER_SIZE <= 255,
+            "`Accounts` flattened HEADER_SIZE must be <= 255 (duplicate-tracking domain)"
+        );
 
         #[cfg(feature = "idl-build")]
         #[doc(hidden)]
