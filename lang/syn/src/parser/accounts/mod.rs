@@ -387,6 +387,18 @@ fn constraints_cross_checks(fields: &[AccountField]) -> ParseResult<()> {
         }
     }
 
+    // MIGRATION
+    for field in fields {
+        if let AccountField::Field(f) = field {
+            if matches!(f.ty, Ty::Migration(_)) && !f.constraints.is_mutable() {
+                return Err(ParseError::new(
+                    f.ident.span(),
+                    "Migration accounts must be mutable. Add `#[account(mut)]`",
+                ));
+            }
+        }
+    }
+
     Ok(())
 }
 
