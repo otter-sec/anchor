@@ -17,12 +17,12 @@ use {
     anchor_lang::{
         accounts::{
             Account, BorshAccount, Interface, Program, Signer, SlabSchema, SystemAccount, Sysvar,
-            UncheckedAccount,
+            SysvarInstructions, UncheckedAccount,
         },
         programs::{System, Token},
         testing::AccountBuffer,
-        Accounts, AnchorAccount, AnchorDeserialize, AnchorSerialize, Discriminator, ErrorCode,
-        Ids, Owner, TryAccounts,
+        Accounts, AnchorAccount, AnchorDeserialize, AnchorSerialize, Discriminator, ErrorCode, Ids,
+        Owner, TryAccounts,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::address::Address,
@@ -387,6 +387,216 @@ fn sysvar_load_rejects_wrong_address() {
     let view = unsafe { buf.view() };
     let err = expect_err(Sysvar::<pinocchio::sysvars::clock::Clock>::load(view));
     assert_eq!(err, ProgramError::InvalidArgument);
+}
+
+// -- Sysvar<SysvarInstructions> -----------------------------------------------
+//
+// Unlike `Clock` / `Rent`, this sysvar has no `sol_get_sysvar` syscall — the
+// value is read out of the account's data buffer. These tests build a
+// synthetic sysvar blob matching the runtime's serialization so the pointer
+// arithmetic in pinocchio's `Instructions` accessors is exercised for real.
+//
+// Layout (agave's `construct_instructions_data`):
+//
+//   sysvar  := [u16 num_ix] [u16 offset; num_ix] <ix blobs> [u16 current_index]
+//   ix blob := [u16 num_accounts] [{u8 flags, [u8; 32] key} * num_accounts]
+//              [[u8; 32] program_id] [u16 data_len] [data]
+//   flags   := 0b01 signer | 0b10 writable
+//
+// `current_index` lives in the *last two bytes*, so `data_len` in the account
+// header must match the blob length exactly.
+
+struct TestIx {
+    program_id: [u8; 32],
+    /// `(key, is_signer, is_writable)`
+    accounts: Vec<([u8; 32], bool, bool)>,
+    data: Vec<u8>,
+}
+
+fn build_instructions_sysvar(ixs: &[TestIx], current_index: u16) -> Vec<u8> {
+    let header_len = 2 + 2 * ixs.len();
+    let mut offsets = Vec::with_capacity(ixs.len());
+    let mut blobs = Vec::with_capacity(ixs.len());
+    let mut cursor = header_len;
+
+    for ix in ixs {
+        offsets.push(cursor as u16);
+        let mut blob = Vec::new();
+        blob.extend_from_slice(&(ix.accounts.len() as u16).to_le_bytes());
+        for (key, is_signer, is_writable) in &ix.accounts {
+            let mut flags = 0u8;
+            if *is_signer {
+                flags |= 0b01;
+            }
+            if *is_writable {
+                flags |= 0b10;
+            }
+            blob.push(flags);
+            blob.extend_from_slice(key);
+        }
+        blob.extend_from_slice(&ix.program_id);
+        blob.extend_from_slice(&(ix.data.len() as u16).to_le_bytes());
+        blob.extend_from_slice(&ix.data);
+        cursor += blob.len();
+        blobs.push(blob);
+    }
+
+    let mut out = Vec::with_capacity(cursor + 2);
+    out.extend_from_slice(&(ixs.len() as u16).to_le_bytes());
+    for offset in &offsets {
+        out.extend_from_slice(&offset.to_le_bytes());
+    }
+    for blob in &blobs {
+        out.extend_from_slice(blob);
+    }
+    out.extend_from_slice(&current_index.to_le_bytes());
+    out
+}
+
+fn instructions_sysvar_id() -> [u8; 32] {
+    pinocchio::sysvars::instructions::INSTRUCTIONS_ID.to_bytes()
+}
+
+fn sample_instructions() -> Vec<TestIx> {
+    vec![
+        TestIx {
+            program_id: [0xAA; 32],
+            accounts: vec![([0x11; 32], true, true), ([0x22; 32], false, false)],
+            data: vec![1, 2, 3, 4],
+        },
+        TestIx {
+            program_id: PROGRAM_ID,
+            accounts: vec![([0x33; 32], false, true)],
+            data: vec![9],
+        },
+    ]
+}
+
+#[test]
+fn sysvar_instructions_load_rejects_wrong_address() {
+    // The address gate must reject before the data borrow, exactly like
+    // `Sysvar<Clock>` — a non-instructions account never reaches
+    // `SysvarLoad::read`.
+    let buf = AccountBuffer::<512>::new();
+    let blob = build_instructions_sysvar(&sample_instructions(), 0);
+    buf.init([0x01; 32], [0u8; 32], blob.len(), false, false, false);
+    buf.write_data(&blob);
+    let view = unsafe { buf.view() };
+    let err = expect_err(Sysvar::<SysvarInstructions>::load(view));
+    assert_eq!(err, ProgramError::InvalidArgument);
+}
+
+#[test]
+fn sysvar_instructions_reads_synthetic_blob() {
+    let buf = AccountBuffer::<512>::new();
+    let blob = build_instructions_sysvar(&sample_instructions(), 1);
+    buf.init(
+        instructions_sysvar_id(),
+        [0u8; 32],
+        blob.len(),
+        false,
+        false,
+        false,
+    );
+    buf.write_data(&blob);
+    let view = unsafe { buf.view() };
+    let sysvar = Sysvar::<SysvarInstructions>::load(view).unwrap();
+
+    assert_eq!(sysvar.num_instructions(), 2);
+    assert_eq!(sysvar.load_current_index(), 1);
+
+    let first = sysvar.load_instruction_at(0).unwrap();
+    assert_eq!(first.get_program_id().to_bytes(), [0xAA; 32]);
+    assert_eq!(first.get_instruction_data(), &[1, 2, 3, 4]);
+    assert_eq!(first.num_account_metas(), 2);
+
+    let signer = first.get_instruction_account_at(0).unwrap();
+    assert_eq!(signer.key.to_bytes(), [0x11; 32]);
+    assert!(signer.is_signer());
+    assert!(signer.is_writable());
+
+    let readonly = first.get_instruction_account_at(1).unwrap();
+    assert_eq!(readonly.key.to_bytes(), [0x22; 32]);
+    assert!(!readonly.is_signer());
+    assert!(!readonly.is_writable());
+
+    // `current_index` is 1, so relative 0 is the second instruction and
+    // relative -1 walks back to the first.
+    let current = sysvar.get_instruction_relative(0).unwrap();
+    assert_eq!(current.get_program_id().to_bytes(), PROGRAM_ID);
+    assert_eq!(current.get_instruction_data(), &[9]);
+
+    let previous = sysvar.get_instruction_relative(-1).unwrap();
+    assert_eq!(previous.get_program_id().to_bytes(), [0xAA; 32]);
+}
+
+#[test]
+fn sysvar_instructions_rejects_out_of_range_index() {
+    let buf = AccountBuffer::<512>::new();
+    let blob = build_instructions_sysvar(&sample_instructions(), 0);
+    buf.init(
+        instructions_sysvar_id(),
+        [0u8; 32],
+        blob.len(),
+        false,
+        false,
+        false,
+    );
+    buf.write_data(&blob);
+    let view = unsafe { buf.view() };
+    let sysvar = Sysvar::<SysvarInstructions>::load(view).unwrap();
+
+    assert_eq!(
+        expect_err(sysvar.load_instruction_at(2)),
+        ProgramError::InvalidInstructionData
+    );
+    // `current_index` is 0, so there is no preceding instruction.
+    assert_eq!(
+        expect_err(sysvar.get_instruction_relative(-1)),
+        ProgramError::InvalidInstructionData
+    );
+}
+
+#[test]
+fn sysvar_instructions_holds_a_shared_borrow_not_an_exclusive_one() {
+    // The wrapper keeps a `Ref` alive for its whole lifetime. That must stay a
+    // *shared* borrow: `program.rs` calls `check_borrow()` before a readonly
+    // CPI, and an exclusive marker would break passing the sysvar through.
+    let buf = AccountBuffer::<512>::new();
+    let blob = build_instructions_sysvar(&sample_instructions(), 0);
+    buf.init(
+        instructions_sysvar_id(),
+        [0u8; 32],
+        blob.len(),
+        false,
+        false,
+        false,
+    );
+    buf.write_data(&blob);
+    let view = unsafe { buf.view() };
+    let sysvar = Sysvar::<SysvarInstructions>::load(view).unwrap();
+
+    assert!(sysvar.account().check_borrow().is_ok());
+    assert!(sysvar.account().check_borrow_mut().is_err());
+
+    // Dropping the wrapper releases the guard.
+    drop(sysvar);
+    let view = unsafe { buf.view() };
+    assert!(view.check_borrow_mut().is_ok());
+}
+
+#[cfg(feature = "guardrails")]
+#[test]
+fn sysvar_instructions_rejects_undersized_data() {
+    // A genuine sysvar is always at least `[u16 num][u16 current_index]`. The
+    // guardrails check stops a truncated mock from underflowing the pointer
+    // arithmetic in `load_current_index`.
+    let buf = AccountBuffer::<128>::new();
+    buf.init(instructions_sysvar_id(), [0u8; 32], 2, false, false, false);
+    buf.write_data(&[0u8; 2]);
+    let view = unsafe { buf.view() };
+    let err = expect_err(Sysvar::<SysvarInstructions>::load(view));
+    assert_eq!(err, ProgramError::AccountDataTooSmall);
 }
 
 // -- Account<T> / Slab<H, HeaderOnly> ----------------------------------
