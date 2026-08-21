@@ -7,7 +7,10 @@ use {
     anyhow::{anyhow, bail, Context, Error, Result},
     cargo_toml::Manifest,
     chrono::{TimeZone, Utc},
-    reqwest::{header::USER_AGENT, StatusCode},
+    reqwest::{
+        header::{LINK, USER_AGENT},
+        StatusCode,
+    },
     semver::{Prerelease, Version},
     serde::{de, Deserialize},
     sha2::{Digest, Sha256},
@@ -41,6 +44,7 @@ const NIGHTLY_S3_BASE_URL: &str = "https://anchor-releases.s3-eu-west-1.amazonaw
 const HTTP_CLIENT_TIMEOUT_SECS: u64 = 5;
 /// Longer timeout for release asset downloads, which can take longer than metadata requests.
 const DOWNLOAD_CLIENT_TIMEOUT_SECS: u64 = 60;
+const GITHUB_RELEASES_PER_PAGE: u32 = 100;
 
 /// Shared HTTP client with a short timeout, used for metadata/API requests.
 static HTTP_CLIENT: LazyLock<reqwest::blocking::Client> = LazyLock::new(|| {
@@ -691,8 +695,7 @@ pub fn read_anchorversion_file() -> Result<Version> {
         .map_err(|e| anyhow!("Unable to parse version: {e}"))
 }
 
-/// Retrieve a list of installable versions of anchor-cli using the GitHub API and tags on the Anchor
-/// repository.
+/// Retrieve a list of installable versions of anchor-cli using the GitHub Releases API.
 pub fn fetch_versions(include_pre_release: bool) -> Result<Vec<Version>, Error> {
     fetch_versions_with_client(&HTTP_CLIENT, include_pre_release)
 }
@@ -717,30 +720,48 @@ fn fetch_versions_with_client(
         Version::parse(s.trim_start_matches('v')).map_err(de::Error::custom)
     }
 
-    let response = client
-        .get("https://api.github.com/repos/otter-sec/anchor/releases")
-        .header(USER_AGENT, "avm https://github.com/otter-sec/anchor")
-        .send()?;
+    let mut page = 1;
+    let mut versions = vec![];
 
-    if response.status().is_success() {
+    loop {
+        let response = client
+            .get("https://api.github.com/repos/otter-sec/anchor/releases")
+            .query(&[("per_page", GITHUB_RELEASES_PER_PAGE), ("page", page)])
+            .header(USER_AGENT, "avm https://github.com/otter-sec/anchor")
+            .send()?;
+
+        if !response.status().is_success() {
+            return Err(
+                if let Some(reset_time) = github_rate_limit_reset_time(response.headers()) {
+                    anyhow!(
+                        "GitHub API rate limit exceeded. Try again after {} UTC.",
+                        reset_time
+                    )
+                } else {
+                    anyhow!("GitHub API rate limit exceeded. Try again later.",)
+                },
+            );
+        }
+
+        let has_next_page = response
+            .headers()
+            .get(LINK)
+            .and_then(|header| header.to_str().ok())
+            .is_some_and(|header| header.contains(r#"rel="next""#));
         let releases: Vec<Release> = response.json()?;
-        let versions: Vec<Version> = releases
-            .into_iter()
-            .filter(|r| !r.draft && (include_pre_release || !r.prerelease))
-            .map(|r| r.version)
-            .collect();
-        Ok(versions)
-    } else {
-        Err(
-            if let Some(reset_time) = github_rate_limit_reset_time(response.headers()) {
-                anyhow!(
-                    "GitHub API rate limit exceeded. Try again after {} UTC.",
-                    reset_time
-                )
-            } else {
-                anyhow!("GitHub API rate limit exceeded. Try again later.",)
-            },
-        )
+
+        versions.extend(
+            releases
+                .into_iter()
+                .filter(|release| !release.draft && (include_pre_release || !release.prerelease))
+                .map(|release| release.version),
+        );
+
+        if !has_next_page {
+            return Ok(versions);
+        }
+
+        page += 1;
     }
 }
 
