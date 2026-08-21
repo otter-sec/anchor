@@ -27,12 +27,6 @@ fn gen_cpi_instructions(idl: &Idl) -> proc_macro2::TokenStream {
         let method_name = format_ident!("{}", ix.name);
         let accounts_ident = format_ident!("{}", ix.name.to_camel_case());
 
-        let accounts_generic = if ix.accounts.is_empty() {
-           quote!()
-        } else {
-            quote!(<'info>)
-        };
-
         let args = ix.args.iter().map(|arg| {
             let name = format_ident!("{}", arg.name);
             let ty = convert_idl_type_to_syn_type(&arg.ty);
@@ -72,7 +66,10 @@ fn gen_cpi_instructions(idl: &Idl) -> proc_macro2::TokenStream {
 
         quote! {
             pub fn #method_name<'a, 'b, 'c, 'info>(
-                ctx: anchor_lang::context::CpiContext<'a, 'b, 'c, 'info, accounts::#accounts_ident #accounts_generic>,
+                // `<'info>` is always present: `__cpi_client_accounts::generate`
+                // emits the accounts struct with the lifetime even when it has no
+                // fields (see #4658), so the signature must reference it the same way.
+                ctx: anchor_lang::context::CpiContext<'a, 'b, 'c, 'info, accounts::#accounts_ident<'info>>,
                 #(#args),*
             ) -> #ret_type {
                 let ix = {

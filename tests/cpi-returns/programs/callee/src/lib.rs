@@ -39,6 +39,14 @@ pub mod callee {
         let account = &ctx.accounts.account;
         Ok(account.value)
     }
+
+    // Regression guard for #4658: an instruction whose accounts struct has no
+    // fields. Its generated CPI client (`NoAccounts`) must still carry the
+    // `<'info>` lifetime that `cpi::no_accounts` references, or the caller below
+    // fails to compile.
+    pub fn no_accounts(_ctx: Context<NoAccounts>) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -54,6 +62,9 @@ pub struct Initialize<'info> {
 pub struct CpiReturn<'info> {
     pub account: Account<'info, CpiReturnAccount>,
 }
+
+#[derive(Accounts)]
+pub struct NoAccounts {}
 
 #[account]
 pub struct CpiReturnAccount {
