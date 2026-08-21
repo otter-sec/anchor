@@ -96,16 +96,16 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
             use ::std::marker::PhantomData;
 
 
-            #[derive(Debug, Clone, Copy)]
+            #[derive(Debug, Clone)]
             pub struct Return<T> {
                 phantom: ::std::marker::PhantomData<T>,
                 program_id: anchor_lang::solana_program::pubkey::Pubkey,
-                return_data: anchor_lang::__private::CpiReturnData,
+                return_data: Option<anchor_lang::__private::CpiReturnData>,
             }
 
             impl<T: AnchorDeserialize> Return<T> {
                 pub fn get(&self) -> T {
-                    self.return_data.get(self.program_id)
+                    self.return_data.as_ref().unwrap().get(self.program_id)
                 }
 
                 /// Read return data without validating the program_id.
