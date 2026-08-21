@@ -4417,7 +4417,10 @@ fn process_handler(
                 __ctx: anchor_lang_v2::CpiContext<'a, accounts::#accounts_type<'a>>,
                 #(#extra_arg_names: #extra_arg_types,)*
             ) #ret_ty {
-                let __ix = super::instruction::#ix_struct_name #ix_lt_use_local {
+                // No lifetime arguments on the literal: a struct expression
+                // cannot carry them, and the type is already fixed by the
+                // annotation below.
+                let __ix = super::instruction::#ix_struct_name {
                     #(#extra_arg_names,)*
                 };
                 let __data = <
