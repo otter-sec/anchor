@@ -522,7 +522,7 @@ jobs:
             path: tests/anchor-cli-legacy-idl
           - cmd: cd tests/anchor-cli-account && anchor test --skip-lint
             path: tests/anchor-cli-account
-          - cmd: cd tests/bench && anchor test --skip-lint
+          - cmd: cd tests/bench && ./test.sh
             path: tests/bench
           - cmd: cd tests/idl && ./test.sh
             path: tests/idl

@@ -21,7 +21,10 @@ use {
     },
 };
 pub use {
-    platform_tools::{resolve_platform_tools, PlatformToolsResolution, PlatformToolsSource},
+    platform_tools::{
+        resolve_platform_tools, resolve_platform_tools_for_solana_version, PlatformToolsResolution,
+        PlatformToolsSource,
+    },
     resolve::{
         resolve_anchor_version, resolve_solana_version, Resolution, ResolutionSource,
         SolanaResolution, SolanaResolutionSource,

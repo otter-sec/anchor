@@ -1,9 +1,9 @@
 # Static map from Solana release → bundled `platform-tools` version.
 #
-# Source of truth: `DEFAULT_PLATFORM_TOOLS_VERSION` (or its predecessor, the
-# `platform_tools_version = String::from("vX.Y")` literal) in cargo-build-sbf:
+# Source of truth: `DEFAULT_PLATFORM_TOOLS_VERSION` (or its predecessors, the
+# `platform_tools_version` / `sbf_tools_version` literals) in cargo-build-sbf:
 #
-#   1.18.x : solana-labs/solana, sdk/cargo-build-sbf/src/main.rs
+#   1.14.x – 1.18.x : solana-labs/solana, sdk/cargo-build-sbf/src/main.rs
 #   2.0.x – 2.3.x : anza-xyz/agave, sdk/cargo-build-sbf/src/main.rs
 #                   (then platform-tools-sdk/cargo-build-sbf/src/main.rs from 2.2)
 #   3.0.x+ : anza-xyz/agave, platform-tools-sdk/cargo-build-sbf/src/toolchain.rs
@@ -13,13 +13,28 @@
 # the resolver can stop at the first key that exceeds the request.
 #
 # `rustc` is the Rust compiler bundled in the corresponding platform-tools
-# release. Source of truth: `src/version` in anza-xyz/rust on the
-# `solana-tools-<platform_tools>` branch.
+# release. Source of truth: `src/version` in solana-labs/rust or anza-xyz/rust
+# on the tool release's tag or `solana-tools-<platform_tools>` branch.
 #
 # `fallback` is used when the project does not pin a Solana version at all.
 # Keep it equal to the platform-tools version of the newest entry below.
 
 fallback = "v1.54"
+
+[[entries]]
+solana = "1.14.16"
+platform_tools = "v1.29"
+rustc = "1.62.0"
+
+[[entries]]
+solana = "1.15.0"
+platform_tools = "v1.32"
+rustc = "1.65.0"
+
+[[entries]]
+solana = "1.16.0"
+platform_tools = "v1.37"
+rustc = "1.68.0"
 
 [[entries]]
 solana = "1.18.0"
