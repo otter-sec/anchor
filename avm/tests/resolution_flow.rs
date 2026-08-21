@@ -386,6 +386,34 @@ fn avm_subcommands_resolve_solana_and_platform_tools_from_project() {
     );
 }
 
+#[test]
+fn platform_tools_uninstall_rejects_path_traversal() {
+    let fixture = Fixture::new();
+    let project = fixture.project("platform-tools-path-traversal");
+    fs::create_dir_all(fixture.avm_home.join("platform-tools/v1.54")).unwrap();
+
+    let victim = fixture._temp.path().join("victim");
+    let marker = victim.join("marker");
+    fs::create_dir_all(&victim).unwrap();
+    fs::write(&marker, "keep").unwrap();
+
+    let output = fixture.run_avm(
+        &project,
+        ["platform-tools", "uninstall", "v1.54/../../../victim"],
+    );
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Invalid platform-tools version"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        marker.exists(),
+        "uninstall must not delete outside AVM_HOME"
+    );
+}
+
 fn create_tar_gz(archive: &Path, source_dir: &Path, entry: &str) {
     let output = Command::new("tar")
         .arg("-czf")
