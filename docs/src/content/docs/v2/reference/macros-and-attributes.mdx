@@ -1,0 +1,243 @@
+---
+title: Macros and derives
+description: Reference for `#[program]{:rs}`, `#[derive(Accounts)]{:rs}`, `#[account]{:rs}`, `#[event]{:rs}`, and related attributes.
+---
+
+Anchor programs use attributes and derives to declare instruction handlers, account validation, account layouts, events, errors, and constants. This page collects the core macros and the code they generate.
+
+## `#[program]{:rs}`
+
+The `#[program]{:rs}` attribute marks a module as the program entry point. The macro generates a discriminator-keyed dispatcher that matches incoming instruction data against the handler's auto-derived 8-byte discriminator:
+
+```rust title="lib.rs" showLineNumbers=false
+#[program]
+pub mod counter {
+    use super::*;
+
+    pub fn init(ctx: &mut Context<Init>) -> Result<()> { /* ... */ }
+    pub fn increment(ctx: &mut Context<Increment>) -> Result<()> { /* ... */ }
+}
+```
+
+Each handler takes `&mut Context<Accs>{:rs}` and any extra arguments declared after `ctx{:rs}`. The dispatcher decodes the extras through wincode using a borsh-compatible wire format.
+
+The default instruction discriminator is `sha256("global:" + name)[..8]{:rs}`, where `name{:rs}` is the handler's identifier. CU-sensitive programs can override per handler with `#[discrim = N]{:rs}` for a compact 1-byte discriminator. The override is all-or-nothing. If any handler in the module uses `#[discrim = N]{:rs}`, every other handler must also declare a unique byte value:
+
+```rust title="lib.rs" showLineNumbers=false
+#[program]
+pub mod vault {
+    use super::*;
+
+    #[discrim = 0]
+    pub fn deposit(ctx: &mut Context<Deposit>, amount: u64) -> Result<()> { /* ... */ }
+
+    #[discrim = 1]
+    pub fn withdraw(ctx: &mut Context<Withdraw>, amount: u64) -> Result<()> { /* ... */ }
+}
+```
+
+## `#[derive(Accounts)]{:rs}`
+
+`#[derive(Accounts)]{:rs}` declares an instruction's account list and generates the validation code that runs before the handler. For each struct it expands to:
+
+- A `TryAccounts{:rs}` impl that loads each declared account from the pre-walked view slice, applies constraints, and returns the validated struct
+- A `Bumps{:rs}` impl whose associated type carries one `u8{:rs}` per PDA seed group (or `Option<u8>{:rs}` for optional accounts)
+- A `Resolved{:rs}` companion struct: a subset of fields the caller must supply when building an instruction from a client or test. The rest auto-derive (PDAs) or auto-fill (system / token programs)
+- A `to_account_metas(){:rs}` method for client-side instruction building
+
+```rust title="lib.rs" showLineNumbers=false
+#[derive(Accounts)]
+pub struct Create {
+    #[account(mut)]
+    pub creator: Signer,
+    #[account(init, payer = creator, seeds = [b"multisig", creator.address().as_ref()])]
+    pub config: Account<MultisigConfig>,
+    pub system_program: Program<System>,
+}
+```
+
+### Constraints
+
+The derive handles built-in clauses directly. Namespaced extension clauses such as `token::mint{:rs}` and third-party `my_ns::key{:rs}` route through [`AccountConstraint{:rs}`](/docs/v2/programs/extensibility/#accountconstraint), which exposes the four lifecycle hooks `init{:rs}`, `check{:rs}`, `update{:rs}`, and `exit{:rs}`. The most common built-in clauses are:
+
+| Clause | Effect |
+| --- | --- |
+| `mut{:rs}` | Marks the account writable. Validated against `is_writable{:rs}`. |
+| `init{:rs}` | Creates the account via System Program CPI. Requires `payer{:rs}`. |
+| `init_if_needed{:rs}` | Creates only if the account doesn't exist. |
+| `payer = payer{:rs}` | Funds rent for `init{:rs}` / `init_if_needed{:rs}`. |
+| `seeds = [...]{:rs}` and `bump{:rs}` | Validates the account is a PDA from the listed seeds. |
+| `bump = field{:rs}` | Uses a stored bump instead of searching at runtime. |
+| `address = expr{:rs}` | Validates `account.address() == expr{:rs}`. Prefer this for checking that a sibling account matches a stored address field. |
+| `owner = program_id{:rs}` | Validates `account.owner() == program_id{:rs}`. |
+| `space = N{:rs}` | Account size in bytes for `init{:rs}`. |
+| `close = dest{:rs}` | On exit, transfers all lamports to `dest{:rs}` and zeros the data. |
+
+### Macro-time PDA bump precomputation
+
+When all seed values in `seeds = [...]{:rs}` are byte literals, the derive runs `find_program_address{:rs}` at compile time and bakes the canonical bump in as a `const{:rs}`. The runtime PDA search is skipped. See [Performance and optimizations](/docs/v2/security/performance-and-optimizations/).
+
+### Topological seed resolution
+
+When seeds reference other fields in the same struct, the macro sorts derivations topologically. The example below derives `vault{:rs}` from `config.address(){:rs}`, which is itself a PDA derived from `creator{:rs}`:
+
+```rust title="lib.rs" showLineNumbers=false
+#[derive(Accounts)]
+pub struct ExecuteTransfer {
+    pub creator: UncheckedAccount,
+    #[account(seeds = [b"multisig", creator.address().as_ref()], bump = config.bump)]
+    pub config: Account<MultisigConfig>,
+    #[account(mut, seeds = [b"vault", config.address().as_ref()], bump)]
+    pub vault: UncheckedAccount,
+}
+```
+
+## `#[account]{:rs}`
+
+The `#[account]{:rs}` attribute marks a struct as an account type. It has two modes. The default form is zero-copy, and the opt-in form uses borsh.
+
+### Default zero-copy form
+
+In the default form, the macro generates:
+
+- A compile-time assertion that every field is `bytemuck::Pod{:rs}`
+- A `#[repr(C)]{:rs}` layout with `#[derive(Clone, Copy)]{:rs}`
+- A `Discriminator{:rs}` impl with `sha256("account:" + name)[..8]{:rs}`
+- An `Owner{:rs}` impl returning `program_id{:rs}` (program-owned)
+- A no-padding assertion (struct size must equal the sum of field sizes)
+- An IDL type entry under `idl-build{:toml}`
+
+The struct must be `#[repr(C)]{:rs}` (added by the macro) and every field must itself be `Pod{:rs}`. Pairing it with `Account<T>{:rs}` then yields a fully zero-copy load.
+
+### Borsh form
+
+For accounts whose fields are variable-length (`Vec{:rs}`, `String{:rs}`, enums with payload variants), use `#[account(borsh)]{:rs}` and pair the struct with `BorshAccount<T>{:rs}`. The macro auto-derives `BorshSerialize{:rs}`, `BorshDeserialize{:rs}`, and `Default{:rs}` so the struct can round-trip through borsh:
+
+```rust title="lib.rs" showLineNumbers=false
+#[account(borsh)]
+pub struct Profile {
+    pub owner: Address,
+    pub name: String,
+    pub friends: Vec<Address>,
+}
+```
+
+Borsh accounts deserialize on load and serialize on exit, so reach for the borsh form only when variable-length fields are genuinely needed. Fixed-size structs should stay in the default zero-copy form.
+
+## `#[event]{:rs}` and `#[event(bytemuck)]{:rs}`
+
+Program events have two encoding modes. The right choice depends on whether the event has any variable-length fields.
+
+The default mode encodes through wincode with a borsh-wire-compatible config: `u8{:rs}` enum tags, `u32{:rs}` little-endian length prefixes, and no alignment checks. It still supports `Vec{:rs}`, `String{:rs}`, `Option{:rs}`, and enums, while running roughly 3 to 10 times cheaper than borsh on SBF:
+
+```rust title="lib.rs" showLineNumbers=false
+#[event]
+pub struct OrderFilled {
+    pub maker: Address,
+    pub taker: Address,
+    pub price: u64,
+    pub size: u64,
+    pub note: String,
+}
+
+emit!(OrderFilled {
+    maker: *ctx.accounts.maker.address(),
+    taker: *ctx.accounts.taker.address(),
+    price: 1_000,
+    size: 1,
+    note: String::from("partial fill"),
+});
+```
+
+`#[event(bytemuck)]{:rs}` swaps the encoder for a zero-copy `repr(C){:rs}` memcpy and is the right choice when every event field is fixed-size. With this mode, emission collapses to one discriminator write plus a memcpy of the body, with no per-field encoding step:
+
+```rust title="lib.rs" showLineNumbers=false
+#[event(bytemuck)]
+#[repr(C)]
+pub struct PriceUpdate {
+    pub price: PodU64,
+    pub timestamp: PodU64,
+}
+```
+
+## `#[derive(InitSpace)]{:rs}`
+
+`#[derive(InitSpace)]{:rs}` adds a `Space{:rs}` implementation whose `INIT_SPACE{:rs}` constant equals the struct's borsh-serialized size. Variable-length fields are not derivable on their own, so annotate them with `#[max_len(N)]{:rs}` (or `#[max_len(N, M)]{:rs}` for nested vectors) to give the macro an explicit upper bound:
+
+```rust title="lib.rs" showLineNumbers=false
+#[account(borsh)]
+#[derive(InitSpace)]
+pub struct UserProfile {
+    pub owner: Address,
+    #[max_len(50)]
+    pub name: String,
+    #[max_len(10)]
+    pub friends: Vec<Address>,
+}
+```
+
+`UserProfile::INIT_SPACE{:rs}` then drops into the `space{:rs}` constraint:
+
+```rust title="lib.rs" showLineNumbers=false
+#[account(init, payer = signer, space = 8 + UserProfile::INIT_SPACE)]
+pub profile: BorshAccount<UserProfile>,
+```
+
+## `#[constant]{:rs}`
+
+The `#[constant]{:rs}` attribute exposes a const value to the IDL and generated clients. It is useful for documenting program-level constants, like seed strings or maximum sizes, that off-chain code has to reproduce verbatim:
+
+```rust title="lib.rs" showLineNumbers=false
+#[constant]
+pub const MAX_SIGNERS: usize = 10;
+```
+
+## `#[error_code]{:rs}`
+
+The `#[error_code]{:rs}` attribute declares a custom error enum. Each variant maps to an `Error::Custom(discriminant + offset){:rs}` where `offset{:rs}` defaults to `6000{:rs}`. The variant names and `#[msg(...)]{:rs}` strings land in the generated IDL so clients can decode the codes back into named variants:
+
+```rust title="lib.rs" showLineNumbers=false
+#[error_code]
+pub enum MultisigError {
+    #[msg("Threshold must be between 1 and the number of signers")]
+    InvalidThreshold,
+    #[msg("Too many signers; max is MAX_SIGNERS")]
+    TooManySigners,
+    #[msg("A required signer did not sign")]
+    MissingRequiredSignature,
+}
+```
+
+Override the starting offset with `#[error_code(offset = N)]{:rs}` when a program needs a non-default error-code base.
+
+<Callout variant="remark" title="No runtime `AnchorError{:rs}`">
+  The runtime does not allocate an `AnchorError{:rs}` struct. The `#[msg(...)]{:rs}` text is IDL-only metadata, so emitting an error costs only the `Custom(u32){:rs}` write.
+</Callout>
+
+## `#[access_control]{:rs}`
+
+The `#[access_control]{:rs}` attribute wraps a handler with a guard call that runs before the handler body. The guard returns `Result<()>{:rs}`, and a failure short-circuits the instruction without ever entering the handler. The pattern is most useful for invariants that depend on instruction arguments, since `#[derive(Accounts)]{:rs}` constraints fire before args are unpacked:
+
+```rust title="lib.rs" showLineNumbers=false
+#[program]
+pub mod admin_only {
+    use super::*;
+
+    #[access_control(Reset::is_admin(&ctx))]
+    pub fn reset(ctx: &mut Context<Reset>) -> Result<()> {
+        ctx.accounts.counter.value = 0;
+        Ok(())
+    }
+}
+
+impl Reset {
+    pub fn is_admin(ctx: &Context<Reset>) -> Result<()> {
+        require_keys_eq!(ctx.accounts.signer.address(), &ADMIN_PUBKEY);
+        Ok(())
+    }
+}
+```
+
+## `#[pod_wrapper]{:rs}`
+
+Generates a transparent `u8{:rs}`-backed wrapper that validates discriminants on equality and conversion. See [Pod types](/docs/v2/programs/pod-types/#pod_wrapper-for-enums).

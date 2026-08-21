@@ -1,0 +1,156 @@
+---
+import {
+  BANNER_GRAPHICS,
+  DEFAULT_BANNER_GRAPHIC,
+  DEFAULT_ROTATING_BANNER_GRAPHIC_ID,
+  getBannerGraphic,
+} from '@/lib/banner-graphics'
+import { withBase } from '@/lib/docs'
+import { cn } from '@/lib/utils'
+import Icon from '@/components/icon.astro'
+
+interface Props {
+  banner: string
+  size?: 'full' | 'compact'
+}
+
+const TRANSPARENT_IMAGE_SRC =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
+
+const { banner, size = 'full' } = Astro.props
+const isRotating = banner === 'random'
+const fallback = isRotating ? DEFAULT_BANNER_GRAPHIC : getBannerGraphic(banner)
+const graphics = (isRotating ? BANNER_GRAPHICS : [fallback]).map((graphic) => ({
+  ...graphic,
+  src: withBase(graphic.src),
+}))
+const defaultRotatingGraphic = graphics.find(
+  (graphic) => graphic.id === DEFAULT_ROTATING_BANNER_GRAPHIC_ID,
+)
+const initialGraphic = (isRotating ? defaultRotatingGraphic : undefined) ??
+  graphics[0] ?? { ...fallback, src: withBase(fallback.src) }
+const initialImageSrc = isRotating ? TRANSPARENT_IMAGE_SRC : initialGraphic.src
+const escapeHtml = (value: string) =>
+  value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+const formatCaption = ({ title, artist, year }: typeof initialGraphic) => {
+  const details = [artist, year].filter(Boolean).join(', ')
+
+  return `<cite class="italic">${escapeHtml(title)}</cite>${details ? `, ${escapeHtml(details)}` : ''}`
+}
+const initialCaption = formatCaption(initialGraphic)
+const rotatingBannerBootstrapScript = `
+(() => {
+  const STORAGE_KEY = 'anchor-docs:banner-graphic-id'
+  const script = document.currentScript
+  const banner =
+    script instanceof HTMLScriptElement
+      ? script.closest('[data-doc-banner][data-rotating-banner="true"]')
+      : null
+
+  if (!(banner instanceof HTMLElement)) return
+
+  let options
+  try {
+    const parsed = JSON.parse(banner.dataset.bannerOptions || '[]')
+    options = Array.isArray(parsed) ? parsed : []
+  } catch {
+    return
+  }
+
+  if (options.length === 0) return
+
+  let storedId = ''
+  try {
+    storedId = sessionStorage.getItem(STORAGE_KEY) || ''
+  } catch {
+    storedId = ''
+  }
+
+  const defaultId = banner.dataset.bannerDefaultId || ''
+  const currentId = banner.dataset.bannerGraphicId || storedId || defaultId
+  const selected = options.find((option) => option.id === currentId) || options[0]
+  banner.dataset.bannerGraphicId = selected.id
+
+  const image = banner.querySelector('[data-banner-image]')
+  if (image instanceof HTMLImageElement) {
+    image.src = selected.src
+    image.alt = selected.description
+    image.removeAttribute('title')
+    image.style.objectPosition = selected.objectPosition
+  }
+
+  const caption = banner.querySelector('[data-banner-caption]')
+  if (caption) {
+    const title = document.createElement('cite')
+    const details = [selected.artist, selected.year].filter(Boolean).join(', ')
+
+    title.className = 'italic'
+    title.textContent = selected.title
+    caption.replaceChildren(title)
+    if (details) caption.append(document.createTextNode(', ' + details))
+  }
+
+  try {
+    sessionStorage.setItem(STORAGE_KEY, selected.id)
+  } catch {}
+})()
+`
+---
+
+<figure
+  class={cn(
+    'not-prose group relative overflow-hidden bg-muted xl:ml-4',
+    size === 'compact' ? 'h-36 sm:h-[11rem] xl:h-[12.5rem]' : 'h-72 sm:h-[22rem] xl:h-[25rem]',
+  )}
+  data-pagefind-ignore
+  data-doc-banner
+  data-rotating-banner={isRotating ? 'true' : 'false'}
+  data-banner-default-id={isRotating ? initialGraphic.id : undefined}
+  data-banner-size={size}
+  data-banner-options={JSON.stringify(graphics)}
+>
+  <img
+    src={initialImageSrc}
+    alt={initialGraphic.description}
+    class="size-full object-cover"
+    style={`object-position: ${initialGraphic.objectPosition}`}
+    data-banner-image
+  />
+  <figcaption
+    class="absolute right-3 bottom-3 max-w-[calc(100%-1.5rem)] overflow-hidden rounded-md bg-background/80 px-2 py-1 text-[0.6875rem] leading-tight whitespace-nowrap text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+    data-banner-caption
+    set:html={initialCaption}
+  />
+  {
+    isRotating && (
+      <div
+        class="pointer-events-none absolute bottom-3 left-3 inline-flex rounded-md bg-background/80 p-1 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100"
+        data-banner-controls
+      >
+        <button
+          type="button"
+          class="inline-flex size-6 items-center justify-center rounded-sm transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          aria-label="Previous banner artwork"
+          data-banner-control="previous"
+        >
+          <Icon name="arrow-left" class="size-3.5" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          class="inline-flex size-6 items-center justify-center rounded-sm transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          aria-label="Next banner artwork"
+          data-banner-control="next"
+        >
+          <Icon name="arrow-right" class="size-3.5" aria-hidden="true" />
+        </button>
+      </div>
+    )
+  }
+  {isRotating && <script is:inline set:html={rotatingBannerBootstrapScript} />}
+</figure>
+
+<script>
+  import { mountRotatingDocBanners } from '@/lib/client/rotating-banner'
+
+  mountRotatingDocBanners()
+</script>

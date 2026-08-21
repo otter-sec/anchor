@@ -1,18 +1,12 @@
-# Anchor Docs
+## Anchor docs
 
-Created with [Fumadocs](https://fumadocs.vercel.app). Page contents located in
-[`docs/content/docs`](/docs/content/docs).
+Astro site that builds the v1 and v2 Anchor documentation.
 
-Run development server:
+### Develop
 
 ```bash
-npm run dev
-# or
-pnpm dev
-# or
-yarn dev
-# or
+bun install
 bun run dev
 ```
 
-Open http://localhost:3000 with your browser to see the result.
+The dev server is on `http://localhost:4321/docs/`.

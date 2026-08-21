@@ -1,0 +1,54 @@
+---
+import DocsAside from '@/components/docs/docs-aside.astro'
+import MobileSidebar from '@/components/docs/mobile-sidebar.astro'
+import Header from '@/components/header.astro'
+import Link from '@/components/link.astro'
+import PageHead from '@/components/page-head.astro'
+import { buttonVariants } from '@/components/ui/button'
+import Base from '@/layouts/base.astro'
+import { BASE_URL } from '@/lib/docs'
+import { getSidebarTree } from '@/lib/sidebar'
+import { cn } from '@/lib/utils'
+
+const sidebar = await getSidebarTree(Astro.url.pathname)
+
+const offsetClass = 'xl:ml-[max(0px,calc((100vw-16rem-96rem)/2))]'
+---
+
+<Base>
+  <PageHead slot="head" title="404" noindex />
+
+  <div class="grid flex-1 grid-cols-1 xl:grid-cols-[16rem_minmax(0,1fr)]">
+    <DocsAside tree={sidebar} />
+    <MobileSidebar tree={sidebar} />
+
+    <div class="flex flex-col overflow-x-clip xl:pt-16 xl:pb-6">
+      <header class="bg-background/80 sticky top-0 z-40 border-b backdrop-blur-sm xl:hidden">
+        <Header />
+      </header>
+
+      <main
+        class={cn(
+          'mx-auto flex w-full grow flex-col items-start gap-6 px-4 pt-6 xl:pt-0',
+          offsetClass,
+        )}
+      >
+        <div class="flex flex-col gap-3">
+          <span class="text-muted-foreground font-mono text-xs tracking-wider uppercase">404</span>
+          <h1 class="text-4xl font-medium">Page not found</h1>
+          <p class="text-muted-foreground max-w-md text-pretty">
+            The page you're looking for doesn't exist, or has moved.
+          </p>
+        </div>
+
+        <Link
+          href={BASE_URL}
+          class={cn(buttonVariants({ variant: 'outline' }), 'group flex items-center gap-x-1.5')}
+        >
+          <span class="transition-transform group-hover:-translate-x-1">&larr;</span>
+          Back to home
+        </Link>
+      </main>
+    </div>
+  </div>
+</Base>

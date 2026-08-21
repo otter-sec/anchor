@@ -1,0 +1,103 @@
+---
+title: Feature flags
+description: 'Reference for the `alloc{:toml}`, `guardrails{:toml}`, `const-rent{:toml}`, `compat{:toml}`, and `testing{:toml}` feature flags on `anchor-lang`.'
+---
+
+`anchor-lang` ships five feature flags, two of which are on by default and the other three opt-in. Most programs never need to touch them, but tuning the set is useful for trimming binary size and CU cost in production builds.
+
+| Feature | Default | Effect |
+| --- | --- | --- |
+| `alloc{:toml}` | on | Pulls in `extern crate alloc{:rs}` for `Vec{:rs}`, `String{:rs}`, `BTreeMap{:rs}`. |
+| `guardrails{:toml}` | on | Runtime safety checks on dispatch and `load_mut{:rs}`. |
+| `const-rent{:toml}` | off | Folds the rent formula to a compile-time constant. |
+| `compat{:toml}` | off | Exposes v1-shaped helpers such as `debug!{:rs}`, `error!{:rs}`, and `pubkey!{:rs}`. |
+| `testing{:toml}` | off | Enables `anchor_lang::testing{:rs}` with mock account scaffolding. |
+
+## `alloc{:toml}` (default)
+
+The `alloc{:toml}` feature enables `extern crate alloc{:rs}` and re-exports the `alloc{:rs}` crate under `anchor_lang::__alloc{:rs}`. Generated macro code reaches `Vec{:rs}`, `String{:rs}`, and other heap-allocated types through that re-export, so user crates do not have to import `alloc{:rs}` themselves.
+
+<Callout variant="note" title="When to disable">
+  Only embedded targets without a heap have a reason to turn `alloc{:toml}` off. The ergonomic cost is significant. Most realistic user code that touches `Vec{:rs}` or `String{:rs}` will not compile without it.
+</Callout>
+
+## `guardrails{:toml}` (default)
+
+The `guardrails{:toml}` feature enables a small set of runtime checks that catch caller bugs the borrow checker cannot see statically:
+
+- `check_program_id{:rs}` on dispatch rejects misrouted instructions
+- `is_writable{:rs}` enforcement in data-account `load_mut{:rs}` paths returns an error when the account is not marked `mut{:rs}`
+- executable checks on `Program<T>{:rs}` reject non-program accounts before CPI
+
+Disabling the feature drops those guardrail-only emits, which saves roughly 300 bytes of binary and 1 to 2 CU per account:
+
+```toml title="Cargo.toml" showLineNumbers=false
+[dependencies]
+anchor-lang = { git = "...", branch = "anchor-next", default-features = false, features = ["alloc"] }
+```
+
+<Callout variant="warning" title="Don't disable lightly">
+  The runtime safety net is what catches accidental misuse during development. Only turn `guardrails{:toml}` off in production after the program has been thoroughly tested.
+</Callout>
+
+## `const-rent{:toml}` (off)
+
+The `const-rent{:toml}` feature folds `rent_exempt_lamports{:rs}` to a compile-time constant by combining pinocchio's `DEFAULT_LAMPORTS_PER_BYTE{:rs}` and `ACCOUNT_STORAGE_OVERHEAD{:rs}`. With the constant in place, `create_account{:rs}` skips the `Rent::get(){:rs}` sysvar call entirely. The savings come out to roughly 90 CU per `create_account{:rs}` CPI.
+
+<Callout variant="warning" title="Rent-formula drift">
+  If Solana changes the rent formula in the future (for example, through a SIMD like SIMD-0194), programs built with `const-rent{:toml}` will compute stale values until they are rebuilt. The feature is off by default so programs pick up runtime formula changes transparently.
+</Callout>
+
+<Callout variant="tip" title="When to enable">
+  Reach for `const-rent{:toml}` when 90 CU per `create_account{:rs}` matters more than rent-formula drift safety, and when the program is rebuilt and redeployed often enough that refreshing the constant is part of the normal release cycle.
+</Callout>
+
+## `compat{:toml}` (off)
+
+The `compat{:toml}` feature exposes a small set of v1-shaped helpers for programs in the middle of porting. The most useful is `debug!(msg){:rs}`, a logging macro shaped like `msg!{:rs}` that accepts any Rust format string by routing through `alloc::format!{:rs}`. That covers `{:?}{:rs}`, `{:x}{:rs}`, and dynamic width specifiers, none of which native `msg!{:rs}` supports.
+
+The remaining helpers re-expose v1 names so existing call sites compile without rewrites:
+
+| Helper                                     | Form                                              |
+| ------------------------------------------ | ------------------------------------------------- |
+| `error!{:rs}`, `err!{:rs}`, `pubkey!{:rs}` | Macros                                            |
+| `Pubkey{:rs}`                              | Type alias for `Address{:rs}`                     |
+| `AccountViewCompat{:rs}`                   | Extension trait on pinocchio's `AccountView{:rs}` |
+
+<Callout variant="warning" title="`debug!{:rs}` cost">
+  `debug!{:rs}` is meaningfully more expensive than the native `msg!{:rs}` because of the heap allocation and fmt-trait dispatch. The feature is off by default to keep production binaries from accidentally shipping the heavier path.
+</Callout>
+
+## `testing{:toml}` (off)
+
+The `testing{:toml}` feature exposes the `anchor_lang::testing{:rs}` module, which provides stack-backed mock pinocchio types (such as `AccountView{:rs}` and the SBF input buffer) that the `lang-v2/tests/{:dir}` integration tests and Miri witnesses depend on. Enabling `testing{:toml}` also turns on `const-rent{:toml}` (so host-side tests can exercise rent-dependent helpers without needing SVM sysvar support) and `compat{:toml}` (so tests can cover the v1-style raw remaining-account shims):
+
+```console showLineNumbers=false
+$ <blue>cargo</blue> test <dim>-p</dim> anchor-lang <dim>--features</dim> testing
+```
+
+<Callout variant="note" title="Why off by default">
+  Production BPF binaries should never ship the test scaffold, so `testing{:toml}` stays opt-in.
+</Callout>
+
+## Recipe: minimal binary, prod profile
+
+```toml title="Cargo.toml" showLineNumbers=false
+[dependencies]
+anchor-lang = { git = "...", branch = "anchor-next", default-features = false, features = ["alloc"] }
+```
+
+This profile drops `guardrails{:toml}` for the smallest possible binary.
+
+<Callout variant="danger" title="Verify before shipping">
+  Only adopt this profile once the program has been thoroughly tested. The `guardrails{:toml}` net catches caller bugs the borrow checker cannot see statically. Ship without it only after fuzzing and review have closed those holes.
+</Callout>
+
+## Recipe: maximum CU savings
+
+```toml title="Cargo.toml" showLineNumbers=false
+[dependencies]
+anchor-lang = { git = "...", branch = "anchor-next", default-features = false, features = ["alloc", "const-rent"] }
+```
+
+This profile adds rent-formula constant folding on top of the minimal recipe. Rebuild and redeploy whenever Solana changes the rent formula so the constants stay in sync.

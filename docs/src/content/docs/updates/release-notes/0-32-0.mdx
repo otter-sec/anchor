@@ -1,0 +1,121 @@
+---
+title: 0.32.0
+description: Anchor release notes for 0.32.0.
+---
+
+`0.32.0` is the last planned release before the breaking changes that stabilize Anchor `1.0`. These notes cover the most significant changes; the full list lives in the [`CHANGELOG.md{:file}`](https://github.com/otter-sec/anchor/blob/v0.32.0/CHANGELOG.md#0320---2025-10-08).
+
+---
+
+## How to upgrade
+
+1. Update `anchor-cli`:
+
+   ```bash
+   <blue>avm</blue> install 0.32.0
+   ```
+
+2. Update Anchor crate(s) to `0.32.0`.
+
+3. Update TS package(s) to `0.32.0`.
+
+## Recommended Solana version
+
+The recommended Solana version is `2.3.0`. Install the new tooling with:
+
+```console
+$ <blue>sh</blue> <dim>-c</dim> "$(curl <dim>-sSfL</dim> https://release.anza.xyz/v2.3.0/install)"
+```
+
+## CLI
+
+### `<blue>anchor</blue> verify` switches to `solana-verify`
+
+Anchor versions before `0.32.0` produced verifiable builds using the `solanafoundation/anchor` Docker image. `0.32.0` replaces that pipeline with [`solana-verify`](https://github.com/Ellipsis-Labs/solana-verifiable-build) under the hood. The user-facing entry point is unchanged: `$ <blue>anchor</blue> verify` still produces and verifies builds. Verifying a build produced by Anchor `< 0.32.0` with the new CLI is expected to fail because the verification mechanism has changed.
+
+### IDL upload by default on deploy
+
+`$ <blue>anchor</blue> deploy` now uploads the IDL on every deployment by default. Pass `<dim>--no-idl</dim>` to deploy the program without touching the on-chain IDL.
+
+### Minimum Rust version raised to `1.89.0`
+
+IDL builds now require Rust `1.89.0` or higher because earlier Rust versions don't expose the stabilized [`Span::local_file(){:rs}`](https://doc.rust-lang.org/beta/proc_macro/struct.Span.html#method.local_file). Update the toolchain with:
+
+```console
+$ <blue>rustup</blue> update
+```
+
+Confirm the installed version with:
+
+```console
+$ <blue>rustc</blue> <dim>--version</dim>
+```
+
+This is the host Rust toolchain, distinct from the forked `rustc` that the Solana platform tools use to compile programs.
+
+## IDL
+
+### IDL building is now stabilized
+
+With [`Span::local_file(){:rs}`](https://doc.rust-lang.org/beta/proc_macro/struct.Span.html#method.local_file) stabilized, IDLs build against the current stable Rust compiler instead of nightly. That removes a class of upstream-nightly breakages that previously surfaced as build errors on `0.31.0` and earlier:
+
+```text
+no method named source_file found for struct proc_macro2::Span in the current
+scope
+```
+
+## Lang
+
+### Better error message for `init` on `SystemAccount{:rs}`
+
+`init`-ing a `SystemAccount{:rs}` previously surfaced as a confusing missing-crate error:
+
+```text
+error[E0425]: cannot find crate `try_from_unchecked` in the list of imported crates
+error[E0425]: cannot find crate `try_from` in the list of imported crates
+```
+
+The compile-time error now explains the actual constraint and suggests an alternative:
+
+```text
+Cannot use `init` on a `SystemAccount`.
+The `SystemAccount` type represents an already-existing account
+owned by the system program and cannot be initialized.
+If you need to create a new account, use a more specific account type
+or `UncheckedAccount` and perform manual initialization instead.
+```
+
+### Use `solana-invoke` instead of `solana_cpi::invoke{:rs}` for CPI
+
+`solana_cpi::invoke{:rs}` from `solana-program` is heavier on compute units than necessary. Replacing it with `solana-invoke` saves an average of 5% CUs across CPI call sites in Anchor programs.
+
+### Solang is no longer supported
+
+Solang templates are no longer bundled with Anchor. Projects that want to keep using Solang must build with [Solang's standalone tooling](https://github.com/hyperledger-solang/solang?tab=readme-ov-file).
+
+## TypeScript
+
+### Remove event parsing panic issues
+
+A maliciously crafted event could previously panic the TS event parser. The parser's regex has been hardened to fail closed instead of panicking.
+
+### Added support for `bun` as a package manager
+
+`bun` joins `npm`, `yarn`, and `pnpm` as a recognized value for `toolchain.package_manager` in `Anchor.toml{:file}`:
+
+```toml
+[toolchain]
+package_manager = "bun"
+```
+
+The same value is accepted when scaffolding a new workspace:
+
+```console
+$ <blue>anchor</blue> init <dim><NAME></dim> <dim>--package-manager</dim> bun
+```
+
+The default remains `yarn`.
+
+---
+
+See the full list of notable changes in the [CHANGELOG](https://github.com/otter-sec/anchor/blob/v0.32.0/CHANGELOG.md#0320---2025-10-08).
