@@ -79,7 +79,8 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
         let mut handles = self.accounts.to_cpi_handles();
         let mut optional_sentinel_flags = self.accounts.optional_account_sentinel_flags();
 
-        // Append remaining accounts using the handle's flags.
+        // Append remaining accounts using the handle's writable/signer flags
+        // so PDA remaining accounts marked with `as_signer()` emit signer metas.
         for handle in &self.remaining_accounts {
             instruction_accounts.push(InstructionAccount::new(
                 handle.address(),

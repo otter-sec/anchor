@@ -161,6 +161,32 @@ fn account_view_converts_to_cpi_handles() {
 }
 
 #[test]
+fn cpi_handle_as_signer_overrides_transaction_view() {
+    let buffer = account_view([1; 32], false);
+    let view = unsafe { buffer.view() };
+    assert!(!view.is_signer());
+
+    let handle = CpiHandle::readonly(&view);
+    assert!(!handle.is_signer());
+    assert!(handle.as_signer().is_signer());
+
+    let mut_buffer = account_view([3; 32], true);
+    let mut writable_view = unsafe { mut_buffer.view() };
+    let mut_handle = CpiHandleMut::writable(&mut writable_view);
+    assert!(!mut_handle.is_signer());
+    let mut_signer = mut_handle.as_signer();
+    assert!(mut_signer.is_signer());
+
+    let erased: CpiHandle = mut_signer.into();
+    assert!(erased.is_signer());
+    assert!(erased.is_writable());
+    let signer_buffer = AccountBuffer::<{ MIN_ACCOUNT_BUF + 8 }>::new();
+    signer_buffer.init([4; 32], [9; 32], 8, true, false, false);
+    let signer_view = unsafe { signer_buffer.view() };
+    assert!(CpiHandle::readonly(&signer_view).is_signer());
+}
+
+#[test]
 fn checked_invoke_rejects_missing_handle() {
     let ix = instruction(Address::new_from_array([1; 32]), false);
 
@@ -368,6 +394,23 @@ fn invoke_ix_allows_signer_meta_without_tx_signer_when_seeds_are_supplied() {
 
     CpiContext::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
         .invoke_ix(ix)
+        .unwrap();
+}
+
+#[test]
+fn invoke_remaining_pda_as_signer_with_seeds() {
+    let program = ID;
+    let typed_buffer = account_view([1; 32], false);
+    let remaining_buffer = account_view([2; 32], false);
+    let typed_view = unsafe { typed_buffer.view() };
+    let remaining_view = unsafe { remaining_buffer.view() };
+    let accounts = ReadonlyCpi {
+        account: typed_view.to_cpi_handle(),
+    };
+
+    CpiContext::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
+        .with_remaining_accounts(vec![CpiHandle::readonly(&remaining_view).as_signer()])
+        .invoke(&[])
         .unwrap();
 }
 
