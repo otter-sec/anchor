@@ -2,7 +2,7 @@ use {
     crate::{
         parser::{
             docs,
-            program::{ctx_accounts_ident, function_type, FunctionType},
+            program::{ctx_accounts_path, function_type, FunctionType},
         },
         FallbackFn, Ix, IxArg, IxReturn, Overrides,
     },
@@ -39,7 +39,13 @@ pub fn parse(program_mod: &syn::ItemMod) -> ParseResult<(Vec<Ix>, Option<Fallbac
         .into_iter()
         .map(|method| {
             let (ctx, args) = parse_args(method)?;
-            let anchor_ident = ctx_accounts_ident(&ctx.raw_arg)?;
+            let anchor_path = ctx_accounts_path(&ctx.raw_arg)?;
+            let anchor_ident = anchor_path
+                .segments
+                .last()
+                .ok_or_else(|| ParseError::new(anchor_path.span(), "expected a path segment"))?
+                .ident
+                .clone();
             let overrides = parse_overrides(&method.attrs)?;
             let docs = docs::parse(&method.attrs);
             let cfgs = parse_cfg(method);
@@ -57,6 +63,31 @@ pub fn parse(program_mod: &syn::ItemMod) -> ParseResult<(Vec<Ix>, Option<Fallbac
         })
         .filter_map(|ix| ix.transpose())
         .collect::<ParseResult<Vec<Ix>>>()?;
+
+    // The generated `accounts` and `cpi::accounts` modules are flat, so two
+    // different Accounts structs with the same name would produce ambiguous
+    // re-exports there.
+    let mut anchor_paths = std::collections::HashMap::new();
+    for ix in &ixs {
+        let anchor_path = ix.anchor_path();
+        match anchor_paths.entry(ix.anchor_ident.to_string()) {
+            std::collections::hash_map::Entry::Occupied(entry) if *entry.get() != anchor_path => {
+                return Err(ParseError::new(
+                    anchor_path.span(),
+                    format!(
+                        "two `Accounts` structs named `{}` are used by this program's \
+                         instructions; rename one of them, as the generated `accounts` and \
+                         `cpi::accounts` modules are flat",
+                        ix.anchor_ident
+                    ),
+                ));
+            }
+            std::collections::hash_map::Entry::Occupied(_) => {}
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(anchor_path);
+            }
+        }
+    }
 
     let fallback_fn = match *fallback.as_slice() {
         [] => None,

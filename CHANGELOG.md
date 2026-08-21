@@ -24,6 +24,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang: Support module-qualified paths for the accounts type in `Context<...>` (e.g. `Context<instructions::init::Init>`) instead of resolving only the first path segment ([#4836](https://github.com/otter-sec/anchor/pull/4836)).
 - spl: Fix `anchor-spl` failing to build with only the `metadata` feature ([#4742](https://github.com/solana-foundation/anchor/pull/4742)).
 - lang: Honor `is_signer` in generated client and CPI account metas, enabling PDA signer usage ([#3322](https://github.com/otter-sec/anchor/pull/3322)).
 - lang: Report invalid instruction arguments instead of silently omitting their instructions during parsing ([#4008](https://github.com/otter-sec/anchor/pull/4008)).
