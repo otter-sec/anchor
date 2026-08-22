@@ -97,6 +97,9 @@ jobs:
         env:
           CARGO_BUILD_JOBS: "1"
         run: make coverage-v2-host-tests
+      # This regression spawns cargo build-sbf, so keep llvm-cov out of it.
+      - name: v2 handler inline policy regression
+        run: cargo test -p tests-v2 --test handler_inline_policy
       - name: v2 host coverage for idl-build fixtures
         run: make coverage-v2-host-idl-build
       - name: Generate v2 coverage report
