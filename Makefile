@@ -56,7 +56,7 @@ TESTS_V2_COVERAGE_TESTS := \
 	token_2022_extensions \
 	token_interface
 TESTS_V2_COVERAGE_ARGS := $(foreach test,$(TESTS_V2_COVERAGE_TESTS),--test $(test))
-TESTS_V2_NON_COVERAGE_TESTS := compile_fail
+TESTS_V2_NON_COVERAGE_TESTS := compile_fail handler_inline_policy
 TESTS_V2_NON_COVERAGE_ARGS := $(foreach test,$(TESTS_V2_NON_COVERAGE_TESTS),--test $(test))
 
 .PHONY: coverage-v2
