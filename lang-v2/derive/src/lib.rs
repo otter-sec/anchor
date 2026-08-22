@@ -4772,6 +4772,11 @@ fn process_handler(
     discrim_bytes: Option<&[u8]>,
     program_id: &Expr,
 ) -> HandlerCodegen {
+    let wrapper_inline_attr = match parse_handler_inline_attr(handler) {
+        Ok(true) => quote! { #[inline(always)] },
+        Ok(false) => quote! { #[inline(never)] },
+        Err(err) => return HandlerCodegen::error(handler, err),
+    };
     let fn_name = &handler.sig.ident;
     let fn_name_str = fn_name.to_string();
     let handler_cfg_attrs = cfg_attrs(&handler.attrs);
@@ -4914,7 +4919,7 @@ fn process_handler(
     let wrapper = if extra_arg_names.is_empty() {
         quote! {
             #(#handler_cfg_attrs)*
-            #[inline(always)]
+            #wrapper_inline_attr
             pub fn #fn_name<'a>(
                 __program_id: &'a anchor_lang::Address,
                 __cursor: &'a mut anchor_lang::AccountCursor,
@@ -4951,7 +4956,7 @@ fn process_handler(
         let deser_args = args_deser.deser;
         quote! {
             #(#handler_cfg_attrs)*
-            #[inline(always)]
+            #wrapper_inline_attr
             pub fn #fn_name<'a>(
                 __program_id: &'a anchor_lang::Address,
                 __cursor: &'a mut anchor_lang::AccountCursor,
@@ -5374,15 +5379,17 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         }
     };
 
-    // Strip #[discrim = N] attributes from handler outputs so rustc
-    // doesn't complain about an unknown attribute.
+    // Strip codegen-only attributes from handler outputs so rustc does not
+    // complain about unknown attributes.
     let mut handler_update_errors = Vec::new();
     let handlers: Vec<_> = handlers
         .iter()
         .map(|func| {
             let mut func = (*func).clone();
             func.attrs.retain(|attr| {
-                if let syn::Meta::NameValue(nv) = &attr.meta {
+                if attr.path().is_ident("handler") {
+                    false
+                } else if let syn::Meta::NameValue(nv) = &attr.meta {
                     !nv.path.is_ident("discrim")
                 } else {
                     true
@@ -6468,6 +6475,51 @@ pub fn error_code(args: TokenStream, input: TokenStream) -> TokenStream {
     error_code::expand(args, input)
 }
 
+/// Parse `#[handler(inline = ...)]` on a program handler.
+///
+/// Handlers inline by default to preserve the existing fast path. Programs
+/// with account-loading paths that exceed SBF's 4 KiB stack-frame limit can
+/// opt into a guaranteed wrapper boundary with `#[handler(inline = false)]`.
+fn parse_handler_inline_attr(handler: &syn::ItemFn) -> syn::Result<bool> {
+    let mut inline = None;
+
+    for attr in &handler.attrs {
+        if !attr.path().is_ident("handler") {
+            continue;
+        }
+        if inline.is_some() {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "duplicate `handler` attribute",
+            ));
+        }
+
+        attr.parse_nested_meta(|meta| {
+            if !meta.path.is_ident("inline") {
+                return Err(
+                    meta.error("unsupported handler option; expected `inline = true|false`")
+                );
+            }
+            if inline.is_some() {
+                return Err(meta.error("duplicate `inline` handler option"));
+            }
+
+            let value = meta.value()?;
+            let value: syn::LitBool = value.parse()?;
+            inline = Some(value.value);
+            Ok(())
+        })?;
+        if inline.is_none() {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "expected `#[handler(inline = true|false)]`",
+            ));
+        }
+    }
+
+    Ok(inline.unwrap_or(true))
+}
+
 /// Parse the optional `#[discrim = ...]` attribute on a handler fn.
 /// Returns `Ok(Some(...))` if present, `Ok(None)` if absent,
 /// or `Err` with a properly-spanned diagnostic on malformed input.
@@ -6715,6 +6767,83 @@ mod tests {
             ),
             "expected generic instruction-arg coercion impl in wrapper: {wrapper}"
         );
+    }
+
+    #[test]
+    fn process_handler_respects_wrapper_inline_policy() {
+        let handlers: [(syn::ItemFn, &str); 3] = [
+            (
+                syn::parse_quote! {
+                    pub fn default_inline(ctx: &mut Context<DefaultInline>) -> Result<()> {
+                        let _ = ctx;
+                        Ok(())
+                    }
+                },
+                "always",
+            ),
+            (
+                syn::parse_quote! {
+                    #[handler(inline = false)]
+                    pub fn no_inline(
+                        ctx: &mut Context<NoInline>,
+                        amount: u64,
+                    ) -> Result<()> {
+                        let _ = (ctx, amount);
+                        Ok(())
+                    }
+                },
+                "never",
+            ),
+            (
+                syn::parse_quote! {
+                    #[handler(inline = true)]
+                    pub fn explicit_inline(ctx: &mut Context<ExplicitInline>) -> Result<()> {
+                        let _ = ctx;
+                        Ok(())
+                    }
+                },
+                "always",
+            ),
+        ];
+        let mod_name: syn::Ident = syn::parse_quote!(my_program);
+        let program_id: syn::Expr = syn::parse_quote!(crate::ID);
+
+        for (handler, expected_policy) in handlers {
+            let generated = process_handler(&handler, &mod_name, None, &program_id);
+            let wrapper: syn::ItemFn =
+                syn::parse2(generated.wrapper).expect("handler wrapper should be a function");
+            let inline_attr = wrapper
+                .attrs
+                .iter()
+                .find(|attr| attr.path().is_ident("inline"))
+                .expect("handler wrapper should have an inline attribute");
+
+            let syn::Meta::List(inline_meta) = &inline_attr.meta else {
+                panic!("handler wrapper should specify an inline policy: {inline_attr:?}");
+            };
+            assert_eq!(inline_meta.tokens.to_string(), expected_policy);
+        }
+    }
+
+    #[test]
+    fn handler_inline_policy_rejects_invalid_options() {
+        let attrs: [syn::Attribute; 4] = [
+            syn::parse_quote!(#[handler(inline = false, inline = true)]),
+            syn::parse_quote!(#[handler(inline = "sometimes")]),
+            syn::parse_quote!(#[handler(stack = "large")]),
+            syn::parse_quote!(#[handler()]),
+        ];
+
+        for attr in attrs {
+            let mut handler: syn::ItemFn = syn::parse_quote! {
+                pub fn invalid(ctx: &mut Context<Invalid>) -> Result<()> {
+                    let _ = ctx;
+                    Ok(())
+                }
+            };
+            handler.attrs.push(attr);
+            assert!(parse_handler_inline_attr(&handler).is_err());
+        }
     }
 
     #[test]

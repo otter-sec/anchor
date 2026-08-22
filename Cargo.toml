@@ -28,6 +28,7 @@ members = [
     "tests-v2/programs/dup-mut",
     "tests-v2/programs/equivalence",
     "tests-v2/programs/foreign-borsh-account",
+    "tests-v2/programs/handler-inline-policy",
     "tests-v2/programs/equivalence/metadata/spy",
     "tests-v2/programs/equivalence/metadata/v1",
     "tests-v2/programs/equivalence/metadata/v2",

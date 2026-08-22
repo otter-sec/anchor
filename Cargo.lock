@@ -2951,6 +2951,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "handler-inline-policy"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+]
+
+[[package]]
 name = "hash-cpi"
 version = "0.1.0"
 dependencies = [

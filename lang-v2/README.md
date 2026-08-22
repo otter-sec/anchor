@@ -90,6 +90,29 @@ Here are some examples of optimizations present in Anchor v2.
 - **Guardrails compile away** when you drop the feature. `check_program_id` / the `is_writable` check in `load_mut` just aren't emitted. Smaller binary in prod.
 - **`remaining_accounts()` is lazy-cached.** First call walks the account cursor; subsequent calls return a clone of the cached vec. Zero overhead for instructions that don't touch it.
 
+### Isolating a large instruction stack frame
+
+Anchor inlines instruction wrappers by default to minimize compute units and
+binary size. A program with several large or deeply nested `Accounts` structs
+can instead give selected instructions their own SBF stack frames:
+
+```rust
+#[program]
+pub mod my_program {
+    use super::*;
+
+    #[handler(inline = false)]
+    pub fn large_instruction(ctx: &mut Context<LargeAccounts>) -> Result<()> {
+        // ...
+        Ok(())
+    }
+}
+```
+
+This emits `#[inline(never)]` on Anchor's generated wrapper for that instruction.
+Use it only where the SBF compiler reports an oversized dispatcher frame. The
+extra function call costs some compute units and can increase binary size.
+
 ## Account types
 
 **Why `Account<T>` is zero-copy by default.** Stored bytes match the struct layout, so load is a pointer cast and exit is a no-op — no (de)serialization and no heap.

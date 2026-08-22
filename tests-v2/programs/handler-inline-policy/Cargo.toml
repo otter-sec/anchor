@@ -1,0 +1,21 @@
+[package]
+name = "handler-inline-policy"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = ["no-log-ix-name"]
+force-inline = []
+no-entrypoint = []
+no-log-ix-name = []
+idl-build = []
+
+[dependencies]
+anchor-lang = { path = "../../../lang-v2", default-features = false, features = ["alloc"] }
+
+[lints.rust.unexpected_cfgs]
+level = "allow"
