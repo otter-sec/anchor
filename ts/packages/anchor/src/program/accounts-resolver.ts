@@ -620,6 +620,7 @@ export class AccountsResolver<IDL extends Idl> {
           case "owner":
             return "pubkey";
           case "amount":
+          case "delegatedAmount":
           case "delagatedAmount":
             return "u64";
           default:
