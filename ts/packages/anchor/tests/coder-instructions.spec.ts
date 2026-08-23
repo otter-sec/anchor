@@ -167,4 +167,40 @@ describe("coder.instructions", () => {
     assert.deepStrictEqual(decodedSomeNone?.data["arg"], null);
     assert.deepStrictEqual(decodedSomeSome?.data["arg"], 1);
   });
+
+  test("Can encode and decode instruction args larger than 1000 bytes", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "test",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [
+        {
+          name: "bigArg",
+          discriminator: [1, 2, 3, 4, 5, 6, 7, 8],
+          accounts: [],
+          args: [
+            {
+              name: "arg",
+              type: "bytes",
+            },
+          ],
+        },
+      ],
+    };
+
+    const coder = new BorshCoder(idl);
+    const idlIx = idl.instructions[0];
+    const bigBuffer = Buffer.alloc(5000, 1);
+
+    const encoded = coder.instruction.encode(
+      idlIx.name,
+      toInstruction(idlIx, bigBuffer)
+    );
+    const decoded = coder.instruction.decode(encoded);
+
+    assert.deepStrictEqual(decoded?.data[idlIx.args[0].name], bigBuffer);
+  });
 });

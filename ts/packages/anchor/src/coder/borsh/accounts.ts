@@ -1,6 +1,7 @@
 import bs58 from "bs58";
 import { Buffer } from "buffer";
 import { Layout } from "buffer-layout";
+import { encodeLayout } from "@anchor-lang/borsh";
 import { Idl, IdlDiscriminator } from "../../idl.js";
 import { IdlCoder } from "./idl.js";
 import { AccountsCoder } from "../index.js";
@@ -48,13 +49,11 @@ export class BorshAccountsCoder<A extends string = string>
   }
 
   public async encode<T = any>(accountName: A, account: T): Promise<Buffer> {
-    const buffer = Buffer.alloc(1000); // TODO: use a tighter buffer.
     const layout = this.accountLayouts.get(accountName);
     if (!layout) {
       throw new Error(`Unknown account: ${accountName}`);
     }
-    const len = layout.layout.encode(account, buffer);
-    const accountData = buffer.slice(0, len);
+    const accountData = encodeLayout(layout.layout, account);
     const discriminator = this.accountDiscriminator(accountName);
     return Buffer.concat([discriminator, accountData]);
   }

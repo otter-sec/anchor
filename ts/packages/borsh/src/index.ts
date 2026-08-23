@@ -428,3 +428,44 @@ export function map<K, V>(
     property
   );
 }
+
+/**
+ * Encode `src` into a freshly allocated buffer of exactly the right size.
+ *
+ * Fixed-size layouts allocate `layout.span` bytes exactly. Variable-size
+ * layouts (a `vec`, `str`, `map`, or a struct containing one) start with a
+ * scratch buffer and grow it by doubling whenever the write overruns it.
+ * Growth is capped so a pathological size cannot balloon memory.
+ */
+export function encodeLayout<T>(layout: Layout<T>, src: T): Buffer {
+  if (layout.span > 0) {
+    const buffer = Buffer.alloc(layout.span);
+    const len = layout.encode(src, buffer);
+    return buffer.slice(0, len);
+  }
+
+  // Max serialized size is bounded by what an account/tx can hold. This is
+  // far above any real value while still guarding against unbounded growth.
+  const MAX_ENCODE_SIZE = 10 * 1024 * 1024;
+
+  let buffer = Buffer.alloc(1000);
+  for (;;) {
+    try {
+      const len = layout.encode(src, buffer);
+      return buffer.slice(0, len);
+    } catch (err) {
+      const overflow = (e: unknown): boolean =>
+        e instanceof RangeError &&
+        /overruns Buffer|remaining bytes/.test((e as Error).message);
+      // Only a too-small destination overruns the buffer; other RangeErrors
+      // are genuine input errors and must not be retried.
+      if (!overflow(err)) {
+        throw err;
+      }
+      if (buffer.length >= MAX_ENCODE_SIZE) {
+        throw err;
+      }
+      buffer = Buffer.alloc(buffer.length * 2);
+    }
+  }
+}

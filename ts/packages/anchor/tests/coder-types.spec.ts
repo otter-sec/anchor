@@ -97,4 +97,45 @@ describe("coder.types", () => {
       testing.toString()
     );
   });
+
+  test("Can encode and decode types larger than 1000 bytes", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "basic_0",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [
+        {
+          name: "initialize",
+          accounts: [],
+          args: [],
+          discriminator: [],
+        },
+      ],
+      types: [
+        {
+          name: "BigPayload",
+          type: {
+            kind: "struct",
+            fields: [
+              {
+                name: "data",
+                type: "bytes",
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const coder = new BorshCoder(idl);
+    const bigPayload = {
+      data: Buffer.alloc(5000, 1),
+    };
+    const encoded = coder.types.encode("BigPayload", bigPayload);
+
+    assert.deepEqual(coder.types.decode("BigPayload", encoded), bigPayload);
+  });
 });

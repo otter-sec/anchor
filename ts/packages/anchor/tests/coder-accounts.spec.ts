@@ -233,4 +233,52 @@ describe("coder.accounts", () => {
       assert.deepEqual(coder.accounts.decode("MyAcc", encoded), myAcc);
     });
   });
+
+  test("Can encode and decode accounts larger than 1000 bytes", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "basic_0",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [
+        {
+          name: "initialize",
+          discriminator: [],
+          accounts: [],
+          args: [],
+        },
+      ],
+      accounts: [
+        {
+          name: "BigAccount",
+          discriminator: [0, 1, 2, 3, 4, 5, 6, 7],
+        },
+      ],
+      types: [
+        {
+          name: "BigAccount",
+          type: {
+            kind: "struct",
+            fields: [
+              {
+                name: "data",
+                type: "bytes",
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const coder = new BorshCoder(idl);
+
+    const bigAccount = {
+      data: Buffer.alloc(5000, 1),
+    };
+
+    coder.accounts.encode("BigAccount", bigAccount).then((encoded) => {
+      assert.deepEqual(coder.accounts.decode("BigAccount", encoded), bigAccount);
+    });
+  });
 });
