@@ -1,4 +1,4 @@
-use {crate::IxArg, heck::CamelCase, quote::quote, syn::Result};
+use {crate::IxArg, heck::ToUpperCamelCase, quote::quote, syn::Result};
 
 // Namespace for calculating instruction sighash signatures for any instruction
 // not affecting program state.
@@ -45,5 +45,5 @@ pub fn generate_ix_variant(name: &str, args: &[IxArg]) -> Result<proc_macro2::To
 }
 
 pub fn generate_ix_variant_name(name: &str) -> Result<syn::Ident> {
-    syn::parse_str(&name.to_camel_case())
+    syn::parse_str(&name.to_upper_camel_case())
 }

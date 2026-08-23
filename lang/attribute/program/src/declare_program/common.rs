@@ -4,7 +4,7 @@ use {
         IdlInstructionAccounts, IdlRepr, IdlSerialization, IdlType, IdlTypeDef, IdlTypeDefGeneric,
         IdlTypeDefTy,
     },
-    heck::{CamelCase, SnakeCase},
+    heck::{ToUpperCamelCase, ToSnakeCase},
     proc_macro2::Literal,
     quote::{format_ident, quote},
 };
@@ -46,7 +46,7 @@ fn gen_accounts_mod_name(prefix: &str, name: &str) -> String {
     format!(
         "__{}_accounts_{}",
         prefix,
-        name.to_camel_case().to_snake_case()
+        name.to_upper_camel_case().to_snake_case()
     )
 }
 

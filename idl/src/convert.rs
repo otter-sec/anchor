@@ -56,7 +56,7 @@ mod legacy {
     use {
         crate::types as t,
         anyhow::{anyhow, Result},
-        heck::{MixedCase, SnakeCase},
+        heck::{ToLowerCamelCase, ToSnakeCase},
         serde::{Deserialize, Serialize},
     };
 
@@ -743,7 +743,7 @@ mod legacy {
                         .map(|f| {
                             Ok(IdlEventField {
                                 // Legacy event fields use lowerCamelCase.
-                                name: f.name.to_mixed_case(),
+                                name: f.name.to_lower_camel_case(),
                                 ty: f.ty.try_into()?,
                                 // The `index` flag was removed in the current
                                 // spec and cannot be recovered when going back
@@ -775,7 +775,7 @@ mod legacy {
                 // The legacy spec uses lowerCamelCase identifiers; the forward
                 // converter normalized them to snake_case, so we restore the
                 // original convention here.
-                name: ix.name.to_mixed_case(),
+                name: ix.name.to_lower_camel_case(),
                 docs: (!ix.docs.is_empty()).then_some(ix.docs),
                 accounts: ix.accounts.into_iter().map(Into::into).collect(),
                 args: ix
@@ -793,7 +793,7 @@ mod legacy {
             match item {
                 t::IdlInstructionAccountItem::Single(acc) => Self::IdlAccount(IdlAccount {
                     // Legacy account names are lowerCamelCase.
-                    name: acc.name.to_mixed_case(),
+                    name: acc.name.to_lower_camel_case(),
                     is_mut: acc.writable,
                     is_signer: acc.signer,
                     is_optional: acc.optional.then_some(true),
@@ -802,11 +802,11 @@ mod legacy {
                     relations: acc
                         .relations
                         .into_iter()
-                        .map(|r| recase_path(&r, |s| s.to_mixed_case()))
+                        .map(|r| recase_path(&r, |s| s.to_lower_camel_case()))
                         .collect(),
                 }),
                 t::IdlInstructionAccountItem::Composite(accs) => Self::IdlAccounts(IdlAccounts {
-                    name: accs.name.to_mixed_case(),
+                    name: accs.name.to_lower_camel_case(),
                     accounts: accs.accounts.into_iter().map(Into::into).collect(),
                 }),
             }
@@ -843,7 +843,7 @@ mod legacy {
                     // requires accurate seed types must read the original
                     // legacy IDL.
                     ty: IdlType::Bytes,
-                    path: recase_path(&a.path, |s| s.to_mixed_case()),
+                    path: recase_path(&a.path, |s| s.to_lower_camel_case()),
                 }),
                 t::IdlSeed::Account(a) => Self::Account(IdlSeedAccount {
                     // Account-derived seeds are always pubkeys.
@@ -852,7 +852,7 @@ mod legacy {
                     account: a.account,
                     // `path` references an account in the same instruction
                     // and must follow legacy lowerCamelCase naming.
-                    path: recase_path(&a.path, |s| s.to_mixed_case()),
+                    path: recase_path(&a.path, |s| s.to_lower_camel_case()),
                 }),
             }
         }
@@ -865,7 +865,7 @@ mod legacy {
             Ok(Self {
                 // Legacy struct fields, instruction args, and event fields
                 // all use lowerCamelCase.
-                name: f.name.to_mixed_case(),
+                name: f.name.to_lower_camel_case(),
                 docs: (!f.docs.is_empty()).then_some(f.docs),
                 ty: f.ty.try_into()?,
             })
