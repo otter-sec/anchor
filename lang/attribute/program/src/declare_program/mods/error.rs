@@ -1,6 +1,6 @@
 use {
     anchor_lang_idl::types::Idl,
-    heck::CamelCase,
+    heck::ToUpperCamelCase,
     quote::{format_ident, quote},
 };
 
@@ -22,7 +22,7 @@ pub fn gen_error_mod(idl: &Idl) -> proc_macro2::TokenStream {
     let error = if errors.len() == 0 {
         quote!()
     } else {
-        let name = format_ident!("{}Error", idl.metadata.name.to_camel_case());
+        let name = format_ident!("{}Error", idl.metadata.name.to_upper_camel_case());
         quote! {
             #[anchor_lang::error_code(offset = 0)]
             pub enum #name {

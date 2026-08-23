@@ -1,7 +1,7 @@
 use {
     super::common::{gen_print_section, get_idl_module_path},
     crate::Error,
-    heck::SnakeCase,
+    heck::ToSnakeCase,
     proc_macro2::TokenStream,
     quote::{format_ident, quote},
 };
