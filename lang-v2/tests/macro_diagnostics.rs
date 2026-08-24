@@ -682,7 +682,7 @@ fn check() {
     assert_anchor_account::<Sysvar<SlotHashes>>();
 }
 "#,
-        &["SlotHashes", "SysvarId"],
+        &["SlotHashes", "SysvarLoad"],
     );
 }
 

@@ -1,7 +1,11 @@
 use {
     crate::{require, AnchorAccount},
     core::{marker::PhantomData, ops::Deref},
-    pinocchio::{account::AccountView, address::Address, sysvars::Sysvar as PinocchioSysvar},
+    pinocchio::{
+        account::{AccountView, Ref},
+        address::Address,
+        sysvars::Sysvar as PinocchioSysvar,
+    },
     solana_program_error::ProgramError,
 };
 
@@ -36,11 +40,62 @@ impl SysvarId for pinocchio::sysvars::rent::Rent {
 
 // FIXME: Add `EpochSchedule`: https://github.com/anza-xyz/pinocchio/pull/411
 
+/// Concrete pinocchio [`Instructions`](pinocchio::sysvars::instructions::Instructions)
+/// handle for use as `Sysvar<SysvarInstructions>`.
+///
+/// Named to avoid colliding with the common program-local `Instructions`
+/// module / enum when `use anchor_lang_v2::prelude::*` is in scope.
+///
+/// The instructions sysvar is account-data backed (no `Sysvar::get` syscall),
+/// so Anchor binds it to a `'static` borrow of the account buffer — the same
+/// pattern [`super::SerializedAccount`] uses for its `Ref` guard.
+pub type SysvarInstructions =
+    pinocchio::sysvars::instructions::Instructions<Ref<'static, [u8]>>;
+
+/// How [`Sysvar<T>`] materializes `T` after the account address is validated.
+///
+/// Syscall-backed sysvars (`Clock`, `Rent`) ignore account bytes and call
+/// [`PinocchioSysvar::get`]. The instructions sysvar reads the supplied
+/// account data instead.
+pub trait SysvarLoad: SysvarId + Sized {
+    fn load_data(view: &AccountView) -> Result<Self, ProgramError>;
+}
+
+impl SysvarLoad for pinocchio::sysvars::clock::Clock {
+    #[inline(always)]
+    fn load_data(_view: &AccountView) -> Result<Self, ProgramError> {
+        <Self as PinocchioSysvar>::get().map_err(|_| ProgramError::UnsupportedSysvar)
+    }
+}
+
+impl SysvarLoad for pinocchio::sysvars::rent::Rent {
+    #[inline(always)]
+    fn load_data(_view: &AccountView) -> Result<Self, ProgramError> {
+        <Self as PinocchioSysvar>::get().map_err(|_| ProgramError::UnsupportedSysvar)
+    }
+}
+
+impl SysvarLoad for SysvarInstructions {
+    #[inline(always)]
+    fn load_data(view: &AccountView) -> Result<Self, ProgramError> {
+        let data_ref = view.try_borrow()?;
+        // SAFETY: `AccountView` data is valid for the instruction lifetime.
+        // `Sysvar` retains `view`, and the `Ref` guard keeps the borrow alive
+        // for as long as this value exists (mirrors `SerializedAccount`'s
+        // immutable load path).
+        let guard: Ref<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
+        // SAFETY: caller (`Sysvar::load`) already checked `T::SYSVAR_ID`.
+        Ok(unsafe {
+            pinocchio::sysvars::instructions::Instructions::new_unchecked(guard)
+        })
+    }
+}
+
 /// Account wrapper for sysvars.
 ///
-/// Validates that the passed account address matches `T::SYSVAR_ID`,
-/// then reads the sysvar directly from the runtime via pinocchio's
-/// `Sysvar::get()` syscall (account data is not deserialized).
+/// Validates that the passed account address matches `T::SYSVAR_ID`, then
+/// loads `T` via [`SysvarLoad`]: syscall `get()` for `Clock` / `Rent`, or
+/// a borrow of the account data for [`SysvarInstructions`].
 ///
 /// ## `#[account(address = X @ MyErr)]` does NOT surface `MyErr`
 ///
@@ -49,13 +104,13 @@ impl SysvarId for pinocchio::sysvars::rent::Rent {
 /// `ProgramError::InvalidArgument`, never as the user's `@ MyErr` code.
 /// If you need a custom error code on a sysvar address mismatch, use
 /// `UncheckedAccount` and add `address = X @ MyErr` in the derive.
-pub struct Sysvar<T: PinocchioSysvar + SysvarId + Copy> {
+pub struct Sysvar<T: SysvarLoad> {
     view: AccountView,
     data: T,
     _phantom: PhantomData<T>,
 }
 
-impl<T: PinocchioSysvar + SysvarId + Copy> AnchorAccount for Sysvar<T> {
+impl<T: SysvarLoad> AnchorAccount for Sysvar<T> {
     type Data = T;
 
     fn load(view: AccountView) -> Result<Self, ProgramError> {
@@ -65,9 +120,7 @@ impl<T: PinocchioSysvar + SysvarId + Copy> AnchorAccount for Sysvar<T> {
             crate::address_eq(view.address(), &id),
             ProgramError::InvalidArgument
         );
-        // Use pinocchio's Sysvar::get() which reads directly from the runtime
-        // via syscall, avoiding the need to deserialize from account data.
-        let data = T::get().map_err(|_| ProgramError::UnsupportedSysvar)?;
+        let data = T::load_data(&view)?;
         Ok(Self {
             view,
             data,
@@ -80,27 +133,27 @@ impl<T: PinocchioSysvar + SysvarId + Copy> AnchorAccount for Sysvar<T> {
     }
 }
 
-impl<T: PinocchioSysvar + SysvarId + Copy> Deref for Sysvar<T> {
+impl<T: SysvarLoad> Deref for Sysvar<T> {
     type Target = T;
     fn deref(&self) -> &T {
         &self.data
     }
 }
 
-impl<T: PinocchioSysvar + SysvarId + Copy> AsRef<AccountView> for Sysvar<T> {
+impl<T: SysvarLoad> AsRef<AccountView> for Sysvar<T> {
     fn as_ref(&self) -> &AccountView {
         &self.view
     }
 }
 
-impl<T: PinocchioSysvar + SysvarId + Copy> crate::ToCpiHandle for Sysvar<T> {
+impl<T: SysvarLoad> crate::ToCpiHandle for Sysvar<T> {
     #[inline(always)]
     fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
         crate::AnchorAccount::cpi_handle(self)
     }
 }
 
-impl<T: PinocchioSysvar + SysvarId + Copy> crate::ToCpiHandleMut for Sysvar<T> {
+impl<T: SysvarLoad> crate::ToCpiHandleMut for Sysvar<T> {
     #[inline(always)]
     fn try_to_cpi_handle_mut(
         &mut self,
@@ -110,7 +163,7 @@ impl<T: PinocchioSysvar + SysvarId + Copy> crate::ToCpiHandleMut for Sysvar<T> {
 }
 
 #[doc(hidden)]
-impl<T: PinocchioSysvar + SysvarId + Copy> crate::IdlAccountType for Sysvar<T> {
+impl<T: SysvarLoad> crate::IdlAccountType for Sysvar<T> {
     const __IDL_ADDRESS: Option<&'static str> = if T::IDL_ADDRESS.is_empty() {
         None
     } else {

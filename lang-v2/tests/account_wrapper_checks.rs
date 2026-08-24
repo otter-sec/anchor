@@ -17,7 +17,7 @@ use {
     anchor_lang::{
         accounts::{
             Account, BorshAccount, Interface, Program, Signer, SlabSchema, SystemAccount, Sysvar,
-            UncheckedAccount,
+            SysvarInstructions, UncheckedAccount,
         },
         programs::{System, Token},
         testing::AccountBuffer,
@@ -386,6 +386,48 @@ fn sysvar_load_rejects_wrong_address() {
     buf.init([0x01; 32], [0u8; 32], 0, false, false, false);
     let view = unsafe { buf.view() };
     let err = expect_err(Sysvar::<pinocchio::sysvars::clock::Clock>::load(view));
+    assert_eq!(err, ProgramError::InvalidArgument);
+}
+
+/// `Sysvar1nstructions1111111111111111111111111` as a raw 32-byte key.
+const INSTRUCTIONS_SYSVAR: [u8; 32] = [
+    0x06, 0xa7, 0xd5, 0x17, 0x18, 0x7b, 0xd1, 0x66, 0x35, 0xda, 0xd4, 0x04, 0x55, 0xfd, 0xc2, 0xc0,
+    0xc1, 0x24, 0xc6, 0x8f, 0x21, 0x56, 0x75, 0xa5, 0xdb, 0xba, 0xcb, 0x5f, 0x08, 0x00, 0x00, 0x00,
+];
+
+fn setup_empty_instructions_sysvar(buf: &mut AccountBuffer<128>) {
+    // Minimal layout: u16 num_instructions + u16 current_index.
+    let data = [0u8, 0u8, 0u8, 0u8];
+    buf.init(
+        INSTRUCTIONS_SYSVAR,
+        [0u8; 32],
+        data.len(),
+        false,
+        false,
+        false,
+    );
+    buf.write_data(&data);
+}
+
+#[test]
+fn sysvar_instructions_loads_from_account_data() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_empty_instructions_sysvar(&mut buf);
+
+    let view = unsafe { buf.view() };
+    let ix_sysvar = Sysvar::<SysvarInstructions>::load(view).unwrap();
+    assert_eq!(ix_sysvar.num_instructions(), 0);
+    assert_eq!(ix_sysvar.load_current_index(), 0);
+}
+
+#[test]
+fn sysvar_instructions_rejects_wrong_address() {
+    let mut buf = AccountBuffer::<128>::new();
+    buf.init([0x01; 32], [0u8; 32], 4, false, false, false);
+    buf.write_data(&[0u8; 4]);
+
+    let view = unsafe { buf.view() };
+    let err = expect_err(Sysvar::<SysvarInstructions>::load(view));
     assert_eq!(err, ProgramError::InvalidArgument);
 }
 
