@@ -62,7 +62,7 @@ pub use {
     anchor_attribute_event::{emit, event},
     anchor_attribute_program::{declare_program, instruction, program},
     anchor_derive_accounts::Accounts,
-    anchor_derive_serde::{__erase, AnchorDeserialize, AnchorSerialize},
+    anchor_derive_serde::{AnchorDeserialize, AnchorSerialize, __erase},
     anchor_derive_space::InitSpace,
     borsh::ser::BorshSerialize as AnchorSerialize,
     const_crypto::ed25519::derive_program_address,
