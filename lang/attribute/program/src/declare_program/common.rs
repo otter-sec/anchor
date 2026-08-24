@@ -4,7 +4,7 @@ use {
         IdlInstructionAccounts, IdlRepr, IdlSerialization, IdlType, IdlTypeDef, IdlTypeDefGeneric,
         IdlTypeDefTy,
     },
-    heck::{ToUpperCamelCase, ToSnakeCase},
+    heck::{ToSnakeCase, ToUpperCamelCase},
     proc_macro2::Literal,
     quote::{format_ident, quote},
 };
