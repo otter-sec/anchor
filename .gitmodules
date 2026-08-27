@@ -1,7 +1,3 @@
-[submodule "examples/cfo/deps/swap"]
-	path = tests/cfo/deps/swap
-	url = https://github.com/project-serum/swap.git
-	branch = armani/cfo
 [submodule "examples/cfo/deps/stake"]
 	path = tests/cfo/deps/stake
 	url = https://github.com/project-serum/stake.git
