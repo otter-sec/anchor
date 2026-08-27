@@ -204,7 +204,7 @@ pub mod lockup {
 #[derive(Accounts)]
 pub struct Auth<'info> {
     #[account(signer)]
-    authority: AccountInfo<'info>,
+    authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -216,12 +216,12 @@ pub struct CreateVesting<'info> {
     pub vault: Account<'info, TokenAccount>,
     // Depositor.
     #[account(mut)]
-    pub depositor: AccountInfo<'info>,
+    pub depositor: UncheckedAccount<'info>,
     #[account(signer)]
-    pub depositor_authority: AccountInfo<'info>,
+    pub depositor_authority: UncheckedAccount<'info>,
     // Misc.
     #[account(constraint = token_program.key == &token::ID)]
-    pub token_program: AccountInfo<'info>,
+    pub token_program: UncheckedAccount<'info>,
     pub clock: Sysvar<'info, Clock>,
 }
 
@@ -257,13 +257,13 @@ pub struct Withdraw<'info> {
         seeds = [vesting.to_account_info().key.as_ref()],
         bump = vesting.nonce,
     )]
-    vesting_signer: AccountInfo<'info>,
+    vesting_signer: UncheckedAccount<'info>,
     // Withdraw receiving target..
     #[account(mut)]
     token: Account<'info, TokenAccount>,
     // Misc.
     #[account(constraint = token_program.key == &token::ID)]
-    token_program: AccountInfo<'info>,
+    token_program: UncheckedAccount<'info>,
     clock: Sysvar<'info, Clock>,
 }
 
@@ -281,7 +281,7 @@ pub struct WhitelistDeposit<'info> {
 pub struct WhitelistTransfer<'info> {
     lockup: ProgramState<'info, Lockup>,
     beneficiary: Signer<'info>,
-    whitelisted_program: AccountInfo<'info>,
+    whitelisted_program: UncheckedAccount<'info>,
 
     // Whitelist interface.
     #[account(mut, has_one = beneficiary, has_one = vault)]
@@ -292,12 +292,12 @@ pub struct WhitelistTransfer<'info> {
         seeds = [vesting.to_account_info().key.as_ref()],
         bump = vesting.nonce,
     )]
-    vesting_signer: AccountInfo<'info>,
+    vesting_signer: UncheckedAccount<'info>,
     #[account("token_program.key == &token::ID")]
-    token_program: AccountInfo<'info>,
+    token_program: UncheckedAccount<'info>,
     #[account(mut)]
-    whitelisted_program_vault: AccountInfo<'info>,
-    whitelisted_program_vault_authority: AccountInfo<'info>,
+    whitelisted_program_vault: UncheckedAccount<'info>,
+    whitelisted_program_vault_authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]

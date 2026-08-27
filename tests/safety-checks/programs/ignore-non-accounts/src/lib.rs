@@ -15,16 +15,16 @@ pub struct Initialize<'info> {
     /// CHECK:
     checked1: UncheckedAccount<'info>,
     /// CHECK:
-    checked2: AccountInfo<'info>,
+    checked2: UncheckedAccount<'info>,
 }
 
 #[derive(Debug)]
 pub struct ShouldIgnore1<'info> {
     unchecked1: UncheckedAccount<'info>,
-    unchecked2: AccountInfo<'info>,
+    unchecked2: UncheckedAccount<'info>,
 }
 
 pub struct ShouldIgnore2<'info> {
     unchecked1: UncheckedAccount<'info>,
-    unchecked2: AccountInfo<'info>,
+    unchecked2: UncheckedAccount<'info>,
 }
