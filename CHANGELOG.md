@@ -12,6 +12,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+- lang: Add `Account::skip_exit` and `InterfaceAccount::skip_exit` to skip automatic serialization of mutable accounts on instruction exit.
 - lang: Always derive `Clone` and `Debug` for generated types in `declare_program!` ([#4723](https://github.com/solana-foundation/anchor/pull/4723)).
 - spl: Add pausable mint extension support ([#4092](https://github.com/solana-foundation/anchor/pull/4092)).
 - spl: Add `create_native_mint` and `initialize_non_transferable_mint` helpers ([#3512](https://github.com/otter-sec/anchor/pull/3512)).

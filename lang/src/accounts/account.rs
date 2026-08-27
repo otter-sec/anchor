@@ -11,6 +11,7 @@ use {
         Result, ToAccountInfos, ToAccountMetas,
     },
     std::{
+        cell::Cell,
         collections::BTreeSet,
         fmt,
         ops::{Deref, DerefMut},
@@ -22,6 +23,7 @@ use {
 ///
 /// # Table of Contents
 /// - [Basic Functionality](#basic-functionality)
+/// - [Skipping automatic serialization](#skipping-automatic-serialization)
 /// - [Using Account with non-anchor types](#using-account-with-non-anchor-types)
 /// - [Out of the box wrapper types](#out-of-the-box-wrapper-types)
 ///
@@ -81,6 +83,22 @@ use {
 ///     pub authorized: bool
 /// }
 /// ...
+/// ```
+///
+/// # Skipping automatic serialization
+///
+/// Mutable [`Account`]s are serialized automatically when the instruction
+/// exits. Call [`Account::skip_exit`] to prevent that write-back — for
+/// example after a CPI that already updated the account, so the in-memory
+/// copy does not overwrite those changes.
+///
+/// ```ignore
+/// pub fn after_cpi(ctx: Context<AfterCpi>) -> Result<()> {
+///     // CPI mutated `my_account` on-chain.
+///     other_program::cpi::update(ctx.accounts.into())?;
+///     ctx.accounts.my_account.skip_exit();
+///     Ok(())
+/// }
 /// ```
 ///
 /// # Using Account with non-anchor programs
@@ -230,6 +248,7 @@ use {
 pub struct Account<'info, T: AccountSerialize + AccountDeserialize + Clone> {
     account: T,
     info: &'info AccountInfo<'info>,
+    skip_exit: Cell<bool>,
 }
 
 impl<T: AccountSerialize + AccountDeserialize + Clone + fmt::Debug> fmt::Debug for Account<'_, T> {
@@ -249,7 +268,11 @@ impl<T: AccountSerialize + AccountDeserialize + Clone + fmt::Debug> Account<'_, 
 
 impl<'a, T: AccountSerialize + AccountDeserialize + Clone> Account<'a, T> {
     pub(crate) fn new(info: &'a AccountInfo<'a>, account: T) -> Account<'a, T> {
-        Self { info, account }
+        Self {
+            info,
+            account,
+            skip_exit: Cell::new(false),
+        }
     }
 
     pub(crate) fn exit_with_expected_owner(
@@ -258,13 +281,28 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone> Account<'a, T> {
         program_id: &Pubkey,
     ) -> Result<()> {
         // Only persist if the owner is the current program and the account is not closed.
-        if expected_owner == program_id && !crate::common::is_closed(self.info) {
+        if !self.skip_exit.get()
+            && expected_owner == program_id
+            && !crate::common::is_closed(self.info)
+        {
             let mut data = self.info.try_borrow_mut_data()?;
             let dst: &mut [u8] = &mut data;
             let mut writer = BpfWriter::new(dst);
             self.account.try_serialize(&mut writer)?;
         }
         Ok(())
+    }
+
+    /// Skip automatic serialization of this account when the instruction exits.
+    ///
+    /// Mutable [`Account`]s are written back at the end of the instruction.
+    /// Call this to opt out of that write-back — for example after a CPI that
+    /// already updated the account, or when the account is only mutable for
+    /// lamport changes.
+    ///
+    /// In-memory mutations made through this `Account` will not be persisted.
+    pub fn skip_exit(&self) {
+        self.skip_exit.set(true);
     }
 
     pub fn into_inner(self) -> T {
