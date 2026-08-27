@@ -451,9 +451,6 @@ jobs:
             path: tests/multisig
           # - cmd: cd tests/lockup && anchor test --skip-lint
           #   path: tests/lockup
-          # TODO: Re-enable after making it work with Solana v2
-          # - cmd: cd tests/swap && anchor test --skip-lint
-          #   path: tests/swap
           - cmd: cd tests/escrow && anchor test --skip-lint && npx tsc --noEmit
             path: tests/escrow
           - cmd: cd tests/pyth && anchor test --skip-lint
@@ -488,8 +485,6 @@ jobs:
           # and increase code coverage
           - cmd: cd tests/ido-pool && anchor test --skip-lint --validator legacy
             path: tests/ido-pool
-          # - cmd: cd tests/cfo && anchor run test-with-build && cd deps/stake && git checkout Cargo.lock && cd ../swap && git checkout Cargo.lock
-          #   path: tests/cfo
           - cmd: cd tests/auction-house && anchor test --skip-lint
             path: tests/auction-house
           - cmd: cd tests/floats && anchor test --skip-lint && npx tsc --noEmit
