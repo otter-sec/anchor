@@ -48,6 +48,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Sync type derives and simplify internal args creation in `declare_program!` ([#4667](https://github.com/solana-foundation/anchor/pull/4667)).
 - lang: Improve `std` hygiene inside macros ([#4700](https://github.com/solana-foundation/anchor/pull/4700)).
 - cli: Honor the SIMD-0431 minimum extend program size when extending program data ([#4785](https://github.com/otter-sec/anchor/pull/4785)).
+- client: Do not panic in `parse_logs_response` when logs continue after a top-level instruction returns, e.g. the runtime's trailing `"Log truncated"` marker ([#4967](https://github.com/solana-foundation/anchor/pull/4967)).
 
 ### Breaking
 
