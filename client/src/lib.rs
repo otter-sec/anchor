@@ -461,9 +461,9 @@ pub fn handle_system_log(this_program_str: &str, log: &str) -> (Option<String>, 
     if log.starts_with(&format!("Program {this_program_str} log:")) {
         (Some(this_program_str.to_string()), false)
     } else {
-        static SUCESS_RE: LazyLock<Regex> =
+        static SUCCESS_RE: LazyLock<Regex> =
             LazyLock::new(|| Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) success$").unwrap());
-        if SUCESS_RE.is_match(log) {
+        if SUCCESS_RE.is_match(log) {
             (None, true)
         } else {
             (None, false)
