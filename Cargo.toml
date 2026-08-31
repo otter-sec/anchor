@@ -131,7 +131,8 @@ anchor-lang-idl = { path = "idl", version = "=0.2.0" }
 anchor-lang-idl-spec = { path = "idl/spec", version = "=0.1.0" }
 
 [profile.release]
-lto = true
+# Apple clang's LTO reader cannot consume bitcode emitted by newer Rust LLVM versions.
+lto = false
 
 [profile.release.package.anchor-cli]
 codegen-units = 1
