@@ -544,14 +544,15 @@ pub fn zero_copy(
         if !attr.path().is_ident("derive") {
             continue;
         }
-        if let syn::Meta::List(list) = &attr.meta {
-            let tokens_str = list.tokens.to_string();
-            if tokens_str.contains("bytemuck :: Pod") {
+        if let Err(err) = attr.parse_nested_meta(|meta| {
+            if is_bytemuck_derive(&meta.path, "Pod") {
                 has_pod_attr = true;
-            }
-            if tokens_str.contains("bytemuck :: Zeroable") {
+            } else if is_bytemuck_derive(&meta.path, "Zeroable") {
                 has_zeroable_attr = true;
             }
+            Ok(())
+        }) {
+            return err.into_compile_error().into();
         }
     }
 
@@ -600,6 +601,17 @@ pub fn zero_copy(
 
     #[allow(unreachable_code)]
     proc_macro::TokenStream::from(ret)
+}
+
+// Exact `bytemuck::<leaf>` path, same rule as the IDL build's detection.
+fn is_bytemuck_derive(path: &syn::Path, expected_leaf: &str) -> bool {
+    let mut segments = path.segments.iter();
+
+    matches!(
+        (segments.next(), segments.next(), segments.next()),
+        (Some(first), Some(second), None)
+            if first.ident == "bytemuck" && second.ident == expected_leaf
+    )
 }
 
 /// Convenience macro to define a static public key.
