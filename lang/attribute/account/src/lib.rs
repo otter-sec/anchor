@@ -1,7 +1,9 @@
 extern crate proc_macro;
 
 use {
-    anchor_syn::{codegen::program::common::gen_discriminator, Overrides},
+    anchor_syn::{
+        codegen::program::common::gen_discriminator, parser::is_bytemuck_derive, Overrides,
+    },
     quote::{quote, quote_spanned, ToTokens},
     syn::{
         parenthesized,
@@ -601,17 +603,6 @@ pub fn zero_copy(
 
     #[allow(unreachable_code)]
     proc_macro::TokenStream::from(ret)
-}
-
-// Exact `bytemuck::<leaf>` path, same rule as the IDL build's detection.
-fn is_bytemuck_derive(path: &syn::Path, expected_leaf: &str) -> bool {
-    let mut segments = path.segments.iter();
-
-    matches!(
-        (segments.next(), segments.next(), segments.next()),
-        (Some(first), Some(second), None)
-            if first.ident == "bytemuck" && second.ident == expected_leaf
-    )
 }
 
 /// Convenience macro to define a static public key.
