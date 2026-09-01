@@ -36,6 +36,19 @@ pub mod caller {
         Ok(())
     }
 
+    /// CPIs into `set_data_from_bytes`, whose `&[u8]` argument gives the
+    /// generated instruction struct a lifetime parameter. Exercises the
+    /// ref-args branch of the auto-generated cpi wrapper.
+    pub fn proxy_set_data_from_bytes(ctx: &mut Context<ProxySetData>, bytes: &[u8]) -> Result<()> {
+        let cpi_accounts = callee::cpi::accounts::SetData {
+            data: ctx.accounts.callee_data.cpi_handle_mut(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        callee::cpi::set_data_from_bytes(cpi_ctx, bytes);
+        Ok(())
+    }
+
     /// CPIs into the no-args `noop` handler — exercises the empty-args
     /// branch of the auto-generated cpi wrapper.
     pub fn proxy_noop(ctx: &mut Context<ProxySetData>) -> Result<()> {
