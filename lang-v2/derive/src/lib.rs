@@ -4766,15 +4766,100 @@ fn extract_result_return_type(output: &syn::ReturnType) -> syn::Result<Option<Ty
     }
 }
 
+struct HandlerInlinePolicy {
+    condition: Option<TokenStream2>,
+    inline: syn::Meta,
+}
+
+fn collect_handler_inline_policies(
+    meta: &syn::Meta,
+    outer_condition: Option<TokenStream2>,
+    policies: &mut Vec<HandlerInlinePolicy>,
+) -> syn::Result<()> {
+    if meta.path().is_ident("inline") {
+        policies.push(HandlerInlinePolicy {
+            condition: outer_condition,
+            inline: meta.clone(),
+        });
+        return Ok(());
+    }
+
+    let syn::Meta::List(list) = meta else {
+        return Ok(());
+    };
+    if !list.path.is_ident("cfg_attr") {
+        return Ok(());
+    }
+
+    let nested = list.parse_args_with(
+        syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+    )?;
+    let mut nested = nested.iter();
+    let Some(predicate) = nested.next() else {
+        return Ok(());
+    };
+    let predicate = quote! { #predicate };
+    let condition = Some(match outer_condition {
+        Some(outer) => quote! { all(#outer, #predicate) },
+        None => predicate,
+    });
+
+    for meta in nested {
+        collect_handler_inline_policies(meta, condition.clone(), policies)?;
+    }
+
+    Ok(())
+}
+
+/// Mirror a handler's standard Rust inline policy onto its generated wrapper.
+///
+/// The wrapper stays `#[inline(always)]` when no explicit policy applies. For
+/// conditional policies, a complementary `cfg_attr` preserves that default
+/// when none of their conditions apply.
+fn handler_wrapper_inline_attrs(handler: &syn::ItemFn) -> syn::Result<Vec<TokenStream2>> {
+    let mut policies = Vec::new();
+    for attr in &handler.attrs {
+        collect_handler_inline_policies(&attr.meta, None, &mut policies)?;
+    }
+
+    if policies.is_empty() {
+        return Ok(vec![quote! { #[inline(always)] }]);
+    }
+
+    let mut attrs = Vec::with_capacity(policies.len() + 1);
+    let mut conditions = Vec::new();
+    let mut has_unconditional_policy = false;
+
+    for policy in policies {
+        let inline = policy.inline;
+        if let Some(condition) = policy.condition {
+            attrs.push(quote! { #[cfg_attr(#condition, #inline)] });
+            conditions.push(condition);
+        } else {
+            attrs.push(quote! { #[#inline] });
+            has_unconditional_policy = true;
+        }
+    }
+
+    if !has_unconditional_policy {
+        let fallback = match conditions.as_slice() {
+            [condition] => quote! { not(#condition) },
+            _ => quote! { not(any(#(#conditions),*)) },
+        };
+        attrs.push(quote! { #[cfg_attr(#fallback, inline(always))] });
+    }
+
+    Ok(attrs)
+}
+
 fn process_handler(
     handler: &syn::ItemFn,
     mod_name: &Ident,
     discrim_bytes: Option<&[u8]>,
     program_id: &Expr,
 ) -> HandlerCodegen {
-    let wrapper_inline_attr = match parse_handler_inline_attr(handler) {
-        Ok(true) => quote! { #[inline(always)] },
-        Ok(false) => quote! { #[inline(never)] },
+    let wrapper_inline_attrs = match handler_wrapper_inline_attrs(handler) {
+        Ok(attrs) => attrs,
         Err(err) => return HandlerCodegen::error(handler, err),
     };
     let fn_name = &handler.sig.ident;
@@ -4919,7 +5004,7 @@ fn process_handler(
     let wrapper = if extra_arg_names.is_empty() {
         quote! {
             #(#handler_cfg_attrs)*
-            #wrapper_inline_attr
+            #(#wrapper_inline_attrs)*
             pub fn #fn_name<'a>(
                 __program_id: &'a anchor_lang::Address,
                 __cursor: &'a mut anchor_lang::AccountCursor,
@@ -4956,7 +5041,7 @@ fn process_handler(
         let deser_args = args_deser.deser;
         quote! {
             #(#handler_cfg_attrs)*
-            #wrapper_inline_attr
+            #(#wrapper_inline_attrs)*
             pub fn #fn_name<'a>(
                 __program_id: &'a anchor_lang::Address,
                 __cursor: &'a mut anchor_lang::AccountCursor,
@@ -5379,17 +5464,15 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         }
     };
 
-    // Strip codegen-only attributes from handler outputs so rustc does not
-    // complain about unknown attributes.
+    // Strip the codegen-only discriminator attribute from handler outputs so
+    // rustc does not complain about an unknown attribute.
     let mut handler_update_errors = Vec::new();
     let handlers: Vec<_> = handlers
         .iter()
         .map(|func| {
             let mut func = (*func).clone();
             func.attrs.retain(|attr| {
-                if attr.path().is_ident("handler") {
-                    false
-                } else if let syn::Meta::NameValue(nv) = &attr.meta {
+                if let syn::Meta::NameValue(nv) = &attr.meta {
                     !nv.path.is_ident("discrim")
                 } else {
                     true
@@ -6475,51 +6558,6 @@ pub fn error_code(args: TokenStream, input: TokenStream) -> TokenStream {
     error_code::expand(args, input)
 }
 
-/// Parse `#[handler(inline = ...)]` on a program handler.
-///
-/// Handlers inline by default to preserve the existing fast path. Programs
-/// with account-loading paths that exceed SBF's 4 KiB stack-frame limit can
-/// opt into a guaranteed wrapper boundary with `#[handler(inline = false)]`.
-fn parse_handler_inline_attr(handler: &syn::ItemFn) -> syn::Result<bool> {
-    let mut inline = None;
-
-    for attr in &handler.attrs {
-        if !attr.path().is_ident("handler") {
-            continue;
-        }
-        if inline.is_some() {
-            return Err(syn::Error::new_spanned(
-                attr,
-                "duplicate `handler` attribute",
-            ));
-        }
-
-        attr.parse_nested_meta(|meta| {
-            if !meta.path.is_ident("inline") {
-                return Err(
-                    meta.error("unsupported handler option; expected `inline = true|false`")
-                );
-            }
-            if inline.is_some() {
-                return Err(meta.error("duplicate `inline` handler option"));
-            }
-
-            let value = meta.value()?;
-            let value: syn::LitBool = value.parse()?;
-            inline = Some(value.value);
-            Ok(())
-        })?;
-        if inline.is_none() {
-            return Err(syn::Error::new_spanned(
-                attr,
-                "expected `#[handler(inline = true|false)]`",
-            ));
-        }
-    }
-
-    Ok(inline.unwrap_or(true))
-}
-
 /// Parse the optional `#[discrim = ...]` attribute on a handler fn.
 /// Returns `Ok(Some(...))` if present, `Ok(None)` if absent,
 /// or `Err` with a properly-spanned diagnostic on malformed input.
@@ -6770,8 +6808,8 @@ mod tests {
     }
 
     #[test]
-    fn process_handler_respects_wrapper_inline_policy() {
-        let handlers: [(syn::ItemFn, &str); 3] = [
+    fn wrapper_inline_policy_mirrors_standard_attributes() {
+        let handlers: [(syn::ItemFn, TokenStream2); 4] = [
             (
                 syn::parse_quote! {
                     pub fn default_inline(ctx: &mut Context<DefaultInline>) -> Result<()> {
@@ -6779,11 +6817,21 @@ mod tests {
                         Ok(())
                     }
                 },
-                "always",
+                quote! { #[inline(always)] },
             ),
             (
                 syn::parse_quote! {
-                    #[handler(inline = false)]
+                    #[inline]
+                    pub fn hinted_inline(ctx: &mut Context<HintedInline>) -> Result<()> {
+                        let _ = ctx;
+                        Ok(())
+                    }
+                },
+                quote! { #[inline] },
+            ),
+            (
+                syn::parse_quote! {
+                    #[inline(never)]
                     pub fn no_inline(
                         ctx: &mut Context<NoInline>,
                         amount: u64,
@@ -6792,58 +6840,163 @@ mod tests {
                         Ok(())
                     }
                 },
-                "never",
+                quote! { #[inline(never)] },
             ),
             (
                 syn::parse_quote! {
-                    #[handler(inline = true)]
+                    #[inline(always)]
                     pub fn explicit_inline(ctx: &mut Context<ExplicitInline>) -> Result<()> {
                         let _ = ctx;
                         Ok(())
                     }
                 },
-                "always",
+                quote! { #[inline(always)] },
             ),
         ];
-        let mod_name: syn::Ident = syn::parse_quote!(my_program);
-        let program_id: syn::Expr = syn::parse_quote!(crate::ID);
 
         for (handler, expected_policy) in handlers {
-            let generated = process_handler(&handler, &mod_name, None, &program_id);
-            let wrapper: syn::ItemFn =
-                syn::parse2(generated.wrapper).expect("handler wrapper should be a function");
-            let inline_attr = wrapper
-                .attrs
-                .iter()
-                .find(|attr| attr.path().is_ident("inline"))
-                .expect("handler wrapper should have an inline attribute");
-
-            let syn::Meta::List(inline_meta) = &inline_attr.meta else {
-                panic!("handler wrapper should specify an inline policy: {inline_attr:?}");
-            };
-            assert_eq!(inline_meta.tokens.to_string(), expected_policy);
+            let actual =
+                handler_wrapper_inline_attrs(&handler).expect("inline policy should parse");
+            assert_eq!(
+                quote! { #(#actual)* }.to_string(),
+                expected_policy.to_string()
+            );
         }
     }
 
     #[test]
-    fn handler_inline_policy_rejects_invalid_options() {
-        let attrs: [syn::Attribute; 4] = [
-            syn::parse_quote!(#[handler(inline = false, inline = true)]),
-            syn::parse_quote!(#[handler(inline = "sometimes")]),
-            syn::parse_quote!(#[handler(stack = "large")]),
-            syn::parse_quote!(#[handler()]),
-        ];
+    fn wrapper_inline_policy_preserves_conditional_default() {
+        let handler: syn::ItemFn = syn::parse_quote! {
+            #[cfg_attr(feature = "isolate", inline(never))]
+            pub fn conditional(ctx: &mut Context<Conditional>) -> Result<()> {
+                let _ = ctx;
+                Ok(())
+            }
+        };
 
-        for attr in attrs {
-            let mut handler: syn::ItemFn = syn::parse_quote! {
-                pub fn invalid(ctx: &mut Context<Invalid>) -> Result<()> {
-                    let _ = ctx;
-                    Ok(())
-                }
-            };
-            handler.attrs.push(attr);
-            assert!(parse_handler_inline_attr(&handler).is_err());
-        }
+        let actual =
+            handler_wrapper_inline_attrs(&handler).expect("conditional policy should parse");
+        let expected = quote! {
+            #[cfg_attr(feature = "isolate", inline(never))]
+            #[cfg_attr(not(feature = "isolate"), inline(always))]
+        };
+        assert_eq!(quote! { #(#actual)* }.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn wrapper_inline_policy_combines_nested_conditions() {
+        let handler: syn::ItemFn = syn::parse_quote! {
+            #[cfg_attr(
+                feature = "outer",
+                cfg_attr(feature = "inner", inline(never))
+            )]
+            pub fn conditional(ctx: &mut Context<Conditional>) -> Result<()> {
+                let _ = ctx;
+                Ok(())
+            }
+        };
+
+        let actual = handler_wrapper_inline_attrs(&handler).expect("nested policy should parse");
+        let expected = quote! {
+            #[cfg_attr(all(feature = "outer", feature = "inner"), inline(never))]
+            #[cfg_attr(
+                not(all(feature = "outer", feature = "inner")),
+                inline(always)
+            )]
+        };
+        assert_eq!(quote! { #(#actual)* }.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn wrapper_inline_policy_preserves_mutually_exclusive_policies() {
+        let handler: syn::ItemFn = syn::parse_quote! {
+            #[cfg_attr(feature = "isolate", inline(never))]
+            #[cfg_attr(not(feature = "isolate"), inline(always))]
+            pub fn conditional(ctx: &mut Context<Conditional>) -> Result<()> {
+                let _ = ctx;
+                Ok(())
+            }
+        };
+
+        let actual = handler_wrapper_inline_attrs(&handler).expect("policies should parse");
+        let expected = quote! {
+            #[cfg_attr(feature = "isolate", inline(never))]
+            #[cfg_attr(not(feature = "isolate"), inline(always))]
+            #[cfg_attr(
+                not(any(feature = "isolate", not(feature = "isolate"))),
+                inline(always)
+            )]
+        };
+        assert_eq!(quote! { #(#actual)* }.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn wrapper_inline_policy_defaults_when_no_condition_matches() {
+        let handler: syn::ItemFn = syn::parse_quote! {
+            #[cfg_attr(feature = "small-stack", inline(never))]
+            #[cfg_attr(feature = "hot-path", inline(always))]
+            pub fn conditional(ctx: &mut Context<Conditional>) -> Result<()> {
+                let _ = ctx;
+                Ok(())
+            }
+        };
+
+        let actual = handler_wrapper_inline_attrs(&handler).expect("policies should parse");
+        let expected = quote! {
+            #[cfg_attr(feature = "small-stack", inline(never))]
+            #[cfg_attr(feature = "hot-path", inline(always))]
+            #[cfg_attr(
+                not(any(feature = "small-stack", feature = "hot-path")),
+                inline(always)
+            )]
+        };
+        assert_eq!(quote! { #(#actual)* }.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn wrapper_inline_policy_does_not_add_fallback_to_unconditional_policy() {
+        let handler: syn::ItemFn = syn::parse_quote! {
+            #[cfg_attr(feature = "isolate", inline(never))]
+            #[inline(always)]
+            pub fn conditional(ctx: &mut Context<Conditional>) -> Result<()> {
+                let _ = ctx;
+                Ok(())
+            }
+        };
+
+        let actual = handler_wrapper_inline_attrs(&handler).expect("policies should parse");
+        let expected = quote! {
+            #[cfg_attr(feature = "isolate", inline(never))]
+            #[inline(always)]
+        };
+        assert_eq!(quote! { #(#actual)* }.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn process_handler_emits_conditional_wrapper_inline_policy() {
+        let handler: syn::ItemFn = syn::parse_quote! {
+            #[cfg_attr(feature = "isolate", inline(never))]
+            pub fn conditional(ctx: &mut Context<Conditional>) -> Result<()> {
+                let _ = ctx;
+                Ok(())
+            }
+        };
+        let mod_name: syn::Ident = syn::parse_quote!(my_program);
+        let program_id: syn::Expr = syn::parse_quote!(crate::ID);
+        let generated = process_handler(&handler, &mod_name, None, &program_id);
+        let wrapper: syn::ItemFn =
+            syn::parse2(generated.wrapper).expect("handler wrapper should be a function");
+        let attrs: Vec<_> = wrapper
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("cfg_attr"))
+            .collect();
+
+        assert_eq!(attrs.len(), 2);
+        let first = &attrs[0].meta;
+        let second = &attrs[1].meta;
+        assert!(quote!(#first).to_string().contains("inline (never)"));
+        assert!(quote!(#second).to_string().contains("inline (always)"));
     }
 
     #[test]

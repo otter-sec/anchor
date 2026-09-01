@@ -101,7 +101,7 @@ can instead give selected instructions their own SBF stack frames:
 pub mod my_program {
     use super::*;
 
-    #[handler(inline = false)]
+    #[inline(never)]
     pub fn large_instruction(ctx: &mut Context<LargeAccounts>) -> Result<()> {
         // ...
         Ok(())
@@ -109,9 +109,21 @@ pub mod my_program {
 }
 ```
 
-This emits `#[inline(never)]` on Anchor's generated wrapper for that instruction.
-Use it only where the SBF compiler reports an oversized dispatcher frame. The
-extra function call costs some compute units and can increase binary size.
+Anchor mirrors the handler's inline policy onto its generated wrapper. Without
+an explicit policy, the wrapper keeps its existing `#[inline(always)]` default.
+Use `#[inline(never)]` only where the SBF compiler reports an oversized
+dispatcher frame. It also applies to the user handler, so the additional call
+boundaries can cost compute units and increase binary size.
+
+The policy can be conditional without changing the default in other builds:
+
+```rust
+#[cfg_attr(feature = "isolate-large-handler", inline(never))]
+pub fn large_instruction(ctx: &mut Context<LargeAccounts>) -> Result<()> {
+    // ...
+    Ok(())
+}
+```
 
 ## Account types
 

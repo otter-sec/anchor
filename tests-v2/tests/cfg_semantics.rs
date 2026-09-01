@@ -52,7 +52,11 @@ live = []
 }
 
 fn compile_pass_case(name: &str, source: &str) {
-    let output = cargo_case(name, source, "check", &[]);
+    compile_pass_case_with_features(name, source, &[]);
+}
+
+fn compile_pass_case_with_features(name: &str, source: &str, features: &[&str]) {
+    let output = cargo_case(name, source, "check", features);
     assert!(
         output.status.success(),
         "{name} failed to compile\n\nstdout:\n{}\n\nstderr:\n{}",
@@ -98,6 +102,36 @@ pub mod gated_program {
 pub struct Noop {}
 "#,
     );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn cfg_attr_inline_policy_compiles_in_both_branches() {
+    let source = r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+pub mod conditional_inline {
+    use super::*;
+
+    #[cfg_attr(feature = "live", inline(never))]
+    #[cfg_attr(not(feature = "live"), inline(always))]
+    pub fn run(_ctx: &mut Context<Noop>) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Noop {}
+"#;
+
+    compile_pass_case("tests_v2_cfg_attr_inline_default", source);
+    compile_pass_case_with_features("tests_v2_cfg_attr_inline_never", source, &["live"]);
 }
 
 #[test]
