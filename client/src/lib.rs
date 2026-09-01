@@ -449,10 +449,16 @@ pub fn handle_system_log(this_program_str: &str, log: &str) -> (Option<String>, 
     });
     if let Some(invoke_match) = INVOKE_RE.captures(log) {
         if invoke_match.get(1).unwrap().as_str() == this_program_str {
-            return (Some(this_program_str.to_string()), false);
-
-            // `Invoke [1]` instructions are pushed to the stack in `parse_logs_response`,
-            // so this ensures we only push CPIs to the stack at this stage
+            // Only CPIs *into* this program (depth >= 2) are pushed here. Depth-1
+            // invokes of this program are new top-level instructions, already pushed
+            // by `parse_logs_response` (peek / re-seed); pushing again would leave a
+            // stale entry that misattributes later `Program data:` lines. (A depth-1
+            // invoke with a stale stack top cannot occur in real validator output: a
+            // failed instruction aborts the whole transaction, so no subsequent
+            // instruction logs exist.)
+            if invoke_match.get(2).unwrap().as_str() != "1" {
+                return (Some(this_program_str.to_string()), false);
+            }
         } else if invoke_match.get(2).unwrap().as_str() != "1" {
             return (Some("cpi".to_string()), false); // Any string will do.
         }
@@ -496,8 +502,11 @@ impl Execution {
     }
 
     pub fn program(&self) -> String {
-        assert!(!self.stack.is_empty());
-        self.stack[self.stack.len() - 1].clone()
+        self.stack.last().cloned().unwrap_or_default()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.stack.is_empty()
     }
 
     pub fn push(&mut self, new_program: String) {
@@ -505,8 +514,7 @@ impl Execution {
     }
 
     pub fn pop(&mut self) {
-        assert!(!self.stack.is_empty());
-        self.stack.pop().unwrap();
+        self.stack.pop();
     }
 }
 
@@ -890,6 +898,23 @@ fn parse_logs_response<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
             });
 
             while let Some(l) = logs_iter.next() {
+                // Between top-level instructions the stack can be empty: a `success`
+                // is not always directly followed by an `invoke [1]` line. Never index
+                // an empty stack (this used to panic in `Execution::program`/`pop`).
+                // Re-seed from the current line when it is an invoke, else skip it.
+                if execution.is_empty() {
+                    // Only top-level invokes (depth [1]) restart the stack here; a CPI
+                    // invoke without an active parent is malformed and gets skipped.
+                    if let Some(caps) = RE.captures(l) {
+                        if &caps[2] == "1" {
+                            execution.push(caps[1].to_string());
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                }
                 // Parse the log.
                 let (event, new_program, did_pop) = {
                     if program_id_str == execution.program() {
@@ -1162,6 +1187,151 @@ mod tests {
             "VeryCoolProgram",
         )
         .unwrap();
+
+        Ok(())
+    }
+
+    /// Regression for #1941: a transaction with multiple top-level instructions from
+    /// the subscribed program, each emitting an event, must deliver every event in
+    /// order. This is the exact reproducer from tsfotis/anchor-sub-client-issue.
+    #[test]
+    fn test_parse_logs_response_multiple_instructions_same_program() -> Result<()> {
+        use {
+            anchor_lang::__private::base64,
+            base64::{engine::general_purpose::STANDARD, Engine},
+        };
+
+        let mock_event = MockEvent {};
+        let program_data_log = format!("Program data: {}", STANDARD.encode(mock_event.data()));
+
+        // Program ids must be base58-valid ([1-9A-HJ-NP-Za-km-z], no `0 O I l`): the
+        // parser's regexes reject anything else and silently skip the whole log set.
+        let program_id = "7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw";
+        let logs = [
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw invoke [1]",
+            &program_data_log,
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw consumed 1000 of 200000 compute \
+             units",
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw success",
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw invoke [1]",
+            &program_data_log,
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw consumed 1000 of 200000 compute \
+             units",
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw success",
+        ];
+        let logs: Vec<String> = logs.iter().map(|&l| l.to_string()).collect();
+
+        let events = parse_logs_response::<MockEvent>(
+            RpcResponse {
+                context: RpcResponseContext::new(0),
+                value: RpcLogsResponse {
+                    signature: "".to_string(),
+                    err: None,
+                    logs,
+                },
+            },
+            program_id,
+        )
+        .unwrap();
+
+        assert_eq!(events.len(), 2);
+
+        Ok(())
+    }
+
+    /// Regression for #1941: the parser must never panic on an empty execution stack.
+    /// A `success` that is not directly followed by an `invoke [1]` line used to
+    /// trigger `assertion failed: !self.stack.is_empty()` inside
+    /// `Execution::program`/`pop`, killing the event subscription thread.
+    #[test]
+    fn test_parse_logs_response_no_panic_success_not_followed_by_invoke() -> Result<()> {
+        use {
+            anchor_lang::__private::base64,
+            base64::{engine::general_purpose::STANDARD, Engine},
+        };
+
+        let mock_event = MockEvent {};
+        let program_data_log = format!("Program data: {}", STANDARD.encode(mock_event.data()));
+
+        // Program ids must be base58-valid ([1-9A-HJ-NP-Za-km-z], no `0 O I l`): the
+        // parser's regexes reject anything else and silently skip the whole log set.
+        let program_id = "7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw";
+        let logs = [
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw invoke [1]",
+            &program_data_log,
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw success",
+            "Program log: trailing line between instructions",
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw invoke [1]",
+            &program_data_log,
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw success",
+        ];
+        let logs: Vec<String> = logs.iter().map(|&l| l.to_string()).collect();
+
+        let events = parse_logs_response::<MockEvent>(
+            RpcResponse {
+                context: RpcResponseContext::new(0),
+                value: RpcLogsResponse {
+                    signature: "".to_string(),
+                    err: None,
+                    logs,
+                },
+            },
+            program_id,
+        )
+        .unwrap();
+
+        assert_eq!(events.len(), 2);
+
+        Ok(())
+    }
+
+    /// Guard for #1941: in a multi-instruction transaction that includes a different
+    /// program, only the subscribed program's `Program data:` lines are delivered.
+    /// Pre-fix master happens to pass this shape too (the peek re-push already covers
+    /// the transition), so this is a guard test; the red-green regression for the
+    /// empty-stack panic is
+    /// `test_parse_logs_response_no_panic_success_not_followed_by_invoke`.
+    #[test]
+    fn test_parse_logs_response_no_double_push_stale_attribution() -> Result<()> {
+        use {
+            anchor_lang::__private::base64,
+            base64::{engine::general_purpose::STANDARD, Engine},
+        };
+
+        let mock_event = MockEvent {};
+        let program_data_log = format!("Program data: {}", STANDARD.encode(mock_event.data()));
+
+        // Program ids must be base58-valid ([1-9A-HJ-NP-Za-km-z], no `0 O I l`): the
+        // parser's regexes reject anything else and silently skip the whole log set.
+        let program_id = "7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw";
+        let logs = vec![
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw invoke [1]",
+            &program_data_log,
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw success",
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw invoke [1]",
+            &program_data_log,
+            "Program 7Y8VDzehoewALqJfyxZYMgYCnMTCDhWuGfJKUvjYWATw success",
+            "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [1]",
+            &program_data_log, // other program's data line — must NOT be parsed
+            "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        ];
+        let logs: Vec<String> = logs.iter().map(|&l| l.to_string()).collect();
+
+        let events = parse_logs_response::<MockEvent>(
+            RpcResponse {
+                context: RpcResponseContext::new(0),
+                value: RpcLogsResponse {
+                    signature: "".to_string(),
+                    err: None,
+                    logs,
+                },
+            },
+            program_id,
+        )
+        .unwrap();
+
+        // Only VeryCoolProgram's two events may be delivered.
+        assert_eq!(events.len(), 2);
 
         Ok(())
     }
