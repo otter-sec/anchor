@@ -802,6 +802,41 @@ fn has_cfg_attrs(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(is_cfg_control_attr)
 }
 
+fn handler_wrapper_inline_attr(attrs: &[syn::Attribute]) -> syn::Result<syn::Attribute> {
+    let mut inline_attrs = attrs.iter().filter(|attr| attr.path().is_ident("inline"));
+    let Some(inline_attr) = inline_attrs.next() else {
+        return Ok(syn::parse_quote!(#[inline(never)]));
+    };
+
+    if let Some(duplicate) = inline_attrs.next() {
+        return Err(syn::Error::new(
+            duplicate.span(),
+            "instruction handlers may only have one `#[inline]` attribute",
+        ));
+    }
+
+    match &inline_attr.meta {
+        syn::Meta::Path(_) => Ok(inline_attr.clone()),
+        syn::Meta::List(list) => {
+            let mode: Ident = list.parse_args().map_err(|_| {
+                syn::Error::new(
+                    list.tokens.span(),
+                    "expected `#[inline]`, `#[inline(always)]`, or `#[inline(never)]`",
+                )
+            })?;
+            if mode == "always" || mode == "never" {
+                Ok(inline_attr.clone())
+            } else {
+                Err(syn::Error::new(mode.span(), "expected `always` or `never`"))
+            }
+        }
+        syn::Meta::NameValue(meta) => Err(syn::Error::new(
+            meta.span(),
+            "expected `#[inline]`, `#[inline(always)]`, or `#[inline(never)]`",
+        )),
+    }
+}
+
 fn cfg_field_dep_walkers(fields: &syn::Fields) -> Vec<TokenStream2> {
     fields
         .iter()
@@ -4849,6 +4884,10 @@ fn process_handler(
     let fn_name = &handler.sig.ident;
     let fn_name_str = fn_name.to_string();
     let handler_cfg_attrs = cfg_attrs(&handler.attrs);
+    let handler_inline_attr = match handler_wrapper_inline_attr(&handler.attrs) {
+        Ok(attr) => attr,
+        Err(err) => return HandlerCodegen::error(handler, err),
+    };
     let return_type = match extract_result_return_type(&handler.sig.output) {
         Ok(return_ty) => return_ty,
         Err(err) => return HandlerCodegen::error(handler, err),
@@ -5009,7 +5048,7 @@ fn process_handler(
     let wrapper = if extra_arg_names.is_empty() {
         quote! {
             #(#handler_cfg_attrs)*
-            #[inline(always)]
+            #handler_inline_attr
             pub fn #fn_name<'a>(
                 __program_id: &'a anchor_lang::Address,
                 __cursor: &'a mut anchor_lang::AccountCursor,
@@ -5046,7 +5085,7 @@ fn process_handler(
         let deser_args = args_deser.deser;
         quote! {
             #(#handler_cfg_attrs)*
-            #[inline(always)]
+            #handler_inline_attr
             pub fn #fn_name<'a>(
                 __program_id: &'a anchor_lang::Address,
                 __cursor: &'a mut anchor_lang::AccountCursor,
@@ -6789,6 +6828,80 @@ mod tests {
         assert!(
             err.to_string().contains("expected `:`"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn handler_wrapper_defaults_to_inline_never() {
+        let attr = handler_wrapper_inline_attr(&[]).unwrap();
+
+        assert_eq!(quote!(#attr).to_string(), "# [inline (never)]");
+    }
+
+    #[test]
+    fn handler_wrapper_preserves_rust_inline_attributes() {
+        for (attr, expected) in [
+            (syn::parse_quote!(#[inline]), "# [inline]"),
+            (syn::parse_quote!(#[inline(always)]), "# [inline (always)]"),
+            (syn::parse_quote!(#[inline(never)]), "# [inline (never)]"),
+        ] {
+            let attr = handler_wrapper_inline_attr(&[attr]).unwrap();
+            assert_eq!(quote!(#attr).to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn handler_wrapper_rejects_invalid_or_duplicate_inline_attributes() {
+        let invalid = vec![syn::parse_quote!(#[inline(sometimes)])];
+        let err = handler_wrapper_inline_attr(&invalid).unwrap_err();
+        assert!(
+            err.to_string().contains("expected `always` or `never`"),
+            "unexpected error: {err}"
+        );
+
+        let duplicate = vec![
+            syn::parse_quote!(#[inline]),
+            syn::parse_quote!(#[inline(always)]),
+        ];
+        let err = handler_wrapper_inline_attr(&duplicate).unwrap_err();
+        assert!(
+            err.to_string().contains("may only have one"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn process_handler_applies_inline_policy_to_generated_wrapper() {
+        let mod_name: syn::Ident = syn::parse_quote!(my_program);
+        let program_id: syn::Expr = syn::parse_quote!(crate::ID);
+        let default_handler: syn::ItemFn = syn::parse_quote! {
+            pub fn default_handler(ctx: &mut Context<MyAccounts>) -> Result<()> {
+                let _ = ctx;
+                Ok(())
+            }
+        };
+        let always_handler: syn::ItemFn = syn::parse_quote! {
+            #[inline(always)]
+            pub fn fast_handler(ctx: &mut Context<MyAccounts>, amount: u64) -> Result<()> {
+                let _ = (ctx, amount);
+                Ok(())
+            }
+        };
+
+        let default_wrapper = process_handler(&default_handler, &mod_name, None, &program_id)
+            .wrapper
+            .to_string();
+        let always_wrapper = process_handler(&always_handler, &mod_name, None, &program_id)
+            .wrapper
+            .to_string();
+
+        assert!(
+            default_wrapper.contains("# [inline (never)] pub fn default_handler"),
+            "expected non-inlined default wrapper: {default_wrapper}"
+        );
+        assert!(
+            always_wrapper.contains("# [inline (always)] pub fn fast_handler"),
+            "expected explicit inline override: {always_wrapper}"
         );
     }
 
