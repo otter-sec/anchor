@@ -84,7 +84,7 @@ pub enum MigrationInner<From, To> {
 /// let migrated = ctx.accounts.my_account.into_inner(AccountV2 {
 ///     data: ctx.accounts.my_account.data,
 ///     new_field: ctx.accounts.my_account.data * 2,
-/// })?;
+/// });
 ///
 /// // Use migrated data (safe to call multiple times!)
 /// msg!("New field: {}", migrated.new_field);
@@ -236,7 +236,7 @@ where
     ///     let migrated = ctx.accounts.my_account.into_inner(AccountV2 {
     ///         data: ctx.accounts.my_account.data,
     ///         new_field: 42,
-    ///     })?;
+    ///     });
     ///
     ///     // Use migrated...
     ///     msg!("Migrated data: {}", migrated.data);
