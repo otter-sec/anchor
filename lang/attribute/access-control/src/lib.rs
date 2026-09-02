@@ -1,10 +1,14 @@
 extern crate proc_macro;
 
-use {quote::quote, syn::parse_macro_input};
+use {
+    quote::quote,
+    syn::{parse::Parser, parse_macro_input, punctuated::Punctuated, Expr, Token},
+};
 
 /// Executes the given access control method before running the decorated
 /// instruction handler. Any method in scope of the attribute can be invoked
-/// with any arguments from the associated instruction handler.
+/// with any arguments from the associated instruction handler. Multiple
+/// methods may be provided, separated by commas; they run in order.
 ///
 /// # Example
 ///
@@ -58,24 +62,13 @@ pub fn access_control(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let mut args = args.to_string();
-    args.retain(|c| !c.is_whitespace());
-    let access_control: Vec<proc_macro2::TokenStream> = args
-        .split(')')
-        .filter(|ac| !ac.is_empty())
-        .map(|ac| format!("{ac})")) // Put back on the split char.
-        .map(|ac| format!("{ac}?;")) // Add `?;` syntax.
-        .map(|ac| {
-            ac.parse::<proc_macro2::TokenStream>().map_err(|_| {
-                syn::Error::new(
-                    proc_macro2::Span::call_site(),
-                    format!("`#[access_control]` argument `{ac} is not valid Rust syntax"),
-                )
-                .into_compile_error()
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap_or_else(|err| vec![err]);
+    let parser = Punctuated::<Expr, Token![,]>::parse_terminated;
+    let exprs = match parser.parse(args) {
+        Ok(exprs) => exprs,
+        Err(err) => return err.to_compile_error().into(),
+    };
+    let access_control: Vec<proc_macro2::TokenStream> =
+        exprs.into_iter().map(|expr| quote! { #expr?; }).collect();
 
     let item_fn = parse_macro_input!(input as syn::ItemFn);
 
