@@ -10,34 +10,48 @@ following subcommands.
 ---
 
 ```shell
-anchor-cli
+Usage: anchor [OPTIONS] <COMMAND>
 
-USAGE:
-    anchor <SUBCOMMAND>
+Commands:
+  init          Initializes a workspace
+  build         Builds the workspace
+  expand        Expands macros (wrapper around cargo expand)
+  verify        Verifies the on-chain bytecode matches the locally compiled artifact. Run this command inside a program subdirectory, i.e., in the dir containing the program's Cargo.toml
+  test          Runs integration tests
+  fuzz          Coverage-guided fuzzing for Solana programs (powered by Crucible)
+  new           Creates a new program
+  debugger      Run tests under an instruction-level debugger
+  coverage      Generate source-level coverage from SBF register traces
+  idl           Commands for interacting with interface definitions
+  clean         Remove all artifacts from the generated directories except program keypairs
+  migrate       Runs the deploy migration script
+  airdrop       Request an airdrop of SOL
+  cluster       Cluster commands
+  config        Configuration management commands
+  shell         Starts a node shell with an Anchor client setup according to the local config
+  run           Runs the script defined by the current workspace's Anchor.toml
+  keys          Program keypair commands
+  localnet      Localnet commands
+  account       Fetch and deserialize an account using the IDL provided
+  completions   Generates shell completions
+  address       Get your public key
+  balance       Get your balance
+  epoch         Get current epoch
+  epoch-info    Get information about the current epoch
+  logs          Stream transaction logs
+  show-account  Show the contents of an account
+  keygen        Keypair generation and management
+  program       Program deployment and management commands
+  codama        Codama IDL integration commands
+  legacy-idl    [DEPRECATED] Manage legacy on-chain IDL accounts. Migrate to Program Metadata-based IDL management (`anchor idl`)
+  help          Print this message or the help of the given subcommand(s)
 
-FLAGS:
-    -h, --help       Prints help information
-    -V, --version    Prints version information
-
-SUBCOMMANDS:
-    account    Fetch and deserialize an account using the IDL provided
-    build      Builds the workspace
-    cluster    Cluster commands
-    deploy     Deploys each program in the workspace
-    expand     Expands the macros of a program or the workspace
-    fuzz       Coverage-guided fuzzing for Solana programs (powered by Crucible)
-    help       Prints this message or the help of the given subcommand(s)
-    idl        Commands for interacting with interface definitions
-    init       Initializes a workspace
-    keys       Program keypair commands
-    migrate    Runs the deploy migration script
-    new        Creates a new program
-    shell      Starts a node shell with an Anchor client setup according to the local config
-    test       Runs integration tests against a localnetwork
-    upgrade    Upgrades a single program. The configured wallet must be the upgrade authority
-    verify     Verifies the on-chain bytecode matches the locally compiled artifact. Run this
-               command inside a program subdirectory, i.e., in the dir containing the program's
-               Cargo.toml
+Options:
+      --provider.cluster <CLUSTER>  Cluster override
+      --provider.wallet <WALLET>    Wallet override
+      --commitment <COMMITMENT>     Commitment override (valid values: processed, confirmed, finalized)
+  -h, --help                        Print help
+  -V, --version                     Print version
 ```
 
 ## Account
@@ -277,6 +291,21 @@ the requested languages. The supported language values are `js`, `js-umi`,
 Codama client generation can also run automatically after `anchor build` when
 `[clients] auto = true` is set in `Anchor.toml`.
 
+## Codama
+
+```shell
+anchor codama convert <target/idl/program.json> --out <codama-idl.json>
+anchor codama generate -l rust,js -p clients <target/idl/program.json>
+```
+
+`anchor codama convert` converts an Anchor IDL into a Codama IDL. `anchor
+codama generate` converts the IDL and invokes the Codama renderer packages for
+the requested languages. The supported language values are `js`, `js-umi`,
+`rust`, and `go`.
+
+Codama client generation can also run automatically after `anchor build` when
+`[clients] auto = true` is set in `Anchor.toml`.
+
 ## Init
 
 ```shell
@@ -407,7 +436,7 @@ Run an integration test suit against the configured cluster, deploying new
 versions of all workspace programs before running them.
 
 If the configured network is a localnet, then automatically starts the
-local network and runs the test. By default, [Surfpool](https://github.com/txtx/surfpool)
+local network and runs the test. By default, [Surfpool](https://github.com/solana-foundation/surfpool)
 is used as the local network backend. To use `solana-test-validator` instead,
 pass `--validator legacy`.
 

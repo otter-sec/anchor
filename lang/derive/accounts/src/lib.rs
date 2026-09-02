@@ -445,8 +445,11 @@ use {proc_macro::TokenStream, quote::ToTokens, syn::parse_macro_input};
 ///                 The account must be marked as <code>mut</code> and applied to either <code>Account</code> or <code>AccountLoader</code> types.
 ///                 <br><br>
 ///                 If the change in account data length is additive, lamports will be transferred from the <code>realloc::payer</code> into the
-///                 program account in order to maintain rent exemption. Likewise, if the change is subtractive, lamports will be transferred from
-///                 the program account back into the <code>realloc::payer</code>.
+///                 program account in order to maintain rent exemption. Likewise, if the change is subtractive, all lamports above the new
+///                 rent-exempt minimum will be transferred from the program account back into the <code>realloc::payer</code>.
+///                 <br><br>
+///                 Warning: do not use subtractive realloc on accounts that intentionally hold extra lamports, such as vaults. Those extra
+///                 lamports will also be transferred to the <code>realloc::payer</code>; refunds are not limited to rent savings alone.
 ///                 <br><br>
 ///                 The <code>realloc::zero</code> constraint is required in order to determine whether the new memory should be zero initialized after
 ///                 reallocation. Please read the documentation on the <code>AccountInfo::realloc</code> function linked above to understand the

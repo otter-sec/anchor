@@ -1,0 +1,46 @@
+---
+title: LiteSVM
+description: 'Use `anchor-v2-testing` as the LiteSVM test harness.'
+---
+
+LiteSVM is an in-process Solana VM for tests. It lets a Rust test load the compiled `.so{:file}`, create accounts, send transactions, and inspect results without starting a validator process.
+
+`anchor-v2-testing` re-exports LiteSVM and common Solana test types. Its `svm(){:rs}` function is `LiteSVM::new(){:rs}` by default, and switches to a trace-recording VM when the crate is built with the `profile{:toml}` feature.
+
+```toml title="Cargo.toml" showLineNumbers=false
+[dev-dependencies]
+anchor-v2-testing = { git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }
+
+[features]
+profile = ["anchor-v2-testing/profile"]
+```
+
+## Test shape
+
+A typical test does the same work a real client would do, but it runs against an in-memory VM:
+
+```rust showLineNumbers=false
+use anchor_v2_testing::{Keypair, Message, Signer, VersionedMessage, VersionedTransaction};
+
+#[test]
+fn test_initialize() {
+    let mut svm = anchor_v2_testing::svm();
+    let payer = Keypair::new();
+
+    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+    // add program, build instruction, sign tx, send transaction
+}
+```
+
+The scaffolded template uses this pattern under `programs/<name>/tests/{:dir}`.
+
+## Why use the wrapper
+
+Use `anchor_v2_testing::svm(){:rs}` instead of calling `LiteSVM::new(){:rs}` directly. The wrapper lets the same tests participate in:
+
+- ordinary `$ <blue>anchor</blue> test`
+- `$ <blue>anchor</blue> test <dim>--profile</dim>`
+- `$ <blue>anchor</blue> debugger`
+- `$ <blue>anchor</blue> coverage`
+
+Without the wrapper, the test may pass normally but produce no traces for the tools that need them.

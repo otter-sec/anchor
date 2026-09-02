@@ -1,0 +1,391 @@
+---
+title: 0.31.0
+description: Anchor release notes for 0.31.0.
+---
+
+`0.31.0` is the last major release before v1. These notes cover the most significant changes (see [`CHANGELOG.md{:file}`](https://github.com/otter-sec/anchor/blob/v0.31.0/CHANGELOG.md#0310---2025-03-08) for all changes).
+
+---
+
+## How to upgrade
+
+1. Install the latest version of `avm`:
+
+   ```bash
+   $ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor avm <dim>--locked</dim> <dim>--force</dim>
+   ```
+
+   This is required for the new prebuilt binary install path. See [Install from binary](#install-from-binary).
+
+2. Update `anchor-cli`:
+
+   ```bash
+   $ <blue>avm</blue> install 0.31.0
+   ```
+
+3. Update Anchor crate(s) to `0.31.0`.
+
+4. Update TS package(s) to `0.31.0`.
+
+## Recommended Solana version
+
+The recommended Solana version is `2.1.0`. Several Solana binaries have been renamed under the [Agave transition](https://github.com/anza-xyz/agave/wiki/Agave-Transition), so this upgrade involves replacing the toolchain entirely. Install the new tooling with:
+
+```console
+$ <blue>sh</blue> <dim>-c</dim> "$(curl <dim>-sSfL</dim> https://release.anza.xyz/v2.1.0/install)"
+```
+
+Setting `toolchain.solana_version` in `Anchor.toml{:file}` handles this automatically. See [Automatic Agave transition](#automatic-agave-transition).
+
+## AVM
+
+### Install from binary
+
+`$ <blue>avm</blue> install` now downloads prebuilt binaries from GitHub by default. Supported targets:
+
+- `aarch64-apple-darwin`
+- `x86_64-unknown-linux-gnu`
+- `x86_64-apple-darwin`
+- `x86_64-pc-windows-msvc`
+
+Pass `<dim>--from-source</dim>` to the `install` command to fall back to building from source (required on unsupported platforms).
+
+## CLI
+
+### Automatic Agave transition
+
+As noted in [Recommended Solana version](#recommended-solana-version), several Solana binaries have been renamed to Agave. `solana-install` is deprecated as of `1.18.19` and logs a deprecation banner that older Anchor versions fail to parse:
+
+```text
+⚠️  solana-install is deprecated and will be discontinued when v1.18 is no longer supported. Please switch to Agave: https://github.com/anza-xyz/agave/wiki/Agave-Transition
+```
+
+When `solana_version` in `[toolchain]` is greater than `1.18.19`, Anchor now installs and switches to `agave-install` automatically:
+
+```toml
+[toolchain]
+solana_version = "2.1.0"
+```
+
+### `solana-program` warning
+
+Adding `solana-program` as a direct dependency of an Anchor program risks version conflicts between Solana v1 and v2 crates. Builds that include it now print a warning:
+
+```text
+WARNING: Adding `solana-program` as a separate dependency might cause conflicts.
+To solve, remove the `solana-program` dependency and use the exported crate from `anchor-lang`.
+`use solana_program` becomes `use anchor_lang::solana_program`.
+Program name: `my-program`
+```
+
+### Pass `cargo` args to IDL build
+
+`$ <blue>anchor</blue> build` and `$ <blue>anchor</blue> idl build` now forward `cargo` arguments through to the IDL build command, so passing `--features` through `--` builds the program and its IDL with the feature enabled:
+
+```console
+$ <blue>anchor</blue> build <dim>--</dim> <dim>--features</dim> my-feature
+```
+
+### `<dim>--no-idl</dim>` flag for tests
+
+When the program changes but its public API doesn't, regenerating the IDL is wasted work. Mirroring [`<dim>--no-idl</dim>` on builds](./0-30-0#--no-idl-flag-on-builds), the test command now accepts the same flag:
+
+```console
+$ <blue>anchor</blue> test <dim>--no-idl</dim>
+```
+
+### `mollusk` test template
+
+Initialize a workspace with the new [`mollusk`](/docs/v1/testing/mollusk/) test template:
+
+```console
+$ <blue>anchor</blue> init my-program <dim>--test-template</dim> mollusk
+```
+
+### `clean`
+
+`$ <blue>anchor</blue> clean` now also removes the generated `.anchor{:dir}` directory. The command behaves like `$ <blue>cargo</blue> clean`, but preserves program keypairs.
+
+### Automatic IDL conversion
+
+In v0.30, legacy (pre-v0.30) IDLs had to be converted with `$ <blue>anchor</blue> idl convert` before any other command could use them. Most CLI commands now perform that conversion transparently, so legacy and new IDLs work interchangeably. `idl fetch` is the one exception and still emits the on-chain bytes verbatim.
+
+### Package manager
+
+Anchor has historically defaulted to `yarn`, and switching was awkward because several commands hard-required `yarn` on PATH. That coupling is gone. Specify the package manager in `Anchor.toml{:file}`:
+
+```toml
+[toolchain]
+package_manager = "npm"
+```
+
+Or pass it when creating a new workspace:
+
+```console
+$ <blue>anchor</blue> init <dim><NAME></dim> <dim>--package-manager</dim> npm
+```
+
+The supported values are `npm`, `yarn`, and `pnpm`. The default is `yarn`.
+
+### Shell completions
+
+Shell completions can now be generated for bash, zsh, fish, and PowerShell. See [Shell completions](/docs/v1/get-started/installation/#shell-completions).
+
+## Lang
+
+### Stack memory improvements
+
+Stack usage from `init` constraints has been reduced significantly, and stack warnings on builds are now reliable when targeting Solana v2 (`platform-tools v1.42`). The rest of this section explains why. Skip to [Custom discriminators](#custom-discriminators) if you don't need the background.
+
+The most common source of stack-violation errors in Anchor programs is the generated `try_accounts(){:rs}` function, where instruction deserialization and constraint validation both run. Co-locating that work is convenient for constraints, but it makes it trivial to overshoot the SVM's fixed 4096-byte stack just by adding accounts. The mangled build log usually looks like:
+
+```text
+Error: Function _ZN71_$LT$pr..Test$u20$as$u20$anchor_lang..Accounts$LT$pr..TestBumps$GT$GT$12try_accounts17h5572074d55b9e638E Stack offset of 4112 exceeded max offset of 4096 by 16 bytes, please minimize large stack variables.
+```
+
+Three external developments compounded the problem. Rust/LLVM changes in Solana v1.18 increased `try_accounts(){:rs}`'s stack footprint, lowering the threshold for hitting violations. The stack-warning logs were unreliable, so going over the limit didn't always surface at build time. And the ["Account data direct mapping"](https://github.com/solana-labs/solana/issues/29708) feature, which is on by default in the local validator, meant that exceeding the stack at runtime triggered [undefined behavior](https://en.wikipedia.org/wiki/Undefined_behavior) rather than a clean panic.
+
+Undefined behavior is particularly hard to debug because tests can appear to pass while a different input silently corrupts account bytes. Reported instances include [#2955](https://github.com/otter-sec/anchor/issues/2955), [#3113](https://github.com/otter-sec/anchor/issues/3113), and [#3196](https://github.com/otter-sec/anchor/issues/3196).
+
+The unreliable warnings are fixed in Solana v2's `platform-tools v1.42`, so build-time warnings are now trustworthy. The largest contributor to stack pressure was identified as the `init` constraint, which expanded into a long inline block inside `try_accounts(){:rs}` and stacked badly when multiple `init` accounts were used. The expansion now lives inside an immediately-invoked closure ([#2939](https://github.com/otter-sec/anchor/pull/2939)), giving each invocation its own stack frame. Looking further out, [SIMD-0166](https://github.com/solana-foundation/solana-improvement-documents/pull/166) proposes dynamic stack frames as a runtime-level fix.
+
+Stack-related problems should be considerably rarer on Anchor v0.31 + Solana v2. Lingering issues are tracked in [otter-sec/anchor#3097](https://github.com/otter-sec/anchor/issues/3097).
+
+### Custom discriminators
+
+Anchor's discriminator handling had several long-standing limitations:
+
+- 8 bytes is sometimes too costly given Solana's 1232-byte transaction size cap
+- The `Discriminator{:rs}` trait had a fixed-size `[u8; 8]{:rs}` field, blocking implementations for non-Anchor programs (including `declare_program!(){:rs}`)
+- Discriminators were not customizable
+- Renaming the underlying type changed its discriminator, breaking deployed programs
+
+This release adds support for custom discriminators. The default 8-byte derivation is unchanged. The `discriminator` argument on Anchor attribute macros opts into an explicit value:
+
+- `#[account(discriminator = 1)]{:rs}`
+- `#[event(discriminator = [1, 2])]{:rs}`
+- `#[instruction(discriminator = MY_CONST)]{:rs}`
+
+Any constant expression is accepted on the right-hand side, with the [`custom-discriminator` integration test](https://github.com/otter-sec/anchor/blob/v0.31.0/tests/custom-discriminator/programs/custom-discriminator/src/lib.rs) exercising the full surface area.
+
+Discriminators must remain unique within a program. Any length is allowed at the trait level (including zero, since some non-Anchor programs like SPL Token have no account discriminator at all), but IDL generation rejects empty discriminators for safety. Programs without discriminators must not rely on the discriminator for safety checks.
+
+IDL generation also rejects ambiguous discriminators, meaning values where one is a prefix of another. With 1-byte discriminators this gets restrictive quickly. An account with discriminator `[1]{:rs}` precludes any other discriminator starting with `1` (such as `[1, 2, 3, 4]{:rs}`), so leave headroom when picking short values.
+
+Custom discriminators also unlock first-class non-Anchor program support via [`declare_program!(){:rs}`](./0-30-0#dependency-free-program-declaration) on the Rust side and the TypeScript client.
+
+### `Discriminator{:rs}` trait
+
+The `discriminator(){:rs}` method of the `Discriminator{:rs}` trait has been removed. Replace any `discriminator(){:rs}` call site with the `DISCRIMINATOR{:rs}` associated constant.
+
+The trait itself is now re-exported from `anchor_lang::prelude{:rs}` so the common pattern of hardcoding the 8-byte discriminator length can be replaced with the trait's associated constant:
+
+```rs showLineNumbers=false del={1} add={2}
+space = 8 + ...
+space = MyAccount::DISCRIMINATOR.len() + ...
+```
+
+### `LazyAccount{:rs}`
+
+`LazyAccount<'info, T>{:rs}` is an experimental drop-in replacement for `Account<'info, T>{:rs}` aimed at performance-sensitive paths. See [its documentation](https://docs.rs/anchor-lang/0.31.0/anchor_lang/accounts/lazy_account/struct.LazyAccount.html) for whether it fits the workload. Using `LazyAccount{:rs}` requires enabling the `lazy-account` feature on `anchor-lang`.
+
+### `cfg{:rs}` attribute on instructions
+
+`cfg{:rs}` attributes are now supported on instructions:
+
+```rs showLineNumbers=false
+#[program]
+mod my_program {
+    #[cfg(feature = "my-feature")]
+    pub fn my_feature(ctx: Context<MyFeature>) -> Result<()> {}
+}
+```
+
+### Unnamed and unit structs with `InitSpace{:rs}`
+
+Unnamed and unit structs gained Anchor support in v0.30, but `#[derive(InitSpace)]{:rs}` didn't work for them. Both shapes are now supported:
+
+```rs showLineNumbers=false
+#[derive(InitSpace)]
+pub struct Unnamed(pub u64, #[max_len(64)] pub Vec<u8>);
+
+#[derive(InitSpace)]
+pub struct Unit;
+```
+
+### Account parser
+
+`declare_program!(){:rs}` now also generates an account parser:
+
+```rs showLineNumbers=false
+declare_program!(my_program);
+```
+
+This will generate something similar to:
+
+```rs showLineNumbers=false
+pub enum Account {
+    SomeAccount(SomeAccount),
+    OtherAccount(OtherAccount),
+}
+```
+
+Call `my_program::utils::Account::try_from_bytes(){:rs}` to deserialize any account owned by the program into the right variant.
+
+### `declare_program!{:rs}` improvements
+
+The following issues related to [`declare_program!{:rs}`](/docs/v1/clients/declare-program/) have been fixed:
+
+- Being unable to use constant bytes ([#3287](https://github.com/otter-sec/anchor/pull/3287))
+- Missing docs from the generated constants ([#3311](https://github.com/otter-sec/anchor/pull/3311))
+- Compilation errors related to incorrectly adding `derive{:rs}`s and `repr{:rs}`s to type aliases ([#3504](https://github.com/otter-sec/anchor/pull/3504))
+- Being unable to use `data` as an instruction parameter ([#3574](https://github.com/otter-sec/anchor/pull/3574))
+
+## SPL
+
+### New Token 2022 instructions
+
+The following Token 2022 instructions were added:
+
+- `burn_checked`
+- `mint_to_checked`
+- `approve_checked`
+- `withdraw_withheld_tokens_from_accounts`
+
+## IDL
+
+### Safety comment checks
+
+In v0.30.1, enabling all features in Rust Analyzer would panic because the `idl-build` feature expected an environment variable that `$ <blue>anchor</blue> build` sets but Rust Analyzer doesn't:
+
+```text
+custom attribute panicked
+message: Safety checks failed: Failed to get program path
+```
+
+The check is now lenient when the variable is absent.
+
+### `address{:rs}` constraint with non-const expressions
+
+A v0.30 regression caused non-const expressions in the `address{:rs}` constraint to fail to build:
+
+```rs showLineNumbers=false
+#[derive(Accounts)]
+pub struct MyIx {
+    #[account(address = my_account.authority())]
+    pub authority: Signer<'info>,
+    pub my_account: Account<'info, MyAccount>,
+}
+```
+
+Fixed in [#3216](https://github.com/otter-sec/anchor/pull/3216).
+
+### `Program{:rs}` accounts with full paths
+
+Fully-qualified external program types now work in the accounts struct:
+
+```rs showLineNumbers=false
+#[derive(Accounts)]
+pub struct FullPath<'info> {
+    pub external_program: Program<'info, external::program::External>,
+}
+```
+
+### `IdlBuilder{:rs}`
+
+[`build_idl(){:rs}`](https://github.com/otter-sec/anchor/blob/v0.31.0/idl/src/build.rs#L119) couldn't gain new parameters without a breaking change. The new builder API solves that:
+
+```rs showLineNumbers=false
+let idl = IdlBuilder::new().program_path(path).skip_lint(true).build()?;
+```
+
+See [`IdlBuilder{:rs}`](https://docs.rs/anchor-lang-idl/0.1.2/anchor_lang_idl/build/struct.IdlBuilder.html) for the full API.
+
+### Generation improvements
+
+The following issues with the IDL generation have been fixed:
+
+- A bug where using tuple parameters in instructions would result in an incorrect IDL ([#3294](https://github.com/otter-sec/anchor/pull/3294))
+- A bug where doc comments could trigger false-positives during module paths conversion ([#3359](https://github.com/otter-sec/anchor/pull/3359))
+- A bug where the generated IDL only has partial resolution information ([#3474](https://github.com/otter-sec/anchor/pull/3474))
+- Being unable to use constant identifiers as generic arguments ([#3522](https://github.com/otter-sec/anchor/pull/3522))
+- Being unable to pass in a `Pubkey{:rs}` constant to `seeds::program{:rs}` ([#3559](https://github.com/otter-sec/anchor/pull/3559))
+- Being unable to pass in an account or an argument to `seeds::program{:rs}` ([#3570](https://github.com/otter-sec/anchor/pull/3570))
+
+## TypeScript
+
+### Simpler `Program{:ts}` construction
+
+TypeScript's structural inference of JSON imports made the `Program{:ts}` constructor awkward to call without an extra cast:
+
+```ts showLineNumbers=false
+import * as idl from './idl/my_program.json'
+import type { MyProgram } from './types/my_program'
+
+const program = new Program(idl as unknown as MyProgram, provider)
+```
+
+The constructor no longer infers the IDL type from its `idl{:ts}` argument, so the explicit type parameter is honored without casting:
+
+```ts showLineNumbers=false
+const program = new Program<MyProgram>(idl, provider)
+```
+
+### Error improvements
+
+Account resolution error now includes the accounts that weren't able to get resolved:
+
+```text
+Reached maximum depth for account resolution. Unresolved accounts: `pda`, `anotherPda`
+```
+
+Similarly, unsupported `view` method error now includes the possible causes:
+
+```text
+Error: Method does not support views. The instruction should return a value, and its accounts must be read-only
+```
+
+### Type improvements
+
+Tests commonly reached for `// @ts-ignore{:ts}` to access the payer keypair:
+
+```ts showLineNumbers=false
+// @ts-ignore
+const payer = program.provider.wallet.payer
+```
+
+The `Provider{:ts}` interface now declares an optional `wallet?: Wallet{:ts}` field, and `Wallet{:ts}` declares an optional `payer?: Keypair{:ts}` field. The non-null assertion (`!`) replaces the suppression in test code, where these fields are guaranteed:
+
+```ts showLineNumbers=false
+const payer = program.provider.wallet!.payer!
+```
+
+### Better confirmation
+
+`Provider.sendAndConfirm(){:ts}` now accepts an optional `blockhash{:ts}` for more reliable confirmation:
+
+```ts showLineNumbers=false
+await program.provider.sendAndConfirm(tx, signers, { blockhash: ... });
+```
+
+### Programs with numbers in their name
+
+`anchor.workspace{:ts}` now resolves programs whose names contain digits in every casing scenario. See [#3450](https://github.com/otter-sec/anchor/pull/3450) for the full breakdown.
+
+## Rust client
+
+### `tokio` support
+
+[`anchor-client`](https://docs.rs/anchor-client/0.31.0/anchor_client/index.html) is now compatible with `tokio` when the `async` feature is enabled. See the [`tokio` example](https://github.com/otter-sec/anchor/blob/v0.31.0/client/example/src/nonblocking.rs#L65-L99).
+
+### Mock client
+
+Enabling the `mock` feature lets tests pass in a [mock RPC client](https://docs.rs/solana-client/2.1.0/solana_client/rpc_client/struct.RpcClient.html#method.new_mock):
+
+```toml
+anchor-client = { version = "0.31.0", features = ["mock"] }
+```
+
+---
+
+See the full list of notable changes in the [CHANGELOG](https://github.com/otter-sec/anchor/blob/v0.31.0/CHANGELOG.md#0310---2025-03-08).

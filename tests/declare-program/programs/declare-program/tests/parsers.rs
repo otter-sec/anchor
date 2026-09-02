@@ -303,12 +303,3 @@ pub fn test_instruction_parser() {
         Err(e) => panic!("Expected Ok result, got error: {:?}", e),
     };
 }
-
-#[test]
-#[cfg(not(feature = "idl-build"))]
-pub fn test_errors() {
-    use external::error::ExternalError;
-
-    assert_eq!(ExternalError::MyNormalError as u32, 6000);
-    assert_eq!(ExternalError::MyErrorWithSpecialOffset as u32, 6500);
-}

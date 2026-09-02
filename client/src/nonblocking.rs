@@ -156,9 +156,9 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Arc<dyn T
     pub async fn signed_transaction(&self) -> Result<Transaction, ClientError> {
         self.signed_transaction_internal(TxVersion::Legacy)
             .await
-            .and_then(|tx| {
+            .map(|tx| {
                 tx.into_legacy_transaction()
-                    .ok_or(ClientError::NotLegacyTransaction)
+                    .expect("Signed transaction with `TxVersion::Legacy`")
             })
     }
 

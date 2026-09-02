@@ -1,0 +1,22 @@
+[package]
+name = "accountloader-realloc"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "accountloader_realloc"
+
+[features]
+no-entrypoint = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build"]
+
+[profile.release]
+overflow-checks = true
+
+[dependencies]
+anchor-lang = { path = "../../../../lang" }
+bytemuck = { version = "1.4.0", features = ["derive", "min_const_generics"] }

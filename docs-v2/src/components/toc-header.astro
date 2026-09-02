@@ -1,0 +1,105 @@
+---
+import Icon from '@/components/icon.astro'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { renderTocHeading } from '@/lib/toc-heading'
+import { cn, getHeadingMargin } from '@/lib/utils'
+import type { MarkdownHeading } from 'astro'
+
+type Props = {
+  headings: MarkdownHeading[]
+  minDepth?: number
+  maxDepth?: number
+}
+
+const { headings, minDepth = 2, maxDepth = 4 } = Astro.props
+const visible = headings.filter((h) => h.depth >= minDepth && h.depth <= maxDepth)
+---
+
+{
+  visible.length > 0 && (
+    <div
+      id="mobile-toc-container"
+      class="bg-background/80 sticky top-14 z-30 border-b backdrop-blur-sm xl:hidden"
+    >
+      <details class="group">
+        <summary class="flex w-full cursor-pointer items-center justify-between">
+          <div class="mx-auto flex h-11 w-full max-w-[calc(var(--container-2xl)+2rem)] items-center px-4 py-3">
+            <div class="relative mr-2 size-4">
+              <svg class="h-4 w-4" viewBox="0 0 24 24">
+                <circle
+                  class="text-primary/20"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                />
+                <circle
+                  id="mobile-toc-progress-circle"
+                  class="text-primary"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-dasharray="62.83"
+                  stroke-dashoffset="62.83"
+                  transform="rotate(-90 12 12)"
+                />
+              </svg>
+            </div>
+            <span
+              id="mobile-toc-current-section"
+              data-toc-text
+              class="text-muted-foreground grow truncate text-sm"
+            >
+              Overview
+            </span>
+            <span class="text-muted-foreground ml-2">
+              <Icon
+                name="chevron-down"
+                class="h-4 w-4 transition-transform duration-200 group-open:rotate-180"
+              />
+            </span>
+          </div>
+        </summary>
+
+        <ScrollArea
+          client:idle
+          className="mx-auto max-w-[calc(var(--container-2xl)+2rem)]"
+          data-toc-header-scroll
+        >
+          <div class="max-h-[30vh]">
+            <ul class="flex list-none flex-col gap-y-2 px-4 pb-4" id="mobile-table-of-contents">
+              {visible.map((heading) => (
+                <li
+                  class={cn(
+                    'px-4 pl-6 text-sm',
+                    getHeadingMargin(heading.depth),
+                    'text-foreground/60',
+                  )}
+                >
+                  <a
+                    href={`#${heading.slug}`}
+                    class="mobile-toc-item underline decoration-transparent underline-offset-[3px] transition-colors duration-200 hover:decoration-inherit"
+                    data-heading-id={heading.slug}
+                  >
+                    <span data-toc-text set:html={renderTocHeading(heading.text)} />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </ScrollArea>
+      </details>
+    </div>
+  )
+}
+
+<script>
+  import { mountMobileTocHeader } from '@/lib/client/toc-header'
+
+  mountMobileTocHeader()
+</script>

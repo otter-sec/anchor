@@ -32,7 +32,7 @@ describe("transfer hook", () => {
   const TOKEN_2022_PROGRAM_ID = new anchor.web3.PublicKey(
     "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
   );
-  const program = anchor.workspace.TransferHook as Program<TransferHook>;
+  const program = anchor.workspace.transferHook as Program<TransferHook>;
 
   const decimals = 2;
   const mintAmount = 100;

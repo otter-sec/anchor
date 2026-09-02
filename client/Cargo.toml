@@ -2,15 +2,13 @@
 name = "anchor-client"
 version.workspace = true
 publish = true
-authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/otter-sec/anchor"
+repository.workspace = true
 edition = "2021"
 license = "Apache-2.0"
 description = "An RPC client to interact with Anchor programs"
 
 [package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+workspace = true
 
 [features]
 async = []
@@ -18,7 +16,7 @@ debug = []
 mock = []
 
 [dependencies]
-anchor-lang = { path = "../lang", version = "1.0.2" }
+anchor-lang = { workspace = true }
 anyhow = "1"
 futures = "0.3"
 regex = "1"

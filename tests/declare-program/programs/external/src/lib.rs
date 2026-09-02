@@ -86,6 +86,12 @@ pub mod external {
         Ok(())
     }
 
+    // Test optional accounts parsing
+    pub fn update_with_optional(ctx: Context<UpdateWithOptional>, value: u32) -> Result<()> {
+        ctx.accounts.my_account.field = value;
+        Ok(())
+    }
+
     // Compilation test for whether a defined type (an account in this case) can be used in `cpi` client.
     pub fn test_compilation_defined_type_param(
         _ctx: Context<TestCompilation>,
@@ -119,25 +125,29 @@ pub mod external {
         Ok(())
     }
 
-    // Regression test for `declare_program!` codegen with numeric suffixes.
+    // Compilation test for an instruction with a numeric suffix
     // https://github.com/otter-sec/anchor/issues/4281
-    pub fn initialize_with_token_2022(_ctx: Context<TestCompilation>) -> Result<()> {
+    pub fn test_compilation_initialize_with_token_2022(
+        _ctx: Context<TestCompilation>,
+    ) -> Result<()> {
         Ok(())
     }
 
-    // Test optional accounts parsing
-    pub fn update_with_optional(ctx: Context<UpdateWithOptional>, value: u32) -> Result<()> {
-        ctx.accounts.my_account.field = value;
+    // Compilation test for generic types (both arguments and account fields)
+    pub fn test_compilation_generic_types(
+        _ctx: Context<TestCompilationGeneric>,
+        generic_struct: GenericStruct<u32, 8>,
+    ) -> Result<()> {
         Ok(())
     }
 }
 
 #[error_code]
-pub enum ExternalProgramError {
-    // Should have offset 6000
-    MyNormalError,
-    // Should have offset 6500
-    MyErrorWithSpecialOffset = 500,
+pub enum ExternalError {
+    Default,
+    WithOffset = 500,
+    #[msg("Custom msg")]
+    WithMsg,
 }
 
 #[derive(Accounts)]
@@ -152,6 +162,11 @@ pub struct TestCompilationPackedAccount<'info> {
 
 #[derive(Accounts)]
 pub struct TestCompilationNoAccounts {}
+
+#[derive(Accounts)]
+pub struct TestCompilationGeneric<'info> {
+    pub account_with_generic_field: Account<'info, AccountWithGenericField>,
+}
 
 #[derive(Accounts)]
 pub struct Init<'info> {
@@ -229,7 +244,17 @@ pub struct PackedAccount {
     pub b: [u16; 8],
 }
 
+#[account]
+pub struct AccountWithGenericField {
+    pub field: GenericStruct<u32, 8>,
+}
+
 #[event]
 pub struct MyEvent {
     pub value: u32,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct GenericStruct<T, const N: usize> {
+    pub field: [T; N],
 }

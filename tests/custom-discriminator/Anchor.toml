@@ -1,5 +1,5 @@
 [workspace]
-exclude = ["programs/ambiguous-discriminator"]
+exclude = ["programs/ambiguous-discriminator", "programs/zeroed-discriminator"]
 
 [features]
 resolution = true
@@ -8,6 +8,7 @@ skip-lint = false
 [programs.localnet]
 ambiguous-discriminator = "AmbiguousDiscriminator111111111111111111111"
 custom_discriminator = "CustomDiscriminator111111111111111111111111"
+zeroed-discriminator = "Fg6PaFpoGXkYsidMpWxTWqkZP8eM5uZuN4fKwvVZZzCk"
 
 [provider]
 cluster = "Localnet"

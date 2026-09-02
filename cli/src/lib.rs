@@ -23,7 +23,6 @@ use {
     dirs::home_dir,
     heck::{ToKebabCase, ToLowerCamelCase, ToPascalCase, ToSnakeCase},
     regex::{Regex, RegexBuilder},
-    rust_template::{AnchorVersion, ProgramTemplate, TestTemplate},
     semver::{Version, VersionReq},
     serde::Deserialize,
     serde_json::{json, Map, Value as JsonValue},
@@ -51,6 +50,7 @@ use {
         string::ToString,
         sync::{LazyLock, OnceLock},
     },
+    template::{AnchorVersion, ProgramTemplate, TestTemplate},
 };
 
 mod abs_path;
@@ -71,7 +71,7 @@ mod metadata;
 #[cfg(not(windows))]
 mod profile;
 mod program;
-pub mod rust_template;
+pub mod template;
 
 // Version of the docker image.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -469,6 +469,7 @@ pub enum Command {
     /// config.
     Shell,
     /// Runs the script defined by the current workspace's Anchor.toml.
+    #[clap(alias = "r")]
     Run {
         /// The name of the script to run.
         script: String,
@@ -1703,10 +1704,10 @@ fn init(
     }
 
     // Initialize .gitignore file
-    fs::write(".gitignore", rust_template::git_ignore())?;
+    fs::write(".gitignore", template::git_ignore())?;
 
     // Initialize .prettierignore file
-    fs::write(".prettierignore", rust_template::prettier_ignore())?;
+    fs::write(".prettierignore", template::prettier_ignore())?;
 
     // Remove the default program if `--force` is passed
     if force {
@@ -1719,14 +1720,14 @@ fn init(
     }
 
     // Build the program.
-    rust_template::create_program(
+    template::create_program(
         &project_name,
         template,
         Some(&test_template),
         anchor_version,
     )?;
 
-    let program_id = rust_template::get_or_create_program_id(&rust_name, target_dir()?);
+    let program_id = template::get_or_create_program_id(&rust_name, target_dir()?);
     let mut localnet = BTreeMap::new();
     localnet.insert(
         rust_name,
@@ -1752,22 +1753,21 @@ fn init(
             // Build javascript config
             let mut package_json = File::create("package.json")?;
             package_json
-                .write_all(rust_template::package_json(jest, license, anchor_version).as_bytes())?;
+                .write_all(template::package_json(jest, license, anchor_version).as_bytes())?;
 
             let mut deploy = File::create(migrations_path.join("deploy.js"))?;
-            deploy.write_all(rust_template::deploy_script().as_bytes())?;
+            deploy.write_all(template::deploy_script().as_bytes())?;
         } else {
             // Build typescript config
             let mut ts_config = File::create("tsconfig.json")?;
-            ts_config.write_all(rust_template::ts_config(jest).as_bytes())?;
+            ts_config.write_all(template::ts_config(jest).as_bytes())?;
 
             let mut ts_package_json = File::create("package.json")?;
-            ts_package_json.write_all(
-                rust_template::ts_package_json(jest, license, anchor_version).as_bytes(),
-            )?;
+            ts_package_json
+                .write_all(template::ts_package_json(jest, license, anchor_version).as_bytes())?;
 
             let mut deploy = File::create(migrations_path.join("deploy.ts"))?;
-            deploy.write_all(rust_template::ts_deploy_script().as_bytes())?;
+            deploy.write_all(template::ts_deploy_script().as_bytes())?;
         }
     }
 
@@ -1964,12 +1964,12 @@ fn new(
                     fs::remove_dir_all(std::env::current_dir()?.join("programs").join(&name))?;
                 }
 
-                rust_template::create_program(&name, template, None, anchor_version)?;
+                template::create_program(&name, template, None, anchor_version)?;
 
                 programs.insert(
                     name.clone(),
                     ProgramDeployment {
-                        address: rust_template::get_or_create_program_id(&name, target_dir()?),
+                        address: template::get_or_create_program_id(&name, target_dir()?),
                         path: None,
                         idl: None,
                     },
@@ -2100,7 +2100,7 @@ fn expand_all(
     cargo_args: &[String],
 ) -> Result<()> {
     let cur_dir = std::env::current_dir()?;
-    for p in workspace_cfg.get_rust_program_list()? {
+    for p in workspace_cfg.get_program_list()? {
         expand_program(p, expansions_path.clone(), stdout, cargo_args)?;
     }
     std::env::set_current_dir(cur_dir)?;
@@ -2201,7 +2201,20 @@ pub fn build(
 
     // Check for program ID mismatches before building (skip if --ignore-keys is used), Always skipped in anchor test
     if !ignore_keys {
-        check_program_id_mismatch(&cfg, program_name.clone())?;
+        // FIXME: Consider making this a hard error in `deploy` instead
+        if let ProgramIdComparison::Mismatch {
+            lib_name,
+            actual_id,
+            declared_id,
+        } = check_program_id_mismatch(&cfg, program_name.clone())?
+        {
+            eprintln!(
+                "Program ID mismatch detected for program '{lib_name}':\n  Keypair file has: \
+                 {actual_id}\n  Source code has:  {declared_id}\n\nPlease run 'anchor keys sync' \
+                 to update the program ID in your source code or use the '--ignore-keys' flag to \
+                 skip this check.",
+            );
+        }
     }
 
     let idl_out = match idl {
@@ -2264,7 +2277,7 @@ pub fn build(
             no_docs,
         )?,
         // Cargo.toml represents a single package. Build it.
-        Some(cargo) => build_rust_cwd(
+        Some(cargo) => build_cwd(
             &cfg,
             cargo.path().to_path_buf(),
             no_idl,
@@ -2314,8 +2327,8 @@ fn build_all(
             None => Err(anyhow!("Invalid Anchor.toml at {}", cfg_path.display())),
             Some(_parent) => {
                 let mut idl_paths = Vec::new();
-                for p in get_metadata_ordered_rust_program_list(cfg)? {
-                    idl_paths.extend(build_rust_cwd(
+                for p in get_metadata_ordered_program_list(cfg)? {
+                    idl_paths.extend(build_cwd(
                         cfg,
                         p.join("Cargo.toml"),
                         no_idl,
@@ -2338,13 +2351,13 @@ fn build_all(
     r
 }
 
-fn get_metadata_ordered_rust_program_list(cfg: &WithPath<Config>) -> Result<Vec<PathBuf>> {
-    let programs = cfg.get_rust_program_list()?;
-    let ordered = order_rust_programs_by_metadata(cfg, &programs);
+fn get_metadata_ordered_program_list(cfg: &WithPath<Config>) -> Result<Vec<PathBuf>> {
+    let programs = cfg.get_program_list()?;
+    let ordered = order_programs_by_metadata(cfg, &programs);
     Ok(ordered.unwrap_or(programs))
 }
 
-fn order_rust_programs_by_metadata(
+fn order_programs_by_metadata(
     cfg: &WithPath<Config>,
     programs: &[PathBuf],
 ) -> Result<Vec<PathBuf>> {
@@ -2481,7 +2494,7 @@ fn local_dependency_closure(start: usize, deps: &[Vec<usize>]) -> HashSet<usize>
 
 // Runs the build command outside of a workspace.
 #[allow(clippy::too_many_arguments)]
-fn build_rust_cwd(
+fn build_cwd(
     cfg: &WithPath<Config>,
     cargo_toml: PathBuf,
     no_idl: bool,
@@ -2500,7 +2513,7 @@ fn build_rust_cwd(
         Some(p) => std::env::set_current_dir(p)?,
     };
     match build_config.verifiable {
-        false => _build_rust_cwd(
+        false => _build_cwd(
             cfg, no_idl, idl_out, idl_ts_out, skip_lint, no_docs, cargo_args,
         ),
         true => build_cwd_verifiable(
@@ -2859,7 +2872,7 @@ fn docker_exec(container_name: &str, args: &[&str]) -> Result<()> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn _build_rust_cwd(
+fn _build_cwd(
     cfg: &WithPath<Config>,
     no_idl: bool,
     idl_out: Option<PathBuf>,
@@ -5687,7 +5700,7 @@ fn stream_solana_logs(config: &WithPath<Config>, rpc_url: &str) -> Result<Vec<Lo
                     Err(e) => {
                         eprintln!(
                             "Warning: Failed to subscribe to logs for genesis program {}: {}",
-                            &entry.address, e
+                            entry.address, e
                         );
                         continue;
                     }
@@ -5803,7 +5816,7 @@ fn start_surfpool_validator(
 }
 
 fn start_solana_test_validator(
-    cfg: &Config,
+    cfg: &WithPath<Config>,
     test_validator: &Option<TestValidator>,
     flags: Option<Vec<String>>,
     test_log_stdout: bool,
@@ -5852,6 +5865,18 @@ fn start_solana_test_validator(
             "Your configured faucet port: {faucet_port} is already in use"
         ));
     }
+    let program_ids: Vec<Pubkey> = flags
+        .as_deref()
+        .unwrap_or(&[])
+        .windows(2)
+        .filter_map(|w| {
+            if w[0] == "--bpf-program" || w[0] == "--upgradeable-program" {
+                w[1].parse::<Pubkey>().ok()
+            } else {
+                None
+            }
+        })
+        .collect();
 
     let mut validator_handle = std::process::Command::new("solana-test-validator")
         .arg("--ledger")
@@ -5866,29 +5891,62 @@ fn start_solana_test_validator(
 
     // Wait for the validator to be ready.
     let client = create_client(rpc_url);
-    let mut count = 0;
     let ms_wait = test_validator
         .as_ref()
         .map(|test| test.startup_wait)
         .unwrap_or(STARTUP_WAIT);
-    while count < ms_wait {
-        let r = client.get_latest_blockhash();
-        if r.is_ok() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        count += 100;
-    }
-    if count >= ms_wait {
+
+    if let Err(e) = wait_for_validator_ready(&client, ms_wait, &program_ids) {
         eprintln!(
-            "Unable to get latest blockhash. Test validator does not look started. Check \
-             {test_ledger_log_filename:?} for errors. Consider increasing [test.startup_wait] in \
-             Anchor.toml."
+            "Test validator setup failed: {e}. Check {test_ledger_log_filename:?} for errors. \
+             Consider increasing [test.startup_wait] in Anchor.toml."
         );
         validator_handle.kill()?;
         std::process::exit(1);
     }
     Ok(validator_handle)
+}
+
+fn wait_for_validator_ready(
+    client: &RpcClient,
+    ms_wait: u64,
+    program_ids: &[Pubkey],
+) -> Result<()> {
+    let start = std::time::Instant::now();
+    let max_wait = std::time::Duration::from_millis(ms_wait);
+
+    // Wait for RPC to be up
+    while client.get_latest_blockhash().is_err() {
+        if start.elapsed() >= max_wait {
+            return Err(anyhow!(
+                "Timeout waiting for validator to start (RPC not ready)"
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    // Wait for programs to be deployed and executable
+    let mut pending: Vec<Pubkey> = program_ids.to_vec();
+    while !pending.is_empty() {
+        pending = pending
+            .chunks(100)
+            .flat_map(|chunk| match client.get_multiple_accounts(chunk) {
+                Ok(accounts) => chunk
+                    .iter()
+                    .zip(accounts.iter())
+                    .filter(|(_, acc)| !acc.as_ref().is_some_and(|a| a.executable))
+                    .map(|(pk, _)| *pk)
+                    .collect::<Vec<_>>(),
+                Err(_) => chunk.to_vec(),
+            })
+            .collect();
+        if start.elapsed() >= max_wait {
+            return Err(anyhow!("Timeout waiting for programs to deploy"));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    Ok(())
 }
 
 // Return the URL that solana-test-validator should be running on given the
@@ -6108,7 +6166,7 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
         let exit = if use_ts {
             let module_path = migrations_dir.join(deploy_ts);
             let deploy_script_host_str =
-                rust_template::deploy_ts_script_host(&url, &module_path.display().to_string());
+                template::deploy_ts_script_host(&url, &module_path.display().to_string());
             fs::write(deploy_ts, deploy_script_host_str)?;
 
             let pkg_manager_cmd =
@@ -6128,7 +6186,7 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
             let deploy_js = deploy_ts.with_extension("js");
             let module_path = migrations_dir.join(&deploy_js);
             let deploy_script_host_str =
-                rust_template::deploy_js_script_host(&url, &module_path.display().to_string());
+                template::deploy_js_script_host(&url, &module_path.display().to_string());
             fs::write(&deploy_js, deploy_script_host_str)?;
 
             std::process::Command::new("node")
@@ -6439,7 +6497,7 @@ fn shell(cfg_override: &ConfigOverride) -> Result<()> {
             }
         };
         let url = cluster_url(cfg, &cfg.test_validator, &cfg.surfpool_config);
-        let js_code = rust_template::node_shell(&url, &cfg.provider.wallet.to_string(), programs)?;
+        let js_code = template::node_shell(&url, &cfg.provider.wallet.to_string(), programs)?;
         let mut child = std::process::Command::new("node")
             .args(["-e", &js_code, "-i", "--experimental-repl-await"])
             .stdout(Stdio::inherit())
@@ -6586,9 +6644,21 @@ fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Res
     })?
 }
 
+enum ProgramIdComparison {
+    Same,
+    Mismatch {
+        lib_name: String,
+        actual_id: String,
+        declared_id: String,
+    },
+}
+
 /// Check if there's a mismatch between the program keypair and the `declare_id!` in the source code.
-/// Returns an error if a mismatch is detected, prompting the user to run `anchor keys sync`.
-fn check_program_id_mismatch(cfg: &WithPath<Config>, program_name: Option<String>) -> Result<()> {
+/// Returns `false` if there is a mismatch.
+fn check_program_id_mismatch(
+    cfg: &WithPath<Config>,
+    program_name: Option<String>,
+) -> Result<ProgramIdComparison> {
     let declare_id_regex = RegexBuilder::new(r#"^(([\w]+::)*)declare_id!\("(\w*)"\)"#)
         .multi_line(true)
         .build()
@@ -6614,20 +6684,16 @@ fn check_program_id_mismatch(cfg: &WithPath<Config>, program_name: Option<String
                 .filter(|program_id_match| program_id_match.as_str() != actual_program_id);
 
             if let Some(program_id_match) = incorrect_program_id {
-                let declared_id = program_id_match.as_str();
-                return Err(anyhow!(
-                    "Program ID mismatch detected for program '{}':\n  Keypair file has: {}\n  \
-                     Source code has:  {}\n\nPlease run 'anchor keys sync' to update the program \
-                     ID in your source code or use the '--ignore-keys' flag to skip this check.",
-                    program.lib_name,
-                    actual_program_id,
-                    declared_id
-                ));
+                return Ok(ProgramIdComparison::Mismatch {
+                    lib_name: program.lib_name,
+                    actual_id: actual_program_id,
+                    declared_id: program_id_match.as_str().to_string(),
+                });
             }
         }
     }
 
-    Ok(())
+    Ok(ProgramIdComparison::Same)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -7496,8 +7562,8 @@ mod tests {
     #[test]
     fn test_jest_package_json_pins_uuid_for_commonjs() {
         for package_json in [
-            rust_template::package_json(true, "ISC".to_owned(), AnchorVersion::V1),
-            rust_template::ts_package_json(true, "ISC".to_owned(), AnchorVersion::V1),
+            template::package_json(true, "ISC".to_owned(), AnchorVersion::V1),
+            template::ts_package_json(true, "ISC".to_owned(), AnchorVersion::V1),
         ] {
             let package: JsonValue = serde_json::from_str(&package_json).unwrap();
 

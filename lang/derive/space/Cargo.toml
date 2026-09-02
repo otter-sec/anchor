@@ -2,21 +2,23 @@
 name = "anchor-derive-space"
 version.workspace = true
 publish = true
-authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/otter-sec/anchor"
+repository.workspace = true
 license = "Apache-2.0"
 description = "Anchor Derive macro to automatically calculate the size of a structure or an enum"
 edition = "2021"
+
+[package.metadata.docs.rs]
+workspace = true
 
 [lib]
 proc-macro = true
 
 [lints.clippy]
-unwrap-used = "deny"
-expect-used = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
 panic = "deny"
 unimplemented = "deny"
-indexing-slicing = "deny"
+indexing_slicing = "deny"
 
 [dependencies]
 proc-macro2 = "1"

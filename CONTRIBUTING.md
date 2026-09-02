@@ -50,6 +50,41 @@ After coding:
 - If you've added a new folder to the `tests` directory, add it to the [CI](./.github/workflows/tests.yaml).
 - Before opening a PR, build, test, and run formatting and lints locally; see the sections below for commands.
 
+## Style Guidelines
+
+These are not strict guidelines, but following them is recommended.
+
+### Rust
+
+#### Macros
+
+- Always use fully qualified paths (except IDL build codegen)
+
+  ```rs
+  // Instead of
+  Account
+  // Use
+  anchor_lang::accounts::account::Account
+  ```
+
+- Always prefix `core` and `std` with `::`
+
+  ```rs
+  // Instead of
+  core::ptr::addr_of!
+  // Use
+  ::core::ptr::addr_of!
+  ```
+
+- Avoid prefixing crates that are unlikely to clash, including `anchor_lang` and other dependencies
+
+  ```rs
+  // Instead of
+  ::anchor_lang::Lamports
+  // Use
+  anchor_lang::Lamports
+  ```
+
 ## Building and Testing Locally
 
 Use the commands below to validate changes before opening a PR.
@@ -132,6 +167,6 @@ cargo clippy --all-targets -- -D warnings
 Enter the relevant JS package (e.g. `tests/`, or `ts/packages/anchor`) and run:
 
 ```sh
-yarn
+yarn install --frozen-lockfile
 yarn lint:fix
 ```

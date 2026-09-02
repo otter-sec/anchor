@@ -1,0 +1,189 @@
+name: Network Deploy
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+permissions:
+  contents: read
+
+env:
+  SOLANA_VERSION: 4.1.0-rc.1
+  CARGO_PROFILE: debug
+  ANCHOR_BINARY_NAME: anchor-binary-network-deploy
+  CARGO_CACHE_PATH: |
+    ~/.cargo/bin/
+    ~/.cargo/registry/index/
+    ~/.cargo/registry/cache/
+    ~/.cargo/git/db/
+    ./target/
+
+jobs:
+  setup-anchor-cli:
+    name: Setup Anchor CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup/
+
+      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+        name: Cache Cargo registry + index
+        id: cache-anchor
+        with:
+          path: ${{ env.CARGO_CACHE_PATH }}
+          key: cargo-${{ runner.os }}-${{ env.CARGO_PROFILE }}-anchor-${{ hashFiles('**/Cargo.lock') }}
+
+      - run: cargo install --path cli anchor-cli --locked --force --debug
+
+      - run: chmod +x ~/.cargo/bin/anchor
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ env.ANCHOR_BINARY_NAME }}
+          path: ~/.cargo/bin/anchor
+
+  deploy:
+    needs: setup-anchor-cli
+    name: Deploy with ${{ matrix.cluster }} feature set
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cluster: devnet
+            rpc_url: https://api.devnet.solana.com
+          - cluster: testnet
+            rpc_url: https://api.testnet.solana.com
+          - cluster: mainnet
+            rpc_url: https://api.mainnet-beta.solana.com
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup/
+      - uses: ./.github/actions/setup-solana/
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ env.ANCHOR_BINARY_NAME }}
+          path: ~/.cargo/bin/
+
+      - run: chmod +x ~/.cargo/bin/anchor
+
+      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+        name: Cache Cargo registry + index
+        id: cache-cargo-build
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-${{ runner.os }}-network-deploy-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Create minimal Anchor program
+        env:
+          SMOKE_PROJECT: minimal-deploy
+          SMOKE_WORKSPACE: ${{ runner.temp }}/minimal-deploy
+        run: |
+          set -euo pipefail
+
+          rm -rf "$SMOKE_WORKSPACE"
+          cd "$RUNNER_TEMP"
+
+          anchor init --no-git --no-install -t single "$SMOKE_PROJECT"
+
+          cd "$SMOKE_WORKSPACE"
+          cargo add anchor-lang \
+            --manifest-path programs/minimal-deploy/Cargo.toml \
+            --path "$GITHUB_WORKSPACE/lang"
+
+          anchor build --skip-lint
+
+      - name: Start validator with ${{ matrix.cluster }} feature set
+        env:
+          CLUSTER_RPC_URL: ${{ matrix.rpc_url }}
+          VALIDATOR_LEDGER: ${{ runner.temp }}/validator-ledger-${{ matrix.cluster }}
+          VALIDATOR_LOG: ${{ runner.temp }}/validator-${{ matrix.cluster }}.log
+        run: |
+          set -euo pipefail
+
+          : > "$VALIDATOR_LOG"
+
+          for start_attempt in {1..3}; do
+            echo "Starting validator, attempt $start_attempt" >> "$VALIDATOR_LOG"
+            rm -rf "$VALIDATOR_LEDGER"
+
+            solana-test-validator \
+              --reset \
+              --quiet \
+              --ledger "$VALIDATOR_LEDGER" \
+              --url "$CLUSTER_RPC_URL" \
+              --clone-feature-set \
+              >> "$VALIDATOR_LOG" 2>&1 &
+            validator_pid="$!"
+            echo "$validator_pid" > "$RUNNER_TEMP/solana-test-validator.pid"
+
+            for _ in {1..60}; do
+              if solana --url http://127.0.0.1:8899 cluster-version >/dev/null 2>&1; then
+                solana config set --url http://127.0.0.1:8899
+
+                for _ in {1..30}; do
+                  if solana --url http://127.0.0.1:8899 airdrop 10; then
+                    exit 0
+                  fi
+
+                  sleep 2
+                done
+
+                cat "$VALIDATOR_LOG"
+                exit 1
+              fi
+
+              if ! kill -0 "$validator_pid" 2>/dev/null; then
+                break
+              fi
+
+              sleep 2
+            done
+
+            cat "$VALIDATOR_LOG"
+            if kill -0 "$validator_pid" 2>/dev/null; then
+              kill "$validator_pid" || true
+              wait "$validator_pid" || true
+            fi
+
+            sleep 10
+          done
+
+          exit 1
+
+      - name: Deploy minimal program
+        env:
+          SMOKE_WORKSPACE: ${{ runner.temp }}/minimal-deploy
+        run: |
+          set -euo pipefail
+
+          cd "$SMOKE_WORKSPACE"
+          anchor deploy
+
+          program_id="$(solana-keygen pubkey target/deploy/minimal_deploy-keypair.json)"
+          solana --url http://127.0.0.1:8899 program show "$program_id"
+
+      - name: Print validator log
+        if: failure()
+        run: cat "$RUNNER_TEMP/validator-${{ matrix.cluster }}.log" || true
+
+      - name: Stop validator
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/solana-test-validator.pid" ]]; then
+            kill "$(cat "$RUNNER_TEMP/solana-test-validator.pid")" || true
+          fi

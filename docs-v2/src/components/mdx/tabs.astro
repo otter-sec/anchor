@@ -1,0 +1,76 @@
+---
+import { renderDescription } from '@/lib/render-description'
+
+interface Props {
+  items: string[]
+  defaultIndex?: number
+  sync?: string
+}
+
+const { items, defaultIndex = 0, sync } = Astro.props
+
+const ANNOT_RE = /\{:([a-z0-9]+)\}\s*$/i
+const RESPONSE_RE = /^(\d{3})\s+([a-z][a-z0-9]*)$/i
+const TAB_KEY_ALIASES: Record<string, string> = {
+  '403:badcaptcha': 'captcha-error',
+  '401:badrecaptchacode': 'captcha-error',
+}
+
+function tabKey(plain: string): string {
+  const normalized = plain.trim().replace(/\s+/g, ' ')
+  const response = normalized.match(RESPONSE_RE)
+  if (response) {
+    const status = response[1] ?? ''
+    const kind = response[2] ?? ''
+    const key = `${status}:${kind.replace(/v\d+$/i, '').toLowerCase()}`
+    return TAB_KEY_ALIASES[key] ?? key
+  }
+
+  return normalized.toLowerCase()
+}
+
+const renderedItems = await Promise.all(
+  items.map(async (label) => {
+    const match = label.match(ANNOT_RE)
+    const rendered = await renderDescription(
+      match && match.index !== undefined
+        ? `\`${label.slice(0, match.index).trim()}{:${match[1]}}\``
+        : label,
+    )
+    return { html: rendered.html, key: tabKey(rendered.plain) }
+  }),
+)
+---
+
+<div class="my-6 rounded-lg border-2" data-tabs data-sync-group={sync}>
+  <div
+    role="tablist"
+    class="border-border bg-muted/30 flex flex-wrap gap-1 rounded-t-[6px] border-b-2 px-2 py-1.5"
+  >
+    {
+      renderedItems.map((item, i) => (
+        <button
+          type="button"
+          role="tab"
+          data-tab-index={i}
+          data-tab-key={item.key}
+          aria-selected={i === defaultIndex}
+          tabindex={i === defaultIndex ? 0 : -1}
+          class="data-[selected=true]:bg-muted data-[selected=true]:text-foreground text-muted-foreground hover:text-foreground shrink-0 rounded-md px-3 py-1 text-sm font-medium whitespace-nowrap transition-colors"
+          data-selected={i === defaultIndex}
+        >
+          <span class="tab-label-code not-prose" set:html={item.html} />
+        </button>
+      ))
+    }
+  </div>
+  <div data-tabs-panels class="p-4" data-default-index={defaultIndex}>
+    <slot />
+  </div>
+</div>
+
+<script>
+  import { mountTabs } from '@/lib/client/tabs'
+
+  mountTabs()
+</script>

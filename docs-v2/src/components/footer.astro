@@ -1,0 +1,26 @@
+---
+import { Separator } from '@/components/ui/separator'
+import { SOCIAL_LINKS } from '@/consts'
+import Link from './link.astro'
+import SocialIcons from './social-icons.astro'
+---
+
+<footer
+  class="mx-auto mb-8 flex w-full max-w-3xl flex-col items-center justify-center gap-y-2 sm:mb-4 sm:flex-row sm:justify-between"
+>
+  <div class="flex flex-wrap items-center justify-center gap-x-2 text-center">
+    <span class="text-muted-foreground text-sm">
+      &copy; {new Date().getFullYear()} All rights reserved.
+    </span>
+    <Separator orientation="vertical" className="hidden h-4! sm:block" />
+    <p class="text-muted-foreground text-sm">
+      Made with 🤍 by <Link
+        href="https://github.com/jktrn"
+        class="text-foreground"
+        external
+        underline>enscribe</Link
+      >!
+    </p>
+  </div>
+  <SocialIcons links={SOCIAL_LINKS} />
+</footer>

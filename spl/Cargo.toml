@@ -2,15 +2,13 @@
 name = "anchor-spl"
 version.workspace = true
 publish = true
-authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/otter-sec/anchor"
+repository.workspace = true
 edition = "2021"
 license = "Apache-2.0"
 description = "CPI clients for SPL programs"
 
 [package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+workspace = true
 
 [features]
 default = ["associated_token", "mint", "token", "token_2022", "token_2022_extensions"]
@@ -20,7 +18,12 @@ devnet = []
 governance = []
 idl-build = ["anchor-lang/idl-build"]
 memo = ["spl-memo-interface"]
-metadata = ["mpl-token-metadata", "dep:solana-sysvar"]
+metadata = [
+    "mpl-token-metadata",
+    "dep:solana-sysvar",
+    "spl-token-interface",
+    "spl-associated-token-account-interface",
+]
 mint = []
 stake = ["dep:borsh", "dep:solana-stake-interface"]
 token = ["spl-token-interface"]
@@ -33,7 +36,7 @@ token_2022_extensions = [
 ]
 
 [dependencies]
-anchor-lang = { path = "../lang", version = "1.0.2", features = ["derive"] }
+anchor-lang = { workspace = true, features = ["derive"] }
 borsh = { version = "1.5.7", optional = true }
 mpl-token-metadata = { version = "=5.1.2-alpha.2", optional = true }
 solana-stake-interface = { workspace = true, features = ["borsh"], optional = true }

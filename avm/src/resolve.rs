@@ -660,7 +660,7 @@ mod tests {
             &dir.path().join("programs/foo/Cargo.toml"),
             "[package]\nname = \"foo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\
              [lib]\npath = \"src/lib.rs\"\n\
-             [dependencies]\nanchor-lang = { git = \"https://github.com/solana-foundation/anchor\" }\n",
+             [dependencies]\nanchor-lang = { git = \"https://github.com/otter-sec/anchor\" }\n",
         );
         write(&dir.path().join("programs/foo/src/lib.rs"), "");
         let err = resolve_anchor_version_with(dir.path(), &[], None).unwrap_err();

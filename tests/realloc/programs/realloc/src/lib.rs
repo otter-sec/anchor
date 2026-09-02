@@ -12,7 +12,21 @@ pub mod realloc {
         Ok(())
     }
 
+    pub fn initialize_box_payer(ctx: Context<InitializeBoxPayer>) -> Result<()> {
+        ctx.accounts.payer.data = vec![0];
+        ctx.accounts.payer.bump = ctx.bumps.payer;
+        Ok(())
+    }
+
     pub fn realloc(ctx: Context<Realloc>, len: u16) -> Result<()> {
+        ctx.accounts
+            .sample
+            .data
+            .resize_with(len as usize, Default::default);
+        Ok(())
+    }
+
+    pub fn realloc_box_payer(ctx: Context<ReallocBoxPayer>, len: u16) -> Result<()> {
         ctx.accounts
             .sample
             .data
@@ -52,6 +66,23 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitializeBoxPayer<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        init,
+        payer = authority,
+        seeds = [b"payer"],
+        bump,
+        space = Sample::space(1),
+    )]
+    pub payer: Box<Account<'info, Sample>>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 #[instruction(len: u16)]
 pub struct Realloc<'info> {
     #[account(mut)]
@@ -66,6 +97,32 @@ pub struct Realloc<'info> {
         realloc::zero = false,
     )]
     pub sample: Account<'info, Sample>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(len: u16)]
+pub struct ReallocBoxPayer<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"sample"],
+        bump = sample.bump,
+        realloc = Sample::space(len as usize),
+        realloc::payer = payer,
+        realloc::zero = false,
+    )]
+    pub sample: Account<'info, Sample>,
+
+    #[account(
+        mut,
+        seeds = [b"payer"],
+        bump = payer.bump,
+    )]
+    pub payer: Box<Account<'info, Sample>>,
 
     pub system_program: Program<'info, System>,
 }

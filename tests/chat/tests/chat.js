@@ -7,7 +7,7 @@ describe("chat", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
 
   // Program client handle.
-  const program = anchor.workspace.Chat;
+  const program = anchor.workspace.chat;
 
   // Chat room account.
   const chatRoom = anchor.web3.Keypair.generate();

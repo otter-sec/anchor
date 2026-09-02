@@ -1,0 +1,77 @@
+---
+title: 1.0.2
+description: Anchor release notes for 1.0.2.
+---
+
+`1.0.2` is a patch release with fixes across `anchor-cli`, `anchor-lang`, and `anchor-client`. The most user-visible change is the localnet bind default that unblocks `$ <blue>anchor</blue> test` against `solana-test-validator` `3.1.10` (see [bind localnet to `127.0.0.1` by default](#bind-localnet-to-127001-by-default)).
+
+---
+
+## How to upgrade
+
+To install the new `anchor-cli` via AVM:
+
+```console
+$ <blue>avm</blue> install 1.0.2
+```
+
+Or directly from the repository:
+
+```console
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor <dim>--tag</dim> v1.0.2 anchor-cli <dim>--locked</dim>
+```
+
+Then update Anchor crate(s) and TS package(s) to `1.0.2`.
+
+## Recommended Solana version
+
+The recommended Solana version is `3.1.10`, the same as [v1.0.0's recommended Solana version](./1-0-0#recommended-solana-version).
+
+## CLI
+
+### Bind localnet to `127.0.0.1` by default
+
+`$ <blue>anchor</blue> test` now defaults the localnet bind address to `127.0.0.1` rather than `0.0.0.0`. The previous `0.0.0.0` default caused `solana-test-validator` `3.1.10` to panic on startup, which broke the localnet test loop on the recommended Solana toolchain. The `bind_address` field in `Anchor.toml{:file}` still overrides the default for workspaces that need a different value.
+
+### Fall back to a priority fee of `0` on localnet
+
+`$ <blue>anchor</blue> deploy` and related commands no longer surface a fee-lookup error when targeting a local cluster. The recent-priority-fee RPC method may either fail or return an empty list against localnet, so the CLI now falls back to a priority fee of `0` in both cases and prints a warning. This matches the assumption that localnet does not need fee competition.
+
+## Lang
+
+### Faster IDL builds via cached `CrateContext`
+
+The IDL build pipeline now caches the parsed crate context inside a `OnceLock{:rs}` shared across `gen_idl_type{:rs}` invocations within a single compilation. Previously, each emitted type re-parsed `lib.rs{:file}` through `CrateContext::parse{:rs}`, which made IDL generation scale poorly with the number of account, instruction, and event types in a program. Workspaces with many defined types see materially shorter IDL build times.
+
+### Fix compile error with `init` and a runtime seeds expression
+
+`#[account(init, ..., seeds = <runtime expression>, bump)]{:rs}` now compiles when the seed list is computed at runtime rather than spelled out as a literal array:
+
+```rust showLineNumbers=false
+#[derive(Accounts)]
+pub struct Open<'info> {
+    #[account(
+        init,
+        payer = user,
+        space = 8,
+        seeds = pda_seeds(user.key()),
+        bump,
+    )]
+    pub pda: Account<'info, Dummy>,
+    #[account(mut)]
+    pub user: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+```
+
+Previously, the generated code pushed a borrowed temporary array (`&[__bump][..]{:rs}`) into the runtime signer-seeds vector. The borrow checker rejected this when the rest of the seed list came from a runtime expression because the temporary did not outlive the enclosing block. The fix binds the bump byte to a named local so the borrow lives long enough.
+
+## Client
+
+### Replace `solana-program` with `solana-hash`
+
+`anchor-client` previously depended on `solana-program` solely to re-export `solana_program::hash::Hash{:rs}`. The dependency is now `solana-hash`, which trims the client's transitive surface and reduces compile time for downstream Rust SDKs that consume `anchor-client`.
+
+---
+
+See the full list of notable changes in the [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.0.2/CHANGELOG.md#102---2026-05-02).

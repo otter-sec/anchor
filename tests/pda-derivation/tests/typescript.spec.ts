@@ -10,7 +10,7 @@ describe("typescript", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.PdaDerivation as Program<PdaDerivation>;
+  const program = anchor.workspace.pdaDerivation as Program<PdaDerivation>;
   const base = Keypair.generate();
   const dataKey = Keypair.generate();
   const data = new BN(1);
@@ -128,9 +128,20 @@ describe("typescript", () => {
       // intentionally not provided to test the error message
       await program.methods.resolutionError().rpc();
       throw new Error("Should throw due to account resolution failure!");
-    } catch (e) {
+    } catch (e: any) {
       expect(e.message).to.equal(
         "Reached maximum depth for account resolution. Unresolved accounts: `pda`, `anotherPda`"
+      );
+    }
+  });
+
+  it("Throws a dedicated error for self-referencing PDAs", async () => {
+    try {
+      await program.methods.selfReferencingSeed().rpc();
+      throw new Error("Should throw due to account resolution failure!");
+    } catch (e: any) {
+      expect(e.message).to.equal(
+        "Self-referencing PDAs must be provided manually. Unresolved PDAs: `selfReferencingPda`"
       );
     }
   });

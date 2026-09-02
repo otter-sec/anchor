@@ -1,0 +1,59 @@
+---
+import { cn } from '@/lib/utils'
+
+interface Item {
+  name: string
+  typeHtml: string
+  descriptionHtml: string
+  required?: boolean
+}
+
+interface Props {
+  items: Item[]
+  title?: string
+  class?: string
+}
+
+const { items, title, class: className } = Astro.props
+---
+
+{
+  items.length > 0 && (
+    <section class={cn('not-prose mt-8 mb-6', className)}>
+      {title && <h3 class="text-foreground mb-4 text-lg leading-tight">{title}</h3>}
+      <div class="divide-border divide-y-2 border-y-2">
+        {items.map((item) => (
+          <article class="pt-3 pb-2">
+            <header class="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+              <code class="text-foreground font-mono text-base leading-tight wrap-anywhere">
+                {item.name}
+                {item.required && (
+                  <>
+                    <span
+                      class="font-sans text-(--inline-tone-red)"
+                      aria-hidden="true"
+                      title="required"
+                    >
+                      *
+                    </span>
+                    <span class="sr-only"> required</span>
+                  </>
+                )}
+              </code>
+              <span
+                class="text-muted-foreground font-mono text-sm leading-snug wrap-break-word opacity-80 dark:opacity-60"
+                data-api-field-type
+                set:html={item.typeHtml}
+              />
+            </header>
+            <div
+              class="text-foreground/80 mt-1 text-sm leading-6 wrap-break-word"
+              data-doc-description
+              set:html={item.descriptionHtml}
+            />
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}

@@ -12,7 +12,7 @@ describe("basic-2", () => {
   const counter = anchor.web3.Keypair.generate();
 
   // Program for the tests.
-  const program = anchor.workspace.Basic2;
+  const program = anchor.workspace.basic2;
 
   it("Creates a counter", async () => {
     await program.methods

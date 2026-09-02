@@ -7,15 +7,20 @@ describe("realloc", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.Realloc as Program<Realloc>;
+  const program = anchor.workspace.realloc as Program<Realloc>;
   const authority = (program.provider as any).wallet
     .payer as anchor.web3.Keypair;
 
   let sample: anchor.web3.PublicKey;
+  let payer: anchor.web3.PublicKey;
 
   before(async () => {
     [sample] = await anchor.web3.PublicKey.findProgramAddress(
       [Buffer.from("sample")],
+      program.programId
+    );
+    [payer] = await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from("payer")],
       program.programId
     );
   });
@@ -48,6 +53,16 @@ describe("realloc", () => {
     }
   });
 
+  it("initializes boxed realloc payer", async () => {
+    await program.methods
+      .initializeBoxPayer()
+      .accounts({ authority: authority.publicKey, payer })
+      .rpc();
+
+    const payerAccount = await program.account.sample.fetch(payer);
+    assert.lengthOf(payerAccount.data, 1);
+  });
+
   it("realloc additive", async () => {
     await program.methods
       .realloc(5)
@@ -63,6 +78,41 @@ describe("realloc", () => {
       .realloc(1)
       .accounts({ authority: authority.publicKey, sample })
       .rpc();
+
+    const s = await program.account.sample.fetch(sample);
+    assert.lengthOf(s.data, 1);
+  });
+
+  it("realloc subtractive with boxed payer", async () => {
+    await program.methods
+      .realloc(5)
+      .accounts({ authority: authority.publicKey, sample })
+      .rpc();
+
+    const beforeSample = await program.provider.connection.getAccountInfo(
+      sample
+    );
+    const beforePayer = await program.provider.connection.getAccountInfo(payer);
+    assert.isNotNull(beforeSample);
+    assert.isNotNull(beforePayer);
+
+    await program.methods
+      .reallocBoxPayer(1)
+      .accounts({
+        authority: authority.publicKey,
+        sample,
+        payer,
+      })
+      .rpc();
+
+    const afterSample = await program.provider.connection.getAccountInfo(
+      sample
+    );
+    const afterPayer = await program.provider.connection.getAccountInfo(payer);
+    assert.isNotNull(afterSample);
+    assert.isNotNull(afterPayer);
+    assert.isBelow(afterSample!.lamports, beforeSample!.lamports);
+    assert.isAbove(afterPayer!.lamports, beforePayer!.lamports);
 
     const s = await program.account.sample.fetch(sample);
     assert.lengthOf(s.data, 1);

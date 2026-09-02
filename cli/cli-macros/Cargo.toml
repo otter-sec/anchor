@@ -7,6 +7,9 @@ repository =  "https://github.com/otter-sec/anchor"
 description = "Macros used internally by the Anchor CLI"
 license = "Apache-2.0"
 
+[package.metadata.docs.rs]
+workspace = true
+
 [lib]
 proc-macro = true
 

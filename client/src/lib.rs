@@ -45,7 +45,7 @@
 //!
 //! More examples can be found in [here].
 //!
-//! [here]: https://github.com/otter-sec/anchor/tree/v1.0.2/client/example/src
+//! [here]: https://github.com/otter-sec/anchor/tree/v1.1.2/client/example/src
 //!
 //! # Features
 //!
@@ -54,7 +54,7 @@
 //! The client is blocking by default. To enable asynchronous client, add `async` feature:
 //!
 //! ```toml
-//! anchor-client = { version = "1.0.2", features = ["async"] }
+//! anchor-client = { version = "1.1.2", features = ["async"] }
 //! ````
 //!
 //! ## `mock`
@@ -75,7 +75,8 @@ pub use {
     solana_message::AddressLookupTableAccount,
     solana_pubsub_client::nonblocking::pubsub_client::PubsubClientError,
     solana_rpc_client_api::{
-        client_error::Error as SolanaClientError, config::RpcSendTransactionConfig,
+        client_error::{Error as SolanaClientError, ErrorKind as SolanaClientErrorKind},
+        config::RpcSendTransactionConfig,
         filter::RpcFilterType,
     },
     solana_signer::{Signer, SignerError},
@@ -99,10 +100,18 @@ use {
             RpcTransactionLogsFilter,
         },
         filter::Memcmp,
+        request::RpcError,
         response::{Response as RpcResponse, RpcLogsResponse},
     },
     solana_signature::Signature,
-    std::{iter::Map, marker::PhantomData, ops::Deref, pin::Pin, sync::Arc, vec::IntoIter},
+    std::{
+        iter::Map,
+        marker::PhantomData,
+        ops::Deref,
+        pin::Pin,
+        sync::{Arc, LazyLock},
+        vec::IntoIter,
+    },
     thiserror::Error,
     tokio::{
         runtime::Handle,
@@ -266,7 +275,7 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
     ) -> Result<T, ClientError> {
         let account = self
             .internal_rpc_client
-            .get_account_with_commitment(&address, CommitmentConfig::processed())
+            .get_account_with_commitment(&address, self.internal_rpc_client.commitment())
             .await
             .map_err(Box::new)?
             .value
@@ -298,10 +307,16 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
                 .map_err(Box::new)?
                 .into_iter()
                 .map(|(key, account)| {
-                    let data = account
-                        .data
-                        .decode()
-                        .expect("account was fetched with binary encoding");
+                    let data = account.data.decode().ok_or_else(|| {
+                        ClientError::SolanaClientError(Box::new(
+                            SolanaClientError::new_with_request(
+                                SolanaClientErrorKind::Custom(
+                                    "Failed to decode account data".to_string(),
+                                ),
+                                solana_rpc_client_api::request::RpcRequest::GetProgramAccounts,
+                            ),
+                        ))
+                    })?;
                     Ok((key, T::try_deserialize(&mut data.as_slice())?))
                 }),
         })
@@ -349,8 +364,14 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
             })?;
 
             while let Some(logs) = notifications.next().await {
+                let signature: Signature = logs.value.signature.parse().map_err(|e| {
+                    ClientError::LogParseError(format!(
+                        "Invalid signature '{}': {e}",
+                        logs.value.signature
+                    ))
+                })?;
                 let ctx = EventContext {
-                    signature: logs.value.signature.parse().unwrap(),
+                    signature,
                     slot: logs.context.slot,
                 };
                 let events = parse_logs_response(logs, &program_id_str)?;
@@ -423,16 +444,26 @@ pub fn handle_program_log<T: anchor_lang::Event + anchor_lang::AnchorDeserialize
 }
 
 pub fn handle_system_log(this_program_str: &str, log: &str) -> (Option<String>, bool) {
+    static INVOKE_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[([\d]+)\]$").unwrap()
+    });
+    if let Some(invoke_match) = INVOKE_RE.captures(log) {
+        if invoke_match.get(1).unwrap().as_str() == this_program_str {
+            return (Some(this_program_str.to_string()), false);
+
+            // `Invoke [1]` instructions are pushed to the stack in `parse_logs_response`,
+            // so this ensures we only push CPIs to the stack at this stage
+        } else if invoke_match.get(2).unwrap().as_str() != "1" {
+            return (Some("cpi".to_string()), false); // Any string will do.
+        }
+    }
+
     if log.starts_with(&format!("Program {this_program_str} log:")) {
         (Some(this_program_str.to_string()), false)
-
-        // `Invoke [1]` instructions are pushed to the stack in `parse_logs_response`,
-        // so this ensures we only push CPIs to the stack at this stage
-    } else if log.contains("invoke") && !log.ends_with("[1]") {
-        (Some("cpi".to_string()), false) // Any string will do.
     } else {
-        let re = Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) success$").unwrap();
-        if re.is_match(log) {
+        static SUCESS_RE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) success$").unwrap());
+        if SUCESS_RE.is_match(log) {
             (None, true)
         } else {
             (None, false)
@@ -448,9 +479,10 @@ impl Execution {
     pub fn new(logs: &mut &[String]) -> Result<Self, ClientError> {
         let l = &logs[0];
         *logs = &logs[1..];
-
-        let re = Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[[\d]+\]$").unwrap();
-        let c = re
+        static RE: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[[\d]+\]$").unwrap()
+        });
+        let c = RE
             .captures(l)
             .ok_or_else(|| ClientError::LogParseError(l.to_string()))?;
         let program = c
@@ -463,18 +495,33 @@ impl Execution {
         })
     }
 
+    /// The program currently on top of the stack.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stack is empty. Prefer [`Execution::try_program`], which
+    /// returns `None` instead; the stack legitimately empties whenever a
+    /// top-level instruction returns, and more logs can still follow it.
     pub fn program(&self) -> String {
         assert!(!self.stack.is_empty());
         self.stack[self.stack.len() - 1].clone()
+    }
+
+    /// The program currently on top of the stack, or `None` when no
+    /// instruction is in scope.
+    pub fn try_program(&self) -> Option<String> {
+        self.stack.last().cloned()
     }
 
     pub fn push(&mut self, new_program: String) {
         self.stack.push(new_program);
     }
 
+    /// Pops the innermost program off the stack. A no-op when the stack is
+    /// already empty, which happens on a `Program <id> success` line that the
+    /// runtime emits without a matching tracked `invoke`.
     pub fn pop(&mut self) {
-        assert!(!self.stack.is_empty());
-        self.stack.pop().unwrap();
+        self.stack.pop();
     }
 }
 
@@ -502,10 +549,17 @@ pub enum ClientError {
     IOError(#[from] std::io::Error),
     #[error("{0}")]
     SignerError(#[from] SignerError),
-    #[error("{0}")]
-    CompileError(#[from] solana_message::CompileError),
-    #[error("Expected a legacy transaction but got a versioned transaction")]
-    NotLegacyTransaction,
+}
+
+impl ClientError {
+    /// Adding a new variant to [`ClientError`] is a breaking change in v1. To mitigate this issue,
+    /// use this helper method for all errors that cannot be precisely described by [`ClientError`].
+    fn other<E>(e: E) -> Self
+    where
+        E: Into<Box<dyn std::error::Error + Send + Sync>>,
+    {
+        Self::IOError(std::io::Error::other(e))
+    }
 }
 
 pub trait AsSigner {
@@ -695,7 +749,8 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
                     &instructions,
                     address_lookup_table_accounts,
                     recent_blockhash,
-                )?;
+                )
+                .map_err(ClientError::other)?;
                 Ok(solana_transaction::versioned::VersionedTransaction {
                     signatures: vec![
                         solana_signature::Signature::default();
@@ -734,7 +789,8 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
                     &instructions,
                     address_lookup_table_accounts,
                     latest_hash,
-                )?;
+                )
+                .map_err(ClientError::other)?;
                 solana_message::VersionedMessage::V0(msg)
             }
         };
@@ -751,25 +807,68 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     ) -> Result<solana_transaction::versioned::VersionedTransaction, ClientError> {
         let latest_hash = self
             .internal_rpc_client
-            .get_latest_blockhash()
+            .get_latest_blockhash_with_commitment(self.options)
             .await
-            .map_err(Box::new)?;
+            .map_err(Box::new)?
+            .0;
 
         self.signed_transaction_with_blockhash_versioned(version, latest_hash)
     }
 
     async fn send_internal(&self, version: TxVersion<'_>) -> Result<Signature, ClientError> {
-        let latest_hash = self
+        let (latest_hash, _) = self
             .internal_rpc_client
-            .get_latest_blockhash()
+            .get_latest_blockhash_with_commitment(self.options)
             .await
             .map_err(Box::new)?;
         let tx = self.signed_transaction_with_blockhash_versioned(version, latest_hash)?;
 
-        self.internal_rpc_client
-            .send_and_confirm_transaction(&tx)
+        // FIXME: Inline a no-spinner version of `RpcClient::send_and_confirm_transaction`
+        // that honors the configured commitment level (`self.options`). The built-in
+        // non-spinner methods ignore the commitment, and the only commitment-aware
+        // confirmation helper (`send_and_confirm_transaction_with_spinner_and_commitment`)
+        // forces a spinner onto callers. Replace this with the non-spinner,
+        // commitment-aware method once we upgrade to Solana 4.0, which adds it.
+        let signature = self
+            .internal_rpc_client
+            .send_transaction(&tx)
             .await
-            .map_err(|e| Box::new(e).into())
+            .map_err(Box::new)?;
+
+        loop {
+            match self
+                .internal_rpc_client
+                .get_signature_status_with_commitment(&signature, self.options)
+                .await
+                .map_err(Box::new)?
+            {
+                Some(Ok(())) => return Ok(signature),
+                Some(Err(e)) => return Err(ClientError::SolanaClientError(Box::new(e.into()))),
+                None => {
+                    if !self
+                        .internal_rpc_client
+                        .is_blockhash_valid(&latest_hash, CommitmentConfig::processed())
+                        .await
+                        .map_err(Box::new)?
+                    {
+                        // Block hash is not found by some reason
+                        break;
+                    } else if cfg!(not(test)) {
+                        // Retry twice a second
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    }
+                }
+            }
+        }
+
+        Err(ClientError::SolanaClientError(Box::new(
+            RpcError::ForUser(
+                "unable to confirm transaction. This can happen in situations such as transaction \
+                 expiration and insufficient fee-payer funds"
+                    .to_string(),
+            )
+            .into(),
+        )))
     }
 
     async fn send_with_spinner_and_config_internal(
@@ -777,19 +876,15 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
         version: TxVersion<'_>,
         config: RpcSendTransactionConfig,
     ) -> Result<Signature, ClientError> {
-        let latest_hash = self
+        let (latest_hash, _) = self
             .internal_rpc_client
-            .get_latest_blockhash()
+            .get_latest_blockhash_with_commitment(self.options)
             .await
             .map_err(Box::new)?;
         let tx = self.signed_transaction_with_blockhash_versioned(version, latest_hash)?;
 
         self.internal_rpc_client
-            .send_and_confirm_transaction_with_spinner_and_config(
-                &tx,
-                self.internal_rpc_client.commitment(),
-                config,
-            )
+            .send_and_confirm_transaction_with_spinner_and_config(&tx, self.options, config)
             .await
             .map_err(|e| Box::new(e).into())
     }
@@ -805,12 +900,32 @@ fn parse_logs_response<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
         if let Ok(mut execution) = Execution::new(&mut logs) {
             // Create a new peekable iterator so that we can peek at the next log whilst iterating
             let mut logs_iter = logs.iter().peekable();
-            let regex = Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[(\d+)\]$").unwrap();
+            static RE: LazyLock<Regex> = LazyLock::new(|| {
+                Regex::new(r"^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[(\d+)\]$").unwrap()
+            });
 
             while let Some(l) = logs_iter.next() {
+                // No instruction is in scope. This is reached whenever a
+                // top-level instruction has returned but the log stream has
+                // not ended -- most commonly the runtime's trailing
+                // `"Log truncated"` marker, which is appended after the final
+                // `success` when a transaction overruns the log buffer.
+                //
+                // Only a new top-level `invoke [1]` can re-enter a program
+                // context; anything else carries no events, so skip it rather
+                // than panicking in `Execution::program`.
+                let Some(current_program) = execution.try_program() else {
+                    if let Some(caps) = RE.captures(l) {
+                        if &caps[2] == "1" {
+                            execution.push(caps[1].to_string());
+                        }
+                    }
+                    continue;
+                };
+
                 // Parse the log.
                 let (event, new_program, did_pop) = {
-                    if program_id_str == execution.program() {
+                    if program_id_str == current_program {
                         handle_program_log(program_id_str, l)?
                     } else {
                         let (program, did_pop) = handle_system_log(program_id_str, l);
@@ -843,7 +958,7 @@ fn parse_logs_response<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
                     // `"Program log: ...invoke [1]"`), which then fail the strict
                     // `^Program <pubkey> invoke [N]$` regex and panic on unwrap.
                     if let Some(&next_log) = logs_iter.peek() {
-                        if let Some(caps) = regex.captures(next_log) {
+                        if let Some(caps) = RE.captures(next_log) {
                             if &caps[2] == "1" {
                                 execution.push(caps[1].to_string());
                             }
@@ -861,7 +976,7 @@ mod tests {
     // Creating a mock struct that implements `anchor_lang::events`
     // for type inference in `test_logs`
     use {
-        anchor_lang::prelude::*,
+        anchor_lang::{prelude::*, Event},
         futures::{SinkExt, StreamExt},
         solana_rpc_client_api::response::RpcResponseContext,
         std::sync::atomic::{AtomicU64, Ordering},
@@ -1080,6 +1195,172 @@ mod tests {
             "VeryCoolProgram",
         )
         .unwrap();
+
+        Ok(())
+    }
+
+    #[test]
+    fn execution_pop_past_empty_is_not_a_panic() {
+        let mut logs: &[String] =
+            &["Program term9YPb9mzAsABaqN71A4xdbxHmpBNZavpBiQKZzN3 invoke [1]".to_string()];
+        let mut exe = Execution::new(&mut logs).unwrap();
+        assert_eq!(
+            exe.try_program().as_deref(),
+            Some("term9YPb9mzAsABaqN71A4xdbxHmpBNZavpBiQKZzN3")
+        );
+
+        exe.pop();
+        assert_eq!(exe.try_program(), None);
+
+        // A second pop with nothing left used to trip `assert!(!self.stack.is_empty())`.
+        exe.pop();
+        assert_eq!(exe.try_program(), None);
+    }
+
+    /// Regression for #1941: the runtime appends a bare `"Log truncated"` line
+    /// after the final `success` when a transaction overruns the log buffer.
+    /// That line arrives with an empty stack, and `Execution::program` used to
+    /// panic on it -- taking down the whole `logs_subscribe` thread rather than
+    /// returning an error.
+    #[test]
+    fn test_parse_logs_response_trailing_log_after_last_instruction() -> Result<()> {
+        let logs = [
+            "Program ComputeBudget111111111111111111111111111111 invoke [1]",
+            "Program ComputeBudget111111111111111111111111111111 success",
+            "Log truncated",
+        ];
+        let logs: Vec<String> = logs.iter().map(|&l| l.to_string()).collect();
+
+        let events = parse_logs_response::<MockEvent>(
+            RpcResponse {
+                context: RpcResponseContext::new(0),
+                value: RpcLogsResponse {
+                    signature: "".to_string(),
+                    err: None,
+                    logs,
+                },
+            },
+            "term9YPb9mzAsABaqN71A4xdbxHmpBNZavpBiQKZzN3",
+        )
+        .unwrap();
+
+        assert!(events.is_empty());
+
+        Ok(())
+    }
+
+    /// The empty-stack guard must skip only the logs that carry no events -- a
+    /// later top-level `invoke [1]` still has to re-enter the program context,
+    /// or the fix would trade a panic for silently dropped events.
+    #[test]
+    fn test_parse_logs_response_event_after_trailing_log() -> Result<()> {
+        use {
+            anchor_lang::__private::base64,
+            base64::{engine::general_purpose::STANDARD, Engine},
+        };
+
+        let program_data_log = format!("Program data: {}", STANDARD.encode(MockEvent {}.data()));
+
+        let logs = vec![
+            "Program ComputeBudget111111111111111111111111111111 invoke [1]".to_string(),
+            "Program ComputeBudget111111111111111111111111111111 success".to_string(),
+            // Empty stack from here until the next top-level invoke.
+            "Log truncated".to_string(),
+            "Program term9YPb9mzAsABaqN71A4xdbxHmpBNZavpBiQKZzN3 invoke [1]".to_string(),
+            program_data_log,
+            "Program term9YPb9mzAsABaqN71A4xdbxHmpBNZavpBiQKZzN3 success".to_string(),
+        ];
+
+        let events = parse_logs_response::<MockEvent>(
+            RpcResponse {
+                context: RpcResponseContext::new(0),
+                value: RpcLogsResponse {
+                    signature: "".to_string(),
+                    err: None,
+                    logs,
+                },
+            },
+            "term9YPb9mzAsABaqN71A4xdbxHmpBNZavpBiQKZzN3",
+        )
+        .unwrap();
+
+        assert_eq!(events.len(), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_log_response_inner_events() -> Result<()> {
+        use {
+            anchor_lang::__private::base64,
+            base64::{engine::general_purpose::STANDARD, Engine},
+        };
+
+        let mock_event = MockEvent {};
+        let program_data_log = format!("Program data: {}", STANDARD.encode(mock_event.data()));
+
+        let logs = vec![
+            "Program ComputeBudget111111111111111111111111111111 invoke [1]",
+            "Program ComputeBudget111111111111111111111111111111 success",
+            "Program ComputeBudget111111111111111111111111111111 invoke [1]",
+            "Program ComputeBudget111111111111111111111111111111 success",
+            "Program term9YPb9mzAsABaqN71A4xdbxHmpBNZavpBiQKZzN3 invoke [1]",
+            "Program log: Instruction: ValidateNonce",
+            "Program term9YPb9mzAsABaqN71A4xdbxHmpBNZavpBiQKZzN3 consumed 4839 of 239700 compute \
+             units",
+            "Program term9YPb9mzAsABaqN71A4xdbxHmpBNZavpBiQKZzN3 success",
+            "Program term9YPb9mzAsABaqN71A4xdbxHmpBNZavpBiQKZzN3 invoke [1]",
+            "Program log: Instruction: SellExactInPumpFunV3",
+            "Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P invoke [2]",
+            "Program log: Instruction: Sell",
+            "Program pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ invoke [3]",
+            "Program log: Instruction: GetFees",
+            "Program pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ consumed 3136 of 187774 compute \
+             units",
+            "Program return: pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ \
+             AAAAAAAAAABfAAAAAAAAAB4AAAAAAAAA",
+            "Program pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ success",
+            "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb invoke [3]",
+            "Program log: Instruction: TransferChecked",
+            "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb consumed 2475 of 180928 compute \
+             units",
+            "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb success",
+            &program_data_log,
+            "Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P invoke [3]",
+            "Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P consumed 2060 of 166037 compute \
+             units",
+            "Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P success",
+            "Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P consumed 60634 of 223605 compute \
+             units",
+            "Program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P success",
+            "Program term9YPb9mzAsABaqN71A4xdbxHmpBNZavpBiQKZzN3 consumed 72662 of 234861 compute \
+             units",
+            "Program term9YPb9mzAsABaqN71A4xdbxHmpBNZavpBiQKZzN3 success",
+            "Program 11111111111111111111111111111111 invoke [1]",
+            "Program 11111111111111111111111111111111 success",
+            "Program 11111111111111111111111111111111 invoke [1]",
+            "Program 11111111111111111111111111111111 success",
+        ];
+
+        // Converting to Vec<String> as expected in `RpcLogsResponse`
+        let logs: Vec<String> = logs.iter().map(|&l| l.to_string()).collect();
+
+        let program_id_str = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
+
+        let events = parse_logs_response::<MockEvent>(
+            RpcResponse {
+                context: RpcResponseContext::new(0),
+                value: RpcLogsResponse {
+                    signature: "".to_string(),
+                    err: None,
+                    logs: logs.to_vec(),
+                },
+            },
+            program_id_str,
+        )
+        .unwrap();
+
+        assert_eq!(events.len(), 1);
 
         Ok(())
     }

@@ -1,0 +1,239 @@
+---
+import DocBanner from '@/components/docs/banner.astro'
+import DocNavigation from '@/components/docs/doc-navigation.astro'
+import DocsAside from '@/components/docs/docs-aside.astro'
+import LastUpdated from '@/components/docs/last-updated.astro'
+import MobileSidebar from '@/components/docs/mobile-sidebar.astro'
+import Header from '@/components/header.astro'
+import CardGrid from '@/components/mdx/card-grid.astro'
+import Card from '@/components/mdx/card.astro'
+import PageHead from '@/components/page-head.astro'
+import TOCHeader from '@/components/toc-header.astro'
+import TOCSidebar from '@/components/toc-sidebar.astro'
+import Base from '@/layouts/base.astro'
+import { docHref, docOgImageHref, type Doc } from '@/lib/docs'
+import { renderDescription } from '@/lib/render-description'
+import type { DocsVersionSwitchOption, IndexChild } from '@/lib/sidebar'
+import { cn } from '@/lib/utils'
+import type { FlatDoc, SidebarNode } from '@/types'
+import type { MarkdownHeading } from 'astro'
+
+interface Props {
+  doc: Doc
+  headings: MarkdownHeading[]
+  sidebar: SidebarNode[]
+  versionSidebars?: {
+    v1: SidebarNode[]
+    v2: SidebarNode[]
+  }
+  versionOptions?: DocsVersionSwitchOption[]
+  prev: FlatDoc | null
+  next: FlatDoc | null
+  editUrl: string | null
+  lastUpdated: Date | null
+  tocMinDepth: number
+  tocMaxDepth: number
+  tocEnabled: boolean
+  indexChildren: IndexChild[]
+  scrollGroup?: {
+    path: string
+    label: string
+    description?: string
+  } | null
+}
+
+const {
+  doc,
+  headings,
+  sidebar,
+  versionSidebars,
+  versionOptions,
+  prev,
+  next,
+  editUrl,
+  lastUpdated,
+  tocMinDepth,
+  tocMaxDepth,
+  tocEnabled,
+  indexChildren,
+  scrollGroup = null,
+} = Astro.props
+
+const isDocsHome = doc.id === 'index'
+const hasArticleNavigation = Boolean(prev || next)
+const currentYear = new Date().getFullYear()
+const pageTitle = scrollGroup?.label ?? doc.data.title
+const pageDescription = scrollGroup?.description ?? doc.data.description
+const pageHeaderEnabled = scrollGroup ? true : doc.data.pageHeader
+const banner = doc.data.banner === false ? null : (doc.data.banner ?? 'random')
+const hasBanner = Boolean(banner)
+const bannerSize = isDocsHome ? 'full' : 'compact'
+
+const renderedTitle = await renderDescription(pageTitle)
+const renderedDescription = pageDescription ? await renderDescription(pageDescription) : null
+
+const renderedIndexChildren = await Promise.all(
+  indexChildren.map(async (child) => ({
+    ...child,
+    renderedLabel: await renderDescription(child.label),
+    rendered: child.description ? await renderDescription(child.description) : null,
+  })),
+)
+---
+
+<Base>
+  <PageHead
+    slot="head"
+    title={renderedTitle.plain}
+    description={renderedDescription?.plain}
+    image={docOgImageHref(doc.id)}
+    canonicalHref={scrollGroup ? docHref(scrollGroup.path) : undefined}
+  />
+  {editUrl && <meta slot="head" name="docs-edit-url" content={editUrl} />}
+
+  <div class="grid flex-1 grid-cols-1 xl:grid-cols-[16rem_minmax(0,1fr)]">
+    <DocsAside tree={sidebar} versionTrees={versionSidebars} versionOptions={versionOptions} />
+    <MobileSidebar tree={sidebar} versionTrees={versionSidebars} versionOptions={versionOptions} />
+
+    <div class={cn('flex flex-col overflow-x-clip xl:pb-6', hasBanner ? 'xl:pt-0' : 'xl:pt-16')}>
+      <header class="bg-background/80 sticky top-0 z-40 border-b backdrop-blur-sm xl:hidden">
+        <Header />
+      </header>
+
+      {banner && <DocBanner banner={banner} size={bannerSize} />}
+
+      {
+        tocEnabled && (
+          <TOCHeader headings={headings} minDepth={tocMinDepth} maxDepth={tocMaxDepth} />
+        )
+      }
+
+      <main
+        class={cn(
+          'mx-auto flex w-full grow flex-col gap-y-6 pr-4 pl-4 xl:ml-[max(0px,calc((100vw-16rem-96rem)/2))] xl:pr-6',
+          !doc.data.pageHeader && 'mt-4 xl:mt-0',
+        )}
+      >
+        <div
+          data-doc-content-grid
+          class={cn(
+            'grid grid-cols-1 gap-8',
+            scrollGroup
+              ? 'xl:grid-cols-[minmax(0,60rem)]'
+              : doc.data.wide && tocEnabled
+                ? 'xl:grid-cols-[minmax(0,64rem)_minmax(14rem,16rem)]'
+                : doc.data.wide
+                  ? 'xl:grid-cols-[minmax(0,64rem)]'
+                  : 'xl:grid-cols-[minmax(0,42rem)_minmax(14rem,16rem)]',
+          )}
+        >
+          <article
+            class={cn(
+              'mx-auto w-full min-w-0 xl:mx-0',
+              scrollGroup ? 'max-w-2xl xl:max-w-none' : doc.data.wide ? 'max-w-5xl' : 'max-w-2xl',
+            )}
+            data-pagefind-body
+            data-mdx-aside-shell
+            data-scroll-group-root={scrollGroup ? scrollGroup.path : undefined}
+          >
+            {
+              pageHeaderEnabled && (
+                <header
+                  class={cn(
+                    'mt-6 mb-8 flex flex-col gap-3',
+                    !hasBanner && 'xl:-mt-3',
+                    !doc.data.wide && 'max-w-2xl',
+                  )}
+                >
+                  <h1
+                    id="post-title"
+                    class="scroll-mt-32 text-3xl leading-tight font-medium sm:text-4xl xl:scroll-mt-[calc(var(--docs-announcement-offset,0)+4rem-4px)]"
+                    data-doc-title
+                    set:html={renderedTitle.html}
+                  />
+
+                  {renderedDescription && (
+                    <p
+                      class="text-muted-foreground text-lg text-pretty"
+                      data-doc-description
+                      set:html={renderedDescription.html}
+                    />
+                  )}
+                </header>
+              )
+            }
+
+            {
+              scrollGroup ? (
+                <slot />
+              ) : (
+                <div class="prose max-w-none" data-mdx-aside-layout>
+                  <slot />
+                </div>
+              )
+            }
+
+            {
+              renderedIndexChildren.length > 0 && (
+                <CardGrid class="not-prose mt-8">
+                  {renderedIndexChildren.map((child) => (
+                    <Card
+                      title={child.label}
+                      titleHtml={child.renderedLabel.html}
+                      href={child.href}
+                    >
+                      {child.rendered && (
+                        <span data-doc-description set:html={child.rendered.html} />
+                      )}
+                    </Card>
+                  ))}
+                </CardGrid>
+              )
+            }
+
+            <footer
+              class={cn('border-border/70 mt-16 border-t', scrollGroup && 'max-w-2xl')}
+              data-pagefind-ignore
+            >
+              {
+                hasArticleNavigation && (
+                  <div class="py-6">
+                    <DocNavigation prev={prev} next={next} />
+                  </div>
+                )
+              }
+              <div
+                class="text-muted-foreground flex h-[3.75rem] w-full flex-wrap items-center justify-between gap-3 text-sm leading-none"
+              >
+                <span class="leading-none">&copy; {currentYear} Anchor Docs</span>
+                {lastUpdated && <LastUpdated date={lastUpdated} />}
+              </div>
+            </footer>
+          </article>
+
+          {
+            tocEnabled && !scrollGroup && (
+              <TOCSidebar
+                headings={headings}
+                minDepth={tocMinDepth}
+                maxDepth={tocMaxDepth}
+                title={pageTitle}
+                class={hasBanner ? (bannerSize === 'full' ? 'mt-36' : 'mt-12') : undefined}
+              />
+            )
+          }
+        </div>
+      </main>
+    </div>
+  </div>
+</Base>
+
+<script>
+  import { mountKatexStyles } from '@/lib/client/katex-styles'
+  import { mountMdxAsides } from '@/lib/client/mdx-aside'
+  import { mountScrollGroup } from '@/lib/client/scroll-group'
+
+  mountKatexStyles()
+  mountMdxAsides()
+  mountScrollGroup()
+</script>

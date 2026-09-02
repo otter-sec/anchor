@@ -234,6 +234,16 @@ Examples: [Github](https://github.com/solana-developers/anchor-examples/tree/mai
 
 Description: Used to realloc program account space at the beginning of an
 instruction.
+
+If the change is additive, lamports are transferred from `realloc::payer` to
+maintain rent exemption. If the change is subtractive, all lamports above the
+new rent-exempt minimum are transferred back to `realloc::payer`.
+
+Warning: Do not use subtractive realloc on accounts that intentionally hold
+extra lamports, such as vaults. Those extra lamports will also be transferred
+to `realloc::payer`; the current v1 behavior does not limit refunds to rent
+savings alone.
+
 Examples: [Github](https://github.com/solana-developers/anchor-examples/tree/main/account-constraints/realloc)
 |
 [Solpg](https://beta.solpg.io/https://github.com/solana-developers/anchor-examples/tree/main/account-constraints/realloc)
@@ -336,6 +346,8 @@ Examples: [Github](https://github.com/solana-developers/anchor-examples/tree/mai
 
 ## Token Extensions Constraints
 
+Note that these extensions are not checked when used with `init_if_needed`.
+
 ### `#[account(extensions::close_authority::*)]`
 
 Description: Create or validate close authority extension on the mint account.
@@ -410,6 +422,7 @@ Description: You can access the instruction's arguments with the
 `#[instruction(..)]` attribute. You must list them in the same order as in the
 instruction handler but you can omit all arguments after the last one you need.
 Skipping arguments will result in an error.
+The attribute must appear after `#[derive(Accounts)]`.
 
 Examples:
 [Github](https://github.com/solana-developers/anchor-examples/tree/main/account-constraints/instruction)

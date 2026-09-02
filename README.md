@@ -29,9 +29,34 @@ Anchor is the most popular framework for Solana programs.
 
 ## Getting Started
 
-For a quickstart guide and in depth tutorials, see the [Anchor book](https://book.anchor-lang.com) and the [Anchor documentation](https://anchor-lang.com).
+For a quickstart guide and in depth tutorials, see the [Anchor documentation](https://www.anchor-lang.com/docs).
 
 To jump straight to examples, go [here](https://github.com/otter-sec/anchor/tree/master/examples). For the latest Rust and TypeScript API documentation, see [docs.rs](https://docs.rs/anchor-lang) and the [typedoc](https://www.anchor-lang.com/docs/clients/typescript).
+
+## Installation
+
+The recommended way to install the Anchor CLI is with the Anchor Version Manager (AVM).
+
+```sh
+curl -sSfL https://raw.githubusercontent.com/otter-sec/anchor/master/avm/install | sh
+```
+
+The installer downloads the latest nightly AVM and Anchor CLI binaries, enables
+the nightly channel, and links the `avm` and `anchor` commands into
+`~/.cargo/bin` when possible. After that, `anchor` will use the latest cached
+nightly build and periodically check for updates.
+
+If you already have AVM installed, you can enable the nightly channel directly:
+
+```sh
+avm nightly
+```
+
+To leave nightly mode and return to normal AVM version resolution, run:
+
+```sh
+avm nightly --disable
+```
 
 ## Packages
 

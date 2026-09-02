@@ -38,7 +38,7 @@ pub fn gen_accounts_mod(idl: &Idl) -> proc_macro2::TokenStream {
             match ty_def.serialization {
                 IdlSerialization::Borsh => quote! {
                     impl anchor_lang::AccountSerialize for #name {
-                        fn try_serialize<W: std::io::Write>(&self, writer: &mut W) -> anchor_lang::Result<()> {
+                        fn try_serialize<W: ::std::io::Write>(&self, writer: &mut W) -> anchor_lang::Result<()> {
                             if writer.write_all(#disc).is_err() {
                                 return Err(anchor_lang::error::ErrorCode::AccountDidNotSerialize.into());
                             }
@@ -102,7 +102,7 @@ pub fn gen_accounts_mod(idl: &Idl) -> proc_macro2::TokenStream {
             }
 
             impl anchor_lang::Owner for #name {
-                fn owner() -> Pubkey {
+                fn owner() -> anchor_lang::prelude::Pubkey {
                     #program_id
                 }
             }

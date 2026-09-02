@@ -12,14 +12,14 @@ declare_program!(external_legacy);
 // https://github.com/raydium-io/raydium-idl/blob/6123104304ebcb42be175cc297a2c221ac96bb96/raydium_clmm/amm_v3.json
 declare_program!(amm_v3);
 
-pub const GLOBAL: &[u8] = b"global";
+// Compilation check for an IDL type named after a prelude item: `Key` mirrors
+// mpl-core's account discriminator, which any IDL for a program that CPIs
+// into mpl-core embeds, and collides with the `anchor_lang::Key` trait (#4775)
+declare_program!(mpl_core_shape);
 
 #[program]
 pub mod declare_program {
-    use {
-        super::*,
-        anchor_lang::solana_program::{instruction::Instruction, program::invoke_signed},
-    };
+    use super::*;
 
     pub fn cpi(ctx: Context<Cpi>, value: u32) -> Result<()> {
         let cpi_my_account = &mut ctx.accounts.cpi_my_account;
@@ -94,33 +94,6 @@ pub mod declare_program {
 
         Ok(())
     }
-
-    pub fn proxy(ctx: Context<Proxy>, data: Vec<u8>) -> Result<()> {
-        let (authority, bump) = Pubkey::find_program_address(&[GLOBAL], &ID);
-
-        let accounts = ctx
-            .remaining_accounts
-            .iter()
-            .map(|ra| AccountMeta {
-                pubkey: ra.key(),
-                is_signer: ra.is_signer || &authority == ra.key,
-                is_writable: ra.is_writable,
-            })
-            .collect();
-
-        let signer_seeds: &[&[&[u8]]] = &[&[GLOBAL, &[bump]]];
-        invoke_signed(
-            &Instruction {
-                program_id: ctx.accounts.program.key(),
-                accounts,
-                data,
-            },
-            ctx.remaining_accounts,
-            signer_seeds,
-        )?;
-
-        Ok(())
-    }
 }
 
 #[derive(Accounts)]
@@ -129,14 +102,4 @@ pub struct Cpi<'info> {
     #[account(mut)]
     pub cpi_my_account: Account<'info, external::accounts::MyAccount>,
     pub external_program: Program<'info, External>,
-}
-
-#[derive(Accounts)]
-pub struct Utils<'info> {
-    pub authority: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct Proxy<'info> {
-    pub program: Program<'info, External>,
 }

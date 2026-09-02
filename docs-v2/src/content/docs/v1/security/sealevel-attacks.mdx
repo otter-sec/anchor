@@ -1,0 +1,12 @@
+---
+title: Sealevel attacks
+description: A curated list of common Solana security exploits and Anchor-idiomatic fixes from the Sealevel attacks repo.
+---
+
+Anchor eliminates many common footguns, but anything shipped to mainnet should be understood end to end. The [Sealevel attacks repository](https://github.com/coral-xyz/sealevel-attacks) catalogs common exploit patterns. Each entry comes in three variants: an `insecure` version showing the flawed code, a `secure` version with a fix, and a `recommended` version that uses idiomatic Anchor.
+
+<Callout variant="important" title="Not a substitute for review">
+  These examples are not exhaustive nor guaranteed to be secure on their own. Each one isolates a
+  single issue and its fix for study. Real programs combine multiple checks, and a clean entry here
+  does not mean a program built around that pattern is automatically safe.
+</Callout>

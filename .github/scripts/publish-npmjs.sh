@@ -28,10 +28,18 @@ publish() {
     return 0
   fi
 
+  local latest major_minor
+  latest="$(npm view "$name" dist-tags.latest 2>/dev/null || true)"
+  major_minor="$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")"
+
   local publish_args=()
   # If version looks like X.Y.Z-<something> (e.g. 1.0.0-rc.2), publish under dist-tag "next"
   if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-.+ ]]; then
     publish_args+=(--tag next)
+  # If we are releasing a backport, then we need to explicitly specify --tag as it can't be latest
+  elif [[ -n "$latest" ]] && [[ "$version" != "$latest" ]] &&
+     [[ "$(printf '%s\n%s\n' "$version" "$latest" | sort -V | tail -n1)" == "$latest" ]]; then
+    publish_args+=(--tag "back-$major_minor")
   fi
 
   if [[ "${DRY_RUN:-false}" == "true" ]]; then

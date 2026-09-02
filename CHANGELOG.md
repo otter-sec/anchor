@@ -13,40 +13,105 @@ The minor version will be incremented upon a breaking change and the patch versi
 ### Features
 
 - cli: Generate a TypeScript error constants file from the IDL during `anchor build` ([#3827](https://github.com/solana-foundation/anchor/pull/3827)).
+- lang: Always derive `Clone` and `Debug` for generated types in `declare_program!` ([#4723](https://github.com/solana-foundation/anchor/pull/4723)).
+- spl: Add pausable mint extension support ([#4092](https://github.com/solana-foundation/anchor/pull/4092)).
+- spl: Add `create_native_mint` and `initialize_non_transferable_mint` helpers ([#3512](https://github.com/otter-sec/anchor/pull/3512)).
+- spl: Add `reallocate` and `withdraw_excess_lamports` helpers ([#3516](https://github.com/otter-sec/anchor/pull/3516)).
+- spl: Added `token_metadata_remove_key` to support removing keys from token metadata extension ([#3717](https://github.com/solana-foundation/anchor/pull/3717)).
+- lang: Add `AccountLoader::new_unchecked` for constructing an `AccountLoader` without performing owner or discriminator checks ([#4162](https://github.com/solana-foundation/anchor/pull/4162)).
+- lang: Provide better error messages for `token` constraints ([#4698](https://github.com/solana-foundation/anchor/pull/4698)).
+- ts: Improve account resolution error of self-referencing PDAs ([#4711](https://github.com/solana-foundation/anchor/pull/4711)).
+- cli: Warn unused `Anchor.toml` fields ([#4749](https://github.com/solana-foundation/anchor/pull/4749)).
+
+### Fixes
+
+- spl: Fix `anchor-spl` failing to build with only the `metadata` feature ([#4742](https://github.com/solana-foundation/anchor/pull/4742)).
+- lang: Honor `is_signer` in generated client and CPI account metas, enabling PDA signer usage ([#3322](https://github.com/otter-sec/anchor/pull/3322)).
+- lang: Report invalid instruction arguments instead of silently omitting their instructions during parsing ([#4008](https://github.com/otter-sec/anchor/pull/4008)).
+- syn: Correct `bytemuck` serialization detection to avoid false positives from unrelated derives ([#4215](https://github.com/otter-sec/anchor/pull/4215)).
+- lang: Return an error instead of panicking when zero-copy account data is undersized ([#4555](https://github.com/otter-sec/anchor/pull/4555)).
+- lang: Handle numeric instruction suffixes in `declare_program!` generated account-module re-exports ([#4568](https://github.com/otter-sec/anchor/pull/4568)).
+- lang: Reject all-zero account discriminators ([#4645](https://github.com/otter-sec/anchor/pull/4645)).
+- lang: Preserve IDL namespace boundaries in `declare_program!` to prevent foreign-IDL name collisions with Anchor prelude items ([#4776](https://github.com/otter-sec/anchor/pull/4776)).
+- lang: Re-run ownership and discriminator checks when unloading `LazyAccount` after a CPI ([#4784](https://github.com/otter-sec/anchor/pull/4784)).
+- client: Fix ignored commitment level ([#4666](https://github.com/solana-foundation/anchor/pull/4666)).
+- lang: Remove cloning `AccountInfo` to read lamports in `init_if_needed` codegen ([#4675](https://github.com/solana-foundation/anchor/pull/4675)).
+- lang: Guard `AccountLoader<T>::exit` against zero-copy buffer truncation and bail with `AccountDidNotDeserialize` instead of rewriting the discriminator over an undersized buffer ([#4633](https://github.com/otter-sec/anchor/pull/4633)).
+- lang: Shorten invariant lifetimes during `Context` creation ([#4363](https://github.com/solana-foundation/anchor/pull/4363)).
+- lang: Qualify bare `error!` calls in require macros so they don't depend on global prelude imports ([#4639](https://github.com/otter-sec/anchor/pull/4639)).
+- ts: Guard recursive IDL layouts against stack overflows while preserving supported recursive types ([#4604](https://github.com/solana-foundation/anchor/pull/4604)).
+- lang: Fix missing error messages of the generated errors in `declare_program!` ([#4652](https://github.com/solana-foundation/anchor/pull/4652)).
+- spl: Fix wrong owner pubkey in CPI Guard enable/disable ([#4322](https://github.com/solana-foundation/anchor/pull/4322)).
+- spl: Add missing auth account to `group_pointer_update` ([#4324](https://github.com/solana-foundation/anchor/pull/4324)).
+- spl: Deprecate broken `cpi_guard_enable/disable` functions ([#4465](https://github.com/solana-foundation/anchor/pull/4465)).
+- lang: Reduce cloning in `realloc` constraint when shrinking ([#4642](https://github.com/solana-foundation/anchor/pull/4642)).
+- syn: Remove `anyhow` ([#4640](https://github.com/solana-foundation/anchor/pull/4640)).
+- lang: Sync type derives and simplify internal args creation in `declare_program!` ([#4667](https://github.com/solana-foundation/anchor/pull/4667)).
+- lang: Improve `std` hygiene inside macros ([#4700](https://github.com/solana-foundation/anchor/pull/4700)).
+- cli: Honor the SIMD-0431 minimum extend program size when extending program data ([#4785](https://github.com/otter-sec/anchor/pull/4785)).
+- client: Do not panic in `parse_logs_response` when logs continue after a top-level instruction returns, e.g. the runtime's trailing `"Log truncated"` marker ([#4967](https://github.com/solana-foundation/anchor/pull/4967)).
+
+### Breaking
+
+## [1.1.2] - 2026-06-26
+
+### Features
+
+### Fixes
+
+- deps: Tighten dependencies between `anchor-*` crates to reduce breakage ([#4726](https://github.com/otter-sec/anchor/pull/4726)).
+
+### Breaking
+
+## [1.1.1] - 2026-06-25
+
+### Features
+
 - ts: Re-implement `verifiedBuild` using the OtterSec registry (`verify.osec.io`), replacing the defunct `apr.dev` API ([#4522](https://github.com/solana-foundation/anchor/pull/4522)).
 - ts: Add `decodeIdlAccountRaw` ([#4375](https://github.com/solana-foundation/anchor/pull/4375)).
 - cli: Add `--stdout` flag to the `expand` command ([#4400](https://github.com/solana-foundation/anchor/pull/4400)).
 - client: Add versioned tx support ([#4207](https://github.com/solana-foundation/anchor/pull/4207)).
 - cli: Add `edition` and `rust-version` to template ([#4048](https://github.com/solana-foundation/anchor/pull/4048))
 - lang: Add `program_id` verification to CPI return values ([#4411](https://github.com/solana-foundation/anchor/pull/4411)).
-- spl: Add pausable mint extension support ([#4092](https://github.com/solana-foundation/anchor/pull/4092)).
-- cli: Resolve the target directory via `cargo metadata` to support target directory overrides ([#3817](https://github.com/solana-foundation/anchor/pull/3817)).
-- spl: Added `token_metadata_remove_key` to support removing keys from token metadata extension ([#3717](https://github.com/solana-foundation/anchor/pull/3717)).
+- cli: Resolve the target directory via `cargo metadata` so custom target locations (e.g. `CARGO_TARGET_DIR`, workspace-level overrides) work across build, test, deploy and IDL paths ([#3817](https://github.com/solana-foundation/anchor/pull/3817)).
 - cli: Allow configuring IDL JSON location in workspace config ([#4483](https://github.com/solana-foundation/anchor/pull/4483)).
 - lang: Derive `Clone`, `Debug`, `Copy`, and `Default` on generated client / CPI account structs and instruction args where the field types allow it ([#4085](https://github.com/solana-foundation/anchor/pull/4085)).
-- lang: Add `AccountLoader::new_unchecked` for constructing an `AccountLoader` without performing owner or discriminator checks ([#4162](https://github.com/solana-foundation/anchor/pull/4162)).
 - cli: Support multiple named scripts in `Anchor.toml` and run them via `anchor test --script <name>` / `anchor run <name>` ([#3999](https://github.com/solana-foundation/anchor/pull/3999)).
 - cli/idl: Add `fetch-historical` support to recover historical IDLs with the Anchor CLI ([#3992](https://github.com/solana-foundation/anchor/pull/3992)).
 - cli: `anchor init` refuses to create a new Anchor workspace inside an existing Cargo workspace to avoid broken nested layouts ([#4576](https://github.com/solana-foundation/anchor/pull/4576)).
+- cli: Add `r` as an alias to the `run` command ([#4643](https://github.com/solana-foundation/anchor/pull/4643)).
 
 ### Fixes
 
-- lang: Shorten invariant lifetimes during `Context` creation ([#4363](https://github.com/solana-foundation/anchor/pull/4363)).
-- ts: Guard recursive IDL layouts against stack overflows while preserving supported recursive types ([#4604](https://github.com/solana-foundation/anchor/pull/4604)).
-- idl: Bump version to 0.1.3 ([#4453](https://github.com/solana-foundation/anchor/pull/4453)).
+- cli: Warn instead of aborting `anchor build` when a program keypair and `declare_id!` do not match ([#4705](https://github.com/otter-sec/anchor/pull/4705)).
+- lang: Snapshot CPI return data before `Return::get()` validates the source program ([#4624](https://github.com/otter-sec/anchor/pull/4624)).
+- lang/syn: Remove remaining fallible IDL generation paths from clippy-denied code ([#4631](https://github.com/otter-sec/anchor/pull/4631)).
+- lang: Validate `max_len` arguments more strictly during space derivation ([#4707](https://github.com/otter-sec/anchor/pull/4707)).
+- ts: Remove `cross-fetch` dependency ([#4671](https://github.com/solana-foundation/anchor/pull/4671)).
+- lang: Set `anchor-lang` Minimum Supported Rust Version to `1.89` ([#4638](https://github.com/otter-sec/anchor/pull/4638)).
 - lang: Migrate `anchor-syn` from syn 1.x to syn 2.0, allowing use of modern Rust syntax ([#4523](https://github.com/solana-foundation/anchor/issues/4523)).
+- idl: Bump version to 0.1.3 ([#4453](https://github.com/solana-foundation/anchor/pull/4453)).
 - lang: Avoid fatal errors in IDL building when modern Rust syntax is in use ([#4520](https://github.com/solana-foundation/anchor/pull/4520)).
+- lang: Return `InvalidProgramId` when `Migration::exit` cannot persist migrated state because `To::owner()` does not match `program_id` ([#4706](https://github.com/otter-sec/anchor/pull/4706)).
 - client: Avoid panic in `parse_logs_response` when a program-emitted log line ends with `invoke [1]` ([#4461](https://github.com/solana-foundation/anchor/issues/4461)).
 - cli: Correctly honor `--skip-seed-phrase-validation` in `keygen recover` ([#4417](https://github.com/solana-foundation/anchor/pull/4417)).
-- spl: Fix wrong owner pubkey in CPI Guard enable/disable ([#4322](https://github.com/solana-foundation/anchor/pull/4322)).
 - ts: Fix `sha256.hash()` returning corrupted output by using hex encoding ([#4404](https://github.com/solana-foundation/anchor/pull/4404)).
-- spl: Add missing auth account to `group_pointer_update` ([#4324](https://github.com/solana-foundation/anchor/pull/4324)).
 - lang: Support module constants in `max_len` attribute ([#3879](https://github.com/solana-foundation/anchor/pull/3879)).
-- spl: Deprecate broken `cpi_guard_enable/disable` functions ([#4465](https://github.com/solana-foundation/anchor/pull/4465)).
 - cli: Bump `cargo_toml` to allow parsing `resolver = "3"` ([#4515](https://github.com/solana-foundation/anchor/pull/4515)).
 - ts: Validate instruction args in `BorshInstructionCoder.encode` to reject typo'd or missing fields instead of silently ignoring them ([#4560](https://github.com/solana-foundation/anchor/pull/4560)).
 - ts: Align TS `camelCase` conversion with Rust `heck` for digit-letter identifiers so generated client names match Rust identifiers ([#4571](https://github.com/solana-foundation/anchor/pull/4571)).
 - cli: Warn if `event-cpi` instruction is unreachable with custom discriminators ([#4614](https://github.com/solana-foundation/anchor/pull/4614)).
+- ts: Update `engines.node` to `>= 20.18` ([#4647](https://github.com/solana-foundation/anchor/pull/4647)).
+
+### Breaking
+
+## [1.0.3] - 2026-06-26
+
+### Features
+
+### Fixes
+
+- deps: Tighten dependencies between `anchor-*` crates to reduce breakage ([#4726](https://github.com/otter-sec/anchor/pull/4726)).
 
 ### Breaking
 

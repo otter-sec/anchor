@@ -18,7 +18,7 @@ describe("wrapper", () => {
     [TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID],
     [TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID],
   ];
-  const program = anchor.workspace.TokenWrapper as Program<TokenWrapper>;
+  const program = anchor.workspace.tokenWrapper as Program<TokenWrapper>;
 
   let depositMint: Token = null;
   let wrappedMint: Token = null;

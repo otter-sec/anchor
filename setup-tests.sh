@@ -1,8 +1,8 @@
 #!/bin/bash
 
 active_version=$(solana -V | awk '{print $2}')
-if [ "$active_version" != "3.1.10" ]; then
-  agave-install init 3.1.10
+if [ "$active_version" != "4.1.2" ]; then
+  agave-install init 4.1.2
 fi
 
 git submodule update --init --recursive --depth 1

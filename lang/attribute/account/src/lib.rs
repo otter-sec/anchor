@@ -9,7 +9,7 @@ use {
         parse_macro_input,
         spanned::Spanned,
         token::Paren,
-        Expr, Ident, LitStr, Token,
+        Ident, LitStr, Token,
     },
 };
 
@@ -56,7 +56,7 @@ mod lazy;
 ///     - `discriminator = MY_DISC`
 ///     - `discriminator = get_disc(...)`
 ///
-/// All-zeroed discriminators are not supported.
+/// All-zero or empty discriminators are not supported.
 ///
 /// # Zero Copy Deserialization
 ///
@@ -113,37 +113,27 @@ pub fn account(
     let account_name_str = account_name.to_string();
     let (impl_gen, type_gen, where_clause) = account_strct.generics.split_for_impl();
 
-    fn is_zero_lit(expr: &Expr) -> bool {
-        matches!(
-            expr,
-            Expr::Lit(syn::ExprLit { lit: syn::Lit::Int(val), .. })
-                if val.base10_parse::<u128>().is_ok_and(|v| v == 0)
-        )
-    }
-
-    fn is_zeroed_discriminator(mut discr: &Expr) -> bool {
-        // Peel references
-        while let Expr::Reference(syn::ExprReference { expr, .. }) = discr {
-            discr = expr;
-        }
-        match discr {
-            Expr::Lit(_) => is_zero_lit(discr),
-            Expr::Array(arr) => arr.elems.iter().all(is_zero_lit),
-            // [0; N] — repeat expression
-            Expr::Repeat(rep) => is_zero_lit(&rep.expr),
-            _ => false,
-        }
-    }
-
     let discriminator = match args.overrides.and_then(|ov| ov.discriminator) {
         Some(discrim) => {
-            let zero_err = is_zeroed_discriminator(&discrim).then(||
-                quote_spanned! {discrim.span() => compile_error!("all-zero discriminators are not supported");}
-            );
-            quote! {
+            quote_spanned! {discrim.span() =>
                 {
-                    #zero_err
-                    #discrim
+                    let discriminator = #discrim;
+                    if discriminator.is_empty() {
+                        panic!("all-zero or empty discriminators are not supported");
+                    }
+
+                    let mut i = 0;
+                    while i < discriminator.len() {
+                        if discriminator[i] != 0 {
+                            break;
+                        }
+                        i += 1;
+                    }
+
+                    if i == discriminator.len() {
+                        panic!("all-zero or empty discriminators are not supported");
+                    }
+                    discriminator
                 }
             }
         }
@@ -266,7 +256,7 @@ pub fn account(
 
                 #[automatically_derived]
                 impl #impl_gen anchor_lang::AccountSerialize for #account_name #type_gen #where_clause {
-                    fn try_serialize<W: std::io::Write>(&self, writer: &mut W) -> anchor_lang::Result<()> {
+                    fn try_serialize<W: ::std::io::Write>(&self, writer: &mut W) -> anchor_lang::Result<()> {
                         if writer.write_all(#disc).is_err() {
                             return Err(anchor_lang::error::ErrorCode::AccountDidNotSerialize.into());
                         }

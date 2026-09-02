@@ -17,7 +17,7 @@ pub fn gen_program_mod(program_name: &str) -> proc_macro2::TokenStream {
             pub struct #name;
 
             impl anchor_lang::Id for #name {
-                fn id() -> Pubkey {
+                fn id() -> anchor_lang::prelude::Pubkey {
                     #id
                 }
             }
