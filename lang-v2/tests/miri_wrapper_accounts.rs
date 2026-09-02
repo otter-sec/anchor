@@ -10,7 +10,7 @@
 use anchor_lang::testing::AccountBuffer;
 
 use anchor_lang::{
-    accounts::{Instructions, SystemAccount, Sysvar, UncheckedAccount},
+    accounts::{SystemAccount, Sysvar, SysvarInstructions, UncheckedAccount},
     prelude::{Program, Signer},
     programs::{System, Token},
     AnchorAccount,
@@ -134,10 +134,10 @@ fn distinct_wrapper_types_on_distinct_buffers() {
     assert_ne!(sys.address().to_bytes(), unchecked.address().to_bytes());
 }
 
-// -- Sysvar<Instructions> --------------------------------------------
+// -- Sysvar<SysvarInstructions> --------------------------------------------
 //
 // The one wrapper here that stores a `'static`-transmuted borrow guard
-// alongside its `AccountView` (`SysvarLoad for Instructions` in
+// alongside its `AccountView` (`SysvarLoad for SysvarInstructions` in
 // `accounts/sysvar.rs`). The claim under test: `Ref` holds raw pointers into
 // the account's runtime memory, not into the `AccountView`, so moving the view
 // into `Sysvar<T>` after taking the borrow keeps the guard's provenance valid
@@ -172,7 +172,7 @@ fn sysvar_instructions_guard_survives_the_view_move() {
     buf.write_data(&blob);
 
     let view = unsafe { buf.view() };
-    let sysvar = Sysvar::<Instructions>::load(view).unwrap();
+    let sysvar = Sysvar::<SysvarInstructions>::load(view).unwrap();
 
     // Reading through the transmuted guard must stay in-bounds of the
     // provenance established by `try_borrow()`.

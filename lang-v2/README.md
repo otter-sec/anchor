@@ -108,7 +108,7 @@ None of these carry an `'info` lifetime — pinocchio's account model is static-
 | `SystemAccount` | System-owned account. Owner check only. (v1 compat) |
 | `UncheckedAccount` | Escape hatch. No validation. No generic `close` support. (v1 compat) |
 | `Sysvar<T>` | `Sysvar<Clock>`, `Sysvar<Rent>`. Prefer `Clock::get()` / `Rent::get()` syscalls where possible. (v1 compat) |
-| `Sysvar<Instructions>` | Instruction introspection. No syscall exists for this sysvar, so the account must be passed in the transaction; the wrapper reads its data and derefs to pinocchio's `Instructions`. |
+| `Sysvar<SysvarInstructions>` | Instruction introspection. No syscall exists for this sysvar, so the account must be passed in the transaction; the wrapper reads its data and derefs to pinocchio's `Instructions`. |
 
 ## CPI Semantics
 
