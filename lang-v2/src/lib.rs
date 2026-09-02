@@ -102,8 +102,9 @@ pub use wincode;
 /// - **`HashMap` / `HashSet`**: borsh sorts entries by key, wincode preserves
 ///   insertion order. Use `BTreeMap` / `BTreeSet` or `Vec<(K, V)>` if you
 ///   need canonical ordering.
-/// - **`f32` / `f64` NaN**: borsh rejects NaN on deserialize, wincode
-///   accepts it. v2 won't surface an error for a NaN-bearing account.
+/// - **`f32` / `f64`**: wincode accepts NaN while borsh rejects it, so Anchor
+///   macros reject floats on Borsh-compatible instruction, account, event, and
+///   IDL type surfaces. Use an integer or fixed-point representation instead.
 ///
 /// Programs that don't use these types are unaffected.
 ///
