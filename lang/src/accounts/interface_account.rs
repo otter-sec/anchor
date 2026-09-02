@@ -208,6 +208,13 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone> InterfaceAccount<'a, 
     pub fn set_inner(&mut self, inner: T) {
         self.account.set_inner(inner);
     }
+
+    /// Skip automatic serialization of this account when the instruction exits.
+    ///
+    /// See [`Account::skip_exit`](crate::accounts::account::Account::skip_exit).
+    pub fn skip_exit(&self) {
+        self.account.skip_exit();
+    }
 }
 
 impl<'a, T: AccountSerialize + AccountDeserialize + CheckOwner + Clone> InterfaceAccount<'a, T> {

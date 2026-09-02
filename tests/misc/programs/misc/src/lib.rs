@@ -409,4 +409,11 @@ pub mod misc {
     pub fn test_init_and_zero(_ctx: Context<TestInitAndZero>) -> Result<()> {
         Ok(())
     }
+
+    pub fn test_skip_exit(ctx: Context<TestSkipExit>, udata: u128, idata: i128) -> Result<()> {
+        ctx.accounts.data.udata = udata;
+        ctx.accounts.data.idata = idata;
+        ctx.accounts.data.skip_exit();
+        Ok(())
+    }
 }

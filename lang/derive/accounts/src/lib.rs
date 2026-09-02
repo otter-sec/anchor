@@ -76,6 +76,7 @@ use {proc_macro::TokenStream, quote::ToTokens, syn::parse_macro_input};
 ///             <td>
 ///                 Checks the given account is mutable.<br>
 ///                 Makes anchor persist any state changes.<br>
+///                 Call <code>Account::skip_exit()</code> (or <code>InterfaceAccount::skip_exit()</code>) to skip that write-back.<br>
 ///                 Custom errors are supported via <code>@</code>.<br><br>
 ///                 Example:
 ///                 <pre><code>

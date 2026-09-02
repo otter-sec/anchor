@@ -835,3 +835,9 @@ pub struct TestInitAndZero<'info> {
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
+
+#[derive(Accounts)]
+pub struct TestSkipExit<'info> {
+    #[account(mut)]
+    pub data: Account<'info, Data>,
+}
