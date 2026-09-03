@@ -1,0 +1,16 @@
+{
+  "name": "@anchor-lang/tests",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "test": "rimraf dist && tsc -p . && ts-node dist"
+  },
+  "devDependencies": {
+    "@types/node": "*",
+    "rimraf": "*",
+    "ts-node": "*",
+    "typescript": "*"
+  },
+  "dependencies": {}
+}

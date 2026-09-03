@@ -1,0 +1,36 @@
+{
+  "name": "@anchor-lang/errors",
+  "version": "2.0.0-rc.1",
+  "description": "Anchor error codes",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/otter-sec/anchor.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=10"
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint:fix": "prettier src/** -w",
+    "lint": "prettier src/** --check",
+    "watch": "tsc --watch",
+    "prepublishOnly": "yarn build",
+    "test": "",
+    "clean": "rm -rf dist"
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "prettier": "^2.1.2"
+  }
+}
