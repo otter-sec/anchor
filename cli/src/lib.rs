@@ -3684,7 +3684,7 @@ fn write_error_constants_file(
     ts_out_dir: &Path,
     cfg_types_dir: Option<PathBuf>,
 ) -> Result<()> {
-    let error_file_name = format!("{}_errors.ts", &idl.metadata.name);
+    let error_file_name = format!("{}_errors.ts", idl.metadata.name);
     let error_out = ts_out_dir.join(&error_file_name);
     let cfg_error_out = cfg_types_dir.map(|types_dir| types_dir.join(&error_file_name));
 
