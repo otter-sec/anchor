@@ -20,7 +20,7 @@ pub use {
     slab::{HeaderOnly, Slab},
     slab_hooks::{SlabInit, SlabSchema},
     system_account::SystemAccount,
-    sysvar::{Sysvar, SysvarId},
+    sysvar::{SysvarInstructions, Sysvar, SysvarId, SysvarLoad},
     unchecked_account::UncheckedAccount,
 };
 
@@ -45,7 +45,7 @@ pub type Account<T> = slab::Slab<T, HeaderOnly>;
 /// Generic interface account alias.
 ///
 /// Token-interface semantics are carried by the `T` type itself, for example
-/// `anchor_spl_v2::token_interface::TokenAccount`.
+/// `anchor_spl::token_interface::TokenAccount`.
 pub type InterfaceAccount<T> = Account<T>;
 
 /// Generates `Deref<Target=AccountView>` + `AsRef<AccountView>` + `AsRef<Address>`

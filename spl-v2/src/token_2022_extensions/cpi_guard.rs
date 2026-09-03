@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
+    anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     solana_program_error::ProgramError,
 };
 
@@ -28,7 +28,7 @@ pub fn cpi_guard_disable<'a>(_ctx: CpiContext<'a, CpiGuard<'a>>) -> Result<(), P
 mod tests {
     use {
         super::*,
-        anchor_lang_v2::{
+        anchor_lang::{
             testing::{AccountBuffer, MIN_ACCOUNT_BUF},
             Address,
         },

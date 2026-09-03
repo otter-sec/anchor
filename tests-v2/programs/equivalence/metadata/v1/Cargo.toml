@@ -16,5 +16,5 @@ no-idl = []
 idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
-anchor-lang = { path = "../../../../../lang" }
-anchor-spl = { path = "../../../../../spl", default-features = false, features = ["associated_token", "metadata", "token"] }
+anchor-lang = { package = "anchor-lang-v1", path = "../../../../../lang" }
+anchor-spl = { package = "anchor-spl-v1", path = "../../../../../spl", default-features = false, features = ["associated_token", "metadata", "token"] }

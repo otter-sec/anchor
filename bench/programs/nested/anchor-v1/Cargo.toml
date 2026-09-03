@@ -18,7 +18,7 @@ no-log-ix-name = []
 profile = ["anchor-v2-testing/profile"]
 
 [dependencies]
-anchor-lang = { path = "../../../../lang" }
+anchor-lang = { package = "anchor-lang-v1", path = "../../../../lang" }
 
 [dev-dependencies]
 anchor-v2-testing = { path = "../../../../v2-testing" }

@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{Discriminator, InstructionData, ToAccountMetas},
+    anchor_lang::{Discriminator, InstructionData, ToAccountMetas},
     client_builders::{accounts, instruction},
     litesvm::{types::TransactionResult, LiteSVM},
     solana_keypair::Keypair,
@@ -42,7 +42,7 @@ fn setup() -> (LiteSVM, Keypair, Keypair) {
 
 fn send_ix(
     svm: &mut LiteSVM,
-    ix: anchor_lang_v2::solana_program::instruction::Instruction,
+    ix: anchor_lang::solana_program::instruction::Instruction,
     payer: &Keypair,
     extra_signers: &[&Keypair],
 ) -> TransactionResult {
@@ -247,6 +247,37 @@ fn optional_none_builder_uses_program_id_sentinel() {
     assert!(!metas[0].is_writable);
     assert!(!metas[0].is_signer);
     assert_eq!(metas[1].pubkey, solana_sdk_ids::system_program::ID);
+}
+
+#[test]
+fn optional_derivable_none_resolved_uses_program_id_sentinel() {
+    // Pre-fix: optional Program/PDA were auto-derived as Some(address) on
+    // *Resolved, so None → program-id sentinel was unreachable.
+    let accounts = accounts::OptionalDerivableBuilderCaseResolved {
+        system_program: None,
+        optional_pda: None,
+    };
+    let metas = accounts.to_account_metas(None);
+    assert_eq!(metas.len(), 2);
+    assert_eq!(metas[0].pubkey, program_id());
+    assert!(!metas[0].is_writable);
+    assert!(!metas[0].is_signer);
+    assert_eq!(metas[1].pubkey, program_id());
+    assert!(!metas[1].is_writable);
+    assert!(!metas[1].is_signer);
+}
+
+#[test]
+fn optional_derivable_some_resolved_uses_caller_addresses() {
+    let (optional_pda, _) = accounts::OptionalDerivableBuilderCase::find_optional_pda_address();
+    let accounts = accounts::OptionalDerivableBuilderCaseResolved {
+        system_program: Some(solana_sdk_ids::system_program::ID),
+        optional_pda: Some(optional_pda),
+    };
+    let metas = accounts.to_account_metas(None);
+    assert_eq!(metas.len(), 2);
+    assert_eq!(metas[0].pubkey, solana_sdk_ids::system_program::ID);
+    assert_eq!(metas[1].pubkey, optional_pda);
 }
 
 #[test]

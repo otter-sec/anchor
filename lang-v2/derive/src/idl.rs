@@ -17,7 +17,10 @@ use {
     proc_macro2::TokenStream as TokenStream2,
     quote::quote,
     serde_json::{json, Value},
-    syn::{visit::Visit, Expr, GenericParam, Generics, Lit, PathArguments, Type, TypePath},
+    syn::{
+        punctuated::Punctuated, spanned::Spanned, visit::Visit, Expr, GenericParam, Generics, Lit,
+        PathArguments, Token, Type, TypePath,
+    },
 };
 
 const DYNAMIC_LEN_KEY: &str = "__anchor_private_const_len";
@@ -37,6 +40,9 @@ impl<'a> TypeLowerer<'a> {
     }
 
     fn lower(&mut self, ty: &Type) -> Value {
+        if let Some(value) = pod_vec_type_to_idl_value(ty) {
+            return value;
+        }
         match ty {
             Type::Reference(reference) => self.lower(&reference.elem),
             Type::Group(group) => self.lower(&group.elem),
@@ -144,7 +150,7 @@ impl<'a> TypeLowerer<'a> {
             }
             steps.push(quote! {
                 __s.push_str(
-                    &anchor_lang_v2::__alloc::string::ToString::to_string(&((#expr) as usize))
+                    &anchor_lang::__alloc::string::ToString::to_string(&((#expr) as usize))
                 );
             });
             remaining = after.to_owned();
@@ -155,9 +161,9 @@ impl<'a> TypeLowerer<'a> {
             });
         }
         quote! {{
-            let mut __s = anchor_lang_v2::__alloc::string::String::new();
+            let mut __s = anchor_lang::__alloc::string::String::new();
             #(#steps)*
-            anchor_lang_v2::__alloc::boxed::Box::leak(__s.into_boxed_str()) as &'static str
+            anchor_lang::__alloc::boxed::Box::leak(__s.into_boxed_str()) as &'static str
         }}
     }
 }
@@ -168,6 +174,72 @@ pub fn rust_type_to_idl(ty: &Type) -> TokenStream2 {
     let value = lowerer.lower(ty);
     lowerer.finish(value)
 }
+
+fn pod_vec_type_to_idl_value(ty: &Type) -> Option<Value> {
+    match ty {
+        Type::Group(group) => pod_vec_type_to_idl_value(&group.elem),
+        Type::Paren(paren) => pod_vec_type_to_idl_value(&paren.elem),
+        Type::Reference(reference) => pod_vec_type_to_idl_value(reference.elem.as_ref()),
+        Type::Path(type_path) => {
+            let segment = type_path.path.segments.last()?;
+            if segment.ident != "PodVec" {
+                return None;
+            }
+            let PathArguments::AngleBracketed(args) = &segment.arguments else {
+                return None;
+            };
+            if args.args.len() != 2 {
+                return None;
+            }
+            let mut args_iter = args.args.iter();
+            let inner_ty = match args_iter.next()? {
+                syn::GenericArgument::Type(ty) => ty,
+                _ => return None,
+            };
+            let max_expr = match args_iter.next()? {
+                syn::GenericArgument::Const(expr) => expr,
+                _ => return None,
+            };
+            Some(json!({
+                "defined": {
+                    "name": "PodVec",
+                    "generics": [
+                        {
+                            "kind": "type",
+                            "type": pod_vec_element_type_to_idl_value(inner_ty),
+                        },
+                        {
+                            "kind": "const",
+                            "value": quote!(#max_expr).to_string().replace(' ', ""),
+                        },
+                    ],
+                }
+            }))
+        }
+        _ => None,
+    }
+}
+
+fn pod_vec_element_type_to_idl_value(ty: &Type) -> Value {
+    match ty {
+        Type::Path(type_path) => {
+            let Some(segment) = type_path.path.segments.last() else {
+                return TypeLowerer::default().lower(ty);
+            };
+            match normalize_builtin_path(&segment.ident.to_string()) {
+                "PodBool" | "PodU16" | "PodU32" | "PodU64" | "PodU128" | "PodI16" | "PodI32"
+                | "PodI64" | "PodI128" => json!({
+                    "defined": {
+                        "name": segment.ident.to_string(),
+                    }
+                }),
+                _ => TypeLowerer::default().lower(ty),
+            }
+        }
+        _ => TypeLowerer::default().lower(ty),
+    }
+}
+
 fn normalize_builtin_path(ty: &str) -> &str {
     let ty = ty.trim_start_matches("::");
     [
@@ -185,8 +257,8 @@ fn normalize_builtin_path(ty: &str) -> &str {
         "solana_program::pubkey::",
         "solana_address::",
         "pinocchio::address::",
-        "anchor_lang_v2::pod::",
-        "anchor_lang_v2::prelude::",
+        "anchor_lang::pod::",
+        "anchor_lang::prelude::",
     ]
     .iter()
     .find_map(|prefix| ty.strip_prefix(prefix))
@@ -344,43 +416,46 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
             // immaterial in the test-only IDL build path.
             let pda_json_expr = match &f.pda_json {
                 Some(ts) => quote! {
-                    let __pda_json: anchor_lang_v2::__alloc::string::String = {
-                        let __body: anchor_lang_v2::__alloc::string::String = #ts;
-                        anchor_lang_v2::__alloc::format!(",\"pda\":{}", __body)
+                    let __pda_json: anchor_lang::__alloc::string::String = {
+                        let __body: anchor_lang::__alloc::string::String = #ts;
+                        anchor_lang::__alloc::format!(",\"pda\":{}", __body)
                     };
                 },
                 None => quote! {
-                    let __pda_json: anchor_lang_v2::__alloc::string::String =
-                        anchor_lang_v2::__alloc::string::String::new();
+                    let __pda_json: anchor_lang::__alloc::string::String =
+                        anchor_lang::__alloc::string::String::new();
                 },
             };
-            // `#[account(address = <expr>)]` override. Static address
-            // expressions are evaluated at IDL-build time; dotted field
-            // paths stay as pre-formatted client-side hints.
-            let address_override_json = f
-                .address_override
-                .map(|s| format!(",\"address\":\"{s}\""))
-                .unwrap_or_default();
             let init_signer = f.init_signer;
             if let Some(ty) = f.field_ty {
                 let addr_json_expr = if let Some(address_expr) = f.address_override_expr {
                     quote! {
-                        let __addr: anchor_lang_v2::Address =
+                        let __addr: anchor_lang::Address =
                             ::core::convert::Into::into(#address_expr);
-                        let __addr_json: anchor_lang_v2::__alloc::string::String =
-                            anchor_lang_v2::__alloc::format!(",\"address\":\"{}\"", __addr);
+                        let __addr_string = anchor_lang::__alloc::format!("{}", __addr);
+                        let __addr_json: anchor_lang::__alloc::string::String =
+                            anchor_lang::__alloc::format!(
+                                ",\"address\":{}",
+                                anchor_lang::idl_build::__idl_json_string(&__addr_string),
+                            );
                     }
-                } else if f.address_override.is_some() {
+                } else if let Some(address_override) = f.address_override {
                     quote! {
-                        let __addr_json: anchor_lang_v2::__alloc::string::String =
-                            anchor_lang_v2::__alloc::string::String::from(#address_override_json);
+                        let __addr_json: anchor_lang::__alloc::string::String =
+                            anchor_lang::__alloc::format!(
+                                ",\"address\":{}",
+                                anchor_lang::idl_build::__idl_json_string(#address_override),
+                            );
                     }
                 } else {
                     quote! {
-                        let __addr = <#ty as anchor_lang_v2::IdlAccountType>::__IDL_ADDRESS;
-                        let __addr_json: anchor_lang_v2::__alloc::string::String = match __addr {
-                            Some(a) => anchor_lang_v2::__alloc::format!(",\"address\":\"{}\"", a),
-                            None => anchor_lang_v2::__alloc::string::String::new(),
+                        let __addr = <#ty as anchor_lang::IdlAccountType>::__IDL_ADDRESS;
+                        let __addr_json: anchor_lang::__alloc::string::String = match __addr {
+                            Some(a) => anchor_lang::__alloc::format!(
+                                ",\"address\":{}",
+                                anchor_lang::idl_build::__idl_json_string(a),
+                            ),
+                            None => anchor_lang::__alloc::string::String::new(),
                         };
                     }
                 };
@@ -389,12 +464,12 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
                         // Trait-const OR compile-time init_signer flag.
                         // Kept separate so a Signer + init-without-seeds
                         // combo still renders exactly one `"signer":true`.
-                        let __signer = <#ty as anchor_lang_v2::IdlAccountType>::__IDL_IS_SIGNER
+                        let __signer = <#ty as anchor_lang::IdlAccountType>::__IDL_IS_SIGNER
                             || #init_signer;
                         let __signer_json: &str = if __signer { ",\"signer\":true" } else { "" };
                         #addr_json_expr
                         #pda_json_expr
-                        anchor_lang_v2::__alloc::format!(
+                        anchor_lang::__alloc::format!(
                             "{{\"name\":\"{}\"{}{}{}{}{}{}{}}}",
                             #name,
                             #writable_json,
@@ -412,15 +487,30 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
                 // can't resolve the trait, so we emit only compile-time
                 // flags. Never triggers for valid Accounts structs.
                 let signer_json = if init_signer { ",\"signer\":true" } else { "" };
+                let addr_json_expr = if let Some(address_override) = f.address_override {
+                    quote! {
+                        let __addr_json: anchor_lang::__alloc::string::String =
+                            anchor_lang::__alloc::format!(
+                                ",\"address\":{}",
+                                anchor_lang::idl_build::__idl_json_string(#address_override),
+                            );
+                    }
+                } else {
+                    quote! {
+                        let __addr_json: anchor_lang::__alloc::string::String =
+                            anchor_lang::__alloc::string::String::new();
+                    }
+                };
                 quote! {
                     {
+                        #addr_json_expr
                         #pda_json_expr
-                        anchor_lang_v2::__alloc::format!(
+                        anchor_lang::__alloc::format!(
                             "{{\"name\":\"{}\"{}{}{}{}{}{}{}}}",
                             #name,
                             #writable_json,
                             #signer_json,
-                            #address_override_json,
+                            __addr_json,
                             #optional_json,
                             #relations_json,
                             #docs_json,
@@ -437,11 +527,11 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
         /// struct's account list. Implementation detail of the IDL build
         /// pipeline; do not rely on the shape or call this directly.
         #[doc(hidden)]
-        pub fn __idl_accounts() -> anchor_lang_v2::__alloc::string::String {
-            let __parts: anchor_lang_v2::__alloc::vec::Vec<
-                anchor_lang_v2::__alloc::string::String
-            > = anchor_lang_v2::__alloc::vec![#(#parts),*];
-            let mut __s = anchor_lang_v2::__alloc::string::String::from("[");
+        pub fn __idl_accounts() -> anchor_lang::__alloc::string::String {
+            let __parts: anchor_lang::__alloc::vec::Vec<
+                anchor_lang::__alloc::string::String
+            > = anchor_lang::__alloc::vec![#(#parts),*];
+            let mut __s = anchor_lang::__alloc::string::String::from("[");
             let mut __first = true;
             for __p in &__parts {
                 // A `Nested<Inner>` whose inner has zero fields contributes
@@ -497,51 +587,49 @@ pub enum TypeKind {
     /// Default borsh layout. Spec `skip_serializing_if`s both fields at the
     /// default value, so nothing extra gets emitted.
     Borsh,
-    /// `bytemuck` Pod + `repr(C)`. Both fields show up in the JSON.
-    BytemuckRepr,
+    /// `bytemuck` Pod + `repr(C)` plus any layout modifiers preserved from
+    /// the source item's `#[repr(...)]` attributes.
+    BytemuckRepr(BytemuckRepr),
 }
 
-/// Pre-split IDL type strings emitted by the derive at macro-expansion time.
-///
-/// The runtime print test no longer parses JSON — it concatenates these
-/// strings directly. That lets `lang-v2` avoid a runtime `serde_json`
-/// dependency or local `idl-build` feature; derive output still emits
-/// `feature = "idl-build"` cfgs into user crates.
-pub struct IdlTypeStrings {
-    /// `{"name":"X","discriminator":[…]}` for the program-level
-    /// `accounts[]` array (spec:137-140). `None` when the discriminator
-    /// is empty — i.e. plain `#[derive(IdlType)]` types that only
-    /// contribute to `types[]`.
-    pub account_entry: Option<String>,
-    /// `IdlTypeDef` JSON (spec:176-188) — `name`, optional `docs`, the
-    /// `serialization` / `repr` pair, and the inner `type` object. Never
-    /// carries `discriminator`; that field belongs only on the
-    /// accounts entry.
-    pub type_def: TokenStream2,
+#[derive(Clone, Copy, Default)]
+pub struct BytemuckRepr {
+    pub packed: bool,
+    pub align: Option<usize>,
 }
 
-pub fn build_type_strings(
-    name: &str,
-    disc: &[u8],
-    docs: &[String],
-    fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
-    kind: TypeKind,
-    generics: &Generics,
-) -> IdlTypeStrings {
-    let mut lowerer = TypeLowerer::with_generics(generics);
-    let mut type_def_obj = build_type_def_header(name, docs, kind, generics);
-    let field_values: Vec<Value> = fields
-        .iter()
-        .map(|field| named_field_value(field, &mut lowerer))
-        .collect();
-    type_def_obj.insert(
-        "type".into(),
-        json!({ "kind": "struct", "fields": field_values }),
-    );
-    IdlTypeStrings {
-        account_entry: build_account_entry(name, disc),
-        type_def: lowerer.finish(Value::Object(type_def_obj)),
+pub fn bytemuck_repr_from_attrs(attrs: &[syn::Attribute]) -> syn::Result<BytemuckRepr> {
+    let mut repr = BytemuckRepr::default();
+
+    for attr in attrs.iter().filter(|attr| attr.path().is_ident("repr")) {
+        let metas = attr.parse_args_with(Punctuated::<syn::Meta, Token![,]>::parse_terminated)?;
+        for meta in metas {
+            match meta {
+                syn::Meta::Path(path) if path.is_ident("packed") => {
+                    repr.packed = true;
+                }
+                syn::Meta::List(list) if list.path.is_ident("packed") => {
+                    let packed = list.parse_args::<syn::LitInt>()?;
+                    let packed = packed.base10_parse::<usize>()?;
+                    if packed != 1 {
+                        return Err(syn::Error::new(
+                            list.span(),
+                            "Anchor IDL only supports `#[repr(..., packed)]` or `#[repr(..., \
+                             packed(1))]`; other packed widths would produce a lossy IDL layout",
+                        ));
+                    }
+                    repr.packed = true;
+                }
+                syn::Meta::List(list) if list.path.is_ident("align") => {
+                    let align = list.parse_args::<syn::LitInt>()?;
+                    repr.align = Some(align.base10_parse()?);
+                }
+                _ => {}
+            }
+        }
     }
+
+    Ok(repr)
 }
 
 pub fn build_account_entry_string(name: &str, disc: &[u8]) -> Option<String> {
@@ -562,58 +650,21 @@ pub fn build_struct_type_def_emission(
             .iter()
             .map(|field| field_push_stmt(field, generics))
             .collect(),
-        syn::Fields::Unnamed(_) | syn::Fields::Unit => Vec::new(),
+        syn::Fields::Unnamed(unnamed) => unnamed
+            .unnamed
+            .iter()
+            .map(|field| {
+                let field_json = unnamed_field_emission(field, generics);
+                let cfg_attrs = crate::cfg_attrs(&field.attrs);
+                quote! {
+                    #(#cfg_attrs)*
+                    __entries.push(#field_json);
+                }
+            })
+            .collect(),
+        syn::Fields::Unit => Vec::new(),
     };
     build_joined_type_def_emission(header, suffix, &field_pushes)
-}
-
-/// Build pre-split IDL type strings from enum variants. Mirrors `build_type_strings`
-/// with `build_enum_type_strings`.
-pub fn build_enum_type_strings(
-    name: &str,
-    disc: &[u8],
-    docs: &[String],
-    variants: &syn::punctuated::Punctuated<syn::Variant, syn::token::Comma>,
-    kind: TypeKind,
-    generics: &Generics,
-) -> IdlTypeStrings {
-    let mut lowerer = TypeLowerer::with_generics(generics);
-    let mut type_def_obj = build_type_def_header(name, docs, kind, generics);
-    let variant_values: Vec<Value> = variants
-        .iter()
-        .map(|v| {
-            let mut obj = serde_json::Map::new();
-            obj.insert("name".into(), Value::String(v.ident.to_string()));
-            match &v.fields {
-                syn::Fields::Unit => {}
-                syn::Fields::Named(named) => {
-                    let fields: Vec<Value> = named
-                        .named
-                        .iter()
-                        .map(|field| named_field_value(field, &mut lowerer))
-                        .collect();
-                    obj.insert("fields".into(), Value::Array(fields));
-                }
-                syn::Fields::Unnamed(unnamed) => {
-                    let tys: Vec<Value> = unnamed
-                        .unnamed
-                        .iter()
-                        .map(|field| lowerer.lower(&field.ty))
-                        .collect();
-                    obj.insert("fields".into(), Value::Array(tys));
-                }
-            }
-            Value::Object(obj)
-        })
-        .collect();
-    type_def_obj.insert(
-        "type".into(),
-        json!({ "kind": "enum", "variants": variant_values }),
-    );
-    IdlTypeStrings {
-        account_entry: build_account_entry(name, disc),
-        type_def: lowerer.finish(Value::Object(type_def_obj)),
-    }
 }
 
 pub fn build_enum_type_def_emission(
@@ -654,10 +705,10 @@ fn build_joined_type_def_emission(
 ) -> TokenStream2 {
     quote! {
         {
-            let mut __entries: anchor_lang_v2::__alloc::vec::Vec<&'static str> =
-                anchor_lang_v2::__alloc::vec::Vec::new();
+            let mut __entries: anchor_lang::__alloc::vec::Vec<&'static str> =
+                anchor_lang::__alloc::vec::Vec::new();
             #(#entries)*
-            let mut __s = anchor_lang_v2::__alloc::string::String::from(#header);
+            let mut __s = anchor_lang::__alloc::string::String::from(#header);
             let mut __first = true;
             for __entry in &__entries {
                 if !__first {
@@ -668,7 +719,7 @@ fn build_joined_type_def_emission(
             }
             __s.push_str(#suffix);
             ::core::option::Option::Some(
-                anchor_lang_v2::__alloc::boxed::Box::leak(__s.into_boxed_str()) as &'static str
+                anchor_lang::__alloc::boxed::Box::leak(__s.into_boxed_str()) as &'static str
             )
         }
     }
@@ -681,10 +732,10 @@ fn build_joined_entry_emission(
 ) -> TokenStream2 {
     quote! {
         {
-            let mut __entries: anchor_lang_v2::__alloc::vec::Vec<&'static str> =
-                anchor_lang_v2::__alloc::vec::Vec::new();
+            let mut __entries: anchor_lang::__alloc::vec::Vec<&'static str> =
+                anchor_lang::__alloc::vec::Vec::new();
             #(#entries)*
-            let mut __s = anchor_lang_v2::__alloc::string::String::from(#header);
+            let mut __s = anchor_lang::__alloc::string::String::from(#header);
             let mut __first = true;
             for __entry in &__entries {
                 if !__first {
@@ -694,7 +745,7 @@ fn build_joined_entry_emission(
                 __s.push_str(__entry);
             }
             __s.push_str(#suffix);
-            anchor_lang_v2::__alloc::boxed::Box::leak(__s.into_boxed_str()) as &'static str
+            anchor_lang::__alloc::boxed::Box::leak(__s.into_boxed_str()) as &'static str
         }
     }
 }
@@ -707,10 +758,15 @@ fn type_def_header_parts(
     kind_name: &str,
 ) -> (String, String) {
     const FIELD_MARKER: &str = "__anchor_private_fields__";
+    let entries_key = if kind_name == "enum" {
+        "variants"
+    } else {
+        "fields"
+    };
     let mut type_def_obj = build_type_def_header(name, docs, kind, generics);
     type_def_obj.insert(
         "type".into(),
-        json!({ "kind": kind_name, "fields": [FIELD_MARKER] }),
+        json!({ "kind": kind_name, entries_key: [FIELD_MARKER] }),
     );
     let header = Value::Object(type_def_obj).to_string();
     let marker = Value::String(FIELD_MARKER.to_owned()).to_string();
@@ -817,9 +873,17 @@ fn build_type_def_header(
     }
     match kind {
         TypeKind::Borsh => {}
-        TypeKind::BytemuckRepr => {
+        TypeKind::BytemuckRepr(repr) => {
             out.insert("serialization".into(), Value::String("bytemuck".into()));
-            out.insert("repr".into(), json!({ "kind": "c" }));
+            let mut repr_json = serde_json::Map::new();
+            repr_json.insert("kind".into(), Value::String("c".into()));
+            if repr.packed {
+                repr_json.insert("packed".into(), Value::Bool(true));
+            }
+            if let Some(align) = repr.align {
+                repr_json.insert("align".into(), json!(align));
+            }
+            out.insert("repr".into(), Value::Object(repr_json));
         }
     }
     out
@@ -905,16 +969,28 @@ fn docs_value(docs: &[String]) -> Value {
 // Seed classification (Part E — `pda: {...}` emission)
 // ---------------------------------------------------------------------------
 
-/// Classified seed expression. Only explicitly recognized shapes carry
-/// structured IDL metadata; unsupported regular seed expressions are emitted
-/// as opaque `{"kind":"expr"}` placeholders. Program seed expressions can use
-/// the runtime variant because `seeds::program` must evaluate to address bytes.
+/// Classified seed expression. Only supported IDL seed shapes survive to the
+/// final JSON: statically-known shapes stay `Static`, constant-only runtime
+/// expressions become `Runtime`, and runtime-only unsupported expressions are
+/// filtered out as `Unsupported`.
 #[derive(Clone)]
 pub enum SeedJson {
     /// Pre-serialized JSON object — known at macro time.
     Static(String),
     /// Token expression evaluating to `alloc::string::String` at IDL-build
     /// time.
+    Runtime(TokenStream2),
+    /// Expression depends on runtime-only values and cannot be represented in
+    /// the current IDL seed spec.
+    Unsupported,
+}
+
+#[derive(Clone)]
+pub enum SeedListJson {
+    /// Per-seed JSON objects already split into the spec's supported variants.
+    Listed(Vec<SeedJson>),
+    /// Token expression evaluating to a full JSON seed array string (including
+    /// the surrounding `[...]`) at IDL-build time.
     Runtime(TokenStream2),
 }
 
@@ -923,9 +999,12 @@ impl SeedJson {
     pub fn into_string_expr(self) -> TokenStream2 {
         match self {
             SeedJson::Static(s) => quote! {
-                anchor_lang_v2::__alloc::string::String::from(#s)
+                anchor_lang::__alloc::string::String::from(#s)
             },
             SeedJson::Runtime(ts) => ts,
+            SeedJson::Unsupported => {
+                unreachable!("unsupported seed must be filtered out before IDL emission")
+            }
         }
     }
 }
@@ -947,12 +1026,42 @@ impl SeedJson {
 ///   with `nonce` in `ix_arg_names`
 ///   → `{"kind":"arg","path":"nonce"}`
 ///
-/// Anything else (a constant ref like `MY_PREFIX`, a const-fn call like
-/// `<Marker as Id>::id()`, wrapped account/arg field access, etc.) is opaque:
-/// `{"kind":"expr"}`. Runtime constraints still evaluate the original Rust
-/// expression; this only avoids over-promising IDL/client metadata.
+/// Constant-only expressions that aren't structurally recognized are evaluated
+/// at IDL-build time into `{"kind":"const","value":[...]}`. Expressions that
+/// depend on runtime account/arg values remain `Unsupported` and should cause
+/// PDA metadata omission rather than invalid IDL output.
 pub fn classify_seed(expr: &Expr, field_names: &[String], ix_arg_names: &[String]) -> SeedJson {
-    classify_seed_inner(expr, field_names, ix_arg_names)
+    if let Some(seed) = classify_seed_inner(expr, field_names, ix_arg_names) {
+        seed
+    } else if expr_contains_macro(expr)
+        || expr_references_runtime_seed_inputs(expr, field_names, ix_arg_names)
+    {
+        SeedJson::Unsupported
+    } else {
+        runtime_seed(expr)
+    }
+}
+
+pub fn classify_seed_list(
+    expr: &Expr,
+    field_names: &[String],
+    ix_arg_names: &[String],
+) -> Option<SeedListJson> {
+    match expr {
+        Expr::Array(arr) => {
+            let seeds: Vec<_> = arr
+                .elems
+                .iter()
+                .map(|seed| classify_seed(seed, field_names, ix_arg_names))
+                .collect();
+            seeds
+                .iter()
+                .all(|seed| !matches!(seed, SeedJson::Unsupported))
+                .then_some(SeedListJson::Listed(seeds))
+        }
+        _ => (!expr_references_runtime_seed_inputs(expr, field_names, ix_arg_names))
+            .then_some(SeedListJson::Runtime(runtime_seeds(expr))),
+    }
 }
 
 /// Classify `seeds::program = <expr>` into an IDL seed. Unlike arbitrary PDA
@@ -962,21 +1071,11 @@ pub fn classify_program_seed(
     expr: &Expr,
     field_names: &[String],
     ix_arg_names: &[String],
-) -> SeedJson {
-    let seed = classify_seed_inner(expr, field_names, ix_arg_names);
+) -> Option<SeedJson> {
+    let seed = classify_seed(expr, field_names, ix_arg_names);
     match seed {
-        SeedJson::Static(ref s) if s == r#"{"kind":"expr"}"# => {
-            if expr_contains_macro(expr)
-                || expr_references_local_binding(expr, field_names, ix_arg_names)
-            {
-                seed
-            } else {
-                SeedJson::Runtime(quote! {
-                    anchor_lang_v2::idl_build::__idl_const_seed_json(#expr)
-                })
-            }
-        }
-        _ => seed,
+        SeedJson::Unsupported => None,
+        other => Some(other),
     }
 }
 
@@ -1045,7 +1144,23 @@ fn static_seed(value: Value) -> SeedJson {
     SeedJson::Static(value.to_string())
 }
 
-fn classify_seed_inner(expr: &Expr, field_names: &[String], ix_arg_names: &[String]) -> SeedJson {
+fn runtime_seed(expr: &Expr) -> SeedJson {
+    SeedJson::Runtime(quote! {
+        anchor_lang::idl_build::__idl_const_seed_json(#expr)
+    })
+}
+
+fn runtime_seeds(expr: &Expr) -> TokenStream2 {
+    quote! {
+        anchor_lang::idl_build::__idl_const_seeds_json(#expr)
+    }
+}
+
+fn classify_seed_inner(
+    expr: &Expr,
+    field_names: &[String],
+    ix_arg_names: &[String],
+) -> Option<SeedJson> {
     // Peel `&<inner>` wrappers — they're common in seed expressions and
     // always transparent to classification.
     let mut cur = expr;
@@ -1055,9 +1170,9 @@ fn classify_seed_inner(expr: &Expr, field_names: &[String], ix_arg_names: &[Stri
 
     if let Expr::Lit(lit) = cur {
         match &lit.lit {
-            Lit::ByteStr(bs) => return static_seed(const_seed_value(&bs.value())),
-            Lit::Str(s) => return static_seed(const_seed_value(s.value().as_bytes())),
-            Lit::Byte(b) => return static_seed(const_seed_value(&[b.value()])),
+            Lit::ByteStr(bs) => return Some(static_seed(const_seed_value(&bs.value()))),
+            Lit::Str(s) => return Some(static_seed(const_seed_value(s.value().as_bytes()))),
+            Lit::Byte(b) => return Some(static_seed(const_seed_value(&[b.value()]))),
             _ => {}
         }
     }
@@ -1079,27 +1194,27 @@ fn classify_seed_inner(expr: &Expr, field_names: &[String], ix_arg_names: &[Stri
             break;
         }
         if let Some(b) = bytes {
-            return static_seed(const_seed_value(&b));
+            return Some(static_seed(const_seed_value(&b)));
         }
     }
 
     if let Some(root) = account_seed_root_ident(cur) {
         if field_names.contains(&root) {
-            return static_seed(account_seed_value(&root));
+            return Some(static_seed(account_seed_value(&root)));
         }
     }
 
     if let Some(root) = arg_seed_root_ident(cur) {
         if ix_arg_names.contains(&root) {
-            return static_seed(arg_seed_value(&root));
+            return Some(static_seed(arg_seed_value(&root)));
         }
     }
 
     if let Some(s) = string_as_bytes(cur) {
-        return static_seed(const_seed_value(s.value().as_bytes()));
+        return Some(static_seed(const_seed_value(s.value().as_bytes())));
     }
 
-    static_seed(json!({ "kind": "expr" }))
+    None
 }
 
 /// Return the bare root ident for simple, client-derivable seed expressions.
@@ -1139,6 +1254,44 @@ fn method_receiver<'a>(expr: &'a Expr, method: &str) -> Option<&'a Expr> {
         return None;
     };
     (mc.method == method && mc.args.is_empty()).then_some(&*mc.receiver)
+}
+
+fn expr_references_runtime_seed_inputs(
+    expr: &Expr,
+    field_names: &[String],
+    ix_arg_names: &[String],
+) -> bool {
+    struct RuntimeSeedInputVisitor<'a> {
+        names: Vec<&'a str>,
+        found: bool,
+    }
+
+    impl<'ast> Visit<'ast> for RuntimeSeedInputVisitor<'_> {
+        fn visit_expr_path(&mut self, node: &'ast syn::ExprPath) {
+            if self.found {
+                return;
+            }
+            if let Some(ident) = node.path.get_ident() {
+                let ident = ident.to_string();
+                if self.names.iter().any(|name| *name == ident) {
+                    self.found = true;
+                    return;
+                }
+            }
+            syn::visit::visit_expr_path(self, node);
+        }
+    }
+
+    let mut visitor = RuntimeSeedInputVisitor {
+        names: field_names
+            .iter()
+            .chain(ix_arg_names.iter())
+            .map(String::as_str)
+            .collect(),
+        found: false,
+    };
+    visitor.visit_expr(expr);
+    visitor.found
 }
 
 fn account_seed_root_ident(expr: &Expr) -> Option<String> {
@@ -1200,19 +1353,32 @@ fn arg_seed_value(path: &str) -> Value {
 /// Static seeds become string-literal pushes. The whole expression assembles a
 /// single `String` via `push_str`, avoiding intermediate `Vec` /
 /// `serde_json::Value` round-trips.
-pub fn pda_object_emission(seeds: &[SeedJson], program: Option<&SeedJson>) -> TokenStream2 {
-    let seed_pushes: Vec<TokenStream2> = seeds
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            let expr = s.clone().into_string_expr();
-            let comma = if i == 0 { "" } else { "," };
+pub fn pda_object_emission(seeds: &SeedListJson, program: Option<&SeedJson>) -> TokenStream2 {
+    let seeds_expr = match seeds {
+        SeedListJson::Listed(seeds) => {
+            let seed_pushes: Vec<TokenStream2> = seeds
+                .iter()
+                .enumerate()
+                .map(|(i, s)| {
+                    let expr = s.clone().into_string_expr();
+                    let comma = if i == 0 { "" } else { "," };
+                    quote! {
+                        __seeds.push_str(#comma);
+                        __seeds.push_str(&{ #expr });
+                    }
+                })
+                .collect();
             quote! {
-                __pda.push_str(#comma);
-                __pda.push_str(&{ #expr });
+                {
+                    let mut __seeds = anchor_lang::__alloc::string::String::from("[");
+                    #(#seed_pushes)*
+                    __seeds.push(']');
+                    __seeds
+                }
             }
-        })
-        .collect();
+        }
+        SeedListJson::Runtime(ts) => quote! { { #ts } },
+    };
     let program_part = match program {
         None => quote! {},
         Some(p) => {
@@ -1225,9 +1391,8 @@ pub fn pda_object_emission(seeds: &[SeedJson], program: Option<&SeedJson>) -> To
     };
     quote! {
         {
-            let mut __pda = anchor_lang_v2::__alloc::string::String::from("{\"seeds\":[");
-            #(#seed_pushes)*
-            __pda.push(']');
+            let mut __pda = anchor_lang::__alloc::string::String::from("{\"seeds\":");
+            __pda.push_str(&{ #seeds_expr });
             #program_part
             __pda.push('}');
             __pda
@@ -1247,6 +1412,7 @@ mod tests {
             SeedJson::Runtime(ts) => {
                 panic!("expected Static seed, got Runtime: {}", ts);
             }
+            SeedJson::Unsupported => panic!("expected Static seed, got Unsupported"),
         }
     }
 
@@ -1254,7 +1420,15 @@ mod tests {
         match seed {
             SeedJson::Static(s) => panic!("expected Runtime seed, got Static: {s}"),
             SeedJson::Runtime(ts) => ts.to_string(),
+            SeedJson::Unsupported => panic!("expected Runtime seed, got Unsupported"),
         }
+    }
+
+    fn expect_unsupported(seed: SeedJson) {
+        assert!(
+            matches!(seed, SeedJson::Unsupported),
+            "expected Unsupported seed"
+        );
     }
 
     fn classify(expr: syn::Expr, fields: &[&str], args: &[&str]) -> SeedJson {
@@ -1283,7 +1457,7 @@ mod tests {
         let vec_ty: Type = syn::parse_quote!(alloc::vec::Vec<alloc::string::String>);
         assert_eq!(rust_type_to_idl_value(&vec_ty), json!({ "vec": "string" }));
 
-        let address_ty: Type = syn::parse_quote!(anchor_lang_v2::prelude::Address);
+        let address_ty: Type = syn::parse_quote!(anchor_lang::prelude::Address);
         assert_eq!(rust_type_to_idl_value(&address_ty), json!("pubkey"));
 
         let user_ty: Type = syn::parse_quote!(crate::models::Inner);
@@ -1296,6 +1470,33 @@ mod tests {
         assert_eq!(
             rust_type_to_idl_value(&primitive_named_user_ty),
             json!({ "defined": { "name": "u8" } })
+        );
+    }
+
+    #[test]
+    fn pod_vec_references_preserve_type_and_const_generics() {
+        let ty: Type = syn::parse_quote!(PodVec<PodU64, 4>);
+        assert_eq!(
+            rust_type_to_idl_value(&ty),
+            json!({
+                "defined": {
+                    "name": "PodVec",
+                    "generics": [
+                        {
+                            "kind": "type",
+                            "type": {
+                                "defined": {
+                                    "name": "PodU64",
+                                }
+                            }
+                        },
+                        {
+                            "kind": "const",
+                            "value": "4",
+                        }
+                    ]
+                }
+            })
         );
     }
 
@@ -1324,6 +1525,25 @@ mod tests {
     }
 
     #[test]
+    fn packed_one_repr_modifier_sets_packed_flag() {
+        let attrs: Vec<syn::Attribute> = vec![syn::parse_quote!(#[repr(C, packed(1))])];
+        let repr = bytemuck_repr_from_attrs(&attrs).expect("packed(1) should parse");
+        assert!(repr.packed);
+        assert_eq!(repr.align, None);
+    }
+
+    #[test]
+    fn packed_greater_than_one_repr_modifier_is_rejected() {
+        let attrs: Vec<syn::Attribute> = vec![syn::parse_quote!(#[repr(C, packed(2))])];
+        let err = match bytemuck_repr_from_attrs(&attrs) {
+            Ok(_) => panic!("packed(2) should be rejected"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("Anchor IDL only supports"));
+        assert!(err.to_string().contains("lossy IDL layout"));
+    }
+
+    #[test]
     fn byte_literal_is_static_one_byte_const() {
         let s = expect_static(classify(syn::parse_quote!(b'A'), &[], &[]));
         assert_eq!(s, r#"{"kind":"const","value":[65]}"#);
@@ -1336,9 +1556,9 @@ mod tests {
     }
 
     #[test]
-    fn byte_array_with_non_u8_is_opaque_expr() {
-        let s = expect_static(classify(syn::parse_quote!([999, 2]), &[], &[]));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
+    fn byte_array_with_non_u8_is_evaluated_at_idl_build_time() {
+        let ts = expect_runtime(classify(syn::parse_quote!([999, 2]), &[], &[]));
+        assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
     }
 
     #[test]
@@ -1395,43 +1615,39 @@ mod tests {
     }
 
     #[test]
-    fn account_field_method_chain_is_opaque_expr() {
-        let s = expect_static(classify(
+    fn account_field_method_chain_is_unsupported() {
+        expect_unsupported(classify(
             syn::parse_quote!(manager.next_oracle_id.to_le_bytes()),
             &["manager"],
             &[],
         ));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
     }
 
     #[test]
-    fn nested_account_address_chain_is_opaque_expr() {
-        let s = expect_static(classify(
+    fn nested_account_address_chain_is_unsupported() {
+        expect_unsupported(classify(
             syn::parse_quote!(manager.account().address().as_ref()),
             &["manager"],
             &[],
         ));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
     }
 
     #[test]
-    fn wrapped_account_ref_is_opaque_expr() {
-        let s = expect_static(classify(
+    fn wrapped_account_ref_is_unsupported() {
+        expect_unsupported(classify(
             syn::parse_quote!(u64::from(manager.next_oracle_id).to_le_bytes()),
             &["manager"],
             &[],
         ));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
     }
 
     #[test]
     fn wrapped_arg_ref_is_opaque_expr() {
-        let s = expect_static(classify(
+        expect_unsupported(classify(
             syn::parse_quote!(u64::from(next_oracle_id).to_le_bytes()),
             &[],
             &["next_oracle_id"],
         ));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
     }
 
     #[test]
@@ -1441,52 +1657,48 @@ mod tests {
     }
 
     #[test]
-    fn const_path_is_opaque_expr() {
-        let s = expect_static(classify(syn::parse_quote!(MY_PREFIX), &[], &[]));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
+    fn const_path_is_evaluated_at_idl_build_time() {
+        let ts = expect_runtime(classify(syn::parse_quote!(MY_PREFIX), &[], &[]));
+        assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
     }
 
     #[test]
-    fn marker_id_call_is_opaque_expr() {
-        let s = expect_static(classify(syn::parse_quote!(System::id()), &[], &[]));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
+    fn marker_id_call_is_evaluated_at_idl_build_time() {
+        let ts = expect_runtime(classify(syn::parse_quote!(System::id()), &[], &[]));
+        assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
     }
 
     #[test]
     fn program_marker_id_call_flows_through_runtime_const_seed() {
         let fields = Vec::new();
         let args = Vec::new();
-        let ts = expect_runtime(classify_program_seed(
-            &syn::parse_quote!(System::id()),
-            &fields,
-            &args,
-        ));
+        let ts = expect_runtime(
+            classify_program_seed(&syn::parse_quote!(System::id()), &fields, &args)
+                .expect("program marker should be representable in the IDL"),
+        );
         assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
         assert!(ts.contains("System :: id"), "got: {ts}");
     }
 
     #[test]
-    fn local_field_program_seed_stays_opaque_expr() {
+    fn local_field_program_seed_is_omitted() {
         let fields = vec!["config".to_string()];
         let args = Vec::new();
-        let s = expect_static(classify_program_seed(
-            &syn::parse_quote!(config.program_id),
-            &fields,
-            &args,
-        ));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
+        assert!(
+            classify_program_seed(&syn::parse_quote!(config.program_id), &fields, &args).is_none()
+        );
     }
 
     #[test]
-    fn macro_wrapped_local_field_program_seed_stays_opaque_expr() {
+    fn macro_wrapped_local_field_program_seed_is_omitted() {
         let fields = vec!["config".to_string()];
         let args = Vec::new();
-        let s = expect_static(classify_program_seed(
+        assert!(classify_program_seed(
             &syn::parse_quote!(wrap!(config.program_id)),
             &fields,
-            &args,
-        ));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
+            &args
+        )
+        .is_none());
     }
 
     #[test]
@@ -1514,9 +1726,9 @@ mod tests {
     }
 
     #[test]
-    fn unknown_marker_id_call_is_opaque_expr() {
-        let s = expect_static(classify(syn::parse_quote!(MyCustomProgram::id()), &[], &[]));
-        assert_eq!(s, r#"{"kind":"expr"}"#);
+    fn unknown_marker_id_call_is_evaluated_at_idl_build_time() {
+        let ts = expect_runtime(classify(syn::parse_quote!(MyCustomProgram::id()), &[], &[]));
+        assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
     }
 
     #[test]
@@ -1525,7 +1737,7 @@ mod tests {
             SeedJson::Static(r#"{"kind":"const","value":[1]}"#.to_string()),
             SeedJson::Static(r#"{"kind":"account","path":"user"}"#.to_string()),
         ];
-        let ts = pda_object_emission(&seeds, None).to_string();
+        let ts = pda_object_emission(&SeedListJson::Listed(seeds), None).to_string();
         // Both seed bodies are spliced in source order with the comma
         // separator between them.
         assert!(
@@ -1548,7 +1760,7 @@ mod tests {
             r#"{"kind":"const","value":[1]}"#.to_string(),
         )];
         let prog = SeedJson::Static(r#"{"kind":"const","value":[2]}"#.to_string());
-        let ts = pda_object_emission(&seeds, Some(&prog)).to_string();
+        let ts = pda_object_emission(&SeedListJson::Listed(seeds), Some(&prog)).to_string();
         // The program override gets its own runtime push under the
         // "program" key.
         assert!(ts.contains(r#",\"program\":"#), "missing program key: {ts}");

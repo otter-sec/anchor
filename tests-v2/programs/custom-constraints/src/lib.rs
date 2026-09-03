@@ -9,7 +9,7 @@
 
 extern crate alloc;
 
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("CC111111111111111111111111111111111111111111");
 
@@ -117,7 +117,7 @@ pub struct Counter {
 pub mod counter_ns {
     use {
         super::Counter,
-        anchor_lang_v2::{accounts::BorshAccount, AccountConstraint},
+        anchor_lang::{accounts::BorshAccount, AccountConstraint},
         solana_program_error::ProgramError,
     };
 

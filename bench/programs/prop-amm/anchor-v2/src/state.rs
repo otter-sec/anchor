@@ -1,4 +1,4 @@
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 #[account]
 pub struct Oracle {

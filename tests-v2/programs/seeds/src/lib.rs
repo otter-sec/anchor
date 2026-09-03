@@ -8,7 +8,7 @@
 //!   - explicit `bump = data.bump` with each seeds form
 //!   - bare `bump` (runtime find) with each seeds form
 
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("Hyc9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
 

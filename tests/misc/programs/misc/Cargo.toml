@@ -17,6 +17,6 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 my-feature = []
 
 [dependencies]
-anchor-lang = { path = "../../../../lang", features = ["init-if-needed"] }
-anchor-spl = { path = "../../../../spl" }
+anchor-lang = { package = "anchor-lang-v1", path = "../../../../lang", features = ["init-if-needed"] }
+anchor-spl = { package = "anchor-spl-v1", path = "../../../../spl" }
 bytemuck = { version = "1.4.0", features = ["derive", "min_const_generics"] }

@@ -3,7 +3,7 @@ use {
         AsSigner, ClientError, Config, EventContext, EventUnsubscriber, Program,
         ProgramAccountsIterator, RequestBuilder,
     },
-    anchor_lang_v2::{AccountDeserialize, Discriminator},
+    anchor_lang::{AccountDeserialize, Discriminator},
     solana_commitment_config::CommitmentConfig,
     solana_program::pubkey::Pubkey,
     solana_rpc_client::nonblocking::rpc_client::RpcClient as AsyncRpcClient,
@@ -109,8 +109,8 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
     ///
     /// Returns an [`EventUnsubscriber`] to unsubscribe and close connection gracefully.
     pub async fn on<
-        T: anchor_lang_v2::Event
-            + for<'de> anchor_lang_v2::wincode::SchemaRead<'de, anchor_lang_v2::BorshConfig, Dst = T>,
+        T: anchor_lang::Event
+            + for<'de> anchor_lang::wincode::SchemaRead<'de, anchor_lang::BorshConfig, Dst = T>,
     >(
         &self,
         f: impl FnMut(&EventContext, T) + Send + 'static,

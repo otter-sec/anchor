@@ -13,15 +13,15 @@
 //!    a dup index but it's the very first record)
 //! 4. Consecutive dups — second account dups first, third dups second
 //!
-//! Run: `MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p anchor-lang-v2 --test miri_cursor_walk`
+//! Run: `MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p anchor-lang --test miri_cursor_walk`
 //!
 //! Tree Borrows compatible: the cursor's 8-byte-alignment step uses
 //! strict-provenance `.addr()` + `.add(delta)` rather than an
 //! int-to-ptr mask, so the derivation chain survives Miri's check.
 
-use anchor_lang_v2::testing::{AccountRecord, SbfInputBuffer};
+use anchor_lang::testing::{AccountRecord, SbfInputBuffer};
 
-use anchor_lang_v2::cursor::AccountCursor;
+use anchor_lang::cursor::AccountCursor;
 use core::mem::MaybeUninit;
 use pinocchio::account::AccountView;
 

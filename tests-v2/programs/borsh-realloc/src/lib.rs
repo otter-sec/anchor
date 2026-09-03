@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("D51usz545PmMTSqE18F1YSj1RXqvpPhKUUxB6wHPNewT");
 

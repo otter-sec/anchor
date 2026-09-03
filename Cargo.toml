@@ -69,7 +69,13 @@ exclude = [
 resolver = "2"
 
 [workspace.package]
-version = "2.0.0"
+version = "2.0.0-rc.1"
+readme = "README.md"
+repository = "https://github.com/otter-sec/anchor"
+
+[workspace.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace.dependencies]
 pinocchio = { version = "0.11", default-features = false }
@@ -116,12 +122,13 @@ solana-transaction = "3.0.1"
 cargo_toml = "0.22.3"
 
 # Internal anchor crates
-anchor-lang-v2 = { path = "lang-v2", version = "=2.0.0" }
-anchor-derive-accounts-v2 = { path = "lang-v2/derive", version = "=2.0.0" }
-anchor-lang = { path = "lang", version = "=2.0.0" }
-anchor-client = { path = "client", version = "=2.0.0" }
-anchor-cli-macros = { path = "cli/cli-macros", version = "=2.0.0" }
-anchor-lang-idl = { path = "idl", version = "=0.1.2" }
+anchor-lang = { path = "lang-v2", version = "=2.0.0-rc.1" }
+anchor-derive-accounts = { path = "lang-v2/derive", version = "=2.0.0-rc.1" }
+anchor-spl = { path = "spl-v2", version = "=2.0.0-rc.1" }
+anchor-client = { path = "client", version = "=2.0.0-rc.1" }
+anchor-cli-macros = { path = "cli/cli-macros", version = "=2.0.0-rc.1" }
+anchor-lang-idl = { path = "idl", version = "=0.2.0" }
+anchor-lang-idl-spec = { path = "idl/spec", version = "=0.1.0" }
 
 [profile.release]
 lto = true

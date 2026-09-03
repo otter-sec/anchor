@@ -8,7 +8,7 @@
 // Test structs exist only to feed the derive — fields/variants aren't read.
 #![allow(dead_code)]
 
-use anchor_lang_v2::{prelude::*, InitSpace, Space};
+use anchor_lang::{prelude::*, InitSpace, Space};
 
 #[derive(InitSpace)]
 struct Primitives {

@@ -14,5 +14,5 @@ cpi = ["no-entrypoint"]
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
-anchor-lang = { path = "../../../../../lang" }
-anchor-spl = { path = "../../../../../spl" }
+anchor-lang = { package = "anchor-lang-v1", path = "../../../../../lang" }
+anchor-spl = { package = "anchor-spl-v1", path = "../../../../../spl" }

@@ -86,8 +86,8 @@ fn helper_attrs(mac: &str) -> TokenStream2 {
     // 3. This results in the trait implementations being produced, but the duplicate type definition being deleted
 
     let mac_path = Ident::new(mac, Span::call_site());
-    let anchor = proc_macro_crate::crate_name("anchor-lang")
-        .expect("`anchor-derive-serde` must be used via `anchor-lang`");
+    let anchor = proc_macro_crate::crate_name("anchor-lang-v1")
+        .expect("`anchor-derive-serde` must be used via `anchor-lang-v1`");
 
     let anchor_path = Ident::new(
         match &anchor {

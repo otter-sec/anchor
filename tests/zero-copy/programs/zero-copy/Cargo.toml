@@ -17,7 +17,7 @@ test-sbf = []
 idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
-anchor-lang = { path = "../../../../lang" }
+anchor-lang = { package = "anchor-lang-v1", path = "../../../../lang" }
 bytemuck = {version = "1.4.0", features = ["derive", "min_const_generics"]}
 
 [dev-dependencies]

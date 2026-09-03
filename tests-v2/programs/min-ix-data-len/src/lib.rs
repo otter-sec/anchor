@@ -1,4 +1,4 @@
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("5s2e6TBgh2AYCEmW3DZi7WJYtNaLWS7M3e8dnNh4qLVA");
 

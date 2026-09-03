@@ -1,15 +1,15 @@
 //! Interface account types that accept both Token and Token-2022 programs.
 //!
 //! Provides `TokenAccount` and `Mint` aliases for use with
-//! `anchor_lang_v2::prelude::InterfaceAccount`, accepting either
+//! `anchor_lang::prelude::InterfaceAccount`, accepting either
 //! `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA` (Token) or
 //! `TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb` (Token-2022).
 //!
 //! # Usage
 //!
 //! ```ignore
-//! use anchor_lang_v2::prelude::InterfaceAccount;
-//! use anchor_spl_v2::token_interface::{Mint, TokenAccount};
+//! use anchor_lang::prelude::InterfaceAccount;
+//! use anchor_spl::token_interface::{Mint, TokenAccount};
 //!
 //! #[derive(Accounts)]
 //! pub struct MyAccounts {
@@ -24,7 +24,7 @@ pub use crate::{
     token_2022_extensions::*,
 };
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         accounts::{InterfaceAccount, SlabInit, SlabSchema},
         programs::{Token, Token2022 as Token2022Program},
         require, require_eq, AccountConstraint, AnchorAccount, Id, Ids,
@@ -135,8 +135,8 @@ impl Ids for TokenInterface {
     #[inline(always)]
     fn ids() -> &'static [Address] {
         static IDS: [Address; 2] = [
-            anchor_lang_v2::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
-            anchor_lang_v2::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
+            anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+            anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
         ];
         &IDS
     }
@@ -186,11 +186,11 @@ impl SlabSchema for Interface<crate::Mint> {
 // Space
 // ---------------------------------------------------------------------------
 
-impl anchor_lang_v2::Space for Interface<crate::TokenAccount> {
+impl anchor_lang::Space for Interface<crate::TokenAccount> {
     const INIT_SPACE: usize = core::mem::size_of::<crate::TokenAccount>();
 }
 
-impl anchor_lang_v2::Space for Interface<crate::Mint> {
+impl anchor_lang::Space for Interface<crate::Mint> {
     const INIT_SPACE: usize = core::mem::size_of::<crate::Mint>();
 }
 
@@ -199,10 +199,10 @@ impl anchor_lang_v2::Space for Interface<crate::Mint> {
 // ---------------------------------------------------------------------------
 
 #[doc(hidden)]
-impl anchor_lang_v2::IdlAccountType for Interface<crate::TokenAccount> {}
+impl anchor_lang::IdlAccountType for Interface<crate::TokenAccount> {}
 
 #[doc(hidden)]
-impl anchor_lang_v2::IdlAccountType for Interface<crate::Mint> {}
+impl anchor_lang::IdlAccountType for Interface<crate::Mint> {}
 
 // ---------------------------------------------------------------------------
 // SlabInit — Interface<TokenAccount>
@@ -236,7 +236,7 @@ impl SlabInit for Interface<crate::TokenAccount> {
         crate::token_shared::validate_token_interface_program(program_id)?;
 
         let space = token_account_init_space(mint, program_id)?;
-        anchor_lang_v2::create_account_with_signers(
+        anchor_lang::create_account_with_signers(
             payer,
             account,
             space,
@@ -260,7 +260,7 @@ fn token_account_init_space(
     mint: &AccountView,
     token_program: &Address,
 ) -> Result<usize, ProgramError> {
-    if !anchor_lang_v2::address_eq(token_program, &Token2022Program::id()) {
+    if !anchor_lang::address_eq(token_program, &Token2022Program::id()) {
         return Ok(core::mem::size_of::<crate::TokenAccount>());
     }
 
@@ -305,7 +305,7 @@ impl SlabInit for Interface<crate::Mint> {
         crate::token_shared::validate_token_interface_program(program_id)?;
 
         let space = core::mem::size_of::<crate::Mint>();
-        anchor_lang_v2::create_account_with_signers(
+        anchor_lang::create_account_with_signers(
             payer,
             account,
             space,
@@ -337,7 +337,7 @@ impl AccountConstraint<InterfaceAccount<TokenAccount>> for crate::token::MintCon
         expected: &Address,
     ) -> Result<(), ProgramError> {
         require!(
-            anchor_lang_v2::address_eq(account.mint(), expected),
+            anchor_lang::address_eq(account.mint(), expected),
             ProgramError::InvalidAccountData
         );
         Ok(())
@@ -352,7 +352,7 @@ impl AccountConstraint<InterfaceAccount<TokenAccount>> for crate::token::Authori
         expected: &Address,
     ) -> Result<(), ProgramError> {
         require!(
-            anchor_lang_v2::address_eq(account.owner(), expected),
+            anchor_lang::address_eq(account.owner(), expected),
             ProgramError::InvalidAccountData
         );
         Ok(())

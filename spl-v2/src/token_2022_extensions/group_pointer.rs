@@ -1,7 +1,7 @@
 use {
     super::common::validate_token_2022_program,
     crate::{token_2022::spl_token_2022, token_shared::multisig_signer_addresses},
-    anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
+    anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
     solana_instruction::Instruction,
     solana_program_error::ProgramError,
@@ -70,7 +70,7 @@ fn group_pointer_update_ix(
 mod tests {
     use {
         super::*,
-        anchor_lang_v2::{
+        anchor_lang::{
             programs::Token2022,
             testing::{AccountBuffer, MIN_ACCOUNT_BUF},
             Address, Id,

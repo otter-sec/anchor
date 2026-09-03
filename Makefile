@@ -21,12 +21,16 @@ TESTS_V2_COVERAGE_TESTS := \
 	account_address_constraints \
 	account_meta_signer_overrides \
 	accounts \
+	borsh_borrow_alignment \
 	borsh_realloc \
+	cfg_semantics \
 	client_builders \
+	constraint_values \
 	constraints \
 	cpi \
 	custom_constraints \
 	declare_program \
+	declare_program_idl_deps \
 	derives \
 	dispatch_remaining \
 	dup_mut \
@@ -34,19 +38,26 @@ TESTS_V2_COVERAGE_TESTS := \
 	equivalence_spl \
 	event_cpi \
 	idl_convert \
+	idl_defined_args \
 	idl_metadata \
 	init_space_usability \
+	instruction_prefix \
 	ix_macro \
+	min_ix_data_len \
 	optional_accounts \
 	pda_payer \
 	program_interface \
 	seeds \
+	slab_idl_surface \
 	spl \
 	spl_ata \
+	space_annotation \
 	sysvar_idl \
 	token_2022_extensions \
 	token_interface
 TESTS_V2_COVERAGE_ARGS := $(foreach test,$(TESTS_V2_COVERAGE_TESTS),--test $(test))
+TESTS_V2_NON_COVERAGE_TESTS := compile_fail
+TESTS_V2_NON_COVERAGE_ARGS := $(foreach test,$(TESTS_V2_NON_COVERAGE_TESTS),--test $(test))
 
 .PHONY: coverage-v2
 coverage-v2:
@@ -97,6 +108,8 @@ build-anchor-debug:
 .PHONY: coverage-v2-host
 coverage-v2-host:
 	$(MAKE) coverage-v2-host-clean
+	$(MAKE) coverage-v2-host-derive
+	$(MAKE) coverage-v2-host-cli
 	$(MAKE) coverage-v2-host-lang
 	$(MAKE) coverage-v2-host-spl
 	$(MAKE) coverage-v2-host-tests
@@ -113,20 +126,33 @@ coverage-v2-host-clean:
 	cargo llvm-cov clean --workspace
 
 .PHONY: coverage-v2-host-lang
+coverage-v2-host-derive:
+	# Proc macros have their own unit-test target and must be selected directly:
+	# depending on them from anchor-lang does not compile that target with cfg(test).
+	CARGO_PROFILE_RELEASE_DEBUG=2 \
+	cargo llvm-cov --no-report -p anchor-derive-accounts
+
+.PHONY: coverage-v2-host-lang
+coverage-v2-host-cli:
+	# Keep the command-line surface in the same host report as the framework.
+	CARGO_PROFILE_RELEASE_DEBUG=2 \
+	cargo llvm-cov --no-report -p anchor-cli
+
+.PHONY: coverage-v2-host-lang
 coverage-v2-host-lang:
-	# First pass: `anchor-lang-v2` with its `testing` feature enabled — the
-	# Miri-witnesses integration tests need the `anchor_lang_v2::testing`
+	# First pass: `anchor-lang` with its `testing` feature enabled — the
+	# Miri-witnesses integration tests need the `anchor_lang::testing`
 	# scaffold. Split into its own invocation because `testing` is a
 	# lang-v2-only feature, and passing it to a multi-package run would
-	# fail when `anchor-spl-v2` / `tests-v2` don't define it.
+	# fail when `anchor-spl` / `tests-v2` don't define it.
 	CARGO_PROFILE_RELEASE_DEBUG=2 \
-	cargo llvm-cov --no-report -p anchor-lang-v2 --features testing
+	cargo llvm-cov --no-report -p anchor-lang --features testing
 
 .PHONY: coverage-v2-host-spl
 coverage-v2-host-spl:
-	# Second pass: `anchor-spl-v2` under default features.
+	# Second pass: `anchor-spl` under default features.
 	CARGO_PROFILE_RELEASE_DEBUG=2 \
-	cargo llvm-cov --no-report -p anchor-spl-v2
+	cargo llvm-cov --no-report -p anchor-spl
 
 .PHONY: coverage-v2-host-tests
 coverage-v2-host-tests:
@@ -136,6 +162,13 @@ coverage-v2-host-tests:
 	# execute framework runtime paths for source coverage.
 	CARGO_PROFILE_RELEASE_DEBUG=2 \
 	cargo llvm-cov --no-report -p tests-v2 $(TESTS_V2_COVERAGE_ARGS)
+
+# Compile-fail fixtures exercise diagnostics by spawning isolated Cargo projects.
+# Run them in CI, but keep them out of the instrumentation report so temporary
+# fixture code cannot dilute framework line coverage.
+.PHONY: test-v2-non-coverage
+test-v2-non-coverage:
+	cargo test -p tests-v2 $(TESTS_V2_NON_COVERAGE_ARGS)
 
 .PHONY: coverage-v2-host-idl-build
 coverage-v2-host-idl-build:
@@ -304,29 +337,11 @@ clean:
 
 .PHONY: publish
 publish:
-	cd lang/syn/ && cargo publish && cd ../../
+	cd lang-v2/derive/ && cargo publish && cd ../../
 	sleep 25
-	cd lang/derive/accounts/ && cargo publish && cd ../../../
+	cd lang-v2/ && cargo publish && cd ../
 	sleep 25
-	cd lang/derive/serde/ && cargo publish && cd ../../../
-	sleep 25
-	cd lang/derive/space/ && cargo publish && cd ../../../
-	sleep 25
-	cd lang/attribute/access-control/ && cargo publish && cd ../../../
-	sleep 25
-	cd lang/attribute/account/ && cargo publish && cd ../../../
-	sleep 25
-	cd lang/attribute/constant/ && cargo publish && cd ../../../
-	sleep 25
-	cd lang/attribute/error/ && cargo publish && cd ../../../
-	sleep 25
-	cd lang/attribute/program/ && cargo publish && cd ../../..
-	sleep 25
-	cd lang/attribute/event/ && cargo publish && cd ../../../
-	sleep 25
-	cd lang/ && cargo publish && cd ../
-	sleep 25
-	cd spl/ && cargo publish && cd ../
+	cd spl-v2/ && cargo publish && cd ../
 	sleep 25
 	cd client/ && cargo publish && cd ../
 	sleep 25

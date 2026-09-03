@@ -77,8 +77,10 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
     pub fn invoke(&self, data: &[u8]) -> ProgramResult {
         let mut instruction_accounts = self.accounts.to_instruction_accounts();
         let mut handles = self.accounts.to_cpi_handles();
+        let mut optional_sentinel_flags = self.accounts.optional_account_sentinel_flags();
 
-        // Append remaining accounts using the handle's flags.
+        // Append remaining accounts using the handle's writable/signer flags
+        // so PDA remaining accounts marked with `as_signer()` emit signer metas.
         for handle in &self.remaining_accounts {
             instruction_accounts.push(InstructionAccount::new(
                 handle.address(),
@@ -86,12 +88,14 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
                 handle.is_signer(),
             ));
             handles.push(*handle);
+            optional_sentinel_flags.push(false);
         }
 
         crate::program::validate_instruction_accounts(
             &instruction_accounts,
             self.program,
             &handles,
+            &optional_sentinel_flags,
             self.signer_seeds.is_empty(),
         )?;
 
@@ -121,7 +125,9 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
             })
             .collect();
 
-        // Build CpiAccounts and invoke.
+        // Build CpiAccounts and invoke. Account count matches handles (optional
+        // None sentinels have metas but no handles); pinocchio skips program-id
+        // placeholder metas that lack a paired CpiAccount.
         let n = handles.len();
         let mut cpi_accounts: Vec<core::mem::MaybeUninit<pinocchio::cpi::CpiAccount>> =
             Vec::with_capacity(n);
@@ -157,6 +163,10 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
     /// The instruction's program id must match this context's program. Account
     /// metas are taken from the instruction, while account handles are collected
     /// from [`ToCpiAccounts`] and `remaining_accounts`.
+    ///
+    /// Optional `None` sentinel slots must appear in the same positions as in
+    /// [`ToCpiAccounts::to_instruction_accounts`]; only those indices may omit
+    /// handles for readonly program-id metas.
     pub fn invoke_ix(&self, ix: Instruction) -> ProgramResult {
         require!(
             address_eq(self.program, &ix.program_id),
@@ -165,7 +175,22 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
 
         let mut handles = self.accounts.to_cpi_handles();
         handles.extend(self.remaining_accounts.iter().copied());
-        crate::program::invoke_signed(&ix, &handles, self.signer_seeds)
+
+        let mut optional_sentinel_flags = self.accounts.optional_account_sentinel_flags();
+        require!(
+            optional_sentinel_flags.len() <= ix.accounts.len(),
+            ProgramError::InvalidArgument
+        );
+        // Trailing metas (e.g. remaining accounts already baked into `ix`) are
+        // never treated as optional sentinels from this accounts struct.
+        optional_sentinel_flags.resize(ix.accounts.len(), false);
+
+        crate::program::invoke_signed_with_optional_sentinels(
+            &ix,
+            &handles,
+            self.signer_seeds,
+            &optional_sentinel_flags,
+        )
     }
 }
 

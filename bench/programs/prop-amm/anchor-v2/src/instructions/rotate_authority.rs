@@ -1,6 +1,6 @@
 use {
     crate::{error::OracleError, state::Oracle},
-    anchor_lang_v2::prelude::*,
+    anchor_lang::prelude::*,
 };
 
 #[derive(Accounts)]

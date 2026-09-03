@@ -4,7 +4,7 @@ pub mod error;
 pub mod instructions;
 pub mod state;
 
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 pub use instructions::*;
 
@@ -83,6 +83,6 @@ pub struct Update {
 //   input + 10400  authority.address[0..32]
 
 #[cfg(target_os = "solana")]
-anchor_lang_v2::pinocchio::default_allocator!();
+anchor_lang::pinocchio::default_allocator!();
 #[cfg(target_os = "solana")]
-anchor_lang_v2::pinocchio::default_panic_handler!();
+anchor_lang::pinocchio::default_panic_handler!();

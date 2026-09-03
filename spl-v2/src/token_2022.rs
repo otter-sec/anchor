@@ -5,12 +5,12 @@ extern crate alloc;
 use {
     crate::token_shared::multisig_signer_addresses,
     alloc::{string::String, vec::Vec},
-    anchor_lang_v2::{require_eq, CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
+    anchor_lang::{require_eq, CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
 };
 
-pub use anchor_lang_v2::programs::Token2022;
+pub use anchor_lang::programs::Token2022;
 pub use spl_token_2022_interface::{
     self as spl_token_2022, extension::ExtensionType, native_mint, ID,
 };
@@ -86,7 +86,7 @@ pub struct PermanentDelegateInitialize<'a> {
 }
 
 fn return_data_from(program: &Address) -> Result<Vec<u8>, ProgramError> {
-    let (return_program, data) = anchor_lang_v2::solana_program::program::get_return_data()
+    let (return_program, data) = anchor_lang::solana_program::program::get_return_data()
         .ok_or(ProgramError::InvalidInstructionData)?;
     require_eq!(
         return_program.to_bytes().as_slice(),

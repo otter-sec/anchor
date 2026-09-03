@@ -5,7 +5,7 @@
 pub fn sha256(data: &[u8]) -> [u8; 32] {
     #[cfg(target_os = "solana")]
     {
-        use solana_define_syscall::definitions::sol_sha256;
+        use solana_sha256_hasher::sol_sha256;
         let slices: [&[u8]; 1] = [data];
         let mut out = core::mem::MaybeUninit::<[u8; 32]>::uninit();
         // SAFETY: slices is a valid single-element array; sol_sha256 writes

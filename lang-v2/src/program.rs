@@ -27,8 +27,25 @@ pub fn get_return_data() -> Option<(crate::Address, Vec<u8>)> {
 /// Unlike the legacy `AccountInfo` API, callers pass [`CpiHandle`]s obtained
 /// from `cpi_handle()` / `cpi_handle_mut()`, so CPI account lifetimes remain
 /// tied to Rust borrows of the caller's typed accounts.
+///
+/// Optional program-id sentinel metas from `Option::None` CPI slots are not
+/// inferred from address alone — use
+/// [`invoke_with_optional_sentinels`] / [`invoke_signed_with_optional_sentinels`]
+/// (or [`crate::CpiContext`]) so required readonly program-id accounts still
+/// require matching handles.
 pub fn invoke<'a>(instruction: &Instruction, account_handles: &[CpiHandle<'a>]) -> ProgramResult {
     invoke_signed(instruction, account_handles, &[])
+}
+
+/// Like [`invoke`], but marks instruction-account indices that are intentional
+/// optional `None` program-id sentinels (parallel to
+/// [`crate::ToCpiAccounts::optional_account_sentinel_flags`]).
+pub fn invoke_with_optional_sentinels<'a>(
+    instruction: &Instruction,
+    account_handles: &[CpiHandle<'a>],
+    optional_sentinel_flags: &[bool],
+) -> ProgramResult {
+    invoke_signed_with_optional_sentinels(instruction, account_handles, &[], optional_sentinel_flags)
 }
 
 /// Invoke a cross-program instruction with PDA signer seeds using Anchor v2
@@ -38,18 +55,36 @@ pub fn invoke_signed<'a, 'seeds>(
     account_handles: &[CpiHandle<'a>],
     signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
 ) -> ProgramResult {
+    invoke_signed_with_optional_sentinels(instruction, account_handles, signer_seeds, &[])
+}
+
+/// Like [`invoke_signed`], with an explicit optional-sentinel mask.
+pub fn invoke_signed_with_optional_sentinels<'a, 'seeds>(
+    instruction: &Instruction,
+    account_handles: &[CpiHandle<'a>],
+    signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
+    optional_sentinel_flags: &[bool],
+) -> ProgramResult {
     let instruction_accounts = instruction_accounts(instruction);
     validate_instruction_accounts(
         &instruction_accounts,
         &instruction.program_id,
         account_handles,
+        optional_sentinel_flags,
         signer_seeds.is_empty(),
     )?;
 
     // SAFETY: Validation above proves every non-sentinel instruction account
     // has a matching handle, writable metas use writable handles, and
     // AccountView borrow state permits the CPI.
-    unsafe { invoke_signed_unchecked(instruction, account_handles, signer_seeds) }
+    unsafe {
+        invoke_signed_unchecked_with_optional_sentinels(
+            instruction,
+            account_handles,
+            signer_seeds,
+            optional_sentinel_flags,
+        )
+    }
 }
 
 /// Invoke a cross-program instruction without borrow validation.
@@ -80,9 +115,27 @@ pub unsafe fn invoke_signed_unchecked<'a, 'seeds>(
     account_handles: &[CpiHandle<'a>],
     signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
 ) -> ProgramResult {
+    unsafe { invoke_signed_unchecked_with_optional_sentinels(instruction, account_handles, signer_seeds, &[]) }
+}
+
+/// Like [`invoke_signed_unchecked`], with an explicit optional-sentinel mask.
+///
+/// # Safety
+///
+/// Same as [`invoke_signed_unchecked`].
+pub unsafe fn invoke_signed_unchecked_with_optional_sentinels<'a, 'seeds>(
+    instruction: &Instruction,
+    account_handles: &[CpiHandle<'a>],
+    signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
+    optional_sentinel_flags: &[bool],
+) -> ProgramResult {
     let instruction_accounts = instruction_accounts(instruction);
-    let cpi_account_count =
-        required_cpi_account_count(&instruction_accounts, &instruction.program_id, account_handles)?;
+    let cpi_account_count = required_cpi_account_count(
+        &instruction_accounts,
+        &instruction.program_id,
+        account_handles,
+        optional_sentinel_flags,
+    )?;
     let instruction_view = InstructionView {
         program_id: &instruction.program_id,
         accounts: &instruction_accounts,
@@ -113,10 +166,15 @@ pub(crate) fn validate_instruction_accounts<'a>(
     instruction_accounts: &[InstructionAccount<'a>],
     program_id: &Address,
     account_handles: &[CpiHandle<'a>],
+    optional_sentinel_flags: &[bool],
     enforce_signers: bool,
 ) -> ProgramResult {
-    let bindings =
-        resolve_instruction_account_bindings(instruction_accounts, program_id, account_handles)?;
+    let bindings = resolve_instruction_account_bindings(
+        instruction_accounts,
+        program_id,
+        account_handles,
+        optional_sentinel_flags,
+    )?;
 
     for (account, binding) in instruction_accounts.iter().zip(bindings) {
         let Some(handle_index) = binding else {
@@ -147,23 +205,41 @@ fn is_optional_instruction_account_sentinel_candidate(
     !account.is_writable && !account.is_signer && address_eq(account.address, program_id)
 }
 
+fn is_skippable_optional_sentinel(
+    program_id: &Address,
+    account: &InstructionAccount<'_>,
+    optional_sentinel_flags: &[bool],
+    instruction_index: usize,
+) -> bool {
+    optional_sentinel_flags
+        .get(instruction_index)
+        .copied()
+        .unwrap_or(false)
+        && is_optional_instruction_account_sentinel_candidate(program_id, account)
+}
+
 fn required_cpi_account_count<'a>(
     instruction_accounts: &[InstructionAccount<'a>],
     program_id: &Address,
     account_handles: &[CpiHandle<'a>],
+    optional_sentinel_flags: &[bool],
 ) -> Result<usize, ProgramError> {
-    Ok(
-        resolve_instruction_account_bindings(instruction_accounts, program_id, account_handles)?
-            .into_iter()
-            .flatten()
-            .count(),
-    )
+    Ok(resolve_instruction_account_bindings(
+        instruction_accounts,
+        program_id,
+        account_handles,
+        optional_sentinel_flags,
+    )?
+    .into_iter()
+    .flatten()
+    .count())
 }
 
 fn resolve_instruction_account_bindings<'a>(
     instruction_accounts: &[InstructionAccount<'a>],
     program_id: &Address,
     account_handles: &[CpiHandle<'a>],
+    optional_sentinel_flags: &[bool],
 ) -> Result<Vec<Option<usize>>, ProgramError> {
     let cols = account_handles.len() + 1;
     let rows = instruction_accounts.len() + 1;
@@ -179,15 +255,25 @@ fn resolve_instruction_account_bindings<'a>(
             let can_consume = handle_index < account_handles.len()
                 && instruction_account_matches_handle(account, &account_handles[handle_index])
                 && can_match[(instruction_index + 1) * cols + (handle_index + 1)];
-            let can_skip = is_optional_instruction_account_sentinel_candidate(program_id, account)
-                && can_match[(instruction_index + 1) * cols + handle_index];
+            let can_skip = is_skippable_optional_sentinel(
+                program_id,
+                account,
+                optional_sentinel_flags,
+                instruction_index,
+            ) && can_match[(instruction_index + 1) * cols + handle_index];
             can_match[instruction_index * cols + handle_index] = can_consume || can_skip;
         }
     }
 
     require!(
         can_match[0],
-        if account_handles.len() < minimum_required_handle_count(instruction_accounts, program_id) {
+        if account_handles.len()
+            < minimum_required_handle_count(
+                instruction_accounts,
+                program_id,
+                optional_sentinel_flags
+            )
+        {
             ProgramError::NotEnoughAccountKeys
         } else {
             ProgramError::InvalidArgument
@@ -198,6 +284,19 @@ fn resolve_instruction_account_bindings<'a>(
     let mut handle_index = 0;
 
     for (instruction_index, account) in instruction_accounts.iter().enumerate() {
+        // Prefer skipping intentional Option::None sentinels so a later
+        // required program-id account can still consume a matching handle.
+        let can_skip = is_skippable_optional_sentinel(
+            program_id,
+            account,
+            optional_sentinel_flags,
+            instruction_index,
+        ) && can_match[(instruction_index + 1) * cols + handle_index];
+        if can_skip {
+            bindings.push(None);
+            continue;
+        }
+
         let can_consume = handle_index < account_handles.len()
             && instruction_account_matches_handle(account, &account_handles[handle_index])
             && can_match[(instruction_index + 1) * cols + (handle_index + 1)];
@@ -207,9 +306,10 @@ fn resolve_instruction_account_bindings<'a>(
             continue;
         }
 
-        let can_skip = is_optional_instruction_account_sentinel_candidate(program_id, account)
-            && can_match[(instruction_index + 1) * cols + handle_index];
-        debug_assert!(can_skip, "validated instruction-account matching must reconstruct");
+        debug_assert!(
+            false,
+            "validated instruction-account matching must reconstruct"
+        );
         bindings.push(None);
     }
 
@@ -219,10 +319,14 @@ fn resolve_instruction_account_bindings<'a>(
 fn minimum_required_handle_count(
     instruction_accounts: &[InstructionAccount<'_>],
     program_id: &Address,
+    optional_sentinel_flags: &[bool],
 ) -> usize {
     instruction_accounts
         .iter()
-        .filter(|account| !is_optional_instruction_account_sentinel_candidate(program_id, account))
+        .enumerate()
+        .filter(|(index, account)| {
+            !is_skippable_optional_sentinel(program_id, account, optional_sentinel_flags, *index)
+        })
         .count()
 }
 

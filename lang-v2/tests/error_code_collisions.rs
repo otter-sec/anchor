@@ -16,7 +16,7 @@
 //! being listed there, the match goes non-exhaustive and the test
 //! crate fails to compile — forcing a review.
 
-use anchor_lang_v2::ErrorCode;
+use anchor_lang::ErrorCode;
 use solana_program_error::ProgramError;
 
 // Exhaustive variant list. The inner `exhaustiveness_check` fn uses a
@@ -40,6 +40,7 @@ fn all_labeled_variants() -> Vec<(&'static str, ErrorCode)> {
             | ErrorCode::ConstraintClose
             | ErrorCode::ConstraintOwner
             | ErrorCode::ConstraintSpace
+            | ErrorCode::ConstraintRentExempt
             | ErrorCode::ConstraintRaw
             | ErrorCode::ConstraintExecutable
             | ErrorCode::ConstraintZero
@@ -72,6 +73,7 @@ fn all_labeled_variants() -> Vec<(&'static str, ErrorCode)> {
         ("ConstraintClose", ErrorCode::ConstraintClose),
         ("ConstraintOwner", ErrorCode::ConstraintOwner),
         ("ConstraintSpace", ErrorCode::ConstraintSpace),
+        ("ConstraintRentExempt", ErrorCode::ConstraintRentExempt),
         ("ConstraintRaw", ErrorCode::ConstraintRaw),
         ("ConstraintExecutable", ErrorCode::ConstraintExecutable),
         ("ConstraintZero", ErrorCode::ConstraintZero),
@@ -121,7 +123,7 @@ fn no_two_variants_share_a_custom_code() {
     }
     // Snapshot — adding a new Custom variant forces a review of this number.
     assert_eq!(
-        custom_count, 17,
+        custom_count, 18,
         "Number of Custom error codes changed; update this snapshot after review"
     );
 }

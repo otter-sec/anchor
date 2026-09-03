@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::solana_program::instruction::AccountMeta,
+    anchor_lang::solana_program::instruction::AccountMeta,
     litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_pubkey::Pubkey,
@@ -14,7 +14,7 @@ fn program_id() -> Pubkey {
 }
 
 fn token_program_id() -> Pubkey {
-    <anchor_spl_v2::token::Token as anchor_lang_v2::Id>::id()
+    <anchor_spl::token::Token as anchor_lang::Id>::id()
 }
 
 fn setup() -> (LiteSVM, Keypair) {

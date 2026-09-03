@@ -1,5 +1,5 @@
-use anchor_lang_v2::__alloc::{string::String, vec::Vec};
-use anchor_lang_v2::prelude::*;
+use anchor_lang::__alloc::{string::String, vec::Vec};
+use anchor_lang::prelude::*;
 
 declare_id!("BF748KR4UhPq7xbhFQYd7yFKmh5UYdqed9GbD6oZvEyu");
 declare_program!(return_spoof);
@@ -17,7 +17,7 @@ pub struct ReturnStore {
     pub _padding: [u8; 5],
 }
 
-#[derive(Clone, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(Clone, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
 pub struct ReturnPayload {
     pub amount: u64,
     pub label: String,

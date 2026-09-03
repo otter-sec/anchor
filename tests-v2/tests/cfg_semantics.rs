@@ -4,7 +4,7 @@ fn cargo_case(name: &str, source: &str, command: &str, features: &[&str]) -> std
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let crate_dir = manifest_dir.join("target/compile-cases").join(name);
     let src_dir = crate_dir.join("src");
-    let anchor_lang_v2 = manifest_dir
+    let anchor_lang = manifest_dir
         .parent()
         .expect("tests-v2 should live under the workspace root")
         .join("lang-v2");
@@ -24,8 +24,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-anchor-lang-v2 = {{ path = "{}" }}
-wincode = {{ version = "0.5", features = ["derive"] }}
+anchor-lang = {{ path = "{}" }}
 
 [features]
 idl-build = []
@@ -34,7 +33,7 @@ live = []
 
 [workspace]
 "#,
-            anchor_lang_v2.display()
+            anchor_lang.display()
         ),
     )
     .unwrap();
@@ -81,7 +80,7 @@ fn cfg_gated_public_handlers_compile_without_wrapper_errors() {
     compile_pass_case(
         "tests_v2_cfg_gated_handler",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -110,7 +109,7 @@ fn cfg_disabled_members_drop_out_of_idl_and_error_codes() {
     cargo_test_pass_case(
         "tests_v2_cfg_filtered_idl",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 

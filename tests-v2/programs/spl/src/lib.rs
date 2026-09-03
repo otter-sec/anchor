@@ -1,11 +1,11 @@
-//! Examples for `anchor-spl-v2` Mint and TokenAccount workflows.
+//! Examples for `anchor-spl` Mint and TokenAccount workflows.
 //!
 //! The handlers show common SPL initialization, CPI helpers, account
 //! accessors, namespaced constraints, and Token Interface patterns.
 
 use {
-    anchor_lang_v2::prelude::*,
-    anchor_spl_v2::{
+    anchor_lang::prelude::*,
+    anchor_spl::{
         associated_token::get_associated_token_address,
         extensions::{
             self, CpiGuard, DefaultAccountState, GroupMemberPointer, GroupPointer, MetadataPointer,
@@ -468,11 +468,11 @@ pub mod spl_test {
     ) -> Result<()> {
         let ta = &*ctx.accounts.token_account;
         require!(
-            anchor_lang_v2::address_eq(ta.mint(), &expected_mint),
+            anchor_lang::address_eq(ta.mint(), &expected_mint),
             ProgramError::InvalidAccountData
         );
         require!(
-            anchor_lang_v2::address_eq(ta.owner(), &expected_owner),
+            anchor_lang::address_eq(ta.owner(), &expected_owner),
             ProgramError::InvalidAccountData
         );
         require_eq!(
@@ -535,11 +535,11 @@ pub mod spl_test {
     ) -> Result<()> {
         let ta = &*ctx.accounts.token_account;
         require!(
-            anchor_lang_v2::address_eq(ta.mint(), &expected_mint),
+            anchor_lang::address_eq(ta.mint(), &expected_mint),
             ProgramError::InvalidAccountData
         );
         require!(
-            anchor_lang_v2::address_eq(ta.owner(), &expected_owner),
+            anchor_lang::address_eq(ta.owner(), &expected_owner),
             ProgramError::InvalidAccountData
         );
         require_eq!(
@@ -627,7 +627,7 @@ pub mod spl_test {
             ctx.accounts.mint.account().address(),
         );
         require!(
-            anchor_lang_v2::address_eq(ctx.accounts.vault.account().address(), &expected),
+            anchor_lang::address_eq(ctx.accounts.vault.account().address(), &expected),
             ProgramError::InvalidAccountData
         );
         Ok(())
@@ -675,11 +675,11 @@ pub mod spl_test {
     ) -> Result<()> {
         let ta = &*ctx.accounts.token_account;
         require!(
-            anchor_lang_v2::address_eq(ta.mint(), &expected_mint),
+            anchor_lang::address_eq(ta.mint(), &expected_mint),
             ProgramError::InvalidAccountData
         );
         require!(
-            anchor_lang_v2::address_eq(ta.owner(), &expected_owner),
+            anchor_lang::address_eq(ta.owner(), &expected_owner),
             ProgramError::InvalidAccountData
         );
         require_eq!(

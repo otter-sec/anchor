@@ -19,7 +19,7 @@ solana-program-error = "3.0"
 # Used only as a utility shim for PDA derivation + signed create_account —
 # we do NOT use any anchor macros, just the `find_program_address` and
 # `create_account_signed` helpers that wrap raw pinocchio primitives.
-anchor-lang-v2 = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
+anchor-lang = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 anchor-v2-testing = { path = "../../../../v2-testing" }

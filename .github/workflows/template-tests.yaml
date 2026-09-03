@@ -52,142 +52,47 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # Rust-only test templates: `--javascript` and `--package-manager` don't
-  # apply, so the matrix is just template × test-template (2 × 3 = 6 cells).
-  template-rust-tests:
-    name: ${{ matrix.template }} + ${{ matrix.test_template }}
+  # The Rust rows are exhaustive (2 layouts × 3 runners). The eight JS rows
+  # cover every layout/runner/language combination and pair every package
+  # manager with both values of those dimensions, without a 32-cell product.
+  template-tests:
+    name: ${{ matrix.name }}
     needs: build-cli
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        template: [single, multiple]
-        test_template: [rust, mollusk, litesvm]
+        include:
+          - { name: "single + rust", template: single, test_template: rust, kind: rust }
+          - { name: "multiple + rust", template: multiple, test_template: rust, kind: rust }
+          - { name: "single + mollusk", template: single, test_template: mollusk, kind: rust }
+          - { name: "multiple + mollusk", template: multiple, test_template: mollusk, kind: rust }
+          - { name: "single + litesvm", template: single, test_template: litesvm, kind: rust }
+          - { name: "multiple + litesvm", template: multiple, test_template: litesvm, kind: rust }
+          - { name: "single + mocha + typescript + npm", template: single, test_template: mocha, language: typescript, package_manager: npm, javascript: false, kind: js }
+          - { name: "multiple + jest + javascript + npm", template: multiple, test_template: jest, language: javascript, package_manager: npm, javascript: true, kind: js }
+          - { name: "single + mocha + javascript + yarn", template: single, test_template: mocha, language: javascript, package_manager: yarn, javascript: true, kind: js }
+          - { name: "multiple + jest + typescript + yarn", template: multiple, test_template: jest, language: typescript, package_manager: yarn, javascript: false, kind: js }
+          - { name: "single + jest + typescript + pnpm", template: single, test_template: jest, language: typescript, package_manager: pnpm, javascript: false, kind: js }
+          - { name: "multiple + mocha + javascript + pnpm", template: multiple, test_template: mocha, language: javascript, package_manager: pnpm, javascript: true, kind: js }
+          - { name: "single + jest + javascript + bun", template: single, test_template: jest, language: javascript, package_manager: bun, javascript: true, kind: js }
+          - { name: "multiple + mocha + typescript + bun", template: multiple, test_template: mocha, language: typescript, package_manager: bun, javascript: false, kind: js }
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-solana/
       - uses: ./.github/actions/setup-surfpool/
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: anchor-cli
-          path: ~/.cargo/bin/
-      - run: chmod +x ~/.cargo/bin/anchor
-
-      # Match `tests-v2/src/lib.rs::build_program`. Pre-install so concurrent
-      # `cargo build-sbf` invocations don't race on the platform-tools rename.
-      # Cache platform-tools so the matrix cells don't each re-download it via
-      # the GitHub releases API (unauthenticated, so shared runner IPs get
-      # rate-limited and the install dies with "Failed to parse Github
-      # response"); retry the cold-cache install for the same reason.
-      - uses: actions/cache@v4
-        name: Cache SBF platform tools
-        with:
-          path: ~/.cache/solana/v1.52/platform-tools
-          key: solana-platform-tools-${{ runner.os }}-v1.52
-      - uses: nick-fields/retry@v2
-        name: Install SBF platform tools
-        with:
-          retry_wait_seconds: 60
-          timeout_minutes: 10
-          max_attempts: 5
-          retry_on: error
-          shell: bash
-          command: cargo build-sbf --tools-version v1.52 --install-only
-
-      # Cache the generated project's `target/` so subsequent runs reuse
-      # compiled deps. Restored before `anchor init` (which is invoked with
-      # `--force`, leaving `target/` intact); the deps don't depend on the
-      # template-files diff, so a partial restore from a prior commit is
-      # always a hit. Per-cell key avoids cross-pollination — different
-      # test templates pull different dev-deps.
-      - uses: actions/cache@v4
-        with:
-          path: /tmp/my_program/target/
-          key: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-${{ github.sha }}
-          restore-keys: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-
-
-      - name: anchor init
-        working-directory: /tmp
-        run: |
-          mkdir -p my_program
-          anchor init my_program \
-            --template ${{ matrix.template }} \
-            --test-template ${{ matrix.test_template }} \
-            --no-git \
-            --no-install \
-            --force
-
-      # Redirect every `git = ".../anchor.git"` dep in the generated
-      # project to this PR's checkout so PR changes are exercised. Without
-      # this, `anchor init` resolves anchor-lang-v2 / anchor-client /
-      # anchor-v2-testing from upstream `anchor-next`, masking any local
-      # changes. Listed crates that the lockfile doesn't reference are
-      # silently ignored (Cargo emits a warning, not an error). The rust
-      # test template has its own non-workspace `tests/Cargo.toml`, so
-      # we patch it separately when present.
-      - name: Patch generated project to use PR checkout
-        env:
-          REPO: ${{ github.workspace }}
-        run: |
-          patch_block() {
-            cat <<EOF >> "$1"
-
-          [patch."https://github.com/otter-sec/anchor.git"]
-          anchor-lang-v2 = { path = "$REPO/lang-v2" }
-          anchor-derive-accounts-v2 = { path = "$REPO/lang-v2/derive" }
-          anchor-client = { path = "$REPO/client" }
-          anchor-spl-v2 = { path = "$REPO/spl-v2" }
-          anchor-v2-testing = { path = "$REPO/v2-testing" }
-          EOF
-          }
-          patch_block /tmp/my_program/Cargo.toml
-          if [ -f /tmp/my_program/tests/Cargo.toml ]; then
-            patch_block /tmp/my_program/tests/Cargo.toml
-          fi
-
-      - name: anchor test
-        working-directory: /tmp/my_program
-        run: anchor test
-
-  # JS-based test templates: cross-product over template × language ×
-  # package manager (2 × 2 × 2 × 4 = 32 cells).
-  template-js-tests:
-    name: ${{ matrix.template }} + ${{ matrix.test_template }} + ${{ matrix.language }} + ${{ matrix.package_manager }}
-    needs: build-cli
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        template: [single, multiple]
-        test_template: [mocha, jest]
-        language: [typescript, javascript]
-        package_manager: [npm, yarn, pnpm, bun]
-    steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup/
-      - uses: ./.github/actions/setup-solana/
-      - uses: ./.github/actions/setup-surfpool/
-
-      - uses: actions/setup-node@v4
+      - if: matrix.kind == 'js'
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      # Each PM gets its own setup. Corepack's shim approach didn't work
-      # reliably without a `packageManager` field in package.json, and
-      # ubuntu-latest only ships yarn classic pre-installed.
-      #   - npm: bundled with Node (no setup needed)
-      #   - yarn: pre-installed on ubuntu-latest as yarn classic
-      #   - pnpm: pnpm/action-setup adds the binary to PATH
-      #   - bun:  oven-sh/setup-bun does the same
-      - if: matrix.package_manager == 'pnpm'
+      - if: matrix.kind == 'js' && matrix.package_manager == 'pnpm'
         uses: pnpm/action-setup@v4
         with:
           version: 10
-      - if: matrix.package_manager == 'bun'
+      - if: matrix.kind == 'js' && matrix.package_manager == 'bun'
         uses: oven-sh/setup-bun@v2
 
       - uses: actions/download-artifact@v4
@@ -196,8 +101,6 @@ jobs:
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/anchor
 
-      # Cache + retry for the same GitHub releases API rate-limit flake as in
-      # `template-rust-tests` above.
       - uses: actions/cache@v4
         name: Cache SBF platform tools
         with:
@@ -213,17 +116,13 @@ jobs:
           shell: bash
           command: cargo build-sbf --tools-version v1.52 --install-only
 
-      # Cache cargo `target/` and `node_modules/` for the generated project.
-      # `anchor init --force` leaves both alone, so the dirs survive a fresh
-      # init. Caching keys are per-cell so e.g. `mocha+ts+npm` doesn't pull
-      # `jest+js+pnpm`'s lockfile artifacts. `restore-keys` lets a stale
-      # commit's cache hit when the SHA-suffixed primary key misses.
       - uses: actions/cache@v4
         with:
           path: /tmp/my_program/target/
           key: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-${{ github.sha }}
           restore-keys: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-
-      - uses: actions/cache@v4
+      - if: matrix.kind == 'js'
+        uses: actions/cache@v4
         with:
           path: /tmp/my_program/node_modules/
           key: template-nm-${{ runner.os }}-${{ matrix.test_template }}-${{ matrix.language }}-${{ matrix.package_manager }}-${{ github.sha }}
@@ -233,30 +132,39 @@ jobs:
         working-directory: /tmp
         run: |
           mkdir -p my_program
+          extra_args="--no-install"
+          if [ "${{ matrix.kind }}" = "js" ]; then
+            extra_args="--package-manager ${{ matrix.package_manager }}"
+            if [ "${{ matrix.javascript }}" = "true" ]; then
+              extra_args="$extra_args --javascript"
+            fi
+          fi
           anchor init my_program \
             --template ${{ matrix.template }} \
             --test-template ${{ matrix.test_template }} \
-            --package-manager ${{ matrix.package_manager }} \
-            ${{ matrix.language == 'javascript' && '--javascript' || '' }} \
+            $extra_args \
             --no-git \
             --force
 
-      # Redirect git deps to this PR's checkout. See the rust matrix above
-      # for the rationale; JS templates only carry git deps through the
-      # program crate (no separate `tests/Cargo.toml`).
       - name: Patch generated project to use PR checkout
         env:
           REPO: ${{ github.workspace }}
         run: |
-          cat <<EOF >> /tmp/my_program/Cargo.toml
+          patch_block() {
+            cat <<EOF >> "$1"
 
           [patch."https://github.com/otter-sec/anchor.git"]
-          anchor-lang-v2 = { path = "$REPO/lang-v2" }
-          anchor-derive-accounts-v2 = { path = "$REPO/lang-v2/derive" }
+          anchor-lang = { path = "$REPO/lang-v2" }
+          anchor-derive-accounts = { path = "$REPO/lang-v2/derive" }
           anchor-client = { path = "$REPO/client" }
-          anchor-spl-v2 = { path = "$REPO/spl-v2" }
+          anchor-spl = { path = "$REPO/spl-v2" }
           anchor-v2-testing = { path = "$REPO/v2-testing" }
           EOF
+          }
+          patch_block /tmp/my_program/Cargo.toml
+          if [ -f /tmp/my_program/tests/Cargo.toml ]; then
+            patch_block /tmp/my_program/tests/Cargo.toml
+          fi
 
       - name: anchor test
         working-directory: /tmp/my_program

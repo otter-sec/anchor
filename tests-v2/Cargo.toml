@@ -20,7 +20,7 @@ name = "token_2022_extensions"
 path = "tests/token_2022_extensions/main.rs"
 
 [dependencies]
-anchor-lang-v2 = { path = "../lang-v2" }
+anchor-lang = { path = "../lang-v2" }
 account-address-constraints = { path = "programs/account-address-constraints" }
 account-meta-signer-overrides = { path = "programs/account-meta-signer-overrides" }
 borsh-realloc = { path = "programs/borsh-realloc", features = ["cpi"] }
@@ -48,7 +48,7 @@ ix-macro = { path = "programs/ix-macro" }
 min-ix-data-len = { path = "programs/min-ix-data-len" }
 optional-accounts = { path = "programs/optional-accounts" }
 program-interface = { path = "programs/program-interface", features = ["cpi"] }
-seeds = { path = "programs/seeds" }
+seeds = { path = "programs/seeds", features = ["idl-build"] }
 space-annotation = { path = "programs/space-annotation" }
 spl-test = { path = "programs/spl", features = ["cpi"] }
 spl-ata-test = { path = "programs/spl-ata", features = ["cpi"] }
@@ -70,12 +70,12 @@ sha2 = "0.10"
 anyhow = "1"
 
 [dev-dependencies]
-anchor-lang-idl = { path = "../idl", version = "0.1.2", features = ["convert"] }
-anchor-spl-v2 = { path = "../spl-v2" }
+anchor-lang-idl = { workspace = true, features = ["convert"] }
+anchor-spl = { path = "../spl-v2" }
 anchor-lang-idl-spec = { path = "../idl/spec", version = "0.1.0" }
 bytemuck = { version = "1", features = ["derive"] }
 proptest = "1"
-solana-address = "2.0"
+solana-address = "2.7.0"
 solana-loader-v3-interface.workspace = true
 solana-program-option = "3.1"
 solana-program-pack = "3.1"

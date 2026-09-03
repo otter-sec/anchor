@@ -1,4 +1,4 @@
-use {anchor_lang_v2::prelude::*, anchor_spl_v2::token_2022_extensions as token_2022_ext};
+use {anchor_lang::prelude::*, anchor_spl::token_2022_extensions as token_2022_ext};
 
 declare_id!("7Xp89PEgC8vJzUMCRZ8itHmfurazLM7SSNJ3R8hyaG6t");
 

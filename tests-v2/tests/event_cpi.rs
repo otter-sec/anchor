@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         event::EVENT_IX_TAG_LE, solana_program::instruction::AccountMeta, InstructionData,
     },
     litesvm::LiteSVM,

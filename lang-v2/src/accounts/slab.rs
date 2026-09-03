@@ -44,9 +44,9 @@ pub(super) fn cold_not_writable() -> ProgramError {
 }
 
 /// Capacity from live `data_len` / `items_offset` / `item_size`. Returns 0
-/// when `data_len < items_offset` to guard against underflow if an external
-/// `realloc_account` shrinks the buffer while a `Slab` is retained. Caller
-/// must ensure `item_size > 0` (`Slab` skips this for ZST items).
+/// when `data_len < items_offset` (external shrink below the tail region) or
+/// when `item_size == 0` (Pod ZST tails are rejected by the tail API; this
+/// guard keeps the helper panic-free if called incorrectly).
 ///
 /// Factored out of `Slab::capacity` as a free `const fn` so the Kani proofs
 /// below (`capacity_never_underflows`, `capacity_fits_within_data_len_item_*`,
@@ -54,7 +54,7 @@ pub(super) fn cold_not_writable() -> ProgramError {
 /// `Slab`'s generic plumbing.
 #[inline(always)]
 const fn capacity_for(data_len: usize, items_offset: usize, item_size: usize) -> usize {
-    if data_len < items_offset {
+    if item_size == 0 || data_len < items_offset {
         0
     } else {
         (data_len - items_offset) / item_size
@@ -420,7 +420,9 @@ where
     }
 
     /// Move excess lamports (current - min_lamports) from the account to
-    /// `recipient`. No-op if the account is already at the rent floor.
+    /// `recipient`. No-op if the account is already at the rent floor, or if
+    /// `recipient` aliases this account's lamport slot (a self-transfer would
+    /// otherwise credit then overwrite and burn the excess).
     ///
     /// Direct lamport arithmetic, no CPI — callers must only use this for
     /// accounts whose owner permits in-program lamport mutation.
@@ -429,6 +431,11 @@ where
         let required = self.min_lamports()?;
         let current = self.view.lamports();
         if current <= required {
+            return Ok(());
+        }
+        // When the recipient aliases this account, credit-then-debit would
+        // overwrite the first write and burn `excess`. Skip both writes.
+        if pinocchio::address::address_eq(recipient.address(), self.view.address()) {
             return Ok(());
         }
         let excess = current - required;
@@ -446,6 +453,8 @@ where
 // ===========================================================================
 // Tail-only impl block — `T: Pod` bound excludes `HeaderOnly`, so these
 // methods are "method not found" compile errors on `Account<H>`.
+// Zero-sized `Pod` types (e.g. `()`) are also rejected: layout treats them as
+// tail-less (`HAS_TAIL = false`) but the capacity math divides by item size.
 // ===========================================================================
 
 impl<H, T> Slab<H, T>
@@ -453,6 +462,14 @@ where
     H: Pod + Zeroable + SlabSchema,
     T: Pod,
 {
+    // Evaluated when any method from this impl is monomorphized.
+    #[allow(dead_code)]
+    const _NONZERO_TAIL: () = assert!(
+        core::mem::size_of::<T>() > 0,
+        "Slab tail item type must be non-zero-sized; use Account<H> / Slab<H, HeaderOnly> \
+         for header-only accounts",
+    );
+
     // -----------------------------------------------------------------------
     // Safe byte-slice accessors — bounds checks + bytemuck alignment checks
     // trade a small cost for zero unsafe in the tail-mutation path.
@@ -526,6 +543,7 @@ where
     /// `H::validate`, keeping `resize_to_capacity(0)` from bricking the account.
     #[inline(always)]
     pub const fn try_space_for(capacity: u32) -> Result<usize, ProgramError> {
+        let _ = Self::_NONZERO_TAIL;
         let item_bytes = match (capacity as usize).checked_mul(core::mem::size_of::<T>()) {
             Some(value) => value,
             None => return Err(ProgramError::ArithmeticOverflow),
@@ -556,6 +574,7 @@ where
     /// account below the Slab's structural minimum).
     #[inline(always)]
     pub fn capacity(&self) -> usize {
+        let _ = Self::_NONZERO_TAIL;
         capacity_for(
             self.view.data_len(),
             Self::ITEMS_OFFSET,
@@ -993,6 +1012,7 @@ where
 
     #[inline(always)]
     fn index(&self, index: usize) -> &T {
+        let _ = Self::_NONZERO_TAIL;
         &self.as_slice()[index]
     }
 }
@@ -1004,6 +1024,7 @@ where
 {
     #[inline(always)]
     fn index_mut(&mut self, index: usize) -> &mut T {
+        let _ = Self::_NONZERO_TAIL;
         &mut self.as_mut_slice()[index]
     }
 }
@@ -1197,6 +1218,13 @@ mod tests {
         );
         assert_eq!(acct.value, 99);
     }
+
+    #[test]
+    fn capacity_for_zero_item_size_returns_zero() {
+        assert_eq!(capacity_for(0, 0, 0), 0);
+        assert_eq!(capacity_for(128, 32, 0), 0);
+        assert_eq!(capacity_for(10, 32, 0), 0);
+    }
 }
 
 // Kani proofs for the `capacity_for` helper, which backs `Slab::capacity`
@@ -1215,13 +1243,13 @@ mod kani_proofs {
     const OFFSET_MAX: usize = 1024;
     const ITEM_SIZE_MAX: usize = 1024;
 
-    // `capacity_for` never panics or wraps for any valid input.
+    // `capacity_for` never panics or wraps for any input, including
+    // `item_size == 0` (returns 0).
     #[kani::proof]
     fn capacity_never_underflows() {
         let data_len: usize = kani::any();
         let items_offset: usize = kani::any();
         let item_size: usize = kani::any();
-        kani::assume(item_size > 0);
         kani::assume(data_len <= DATA_LEN_MAX);
         kani::assume(items_offset <= OFFSET_MAX);
         kani::assume(item_size <= ITEM_SIZE_MAX);

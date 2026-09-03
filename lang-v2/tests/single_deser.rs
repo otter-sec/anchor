@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use anchor_lang_v2::{prelude::*, TryAccounts};
+use anchor_lang::{prelude::*, TryAccounts};
 
 declare_id!("11111111111111111111111111111111");
 

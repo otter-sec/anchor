@@ -6,9 +6,9 @@
 //! padding); these tests cover the size and byte-cast assumptions for those two
 //! wrapper types.
 //!
-//! Run: `MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p anchor-spl-v2 --test miri_spl_pod`
+//! Run: `MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p anchor-spl --test miri_spl_pod`
 
-use anchor_spl_v2::{Mint, TokenAccount};
+use anchor_spl::{Mint, TokenAccount};
 use solana_program_pack::Pack;
 
 // --- Size cross-check against canonical `spl-token-interface` packed sizes.

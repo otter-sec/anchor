@@ -20,4 +20,4 @@ idl-build = ["anchor-lang/idl-build"]
 overflow-checks = true
 
 [dependencies]
-anchor-lang = { path = "../../../../lang" }
+anchor-lang = { package = "anchor-lang-v1", path = "../../../../lang" }

@@ -8,7 +8,7 @@
 //! phase.
 
 use {
-    anchor_lang_v2::{solana_program::instruction::AccountMeta, InstructionData},
+    anchor_lang::{solana_program::instruction::AccountMeta, InstructionData},
     litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_pubkey::Pubkey,

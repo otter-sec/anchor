@@ -9,7 +9,7 @@
 //! live `&mut Data` to the same bytes, so no UB.
 
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         solana_program::instruction::{AccountMeta, Instruction},
         InstructionData,
     },

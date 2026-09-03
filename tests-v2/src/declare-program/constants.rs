@@ -1,4 +1,4 @@
-use {anchor_lang_v2::Id, declare_program_constants::constants, solana_pubkey::Pubkey};
+use {anchor_lang::Id, declare_program_constants::constants, solana_pubkey::Pubkey};
 
 fn constants_id() -> Pubkey {
     "11111111111111111111111111111111".parse().unwrap()

@@ -18,5 +18,5 @@ idl-build = ["anchor-lang/idl-build"]
 anchor-debug = ["anchor-lang/anchor-debug"]
 
 [dependencies]
-anchor-lang = { path = "../../../../../lang" }
+anchor-lang = { package = "anchor-lang-v1", path = "../../../../../lang" }
 

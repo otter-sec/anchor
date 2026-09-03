@@ -4,7 +4,7 @@ fn compile_pass_case(name: &str, source: &str) {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let crate_dir = manifest_dir.join("target/compile-cases").join(name);
     let src_dir = crate_dir.join("src");
-    let anchor_lang_v2 = manifest_dir
+    let anchor_lang = manifest_dir
         .parent()
         .expect("tests-v2 should live under the workspace root")
         .join("lang-v2");
@@ -24,12 +24,11 @@ edition = "2021"
 publish = false
 
 [dependencies]
-anchor-lang-v2 = {{ path = "{}" }}
-wincode = {{ version = "0.5", features = ["derive"] }}
+anchor-lang = {{ path = "{}" }}
 
 [workspace]
 "#,
-            anchor_lang_v2.display()
+            anchor_lang.display()
         ),
     )
     .unwrap();
@@ -60,7 +59,7 @@ fn instruction_attr_keeps_declared_prefix_tuple() {
         r#"
 #![allow(dead_code)]
 
-use anchor_lang_v2::{prelude::*, TryAccounts};
+use anchor_lang::{prelude::*, TryAccounts};
 
 declare_id!("11111111111111111111111111111111");
 

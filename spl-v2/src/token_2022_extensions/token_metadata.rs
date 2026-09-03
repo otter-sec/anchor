@@ -1,7 +1,7 @@
 use {
     super::common::validate_token_2022_program,
     alloc::string::String,
-    anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
+    anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
     spl_pod::optional_keys::OptionalNonZeroPubkey,

@@ -1,4 +1,4 @@
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("BF748KR4UhPq7xbhFQYd7yFKmh5UYdqed9GbD6oZvEyu");
 
@@ -16,7 +16,7 @@ pub struct Store {
     pub last_tag: [u8; 3],
 }
 
-#[derive(Clone, Copy, IdlType, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(Clone, Copy, IdlType, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
 pub struct MyArgs {
     pub amount: u64,
     pub tag: [u8; 3],

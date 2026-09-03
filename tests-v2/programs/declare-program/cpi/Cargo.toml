@@ -15,8 +15,7 @@ no-idl = []
 no-log-ix-name = []
 
 [dependencies]
-anchor-lang-v2 = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
-wincode = { version = "0.5", features = ["derive"] }
+anchor-lang = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
 
 [lints.rust.unexpected_cfgs]
 level = "allow"

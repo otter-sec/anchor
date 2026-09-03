@@ -38,8 +38,8 @@
 //! // variant panics. The raw-byte read via `pod.0` remains unvalidated —
 //! // it's the intentional escape hatch for callers that want to inspect
 //! // bytes without triggering the variant check.
-//! unsafe impl anchor_lang_v2::bytemuck::Pod for PodMarketMode {}
-//! unsafe impl anchor_lang_v2::bytemuck::Zeroable for PodMarketMode {}
+//! unsafe impl anchor_lang::bytemuck::Pod for PodMarketMode {}
+//! unsafe impl anchor_lang::bytemuck::Zeroable for PodMarketMode {}
 //!
 //! // Cross-type comparisons let existing `engine.market_mode == MarketMode::Live`
 //! // keep working untouched after migrating the field from `MarketMode` to
@@ -65,6 +65,7 @@ use {
     proc_macro::TokenStream,
     proc_macro2::{Ident, TokenStream as TokenStream2},
     quote::{quote, quote_spanned},
+    serde_json::{json, Value},
     syn::{parse_macro_input, Data, DeriveInput, Fields},
 };
 
@@ -117,6 +118,23 @@ pub fn expand(item: TokenStream) -> TokenStream {
     }
 
     let pod_name = Ident::new(&format!("Pod{}", name), name.span());
+    let docs = crate::idl::extract_doc_lines(&input.attrs);
+    let mut idl_type_def = serde_json::Map::new();
+    idl_type_def.insert("name".into(), Value::String(pod_name.to_string()));
+    if !docs.is_empty() {
+        idl_type_def.insert(
+            "docs".into(),
+            Value::Array(docs.iter().cloned().map(Value::String).collect()),
+        );
+    }
+    idl_type_def.insert(
+        "type".into(),
+        json!({
+            "kind": "type",
+            "alias": "u8",
+        }),
+    );
+    let idl_type_def = syn::LitStr::new(&Value::Object(idl_type_def).to_string(), pod_name.span());
 
     // Per-variant associated constants keep the original variant name
     // (PascalCase), so swapping a field type from `Enum` to `PodEnum` is a
@@ -161,8 +179,8 @@ pub fn expand(item: TokenStream) -> TokenStream {
         // Byte patterns that don't correspond to a declared variant are
         // surfaced at conversion time (`From<#pod_name> for #name`), not at
         // cast time — so `bytemuck`'s zero-copy cast is always sound.
-        unsafe impl anchor_lang_v2::bytemuck::Pod for #pod_name {}
-        unsafe impl anchor_lang_v2::bytemuck::Zeroable for #pod_name {}
+        unsafe impl anchor_lang::bytemuck::Pod for #pod_name {}
+        unsafe impl anchor_lang::bytemuck::Zeroable for #pod_name {}
 
         impl #pod_name {
             #(#variant_consts)*
@@ -222,14 +240,22 @@ pub fn expand(item: TokenStream) -> TokenStream {
             }
         }
 
-        // `#[repr(transparent)] struct Pod{Enum}(pub u8)` — at the byte
-        // level the wrapper is a plain `u8`, so it gets the same no-op
-        // `IdlAccountType` treatment as `PodU64` / `PodBool`. Without
-        // this impl, using the wrapper inside a `#[derive(Accounts)]`
-        // field trips the trait bound on the generated `__register_idl_deps`
-        // walk under `--features idl-build`.
+        // `#[repr(transparent)] struct Pod{Enum}(pub u8)` — the wire shape is
+        // just a byte, but it still needs a type def so downstream
+        // `declare_program!` consumers can resolve `Pod{Enum}` references.
         #[cfg(feature = "idl-build")]
-        impl anchor_lang_v2::IdlAccountType for #pod_name {}
+        impl anchor_lang::IdlAccountType for #pod_name {
+            const __IDL_TYPE_DEF: Option<&'static str> = Some(#idl_type_def);
+
+            fn __register_idl_deps(
+                _accounts: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
+                types: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
+            ) {
+                if let Some(t) = <Self as anchor_lang::IdlAccountType>::__IDL_TYPE_DEF {
+                    types.push(t);
+                }
+            }
+        }
     };
 
     TokenStream::from(expanded)

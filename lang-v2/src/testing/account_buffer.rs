@@ -1,4 +1,4 @@
-//! Mock `AccountView` scaffold for anchor-lang-v2 integration tests.
+//! Mock `AccountView` scaffold for anchor-lang integration tests.
 //!
 //! Construct a stack-backed `AccountView` instance without running under the
 //! SVM loader. Enables Miri Tree Borrows witnesses for the aliasing patterns
@@ -8,7 +8,7 @@
 //! ## Usage
 //!
 //! ```ignore
-//! use anchor_lang_v2::testing::AccountBuffer;
+//! use anchor_lang::testing::AccountBuffer;
 //!
 //! let mut buf = AccountBuffer::<256>::new();
 //! buf.init([1; 32], [0; 32], /*data_len*/ 0, /*is_signer*/ true,

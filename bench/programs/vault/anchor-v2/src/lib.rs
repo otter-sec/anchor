@@ -1,6 +1,6 @@
 //! Anchor v2 port of the quasar vault bench. Shape matches `examples/vault`.
 
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("33333333333333333333333333333333333333333333");
 

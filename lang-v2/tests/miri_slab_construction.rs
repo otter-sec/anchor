@@ -12,11 +12,11 @@
 //! "shared → unique" transition that Tree Borrows requires for mut
 //! access.
 //!
-//! Run: `MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p anchor-lang-v2 --test miri_slab_construction`
+//! Run: `MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p anchor-lang --test miri_slab_construction`
 
-use anchor_lang_v2::testing::AccountBuffer;
+use anchor_lang::testing::AccountBuffer;
 
-use anchor_lang_v2::{accounts::Account, AnchorAccount, Discriminator, Owner};
+use anchor_lang::{accounts::Account, AnchorAccount, Discriminator, Owner};
 use bytemuck::{Pod, Zeroable};
 use pinocchio::address::Address;
 

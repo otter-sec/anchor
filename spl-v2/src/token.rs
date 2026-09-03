@@ -5,11 +5,11 @@
 
 pub use {
     crate::mint::Mint,
-    anchor_lang_v2::programs::Token,
+    anchor_lang::programs::Token,
     spl_token_interface::{self as spl_token, ID},
 };
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         accounts::{Account, Program, SlabInit, SlabSchema},
         require, require_eq, AccountConstraint, CpiContext, Id, ToCpiHandle, ToCpiHandleMut,
     },
@@ -65,7 +65,7 @@ pub(crate) fn create_token_account(
     payer_signer_seeds: Option<&[&[u8]]>,
 ) -> Result<(), ProgramError> {
     let token_program_id = Token::id();
-    anchor_lang_v2::create_account_with_signers(
+    anchor_lang::create_account_with_signers(
         payer,
         account,
         space,
@@ -106,11 +106,11 @@ unsafe impl Zeroable for TokenAccount {}
 // keeps it out of the user's IDL `types[]` array (matches v1's
 // `impl_idl_build!` behavior for this type).
 #[doc(hidden)]
-impl anchor_lang_v2::IdlAccountType for TokenAccount {}
+impl anchor_lang::IdlAccountType for TokenAccount {}
 
 // On-chain size — SPL Token program requires 165 bytes. Used by
 // `#[account(init, token::*)]` as the default when `space` is omitted.
-impl anchor_lang_v2::Space for TokenAccount {
+impl anchor_lang::Space for TokenAccount {
     const INIT_SPACE: usize = core::mem::size_of::<Self>();
 }
 
@@ -267,7 +267,7 @@ impl AccountConstraint<Account<TokenAccount>> for MintConstraint {
     #[inline(always)]
     fn check(account: &Account<TokenAccount>, expected: &Address) -> Result<(), ProgramError> {
         require!(
-            anchor_lang_v2::address_eq(account.mint(), expected),
+            anchor_lang::address_eq(account.mint(), expected),
             ProgramError::InvalidAccountData
         );
         Ok(())
@@ -279,7 +279,7 @@ impl AccountConstraint<Account<TokenAccount>> for AuthorityConstraint {
     #[inline(always)]
     fn check(account: &Account<TokenAccount>, expected: &Address) -> Result<(), ProgramError> {
         require!(
-            anchor_lang_v2::address_eq(account.owner(), expected),
+            anchor_lang::address_eq(account.owner(), expected),
             ProgramError::InvalidAccountData
         );
         Ok(())
@@ -351,7 +351,7 @@ fn token_cpi_ctx<'a, T>(
     signer_seeds: TokenSignerSeeds<'a>,
 ) -> CpiContext<'a, T>
 where
-    T: anchor_lang_v2::ToCpiAccounts<'a>,
+    T: anchor_lang::ToCpiAccounts<'a>,
 {
     CpiContext::new_with_signer(program, accounts, signer_seeds)
 }

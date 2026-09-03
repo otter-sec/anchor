@@ -13,11 +13,11 @@
 //! types in anchor-v2 are all align-1, but user-defined Pod items
 //! (via `#[derive(bytemuck::Pod)]`) could have larger alignment.
 //!
-//! Run: `cargo +nightly miri test -p anchor-lang-v2 --test miri_slab_alignment`
+//! Run: `cargo +nightly miri test -p anchor-lang --test miri_slab_alignment`
 
-use anchor_lang_v2::testing::AccountBuffer;
+use anchor_lang::testing::AccountBuffer;
 
-use anchor_lang_v2::{accounts::Slab, AnchorAccount, Discriminator, Owner};
+use anchor_lang::{accounts::Slab, AnchorAccount, Discriminator, Owner};
 use bytemuck::{Pod, Zeroable};
 use pinocchio::address::Address;
 

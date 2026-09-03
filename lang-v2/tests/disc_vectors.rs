@@ -13,7 +13,7 @@
 //! end-to-end programs under `tests/` that use `#[account]` and boot
 //! against litesvm.
 
-use anchor_lang_v2::Discriminator;
+use anchor_lang::Discriminator;
 use bytemuck::{Pod, Zeroable};
 use sha2::{Digest, Sha256};
 

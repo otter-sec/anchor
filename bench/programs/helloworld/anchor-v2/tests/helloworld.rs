@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{accounts::Account, bytemuck, Space},
+    anchor_lang::{accounts::Account, bytemuck, Space},
     anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction},
     litesvm::types::{FailedTransactionMetadata, TransactionMetadata},
     hello_world_v2::{instruction, Counter},
@@ -18,14 +18,14 @@ fn setup() -> (LiteSVM, Keypair) {
     (svm, payer)
 }
 
-fn send(svm: &mut LiteSVM, ix: anchor_lang_v2::solana_program::instruction::Instruction, signers: &[&Keypair]) -> TxResult {
+fn send(svm: &mut LiteSVM, ix: anchor_lang::solana_program::instruction::Instruction, signers: &[&Keypair]) -> TxResult {
     let blockhash = svm.latest_blockhash();
     let msg = Message::new_with_blockhash(&[ix], Some(&signers[0].pubkey()), &blockhash);
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), signers).unwrap();
     svm.send_transaction(tx)
 }
 
-fn counter_address() -> (anchor_lang_v2::Address, u8) {
+fn counter_address() -> (anchor_lang::Address, u8) {
     hello_world_v2::accounts::Init::find_counter_address()
 }
 

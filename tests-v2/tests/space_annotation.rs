@@ -41,13 +41,13 @@ fn send(
     payer: &Keypair,
 ) -> (Pubkey, TransactionResult) {
     let address = pda(seed);
-    let ix = anchor_lang_v2::solana_program::instruction::Instruction::new_with_bytes(
+    let ix = anchor_lang::solana_program::instruction::Instruction::new_with_bytes(
         program_id(),
         &[discrim],
         vec![
-            anchor_lang_v2::solana_program::instruction::AccountMeta::new(payer.pubkey(), true),
-            anchor_lang_v2::solana_program::instruction::AccountMeta::new(address, false),
-            anchor_lang_v2::solana_program::instruction::AccountMeta::new_readonly(
+            anchor_lang::solana_program::instruction::AccountMeta::new(payer.pubkey(), true),
+            anchor_lang::solana_program::instruction::AccountMeta::new(address, false),
+            anchor_lang::solana_program::instruction::AccountMeta::new_readonly(
                 solana_sdk_ids::system_program::ID,
                 false,
             ),

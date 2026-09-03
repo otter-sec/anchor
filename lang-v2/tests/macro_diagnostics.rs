@@ -8,6 +8,11 @@ fn cargo_case(
 ) -> std::process::Output {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let crate_dir = manifest_dir.join("target/macro-diagnostics").join(name);
+    // Keep sources isolated for clear per-case diagnostics, but share Cargo
+    // artifacts across cases. The Rust test harness may invoke these helpers
+    // concurrently; Cargo coordinates the target-directory lock and avoids
+    // recompiling anchor-lang and its dependencies for every fixture.
+    let target_dir = manifest_dir.join("target/macro-diagnostics-target");
     let src_dir = crate_dir.join("src");
     fs::create_dir_all(&src_dir).unwrap();
     fs::write(
@@ -20,8 +25,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-anchor-lang-v2 = {{ path = "{}" }}
-wincode = {{ version = "0.5", features = ["derive"] }}
+anchor-lang = {{ path = "{}" }}
 
 [features]
 idl-build = []
@@ -37,6 +41,7 @@ live = []
     fs::write(src_dir.join("lib.rs"), source).unwrap();
 
     Command::new("cargo")
+        .env("CARGO_TARGET_DIR", target_dir)
         .arg(command)
         .arg("--offline")
         .arg("--manifest-path")
@@ -114,7 +119,7 @@ fn raw_constraint_rejects_obvious_non_bool_literals() {
     compile_fail_case(
         "raw_constraint_non_bool",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 #[derive(Accounts)]
 pub struct Bad {
@@ -138,7 +143,7 @@ fn invalid_account_arguments_are_targeted() {
     compile_fail_case(
         "invalid_account_argument",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 #[derive(Accounts)]
 pub struct Bad {
@@ -159,7 +164,7 @@ fn unsafe_dup_constraint_has_targeted_message() {
     compile_fail_case(
         "unsafe_dup_required",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 #[derive(Accounts)]
 pub struct Bad {
@@ -183,7 +188,7 @@ fn init_space_rejects_union_and_unsized_reference_fields() {
     compile_fail_case(
         "init_space_union",
         r#"
-use anchor_lang_v2::InitSpace;
+use anchor_lang::InitSpace;
 
 #[derive(Copy, Clone, InitSpace)]
 union Bad {
@@ -196,7 +201,7 @@ union Bad {
     compile_fail_case(
         "init_space_reference",
         r#"
-use anchor_lang_v2::InitSpace;
+use anchor_lang::InitSpace;
 
 #[derive(InitSpace)]
 pub struct Bad<'a> {
@@ -219,9 +224,9 @@ fn init_space_rejects_wincode_field_overrides() {
     compile_fail_case(
         "init_space_wincode_skip",
         r#"
-use anchor_lang_v2::InitSpace;
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, InitSpace};
 
-#[derive(InitSpace, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(InitSpace, AnchorDeserialize, AnchorSerialize)]
 pub struct Bad {
     #[wincode(skip)]
     pub skipped: u64,
@@ -237,9 +242,9 @@ pub struct Bad {
     compile_fail_case(
         "init_space_wincode_skip_default_val",
         r#"
-use anchor_lang_v2::InitSpace;
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, InitSpace};
 
-#[derive(InitSpace, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(InitSpace, AnchorDeserialize, AnchorSerialize)]
 pub struct Bad {
     #[wincode(skip(default_val = 9))]
     pub skipped: u64,
@@ -255,9 +260,9 @@ pub struct Bad {
     compile_fail_case(
         "init_space_wincode_with",
         r#"
-use anchor_lang_v2::InitSpace;
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, InitSpace};
 
-#[derive(InitSpace, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(InitSpace, AnchorDeserialize, AnchorSerialize)]
 pub struct Bad {
     #[wincode(with = "shim::ByteCodec")]
     pub packed: u64,
@@ -272,6 +277,24 @@ mod shim {
             "custom wincode codecs can change the serialized layout",
         ],
     );
+
+    compile_fail_case(
+        "init_space_wincode_tag_encoding",
+        r#"
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, InitSpace};
+
+#[derive(InitSpace, AnchorDeserialize, AnchorSerialize)]
+#[wincode(tag_encoding = "u32")]
+pub enum Bad {
+    A([u8; 32]),
+    B(u8),
+}
+"#,
+        &[
+            "#[derive(InitSpace)] does not support `#[wincode(tag_encoding = ...)]`",
+            "1-byte enum discriminant",
+        ],
+    );
 }
 
 #[test]
@@ -283,9 +306,9 @@ fn idl_generation_rejects_wincode_field_overrides() {
     compile_fail_case(
         "idl_type_wincode_skip",
         r#"
-use anchor_lang_v2::IdlType;
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, IdlType};
 
-#[derive(IdlType, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(IdlType, AnchorDeserialize, AnchorSerialize)]
 pub struct Bad {
     #[wincode(skip)]
     pub skipped: u64,
@@ -301,7 +324,7 @@ pub struct Bad {
     compile_fail_case(
         "account_borsh_wincode_skip",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -321,7 +344,7 @@ pub struct Bad {
     compile_fail_case(
         "event_wincode_with",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 #[event]
 pub struct Bad {
@@ -345,11 +368,36 @@ mod shim {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn idl_generation_rejects_lossy_packed_repr_modifiers() {
+    compile_fail_case(
+        "event_bytemuck_packed_two",
+        r#"
+use anchor_lang::prelude::*;
+
+#[event(bytemuck)]
+#[repr(C, packed(2))]
+pub struct Bad {
+    pub tag: u16,
+    pub wide: u64,
+}
+"#,
+        &[
+            "Anchor IDL only supports `#[repr(..., packed)]` or `#[repr(..., packed(1))]`",
+            "lossy IDL layout",
+        ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn malformed_discriminator_attribute_has_targeted_message() {
     compile_fail_case(
         "bad_discriminator",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -379,7 +427,7 @@ fn unknown_error_code_argument_is_rejected() {
     compile_fail_case(
         "unknown_error_code_argument",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 #[error_code(unknown = 7000)]
 pub enum MyError {
@@ -402,7 +450,7 @@ fn instruction_args_must_match_zero_arg_handler() {
     compile_fail_case(
         "instruction_args_without_handler_args",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -436,7 +484,7 @@ fn instruction_args_reject_generated_name_namespace() {
     compile_fail_case(
         "reserved_instruction_arg",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 #[derive(Accounts)]
 #[instruction(__base_offset: usize)]
@@ -445,8 +493,163 @@ pub struct Bad {
     pub data: Option<UncheckedAccount>,
 }
 "#,
+        &["instruction argument names beginning with `__` are reserved for generated code"],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn close_target_cannot_also_be_closed() {
+    compile_fail_case(
+        "close_chain",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account(borsh)]
+pub struct Data {
+    pub value: u64,
+}
+
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(mut, close = receiver)]
+    pub first: BorshAccount<Data>,
+    #[account(mut, close = first)]
+    pub second: BorshAccount<Data>,
+    #[account(mut)]
+    pub receiver: SystemAccount,
+}
+"#,
         &[
-            "instruction argument names beginning with `__` are reserved for generated code",
+            "close target `first` is also scheduled to close",
+            "close chains can revive an account that was already closed",
+        ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn nested_accounts_reject_instruction_arguments() {
+    compile_fail_case(
+        "nested_instruction_args",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+pub mod nested_instruction_args {
+    use super::*;
+
+    pub fn ix(_ctx: &mut Context<Outer>, amount: u64) -> Result<()> {
+        let _ = amount;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+#[instruction(amount: u8)]
+pub struct Inner {
+    #[account(constraint = amount == 0)]
+    pub data: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct Outer {
+    pub inner: Nested<Inner>,
+}
+"#,
+        &["expected `()`, found `(u8,)`"],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn floats_are_rejected_on_borsh_compatible_surfaces() {
+    compile_fail_case(
+        "float_instruction_arg",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+pub mod float_instruction_arg {
+    use super::*;
+
+    pub fn set(_ctx: &mut Context<Noop>, value: f64) -> Result<()> {
+        let _ = value;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Noop {}
+"#,
+        &[
+            "`f32` and `f64` instruction arguments are not supported",
+            "use an integer or fixed-point representation",
+        ],
+    );
+
+    compile_fail_case(
+        "float_borsh_account",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account(borsh)]
+pub struct Price {
+    pub value: Option<f32>,
+}
+"#,
+        &[
+            "`f32` and `f64` are not supported on `#[account(borsh)]`",
+            "use an integer or fixed-point representation",
+        ],
+    );
+
+    compile_fail_case(
+        "float_event",
+        r#"
+use anchor_lang::prelude::*;
+
+#[event]
+pub struct PriceChanged {
+    pub value: f64,
+}
+"#,
+        &[
+            "`f32` and `f64` are not supported on `#[event]`",
+            "use an integer or fixed-point representation",
+        ],
+    );
+
+    compile_fail_case(
+        "float_idl_type",
+        r#"
+use anchor_lang::prelude::*;
+
+#[derive(IdlType)]
+pub struct Price {
+    pub value: Vec<f64>,
+}
+"#,
+        &[
+            "`f32` and `f64` are not supported on `#[derive(IdlType)]`",
+            "use an integer or fixed-point representation",
         ],
     );
 }
@@ -460,7 +663,7 @@ fn cfg_gated_public_handlers_do_not_emit_missing_wrappers() {
     compile_pass_case(
         "cfg_gated_handler",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -489,7 +692,7 @@ fn cfg_disabled_members_are_omitted_from_idl_and_error_codes() {
     cargo_test_pass_case(
         "cfg_filtered_idl",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -552,7 +755,7 @@ fn slot_hashes_is_not_a_supported_sysvar_account() {
     compile_fail_case(
         "unsupported_slot_hashes_sysvar",
         r#"
-use anchor_lang_v2::{accounts::Sysvar, pinocchio, AnchorAccount};
+use anchor_lang::{accounts::Sysvar, pinocchio, AnchorAccount};
 
 type SlotHashes = pinocchio::sysvars::slot_hashes::SlotHashes<&'static [u8]>;
 
@@ -562,7 +765,13 @@ fn check() {
     assert_anchor_account::<Sysvar<SlotHashes>>();
 }
 "#,
-        &["SlotHashes", "SysvarId"],
+        // `SysvarLoad` is the bound `Sysvar<T>` actually requires; the
+        // `on_unimplemented` note names `SysvarId` alongside it.
+        &[
+            "SlotHashes",
+            "SysvarLoad",
+            "is not a sysvar Anchor can load",
+        ],
     );
 }
 
@@ -575,7 +784,7 @@ fn qualified_accounts_paths_compile() {
     compile_pass_case(
         "qualified_accounts_paths",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -623,11 +832,114 @@ pub mod qualified_paths {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn seeds_preserve_nontrivial_as_ref_receivers() {
+    compile_pass_case(
+        "seed_nontrivial_as_ref",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
+pub struct SeedBuf(Vec<u8>);
+
+impl SeedBuf {
+    pub fn as_ref(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+}
+
+#[derive(anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
+pub struct SeedConfig {
+    pub seed: SeedBuf,
+}
+
+impl Owner for SeedConfig {
+    const OWNER: Address = crate::ID;
+}
+
+impl Discriminator for SeedConfig {
+    const DISCRIMINATOR: &'static [u8] = &[0x63, 0x66, 0x67, 0x2d, 0x73, 0x65, 0x65, 0x64];
+}
+
+#[derive(Accounts)]
+pub struct Good {
+    pub config: BorshAccount<SeedConfig>,
+    #[account(seeds = [config.seed.as_ref()], bump)]
+    pub target: UncheckedAccount,
+}
+"#,
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn init_opaque_seed_expressions_keep_bump_bytes_alive() {
+    compile_pass_case(
+        "init_opaque_seed_expr",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
+pub struct Data {
+    pub value: u64,
+}
+
+impl Owner for Data {
+    const OWNER: Address = crate::ID;
+}
+
+impl Discriminator for Data {
+    const DISCRIMINATOR: &'static [u8] = &[0x64, 0x61, 0x74, 0x61, 0x2d, 0x62, 0x6f, 0x72];
+}
+
+pub struct SeedBundle<'a>([&'a [u8]; 1]);
+
+impl<'a> SeedBundle<'a> {
+    pub fn for_payer(payer: &'a [u8]) -> Self {
+        Self([payer])
+    }
+}
+
+impl<'a> AsRef<[&'a [u8]]> for SeedBundle<'a> {
+    fn as_ref(&self) -> &[&'a [u8]] {
+        &self.0
+    }
+}
+
+#[derive(Accounts)]
+pub struct Good {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + core::mem::size_of::<Data>(),
+        seeds = SeedBundle::for_payer(payer.address().as_ref()),
+        bump
+    )]
+    pub data: BorshAccount<Data>,
+    pub system_program: Program<System>,
+}
+"#,
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn init_payer_must_be_mutable() {
     compile_fail_case(
         "init_payer_must_be_mutable",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -646,6 +958,30 @@ pub struct Bad {
 "#,
         &["the payer specified for an init constraint must be mutable"],
     );
+
+    compile_fail_case(
+        "init_payer_optional_account_is_rejected",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct Data {
+    pub value: u64,
+}
+
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(init, payer = payer, space = 8 + core::mem::size_of::<Data>())]
+    pub data: Account<Data>,
+    #[account(mut)]
+    pub payer: Option<SystemAccount>,
+    pub system_program: Program<System>,
+}
+"#,
+        &["optional accounts cannot be used as init payers"],
+    );
 }
 
 #[test]
@@ -657,7 +993,7 @@ fn missing_init_and_realloc_payers_are_diagnosed() {
     compile_fail_case_with_forbidden(
         "missing_init_payer",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -673,14 +1009,14 @@ pub struct MissingInitPayer {
     pub system_program: Program<System>,
 }
 "#,
-        &["`init` requires `payer = <target>`"],
+        &["`init` and `init_if_needed` require `payer`"],
         &["proc-macro derive panicked"],
     );
 
     compile_fail_case_with_forbidden(
         "missing_realloc_payer",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -698,8 +1034,41 @@ pub struct MissingReallocPayer {
     pub system_program: Program<System>,
 }
 "#,
-        &["`realloc` requires `realloc_payer = <target>`"],
+        &["`realloc` requires `realloc_payer`"],
         &["proc-macro derive panicked"],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn realloc_payer_cannot_be_optional() {
+    compile_fail_case(
+        "realloc_payer_optional_account_is_rejected",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct Data {
+    pub value: u64,
+}
+
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(mut, realloc = 16, realloc_payer = payer, realloc_zero = false)]
+    pub data: Account<Data>,
+    #[account(mut)]
+    pub payer: Option<SystemAccount>,
+}
+"#,
+        &[
+            "optional accounts cannot be used as realloc payers",
+            "realloc_payer",
+        ],
     );
 }
 
@@ -712,7 +1081,7 @@ fn pda_init_payer_must_be_system_account() {
     compile_fail_case(
         "pda_init_payer_must_be_system_account",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 #[account]
 pub struct Data {
@@ -741,7 +1110,7 @@ fn init_and_init_if_needed_reject_seeds_program() {
     compile_fail_case(
         "init_seeds_program_rejected",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -775,7 +1144,7 @@ pub struct Bad {
     compile_fail_case(
         "init_if_needed_seeds_program_rejected",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -816,7 +1185,7 @@ fn seeds_program_requires_seeds_and_rejects_duplicates() {
     compile_fail_case(
         "seeds_program_without_seeds",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -835,7 +1204,7 @@ pub struct Bad {
     compile_fail_case(
         "duplicate_seeds_program_rejected",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -868,7 +1237,7 @@ fn optional_pda_init_payer_is_rejected() {
     compile_fail_case(
         "optional_pda_init_payer_is_rejected",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 #[account]
 pub struct Data {
@@ -897,7 +1266,7 @@ fn close_on_unchecked_account_is_rejected() {
     compile_fail_case(
         "close_on_unchecked_account",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -925,7 +1294,7 @@ fn init_owner_override_rejects_typed_accounts() {
     fn case(name: &str, account_attr: &str, field_ty: &str) {
         let source = format!(
             r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 

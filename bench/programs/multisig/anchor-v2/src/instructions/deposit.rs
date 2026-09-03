@@ -1,4 +1,4 @@
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 use crate::state::MultisigConfig;
 
@@ -7,7 +7,7 @@ pub struct Deposit {
     #[account(mut)]
     pub depositor: Signer,
     pub config: Account<MultisigConfig>,
-    #[account(mut, seeds = [b"vault", config.address().as_ref()])]
+    #[account(mut, seeds = [b"vault", config.address().as_ref()], bump)]
     pub vault: UncheckedAccount,
     pub system_program: Program<System>,
 }

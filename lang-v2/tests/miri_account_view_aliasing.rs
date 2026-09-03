@@ -1,15 +1,15 @@
 //! Miri soundness witnesses for `AccountView` aliasing patterns used
-//! across `anchor-lang-v2`.
+//! across `anchor-lang`.
 //!
 //! Uses the `AccountBuffer` scaffold in `common/` to construct mock
 //! `AccountView` instances without running under the SBF loader.
 //!
-//! Run: `MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p anchor-lang-v2 --test miri_account_view_aliasing`
+//! Run: `MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p anchor-lang --test miri_account_view_aliasing`
 //!
 //! These tests address the Class C inventory items that were blocked on
 //! AccountView scaffolding (INVENTORY.md §6.12, findings B-NN).
 
-use anchor_lang_v2::testing::AccountBuffer;
+use anchor_lang::testing::AccountBuffer;
 
 // -- Baseline: one view, simple operations ----------------------------
 
@@ -25,7 +25,7 @@ fn single_view_read_and_write_lamports() {
 
 // -- AccountView is Copy: two views sharing a raw pointer -----------
 //
-// pinocchio enables `copy` feature in anchor-lang-v2 so `AccountView`
+// pinocchio enables `copy` feature in anchor-lang so `AccountView`
 // is `Copy`. Two `AccountView` values can alias the same
 // `RuntimeAccount`. This is the foundation of v2's "unchecked CPI"
 // claim: the Rust borrow checker doesn't see the aliasing because

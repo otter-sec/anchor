@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         cpi::{realloc_account, rent_exempt_lamports},
         testing::AccountBuffer,
     },

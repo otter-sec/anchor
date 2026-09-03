@@ -1,4 +1,4 @@
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 pub const FOREIGN_BORSH_OWNER: &str = "Gue5TpR6sstSyGhSvmVeH2TeKqBYYqmXpRCacB9jAk8u";
 

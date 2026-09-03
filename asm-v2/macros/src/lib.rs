@@ -38,7 +38,7 @@ use syn::{
     Token,
 };
 
-/// Default first custom error code. Mirrors `anchor_lang_v2::error_code`.
+/// Default first custom error code. Mirrors `anchor_lang::error_code`.
 const DEFAULT_ERROR_CODE_OFFSET: u32 = 6000;
 
 // ---------------------------------------------------------------------------

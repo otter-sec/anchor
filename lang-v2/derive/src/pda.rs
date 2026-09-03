@@ -142,7 +142,7 @@ pub(crate) fn seeds_as_byte_literals(seeds: &[&syn::Expr]) -> Option<Vec<Vec<u8>
 /// Returns both the PDA address and bump — the address is emitted as a
 /// const for runtime comparison, the bump is needed for init CPI seeds.
 ///
-/// Matches the algorithm in `anchor_lang_v2::cpi::find_program_address`,
+/// Matches the algorithm in `anchor_lang::cpi::find_program_address`,
 /// just running on the host via `sha2` + `curve25519-dalek` instead of
 /// the sbpf syscalls.
 ///

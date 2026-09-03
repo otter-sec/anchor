@@ -17,10 +17,10 @@
 //!      fresh clone on each subsequent call without advancing the
 //!      cursor or double-populating the cache.
 //!
-//! Run: `cargo test -p anchor-lang-v2 --features testing --test cursor_and_remaining_accounts`
+//! Run: `cargo test -p anchor-lang --features testing --test cursor_and_remaining_accounts`
 
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         cursor::{mut_mask_or_shifted, mut_mask_set_bit, AccountBitvec, AccountCursor},
         testing::{AccountRecord, SbfInputBuffer},
         AccountViewCompat, Bumps, Context, MutMask,

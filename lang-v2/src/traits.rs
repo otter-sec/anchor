@@ -25,6 +25,9 @@ use {
 pub struct CpiHandle<'a> {
     view: &'a AccountView,
     writable: bool,
+    /// CPI meta signer bit. Defaults to the transaction view; set via
+    /// [`CpiHandle::as_signer`] for PDA remaining accounts.
+    signer: bool,
     borrow_check: bool,
     relax_readonly_borrow: bool,
 }
@@ -36,6 +39,7 @@ pub struct CpiHandle<'a> {
 #[derive(Clone, Copy)]
 pub struct CpiHandleMut<'a> {
     view: &'a AccountView,
+    signer: bool,
     borrow_check: bool,
 }
 
@@ -64,6 +68,7 @@ impl<'a> CpiHandle<'a> {
         Self {
             view,
             writable: false,
+            signer: view.is_signer(),
             borrow_check,
             relax_readonly_borrow,
         }
@@ -79,6 +84,7 @@ impl<'a> CpiHandle<'a> {
         Self {
             view,
             writable: true,
+            signer: view.is_signer(),
             borrow_check,
             relax_readonly_borrow: false,
         }
@@ -100,10 +106,40 @@ impl<'a> CpiHandle<'a> {
         self.writable
     }
 
-    /// Whether the underlying account is a signer on the transaction.
+    /// Whether this handle should be marked as a signer in CPI account metas.
+    ///
+    /// Defaults to the underlying transaction view. PDA remaining accounts
+    /// that will be signed via [`crate::CpiContext::with_signer`] should call
+    /// [`CpiHandle::as_signer`] so the callee sees a signer meta.
     #[inline(always)]
     pub fn is_signer(&self) -> bool {
-        self.view.is_signer()
+        self.signer
+    }
+
+    /// Mark this handle as a signer for CPI account metas.
+    ///
+    /// Transaction signers are already detected from the view. Use this for
+    /// PDA remaining accounts: `with_remaining_accounts` copies
+    /// [`CpiHandle::is_signer`] onto each remaining `InstructionAccount`, and
+    /// `invoke_signed` still requires matching [`crate::CpiContext::with_signer`]
+    /// seeds at runtime.
+    #[must_use]
+    #[inline(always)]
+    pub fn as_signer(mut self) -> Self {
+        self.signer = true;
+        self
+    }
+
+    /// Erase to a readonly CPI handle.
+    ///
+    /// Used by `#[account_meta(duplicate_readonly)]` so a `CpiHandle` or
+    /// `CpiHandleMut` field can emit a second readonly meta/handle pair.
+    #[inline(always)]
+    pub fn into_readonly(self) -> CpiHandle<'a> {
+        let mut handle =
+            Self::readonly_with_flags(self.view, self.borrow_check, self.relax_readonly_borrow);
+        handle.signer = self.signer;
+        handle
     }
 
     /// Access the underlying `AccountView` for CPI account construction.
@@ -153,7 +189,11 @@ impl<'a> CpiHandleMut<'a> {
 
     #[inline(always)]
     fn writable_with_borrow_check(view: &'a AccountView, borrow_check: bool) -> Self {
-        Self { view, borrow_check }
+        Self {
+            view,
+            signer: view.is_signer(),
+            borrow_check,
+        }
     }
 
     /// The account's on-chain address.
@@ -168,10 +208,33 @@ impl<'a> CpiHandleMut<'a> {
         true
     }
 
-    /// Whether the underlying account is a signer on the transaction.
+    /// Whether this handle should be marked as a signer in CPI account metas.
+    ///
+    /// See [`CpiHandle::is_signer`].
     #[inline(always)]
     pub fn is_signer(&self) -> bool {
-        self.view.is_signer()
+        self.signer
+    }
+
+    /// Mark this handle as a signer for CPI account metas.
+    ///
+    /// See [`CpiHandle::as_signer`].
+    #[must_use]
+    #[inline(always)]
+    pub fn as_signer(mut self) -> Self {
+        self.signer = true;
+        self
+    }
+
+    /// Erase to a readonly [`CpiHandle`].
+    ///
+    /// Used by `#[account_meta(duplicate_readonly)]` so a writable field can
+    /// still emit a second readonly meta/handle pair.
+    #[inline(always)]
+    pub fn into_readonly(self) -> CpiHandle<'a> {
+        let mut handle = CpiHandle::readonly_with_borrow_check(self.view, self.borrow_check);
+        handle.signer = self.signer;
+        handle
     }
 }
 
@@ -181,6 +244,7 @@ impl<'a> From<CpiHandleMut<'a>> for CpiHandle<'a> {
         Self {
             view: handle.view,
             writable: true,
+            signer: handle.signer,
             borrow_check: handle.borrow_check,
             relax_readonly_borrow: false,
         }
@@ -214,6 +278,14 @@ pub trait ToCpiAccounts<'a> {
 
     /// Collect all CPI handles for the invocation.
     fn to_cpi_handles(&self) -> alloc::vec::Vec<CpiHandle<'a>>;
+
+    /// Parallel to [`to_instruction_accounts`]: `true` at each index where an
+    /// optional field was `None` and a program-id sentinel meta was emitted.
+    ///
+    /// The CPI invoker may skip a matching handle only for these indices.
+    /// Required accounts whose address equals the callee program id must be
+    /// `false` here so they still require a handle.
+    fn optional_account_sentinel_flags(&self) -> alloc::vec::Vec<bool>;
 }
 
 pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
@@ -601,8 +673,9 @@ pub trait Discriminator {
 
 /// Client-side account deserialization. Mirrors v1 anchor-lang's trait so
 /// `anchor-client` can fetch raw account bytes and decode them into the
-/// user's `#[account]` struct. The `#[account]` macro emits two impl
-/// bodies:
+/// user's `#[account]` struct. Generated account impls expect `buf` to start
+/// at the full account bytes, including the reserved discriminator prefix. The
+/// `#[account]` macro emits two impl bodies:
 ///
 ///   - Borsh mode (`#[account(borsh)]`): check disc, run `BorshDeserialize`.
 ///   - Pod mode (default): check disc, `bytemuck::pod_read_unaligned` on
@@ -619,8 +692,11 @@ pub trait AccountDeserialize: Sized {
         Self::try_deserialize_unchecked(buf)
     }
 
-    /// Decode without verifying the discriminator. Used during initialization
-    /// when the bytes are zero or otherwise not yet stamped with the disc.
+    /// Decode without verifying the discriminator. Generated account impls
+    /// still skip over the reserved discriminator region before decoding the
+    /// payload, but they do not check the prefix bytes. Used during
+    /// initialization when the bytes are zero or otherwise not yet stamped
+    /// with the disc.
     fn try_deserialize_unchecked(buf: &mut &[u8]) -> Result<Self, ProgramError>;
 }
 
@@ -685,7 +761,7 @@ pub trait ForeignOwnerInit: AccountInitialize {}
 ///
 /// ```ignore
 /// pub mod my_ns {
-///     use anchor_lang_v2::AccountConstraint;
+///     use anchor_lang::AccountConstraint;
 ///     use pinocchio::program_error::ProgramError;
 ///
 ///     pub struct MinBalanceConstraint;

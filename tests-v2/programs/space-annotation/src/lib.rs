@@ -1,4 +1,4 @@
-use anchor_lang_v2::{accounts::Slab, prelude::*};
+use anchor_lang::{accounts::Slab, prelude::*};
 
 declare_id!("Spac111111111111111111111111111111111111111");
 

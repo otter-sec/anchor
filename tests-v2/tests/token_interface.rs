@@ -1,7 +1,7 @@
-//! Dedicated e2e coverage for `anchor-spl-v2::token_interface`.
+//! Dedicated e2e coverage for `anchor-spl::token_interface`.
 
 use {
-    anchor_lang_v2::solana_program::instruction::AccountMeta,
+    anchor_lang::solana_program::instruction::AccountMeta,
     litesvm::LiteSVM,
     solana_account::Account,
     solana_keypair::Keypair,

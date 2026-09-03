@@ -21,7 +21,7 @@
 
 #![allow(dead_code)]
 
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 #[pod_wrapper]
 #[derive(Clone, Copy, Debug)]

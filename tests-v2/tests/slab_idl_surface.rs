@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         accounts::Slab,
         bytemuck::{Pod, Zeroable},
         Discriminator, IdlAccountType, Owner,

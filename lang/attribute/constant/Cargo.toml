@@ -1,7 +1,7 @@
 [package]
 name = "anchor-attribute-constant"
 version.workspace = true
-publish = true
+publish = false
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
 repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
@@ -16,6 +16,6 @@ anchor-debug = ["anchor-syn/anchor-debug"]
 idl-build = ["anchor-syn/idl-build"]
 
 [dependencies]
-anchor-syn = { path = "../../syn", version = "2.0.0" }
+anchor-syn = { path = "../../syn", version = "2.0.0-rc.1" }
 quote = "1"
 syn = { version = "1", features = ["full"] }

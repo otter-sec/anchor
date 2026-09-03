@@ -1,8 +1,8 @@
 # Codecov configuration.
 #
 # The v2 coverage pipeline only emits reports from the `anchor-next`
-# branch — `master`'s tests don't exercise `anchor-lang-v2` /
-# `anchor-spl-v2` / `tests-v2`. Treat anchor-next as Codecov's branch
+# branch — `master`'s tests don't exercise `anchor-lang` /
+# `anchor-spl` / `tests-v2`. Treat anchor-next as Codecov's branch
 # of record for the v2 stack: PR comments compare against it, the
 # dashboard's "main" view renders its coverage, and the badge tracks
 # its history.

@@ -1,9 +1,9 @@
 //! Hand-rolled pinocchio counter — the perf floor for this bench.
 //! Borrows `find_program_address` and `create_account_signed` from
-//! anchor-lang-v2 as plain pinocchio utilities.
+//! anchor-lang as plain pinocchio utilities.
 
 use {
-    anchor_lang_v2::{create_account_signed, find_program_address},
+    anchor_lang::{create_account_signed, find_program_address},
     pinocchio::{
         account::AccountView, address::Address, no_allocator, program_entrypoint, ProgramResult,
     },

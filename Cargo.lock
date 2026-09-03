@@ -16,37 +16,34 @@ dependencies = [
 name = "account-address-constraints"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "account-meta-signer-overrides"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "accounts-test"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "foreign-borsh-account",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -219,13 +216,12 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "alt-cpi"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
 name = "anchor-attribute-access-control"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -234,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-account"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "anchor-syn",
  "proc-macro2",
@@ -244,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-constant"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -253,7 +249,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-error"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -262,7 +258,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-event"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "anchor-syn",
  "proc-macro2",
@@ -272,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-program"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "anchor-lang-idl",
  "anchor-syn",
@@ -285,16 +281,16 @@ dependencies = [
 
 [[package]]
 name = "anchor-cli"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "addr2line",
  "anchor-cli-macros",
  "anchor-client",
- "anchor-lang",
  "anchor-lang-idl",
  "anyhow",
  "base64 0.21.7",
  "bincode",
+ "borsh 1.6.1",
  "bs58",
  "cargo_metadata",
  "cargo_toml 0.22.3",
@@ -354,7 +350,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-cli-macros"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -363,9 +359,9 @@ dependencies = [
 
 [[package]]
 name = "anchor-client"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "anyhow",
  "base64 0.22.1",
  "futures",
@@ -387,21 +383,11 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "url",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "anchor-derive-accounts"
-version = "2.0.0"
-dependencies = [
- "anchor-syn",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "anchor-derive-accounts-v2"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "anchor-lang-idl",
  "bs58",
@@ -410,13 +396,22 @@ dependencies = [
  "quote",
  "serde_json",
  "sha2 0.10.9",
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
  "syn 2.0.117",
 ]
 
 [[package]]
+name = "anchor-derive-accounts-v1"
+version = "2.0.0-rc.1"
+dependencies = [
+ "anchor-syn",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "anchor-derive-serde"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "anchor-syn",
  "proc-macro-crate 3.5.0",
@@ -427,7 +422,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-space"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -436,7 +431,49 @@ dependencies = [
 
 [[package]]
 name = "anchor-lang"
-version = "2.0.0"
+version = "2.0.0-rc.1"
+dependencies = [
+ "anchor-derive-accounts",
+ "bytemuck",
+ "pinocchio",
+ "pinocchio-system",
+ "sha2 0.10.9",
+ "solana-address 2.7.0",
+ "solana-instruction 3.4.0",
+ "solana-msg 3.1.0",
+ "solana-program-error 3.0.0",
+ "solana-program-log",
+ "solana-program-memory 3.1.0",
+ "solana-sha256-hasher 3.1.0",
+ "solana-system-interface 2.0.0",
+ "solana-sysvar 3.1.1",
+ "wincode 0.6.1",
+]
+
+[[package]]
+name = "anchor-lang-idl"
+version = "0.2.0"
+dependencies = [
+ "anchor-lang-idl-spec",
+ "anyhow",
+ "heck 0.3.3",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "anchor-lang-idl-spec"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "anchor-lang-v1"
+version = "2.0.0-rc.1"
 dependencies = [
  "anchor-attribute-access-control",
  "anchor-attribute-account",
@@ -444,7 +481,7 @@ dependencies = [
  "anchor-attribute-error",
  "anchor-attribute-event",
  "anchor-attribute-program",
- "anchor-derive-accounts",
+ "anchor-derive-accounts-v1",
  "anchor-derive-serde",
  "anchor-derive-space",
  "anchor-lang-idl",
@@ -478,53 +515,33 @@ dependencies = [
 ]
 
 [[package]]
-name = "anchor-lang-idl"
-version = "0.1.2"
-dependencies = [
- "anchor-lang-idl-spec",
- "anyhow",
- "heck 0.3.3",
- "regex",
- "serde",
- "serde_json",
- "sha2 0.10.9",
-]
-
-[[package]]
-name = "anchor-lang-idl-spec"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
-]
-
-[[package]]
-name = "anchor-lang-v2"
-version = "2.0.0"
-dependencies = [
- "anchor-derive-accounts-v2",
- "bytemuck",
- "pinocchio",
- "pinocchio-system",
- "sha2 0.10.9",
- "solana-address 2.6.0",
- "solana-define-syscall 5.0.0",
- "solana-instruction 3.4.0",
- "solana-msg 3.1.0",
- "solana-program-error 3.0.0",
- "solana-program-log",
- "solana-program-memory 3.1.0",
- "solana-sha256-hasher 3.1.0",
- "solana-system-interface 2.0.0",
- "solana-sysvar 3.1.1",
- "wincode 0.5.4",
-]
-
-[[package]]
 name = "anchor-spl"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "anchor-lang",
+ "borsh 1.6.1",
+ "bytemuck",
+ "mpl-token-metadata",
+ "pinocchio",
+ "pinocchio-token",
+ "pinocchio-token-2022",
+ "solana-address 2.7.0",
+ "solana-instruction 3.4.0",
+ "solana-program-error 3.0.0",
+ "solana-program-pack 3.1.0",
+ "solana-pubkey 3.0.0",
+ "spl-pod",
+ "spl-token-2022-interface",
+ "spl-token-group-interface",
+ "spl-token-interface",
+ "spl-token-metadata-interface",
+]
+
+[[package]]
+name = "anchor-spl-v1"
+version = "2.0.0-rc.1"
+dependencies = [
+ "anchor-lang-v1",
  "borsh 1.6.1",
  "mpl-token-metadata",
  "solana-stake-interface 2.0.2",
@@ -539,31 +556,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "anchor-spl-v2"
-version = "2.0.0"
-dependencies = [
- "anchor-lang-v2",
- "borsh 1.6.1",
- "bytemuck",
- "mpl-token-metadata",
- "pinocchio",
- "pinocchio-token",
- "pinocchio-token-2022",
- "solana-address 2.6.0",
- "solana-instruction 3.4.0",
- "solana-program-error 3.0.0",
- "solana-program-pack 3.1.0",
- "solana-pubkey 3.0.0",
- "spl-pod",
- "spl-token-2022-interface",
- "spl-token-group-interface",
- "spl-token-interface",
- "spl-token-metadata-interface",
-]
-
-[[package]]
 name = "anchor-syn"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "anyhow",
  "bs58",
@@ -1060,7 +1054,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "avm"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "anyhow",
  "cargo_toml 0.22.3",
@@ -1285,11 +1279,10 @@ dependencies = [
 name = "borsh-realloc"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -1394,24 +1387,22 @@ dependencies = [
 name = "callee"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "caller"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "callee",
  "pinocchio",
  "pinocchio-system",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -1623,12 +1614,11 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 name = "client-builders"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -1772,27 +1762,25 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 name = "constraint-values"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "constraints"
 version = "0.1.0"
 dependencies = [
+ "anchor-lang",
  "anchor-lang-idl-spec",
- "anchor-lang-v2",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "serde_json",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -1969,11 +1957,10 @@ dependencies = [
 name = "custom-constraints"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -2074,71 +2061,63 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 name = "declare-program-constants"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
 ]
 
 [[package]]
 name = "declare-program-cpi"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
 name = "declare-program-errors"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
 name = "declare-program-events"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
 name = "declare-program-optional"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
 name = "declare-program-returns"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
 name = "declare-program-serialization"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
 name = "declare-program-surface"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
 name = "declare-program-types"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
@@ -2195,12 +2174,11 @@ dependencies = [
 name = "derives-test"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -2281,12 +2259,11 @@ dependencies = [
 name = "dispatch-remaining"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -2327,12 +2304,11 @@ dependencies = [
 name = "dup-mut"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -2488,25 +2464,23 @@ dependencies = [
 name = "equivalence-metadata-spy"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
 name = "equivalence-metadata-v1"
 version = "0.1.0"
 dependencies = [
- "anchor-lang",
- "anchor-spl",
+ "anchor-lang-v1",
+ "anchor-spl-v1",
 ]
 
 [[package]]
 name = "equivalence-metadata-v2"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
- "wincode 0.5.4",
+ "anchor-lang",
+ "anchor-spl",
 ]
 
 [[package]]
@@ -2517,19 +2491,18 @@ version = "0.1.0"
 name = "equivalence-spl-v1"
 version = "0.1.0"
 dependencies = [
- "anchor-lang",
- "anchor-spl",
+ "anchor-lang-v1",
+ "anchor-spl-v1",
 ]
 
 [[package]]
 name = "equivalence-spl-v2"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "pinocchio",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -2552,12 +2525,11 @@ dependencies = [
 name = "event-cpi-test"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -2585,8 +2557,7 @@ dependencies = [
 name = "external-cpi"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
@@ -2727,8 +2698,7 @@ checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 name = "foreign-borsh-account"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
@@ -2984,8 +2954,7 @@ dependencies = [
 name = "hash-cpi"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
@@ -3444,11 +3413,10 @@ dependencies = [
 name = "init-space-usability"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -3541,12 +3509,11 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 name = "ix-macro"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -3789,7 +3756,7 @@ dependencies = [
  "serde",
  "sha2 0.10.9",
  "solana-account 3.4.0",
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
  "solana-address-lookup-table-interface 3.0.1",
  "solana-bpf-loader-program",
  "solana-builtins",
@@ -3923,12 +3890,11 @@ dependencies = [
 name = "min-ix-data-len"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -4246,20 +4212,18 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 name = "optional-accounts"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "optional-callee"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
@@ -4308,9 +4272,9 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pastey"
-version = "0.2.1"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b867cad97c0791bbd3aaa6472142568c6c9e8f71937e98379f584cfb0cf35bec"
+checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
 name = "pathdiff"
@@ -4341,12 +4305,11 @@ dependencies = [
 name = "pda-payer-test"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -4392,8 +4355,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d707cea2843c1a2fd8ec49e4116ce3fdaedcd552a3ee168b03ce60e627fc0f62"
 dependencies = [
  "solana-account-view",
- "solana-address 2.6.0",
- "solana-define-syscall 5.0.0",
+ "solana-address 2.7.0",
+ "solana-define-syscall 5.2.0",
  "solana-instruction-view",
  "solana-program-error 3.0.0",
 ]
@@ -4405,7 +4368,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b47216785b5877051afa074920e88b5990c4ce74f0da94c7cb5a139684c48ffe"
 dependencies = [
  "pinocchio",
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
 ]
 
 [[package]]
@@ -4415,7 +4378,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "825f59c8348e5c2d3fd56432ef927f5819542b3b05fae4f5b6869801113e775e"
 dependencies = [
  "solana-account-view",
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
  "solana-instruction-view",
  "solana-program-error 3.0.0",
 ]
@@ -4427,7 +4390,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57dbab5718ab6ae446b2217c47598fabd29173a09bd32b05344f031739db92b8"
 dependencies = [
  "solana-account-view",
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
  "solana-instruction-view",
  "solana-program-error 3.0.0",
 ]
@@ -4553,8 +4516,7 @@ dependencies = [
 name = "program-interface"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
@@ -5035,16 +4997,14 @@ dependencies = [
 name = "return-callee"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
 name = "return-spoof"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
+ "anchor-lang",
 ]
 
 [[package]]
@@ -5385,12 +5345,11 @@ dependencies = [
 name = "seeds"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -5796,7 +5755,7 @@ checksum = "a9cf16495d9eb53e3d04e72366a33bb1c20c24e78c171d8b8f5978357b63ae95"
 dependencies = [
  "bincode",
  "serde_core",
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
  "solana-program-error 3.0.0",
  "solana-program-memory 3.1.0",
 ]
@@ -5807,7 +5766,7 @@ version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc141b940560430425ebaadb7645496c45f6a10fad9911d719bd03eab7f4d422"
 dependencies = [
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
  "solana-program-error 3.0.0",
 ]
 
@@ -5817,14 +5776,14 @@ version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2ecac8e1b7f74c2baa9e774c42817e3e75b20787134b76cc4d45e8a604488f5"
 dependencies = [
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
 ]
 
 [[package]]
 name = "solana-address"
-version = "2.6.0"
+version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1384b52c435a750cc9c538760fc7bb472fd78e65a9900a2d07312c5bb335b72"
+checksum = "01332a01c0a3098404d55a724c8d9a92aed4a50fe40a7dd0c7a51e29274c14de"
 dependencies = [
  "borsh 1.6.1",
  "bytemuck",
@@ -5836,11 +5795,11 @@ dependencies = [
  "serde_derive",
  "sha2-const-stable",
  "solana-atomic-u64 3.0.1",
- "solana-define-syscall 5.0.0",
+ "solana-define-syscall 5.2.0",
  "solana-program-error 3.0.0",
  "solana-sanitize 3.0.1",
  "solana-sha256-hasher 3.1.0",
- "wincode 0.5.4",
+ "wincode 0.6.1",
 ]
 
 [[package]]
@@ -5994,7 +5953,7 @@ dependencies = [
  "ark-ff 0.5.0",
  "ark-serialize 0.5.0",
  "bytemuck",
- "solana-define-syscall 5.0.0",
+ "solana-define-syscall 5.2.0",
  "thiserror 2.0.18",
 ]
 
@@ -6404,9 +6363,9 @@ checksum = "57e5b1c0bc1d4a4d10c88a4100499d954c09d3fecfae4912c1a074dff68b1738"
 
 [[package]]
 name = "solana-define-syscall"
-version = "5.0.0"
+version = "5.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03aacdd7a61e2109887a7a7f046caebafce97ddf1150f33722eeac04f9039c73"
+checksum = "bf8209ece2bd9f1450e672858ffc0e5c8c786ff6916d2a862b126dd0128f380f"
 
 [[package]]
 name = "solana-derivation-path"
@@ -6489,7 +6448,7 @@ version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "027e6d0b9e7daac5b2ac7c3f9ca1b727861121d9ef05084cf435ff736051e7c2"
 dependencies = [
- "solana-define-syscall 5.0.0",
+ "solana-define-syscall 5.2.0",
  "solana-pubkey 4.1.0",
 ]
 
@@ -6691,7 +6650,7 @@ dependencies = [
  "borsh 1.6.1",
  "serde",
  "serde_derive",
- "solana-define-syscall 5.0.0",
+ "solana-define-syscall 5.2.0",
  "solana-instruction-error",
  "solana-pubkey 4.1.0",
 ]
@@ -6715,8 +6674,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ab7a27d0c4214b9f7389c3dd00b68c93093a67f1dcc5b7893aebe299bbcbb47"
 dependencies = [
  "solana-account-view",
- "solana-address 2.6.0",
- "solana-define-syscall 5.0.0",
+ "solana-address 2.7.0",
+ "solana-define-syscall 5.2.0",
  "solana-program-error 3.0.0",
 ]
 
@@ -6802,7 +6761,7 @@ dependencies = [
  "five8 1.0.0",
  "five8_core 1.0.0",
  "rand 0.9.2",
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
  "solana-derivation-path",
  "solana-seed-derivable",
  "solana-seed-phrase",
@@ -7014,7 +6973,7 @@ version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "726b7cbbc6be6f1c6f29146ac824343b9415133eee8cce156452ad1db93f8008"
 dependencies = [
- "solana-define-syscall 5.0.0",
+ "solana-define-syscall 5.2.0",
 ]
 
 [[package]]
@@ -7521,7 +7480,7 @@ version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b06bd918d60111ee1f97de817113e2040ca0cedb740099ee8d646233f6b906c"
 dependencies = [
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
 ]
 
 [[package]]
@@ -7816,7 +7775,7 @@ version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "def234c1956ff616d46c9dd953f251fa7096ddbaa6d52b165218de97882b7280"
 dependencies = [
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
 ]
 
 [[package]]
@@ -7861,7 +7820,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7c5f18893d62e6c73117dcba48f8f5e3266d90e5ec3d0a0a90f9785adac36c1"
 dependencies = [
  "k256",
- "solana-define-syscall 5.0.0",
+ "solana-define-syscall 5.2.0",
  "thiserror 2.0.18",
 ]
 
@@ -8268,7 +8227,7 @@ dependencies = [
  "num-traits",
  "serde",
  "serde_derive",
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
  "solana-instruction 3.4.0",
  "solana-msg 3.1.0",
  "solana-program-error 3.0.0",
@@ -8387,7 +8346,7 @@ version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17358d1e9a13e5b9c2264d301102126cf11a47fd394cdf3dec174fe7bc96e1de"
 dependencies = [
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
  "solana-sdk-ids 3.1.0",
 ]
 
@@ -8453,7 +8412,7 @@ dependencies = [
  "bincode",
  "serde",
  "serde_derive",
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
  "solana-hash 4.2.0",
  "solana-instruction 3.4.0",
  "solana-instruction-error",
@@ -8766,12 +8725,11 @@ dependencies = [
 name = "space-annotation"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
+ "anchor-lang",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -8807,13 +8765,12 @@ dependencies = [
 name = "spl-ata-test"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -8895,13 +8852,12 @@ dependencies = [
 name = "spl-test"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
@@ -9277,10 +9233,10 @@ dependencies = [
  "account-address-constraints",
  "account-meta-signer-overrides",
  "accounts-test",
+ "anchor-lang",
  "anchor-lang-idl",
  "anchor-lang-idl-spec",
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-spl",
  "anyhow",
  "base64 0.22.1",
  "borsh-realloc",
@@ -9317,7 +9273,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solana-account 3.4.0",
- "solana-address 2.6.0",
+ "solana-address 2.7.0",
  "solana-keypair",
  "solana-loader-v3-interface 6.1.0",
  "solana-message 3.0.1",
@@ -9473,169 +9429,152 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 name = "token-2022-ext-cpi-guard"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-default-account-state"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-group-member-pointer"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-group-pointer"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-immutable-owner"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-interest-bearing-mint"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-memo-transfer"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-metadata-pointer"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-mint-close-authority"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-non-transferable"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-pausable"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-permanent-delegate"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-token-group"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-token-metadata"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-transfer-fee"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-2022-ext-transfer-hook"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
+ "anchor-lang",
+ "anchor-spl",
  "solana-program-error 3.0.0",
- "wincode 0.5.4",
 ]
 
 [[package]]
 name = "token-interface-test"
 version = "0.1.0"
 dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
- "wincode 0.5.4",
+ "anchor-lang",
+ "anchor-spl",
 ]
 
 [[package]]
@@ -10399,20 +10338,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "thiserror 2.0.18",
- "wincode-derive",
+ "wincode-derive 0.4.5",
 ]
 
 [[package]]
 name = "wincode"
-version = "0.5.4"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37095eb18dd6254c66217edc61a29d83d51f8818de8a2ffe88e4584ad73fb5f9"
+checksum = "bfc6339f1ba427bf7ad7c42403b28e524832ba2ddb5eef1bb2cc3b85db6b7b75"
 dependencies = [
  "pastey",
  "proc-macro2",
  "quote",
  "thiserror 2.0.18",
- "wincode-derive",
+ "wincode-derive 0.5.1",
 ]
 
 [[package]]
@@ -10422,6 +10361,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e262d55d1261f31e2cfe49cc6385a421d14d99faa0526bbe3cc1bda0d3005c62"
 dependencies = [
  "darling 0.21.3",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "wincode-derive"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11d582d9fc9d813264407a9e16bfa16846ccf15ef032f9bbcd700741bdc00255"
+dependencies = [
+ "darling 0.23.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",

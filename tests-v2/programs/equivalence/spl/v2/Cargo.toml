@@ -17,9 +17,8 @@ no-log-ix-name = []
 idl-build = []
 
 [dependencies]
-anchor-lang-v2 = { path = "../../../../../lang-v2", default-features = false, features = ["alloc"] }
-anchor-spl-v2 = { path = "../../../../../spl-v2", features = ["guardrails"] }
+anchor-lang = { path = "../../../../../lang-v2", default-features = false, features = ["alloc"] }
+anchor-spl = { path = "../../../../../spl-v2", features = ["guardrails"] }
 pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
 solana-program-error = "3.0"
-wincode = { version = "0.5", features = ["derive"] }
 

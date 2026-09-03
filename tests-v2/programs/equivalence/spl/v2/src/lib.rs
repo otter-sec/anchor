@@ -1,6 +1,6 @@
 use {
-    anchor_lang_v2::{bytemuck::bytes_of, prelude::*, programs::Token2022, AnchorAccount, Id},
-    anchor_spl_v2::{
+    anchor_lang::{bytemuck::bytes_of, prelude::*, programs::Token2022, AnchorAccount, Id},
+    anchor_spl::{
         extensions::{
             CpiGuard as SplCpiGuard, ExtensionType as SplExtensionType,
             GroupMemberPointer as SplGroupMemberPointer, GroupPointer as SplGroupPointer,

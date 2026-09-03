@@ -1,23 +1,21 @@
 [package]
 name = "anchor-lang-idl"
-version = "0.1.2"
-publish = false
-authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/otter-sec/anchor"
+version = "0.2.0"
+publish = true
+repository.workspace = true
 edition = "2021"
 license = "Apache-2.0"
 description = "Anchor framework IDL"
 
 [package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+workspace = true
 
 [features]
 build = ["dep:regex", "dep:serde_json"]
 convert = ["dep:heck", "dep:serde_json", "dep:sha2"]
 
 [dependencies]
-anchor-lang-idl-spec = { path = "./spec", version = "0.1.0" }
+anchor-lang-idl-spec = { workspace = true }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", optional = true }

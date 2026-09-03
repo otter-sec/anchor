@@ -19,7 +19,7 @@
 
 ## v2 in progress
 
-[`anchor-lang-v2`](./lang-v2/) is the next-generation runtime, built on [pinocchio](https://github.com/anza-xyz/pinocchio) and `#![no_std]` by default. It produces an order of magnitude smaller binaries and fewer CU per instruction than v1. Alpha — see [`lang-v2/README.md`](./lang-v2/README.md) for quick-start, bench numbers, and caveats. The v1 (`lang/`) code in this repo remains the stable, published path.
+[`anchor-lang`](./lang-v2/) is the next-generation runtime, built on [pinocchio](https://github.com/anza-xyz/pinocchio) and `#![no_std]` by default. It produces an order of magnitude smaller binaries and fewer CU per instruction than v1. Alpha — see [`lang-v2/README.md`](./lang-v2/README.md) for quick-start, bench numbers, and caveats. The v1 (`lang/`) code in this repo remains the stable, published path.
 
 ## Getting started
 

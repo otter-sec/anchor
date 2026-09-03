@@ -1,5 +1,5 @@
 use {
-    anchor_lang::{
+    anchor_lang_v1::{
         prelude::Pubkey,
         solana_program::instruction::{AccountMeta, Instruction},
     },

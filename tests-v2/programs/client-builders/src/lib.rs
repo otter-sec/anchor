@@ -1,9 +1,9 @@
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("BF748KR4UhPq7xbhFQYd7yFKmh5UYdqed9GbD6oZvEyu");
 
 pub const OTHER_PROGRAM: Address =
-    anchor_lang_v2::address!("Gue5TpR6sstSyGhSvmVeH2TeKqBYYqmXpRCacB9jAk8u");
+    anchor_lang::address!("Gue5TpR6sstSyGhSvmVeH2TeKqBYYqmXpRCacB9jAk8u");
 
 #[account]
 pub struct Vault {
@@ -80,6 +80,13 @@ pub mod client_builders {
         Ok(())
     }
 
+    #[discrim = 8]
+    pub fn optional_derivable_builder_case(
+        _ctx: &mut Context<OptionalDerivableBuilderCase>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     #[discrim = 5]
     pub fn check_external_pda(_ctx: &mut Context<CheckExternalPda>) -> Result<()> {
         Ok(())
@@ -129,6 +136,13 @@ pub struct OptionalBuilderCase {
     #[account(mut)]
     pub user_state: Option<Account<UserState>>,
     pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct OptionalDerivableBuilderCase {
+    pub system_program: Option<Program<System>>,
+    #[account(seeds = [b"optional_pda"], bump)]
+    pub optional_pda: Option<UncheckedAccount>,
 }
 
 #[derive(Accounts)]

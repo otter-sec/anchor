@@ -1,17 +1,17 @@
 //! Plain `#[derive(IdlType)]` structs used as instruction arguments must
 //! resolve through `IdlAccountType` and land in the IDL's `types[]`.
 //! Regression coverage for otter-sec/anchor#4850 — an arg struct deriving
-//! only the wincode schema traits used to fail `--features idl-build`
+//! only `AnchorDeserialize` / `AnchorSerialize` used to fail `--features idl-build`
 //! compilation with an unsatisfied `IdlAccountType` bound.
 
 use {
     anchor_lang_idl_spec::{IdlArrayLen, IdlDefinedFields, IdlType, IdlTypeDef, IdlTypeDefTy},
-    anchor_lang_v2::IdlAccountType,
+    anchor_lang::IdlAccountType,
 };
 
 #[test]
 fn plain_arg_struct_emits_type_def() {
-    let json = <accounts_test::BumpArgs as IdlAccountType>::__IDL_TYPE_DEF
+    let json = <accounts_test::BumpArgs as IdlAccountType>::__idl_type_def()
         .expect("IdlType derive should set __IDL_TYPE_DEF");
     let type_def: IdlTypeDef = serde_json::from_str(json)
         .unwrap_or_else(|err| panic!("failed to parse type def JSON: {err}\njson: {json}"));
@@ -34,6 +34,22 @@ fn plain_arg_struct_emits_type_def() {
         fields[1].ty,
         IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Value(4))
     );
+}
+
+#[test]
+fn plain_enum_emits_variants() {
+    let json = <accounts_test::DepositType as IdlAccountType>::__idl_type_def()
+        .expect("IdlType derive should set __IDL_TYPE_DEF");
+    let type_def: IdlTypeDef = serde_json::from_str(json)
+        .unwrap_or_else(|err| panic!("failed to parse type def JSON: {err}\njson: {json}"));
+
+    assert_eq!(type_def.name, "DepositType");
+    let IdlTypeDefTy::Enum { variants } = &type_def.ty else {
+        panic!("expected enum type def, got {:?}", type_def.ty);
+    };
+    assert_eq!(variants.len(), 2);
+    assert_eq!(variants[0].name, "Protected");
+    assert_eq!(variants[1].name, "Boosted");
 }
 
 #[test]

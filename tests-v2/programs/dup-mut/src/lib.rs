@@ -5,7 +5,7 @@
 //! variants are written to never hold two `&mut Data` live at once, so
 //! invoking them with aliased inputs does not produce UB.
 
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("2TxMd2YAMi9Sk4xxiJBNkYQNuxK9FwvwwiujuEbKoanz");
 

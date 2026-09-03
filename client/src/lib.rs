@@ -45,7 +45,7 @@
 //!
 //! More examples can be found in [here].
 //!
-//! [here]: https://github.com/solana-foundation/anchor/tree/v1.0.0/client/example/src
+//! [here]: https://github.com/otter-sec/anchor/tree/v2.0.0-rc.1/client/example/src
 //!
 //! # Features
 //!
@@ -54,7 +54,7 @@
 //! The client is blocking by default. To enable asynchronous client, add `async` feature:
 //!
 //! ```toml
-//! anchor-client = { version = "1.0.0 ", features = ["async"] }
+//! anchor-client = { version = "2.0.0-rc.1 ", features = ["async"] }
 //! ````
 //!
 //! ## `mock`
@@ -67,7 +67,7 @@
 #[cfg(feature = "async")]
 pub use nonblocking::ThreadSafeSigner;
 pub use {
-    anchor_lang_v2,
+    anchor_lang,
     cluster::Cluster,
     solana_commitment_config::CommitmentConfig,
     solana_instruction::Instruction,
@@ -81,7 +81,7 @@ pub use {
     solana_transaction::Transaction,
 };
 use {
-    anchor_lang_v2::{AccountDeserialize, Discriminator, InstructionData, ToAccountMetas},
+    anchor_lang::{AccountDeserialize, Discriminator, InstructionData, ToAccountMetas},
     futures::{Future, StreamExt},
     regex::Regex,
     solana_account_decoder::{UiAccount, UiAccountEncoding},
@@ -294,8 +294,8 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
     }
 
     async fn on_internal<
-        T: anchor_lang_v2::Event
-            + for<'de> anchor_lang_v2::wincode::SchemaRead<'de, anchor_lang_v2::BorshConfig, Dst = T>,
+        T: anchor_lang::Event
+            + for<'de> anchor_lang::wincode::SchemaRead<'de, anchor_lang::BorshConfig, Dst = T>,
     >(
         &self,
         mut f: impl FnMut(&EventContext, T) + Send + 'static,
@@ -372,8 +372,8 @@ impl<T> Iterator for ProgramAccountsIterator<T> {
 }
 
 pub fn handle_program_log<
-    T: anchor_lang_v2::Event
-        + for<'de> anchor_lang_v2::wincode::SchemaRead<'de, anchor_lang_v2::BorshConfig, Dst = T>,
+    T: anchor_lang::Event
+        + for<'de> anchor_lang::wincode::SchemaRead<'de, anchor_lang::BorshConfig, Dst = T>,
 >(
     self_program_str: &str,
     l: &str,
@@ -398,9 +398,9 @@ pub fn handle_program_log<
             .starts_with(T::DISCRIMINATOR)
             .then(|| {
                 let data = &log_bytes[T::DISCRIMINATOR.len()..];
-                anchor_lang_v2::wincode::config::deserialize::<T, _>(
+                anchor_lang::wincode::config::deserialize::<T, _>(
                     data,
-                    anchor_lang_v2::BORSH_CONFIG,
+                    anchor_lang::BORSH_CONFIG,
                 )
                 .map_err(|e| ClientError::LogParseError(e.to_string()))
             })
@@ -677,8 +677,8 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
 }
 
 fn parse_logs_response<
-    T: anchor_lang_v2::Event
-        + for<'de> anchor_lang_v2::wincode::SchemaRead<'de, anchor_lang_v2::BorshConfig, Dst = T>,
+    T: anchor_lang::Event
+        + for<'de> anchor_lang::wincode::SchemaRead<'de, anchor_lang::BorshConfig, Dst = T>,
 >(
     logs: RpcResponse<RpcLogsResponse>,
     program_id_str: &str,
@@ -739,23 +739,18 @@ fn parse_logs_response<
 
 #[cfg(test)]
 mod tests {
-    // Mock event: minimal manual impl avoiding the `#[event]` macro, which
-    // depends on the `wincode` derive (anchor-lang-v2 transitively pulls it
-    // in but the re-exported derive's generated code references the bare
-    // `wincode` path, not visible from this crate). The test only needs
-    // `Event + SchemaRead + Discriminator` for type inference inside
-    // `parse_logs_response::<MockEvent>`.
-    // The wincode derive macros emit `::wincode::…` paths, so `wincode` must
-    // be present in this crate's extern-prelude (added as a direct dep).
+    // Mock event: minimal manual implementation avoiding `#[event]`. Anchor's
+    // derives use Anchor's Wincode re-export, so this crate needs no direct
+    // Wincode dependency. The test only needs `Event + SchemaRead +
+    // Discriminator` for type inference inside `parse_logs_response::<MockEvent>`.
     use {
-        anchor_lang_v2::{Discriminator, Event},
+        anchor_lang::{AnchorDeserialize, AnchorSerialize, Discriminator, Event},
         futures::{SinkExt, StreamExt},
         solana_rpc_client_api::response::RpcResponseContext,
         std::sync::atomic::{AtomicU64, Ordering},
         tokio_tungstenite::tungstenite::Message,
-        wincode::{SchemaRead, SchemaWrite},
     };
-    #[derive(Debug, Clone, Copy, SchemaWrite, SchemaRead)]
+    #[derive(Debug, Clone, Copy, AnchorSerialize, AnchorDeserialize)]
     pub struct MockEvent {}
     impl Discriminator for MockEvent {
         const DISCRIMINATOR: &'static [u8] = &[0; 8];

@@ -46,12 +46,12 @@
 //!    discriminator?
 
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         accounts::Slab,
         prelude::BorshAccount,
         testing::AccountBuffer,
-        wincode::{SchemaRead, SchemaWrite},
-        AccountClose, AccountRealloc, AnchorAccount, Discriminator, Owner,
+        AccountClose, AccountRealloc, AnchorAccount, AnchorDeserialize, AnchorSerialize,
+        Discriminator, Owner,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::{account::RuntimeAccount, address::Address},
@@ -59,7 +59,7 @@ use {
 
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
 
-#[derive(SchemaRead, SchemaWrite, Default, Clone)]
+#[derive(AnchorDeserialize, AnchorSerialize, Default, Clone)]
 struct Vault {
     authority: [u8; 32],
     balance: u64,
@@ -256,13 +256,13 @@ fn load_after_close_rejects_with_data_too_small() {
     }
 
     // Even though data bytes retain the disc, the framework rejects
-    // because `data_len = 0` (< DISC_LEN=8 → AccountDataTooSmall).
+    // because `data_len = 0` (< discriminator length → AccountDataTooSmall).
     let view = unsafe { buf.view() };
     let result = BorshAccount::<Vault>::load(view);
     assert!(
         result.is_err(),
         "BorshAccount::load must reject a closed account (owner is [0;32] != program_id, AND \
-         data_len=0 < DISC_LEN)"
+         data_len=0 < discriminator length)"
     );
 }
 
@@ -418,6 +418,36 @@ fn slab_close_scrubs_discriminator_to_closed_sentinel() {
         &[u8::MAX; 8][..],
         "Slab::close must scrub the discriminator to the closed sentinel"
     );
+}
+
+#[test]
+#[should_panic(expected = "Tried to mutate `Slab<H, T>` through a read-only load")]
+fn slab_close_panics_when_loaded_read_only() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf);
+
+    let mut dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
+
+    let view = unsafe { buf.view() };
+    let dest_view = unsafe { dest_buf.view() };
+    let mut counter = Slab::<CounterHeader>::load(view).unwrap();
+    counter.close(dest_view).unwrap();
+}
+
+#[test]
+#[should_panic(expected = "SerializedAccount mutated through a read-only load")]
+fn borsh_close_panics_when_loaded_read_only() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_vault_buf(&mut buf);
+
+    let dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
+
+    let view = unsafe { buf.view() };
+    let dest_view = unsafe { dest_buf.view() };
+    let mut vault = BorshAccount::<Vault>::load(view).unwrap();
+    vault.close(dest_view).unwrap();
 }
 
 #[test]

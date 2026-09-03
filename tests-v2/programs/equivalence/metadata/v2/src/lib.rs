@@ -1,4 +1,4 @@
-use {anchor_lang_v2::prelude::*, anchor_spl_v2::metadata};
+use {anchor_lang::prelude::*, anchor_spl::metadata};
 
 declare_id!("AnQXhs18cC2Q6xqUhPoov4DiYiypsbfY95Mcuy37ZHe5");
 

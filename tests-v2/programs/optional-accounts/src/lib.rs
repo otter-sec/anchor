@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::prelude::*,
+    anchor_lang::prelude::*,
     core::ops::Deref,
     pinocchio::account::AccountView,
     solana_program_error::ProgramError,
@@ -34,7 +34,7 @@ impl AnchorAccount for SpyAccount {
     }
 
     unsafe fn load_mut(view: AccountView) -> Result<Self> {
-        anchor_lang_v2::msg!("spy_load_mut");
+        anchor_lang::msg!("spy_load_mut");
         if !view.is_writable() {
             return Err(ErrorCode::ConstraintMut.into());
         }

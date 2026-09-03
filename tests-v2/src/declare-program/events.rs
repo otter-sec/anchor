@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{Discriminator, Event as _, Id, IdlAccountType},
+    anchor_lang::{Discriminator, Event as _, Id, IdlAccountType},
     declare_program_events::evented,
     solana_pubkey::Pubkey,
 };
@@ -17,7 +17,7 @@ fn declared_events_exports_program_marker_and_id() {
 #[test]
 fn declared_events_module_reexports_event_types_and_traits() {
     fn assert_idl_type<T: IdlAccountType>() {}
-    fn assert_event<T: anchor_lang_v2::Event>() {}
+    fn assert_event<T: anchor_lang::Event>() {}
 
     assert_idl_type::<evented::events::BorshEvent>();
     assert_idl_type::<evented::events::PodEvent>();
@@ -52,7 +52,7 @@ fn declared_borsh_event_serializes_and_parses() {
     trailing.push(0);
     assert!(matches!(
         evented::parsers::Event::parse(&trailing),
-        Err(anchor_lang_v2::Error::InvalidInstructionData)
+        Err(anchor_lang::Error::InvalidInstructionData)
     ));
 }
 
@@ -86,7 +86,7 @@ fn declared_bytemuck_event_copies_repr_c_bytes_and_parses() {
     let truncated = &data[..data.len() - 1];
     assert!(matches!(
         evented::parsers::Event::parse(truncated),
-        Err(anchor_lang_v2::Error::InvalidInstructionData)
+        Err(anchor_lang::Error::InvalidInstructionData)
     ));
 }
 
@@ -94,6 +94,6 @@ fn declared_bytemuck_event_copies_repr_c_bytes_and_parses() {
 fn declared_event_parser_rejects_unknown_discriminator() {
     assert!(matches!(
         evented::parsers::Event::parse(&[0, 0, 0]),
-        Err(anchor_lang_v2::Error::InvalidArgument)
+        Err(anchor_lang::Error::InvalidArgument)
     ));
 }

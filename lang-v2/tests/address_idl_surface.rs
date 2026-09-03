@@ -23,7 +23,7 @@ publish = false
 idl-build = []
 
 [dependencies]
-anchor-lang-v2 = {{ path = "{}" }}
+anchor-lang = {{ path = "{}" }}
 
 [workspace]
 "#,
@@ -34,16 +34,16 @@ anchor-lang-v2 = {{ path = "{}" }}
     fs::write(
         src_dir.join("lib.rs"),
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
-const EXPECTED_PROGRAM: anchor_lang_v2::Address =
-    anchor_lang_v2::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const EXPECTED_PROGRAM: anchor_lang::Address =
+    anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
 #[account]
 pub struct Holder {
-    pub expected_program: anchor_lang_v2::Address,
+    pub expected_program: anchor_lang::Address,
 }
 
 #[derive(Accounts)]

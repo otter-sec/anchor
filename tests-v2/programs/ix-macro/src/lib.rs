@@ -1,4 +1,4 @@
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("Gz3iDiZL332qCU7J2H6yvrXbdeSAeyhUT4Q3ZcLJnb4S");
 
@@ -14,7 +14,7 @@ pub mod ix_macro {
         tag: [u8; 4],
     ) -> Result<()> {
         let marker = ctx.accounts.marker.account().address();
-        if !anchor_lang_v2::address_eq(marker, &expected_marker) || tag != *b"ixok" {
+        if !anchor_lang::address_eq(marker, &expected_marker) || tag != *b"ixok" {
             return Err(ProgramError::InvalidInstructionData.into());
         }
 

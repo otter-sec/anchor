@@ -164,7 +164,7 @@ fn legacy_idl_conversion_preserves_surface_and_generates_discriminators() {
     assert_eq!(
         pda.seeds[1],
         IdlSeed::Arg(anchor_lang_idl::types::IdlSeedArg {
-            path: "newValue".into()
+            path: "new_value".into()
         })
     );
     assert_eq!(
@@ -177,7 +177,7 @@ fn legacy_idl_conversion_preserves_surface_and_generates_discriminators() {
     assert_eq!(
         pda.program,
         Some(IdlSeed::Account(anchor_lang_idl::types::IdlSeedAccount {
-            path: "tokenProgram".into(),
+            path: "token_program".into(),
             account: None
         }))
     );

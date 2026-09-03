@@ -4,7 +4,7 @@
 //! Any test here that fails under Miri or produces a logic bug is a
 //! real issue — disclose per `SECURITY.md`.
 
-use anchor_lang_v2::pod::{PodU64, PodVec};
+use anchor_lang::pod::{PodU64, PodVec};
 
 // -- Boundary capacity -------------------------------------------------
 

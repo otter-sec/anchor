@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::InstructionData,
+    anchor_lang::InstructionData,
     litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_pubkey::Pubkey,

@@ -17,8 +17,8 @@ default = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
-anchor-lang = { path = "../../../../lang" }
-anchor-spl = { path = "../../../../spl" }
+anchor-lang = { package = "anchor-lang-v1", path = "../../../../lang" }
+anchor-spl = { package = "anchor-spl-v1", path = "../../../../spl" }
 solana-sysvar = "3"
 thiserror = "1.0"
 arrayref = "0.3.6"

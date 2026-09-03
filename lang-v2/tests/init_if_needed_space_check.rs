@@ -4,7 +4,7 @@
 //! just keeps a focused derive example in `lang-v2`.
 
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         accounts::{Account, Program, SystemAccount},
         programs::System,
         Accounts, AnchorAccount, Discriminator, Id, InitSpace, Owner, Space,
@@ -13,7 +13,7 @@ use {
     pinocchio::address::Address,
 };
 
-anchor_lang_v2::declare_id!("11111111111111111111111111111111");
+anchor_lang::declare_id!("11111111111111111111111111111111");
 
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
 

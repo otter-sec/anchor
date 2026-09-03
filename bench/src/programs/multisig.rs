@@ -1,7 +1,7 @@
 pub mod anchor_v1 {
     use {
         crate::bench::{keypair_for_account, BenchContext, BenchInstruction},
-        anchor_lang::{
+        anchor_lang_v1::{
             prelude::*,
             solana_program::{instruction::AccountMeta, system_program},
             InstructionData, ToAccountMetas,
@@ -173,13 +173,13 @@ pub mod anchor_v1 {
 pub mod anchor_v2 {
     use {
         crate::bench::{keypair_for_account, BenchContext, BenchInstruction},
-        anchor_lang_v2::{AccountMeta, InstructionData, ToAccountMetas},
+        anchor_lang::{AccountMeta, InstructionData, ToAccountMetas},
         anyhow::Result,
         solana_keypair::Keypair,
         solana_signer::Signer,
     };
 
-    fn config_address(creator: &anchor_lang_v2::Address) -> (anchor_lang_v2::Address, u8) {
+    fn config_address(creator: &anchor_lang::Address) -> (anchor_lang::Address, u8) {
         multisig_v2::accounts::Create::find_config_address(creator)
     }
 

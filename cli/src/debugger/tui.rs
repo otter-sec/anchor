@@ -1036,7 +1036,7 @@ fn resolve_src_path(
     // so relative paths like `src/lib.rs` are ambiguous across crates.
     // When multiple roots contain a matching file, prefer the one that
     // actually has enough lines for the DWARF-referenced line number.
-    // This correctly disambiguates e.g. anchor-lang-v2's `src/cpi.rs`
+    // This correctly disambiguates e.g. anchor-lang's `src/cpi.rs`
     // (538 lines) from pinocchio's `src/cpi.rs` (683 lines) when the
     // DWARF says line 668.
     let mut fallback: Option<std::path::PathBuf> = None;

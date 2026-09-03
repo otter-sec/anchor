@@ -1,8 +1,8 @@
-//! Examples for associated-token-account workflows with `anchor-spl-v2`.
+//! Examples for associated-token-account workflows with `anchor-spl`.
 
 use {
-    anchor_lang_v2::prelude::*,
-    anchor_spl_v2::{
+    anchor_lang::prelude::*,
+    anchor_spl::{
         associated_token::{self, AssociatedToken},
         mint::{self, Mint},
         token::{self, MintTo, Token, TokenAccount},
@@ -72,7 +72,7 @@ pub mod spl_ata_test {
                 authority: ctx.accounts.authority.cpi_handle(),
             },
         );
-        anchor_spl_v2::token::mint_to(cpi_ctx, amount)?;
+        anchor_spl::token::mint_to(cpi_ctx, amount)?;
         Ok(())
     }
 

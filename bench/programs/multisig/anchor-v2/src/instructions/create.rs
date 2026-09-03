@@ -1,4 +1,4 @@
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 use crate::{
     errors::MultisigError,
@@ -9,7 +9,12 @@ use crate::{
 pub struct Create {
     #[account(mut)]
     pub creator: Signer,
-    #[account(init, payer = creator, seeds = [b"multisig", creator.address().as_ref()])]
+    #[account(
+        init,
+        payer = creator,
+        seeds = [b"multisig", creator.address().as_ref()],
+        bump
+    )]
     pub config: Account<MultisigConfig>,
     pub system_program: Program<System>,
 }

@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{Discriminator, InstructionData, ToAccountMetas},
+    anchor_lang::{Discriminator, InstructionData, ToAccountMetas},
     program_interface::{accounts, cpi_account_type_is_generated, instruction, ComplexArgs},
     sha2::{Digest, Sha256},
     solana_pubkey::Pubkey,

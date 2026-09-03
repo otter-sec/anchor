@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         solana_program::instruction::{AccountMeta, Instruction},
         InstructionData, ToAccountMetas,
     },
@@ -28,7 +28,7 @@ fn send(svm: &mut LiteSVM, ix: Instruction, signers: &[&Keypair]) -> TxResult {
     svm.send_transaction(tx)
 }
 
-fn config_address(creator: &anchor_lang_v2::Address) -> (anchor_lang_v2::Address, u8) {
+fn config_address(creator: &anchor_lang::Address) -> (anchor_lang::Address, u8) {
     multisig_v2::accounts::Create::find_config_address(creator)
 }
 

@@ -14,15 +14,14 @@ no-entrypoint = []
 cpi = ["no-entrypoint"]
 no-idl = []
 no-log-ix-name = []
-idl-build = ["anchor-lang-v2/idl-build"]
+idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
-anchor-lang-v2 = { path = "../../../lang-v2", default-features = false, features = ["alloc"] }
+anchor-lang = { path = "../../../lang-v2", default-features = false, features = ["alloc"] }
 bytemuck = { version = "1", features = ["derive"] }
 pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
 pinocchio-system = "0.6"
 solana-program-error = "3.0"
-wincode = { version = "0.5", features = ["derive"] }
 
 [lints.rust.unexpected_cfgs]
 level = "allow"

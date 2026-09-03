@@ -1,7 +1,7 @@
 pub mod anchor_v1 {
     use {
         crate::bench::{keypair_for_account, BenchContext, BenchInstruction},
-        anchor_lang::{
+        anchor_lang_v1::{
             prelude::*,
             solana_program::system_program,
             InstructionData, ToAccountMetas,
@@ -109,7 +109,7 @@ pub mod anchor_v1 {
 pub mod anchor_v2 {
     use {
         crate::bench::{keypair_for_account, BenchContext, BenchInstruction},
-        anchor_lang_v2::{
+        anchor_lang::{
             solana_program::instruction::AccountMeta, InstructionData,
         },
         anyhow::Result,

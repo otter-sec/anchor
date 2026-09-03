@@ -4,7 +4,7 @@
 //! Anchor projects ship an `Anchor.toml` that maps program names to
 //! deployed pubkeys and pins the `cargo test` invocation. Bench /
 //! research workspaces are plain cargo workspaces that happen to use
-//! `anchor-lang-v2` as a library — forcing them to author an Anchor.toml
+//! `anchor-lang` as a library — forcing them to author an Anchor.toml
 //! just to use the debugger would be friction for no payoff.
 //!
 //! This module covers everything the Anchor.toml-driven path provides:

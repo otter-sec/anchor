@@ -18,14 +18,14 @@ fn setup() -> (LiteSVM, Keypair) {
     (svm, user)
 }
 
-fn send(svm: &mut LiteSVM, ix: anchor_lang_v2::solana_program::instruction::Instruction, signers: &[&Keypair]) -> TxResult {
+fn send(svm: &mut LiteSVM, ix: anchor_lang::solana_program::instruction::Instruction, signers: &[&Keypair]) -> TxResult {
     let blockhash = svm.latest_blockhash();
     let msg = Message::new_with_blockhash(&[ix], Some(&signers[0].pubkey()), &blockhash);
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), signers).unwrap();
     svm.send_transaction(tx)
 }
 
-fn vault_address(user: &anchor_lang_v2::Address) -> (anchor_lang_v2::Address, u8) {
+fn vault_address(user: &anchor_lang::Address) -> (anchor_lang::Address, u8) {
     vault_v2::accounts::Deposit::find_vault_address(user)
 }
 

@@ -66,7 +66,7 @@ jobs:
       #   - cargo-llvm-cov for host-side instrumentation coverage.
       #
       # The three direct `cargo test -p anchor-{lang,spl}-v2` / `-p tests-v2`
-      # invocations that used to live here (including `anchor-lang-v2`'s
+      # invocations that used to live here (including `anchor-lang`'s
       # `--features testing` flag for the Miri-witnesses scaffold) are
       # subsumed by the coverage-v2 steps below — the Makefile's host
       # coverage targets run the same packages under instrumentation.
@@ -85,9 +85,13 @@ jobs:
         run: make coverage-v2-sbf-prune
       - name: v2 host coverage setup
         run: make coverage-v2-host-clean
-      - name: v2 host coverage for anchor-lang-v2
+      - name: v2 host coverage for account derive macro
+        run: make coverage-v2-host-derive
+      - name: v2 host coverage for CLI
+        run: make coverage-v2-host-cli
+      - name: v2 host coverage for anchor-lang
         run: make coverage-v2-host-lang
-      - name: v2 host coverage for anchor-spl-v2
+      - name: v2 host coverage for anchor-spl
         run: make coverage-v2-host-spl
       - name: v2 host coverage for tests-v2
         env:
@@ -99,6 +103,8 @@ jobs:
         run: |
           make coverage-v2-host-report
           make coverage-v2-report
+      - name: Check v2 test inventory
+        run: ./.github/scripts/check-v2-test-inventory.sh
 
       # Upload to Codecov. The action handles comment posting on PRs via
       # the Codecov GitHub App — including fork PRs, where the token
@@ -137,13 +143,13 @@ jobs:
         run: |
           rustup toolchain install nightly --component miri --profile minimal
           cargo +nightly miri setup
-      - name: Miri (Tree Borrows) for anchor-lang-v2 + anchor-spl-v2
+      - name: Miri (Tree Borrows) for anchor-lang + anchor-spl
         env:
           MIRIFLAGS: '-Zmiri-tree-borrows'
-        run: cargo +nightly miri test -p anchor-lang-v2 -p anchor-spl-v2 --tests --features anchor-lang-v2/testing
+        run: cargo +nightly miri test -p anchor-lang -p anchor-spl --tests --features anchor-lang/testing
 
       # Kani harnesses live in-tree under `#[cfg(kani)]` and are runnable
-      # locally via `cargo kani -p anchor-lang-v2` / `-p anchor-spl-v2`,
+      # locally via `cargo kani -p anchor-lang` / `-p anchor-spl`,
       # but are not wired into CI: kani-verifier 0.67.0 has an
       # upstream-deterministic `.unwrap()` panic on CBMC `ERROR` status
       # lines (kani#4519, fixed on main in #4540, not yet released).
@@ -154,61 +160,17 @@ jobs:
       - name: Run CLI Tests
         run: cargo test -p anchor-cli
 
-      # Install the `anchor` bin to `~/.cargo/bin` (already on PATH via
-      # rustup). Shared `./target/` via `--target-dir` means the build
-      # reuses artifacts from prior `cargo test -p anchor-cli` instead
-      # of starting from scratch in a temp tree; `--debug` skips release
-      # opt (smoke test — runtime speed doesn't matter).
-      - name: Install CLI
-        run: cargo install --path cli --locked --debug --force --target-dir ./target
-
-      # `anchor debugger` smoke test. These bench crates have no
-      # Anchor.toml, so the CLI falls into loose mode and runs the full
-      # pipeline: `cargo build-sbf` → `cargo test --features profile` →
-      # TUI. We wrap in `script` so crossterm can enter raw mode on a
-      # pty (GHA stdin/stdout aren't ttys) and `timeout` kills the TUI
-      # once it's in its event loop.
-      #
-      # Failure handling: each `prog` is run in its own subshell so
-      # `cd` is scoped (no `popd` bookkeeping) and so `|| rc=$?`
-      # captures the inner pipeline's exit status directly. Build and
-      # TUI phases are kept distinct so a build break is reported as
-      # such instead of bleeding into a confusing TUI failure.
-      #
-      # Exit-code semantics for the TUI phase:
-      #   124 → timeout-killed (TUI was still alive — success)
-      #     0 → clean exit (rare in CI; legal)
-      #   else → real failure; dump the pty log
-      - name: anchor debugger TUI launches for bench anchor-v2 programs
+      # The CLI test suite above compiles and unit-tests the debugger. Check
+      # each loose-mode bench fixture too, without building SBF artifacts or
+      # starting an interactive TUI that CI can only verify by timing out.
+      # `cargo check` deliberately excludes integration tests: they include the
+      # SBF .so emitted by `cargo build-sbf`, which is outside this compile
+      # compatibility check.
+      - name: Check anchor debugger bench fixtures
         run: |
           set -euo pipefail
-          fail=0
           for prog in bench/programs/*/anchor-v2; do
-            echo "::group::anchor debugger in $prog"
-            log=$(mktemp)
-
-            # Build phase — surface build breaks as a distinct error.
-            if ! ( cd "$prog" && anchor coverage ); then
-              echo "::error::`anchor coverage` failed in $prog"
-              fail=1
-              rm -f "$log"
-              echo "::endgroup::"
-              continue
-            fi
-
-            # TUI phase — `|| rc=$?` captures the subshell exit cleanly
-            # without toggling `set +e`/`set -e` around it.
-            rc=0
-            ( cd "$prog" && timeout --kill-after=30 30 \
-                script -qec 'anchor debugger --skip-build' "$log" ) || rc=$?
-
-            if [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ]; then
-              echo "::error::anchor debugger failed in $prog (exit $rc)"
-              cat "$log"
-              fail=1
-            fi
-
-            rm -f "$log"
+            echo "::group::cargo check in $prog"
+            ( cd "$prog" && cargo check )
             echo "::endgroup::"
           done
-          exit "$fail"

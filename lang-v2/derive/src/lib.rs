@@ -29,6 +29,46 @@ pub fn derive_accounts(input: TokenStream) -> TokenStream {
     TokenStream::from(impl_accounts(&input))
 }
 
+/// Derive Anchor's Wincode-backed serialization implementation.
+///
+/// Use `#[derive(AnchorSerialize)]` rather than deriving Wincode's
+/// `SchemaWrite` directly. The generated duplicate item is erased after
+/// Wincode emits the impl, so a downstream crate needs neither a direct
+/// `wincode` dependency nor the `#[wincode(crate = ...)]` escape hatch.
+/// Wincode attributes remain supported when required.
+#[proc_macro_derive(AnchorSerialize, attributes(wincode))]
+pub fn anchor_serialize(input: TokenStream) -> TokenStream {
+    derive_wincode_schema(input, quote!(anchor_lang::wincode::SchemaWrite))
+}
+
+/// Derive Anchor's Wincode-backed deserialization implementation.
+///
+/// Use `#[derive(AnchorDeserialize)]` rather than deriving Wincode's
+/// `SchemaRead` directly. See [`AnchorSerialize`] for why no direct Wincode
+/// dependency is needed.
+#[proc_macro_derive(AnchorDeserialize, attributes(wincode))]
+pub fn anchor_deserialize(input: TokenStream) -> TokenStream {
+    derive_wincode_schema(input, quote!(anchor_lang::wincode::SchemaRead))
+}
+
+fn derive_wincode_schema(input: TokenStream, schema_derive: TokenStream2) -> TokenStream {
+    let input = TokenStream2::from(input);
+    quote! {
+        #[derive(#schema_derive)]
+        #[wincode(crate = "anchor_lang::wincode")]
+        #[anchor_lang::__erase]
+        #input
+    }
+    .into()
+}
+
+/// Removes the duplicate item emitted by the schema-derive wrappers.
+#[doc(hidden)]
+#[proc_macro_attribute]
+pub fn __erase(_: TokenStream, _: TokenStream) -> TokenStream {
+    TokenStream::new()
+}
+
 // ---------------------------------------------------------------------------
 // #[derive(ToCpiAccounts)]
 // ---------------------------------------------------------------------------
@@ -67,6 +107,8 @@ struct AccountMetaAttrs {
 pub(crate) enum UnsupportedWincodeAttrKind {
     Skip,
     With,
+    /// Enum-level override of discriminant width (e.g. `u32` instead of borsh's `u8`).
+    TagEncoding,
 }
 
 pub(crate) fn find_unsupported_wincode_attr(
@@ -103,6 +145,12 @@ pub(crate) fn find_unsupported_wincode_attr(
                     let _ = value.parse::<Expr>()?;
                 }
                 unsupported = Some((UnsupportedWincodeAttrKind::With, span));
+            } else if meta.path.is_ident("tag_encoding") {
+                if meta.input.peek(syn::Token![=]) {
+                    let value = meta.value()?;
+                    let _ = value.parse::<Expr>()?;
+                }
+                unsupported = Some((UnsupportedWincodeAttrKind::TagEncoding, span));
             }
             Ok(())
         });
@@ -117,6 +165,64 @@ pub(crate) fn find_unsupported_wincode_attr(
     Ok(None)
 }
 
+fn update_accounts_stmt_for_handler_pat(pat: &mut Pat) -> syn::Result<syn::Stmt> {
+    let update_stmt = |expr: TokenStream2| {
+        syn::parse_quote! {
+            anchor_lang::TryAccounts::update_accounts(#expr)?;
+        }
+    };
+
+    match pat {
+        Pat::Ident(pi) => {
+            let ctx_ident = &pi.ident;
+            Ok(update_stmt(quote! { &mut #ctx_ident.accounts }))
+        }
+        Pat::Struct(ps) => {
+            let accounts_ident = if let Some(accounts_field) = ps.fields.iter_mut().find(
+                |field| matches!(&field.member, syn::Member::Named(ident) if ident == "accounts"),
+            ) {
+                match accounts_field.pat.as_mut() {
+                    Pat::Ident(pi) => pi.ident.clone(),
+                    Pat::Wild(_) => {
+                        let ident = Ident::new("__anchor_accounts", accounts_field.pat.span());
+                        accounts_field.pat = Box::new(syn::parse_quote!(#ident));
+                        ident
+                    }
+                    other => {
+                        return Err(syn::Error::new_spanned(
+                            other,
+                            "`update(...)` handlers that destructure `Context { .. }` must bind \
+                             `accounts` as a name or `_`, for example `Context { accounts, .. }` \
+                             or `Context { accounts: _, .. }`",
+                        ));
+                    }
+                }
+            } else {
+                let ident = Ident::new("__anchor_accounts", ps.path.span());
+                ps.fields.push(syn::FieldPat {
+                    attrs: Vec::new(),
+                    member: syn::Member::Named(Ident::new("accounts", ps.path.span())),
+                    colon_token: Some(Default::default()),
+                    pat: Box::new(syn::parse_quote!(#ident)),
+                });
+                ident
+            };
+
+            Ok(update_stmt(quote! { #accounts_ident }))
+        }
+        Pat::Wild(_) => {
+            let ident = Ident::new("__anchor_ctx", pat.span());
+            *pat = syn::parse_quote!(#ident);
+            Ok(update_stmt(quote! { &mut #ident.accounts }))
+        }
+        _ => Err(syn::Error::new_spanned(
+            pat,
+            "`update(...)` handlers must take `&mut Context<T>` as an identifier like `ctx`, `_`, \
+             or `Context { .. }`, for example `ctx: &mut Context<T>` or `Context { accounts, .. \
+             }: &mut Context<T>`",
+        )),
+    }
+}
 fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
     let fields = match &input.data {
         Data::Struct(s) => match &s.fields {
@@ -237,11 +343,11 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         match kind {
             CpiFieldKind::Phantom => quote! {},
             CpiFieldKind::Nested => quote! {
-                __accounts.extend(anchor_lang_v2::ToCpiAccounts::to_instruction_accounts(&self.#ident));
+                __accounts.extend(anchor_lang::ToCpiAccounts::to_instruction_accounts(&self.#ident));
             },
             CpiFieldKind::Readonly | CpiFieldKind::Writable => quote! {
                 __accounts.push(
-                    anchor_lang_v2::pinocchio::instruction::InstructionAccount::new(
+                    anchor_lang::pinocchio::instruction::InstructionAccount::new(
                         self.#ident.address(),
                         #writable,
                         #signer,
@@ -252,7 +358,7 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
                 match self.#ident {
                     ::core::option::Option::Some(__account) => {
                         __accounts.push(
-                            anchor_lang_v2::pinocchio::instruction::InstructionAccount::new(
+                            anchor_lang::pinocchio::instruction::InstructionAccount::new(
                                 __account.address(),
                                 #writable,
                                 #signer,
@@ -261,7 +367,7 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
                     }
                     ::core::option::Option::None => {
                         __accounts.push(
-                            anchor_lang_v2::pinocchio::instruction::InstructionAccount::readonly(
+                            anchor_lang::pinocchio::instruction::InstructionAccount::readonly(
                                 &#accounts_program_id,
                             ),
                         );
@@ -274,10 +380,10 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
     let handle_steps = cpi_fields.iter().map(|(ident, kind, _)| match kind {
         CpiFieldKind::Phantom => quote! {},
         CpiFieldKind::Nested => quote! {
-            __handles.extend(anchor_lang_v2::ToCpiAccounts::to_cpi_handles(&self.#ident));
+            __handles.extend(anchor_lang::ToCpiAccounts::to_cpi_handles(&self.#ident));
         },
         CpiFieldKind::Readonly => quote! {
-            __handles.push(self.#ident);
+            __handles.push(self.#ident.into_readonly());
         },
         CpiFieldKind::Writable => quote! {
             __handles.push(self.#ident.into());
@@ -294,26 +400,47 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         },
     });
 
+    let flag_steps = cpi_fields.iter().map(|(ident, kind, _)| match kind {
+        CpiFieldKind::Phantom => quote! {},
+        CpiFieldKind::Nested => quote! {
+            __flags.extend(
+                anchor_lang::ToCpiAccounts::optional_account_sentinel_flags(&self.#ident),
+            );
+        },
+        CpiFieldKind::Readonly | CpiFieldKind::Writable => quote! {
+            __flags.push(false);
+        },
+        CpiFieldKind::OptionalReadonly | CpiFieldKind::OptionalWritable => quote! {
+            __flags.push(self.#ident.is_none());
+        },
+    });
+
     quote! {
-        impl #impl_generics anchor_lang_v2::ToCpiAccounts<#cpi_lifetime>
+        impl #impl_generics anchor_lang::ToCpiAccounts<#cpi_lifetime>
             for #name #ty_generics #where_clause
         {
             fn to_instruction_accounts(
                 &self,
-            ) -> anchor_lang_v2::__alloc::vec::Vec<
-                anchor_lang_v2::pinocchio::instruction::InstructionAccount<#cpi_lifetime>,
+            ) -> anchor_lang::__alloc::vec::Vec<
+                anchor_lang::pinocchio::instruction::InstructionAccount<#cpi_lifetime>,
             > {
-                let mut __accounts = anchor_lang_v2::__alloc::vec::Vec::new();
+                let mut __accounts = anchor_lang::__alloc::vec::Vec::new();
                 #(#meta_steps)*
                 __accounts
             }
 
             fn to_cpi_handles(
                 &self,
-            ) -> anchor_lang_v2::__alloc::vec::Vec<anchor_lang_v2::CpiHandle<#cpi_lifetime>> {
-                let mut __handles = anchor_lang_v2::__alloc::vec::Vec::new();
+            ) -> anchor_lang::__alloc::vec::Vec<anchor_lang::CpiHandle<#cpi_lifetime>> {
+                let mut __handles = anchor_lang::__alloc::vec::Vec::new();
                 #(#handle_steps)*
                 __handles
+            }
+
+            fn optional_account_sentinel_flags(&self) -> anchor_lang::__alloc::vec::Vec<bool> {
+                let mut __flags = anchor_lang::__alloc::vec::Vec::new();
+                #(#flag_steps)*
+                __flags
             }
         }
     }
@@ -683,7 +810,7 @@ fn cfg_field_dep_walkers(fields: &syn::Fields) -> Vec<TokenStream2> {
             let cfg_attrs = cfg_attrs(&field.attrs);
             quote! {
                 #(#cfg_attrs)*
-                <#ty as anchor_lang_v2::IdlAccountType>::__register_idl_deps(accounts, types);
+                <#ty as anchor_lang::IdlAccountType>::__register_idl_deps(accounts, types);
             }
         })
         .collect()
@@ -711,7 +838,7 @@ fn client_meta_signer_expr(field: &parse::AccountField) -> TokenStream2 {
     let init_signer = field.idl_init_signer;
     match idl_field_ty(field) {
         Some(ty) => quote! {
-            if <#ty as anchor_lang_v2::AnchorAccount>::IS_SIGNER || #init_signer {
+            if <#ty as anchor_lang::AnchorAccount>::IS_SIGNER || #init_signer {
                 _is_signer.unwrap_or(true)
             } else {
                 false
@@ -726,7 +853,7 @@ fn cpi_meta_signer_expr(field: &parse::AccountField) -> TokenStream2 {
     let init_signer = field.idl_init_signer;
     match idl_field_ty(field) {
         Some(ty) => quote! {
-            <#ty as anchor_lang_v2::AnchorAccount>::IS_SIGNER || #init_signer
+            <#ty as anchor_lang::AnchorAccount>::IS_SIGNER || #init_signer
         },
         None => quote! { #init_signer },
     }
@@ -776,29 +903,29 @@ fn emit_args_deser(args: &[(&Ident, &Type)], struct_name: &str, inline_error: bo
     } else {
         let error_handling = if inline_error {
             quote! {
-                match anchor_lang_v2::wincode::config::deserialize(
+                match anchor_lang::wincode::config::deserialize(
                     __ix_data,
-                    anchor_lang_v2::BORSH_CONFIG,
+                    anchor_lang::BORSH_CONFIG,
                 ) {
                     Ok(__v) => __v,
                     Err(_) => return {
-                        let __e: anchor_lang_v2::Error =
-                            anchor_lang_v2::ErrorCode::InstructionDidNotDeserialize.into();
+                        let __e: anchor_lang::Error =
+                            anchor_lang::ErrorCode::InstructionDidNotDeserialize.into();
                         __e.into()
                     },
                 }
             }
         } else {
             quote! {
-                anchor_lang_v2::wincode::config::deserialize(
+                anchor_lang::wincode::config::deserialize(
                     __ix_data,
-                    anchor_lang_v2::BORSH_CONFIG,
+                    anchor_lang::BORSH_CONFIG,
                 )
-                    .map_err(|_| anchor_lang_v2::ErrorCode::InstructionDidNotDeserialize)?
+                    .map_err(|_| anchor_lang::ErrorCode::InstructionDidNotDeserialize)?
             }
         };
         quote! {
-            #[derive(anchor_lang_v2::wincode::SchemaRead)]
+            #[derive(anchor_lang::AnchorDeserialize)]
             struct #struct_ident #lt_decl { #(#names: #arg_types,)* }
             let __args: #struct_ident #lt_use = #error_handling;
             #(let #names = __args.#names;)*
@@ -934,7 +1061,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         offset_exprs.push(current_offset.clone());
         if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
             current_offset = quote::quote! {
-                #current_offset + <#inner_ty as anchor_lang_v2::TryAccounts>::HEADER_SIZE
+                #current_offset + <#inner_ty as anchor_lang::TryAccounts>::HEADER_SIZE
             };
         } else {
             current_offset = quote::quote! { #current_offset + 1 };
@@ -961,14 +1088,41 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         Ok(fields) => fields,
         Err(err) => return err.to_compile_error(),
     };
+    if let Err(err) = parse::validate_account_fields(&field_summaries) {
+        return err.to_compile_error();
+    }
+
+    for field in &field_summaries {
+        let Some(close_target) = field.attrs.close.as_ref() else {
+            continue;
+        };
+        let Some(target) = field_summaries
+            .iter()
+            .find(|candidate| candidate.name == *close_target)
+        else {
+            continue;
+        };
+        if target.attrs.close.is_some() {
+            return syn::Error::new(
+                close_target.span(),
+                format!(
+                    "close target `{close_target}` is also scheduled to close; close chains can \
+                     revive an account that was already closed"
+                ),
+            )
+            .to_compile_error();
+        }
+    }
 
     let fields: Vec<parse::AccountField> = match named_fields
         .named
         .iter()
         .zip(offset_exprs)
-        .map(|(f, offset)| {
+        .zip(&field_summaries)
+        .map(|((f, offset), summary)| {
             parse::parse_field(
                 f,
+                &summary.attrs,
                 &raw_field_names,
                 &field_offsets,
                 offset,
@@ -982,30 +1136,6 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         Err(err) => return err.to_compile_error(),
     };
 
-    for field in fields.iter().filter(|f| f.init_payer.is_some()) {
-        let payer = field.init_payer.as_ref().unwrap();
-        match fields
-            .iter()
-            .find(|candidate| candidate.name == payer.as_str())
-        {
-            Some(payer_field) if payer_field.idl_writable => {}
-            Some(_) => {
-                return syn::Error::new(
-                    field.name.span(),
-                    "the payer specified for an init constraint must be mutable",
-                )
-                .to_compile_error();
-            }
-            None => {
-                return syn::Error::new(
-                    field.name.span(),
-                    "the payer specified for an init constraint does not exist",
-                )
-                .to_compile_error();
-            }
-        }
-    }
-
     let field_names: Vec<_> = fields.iter().map(|f| &f.name).collect();
     let loads: Vec<_> = fields.iter().map(|f| &f.load).collect();
     let deferred_loads: Vec<_> = fields
@@ -1013,22 +1143,77 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .filter_map(|f| f.deferred_load.as_ref())
         .collect();
     let constraints: Vec<_> = fields.iter().flat_map(|f| &f.constraints).collect();
-    let updates: Vec<_> = fields.iter().flat_map(|f| &f.updates).collect();
+    let updates: Vec<_> = fields.iter().filter_map(|f| f.update.as_ref()).collect();
     let exits: Vec<_> = fields.iter().filter_map(|f| f.exit.as_ref()).collect();
-    // Bumps fields. Optional accounts get `Option<u8>` so the default
-    // (`None`) maps cleanly to the sentinel-`None` load path; the seeds
-    // check assigns `Some(bump)` only when the inner is `Some`. Mirrors
-    // v1's `bumps.rs:36` Optional handling.
+    // Bump-cache surface:
+    //   - direct PDA fields keep their existing `u8` / `Option<u8>` entries;
+    //     optional accounts still use `Option<u8>` so the sentinel-`None`
+    //     path mirrors v1's `bumps.rs:36` handling
+    //   - `Nested<Inner>` fields preserve the inner `Inner::Bumps` payload so
+    //     handlers can reach it through `ctx.bumps.<nested>.*`
+    //
+    // Direct fields still use per-field mutable locals during parsing; nested
+    // fields bind the inner bumps value returned by `Inner::try_accounts`.
     let bump_fields: Vec<proc_macro2::TokenStream> = fields
         .iter()
-        .filter(|f| f.has_bump)
+        .filter_map(|f| {
+            let n = &f.name;
+            if f.has_bump {
+                Some(if f.is_optional {
+                    quote! { pub #n: Option<u8> }
+                } else {
+                    quote! { pub #n: u8 }
+                })
+            } else {
+                parse::extract_nested_inner_type(&f.ty)
+                    .map(|inner_ty| quote! { pub #n: <#inner_ty as anchor_lang::Bumps>::Bumps })
+            }
+        })
+        .collect();
+    let nested_bump_default_bounds: Vec<proc_macro2::TokenStream> = fields
+        .iter()
+        .filter_map(|f| {
+            parse::extract_nested_inner_type(&f.ty).map(|inner_ty| {
+                quote! { <#inner_ty as anchor_lang::Bumps>::Bumps: ::core::default::Default }
+            })
+        })
+        .collect();
+    let bump_cache_locals: Vec<proc_macro2::TokenStream> = fields
+        .iter()
+        .filter(|f| f.has_bump || parse::extract_nested_inner_type(&f.ty).is_some())
+        .map(|f| {
+            let bump_cache = parse::bump_cache_ident(&f.name);
+            if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
+                quote! {
+                    let mut #bump_cache: <#inner_ty as anchor_lang::Bumps>::Bumps =
+                        ::core::default::Default::default();
+                }
+            } else if f.is_optional {
+                quote! {
+                    let mut #bump_cache: ::core::option::Option<u8> = ::core::default::Default::default();
+                }
+            } else {
+                quote! {
+                    let mut #bump_cache: u8 = ::core::default::Default::default();
+                }
+            }
+        })
+        .collect();
+    let bump_cache_fields: Vec<proc_macro2::TokenStream> = fields
+        .iter()
+        .filter(|f| f.has_bump || parse::extract_nested_inner_type(&f.ty).is_some())
         .map(|f| {
             let n = &f.name;
-            if f.is_optional {
-                quote! { #n: Option<u8> }
-            } else {
-                quote! { #n: u8 }
-            }
+            let bump_cache = parse::bump_cache_ident(n);
+            quote! { #n: #bump_cache }
+        })
+        .collect();
+    let bump_default_fields: Vec<proc_macro2::TokenStream> = fields
+        .iter()
+        .filter(|f| f.has_bump || parse::extract_nested_inner_type(&f.ty).is_some())
+        .map(|f| {
+            let n = &f.name;
+            quote! { #n: ::core::default::Default::default() }
         })
         .collect();
 
@@ -1050,7 +1235,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         quote::quote! { #direct_count }
     } else {
         quote::quote! {
-            #direct_count #(+ <#nested_inner_types as anchor_lang_v2::TryAccounts>::HEADER_SIZE)*
+            #direct_count #(+ <#nested_inner_types as anchor_lang::TryAccounts>::HEADER_SIZE)*
         }
     };
 
@@ -1067,13 +1252,13 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             let offset = &f.offset_expr;
             if f.contributes_mut_bit {
                 Some(quote! {
-                    __mask = anchor_lang_v2::mut_mask_set_bit(__mask, #offset);
+                    __mask = anchor_lang::mut_mask_set_bit(__mask, #offset);
                 })
             } else if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
                 Some(quote! {
-                    __mask = anchor_lang_v2::mut_mask_or_shifted(
+                    __mask = anchor_lang::mut_mask_or_shifted(
                         __mask,
-                        <#inner_ty as anchor_lang_v2::TryAccounts>::MUT_MASK,
+                        <#inner_ty as anchor_lang::TryAccounts>::MUT_MASK,
                         #offset,
                     );
                 })
@@ -1101,7 +1286,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             } else {
                 parse::extract_nested_inner_type(&f.ty).map(|inner_ty| {
                     quote::quote! {
-                        <#inner_ty as anchor_lang_v2::TryAccounts>::HAS_DYNAMIC_MUT_MASK
+                        <#inner_ty as anchor_lang::TryAccounts>::HAS_DYNAMIC_MUT_MASK
                     }
                 })
             }
@@ -1122,15 +1307,15 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             if f.contributes_active_mut_bit {
                 Some(quote! {
                     if self.#field_name.is_some() {
-                        __mask = anchor_lang_v2::mut_mask_set_bit(__mask, #offset);
+                        __mask = anchor_lang::mut_mask_set_bit(__mask, #offset);
                     }
                 })
             } else if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
                 Some(quote! {
-                    if <#inner_ty as anchor_lang_v2::TryAccounts>::HAS_DYNAMIC_MUT_MASK {
-                        __mask = anchor_lang_v2::mut_mask_or_shifted(
+                    if <#inner_ty as anchor_lang::TryAccounts>::HAS_DYNAMIC_MUT_MASK {
+                        __mask = anchor_lang::mut_mask_or_shifted(
                             __mask,
-                            <#inner_ty as anchor_lang_v2::TryAccounts>::active_mut_mask(&self.#field_name.0),
+                            <#inner_ty as anchor_lang::TryAccounts>::active_mut_mask(&self.#field_name.0),
                             #offset,
                         );
                     }
@@ -1224,13 +1409,26 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         })
         .collect();
     let idl_accounts_fn = idl::build_accounts_emission(&accounts_fields);
-    // Only path-typed fields drive the IDL dep walk. `idl_field_ty` is
-    // already the post-Option-unwrap base type (see `parse::parse_field`),
-    // and is `None` for non-Path fields — filter those out so the emitted
-    // trait call has a concrete type to dispatch on.
-    let idl_field_tys: Vec<&syn::Type> = fields
+    // Most field types register transitive IDL deps through
+    // `IdlAccountType::__register_idl_deps`. `Nested<Inner>` is special:
+    // `#[derive(Accounts)]` emits an inherent `Inner::__idl_register_deps`
+    // helper, not an `IdlAccountType` impl for `Inner`, so route those
+    // fields to the inner helper directly.
+    let idl_dep_walkers: Vec<TokenStream2> = fields
         .iter()
-        .filter_map(|f| f.idl_field_ty.as_ref())
+        .filter_map(|f| {
+            if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
+                Some(quote! {
+                    <#inner_ty>::__idl_register_deps(accounts, types);
+                })
+            } else {
+                f.idl_field_ty.as_ref().map(|ty| {
+                    quote! {
+                        <#ty as anchor_lang::IdlAccountType>::__register_idl_deps(accounts, types);
+                    }
+                })
+            }
+        })
         .collect();
 
     let (ix_deser, ix_args_assoc, ix_args_return) = if ix_args.is_empty() {
@@ -1251,14 +1449,27 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     let has_bumps = !bump_fields.is_empty();
     let bumps_def = if has_bumps {
         quote! {
-            #[derive(Default, Clone)]
-            pub struct #bumps_name { #(pub #bump_fields,)* }
+            #[derive(Clone)]
+            pub struct #bumps_name { #(#bump_fields,)* }
+
+            impl ::core::default::Default for #bumps_name
+            where
+                #(#nested_bump_default_bounds,)*
+            {
+                fn default() -> Self {
+                    Self {
+                        #(#bump_default_fields,)*
+                    }
+                }
+            }
         }
     } else {
         quote! { pub type #bumps_name = (); }
     };
-    let bumps_init = if has_bumps {
-        quote! { let mut __bumps = #bumps_name::default(); }
+    let bumps_build = if has_bumps {
+        quote! {
+            let __bumps = #bumps_name { #(#bump_cache_fields,)* };
+        }
     } else {
         quote! { let __bumps = #bumps_name::default(); }
     };
@@ -1266,8 +1477,10 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     // --- Client-side struct for off-chain usage (tests, CPI, SDK) ---
     //
     // The struct only contains fields the user must provide (Signer, raw
-    // accounts, etc.). Derivable fields (Program<T>, PDAs) are computed
-    // inside `to_account_metas()` so the user never has to fill them.
+    // accounts, optional Program/PDA presence, etc.). Non-optional derivable
+    // fields (Program<T>, PDAs) are computed inside `to_account_metas()` so
+    // the user never has to fill them. Optional Program/PDA stay on the
+    // struct as `Option<Address>` so `None` can emit the program-id sentinel.
     let client_mod_name = syn::Ident::new(
         &format!("__client_accounts_{}", name.to_string().to_lowercase()),
         name.span(),
@@ -1295,6 +1508,15 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             };
             let ty_name = parse::field_ty_str(base_ty);
 
+            // Optional Program<T> / seed PDAs must stay caller-provided on the
+            // *Resolved builder so `None` can emit the program-id sentinel.
+            // Auto-deriving them as `Some(address)` made that sentinel arm
+            // unreachable while the full (non-Resolved) builder could still
+            // represent absence.
+            if f.is_optional {
+                return (f, FieldKind::Required);
+            }
+
             if ty_name == "Program" {
                 if let Type::Path(tp) = base_ty {
                     if let Some(seg) = tp.path.segments.last() {
@@ -1303,7 +1525,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                                 return (
                                     f,
                                     FieldKind::Program(quote! {
-                                        <#inner as anchor_lang_v2::Id>::id()
+                                        <#inner as anchor_lang::Id>::id()
                                     }),
                                 );
                             }
@@ -1413,9 +1635,9 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             if let Some(nested_ty) = nested_client_accounts_type(&f.ty) {
                 quote! { pub #fname: #nested_ty }
             } else if f.is_optional {
-                quote! { pub #fname: Option<anchor_lang_v2::Address> }
+                quote! { pub #fname: Option<anchor_lang::Address> }
             } else {
-                quote! { pub #fname: anchor_lang_v2::Address }
+                quote! { pub #fname: anchor_lang::Address }
             }
         })
         .collect();
@@ -1472,42 +1694,20 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .filter_map(|&i| {
             let (f, kind) = &field_kinds[i];
             let ident = &f.name;
-            // When the field is `Option<Program<T>>` / `Option<...seeds...>`,
-            // the downstream `client_meta_entries` match expects the local
-            // binding to be `Option<Address>`, not a bare `Address`. Wrap
-            // the derived value in `Some(...)` in that case so the match
-            // arms type-check.
+            // Non-optional Program/PDA locals are bare Address values.
+            // Optional accounts never reach FieldKind::Program/Pda — they stay
+            // FieldKind::Required so callers can pass None for the sentinel.
             match kind {
-                FieldKind::Program(expr) => {
-                    let init = if f.is_optional {
-                        quote! { Some(#expr) }
-                    } else {
-                        quote! { #expr }
-                    };
-                    Some(quote! { let #ident = #init; })
-                }
+                FieldKind::Program(expr) => Some(quote! { let #ident = #expr; }),
                 FieldKind::Pda {
                     seed_exprs,
                     program_ref,
                     ..
-                } => {
-                    if f.is_optional {
-                        Some(quote! {
-                            let #ident = {
-                                let (__addr, _) = anchor_lang_v2::find_program_address(
-                                    &[#(#seed_exprs),*], #program_ref,
-                                );
-                                Some(__addr)
-                            };
-                        })
-                    } else {
-                        Some(quote! {
-                            let (#ident, _) = anchor_lang_v2::find_program_address(
-                                &[#(#seed_exprs),*], #program_ref,
-                            );
-                        })
-                    }
-                }
+                } => Some(quote! {
+                    let (#ident, _) = anchor_lang::find_program_address(
+                        &[#(#seed_exprs),*], #program_ref,
+                    );
+                }),
                 _ => None,
             }
         })
@@ -1522,7 +1722,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             let field_ident = &field.name;
             if nested_client_accounts_type(&field.ty).is_some() {
                 quote! {
-                    __metas.extend(anchor_lang_v2::ToAccountMetas::to_account_metas(
+                    __metas.extend(anchor_lang::ToAccountMetas::to_account_metas(
                         #field_ident,
                         _is_signer,
                     ));
@@ -1530,12 +1730,12 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             } else if field.is_optional {
                 quote! {
                     match #field_ident {
-                        Some(__addr) => __metas.push(anchor_lang_v2::AccountMeta {
+                        Some(__addr) => __metas.push(anchor_lang::AccountMeta {
                             pubkey: __addr,
                             is_writable: #writable,
                             is_signer: #signer_expr,
                         }),
-                        None => __metas.push(anchor_lang_v2::AccountMeta {
+                        None => __metas.push(anchor_lang::AccountMeta {
                             pubkey: #accounts_program_id,
                             is_writable: false,
                             is_signer: false,
@@ -1544,7 +1744,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 }
             } else {
                 quote! {
-                    __metas.push(anchor_lang_v2::AccountMeta {
+                    __metas.push(anchor_lang::AccountMeta {
                         pubkey: #field_ident,
                         is_writable: #writable,
                         is_signer: #signer_expr,
@@ -1589,7 +1789,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                         let param_ident =
                             syn::Ident::new(root_name, proc_macro2::Span::call_site());
                         if seen_params.insert(root_name.clone()) {
-                            params.push(quote! { #param_ident: &anchor_lang_v2::Address });
+                            params.push(quote! { #param_ident: &anchor_lang::Address });
                         }
                         seed_exprs.push(quote! { #param_ident.as_ref() });
                         continue;
@@ -1619,7 +1819,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                             let param_ident =
                                 syn::Ident::new(root_name, proc_macro2::Span::call_site());
                             if seen_params.insert(root_name.clone()) {
-                                params.push(quote! { #param_ident: &anchor_lang_v2::Address });
+                                params.push(quote! { #param_ident: &anchor_lang::Address });
                             }
                             quote! { #param_ident }
                         } else {
@@ -1641,8 +1841,8 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             };
 
             Some(quote! {
-                pub fn #fn_name(#(#params),*) -> (anchor_lang_v2::Address, u8) {
-                    anchor_lang_v2::find_program_address(
+                pub fn #fn_name(#(#params),*) -> (anchor_lang::Address, u8) {
+                    anchor_lang::find_program_address(
                         &[#(#seed_exprs),*],
                         #program_ref,
                     )
@@ -1659,9 +1859,9 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             if let Some(nested_ty) = nested_client_accounts_type(&f.ty) {
                 quote! { pub #fname: #nested_ty }
             } else if f.is_optional {
-                quote! { pub #fname: Option<anchor_lang_v2::Address> }
+                quote! { pub #fname: Option<anchor_lang::Address> }
             } else {
-                quote! { pub #fname: anchor_lang_v2::Address }
+                quote! { pub #fname: anchor_lang::Address }
             }
         })
         .collect();
@@ -1675,7 +1875,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             let field_ident = &field.name;
             if nested_client_accounts_type(&field.ty).is_some() {
                 quote! {
-                    __metas.extend(anchor_lang_v2::ToAccountMetas::to_account_metas(
+                    __metas.extend(anchor_lang::ToAccountMetas::to_account_metas(
                         &self.#field_ident,
                         _is_signer,
                     ));
@@ -1683,12 +1883,12 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             } else if field.is_optional {
                 quote! {
                     match self.#field_ident {
-                        Some(__addr) => __metas.push(anchor_lang_v2::AccountMeta {
+                        Some(__addr) => __metas.push(anchor_lang::AccountMeta {
                             pubkey: __addr,
                             is_writable: #writable,
                             is_signer: #signer_expr,
                         }),
-                        None => __metas.push(anchor_lang_v2::AccountMeta {
+                        None => __metas.push(anchor_lang::AccountMeta {
                             pubkey: #accounts_program_id,
                             is_writable: false,
                             is_signer: false,
@@ -1697,7 +1897,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 }
             } else {
                 quote! {
-                    __metas.push(anchor_lang_v2::AccountMeta {
+                    __metas.push(anchor_lang::AccountMeta {
                         pubkey: self.#field_ident,
                         is_writable: #writable,
                         is_signer: #signer_expr,
@@ -1747,25 +1947,25 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                     let signer_expr = cpi_meta_signer_expr(f);
                     quote! {
                         #[signer(#signer_expr)]
-                        pub #n: ::core::option::Option<anchor_lang_v2::CpiHandleMut<'a>>
+                        pub #n: ::core::option::Option<anchor_lang::CpiHandleMut<'a>>
                     }
                 } else if f.is_optional {
                     let signer_expr = cpi_meta_signer_expr(f);
                     quote! {
                         #[signer(#signer_expr)]
-                        pub #n: ::core::option::Option<anchor_lang_v2::CpiHandle<'a>>
+                        pub #n: ::core::option::Option<anchor_lang::CpiHandle<'a>>
                     }
                 } else if f.idl_writable {
                     let signer_expr = cpi_meta_signer_expr(f);
                     quote! {
                         #[signer(#signer_expr)]
-                        pub #n: anchor_lang_v2::CpiHandleMut<'a>
+                        pub #n: anchor_lang::CpiHandleMut<'a>
                     }
                 } else {
                     let signer_expr = cpi_meta_signer_expr(f);
                     quote! {
                         #[signer(#signer_expr)]
-                        pub #n: anchor_lang_v2::CpiHandle<'a>
+                        pub #n: anchor_lang::CpiHandle<'a>
                     }
                 }
             })
@@ -1802,7 +2002,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             pub mod #cpi_mod_name {
                 extern crate alloc;
                 use super::*;
-                #[derive(anchor_lang_v2::ToCpiAccounts)]
+                #[derive(anchor_lang::ToCpiAccounts)]
                 #[accounts_program_id(#accounts_program_id)]
                 pub struct #name<'a> {
                     #(#cpi_field_decls,)*
@@ -1817,8 +2017,8 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         pub struct #resolved_name {
             #(#client_fields,)*
         }
-        impl anchor_lang_v2::ToAccountMetas for #resolved_name {
-            fn to_account_metas(&self, _is_signer: Option<bool>) -> alloc::vec::Vec<anchor_lang_v2::AccountMeta> {
+        impl anchor_lang::ToAccountMetas for #resolved_name {
+            fn to_account_metas(&self, _is_signer: Option<bool>) -> alloc::vec::Vec<anchor_lang::AccountMeta> {
                 #(#required_locals)*
                 #(#derive_stmts)*
                 let mut __metas = alloc::vec::Vec::new();
@@ -1835,8 +2035,8 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             pub struct #name {
                 #(#all_client_fields,)*
             }
-            impl anchor_lang_v2::ToAccountMetas for #name {
-                fn to_account_metas(&self, _is_signer: Option<bool>) -> alloc::vec::Vec<anchor_lang_v2::AccountMeta> {
+            impl anchor_lang::ToAccountMetas for #name {
+                fn to_account_metas(&self, _is_signer: Option<bool>) -> alloc::vec::Vec<anchor_lang::AccountMeta> {
                     let mut __metas = alloc::vec::Vec::new();
                     #(#full_meta_steps)*
                     __metas
@@ -1852,11 +2052,11 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
 
         #bumps_def
 
-        impl anchor_lang_v2::Bumps for #name {
+        impl anchor_lang::Bumps for #name {
             type Bumps = #bumps_name;
         }
 
-        impl anchor_lang_v2::TryAccounts for #name {
+        impl anchor_lang::TryAccounts for #name {
             const HEADER_SIZE: usize = #header_size_expr;
             const MUT_MASK: [u64; 4] = #mut_mask_expr;
             const HAS_DYNAMIC_MUT_MASK: bool = #has_dynamic_mut_mask_expr;
@@ -1870,24 +2070,50 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
 
             #[inline]
             fn try_accounts<'ix>(
-                __program_id: &anchor_lang_v2::Address,
-                __views: &[anchor_lang_v2::AccountView],
-                __duplicates: ::core::option::Option<&anchor_lang_v2::AccountBitvec>,
+                __program_id: &anchor_lang::Address,
+                __views: &[anchor_lang::AccountView],
+                __duplicates: ::core::option::Option<&anchor_lang::AccountBitvec>,
                 __base_offset: usize,
                 __ix_data: &'ix [u8],
-            ) -> anchor_lang_v2::Result<(Self, #bumps_name, Self::IxArgs<'ix>)> {
+            ) -> anchor_lang::Result<(Self, #bumps_name, Self::IxArgs<'ix>)> {
+                let (mut __accounts, __bumps, __ix_args) =
+                    <Self as anchor_lang::TryAccounts>::validate_accounts(
+                        __program_id,
+                        __views,
+                        __duplicates,
+                        __base_offset,
+                        __ix_data,
+                    )?;
+                <Self as anchor_lang::TryAccounts>::update_accounts(&mut __accounts)?;
+                Ok((__accounts, __bumps, __ix_args))
+            }
+
+            #[inline]
+            fn validate_accounts<'ix>(
+                __program_id: &anchor_lang::Address,
+                __views: &[anchor_lang::AccountView],
+                __duplicates: ::core::option::Option<&anchor_lang::AccountBitvec>,
+                __base_offset: usize,
+                __ix_data: &'ix [u8],
+            ) -> anchor_lang::Result<(Self, #bumps_name, Self::IxArgs<'ix>)> {
                 #ix_deser
-                #bumps_init
+                #(#bump_cache_locals)*
                 #(#loads)*
                 #(#deferred_loads)*
                 #(#constraints)*
-                #(#updates)*
+                #bumps_build
                 Ok((Self { #(#field_names),* }, __bumps, #ix_args_return))
+            }
+
+            #[inline(always)]
+            fn update_accounts(&mut self) -> anchor_lang::Result<()> {
+                #(#updates)*
+                Ok(())
             }
 
             //
             #[inline(always)]
-            fn exit_accounts<'ix>(&mut self, __ix_data: &'ix [u8]) -> anchor_lang_v2::Result<()> {
+            fn exit_accounts<'ix>(&mut self, __ix_data: &'ix [u8]) -> anchor_lang::Result<()> {
                 #ix_deser
                 #(#exits)*
                 Ok(())
@@ -1909,12 +2135,10 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             /// `accounts[]` and `types[]` arrays.
             #[doc(hidden)]
             pub fn __idl_register_deps(
-                accounts: &mut anchor_lang_v2::__alloc::vec::Vec<&'static str>,
-                types: &mut anchor_lang_v2::__alloc::vec::Vec<&'static str>,
+                accounts: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
+                types: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
             ) {
-                #(
-                    <#idl_field_tys as anchor_lang_v2::IdlAccountType>::__register_idl_deps(accounts, types);
-                )*
+                #(#idl_dep_walkers)*
             }
         }
     }
@@ -1943,6 +2167,11 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .into()
         }
     };
+    if is_borsh {
+        if let Err(err) = reject_float_fields("`#[account(borsh)]`", fields) {
+            return err.to_compile_error().into();
+        }
+    }
     use sha2::Digest;
     let hash = sha2::Sha256::digest(format!("account:{name_str}").as_bytes());
     let disc_bytes = &hash[..8];
@@ -1964,7 +2193,11 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
     let type_kind = if is_borsh {
         idl::TypeKind::Borsh
     } else {
-        idl::TypeKind::BytemuckRepr
+        let repr = match idl::bytemuck_repr_from_attrs(attrs) {
+            Ok(repr) => repr,
+            Err(err) => return err.to_compile_error().into(),
+        };
+        idl::TypeKind::BytemuckRepr(repr)
     };
     let idl_account_entry = match idl::build_account_entry_string(&name_str, disc_bytes) {
         Some(s) => quote! { Some(#s) },
@@ -1981,69 +2214,85 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Client-side `AccountDeserialize` impl. Mode-dependent: borsh accounts
     // run wincode (with `BORSH_CONFIG`, borsh-wire-compatible) over the
-    // post-disc tail; pod accounts do a `bytemuck::pod_read_unaligned` on a
-    // sized slice. Both share the disc-check shape so a wrong-type fetch
-    // surfaces as `InvalidAccountData`.
+    // payload after the reserved discriminator region; pod accounts do a
+    // `bytemuck::pod_read_unaligned` on that same post-disc payload slice.
+    // `try_deserialize_unchecked` intentionally skips the discriminator bytes
+    // without validating them, matching Anchor v1 and the trait docs'
+    // "unchecked" contract for full account buffers.
     let account_deserialize_impl = if is_borsh {
         quote! {
-            impl anchor_lang_v2::AccountDeserialize for #name {
+            impl anchor_lang::AccountDeserialize for #name {
                 fn try_deserialize(
                     buf: &mut &[u8],
-                ) -> ::core::result::Result<Self, anchor_lang_v2::Error> {
-                    use anchor_lang_v2::Discriminator as _;
-                    if buf.len() < <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len() {
-                        return Err(anchor_lang_v2::Error::AccountDataTooSmall);
+                ) -> ::core::result::Result<Self, anchor_lang::Error> {
+                    use anchor_lang::Discriminator as _;
+                    if buf.len() < <Self as anchor_lang::Discriminator>::DISCRIMINATOR.len() {
+                        return Err(anchor_lang::Error::AccountDataTooSmall);
                     }
-                    let (disc, rest) = buf.split_at(<Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len());
-                    if disc != <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR {
-                        return Err(anchor_lang_v2::Error::InvalidAccountData);
+                    let disc = &buf[..<Self as anchor_lang::Discriminator>::DISCRIMINATOR.len()];
+                    if disc != <Self as anchor_lang::Discriminator>::DISCRIMINATOR {
+                        return Err(anchor_lang::Error::InvalidAccountData);
                     }
-                    *buf = rest;
                     Self::try_deserialize_unchecked(buf)
                 }
                 fn try_deserialize_unchecked(
                     buf: &mut &[u8],
-                ) -> ::core::result::Result<Self, anchor_lang_v2::Error> {
+                ) -> ::core::result::Result<Self, anchor_lang::Error> {
+                    use anchor_lang::Discriminator as _;
+                    let disc_len = <Self as anchor_lang::Discriminator>::DISCRIMINATOR.len();
+                    if buf.len() < disc_len {
+                        return Err(anchor_lang::Error::AccountDataTooSmall);
+                    }
+                    let original = *buf;
                     // Use `SchemaRead::get` (reads from a `&mut &[u8]` Reader
                     // and advances it) rather than `config::deserialize`,
                     // which takes the input by value and would leave `*buf`
                     // unchanged — `AccountDeserialize`'s cursor contract
-                    // requires the post-disc slice to advance through the
-                    // payload so chained deserializations stay aligned.
-                    <Self as anchor_lang_v2::wincode::SchemaRead<
+                    // requires the full slice to advance through the
+                    // discriminator region and payload together.
+                    let mut data = &original[disc_len..];
+                    let value = <Self as anchor_lang::wincode::SchemaRead<
                         '_,
-                        anchor_lang_v2::BorshConfig,
-                    >>::get(buf)
-                        .map_err(|_| anchor_lang_v2::Error::InvalidAccountData)
+                        anchor_lang::BorshConfig,
+                    >>::get(&mut data)
+                        .map_err(|_| anchor_lang::Error::InvalidAccountData)?;
+                    *buf = data;
+                    Ok(value)
                 }
             }
         }
     } else {
         quote! {
-            impl anchor_lang_v2::AccountDeserialize for #name {
+            impl anchor_lang::AccountDeserialize for #name {
                 fn try_deserialize(
                     buf: &mut &[u8],
-                ) -> ::core::result::Result<Self, anchor_lang_v2::Error> {
-                    use anchor_lang_v2::Discriminator as _;
-                    if buf.len() < <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len() {
-                        return Err(anchor_lang_v2::Error::AccountDataTooSmall);
+                ) -> ::core::result::Result<Self, anchor_lang::Error> {
+                    use anchor_lang::Discriminator as _;
+                    if buf.len() < <Self as anchor_lang::Discriminator>::DISCRIMINATOR.len() {
+                        return Err(anchor_lang::Error::AccountDataTooSmall);
                     }
-                    let (disc, rest) = buf.split_at(<Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len());
-                    if disc != <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR {
-                        return Err(anchor_lang_v2::Error::InvalidAccountData);
+                    let disc = &buf[..<Self as anchor_lang::Discriminator>::DISCRIMINATOR.len()];
+                    if disc != <Self as anchor_lang::Discriminator>::DISCRIMINATOR {
+                        return Err(anchor_lang::Error::InvalidAccountData);
                     }
-                    *buf = rest;
                     Self::try_deserialize_unchecked(buf)
                 }
                 fn try_deserialize_unchecked(
                     buf: &mut &[u8],
-                ) -> ::core::result::Result<Self, anchor_lang_v2::Error> {
-                    let n = ::core::mem::size_of::<Self>();
-                    if buf.len() < n {
-                        return Err(anchor_lang_v2::Error::AccountDataTooSmall);
+                ) -> ::core::result::Result<Self, anchor_lang::Error> {
+                    use anchor_lang::Discriminator as _;
+                    let disc_len = <Self as anchor_lang::Discriminator>::DISCRIMINATOR.len();
+                    if buf.len() < disc_len {
+                        return Err(anchor_lang::Error::AccountDataTooSmall);
                     }
-                    let value: Self = anchor_lang_v2::bytemuck::pod_read_unaligned(&buf[..n]);
-                    *buf = &buf[n..];
+                    let original = *buf;
+                    let data = &original[disc_len..];
+                    let n = ::core::mem::size_of::<Self>();
+                    if data.len() < n {
+                        return Err(anchor_lang::Error::AccountDataTooSmall);
+                    }
+                    let value: Self = anchor_lang::bytemuck::pod_read_unaligned(&data[..n]);
+                    *buf = &data[n..];
                     Ok(value)
                 }
             }
@@ -2052,7 +2301,9 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let (struct_attrs, pod_impls) = if is_borsh {
         (
-            quote! { #[derive(anchor_lang_v2::wincode::SchemaWrite, anchor_lang_v2::wincode::SchemaRead)] },
+            quote! {
+                #[derive(anchor_lang::AnchorSerialize, anchor_lang::AnchorDeserialize)]
+            },
             quote! {},
         )
     } else {
@@ -2092,7 +2343,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
                     quote! {
                         #(#cfg_attrs)*
                         const _: fn() = || {
-                            fn assert_pod<T: anchor_lang_v2::bytemuck::Pod>() {}
+                            fn assert_pod<T: anchor_lang::bytemuck::Pod>() {}
                             assert_pod::<#ty>();
                         };
                     }
@@ -2137,8 +2388,8 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
                         "account struct has padding bytes — reorder fields from largest to smallest alignment to eliminate padding (e.g. u64 before u32 before u8)"
                     );
                 };
-                unsafe impl anchor_lang_v2::bytemuck::Pod for #name {}
-                unsafe impl anchor_lang_v2::bytemuck::Zeroable for #name {}
+                unsafe impl anchor_lang::bytemuck::Pod for #name {}
+                unsafe impl anchor_lang::bytemuck::Zeroable for #name {}
             },
         )
     };
@@ -2151,28 +2402,28 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
         #(#idl_validation_tokens)*
         #pod_impls
 
-        impl anchor_lang_v2::Owner for #name {
-            const OWNER: anchor_lang_v2::Address = crate::ID;
+        impl anchor_lang::Owner for #name {
+            const OWNER: anchor_lang::Address = crate::ID;
         }
-        impl anchor_lang_v2::Discriminator for #name {
+        impl anchor_lang::Discriminator for #name {
             const DISCRIMINATOR: &'static [u8] = &[#(#disc_literals),*];
         }
         #account_deserialize_impl
         #[cfg(feature = "idl-build")]
         #[doc(hidden)]
-        impl anchor_lang_v2::IdlAccountType for #name {
+        impl anchor_lang::IdlAccountType for #name {
             const __IDL_ACCOUNT_ENTRY: Option<&'static str> = #idl_account_entry;
             fn __idl_type_def() -> Option<&'static str> {
                 #idl_type_def
             }
             fn __register_idl_deps(
-                accounts: &mut ::anchor_lang_v2::__alloc::vec::Vec<&'static str>,
-                types: &mut ::anchor_lang_v2::__alloc::vec::Vec<&'static str>,
+                accounts: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
+                types: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
             ) {
-                if let Some(a) = <Self as anchor_lang_v2::IdlAccountType>::__idl_account_entry() {
+                if let Some(a) = <Self as anchor_lang::IdlAccountType>::__idl_account_entry() {
                     accounts.push(a);
                 }
-                if let Some(t) = <Self as anchor_lang_v2::IdlAccountType>::__idl_type_def() {
+                if let Some(t) = <Self as anchor_lang::IdlAccountType>::__idl_type_def() {
                     types.push(t);
                 }
                 #(#idl_field_dep_walkers)*
@@ -2197,7 +2448,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// The same applies to custom structs passed as `#[program]` instruction
 /// arguments: the IDL build resolves every arg type through
 /// `IdlAccountType`, so a plain args struct (typically deriving
-/// `wincode::SchemaRead` / `wincode::SchemaWrite` for the wire format)
+/// `AnchorDeserialize` / `AnchorSerialize` for the wire format)
 /// additionally needs this derive or `anchor idl build` fails to compile.
 ///
 /// Unlike `#[account]`, this derive carries **none** of the account-kind
@@ -2231,7 +2482,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// }
 ///
 /// // Custom instruction-argument struct.
-/// #[derive(Clone, Copy, IdlType, wincode::SchemaRead, wincode::SchemaWrite)]
+/// #[derive(Clone, Copy, AnchorDeserialize, AnchorSerialize, IdlType)]
 /// pub struct MyArgs {
 ///     pub amount: u64,
 ///     pub tag: [u8; 3],
@@ -2266,28 +2517,43 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
     // `"bytemuck"` tag here would lie in the IDL for non-Pod types.
     let empty_disc: [u8; 0] = [];
     let (idl_type_def, field_dep_walkers, idl_validation_tokens) = match &input.data {
-        Data::Struct(data) => (
-            idl::build_struct_type_def_emission(
-                &name_str,
-                &docs,
-                &data.fields,
-                idl::TypeKind::Borsh,
-                &input.generics,
-            ),
-            cfg_field_dep_walkers(&data.fields),
-            wincode_idl_override_tokens_for_fields("`#[derive(IdlType)]`", &data.fields),
-        ),
-        Data::Enum(data) => (
-            idl::build_enum_type_def_emission(
-                &name_str,
-                &docs,
-                &data.variants,
-                idl::TypeKind::Borsh,
-                &input.generics,
-            ),
-            cfg_variant_dep_walkers(&data.variants),
-            wincode_idl_override_tokens_for_variants("`#[derive(IdlType)]`", &data.variants),
-        ),
+        Data::Struct(data) => {
+            if let Err(err) = reject_float_fields("`#[derive(IdlType)]`", &data.fields) {
+                return err.to_compile_error().into();
+            }
+            (
+                idl::build_struct_type_def_emission(
+                    &name_str,
+                    &docs,
+                    &data.fields,
+                    idl::TypeKind::Borsh,
+                    &input.generics,
+                ),
+                cfg_field_dep_walkers(&data.fields),
+                wincode_idl_override_tokens_for_fields("`#[derive(IdlType)]`", &data.fields),
+            )
+        }
+        Data::Enum(data) => {
+            for variant in &data.variants {
+                if let Err(err) = reject_float_fields("`#[derive(IdlType)]`", &variant.fields) {
+                    return err.to_compile_error().into();
+                }
+            }
+            (
+                idl::build_enum_type_def_emission(
+                    &name_str,
+                    &docs,
+                    &data.variants,
+                    idl::TypeKind::Borsh,
+                    &input.generics,
+                ),
+                cfg_variant_dep_walkers(&data.variants),
+                wincode_idl_override_tokens_for_variants(
+                    "`#[derive(IdlType)]`",
+                    &data.variants,
+                ),
+            )
+        }
         Data::Union(_) => {
             return syn::Error::new(
                 name.span(),
@@ -2310,15 +2576,15 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
         #(#idl_validation_tokens)*
         #[cfg(feature = "idl-build")]
         #[doc(hidden)]
-        impl #impl_generics anchor_lang_v2::IdlAccountType for #name #ty_generics #where_clause {
+        impl #impl_generics anchor_lang::IdlAccountType for #name #ty_generics #where_clause {
             fn __idl_type_def() -> Option<&'static str> {
                 #idl_type_def
             }
             fn __register_idl_deps(
-                accounts: &mut ::anchor_lang_v2::__alloc::vec::Vec<&'static str>,
-                types: &mut ::anchor_lang_v2::__alloc::vec::Vec<&'static str>,
+                accounts: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
+                types: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
             ) {
-                if let Some(t) = <Self as anchor_lang_v2::IdlAccountType>::__idl_type_def() {
+                if let Some(t) = <Self as anchor_lang::IdlAccountType>::__idl_type_def() {
                     types.push(t);
                 }
                 #(#field_dep_walkers)*
@@ -2367,7 +2633,7 @@ fn diagnose_non_pod_field(ty: &Type, field_name: &str, struct_name: &str) -> Opt
         "bool" => Some(format!(
             "field `{field_name}` on `#[account] struct {struct_name}` uses `bool`. `bytemuck` \
              disallows `bool` as Pod because only `0x00` and `0x01` are valid bit-patterns (any \
-             other byte read as `bool` is UB). Use `anchor_lang_v2::PodBool` instead."
+             other byte read as `bool` is UB). Use `anchor_lang::PodBool` instead."
         )),
         _ => None,
     }
@@ -2411,30 +2677,30 @@ fn event_authority_dispatch_check(precomputed_event_authority: Option<[u8; 32]>)
     if let Some(address) = precomputed_event_authority {
         let address_bytes = address.iter().map(|byte| quote! { #byte });
         quote! {
-            const __EXPECTED_EVENT_AUTHORITY: anchor_lang_v2::Address =
-                anchor_lang_v2::Address::new_from_array([#(#address_bytes),*]);
-            if !anchor_lang_v2::address_eq(
+            const __EXPECTED_EVENT_AUTHORITY: anchor_lang::Address =
+                anchor_lang::Address::new_from_array([#(#address_bytes),*]);
+            if !anchor_lang::address_eq(
                 __event_authority.address(),
                 &__EXPECTED_EVENT_AUTHORITY,
             ) {
-                return anchor_lang_v2::Error::from(
-                    anchor_lang_v2::ErrorCode::ConstraintSeeds,
+                return anchor_lang::Error::from(
+                    anchor_lang::ErrorCode::ConstraintSeeds,
                 ).into();
             }
         }
     } else {
         quote! {
             let (__expected_event_authority, _) =
-                anchor_lang_v2::find_program_address(
+                anchor_lang::find_program_address(
                     &[b"__event_authority"],
                     __program_id,
                 );
-            if !anchor_lang_v2::address_eq(
+            if !anchor_lang::address_eq(
                 __event_authority.address(),
                 &__expected_event_authority,
             ) {
-                return anchor_lang_v2::Error::from(
-                    anchor_lang_v2::ErrorCode::ConstraintSeeds,
+                return anchor_lang::Error::from(
+                    anchor_lang::ErrorCode::ConstraintSeeds,
                 ).into();
             }
         }
@@ -2651,7 +2917,7 @@ fn gen_declared_program(
 
         handlers.push(quote! {
             #[discrim = [#(#discrim_tokens),*]]
-            pub fn #ix_ident(_ctx: &mut anchor_lang_v2::Context<#accounts_ident>, #(#arg_decls),*) -> anchor_lang_v2::Result<#return_ty> {
+            pub fn #ix_ident(_ctx: &mut anchor_lang::Context<#accounts_ident>, #(#arg_decls),*) -> anchor_lang::Result<#return_ty> {
                 #(#arg_uses)*
                 unreachable!()
             }
@@ -2663,7 +2929,7 @@ fn gen_declared_program(
         let group_ident = Ident::new(&group_name, name.span());
         let field_tokens = fields.into_iter().map(|field| field.to_tokens());
         account_structs.push(quote! {
-            #[derive(anchor_lang_v2::Accounts)]
+            #[derive(anchor_lang::Accounts)]
             #[accounts_program_id(ID)]
             pub struct #group_ident {
                 #(#field_tokens)*
@@ -2679,14 +2945,16 @@ fn gen_declared_program(
             #[allow(dead_code)]
             const __ANCHOR_DECLARE_PROGRAM_IDL_BYTES: &[u8] = include_bytes!(#idl_path_lit);
 
-            pub const ID: anchor_lang_v2::Address =
-                anchor_lang_v2::address!(#address_lit);
+            pub const ID: anchor_lang::Address =
+                anchor_lang::address!(#address_lit);
 
             pub mod program {
                 pub struct #marker_name;
 
-                impl anchor_lang_v2::Id for #marker_name {
-                    fn id() -> anchor_lang_v2::Address {
+                impl anchor_lang::Id for #marker_name {
+                    const IDL_ADDRESS: &'static str = #address_lit;
+
+                    fn id() -> anchor_lang::Address {
                         super::ID
                     }
                 }
@@ -2703,7 +2971,7 @@ fn gen_declared_program(
             #errors
             #(#account_structs)*
 
-            #[anchor_lang_v2::program(interface, program_id = ID)]
+            #[anchor_lang::program(interface, program_id = ID)]
             pub mod __program {
                 use super::*;
                 #(#handlers)*
@@ -2768,7 +3036,7 @@ fn gen_declare_program_errors(
         pub mod error {
             use super::*;
 
-            #[anchor_lang_v2::error_code(offset = 0)]
+            #[anchor_lang::error_code(offset = 0)]
             pub enum #enum_ident {
                 #(#variants)*
             }
@@ -3016,7 +3284,7 @@ fn collect_declare_account_group(
             let nested_ident = Ident::new(&generated_nested_name, span);
             fields.push(DeclareAccountField {
                 name: ident,
-                ty: quote! { anchor_lang_v2::Nested<#nested_ident> },
+                ty: quote! { anchor_lang::Nested<#nested_ident> },
                 attrs: quote! {},
             });
             continue;
@@ -3037,7 +3305,7 @@ fn collect_declare_account_group(
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
 
-        let base_ty = quote! { anchor_lang_v2::accounts::UncheckedAccount };
+        let base_ty = quote! { anchor_lang::accounts::UncheckedAccount };
         let ty = if optional {
             quote! { Option<#base_ty> }
         } else {
@@ -3121,11 +3389,11 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
             let impl_generics = &generics.impl_generics;
             let ty_generics = &generics.ty_generics;
             quote! {
-                impl #impl_generics anchor_lang_v2::Owner for #ident #ty_generics {
-                    const OWNER: anchor_lang_v2::Address = ID;
+                impl #impl_generics anchor_lang::Owner for #ident #ty_generics {
+                    const OWNER: anchor_lang::Address = ID;
                 }
 
-                impl #impl_generics anchor_lang_v2::Discriminator for #ident #ty_generics {
+                impl #impl_generics anchor_lang::Discriminator for #ident #ty_generics {
                     const DISCRIMINATOR: &'static [u8] = &[#(#bytes),*];
                 }
             }
@@ -3161,6 +3429,16 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                     &idl_type_def,
                     idl_field_tys,
                 );
+                let account_deserialize_impl = account_entry
+                    .as_ref()
+                    .map(|_| {
+                        gen_declare_program_account_deserialize_impl(
+                            &ident,
+                            &generics,
+                            serialization,
+                        )
+                    })
+                    .unwrap_or_default();
                 let pod_impls = serialization
                     .is_bytemuck()
                     .then(|| gen_declare_program_pod_impls(&ident, &generics, &fields))
@@ -3176,16 +3454,18 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                         }
                         #pod_impls
                         #discriminator_impl
+                        #account_deserialize_impl
                         #idl_impl
                     },
                     DeclareTypeFields::Named { fields, .. } => quote! {
                         #(#docs)*
                         #repr
-                        #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+                        #[derive(Clone, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
                         pub struct #ident #impl_generics {
                             #(#fields)*
                         }
                         #discriminator_impl
+                        #account_deserialize_impl
                         #idl_impl
                     },
                     DeclareTypeFields::Tuple { fields, .. } if serialization.is_bytemuck() => quote! {
@@ -3195,14 +3475,16 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                         pub struct #ident #impl_generics(#(#fields),*);
                         #pod_impls
                         #discriminator_impl
+                        #account_deserialize_impl
                         #idl_impl
                     },
                     DeclareTypeFields::Tuple { fields, .. } => quote! {
                         #(#docs)*
                         #repr
-                        #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+                        #[derive(Clone, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
                         pub struct #ident #impl_generics(#(#fields),*);
                         #discriminator_impl
+                        #account_deserialize_impl
                         #idl_impl
                     },
                     DeclareTypeFields::Unit if serialization.is_bytemuck() => quote! {
@@ -3212,14 +3494,16 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                         pub struct #ident #impl_generics;
                         #pod_impls
                         #discriminator_impl
+                        #account_deserialize_impl
                         #idl_impl
                     },
                     DeclareTypeFields::Unit => quote! {
                         #(#docs)*
                         #repr
-                        #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+                        #[derive(Clone, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
                         pub struct #ident #impl_generics;
                         #discriminator_impl
+                        #account_deserialize_impl
                         #idl_impl
                     },
                 });
@@ -3280,7 +3564,7 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                 out.push(quote! {
                     #(#docs)*
                     #repr
-                    #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+                    #[derive(Clone, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
                     pub enum #ident #impl_generics {
                         #(#variant_tokens)*
                     }
@@ -3502,12 +3786,12 @@ fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStrea
 
         let event_impl = if serialization.is_bytemuck() {
             quote! {
-                impl anchor_lang_v2::Event for #ident {
-                    fn data(&self) -> anchor_lang_v2::__alloc::vec::Vec<u8> {
-                        let disc = <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR;
-                        let payload = anchor_lang_v2::bytemuck::bytes_of(self);
+                impl anchor_lang::Event for #ident {
+                    fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
+                        let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
+                        let payload = anchor_lang::bytemuck::bytes_of(self);
                         let mut data =
-                            anchor_lang_v2::__alloc::vec::Vec::with_capacity(disc.len() + payload.len());
+                            anchor_lang::__alloc::vec::Vec::with_capacity(disc.len() + payload.len());
                         data.extend_from_slice(disc);
                         data.extend_from_slice(payload);
                         data
@@ -3516,18 +3800,18 @@ fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStrea
             }
         } else {
             quote! {
-                impl anchor_lang_v2::Event for #ident {
-                    fn data(&self) -> anchor_lang_v2::__alloc::vec::Vec<u8> {
-                        let disc = <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR;
+                impl anchor_lang::Event for #ident {
+                    fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
+                        let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
                         let mut data =
-                            anchor_lang_v2::__alloc::vec::Vec::with_capacity(disc.len() + 256);
+                            anchor_lang::__alloc::vec::Vec::with_capacity(disc.len() + 256);
                         data.extend_from_slice(disc);
-                        anchor_lang_v2::wincode::config::serialize_into(
+                        anchor_lang::wincode::config::serialize_into(
                             &mut data,
                             self,
-                            anchor_lang_v2::BORSH_CONFIG,
+                            anchor_lang::BORSH_CONFIG,
                         )
-                        .expect("declared event serialization cannot fail for derived SchemaWrite types");
+                        .expect("declared event serialization cannot fail for derived AnchorSerialize types");
                         data
                     }
                 }
@@ -3535,7 +3819,7 @@ fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStrea
         };
 
         impls.push(quote! {
-            impl anchor_lang_v2::Discriminator for #ident {
+            impl anchor_lang::Discriminator for #ident {
                 const DISCRIMINATOR: &'static [u8] = &[#(#discriminator),*];
             }
 
@@ -3544,33 +3828,33 @@ fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStrea
 
         let parser_body = if serialization.is_bytemuck() {
             quote! {
-                let payload = &value[<super::events::#ident as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len()..];
+                let payload = &value[<super::events::#ident as anchor_lang::Discriminator>::DISCRIMINATOR.len()..];
                 let expected = core::mem::size_of::<super::events::#ident>();
                 if payload.len() != expected {
-                    return Err(anchor_lang_v2::Error::InvalidInstructionData);
+                    return Err(anchor_lang::Error::InvalidInstructionData);
                 }
                 return Ok(Self::#ident(
-                    anchor_lang_v2::bytemuck::pod_read_unaligned(payload)
+                    anchor_lang::bytemuck::pod_read_unaligned(payload)
                 ));
             }
         } else {
             quote! {
-                let mut payload = &value[<super::events::#ident as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len()..];
+                let mut payload = &value[<super::events::#ident as anchor_lang::Discriminator>::DISCRIMINATOR.len()..];
                 let decoded =
-                    <super::events::#ident as anchor_lang_v2::wincode::SchemaRead<
+                    <super::events::#ident as anchor_lang::wincode::SchemaRead<
                         '_,
-                        anchor_lang_v2::BorshConfig,
+                        anchor_lang::BorshConfig,
                     >>::get(&mut payload)
-                    .map_err(|_| anchor_lang_v2::Error::InvalidInstructionData)?;
+                    .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
                 if !payload.is_empty() {
-                    return Err(anchor_lang_v2::Error::InvalidInstructionData);
+                    return Err(anchor_lang::Error::InvalidInstructionData);
                 }
                 return Ok(Self::#ident(decoded));
             }
         };
         parser_branches.push(quote! {
             if value.starts_with(
-                <super::events::#ident as anchor_lang_v2::Discriminator>::DISCRIMINATOR,
+                <super::events::#ident as anchor_lang::Discriminator>::DISCRIMINATOR,
             ) {
                 #parser_body
             }
@@ -3589,17 +3873,17 @@ fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStrea
                 }
 
                 impl Event {
-                    pub fn parse(data: &[u8]) -> anchor_lang_v2::Result<Self> {
+                    pub fn parse(data: &[u8]) -> anchor_lang::Result<Self> {
                         Self::try_from(data)
                     }
                 }
 
                 impl core::convert::TryFrom<&[u8]> for Event {
-                    type Error = anchor_lang_v2::Error;
+                    type Error = anchor_lang::Error;
 
-                    fn try_from(value: &[u8]) -> anchor_lang_v2::Result<Self> {
+                    fn try_from(value: &[u8]) -> anchor_lang::Result<Self> {
                         #(#parser_branches)*
-                        Err(anchor_lang_v2::Error::InvalidArgument)
+                        Err(anchor_lang::Error::InvalidArgument)
                     }
                 }
             }
@@ -3647,8 +3931,8 @@ fn gen_declare_program_constant(
             .unwrap_or_else(|_| value.to_owned());
         let value = syn::LitStr::new(&value, span);
         return Ok(quote! {
-            pub const #ident: anchor_lang_v2::Address =
-                anchor_lang_v2::address!(#value);
+            pub const #ident: anchor_lang::Address =
+                anchor_lang::address!(#value);
         });
     }
 
@@ -3763,9 +4047,9 @@ fn gen_declare_program_type_generics(
             "type" => {
                 impl_params.push(quote! { #ident });
                 ty_params.push(quote! { #ident });
-                idl_bounds.push(quote! { #ident: anchor_lang_v2::IdlAccountType });
+                idl_bounds.push(quote! { #ident: anchor_lang::IdlAccountType });
                 pod_bounds.push(quote! {
-                    #ident: anchor_lang_v2::bytemuck::Pod + anchor_lang_v2::bytemuck::Zeroable
+                    #ident: anchor_lang::bytemuck::Pod + anchor_lang::bytemuck::Zeroable
                 });
             }
             "const" => {
@@ -3823,25 +4107,107 @@ fn gen_declare_program_idl_account_type_impl(
     let where_clause = &generics.idl_where_clause;
     quote! {
         #[doc(hidden)]
-        impl #impl_generics anchor_lang_v2::IdlAccountType for #ident #ty_generics #where_clause {
+        impl #impl_generics anchor_lang::IdlAccountType for #ident #ty_generics #where_clause {
             const __IDL_ACCOUNT_ENTRY: Option<&'static str> = #account_entry;
             const __IDL_TYPE_DEF: Option<&'static str> = Some(#type_def);
 
             fn __register_idl_deps(
-                accounts: &mut anchor_lang_v2::__alloc::vec::Vec<&'static str>,
-                types: &mut anchor_lang_v2::__alloc::vec::Vec<&'static str>,
+                accounts: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
+                types: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
             ) {
-                if let Some(a) = <Self as anchor_lang_v2::IdlAccountType>::__IDL_ACCOUNT_ENTRY {
+                if let Some(a) = <Self as anchor_lang::IdlAccountType>::__IDL_ACCOUNT_ENTRY {
                     accounts.push(a);
                 }
-                if let Some(t) = <Self as anchor_lang_v2::IdlAccountType>::__IDL_TYPE_DEF {
+                if let Some(t) = <Self as anchor_lang::IdlAccountType>::__IDL_TYPE_DEF {
                     types.push(t);
                 }
                 #(
-                    <#field_tys as anchor_lang_v2::IdlAccountType>::__register_idl_deps(accounts, types);
+                    <#field_tys as anchor_lang::IdlAccountType>::__register_idl_deps(accounts, types);
                 )*
             }
         }
+    }
+}
+
+fn gen_declare_program_account_deserialize_impl(
+    ident: &Ident,
+    generics: &DeclareTypeGenerics,
+    serialization: DeclareTypeSerialization,
+) -> TokenStream2 {
+    let impl_generics = &generics.impl_generics;
+    let ty_generics = &generics.ty_generics;
+    let try_deserialize = quote! {
+        fn try_deserialize(
+            buf: &mut &[u8],
+        ) -> ::core::result::Result<Self, anchor_lang::Error> {
+            use anchor_lang::Discriminator as _;
+            if buf.len() < <Self as anchor_lang::Discriminator>::DISCRIMINATOR.len() {
+                return Err(anchor_lang::Error::AccountDataTooSmall);
+            }
+            let given_disc = &buf[..<Self as anchor_lang::Discriminator>::DISCRIMINATOR.len()];
+            if given_disc != <Self as anchor_lang::Discriminator>::DISCRIMINATOR {
+                return Err(anchor_lang::Error::InvalidAccountData);
+            }
+            Self::try_deserialize_unchecked(buf)
+        }
+    };
+
+    match serialization {
+        DeclareTypeSerialization::Borsh => quote! {
+            impl #impl_generics anchor_lang::AccountDeserialize for #ident #ty_generics
+            where
+                for<'__de> Self:
+                    anchor_lang::wincode::SchemaRead<'__de, anchor_lang::BorshConfig, Dst = Self>,
+            {
+                #try_deserialize
+
+                fn try_deserialize_unchecked(
+                    buf: &mut &[u8],
+                ) -> ::core::result::Result<Self, anchor_lang::Error> {
+                    use anchor_lang::Discriminator as _;
+                    let disc_len = <Self as anchor_lang::Discriminator>::DISCRIMINATOR.len();
+                    if buf.len() < disc_len {
+                        return Err(anchor_lang::Error::AccountDataTooSmall);
+                    }
+                    let original = *buf;
+                    let mut data = &original[disc_len..];
+                    let value = <Self as anchor_lang::wincode::SchemaRead<
+                        '_,
+                        anchor_lang::BorshConfig,
+                    >>::get(&mut data)
+                        .map_err(|_| anchor_lang::Error::InvalidAccountData)?;
+                    *buf = data;
+                    Ok(value)
+                }
+            }
+        },
+        DeclareTypeSerialization::Bytemuck | DeclareTypeSerialization::BytemuckUnsafe => quote! {
+            impl #impl_generics anchor_lang::AccountDeserialize for #ident #ty_generics
+            where
+                Self: anchor_lang::bytemuck::Pod,
+            {
+                #try_deserialize
+
+                fn try_deserialize_unchecked(
+                    buf: &mut &[u8],
+                ) -> ::core::result::Result<Self, anchor_lang::Error> {
+                    use anchor_lang::Discriminator as _;
+                    let disc_len = <Self as anchor_lang::Discriminator>::DISCRIMINATOR.len();
+                    if buf.len() < disc_len {
+                        return Err(anchor_lang::Error::AccountDataTooSmall);
+                    }
+                    let original = *buf;
+                    let data = &original[disc_len..];
+                    let size = ::core::mem::size_of::<Self>();
+                    if data.len() < size {
+                        return Err(anchor_lang::Error::AccountDataTooSmall);
+                    }
+                    let value = anchor_lang::bytemuck::pod_read_unaligned(&data[..size]);
+                    *buf = &data[size..];
+                    Ok(value)
+                }
+            }
+        },
     }
 }
 
@@ -3853,11 +4219,26 @@ fn gen_declare_program_pod_impls(
     let field_types = fields.tys();
     let impl_generics = &generics.impl_generics;
     let ty_generics = &generics.ty_generics;
-    let where_clause = &generics.pod_where_clause;
+    let generic_where_clause = &generics.pod_where_clause;
+    let where_clause = if field_types.is_empty() {
+        generic_where_clause.clone()
+    } else if generic_where_clause.is_empty() {
+        quote! {
+            where
+                #(#field_types: anchor_lang::bytemuck::Pod
+                    + anchor_lang::bytemuck::Zeroable),*
+        }
+    } else {
+        quote! {
+            #generic_where_clause,
+            #(#field_types: anchor_lang::bytemuck::Pod
+                + anchor_lang::bytemuck::Zeroable),*
+        }
+    };
     quote! {
         impl #impl_generics #ident #ty_generics #where_clause {
             const __ANCHOR_DECLARE_PROGRAM_POD_ASSERT: fn() = || {
-                fn assert_pod<T: anchor_lang_v2::bytemuck::Pod>() {}
+                fn assert_pod<T: anchor_lang::bytemuck::Pod>() {}
                 #( assert_pod::<#field_types>(); )*
             };
             const __ANCHOR_DECLARE_PROGRAM_NO_PADDING: () = assert!(
@@ -3865,8 +4246,8 @@ fn gen_declare_program_pod_impls(
                 "declared bytemuck type has padding bytes"
             );
         }
-        unsafe impl #impl_generics anchor_lang_v2::bytemuck::Pod for #ident #ty_generics #where_clause {}
-        unsafe impl #impl_generics anchor_lang_v2::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
+        unsafe impl #impl_generics anchor_lang::bytemuck::Pod for #ident #ty_generics #where_clause {}
+        unsafe impl #impl_generics anchor_lang::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
     }
 }
 
@@ -3944,9 +4325,9 @@ fn declare_idl_type_to_tokens(
             "f64" => quote! { f64 },
             "u128" => quote! { u128 },
             "i128" => quote! { i128 },
-            "bytes" => quote! { anchor_lang_v2::__alloc::vec::Vec<u8> },
-            "string" => quote! { anchor_lang_v2::__alloc::string::String },
-            "pubkey" => quote! { anchor_lang_v2::Address },
+            "bytes" => quote! { anchor_lang::__alloc::vec::Vec<u8> },
+            "string" => quote! { anchor_lang::__alloc::string::String },
+            "pubkey" => quote! { anchor_lang::Address },
             other => {
                 return Err(syn::Error::new(
                     span,
@@ -3962,6 +4343,9 @@ fn declare_idl_type_to_tokens(
         } else {
             json_str(defined, "name", span)?
         };
+        if let Some(builtin) = declare_idl_defined_builtin(defined_name) {
+            return Ok(builtin);
+        }
         let ident = Ident::new(&to_type_name(defined_name), span);
         let generic_args = defined
             .get("generics")
@@ -3985,7 +4369,7 @@ fn declare_idl_type_to_tokens(
     }
     if let Some(inner) = value.get("vec") {
         let inner = declare_idl_type_to_tokens(inner, span)?;
-        return Ok(quote! { anchor_lang_v2::__alloc::vec::Vec<#inner> });
+        return Ok(quote! { anchor_lang::__alloc::vec::Vec<#inner> });
     }
     if let Some(inner) = value.get("option") {
         let inner = declare_idl_type_to_tokens(inner, span)?;
@@ -4007,6 +4391,21 @@ fn declare_idl_type_to_tokens(
         span,
         format!("unsupported IDL type `{value}`"),
     ))
+}
+
+fn declare_idl_defined_builtin(name: &str) -> Option<TokenStream2> {
+    match name {
+        "PodBool" => Some(quote! { anchor_lang::pod::PodBool }),
+        "PodU16" => Some(quote! { anchor_lang::pod::PodU16 }),
+        "PodU32" => Some(quote! { anchor_lang::pod::PodU32 }),
+        "PodU64" => Some(quote! { anchor_lang::pod::PodU64 }),
+        "PodU128" => Some(quote! { anchor_lang::pod::PodU128 }),
+        "PodI16" => Some(quote! { anchor_lang::pod::PodI16 }),
+        "PodI32" => Some(quote! { anchor_lang::pod::PodI32 }),
+        "PodI64" => Some(quote! { anchor_lang::pod::PodI64 }),
+        "PodI128" => Some(quote! { anchor_lang::pod::PodI128 }),
+        _ => None,
+    }
 }
 
 fn declare_idl_array_len_to_tokens(
@@ -4291,6 +4690,14 @@ fn unsupported_wincode_idl_attr_error(
                  exclude this type from generated IDL"
             ),
         )),
+        Ok(Some((UnsupportedWincodeAttrKind::TagEncoding, span))) => Some(syn::Error::new(
+            span,
+            format!(
+                "{surface} does not support `#[wincode(tag_encoding = ...)]` because generated \
+                 IDL assumes borsh's 1-byte enum discriminant; remove the override or exclude \
+                 this type from generated IDL"
+            ),
+        )),
         Ok(None) => None,
         Err(err) => Some(err),
     }
@@ -4379,6 +4786,60 @@ fn extract_result_return_type(output: &syn::ReturnType) -> syn::Result<Option<Ty
     }
 }
 
+fn type_contains_float(ty: &Type) -> bool {
+    fn path_arguments_contain_float(arguments: &syn::PathArguments) -> bool {
+        let syn::PathArguments::AngleBracketed(arguments) = arguments else {
+            return false;
+        };
+        arguments.args.iter().any(|argument| match argument {
+            syn::GenericArgument::Type(ty) => type_contains_float(ty),
+            syn::GenericArgument::AssocType(binding) => type_contains_float(&binding.ty),
+            _ => false,
+        })
+    }
+
+    match ty {
+        Type::Path(path) => path.path.segments.iter().any(|segment| {
+            matches!(segment.ident.to_string().as_str(), "f32" | "f64")
+                || path_arguments_contain_float(&segment.arguments)
+        }),
+        Type::Array(array) => type_contains_float(&array.elem),
+        Type::Slice(slice) => type_contains_float(&slice.elem),
+        Type::Reference(reference) => type_contains_float(&reference.elem),
+        Type::Ptr(pointer) => type_contains_float(&pointer.elem),
+        Type::Tuple(tuple) => tuple.elems.iter().any(type_contains_float),
+        Type::Paren(paren) => type_contains_float(&paren.elem),
+        Type::Group(group) => type_contains_float(&group.elem),
+        Type::BareFn(function) => {
+            function
+                .inputs
+                .iter()
+                .any(|argument| type_contains_float(&argument.ty))
+                || matches!(
+                    &function.output,
+                    syn::ReturnType::Type(_, ty) if type_contains_float(ty)
+                )
+        }
+        _ => false,
+    }
+}
+
+fn reject_float_fields(surface: &str, fields: &Fields) -> syn::Result<()> {
+    for field in fields {
+        if type_contains_float(&field.ty) {
+            return Err(syn::Error::new(
+                field.ty.span(),
+                format!(
+                    "`f32` and `f64` are not supported on {surface} because its \
+                     Borsh-compatible decoder would accept NaN; use an integer or fixed-point \
+                     representation"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn process_handler(
     handler: &syn::ItemFn,
     mod_name: &Ident,
@@ -4392,6 +4853,16 @@ fn process_handler(
         Ok(return_ty) => return_ty,
         Err(err) => return HandlerCodegen::error(handler, err),
     };
+    if let Some(return_ty) = return_type.as_ref().filter(|ty| type_contains_float(ty)) {
+        return HandlerCodegen::error(
+            handler,
+            syn::Error::new(
+                return_ty.span(),
+                "`f32` and `f64` return values are not supported because the Borsh-compatible \
+                 encoder would accept NaN; use an integer or fixed-point representation",
+            ),
+        );
+    }
     let return_ty = return_type
         .as_ref()
         .map(|return_ty| quote! { #return_ty })
@@ -4403,7 +4874,7 @@ fn process_handler(
             let idl_type = idl::rust_type_to_idl(return_ty);
             quote! {
                 {
-                    let mut __s = anchor_lang_v2::__alloc::string::String::from(",\"returns\":");
+                    let mut __s = anchor_lang::__alloc::string::String::from(",\"returns\":");
                     __s.push_str(#idl_type);
                     __s
                 }
@@ -4412,14 +4883,14 @@ fn process_handler(
         .unwrap_or_else(|| quote! { "" });
     let set_return_data = returns_value.then(|| {
         quote! {
-            let mut __return_data = anchor_lang_v2::__alloc::vec::Vec::with_capacity(256);
-            anchor_lang_v2::wincode::config::serialize_into(
+            let mut __return_data = anchor_lang::__alloc::vec::Vec::with_capacity(256);
+            anchor_lang::wincode::config::serialize_into(
                 &mut __return_data,
                 &__result,
-                anchor_lang_v2::BORSH_CONFIG,
+                anchor_lang::BORSH_CONFIG,
             )
                 .expect("return data serialization failed");
-            anchor_lang_v2::pinocchio::cpi::set_return_data(&__return_data);
+            anchor_lang::pinocchio::cpi::set_return_data(&__return_data);
         }
     });
 
@@ -4468,6 +4939,17 @@ fn process_handler(
             None
         })
         .collect();
+    if let Some((_, ty)) = extra_args.iter().find(|(_, ty)| type_contains_float(ty)) {
+        return HandlerCodegen::error(
+            handler,
+            syn::Error::new(
+                ty.span(),
+                "`f32` and `f64` instruction arguments are not supported because the \
+                 Borsh-compatible decoder would accept NaN; use an integer or fixed-point \
+                 representation",
+            ),
+        );
+    }
 
     let extra_arg_names: Vec<_> = extra_args.iter().map(|(n, _)| *n).collect();
     let (extra_arg_types, has_ref_args) = args_meta(&extra_args);
@@ -4529,18 +5011,18 @@ fn process_handler(
             #(#handler_cfg_attrs)*
             #[inline(always)]
             pub fn #fn_name<'a>(
-                __program_id: &'a anchor_lang_v2::Address,
-                __cursor: &'a mut anchor_lang_v2::AccountCursor,
+                __program_id: &'a anchor_lang::Address,
+                __cursor: &'a mut anchor_lang::AccountCursor,
                 __ix_data: &'a [u8],
                 __num_accounts: usize,
             ) -> u64 {
                 #[cfg(not(feature = "no-log-ix-name"))]
-                anchor_lang_v2::msg!(#fn_name_log);
+                anchor_lang::msg!(#fn_name_log);
 
                 #[inline(always)]
                 fn __anchor_assert_no_ix_args(_: ()) {}
 
-                match anchor_lang_v2::run_handler::<#accounts_path, #return_ty>(
+                match anchor_lang::run_handler::<#accounts_path, #return_ty>(
                     __program_id,
                     __cursor,
                     __ix_data,
@@ -4566,28 +5048,28 @@ fn process_handler(
             #(#handler_cfg_attrs)*
             #[inline(always)]
             pub fn #fn_name<'a>(
-                __program_id: &'a anchor_lang_v2::Address,
-                __cursor: &'a mut anchor_lang_v2::AccountCursor,
+                __program_id: &'a anchor_lang::Address,
+                __cursor: &'a mut anchor_lang::AccountCursor,
                 __ix_data: &'a [u8],
                 __num_accounts: usize,
             ) -> u64 {
                 #[cfg(not(feature = "no-log-ix-name"))]
-                anchor_lang_v2::msg!(#fn_name_log);
+                anchor_lang::msg!(#fn_name_log);
 
                 trait __AnchorIxArgCoerce<'ix> {
-                    fn __coerce(self, __ix_data: &'ix [u8]) -> anchor_lang_v2::Result<#tuple_ty>;
+                    fn __coerce(self, __ix_data: &'ix [u8]) -> anchor_lang::Result<#tuple_ty>;
                 }
 
                 impl<'ix, __AnchorIxArgs> __AnchorIxArgCoerce<'ix> for __AnchorIxArgs {
                     #[inline(always)]
-                    fn __coerce(self, __ix_data: &'ix [u8]) -> anchor_lang_v2::Result<#tuple_ty> {
+                    fn __coerce(self, __ix_data: &'ix [u8]) -> anchor_lang::Result<#tuple_ty> {
                         let _ = self;
                         #deser_args
                         Ok((#(#extra_arg_names,)*))
                     }
                 }
 
-                match anchor_lang_v2::run_handler::<#accounts_path, #return_ty>(
+                match anchor_lang::run_handler::<#accounts_path, #return_ty>(
                     __program_id,
                     __cursor,
                     __ix_data,
@@ -4617,23 +5099,23 @@ fn process_handler(
     };
     let instruction_struct = quote! {
         #(#handler_cfg_attrs)*
-        #[derive(anchor_lang_v2::wincode::SchemaWrite)]
+        #[derive(anchor_lang::AnchorSerialize)]
         pub struct #ix_struct_name #ix_lt_decl {
             #(pub #extra_arg_names: #extra_arg_types,)*
         }
         #(#handler_cfg_attrs)*
-        impl #ix_lt_decl anchor_lang_v2::Discriminator for #ix_struct_name #ix_lt_use {
+        impl #ix_lt_decl anchor_lang::Discriminator for #ix_struct_name #ix_lt_use {
             const DISCRIMINATOR: &'static [u8] = &[#(#disc_literal_bytes),*];
         }
         #(#handler_cfg_attrs)*
-        impl #ix_lt_decl anchor_lang_v2::InstructionData for #ix_struct_name #ix_lt_use {
+        impl #ix_lt_decl anchor_lang::InstructionData for #ix_struct_name #ix_lt_use {
             fn data(&self) -> alloc::vec::Vec<u8> {
                 let mut data = alloc::vec::Vec::with_capacity(256);
                 data.extend_from_slice(Self::DISCRIMINATOR);
-                anchor_lang_v2::wincode::config::serialize_into(
+                anchor_lang::wincode::config::serialize_into(
                     &mut data,
                     self,
-                    anchor_lang_v2::BORSH_CONFIG,
+                    anchor_lang::BORSH_CONFIG,
                 )
                     .expect("instruction serialization failed");
                 data
@@ -4643,11 +5125,11 @@ fn process_handler(
         impl #ix_lt_decl #ix_struct_name #ix_lt_use {
             pub fn to_instruction(
                 self,
-                accounts: impl anchor_lang_v2::ToAccountMetas,
-            ) -> anchor_lang_v2::solana_program::instruction::Instruction {
-                anchor_lang_v2::solana_program::instruction::Instruction::new_with_bytes(
+                accounts: impl anchor_lang::ToAccountMetas,
+            ) -> anchor_lang::solana_program::instruction::Instruction {
+                anchor_lang::solana_program::instruction::Instruction::new_with_bytes(
                     #program_id,
-                    &<Self as anchor_lang_v2::InstructionData>::data(&self),
+                    &<Self as anchor_lang::InstructionData>::data(&self),
                     accounts.to_account_metas(None),
                 )
             }
@@ -4683,7 +5165,7 @@ fn process_handler(
         };
         let (ret_ty, ret_value) = if returns_value {
             (
-                quote! { -> anchor_lang_v2::Result<Return<#return_ty>> },
+                quote! { -> anchor_lang::Result<Return<#return_ty>> },
                 quote! {
                     Ok(Return {
                         program: *__ctx.program,
@@ -4692,23 +5174,23 @@ fn process_handler(
                 },
             )
         } else {
-            (
-                quote! { -> anchor_lang_v2::Result<()> },
-                quote! { Ok(()) },
-            )
+            (quote! { -> anchor_lang::Result<()> }, quote! { Ok(()) })
         };
         quote! {
             #(#handler_cfg_attrs)*
             pub fn #fn_name #lt_decl(
-                __ctx: anchor_lang_v2::CpiContext<'a, accounts::#accounts_ident<'a>>,
+                __ctx: anchor_lang::CpiContext<'a, accounts::#accounts_ident<'a>>,
                 #(#extra_arg_names: #extra_arg_types,)*
             ) #ret_ty {
-                let __ix = super::instruction::#ix_struct_name #ix_lt_use_local {
+                // No lifetime arguments on the literal: a struct expression
+                // cannot carry them, and the type is already fixed by the
+                // annotation below.
+                let __ix = super::instruction::#ix_struct_name {
                     #(#extra_arg_names,)*
                 };
                 let __data = <
                     super::instruction::#ix_struct_name #ix_lt_use_local
-                    as anchor_lang_v2::InstructionData
+                    as anchor_lang::InstructionData
                 >::data(&__ix);
                 __ctx.invoke(&__data)?;
                 #ret_value
@@ -4937,7 +5419,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
             let arg_types = &codegen.arg_types;
             let return_register = codegen.return_type.as_ref().map(|return_type| {
                 quote! {
-                    <#return_type as anchor_lang_v2::IdlAccountType>::__register_idl_deps(
+                    <#return_type as anchor_lang::IdlAccountType>::__register_idl_deps(
                         &mut accounts_entries,
                         &mut types_entries,
                     );
@@ -4947,7 +5429,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                 #(#cfg_attrs)*
                 {
                     #(
-                        <#arg_types as anchor_lang_v2::IdlAccountType>::__register_idl_deps(
+                        <#arg_types as anchor_lang::IdlAccountType>::__register_idl_deps(
                             &mut accounts_entries,
                             &mut types_entries,
                         );
@@ -4971,17 +5453,17 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
             let __event_disc: u64 = u64::from_le_bytes(
                 *(__ix_data_ptr as *const [u8; 8])
             );
-            if __event_disc == anchor_lang_v2::event::EVENT_IX_TAG {
+            if __event_disc == anchor_lang::event::EVENT_IX_TAG {
                 if __num < 1 {
-                    return anchor_lang_v2::Error::from(
-                        anchor_lang_v2::ErrorCode::AccountNotEnoughKeys,
+                    return anchor_lang::Error::from(
+                        anchor_lang::ErrorCode::AccountNotEnoughKeys,
                     ).into();
                 }
-                let mut __cursor = anchor_lang_v2::AccountCursor::new(__input, __lookup);
+                let mut __cursor = anchor_lang::AccountCursor::new(__input, __lookup);
                 let __event_authority = __cursor.next();
                 if !__event_authority.is_signer() {
-                    return anchor_lang_v2::Error::from(
-                        anchor_lang_v2::ErrorCode::ConstraintSigner,
+                    return anchor_lang::Error::from(
+                        anchor_lang::ErrorCode::ConstraintSigner,
                     ).into();
                 }
                 #event_authority_check
@@ -4992,6 +5474,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 
     // Strip #[discrim = N] attributes from handler outputs so rustc
     // doesn't complain about an unknown attribute.
+    let mut handler_update_errors = Vec::new();
     let handlers: Vec<_> = handlers
         .iter()
         .map(|func| {
@@ -5003,9 +5486,22 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                     true
                 }
             });
+            if let Some(syn::FnArg::Typed(pt)) = func.sig.inputs.first_mut() {
+                match update_accounts_stmt_for_handler_pat(pt.pat.as_mut()) {
+                    Ok(stmt) => {
+                        func.block.stmts.insert(0, stmt);
+                    }
+                    Err(err) => handler_update_errors.push(err.to_compile_error()),
+                }
+            }
             func
         })
         .collect();
+    if !handler_update_errors.is_empty() {
+        return quote! {
+            #(#handler_update_errors)*
+        };
+    }
 
     let interface_account_reexports = if config.mode == ProgramMode::Interface {
         quote! { pub use super::*; }
@@ -5020,7 +5516,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         pub mod instruction {
             extern crate alloc;
             use super::*;
-            use anchor_lang_v2::Discriminator as _;
+            use anchor_lang::Discriminator as _;
             #(#instruction_structs)*
         }
 
@@ -5042,31 +5538,31 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         pub mod cpi {
             extern crate alloc;
             use super::*;
-            use anchor_lang_v2::InstructionData as _;
+            use anchor_lang::InstructionData as _;
 
             pub struct Return<T> {
-                program: anchor_lang_v2::Address,
+                program: anchor_lang::Address,
                 phantom: core::marker::PhantomData<T>,
             }
 
             impl<T> Return<T>
             where
-                T: for<'de> anchor_lang_v2::wincode::SchemaRead<
+                T: for<'de> anchor_lang::wincode::SchemaRead<
                     'de,
-                    anchor_lang_v2::BorshConfig,
+                    anchor_lang::BorshConfig,
                     Dst = T,
                 >,
             {
                 pub fn get(&self) -> T {
                     let __return_data =
-                        anchor_lang_v2::pinocchio::cpi::get_return_data().unwrap();
+                        anchor_lang::pinocchio::cpi::get_return_data().unwrap();
                     assert!(
-                        anchor_lang_v2::address_eq(__return_data.program_id(), &self.program),
+                        anchor_lang::address_eq(__return_data.program_id(), &self.program),
                         "return data program id mismatch"
                     );
-                    anchor_lang_v2::wincode::config::deserialize(
+                    anchor_lang::wincode::config::deserialize(
                         __return_data.as_slice(),
-                        anchor_lang_v2::BORSH_CONFIG,
+                        anchor_lang::BORSH_CONFIG,
                     )
                         .unwrap()
                 }
@@ -5099,9 +5595,9 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 
         // Custom 2-arg (r1, r2) entrypoint using SIMD-0321 convention.
         #[cfg(not(feature = "no-entrypoint"))]
-        anchor_lang_v2::pinocchio::default_allocator!();
+        anchor_lang::pinocchio::default_allocator!();
         #[cfg(not(feature = "no-entrypoint"))]
-        anchor_lang_v2::pinocchio::default_panic_handler!();
+        anchor_lang::pinocchio::default_panic_handler!();
 
         /// Matches Solana's transaction-wide account cap (u8 index space).
         /// The lookup array holds `[AccountView; 256]` = ~2 KiB of frame
@@ -5143,14 +5639,14 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
             __input: *mut u8,
             __ix_data_ptr: *const u8,
         ) -> u64 {
-            let mut __lookup: [::core::mem::MaybeUninit<anchor_lang_v2::AccountView>;
+            let mut __lookup: [::core::mem::MaybeUninit<anchor_lang::AccountView>;
                 __ANCHOR_MAX_ACCOUNTS] =
                 [const { ::core::mem::MaybeUninit::uninit() }; __ANCHOR_MAX_ACCOUNTS];
 
             __anchor_dispatch_internal(
                 __input,
                 __ix_data_ptr,
-                __lookup.as_mut_ptr() as *mut anchor_lang_v2::AccountView,
+                __lookup.as_mut_ptr() as *mut anchor_lang::AccountView,
             )
         }
 
@@ -5158,30 +5654,30 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         unsafe fn __anchor_dispatch_internal(
             __input: *mut u8,
             __ix_data_ptr: *const u8,
-            __lookup: *mut anchor_lang_v2::AccountView,
+            __lookup: *mut anchor_lang::AccountView,
         ) -> u64 {
             let __ix_data_len = *(__ix_data_ptr.sub(8) as *const u64) as usize;
-            let __program_id: &anchor_lang_v2::Address =
-                &*(__ix_data_ptr.add(__ix_data_len) as *const anchor_lang_v2::Address);
+            let __program_id: &anchor_lang::Address =
+                &*(__ix_data_ptr.add(__ix_data_len) as *const anchor_lang::Address);
 
-            if let Err(__e) = anchor_lang_v2::check_program_id(__program_id, &crate::ID) {
+            if let Err(__e) = anchor_lang::check_program_id(__program_id, &crate::ID) {
                 return __e.into();
             }
 
             let __num = *(__input as *const u64) as usize;
             #event_cpi_dispatch
 
-            let mut __cursor = anchor_lang_v2::AccountCursor::new(__input, __lookup);
+            let mut __cursor = anchor_lang::AccountCursor::new(__input, __lookup);
 
             #(#dispatch_arms)*
-            anchor_lang_v2::Error::from(
-                anchor_lang_v2::ErrorCode::InstructionFallbackNotFound,
+            anchor_lang::Error::from(
+                anchor_lang::ErrorCode::InstructionFallbackNotFound,
             ).into()
         }
 
         mod __handlers {
             use super::*;
-            use anchor_lang_v2::TryAccounts as _;
+            use anchor_lang::TryAccounts as _;
             #(#handler_wrappers)*
         }
 
@@ -5199,7 +5695,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                 println!("--- IDL begin address ---");
                 let addr = crate::ID;
                 // Print base58 address
-                println!("{}", anchor_lang_v2::Address::from(addr));
+                println!("{}", anchor_lang::Address::from(addr));
                 println!("--- IDL end address ---");
             }
 
@@ -5248,18 +5744,18 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                     .filter(|s| !s.is_empty());
                 let repository = option_env!("CARGO_PKG_REPOSITORY")
                     .filter(|s| !s.is_empty());
-                let mut metadata_extras = anchor_lang_v2::__alloc::string::String::new();
+                let mut metadata_extras = anchor_lang::__alloc::string::String::new();
                 if let Some(d) = description {
                     // Escape embedded quotes/backslashes so the JSON stays valid.
                     let escaped = d.replace('\\', "\\\\").replace('"', "\\\"");
-                    metadata_extras.push_str(&anchor_lang_v2::__alloc::format!(
+                    metadata_extras.push_str(&anchor_lang::__alloc::format!(
                         ",\"description\":\"{}\"",
                         escaped,
                     ));
                 }
                 if let Some(r) = repository {
                     let escaped = r.replace('\\', "\\\\").replace('"', "\\\"");
-                    metadata_extras.push_str(&anchor_lang_v2::__alloc::format!(
+                    metadata_extras.push_str(&anchor_lang::__alloc::format!(
                         ",\"repository\":\"{}\"",
                         escaped,
                     ));
@@ -5288,8 +5784,8 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 ///
 /// Two modes:
 ///
-/// **Default (`#[event]`, wincode).** Derives `wincode::SchemaWrite` and
-/// serializes via `wincode::config::serialize_into` with `BORSH_CONFIG`, so
+/// **Default (`#[event]`, wincode).** Derives `AnchorSerialize` and
+/// serializes via Wincode with `BORSH_CONFIG`, so
 /// the on-chain wire format is byte-compatible with borsh while keeping
 /// wincode's faster encoding path. Supports arbitrary layouts, including
 /// `Vec`/`String`/`Option`/enums, and is materially cheaper than borsh on
@@ -5346,13 +5842,18 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .into()
         }
     };
+    if matches!(mode, EventMode::Wincode) {
+        if let Err(err) = reject_float_fields("`#[event]`", fields) {
+            return err.to_compile_error().into();
+        }
+    }
     use sha2::Digest;
     let hash = sha2::Sha256::digest(format!("event:{name_str}").as_bytes());
     let disc_bytes = &hash[..8];
     let disc_literals: Vec<_> = disc_bytes.iter().map(|b| quote! { #b }).collect();
 
     let discriminator_impl = quote! {
-        impl anchor_lang_v2::Discriminator for #name {
+        impl anchor_lang::Discriminator for #name {
             const DISCRIMINATOR: &'static [u8] = &[#(#disc_literals),*];
         }
     };
@@ -5365,7 +5866,13 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
     // `{serialization:"bytemuck",repr:{kind:"c"}}`.
     let type_kind = match mode {
         EventMode::Wincode => idl::TypeKind::Borsh,
-        EventMode::Bytemuck => idl::TypeKind::BytemuckRepr,
+        EventMode::Bytemuck => {
+            let repr = match idl::bytemuck_repr_from_attrs(attrs) {
+                Ok(repr) => repr,
+                Err(err) => return err.to_compile_error().into(),
+            };
+            idl::TypeKind::BytemuckRepr(repr)
+        }
     };
     let struct_docs = idl::extract_doc_lines(attrs);
     let idl_validation_tokens = if matches!(mode, EventMode::Wincode) {
@@ -5410,17 +5917,17 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
             // serialized — we still pass it because `__register_idl_deps`
             // takes both buffers, and a nested `#[account]` data type
             // referenced from an event payload would push into it.
-            let mut __accounts: anchor_lang_v2::__alloc::vec::Vec<&'static str> =
-                anchor_lang_v2::__alloc::vec::Vec::new();
-            let mut __types: anchor_lang_v2::__alloc::vec::Vec<&'static str> =
-                anchor_lang_v2::__alloc::vec::Vec::new();
-            <#name as anchor_lang_v2::IdlAccountType>::__register_idl_deps(
+            let mut __accounts: anchor_lang::__alloc::vec::Vec<&'static str> =
+                anchor_lang::__alloc::vec::Vec::new();
+            let mut __types: anchor_lang::__alloc::vec::Vec<&'static str> =
+                anchor_lang::__alloc::vec::Vec::new();
+            <#name as anchor_lang::IdlAccountType>::__register_idl_deps(
                 &mut __accounts,
                 &mut __types,
             );
             __types.sort();
             __types.dedup();
-            let mut __payload = anchor_lang_v2::__alloc::string::String::from(#event_header_json);
+            let mut __payload = anchor_lang::__alloc::string::String::from(#event_header_json);
             let mut __first = true;
             for __t in &__types {
                 if !__first { __payload.push(','); }
@@ -5441,15 +5948,15 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
     let idl_account_type_impl = quote! {
         #[cfg(feature = "idl-build")]
         #[doc(hidden)]
-        impl anchor_lang_v2::IdlAccountType for #name {
+        impl anchor_lang::IdlAccountType for #name {
             fn __idl_type_def() -> Option<&'static str> {
                 #event_type_def
             }
             fn __register_idl_deps(
-                accounts: &mut ::anchor_lang_v2::__alloc::vec::Vec<&'static str>,
-                types: &mut ::anchor_lang_v2::__alloc::vec::Vec<&'static str>,
+                accounts: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
+                types: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
             ) {
-                if let Some(t) = <Self as anchor_lang_v2::IdlAccountType>::__idl_type_def() {
+                if let Some(t) = <Self as anchor_lang::IdlAccountType>::__idl_type_def() {
                     types.push(t);
                 }
                 #(#idl_field_dep_walkers)*
@@ -5459,35 +5966,35 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     match mode {
         EventMode::Wincode => TokenStream::from(quote! {
-            // `#[derive(wincode::SchemaWrite)]` lays down the per-field encoder.
+            // `#[derive(AnchorSerialize)]` lays down the Wincode per-field encoder.
             // No `repr(C)` — wincode is layout-agnostic (it walks the derived
             // schema, not the in-memory byte layout) so the compiler is free
             // to pick whichever Rust layout is best.
-            #[derive(anchor_lang_v2::wincode::SchemaWrite)]
+            #[derive(anchor_lang::AnchorSerialize)]
             #(#attrs)*
             #vis struct #name #fields
 
             #(#idl_validation_tokens)*
             #discriminator_impl
 
-            impl anchor_lang_v2::Event for #name {
-                fn data(&self) -> anchor_lang_v2::__alloc::vec::Vec<u8> {
-                    let disc = <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR;
+            impl anchor_lang::Event for #name {
+                fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
+                    let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
                     // 256-byte preallocation matches instruction-data
                     // emission. Wincode has no `encoded_size()` yet, so this
                     // is a best-guess that avoids a reallocation for typical
                     // event shapes.
-                    let mut buf = anchor_lang_v2::__alloc::vec::Vec::with_capacity(
+                    let mut buf = anchor_lang::__alloc::vec::Vec::with_capacity(
                         disc.len() + 256,
                     );
                     buf.extend_from_slice(disc);
-                    anchor_lang_v2::wincode::config::serialize_into(
+                    anchor_lang::wincode::config::serialize_into(
                         &mut buf,
                         self,
-                        anchor_lang_v2::BORSH_CONFIG,
+                        anchor_lang::BORSH_CONFIG,
                     )
                         .expect("`#[event]` wincode serialization cannot fail for \
-                                 derived SchemaWrite types");
+                                 derived AnchorSerialize types");
                     buf
                 }
             }
@@ -5528,7 +6035,7 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                     quote! {
                         #(#cfg_attrs)*
                         const _: fn() = || {
-                            fn assert_pod<T: anchor_lang_v2::bytemuck::Pod>() {}
+                            fn assert_pod<T: anchor_lang::bytemuck::Pod>() {}
                             assert_pod::<#ty>();
                         };
                     }
@@ -5628,16 +6135,16 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                 // Not using `#[derive(Pod)]` so we can keep the targeted
                 // field diagnostics above instead of falling straight into
                 // bytemuck's generic trait errors.
-                unsafe impl anchor_lang_v2::bytemuck::Pod for #name {}
-                unsafe impl anchor_lang_v2::bytemuck::Zeroable for #name {}
+                unsafe impl anchor_lang::bytemuck::Pod for #name {}
+                unsafe impl anchor_lang::bytemuck::Zeroable for #name {}
 
                 #discriminator_impl
 
-                impl anchor_lang_v2::Event for #name {
-                    fn data(&self) -> anchor_lang_v2::__alloc::vec::Vec<u8> {
+                impl anchor_lang::Event for #name {
+                    fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
                         const SIZE: usize = ::core::mem::size_of::<#name>();
-                        let disc = <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR;
-                        let mut buf = anchor_lang_v2::__alloc::vec::Vec::with_capacity(
+                        let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
+                        let mut buf = anchor_lang::__alloc::vec::Vec::with_capacity(
                             disc.len() + SIZE,
                         );
                         buf.extend_from_slice(disc);
@@ -5785,7 +6292,7 @@ pub fn emit(input: TokenStream) -> TokenStream {
     let data: proc_macro2::TokenStream = input.into();
     TokenStream::from(quote! {
         {
-            anchor_lang_v2::sol_log_data(&[&anchor_lang_v2::Event::data(&#data)]);
+            anchor_lang::sol_log_data(&[&anchor_lang::Event::data(&#data)]);
         }
     })
 }
@@ -5799,18 +6306,18 @@ pub fn emit_cpi(input: TokenStream) -> TokenStream {
     TokenStream::from(quote! {
         {
             struct __AnchorEventCpiAccounts<'a> {
-                event_authority: anchor_lang_v2::CpiHandle<'a>,
+                event_authority: anchor_lang::CpiHandle<'a>,
             }
 
-            impl<'a> anchor_lang_v2::ToCpiAccounts<'a> for __AnchorEventCpiAccounts<'a> {
+            impl<'a> anchor_lang::ToCpiAccounts<'a> for __AnchorEventCpiAccounts<'a> {
                 fn to_instruction_accounts(
                     &self,
-                ) -> anchor_lang_v2::__alloc::vec::Vec<
-                    anchor_lang_v2::pinocchio::instruction::InstructionAccount<'a>
+                ) -> anchor_lang::__alloc::vec::Vec<
+                    anchor_lang::pinocchio::instruction::InstructionAccount<'a>
                 > {
-                    let mut __accounts = anchor_lang_v2::__alloc::vec::Vec::with_capacity(1);
+                    let mut __accounts = anchor_lang::__alloc::vec::Vec::with_capacity(1);
                     __accounts.push(
-                        anchor_lang_v2::pinocchio::instruction::InstructionAccount::readonly_signer(
+                        anchor_lang::pinocchio::instruction::InstructionAccount::readonly_signer(
                             self.event_authority.address(),
                         ),
                     );
@@ -5819,27 +6326,35 @@ pub fn emit_cpi(input: TokenStream) -> TokenStream {
 
                 fn to_cpi_handles(
                     &self,
-                ) -> anchor_lang_v2::__alloc::vec::Vec<anchor_lang_v2::CpiHandle<'a>> {
-                    let mut __handles = anchor_lang_v2::__alloc::vec::Vec::with_capacity(1);
+                ) -> anchor_lang::__alloc::vec::Vec<anchor_lang::CpiHandle<'a>> {
+                    let mut __handles = anchor_lang::__alloc::vec::Vec::with_capacity(1);
                     __handles.push(self.event_authority);
                     __handles
+                }
+
+                fn optional_account_sentinel_flags(
+                    &self,
+                ) -> anchor_lang::__alloc::vec::Vec<bool> {
+                    let mut __flags = anchor_lang::__alloc::vec::Vec::with_capacity(1);
+                    __flags.push(false);
+                    __flags
                 }
             }
 
             let __event_authority =
-                anchor_lang_v2::AnchorAccount::cpi_handle(&ctx.accounts.event_authority);
-            let __event_data = anchor_lang_v2::Event::data(&#event_struct);
-            let mut __ix_data = anchor_lang_v2::__alloc::vec::Vec::with_capacity(
-                anchor_lang_v2::event::EVENT_IX_TAG_LE.len() + __event_data.len(),
+                anchor_lang::AnchorAccount::cpi_handle(&ctx.accounts.event_authority);
+            let __event_data = anchor_lang::Event::data(&#event_struct);
+            let mut __ix_data = anchor_lang::__alloc::vec::Vec::with_capacity(
+                anchor_lang::event::EVENT_IX_TAG_LE.len() + __event_data.len(),
             );
-            __ix_data.extend_from_slice(anchor_lang_v2::event::EVENT_IX_TAG_LE);
+            __ix_data.extend_from_slice(anchor_lang::event::EVENT_IX_TAG_LE);
             __ix_data.extend_from_slice(&__event_data);
 
             let __event_authority_bump = [ctx.bumps.event_authority];
             let __event_authority_seeds: &[&[u8]] =
                 &[b"__event_authority", __event_authority_bump.as_ref()];
             let __event_authority_signers: &[&[&[u8]]] = &[__event_authority_seeds];
-            anchor_lang_v2::CpiContext::new_with_signer(
+            anchor_lang::CpiContext::new_with_signer(
                 ctx.program_id,
                 __AnchorEventCpiAccounts { event_authority: __event_authority },
                 __event_authority_signers,
@@ -5894,9 +6409,9 @@ pub fn event_cpi(_attr: TokenStream, input: TokenStream) -> TokenStream {
 
             /// CHECK: Only the event authority can invoke self-CPI
             #[account(seeds = [b"__event_authority"], bump)]
-            pub event_authority: anchor_lang_v2::accounts::UncheckedAccount,
+            pub event_authority: anchor_lang::accounts::UncheckedAccount,
             /// CHECK: Kept for v1-compatible account ordering and IDL shape
-            pub program: anchor_lang_v2::accounts::UncheckedAccount,
+            pub program: anchor_lang::accounts::UncheckedAccount,
         }
     })
 }
@@ -5962,7 +6477,7 @@ pub fn constant(_attr: TokenStream, input: TokenStream) -> TokenStream {
 // #[derive(InitSpace)]
 // ---------------------------------------------------------------------------
 
-/// Implements [`anchor_lang_v2::Space`] on the decorated struct or enum so
+/// Implements [`anchor_lang::Space`] on the decorated struct or enum so
 /// users can write `space = 8 + MyAccount::INIT_SPACE` in `#[account(init)]`.
 ///
 /// Variable-size fields (`String`, `Vec<T>`) require a `#[max_len(N)]` helper
@@ -6298,7 +6813,9 @@ mod tests {
             "expected fallback coercion trait in wrapper: {wrapper}"
         );
         assert!(
-            wrapper.contains("impl < 'ix , __AnchorIxArgs > __AnchorIxArgCoerce < 'ix > for __AnchorIxArgs"),
+            wrapper.contains(
+                "impl < 'ix , __AnchorIxArgs > __AnchorIxArgCoerce < 'ix > for __AnchorIxArgs"
+            ),
             "expected generic instruction-arg coercion impl in wrapper: {wrapper}"
         );
     }
@@ -6446,6 +6963,31 @@ mod tests {
     }
 
     #[test]
+    fn nested_accounts_register_idl_deps_through_nested_wrapper() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            pub struct Outer {
+                pub nested: anchor_lang::Nested<Inner>,
+            }
+        };
+
+        let generated = impl_accounts(&input).to_string();
+
+        assert!(
+            generated.contains("< Inner > :: __idl_register_deps"),
+            "nested accounts should forward IDL dep registration through the inner helper: \
+             {generated}"
+        );
+        assert!(
+            !generated.contains(
+                "< anchor_lang :: Nested < Inner > as anchor_lang :: IdlAccountType > :: \
+                 __register_idl_deps"
+            ),
+            "nested accounts should not require an IdlAccountType impl on Inner via Nested: \
+             {generated}"
+        );
+    }
+
+    #[test]
     fn event_authority_dispatch_uses_precomputed_const_when_available() {
         let generated = event_authority_dispatch_check(Some([7; 32])).to_string();
 
@@ -6488,5 +7030,280 @@ mod tests {
         let err = declare_idl_array_len_to_tokens(&json!({ "generic": "limits::ITEMS" }), span)
             .unwrap_err();
         assert!(err.to_string().contains("invalid IDL array generic"));
+    }
+
+    #[test]
+    fn program_handlers_inject_update_phase_into_handler_body() {
+        let module: syn::ItemMod = syn::parse_quote! {
+            pub mod demo_program {
+                use super::*;
+
+                #[access_control(validate(&ctx))]
+                pub fn rotate(ctx: &mut Context<RotateAuthority>) -> Result<()> {
+                    do_work()?;
+                    Ok(())
+                }
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Executable,
+            program_id: syn::parse_quote!(crate::ID),
+        };
+
+        let generated = impl_program(&module, &config).to_string();
+
+        assert!(
+            generated.contains(
+                "anchor_lang :: TryAccounts :: update_accounts (& mut ctx . accounts) ? ;"
+            ),
+            "expected handler body to call update_accounts after access-control expansion, got: \
+             {generated}"
+        );
+        assert!(
+            generated.contains("access_control"),
+            "expected access_control attr to remain on the generated handler, got: {generated}"
+        );
+    }
+
+    #[test]
+    fn program_handlers_inject_update_phase_for_destructured_context() {
+        let module: syn::ItemMod = syn::parse_quote! {
+            pub mod demo_program {
+                use super::*;
+
+                pub fn rotate(Context { accounts, .. }: &mut Context<RotateAuthority>) -> Result<()> {
+                    do_work(accounts)?;
+                    Ok(())
+                }
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Executable,
+            program_id: syn::parse_quote!(crate::ID),
+        };
+
+        let generated = impl_program(&module, &config).to_string();
+
+        assert!(
+            generated.contains("anchor_lang :: TryAccounts :: update_accounts (accounts) ? ;"),
+            "expected destructured handler body to call update_accounts via accounts binding, \
+             got: {generated}"
+        );
+    }
+
+    #[test]
+    fn program_handlers_synthesize_accounts_binding_for_struct_context() {
+        let module: syn::ItemMod = syn::parse_quote! {
+            pub mod demo_program {
+                use super::*;
+
+                pub fn rotate(Context { bumps, .. }: &mut Context<RotateAuthority>) -> Result<()> {
+                    do_work(bumps)?;
+                    Ok(())
+                }
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Executable,
+            program_id: syn::parse_quote!(crate::ID),
+        };
+
+        let generated = impl_program(&module, &config).to_string();
+
+        assert!(
+            generated
+                .contains("anchor_lang :: TryAccounts :: update_accounts (__anchor_accounts) ? ;"),
+            "expected struct-pattern handler body to call update_accounts via synthesized \
+             accounts binding, got: {generated}"
+        );
+        assert!(
+            generated.contains("Context { bumps , accounts : __anchor_accounts , .. }"),
+            "expected struct-pattern handler signature to include synthesized accounts binding, \
+             got: {generated}"
+        );
+    }
+
+    #[test]
+    fn program_handlers_inject_update_phase_for_wildcard_context() {
+        let module: syn::ItemMod = syn::parse_quote! {
+            pub mod demo_program {
+                use super::*;
+
+                pub fn rotate(_: &mut Context<RotateAuthority>) -> Result<()> {
+                    do_work()?;
+                    Ok(())
+                }
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Executable,
+            program_id: syn::parse_quote!(crate::ID),
+        };
+
+        let generated = impl_program(&module, &config).to_string();
+
+        assert!(
+            generated.contains(
+                "anchor_lang :: TryAccounts :: update_accounts (& mut __anchor_ctx . accounts) ? ;"
+            ),
+            "expected wildcard handler body to call update_accounts via synthesized ctx binding, \
+             got: {generated}"
+        );
+        assert!(
+            generated.contains("fn rotate (__anchor_ctx : & mut Context < RotateAuthority >)"),
+            "expected wildcard handler signature to be rewritten to a concrete ctx binding, got: \
+             {generated}"
+        );
+    }
+
+    #[test]
+    fn program_handlers_reject_unsupported_update_hook_context_patterns() {
+        let module: syn::ItemMod = syn::parse_quote! {
+            pub mod demo_program {
+                use super::*;
+
+                pub fn rotate(
+                    Context { accounts: RotateAuthority { vault, .. }, .. }: &mut Context<RotateAuthority>
+                ) -> Result<()> {
+                    do_work(vault)?;
+                    Ok(())
+                }
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Executable,
+            program_id: syn::parse_quote!(crate::ID),
+        };
+
+        let generated = impl_program(&module, &config).to_string();
+
+        assert!(
+            generated.contains("compile_error"),
+            "expected unsupported nested accounts destructuring to emit a compile error, got: \
+             {generated}"
+        );
+        assert!(
+            generated.contains("must bind `accounts` as a name or `_`"),
+            "expected targeted unsupported-pattern error, got: {generated}"
+        );
+    }
+
+    #[test]
+    fn program_handlers_reject_non_binding_update_hook_context_patterns() {
+        let module: syn::ItemMod = syn::parse_quote! {
+            pub mod demo_program {
+                use super::*;
+
+                pub fn rotate(
+                    &mut ctx: &mut Context<RotateAuthority>
+                ) -> Result<()> {
+                    do_work(ctx.accounts.vault)?;
+                    Ok(())
+                }
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Executable,
+            program_id: syn::parse_quote!(crate::ID),
+        };
+
+        let generated = impl_program(&module, &config).to_string();
+
+        assert!(
+            generated.contains("compile_error"),
+            "expected unsupported reference-pattern context to emit a compile error, got: \
+             {generated}"
+        );
+        assert!(
+            generated.contains(
+                "must take `&mut Context<T>` as an identifier like `ctx`, `_`, or `Context { .. }`"
+            ),
+            "expected targeted top-level pattern error, got: {generated}"
+        );
+    }
+
+    #[test]
+    fn declare_program_markers_emit_known_idl_addresses() {
+        let idl = serde_json::json!({
+            "address": "Externa1111111111111111111111111111111111111",
+            "metadata": {
+                "name": "fixture",
+                "version": "0.1.0",
+                "spec": "0.1.0"
+            },
+            "instructions": [{
+                "name": "ping",
+                "discriminator": [1, 2, 3, 4, 5, 6, 7, 8],
+                "accounts": [],
+                "args": []
+            }],
+            "accounts": [],
+            "types": []
+        });
+        let name: syn::Ident = syn::parse_quote!(fixture);
+
+        let generated = gen_declared_program(&name, &idl, std::path::Path::new("fixture.json"))
+            .expect("fixture IDL should generate")
+            .to_string();
+
+        assert!(
+            generated.contains(
+                "const IDL_ADDRESS : & 'static str = \
+                 \"Externa1111111111111111111111111111111111111\""
+            ),
+            "declare_program markers should expose their known address for IDL emission: \
+             {generated}"
+        );
+    }
+
+    #[test]
+    fn declare_idl_defined_pod_wrappers_use_runtime_types() {
+        let span = proc_macro2::Span::call_site();
+        let pod_u64 =
+            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodU64" } }), span).unwrap();
+        assert_eq!(pod_u64.to_string(), "anchor_lang :: pod :: PodU64");
+
+        let pod_bool =
+            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodBool" } }), span).unwrap();
+        assert_eq!(pod_bool.to_string(), "anchor_lang :: pod :: PodBool");
+    }
+
+    fn nested_accounts_preserve_inner_bumps_in_generated_surface() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            pub struct Outer {
+                pub authority: anchor_lang::accounts::UncheckedAccount,
+                pub inner: anchor_lang::Nested<Inner>,
+            }
+        };
+
+        let generated = impl_accounts(&input).to_string();
+
+        assert!(
+            generated.contains("pub struct OuterBumps"),
+            "expected outer bumps struct: {generated}"
+        );
+        assert!(
+            generated.contains("pub inner : < Inner as anchor_lang :: Bumps > :: Bumps"),
+            "expected nested field to retain the inner bumps type: {generated}"
+        );
+        assert!(
+            generated.contains(
+                "let (__nested_inner , __anchor_bump_cache_inner , _) = < Inner as anchor_lang :: \
+                 TryAccounts > :: validate_accounts"
+            ),
+            "expected nested validate_accounts call to keep the returned bumps value: {generated}"
+        );
+        assert!(
+            generated.contains(
+                "let mut __anchor_bump_cache_inner : < Inner as anchor_lang :: Bumps > :: Bumps = \
+                 :: core :: default :: Default :: default() ;"
+            ),
+            "expected nested bump cache local declaration: {generated}"
+        );
+        assert!(
+            generated
+                .contains("let __bumps = OuterBumps { inner : __anchor_bump_cache_inner , } ;"),
+            "expected final outer bumps assembly to include the nested bump cache: {generated}"
+        );
     }
 }

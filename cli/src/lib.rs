@@ -8,14 +8,12 @@ use {
     abs_path::AbsolutePath,
     anchor_cli_macros::AbsolutePath,
     anchor_client::Cluster,
-    anchor_lang::{
-        prelude::UpgradeableLoaderState, solana_program::bpf_loader_upgradeable, AnchorDeserialize,
-    },
     anchor_lang_idl::{
         convert::convert_idl,
         types::{Idl, IdlArrayLen, IdlDefinedFields, IdlType, IdlTypeDefTy},
     },
     anyhow::{anyhow, bail, Context, Result},
+    borsh::BorshDeserialize,
     checks::{check_anchor_version, check_deps, check_idl_build_feature, check_overflow},
     clap::{CommandFactory, Parser},
     dirs::home_dir,
@@ -30,6 +28,7 @@ use {
     solana_compute_budget_interface::ComputeBudgetInstruction,
     solana_instruction::Instruction,
     solana_keypair::Keypair,
+    solana_loader_v3_interface::state::UpgradeableLoaderState,
     solana_pubkey::Pubkey,
     solana_pubsub_client::pubsub_client::{PubsubClient, PubsubClientSubscription},
     solana_rpc_client::rpc_client::RpcClient,
@@ -39,6 +38,7 @@ use {
         response::{Response as RpcResponse, RpcLogsResponse},
     },
     solana_signer::{EncodableKey, Signer},
+    solana_sdk_ids::bpf_loader_upgradeable,
     std::{
         collections::{BTreeMap, HashMap, HashSet},
         ffi::OsString,
@@ -56,11 +56,15 @@ mod account;
 mod checks;
 pub mod codama;
 pub mod config;
+#[cfg(not(windows))]
 pub mod coverage;
+#[cfg(not(windows))]
 pub mod debugger;
+#[cfg(not(windows))]
 mod flamegraph;
 mod keygen;
 mod metadata;
+#[cfg(not(windows))]
 mod profile;
 mod program;
 pub mod rust_template;
@@ -247,6 +251,7 @@ pub enum Command {
         /// Validator type to use for local testing
         #[clap(value_enum, long, default_value = "surfpool")]
         validator: ValidatorType,
+        #[cfg(not(windows))]
         /// Profile each test: record per-test SBF register traces and
         /// render a flamegraph SVG per test under
         /// `target/anchor-v2-profile/`. Forces a debug build (DWARF is
@@ -273,6 +278,7 @@ pub enum Command {
         #[clap(long, action)]
         force: bool,
     },
+    #[cfg(not(windows))]
     /// Run tests under a foundry-style instruction-level debugger.
     ///
     /// Reuses the `anchor test --profile` trace pipeline: rebuilds with DWARF,
@@ -307,6 +313,7 @@ pub enum Command {
         #[clap(required = false, last = true)]
         cargo_args: Vec<String>,
     },
+    #[cfg(not(windows))]
     /// Generate source-level code coverage from SBF register traces.
     ///
     /// Builds programs with DWARF debug info, runs the test suite with
@@ -330,6 +337,7 @@ pub enum Command {
         #[clap(required = false, last = true)]
         cargo_args: Vec<String>,
     },
+    #[cfg(not(windows))]
     /// Filter host LCOV before merging it with SBF coverage.
     #[clap(name = "coverage-filter-host", hide = true)]
     CoverageFilterHost {
@@ -1056,7 +1064,7 @@ fn override_toolchain(cfg_override: &ConfigOverride) -> Result<RestoreToolchainC
                 // binaries in various commands.
                 fn override_solana_version(version: String) -> Result<bool> {
                     // There is a deprecation warning message starting with `1.18.19` which causes
-                    // parsing problems https://github.com/solana-foundation/anchor/issues/3147
+                    // parsing problems https://github.com/otter-sec/anchor/issues/3147
                     let (cmd_name, domain) =
                         if Version::parse(&version)? < Version::parse("1.18.19")? {
                             ("solana-install", "solana.com")
@@ -1364,28 +1372,35 @@ fn process_command(opts: Opts) -> Result<()> {
             detach,
             run,
             validator,
+            #[cfg(not(windows))]
             profile,
             args,
             env,
             cargo_args,
             skip_lint,
-        } => test(
-            &opts.cfg_override,
-            program_name,
-            skip_deploy,
-            skip_local_validator,
-            skip_build,
-            skip_lint,
-            no_idl,
-            detach,
-            run,
-            validator,
-            profile,
-            false, // gdb — only `anchor debugger --gdb` enables this
-            args,
-            env,
-            cargo_args,
-        ),
+        } => {
+            #[cfg(windows)]
+            let profile = false;
+
+            test(
+                &opts.cfg_override,
+                program_name,
+                skip_deploy,
+                skip_local_validator,
+                skip_build,
+                skip_lint,
+                no_idl,
+                detach,
+                run,
+                validator,
+                profile,
+                false, // gdb — only `anchor debugger --gdb` enables this
+                args,
+                env,
+                cargo_args,
+            )
+        }
+        #[cfg(not(windows))]
         Command::Debugger {
             test_name,
             skip_run,
@@ -1402,6 +1417,7 @@ fn process_command(opts: Opts) -> Result<()> {
             gdb,
             cargo_args,
         ),
+        #[cfg(not(windows))]
         Command::Coverage {
             skip_run,
             skip_build,
@@ -1416,6 +1432,7 @@ fn process_command(opts: Opts) -> Result<()> {
             &trace_dir,
             cargo_args,
         ),
+        #[cfg(not(windows))]
         Command::CoverageFilterHost {
             sbf_lcov,
             host_lcov,
@@ -3364,7 +3381,7 @@ fn deserialize_idl_defined_type_to_json(
             }
         }
         IdlTypeDefTy::Enum { variants } => {
-            let repr = <u8 as AnchorDeserialize>::deserialize(data)?;
+            let repr = <u8 as BorshDeserialize>::deserialize(data)?;
 
             let variant = variants
                 .get(repr as usize)
@@ -3404,7 +3421,7 @@ fn deserialize_idl_defined_type_to_json(
     Ok(JsonValue::Object(deserialized_fields))
 }
 
-// Deserializes a primitive type using AnchorDeserialize
+// Deserializes a primitive type using BorshDeserialize
 fn deserialize_idl_type_to_json(
     idl_type: &IdlType,
     data: &mut &[u8],
@@ -3415,50 +3432,50 @@ fn deserialize_idl_type_to_json(
     }
 
     Ok(match idl_type {
-        IdlType::Bool => json!(<bool as AnchorDeserialize>::deserialize(data)?),
+        IdlType::Bool => json!(<bool as BorshDeserialize>::deserialize(data)?),
         IdlType::U8 => {
-            json!(<u8 as AnchorDeserialize>::deserialize(data)?)
+            json!(<u8 as BorshDeserialize>::deserialize(data)?)
         }
         IdlType::I8 => {
-            json!(<i8 as AnchorDeserialize>::deserialize(data)?)
+            json!(<i8 as BorshDeserialize>::deserialize(data)?)
         }
         IdlType::U16 => {
-            json!(<u16 as AnchorDeserialize>::deserialize(data)?)
+            json!(<u16 as BorshDeserialize>::deserialize(data)?)
         }
         IdlType::I16 => {
-            json!(<i16 as AnchorDeserialize>::deserialize(data)?)
+            json!(<i16 as BorshDeserialize>::deserialize(data)?)
         }
         IdlType::U32 => {
-            json!(<u32 as AnchorDeserialize>::deserialize(data)?)
+            json!(<u32 as BorshDeserialize>::deserialize(data)?)
         }
         IdlType::I32 => {
-            json!(<i32 as AnchorDeserialize>::deserialize(data)?)
+            json!(<i32 as BorshDeserialize>::deserialize(data)?)
         }
-        IdlType::F32 => json!(<f32 as AnchorDeserialize>::deserialize(data)?),
+        IdlType::F32 => json!(<f32 as BorshDeserialize>::deserialize(data)?),
         IdlType::U64 => {
-            json!(<u64 as AnchorDeserialize>::deserialize(data)?)
+            json!(<u64 as BorshDeserialize>::deserialize(data)?)
         }
         IdlType::I64 => {
-            json!(<i64 as AnchorDeserialize>::deserialize(data)?)
+            json!(<i64 as BorshDeserialize>::deserialize(data)?)
         }
-        IdlType::F64 => json!(<f64 as AnchorDeserialize>::deserialize(data)?),
+        IdlType::F64 => json!(<f64 as BorshDeserialize>::deserialize(data)?),
         IdlType::U128 => {
-            json!(<u128 as AnchorDeserialize>::deserialize(data)?)
+            json!(<u128 as BorshDeserialize>::deserialize(data)?)
         }
         IdlType::I128 => {
-            json!(<i128 as AnchorDeserialize>::deserialize(data)?)
+            json!(<i128 as BorshDeserialize>::deserialize(data)?)
         }
         IdlType::U256 => todo!("Upon completion of u256 IDL standard"),
         IdlType::I256 => todo!("Upon completion of i256 IDL standard"),
         IdlType::Bytes => JsonValue::Array(
-            <Vec<u8> as AnchorDeserialize>::deserialize(data)?
+            <Vec<u8> as BorshDeserialize>::deserialize(data)?
                 .iter()
                 .map(|i| json!(*i))
                 .collect(),
         ),
-        IdlType::String => json!(<String as AnchorDeserialize>::deserialize(data)?),
+        IdlType::String => json!(<String as BorshDeserialize>::deserialize(data)?),
         IdlType::Pubkey => {
-            json!(<Pubkey as AnchorDeserialize>::deserialize(data)?.to_string())
+            json!(<Pubkey as BorshDeserialize>::deserialize(data)?.to_string())
         }
         IdlType::Array(ty, size) => match size {
             IdlArrayLen::Value(size) => {
@@ -3474,7 +3491,7 @@ fn deserialize_idl_type_to_json(
             IdlArrayLen::Generic(_) => unimplemented!("Generic array length is not yet supported"),
         },
         IdlType::Option(ty) => {
-            let is_present = <u8 as AnchorDeserialize>::deserialize(data)?;
+            let is_present = <u8 as BorshDeserialize>::deserialize(data)?;
 
             if is_present == 0 {
                 JsonValue::String("None".to_string())
@@ -3483,7 +3500,7 @@ fn deserialize_idl_type_to_json(
             }
         }
         IdlType::Vec(ty) => {
-            let size: usize = <u32 as AnchorDeserialize>::deserialize(data)?
+            let size: usize = <u32 as BorshDeserialize>::deserialize(data)?
                 .try_into()
                 .unwrap();
 
@@ -3531,6 +3548,9 @@ fn test(
     env_vars: Vec<String>,
     cargo_args: Vec<String>,
 ) -> Result<()> {
+    #[cfg(windows)]
+    let _ = (profile, gdb);
+
     let test_paths = tests_to_run
         .iter()
         .map(|path| {
@@ -3552,8 +3572,11 @@ fn test(
 
         // --profile setup: clear stale traces + point `anchor-v2-testing`
         // at our profile directory before the child `cargo test` runs.
+        #[cfg(not(windows))]
         let workspace_root = cfg.path().parent().unwrap().to_owned();
+        #[cfg(not(windows))]
         let profile_dir = workspace_root.join(crate::profile::DEFAULT_PROFILE_DIR);
+        #[cfg(not(windows))]
         let _gdb_guard: Option<crate::debugger::gdb::GdbDriver> = if profile {
             let _ = fs::remove_dir_all(&profile_dir);
             std::env::set_var("ANCHOR_PROFILE_DIR", &profile_dir);
@@ -3727,6 +3750,7 @@ fn test(
         }
         cfg.run_hooks(HookType::PostTest)?;
 
+        #[cfg(not(windows))]
         if profile {
             render_profile(cfg, &profile_dir)?;
         }
@@ -3743,6 +3767,7 @@ fn test(
 /// `anchor test` phase and opens the TUI directly — useful when iterating
 /// on the TUI itself without paying for a rebuild each time.
 #[allow(clippy::too_many_arguments)]
+#[cfg(not(windows))]
 fn debugger(
     cfg_override: &ConfigOverride,
     test_name: Option<String>,
@@ -3794,6 +3819,7 @@ fn debugger(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(not(windows))]
 fn debugger_anchor_workspace(
     cfg_override: &ConfigOverride,
     test_name: Option<String>,
@@ -3863,6 +3889,7 @@ fn debugger_anchor_workspace(
 /// (clearing the trace dir, running cargo test) so the user gets a clear
 /// error early rather than a "no traces" mystery later.
 #[allow(clippy::too_many_arguments)]
+#[cfg(not(windows))]
 fn debugger_loose(
     _cfg_override: &ConfigOverride,
     test_name: Option<String>,
@@ -3987,6 +4014,7 @@ fn debugger_loose(
     )
 }
 
+#[cfg(not(windows))]
 fn run_coverage(
     _cfg_override: &ConfigOverride,
     skip_run: bool,
@@ -4094,6 +4122,7 @@ fn run_coverage(
 }
 
 /// Render path `p` as cwd-relative when possible, falling back to absolute.
+#[cfg(not(windows))]
 fn display_path_relative_to_cwd(p: &Path) -> String {
     std::env::current_dir()
         .ok()
@@ -4113,6 +4142,7 @@ fn display_path_relative_to_cwd(p: &Path) -> String {
 ///
 /// Returns `(pubkey_to_so, sources)` where `sources[pk]` is `"Anchor.toml"`
 /// or `"target/deploy"` for diagnostics.
+#[cfg(not(windows))]
 fn resolve_anchor_workspace_programs(
     cfg: &WithPath<Config>,
 ) -> (BTreeMap<String, PathBuf>, BTreeMap<String, &'static str>) {
@@ -4145,6 +4175,7 @@ fn resolve_anchor_workspace_programs(
 /// CPIs are symbolicated against the right ELF per invocation — a
 /// tx that calls into spl-token shows spl-token's frames alongside
 /// the program under test, not dropped or lumped under `[unknown]`.
+#[cfg(not(windows))]
 fn render_profile(cfg: &WithPath<Config>, profile_dir: &Path) -> Result<()> {
     let workspace_root = cfg.path().parent().unwrap().to_owned();
     let (pubkey_to_so, _sources) = resolve_anchor_workspace_programs(cfg);

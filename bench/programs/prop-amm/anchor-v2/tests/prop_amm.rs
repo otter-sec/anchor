@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         accounts::Account, bytemuck, programs::System,
         solana_program::instruction::Instruction, Id, InstructionData, Space, ToAccountMetas,
     },

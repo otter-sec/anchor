@@ -1,0 +1,37 @@
+{
+  "address": "11111111111111111111111111111111",
+  "metadata": {
+    "name": "deserialize_surface",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "noop",
+      "discriminator": [1, 1, 1, 1, 1, 1, 1, 1],
+      "accounts": [],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "DeclaredCounter",
+      "discriminator": [9, 8, 7, 6, 5, 4, 3, 2]
+    }
+  ],
+  "types": [
+    {
+      "name": "DeclaredCounter",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "value",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -13,16 +13,16 @@
 extern crate alloc;
 
 #[cfg(feature = "guardrails")]
-use anchor_lang_v2::require;
+use anchor_lang::require;
 use {
-    anchor_lang_v2::{programs::Token, CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts},
+    anchor_lang::{programs::Token, CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts},
     solana_address::Address,
     solana_program_error::ProgramError,
 };
 
-pub use anchor_lang_v2::programs::AssociatedToken;
+pub use anchor_lang::programs::AssociatedToken;
 
-pub const ID: Address = anchor_lang_v2::address!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+pub const ID: Address = anchor_lang::address!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
 /// Derive the associated token account address for a given wallet and mint.
 pub fn get_associated_token_address(wallet: &Address, mint: &Address) -> Address {
@@ -57,13 +57,13 @@ pub fn create<'a>(ctx: CpiContext<'a, Create<'a>>) -> Result<(), ProgramError> {
     #[cfg(feature = "guardrails")]
     {
         require!(
-            anchor_lang_v2::address_eq(ctx.program, &AssociatedToken::id()),
+            anchor_lang::address_eq(ctx.program, &AssociatedToken::id()),
             ProgramError::IncorrectProgramId
         );
         require!(
-            anchor_lang_v2::address_eq(
+            anchor_lang::address_eq(
                 ctx.accounts.system_program.address(),
-                &anchor_lang_v2::programs::System::id(),
+                &anchor_lang::programs::System::id(),
             ),
             ProgramError::IncorrectProgramId
         );
@@ -78,13 +78,13 @@ pub fn create_idempotent<'a>(
     #[cfg(feature = "guardrails")]
     {
         require!(
-            anchor_lang_v2::address_eq(ctx.program, &AssociatedToken::id()),
+            anchor_lang::address_eq(ctx.program, &AssociatedToken::id()),
             ProgramError::IncorrectProgramId
         );
         require!(
-            anchor_lang_v2::address_eq(
+            anchor_lang::address_eq(
                 ctx.accounts.system_program.address(),
-                &anchor_lang_v2::programs::System::id(),
+                &anchor_lang::programs::System::id(),
             ),
             ProgramError::IncorrectProgramId
         );

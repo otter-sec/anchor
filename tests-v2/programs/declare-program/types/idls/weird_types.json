@@ -13,14 +13,6 @@
       "accounts": [],
       "args": [
         {
-          "name": "float32",
-          "type": "f32"
-        },
-        {
-          "name": "float64",
-          "type": "f64"
-        },
-        {
           "name": "unit",
           "type": {
             "defined": {
@@ -421,6 +413,111 @@
             "name": "data",
             "type": {
               "array": ["u8", 16]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PodMode",
+      "type": {
+        "kind": "type",
+        "alias": "u8"
+      }
+    },
+    {
+      "name": "PodVec",
+      "generics": [
+        {
+          "kind": "type",
+          "name": "T"
+        },
+        {
+          "kind": "const",
+          "name": "MAX",
+          "type": "usize"
+        }
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "len",
+            "type": {
+              "defined": {
+                "name": "PodU16"
+              }
+            }
+          },
+          {
+            "name": "data",
+            "type": {
+              "array": [
+                {
+                  "generic": "T"
+                },
+                {
+                  "generic": "MAX"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PodWrapperOnly",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mode",
+            "type": {
+              "defined": {
+                "name": "PodMode"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PodVecOnly",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "items",
+            "type": {
+              "defined": {
+                "name": "PodVec",
+                "generics": [
+                  {
+                    "kind": "type",
+                    "type": {
+                      "defined": {
+                        "name": "PodU64"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "const",
+                    "value": "4"
+                  }
+                ]
+              }
             }
           }
         ]

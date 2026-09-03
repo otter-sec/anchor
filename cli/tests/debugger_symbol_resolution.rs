@@ -9,6 +9,8 @@
 //! without the Solana toolchain don't get a spurious failure, and CI
 //! jobs that pin the toolchain pick it up automatically.
 
+#![cfg(not(windows))]
+
 use {
     anchor_cli::debugger::source::SourceResolver,
     std::{

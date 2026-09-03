@@ -1,8 +1,8 @@
-//! Examples for `anchor-spl-v2::token_interface` accounts and CPIs.
+//! Examples for `anchor-spl::token_interface` accounts and CPIs.
 
 use {
-    anchor_lang_v2::prelude::*,
-    anchor_spl_v2::{
+    anchor_lang::prelude::*,
+    anchor_spl::{
         mint,
         token::{self, MintTo},
         token_interface::{Mint, TokenAccount, TokenInterface},

@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::pod::{PodI64, PodU64},
+    anchor_lang::pod::{PodI64, PodU64},
     core::fmt::Debug,
     std::panic::{self, UnwindSafe},
 };

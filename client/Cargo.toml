@@ -18,7 +18,7 @@ debug = []
 mock = []
 
 [dependencies]
-anchor-lang-v2 = { workspace = true }
+anchor-lang = { workspace = true }
 anyhow = "1"
 base64 = "0.22"
 futures = "0.3"
@@ -38,7 +38,6 @@ solana-transaction.workspace = true
 thiserror = "1"
 tokio = { version = "1", features = ["rt", "sync"] }
 url = "2"
-wincode = { version = "0.5", features = ["derive"] }
 
 [dev-dependencies]
 solana-keypair.workspace = true

@@ -10,8 +10,8 @@ bin = []
 
 [dependencies]
 anyhow = "1.0"
-anchor-lang = { path = "../lang" }
-anchor-lang-v2 = { path = "../lang-v2" }
+anchor-lang-v1 = { path = "../lang" }
+anchor-lang = { path = "../lang-v2" }
 hello-world = { path = "programs/helloworld/anchor-v1", features = ["no-entrypoint"] }
 hello-world-v2 = { path = "programs/helloworld/anchor-v2", features = ["cpi"], package = "hello-world-v2" }
 litesvm = "0.11.0"

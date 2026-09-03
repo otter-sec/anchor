@@ -43,7 +43,7 @@ pub fn build_session(
 ) -> Result<DebugSession> {
     let mut txs: Vec<DebugTx> = Vec::new();
     let mut src_roots: Vec<PathBuf> = Vec::new();
-    // Path deps (e.g. `anchor-lang-v2 = { path = "../../../../lang-v2" }`)
+    // Path deps (e.g. `anchor-lang = { path = "../../../../lang-v2" }`)
     // must come before the workspace root so their `src/lib.rs` wins over
     // a same-named file at the workspace root (`bench/src/lib.rs`). SBF
     // DWARF omits `DW_AT_comp_dir`, so relative paths like `src/lib.rs`

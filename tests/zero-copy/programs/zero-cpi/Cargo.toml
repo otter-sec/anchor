@@ -16,5 +16,5 @@ default = []
 idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
-anchor-lang = { path = "../../../../lang" }
+anchor-lang = { package = "anchor-lang-v1", path = "../../../../lang" }
 zero-copy = { path = "../zero-copy", features = ["cpi"] }

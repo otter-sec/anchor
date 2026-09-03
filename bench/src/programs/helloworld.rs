@@ -1,7 +1,7 @@
 pub mod anchor_v1 {
     use {
         crate::bench::{BenchContext, BenchInstruction},
-        anchor_lang::{
+        anchor_lang_v1::{
             solana_program::system_program, InstructionData, ToAccountMetas,
         },
         anyhow::Result,
@@ -43,7 +43,7 @@ pub mod anchor_v2 {
 pub mod pinocchio {
     use {
         crate::bench::{BenchContext, BenchInstruction},
-        anchor_lang::solana_program::{instruction::AccountMeta, system_program},
+        anchor_lang_v1::solana_program::{instruction::AccountMeta, system_program},
         anyhow::Result,
     };
     
@@ -67,7 +67,7 @@ pub mod pinocchio {
 pub mod quasar {
     use {
         crate::bench::{BenchContext, BenchInstruction},
-        anchor_lang::solana_program::{instruction::AccountMeta, system_program},
+        anchor_lang_v1::solana_program::{instruction::AccountMeta, system_program},
         anyhow::Result,
     };
     
@@ -90,7 +90,7 @@ pub mod quasar {
 pub mod steel {
     use {
         crate::bench::{BenchContext, BenchInstruction},
-        anchor_lang::solana_program::{instruction::AccountMeta, system_program},
+        anchor_lang_v1::solana_program::{instruction::AccountMeta, system_program},
         anyhow::Result,
     };
     
@@ -108,4 +108,3 @@ pub mod steel {
         Ok(BenchInstruction::new(vec![], metas))
     }
 }
-

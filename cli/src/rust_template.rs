@@ -91,7 +91,7 @@ fn create_program_template_single(name: &str, program_path: &Path, target_path: 
     vec![(
         program_path.join("src").join("lib.rs"),
         format!(
-            r#"use anchor_lang_v2::prelude::*;
+            r#"use anchor_lang::prelude::*;
 
 declare_id!("{}");
 
@@ -146,7 +146,7 @@ pub mod error;
 pub mod instructions;
 pub mod state;
 
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 pub use instructions::*;
 
@@ -167,7 +167,7 @@ pub mod {} {{
         ),
         (
             src_path.join("constants.rs"),
-            r#"use anchor_lang_v2::prelude::*;
+            r#"use anchor_lang::prelude::*;
 
 #[constant]
 pub const SEED: &str = "anchor";
@@ -176,7 +176,7 @@ pub const SEED: &str = "anchor";
         ),
         (
             src_path.join("error.rs"),
-            r#"use anchor_lang_v2::prelude::*;
+            r#"use anchor_lang::prelude::*;
 
 #[error_code]
 pub enum ErrorCode {
@@ -196,7 +196,7 @@ pub use initialize::*;
         ),
         (
             src_path.join("instructions").join("initialize.rs"),
-            r#"use anchor_lang_v2::prelude::*;
+            r#"use anchor_lang::prelude::*;
 
 use crate::state::Counter;
 
@@ -220,7 +220,7 @@ pub fn handler(ctx: &mut Context<Initialize>) -> Result<()> {
         ),
         (
             src_path.join("state.rs"),
-            r#"use anchor_lang_v2::prelude::*;
+            r#"use anchor_lang::prelude::*;
 
 #[account]
 pub struct Counter {
@@ -308,10 +308,9 @@ idl-build = []
 {2}
 
 [dependencies]
-# Once anchor-lang-v2 is published to crates.io, swap to: anchor-lang-v2 = "{3}"
-anchor-lang-v2 = {{ git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }}
+# Once anchor-lang is published to crates.io, swap to: anchor-lang = "{3}"
+anchor-lang = {{ git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }}
 solana-program-log = {{ version = "1.1", features = ["macro"] }}
-wincode = {{ version = "0.5", features = ["derive"] }}
 {4}
 
 [lints.rust]
@@ -971,7 +970,7 @@ fn create_program_template_mollusk_test(name: &str, tests_path: &Path) -> Files 
             r#"#![cfg(feature = "test-sbf")]
 
 use {{
-    anchor_lang_v2::{{
+    anchor_lang::{{
         accounts::Account, solana_program::instruction::Instruction, InstructionData, Space,
         ToAccountMetas,
     }},
@@ -1039,7 +1038,7 @@ fn create_program_template_litesvm_test(name: &str, tests_path: &Path) -> Files 
         format!(
             r#"
 use {{
-    anchor_lang_v2::{{
+    anchor_lang::{{
         accounts::Account, bytemuck, programs::System,
         solana_program::instruction::Instruction, Id, InstructionData, Space, ToAccountMetas,
     }},

@@ -4,13 +4,13 @@
 //! just keeps a focused derive example in `lang-v2`.
 
 use {
-    anchor_lang_v2::{Accounts, AnchorAccount},
+    anchor_lang::{Accounts, AnchorAccount},
     core::{mem::size_of, ops::Deref},
     pinocchio::account::AccountView,
     solana_program_error::ProgramError,
 };
 
-anchor_lang_v2::declare_id!("11111111111111111111111111111111");
+anchor_lang::declare_id!("11111111111111111111111111111111");
 
 struct SpyAccount {
     view: AccountView,

@@ -1,4 +1,4 @@
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi");
 
@@ -14,6 +14,18 @@ pub mod callee {
 
     pub fn set_data(ctx: &mut Context<SetData>, value: u64) -> Result<()> {
         ctx.accounts.data.value = value;
+        Ok(())
+    }
+
+    /// Handler with an argument that borrows instruction data. The
+    /// borrow gives the generated instruction struct a lifetime
+    /// parameter. Drives the `has_ref_args` branch of the cpi-wrapper
+    /// codegen. Regression: the wrapper wrote the lifetime into the
+    /// struct literal, which does not parse, so any program with a
+    /// borrowing handler failed to compile.
+    pub fn set_data_from_bytes(ctx: &mut Context<SetData>, bytes: &[u8]) -> Result<()> {
+        require_eq!(bytes.len(), 8, ErrorCode::InstructionDidNotDeserialize);
+        ctx.accounts.data.value = u64::from_le_bytes(bytes.try_into().unwrap());
         Ok(())
     }
 

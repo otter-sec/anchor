@@ -5,8 +5,8 @@
 //! constraints can refer to any account wrapper with an account address.
 
 use {
-    anchor_lang_v2::prelude::*,
-    anchor_spl_v2::{
+    anchor_lang::prelude::*,
+    anchor_spl::{
         associated_token::AssociatedToken,
         mint::{self, Mint},
         token::{self, Token, TokenAccount},

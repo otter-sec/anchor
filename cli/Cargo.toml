@@ -20,11 +20,11 @@ idl-localnet-testing = []
 [dependencies]
 anchor-cli-macros = { workspace = true }
 anchor-client = { workspace = true }
-anchor-lang = { workspace = true }
 anchor-lang-idl = { workspace = true, features = ["build", "convert"] }
 anyhow = "1.0.32"
 base64 = "0.21"
 bincode = "1.3.3"
+borsh = "1.5.7"
 bs58 = "0.5"
 cargo_metadata = "0.23.1"
 cargo_toml.workspace = true
@@ -54,10 +54,10 @@ solana-commitment-config.workspace = true
 solana-compute-budget-interface.workspace = true
 solana-instruction.workspace = true
 solana-keypair.workspace = true
-solana-loader-v3-interface.workspace = true
+solana-loader-v3-interface = { workspace = true, features = ["bincode"] }
 solana-message.workspace = true
 solana-packet.workspace = true
-solana-pubkey.workspace = true
+solana-pubkey = { workspace = true, features = ["borsh"] }
 solana-sdk-ids.workspace = true
 solana-signature.workspace = true
 solana-signer.workspace = true

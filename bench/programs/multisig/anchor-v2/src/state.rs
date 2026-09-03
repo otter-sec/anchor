@@ -1,4 +1,4 @@
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 pub const MAX_LABEL_LEN: usize = 32;
 pub const MAX_SIGNERS: usize = 10;

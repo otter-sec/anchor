@@ -2,7 +2,7 @@
 //! SystemAccount, UncheckedAccount.
 
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         programs::{Token, Token2022},
         solana_program::instruction::{AccountMeta, Instruction},
         Id,
@@ -31,6 +31,12 @@ fn clock_sysvar_id() -> Pubkey {
 
 fn rent_sysvar_id() -> Pubkey {
     "SysvarRent111111111111111111111111111111111"
+        .parse()
+        .unwrap()
+}
+
+fn instructions_sysvar_id() -> Pubkey {
+    "Sysvar1nstructions1111111111111111111111111"
         .parse()
         .unwrap()
 }
@@ -66,7 +72,7 @@ fn foreign_borsh_owner() -> Pubkey {
 }
 
 fn foreign_borsh_counter_disc() -> &'static [u8] {
-    <ForeignBorshCounter as anchor_lang_v2::Discriminator>::DISCRIMINATOR
+    <ForeignBorshCounter as anchor_lang::Discriminator>::DISCRIMINATOR
 }
 
 const SYSTEM_SEED: &str = "anchor-v2-seed";
@@ -591,6 +597,31 @@ fn read_clock_rejects_wrong_sysvar() {
             || err_msg.contains("InvalidArgument")
             || err_msg.contains("Custom("),
         "wrong sysvar should be rejected, got: {err_msg}"
+    );
+}
+
+#[test]
+fn read_instructions_introspects_the_current_instruction() {
+    let (mut svm, payer) = setup();
+    // The handler asserts, from inside the program, that relative index 0 is
+    // this very instruction: right program id, discriminant 41 in the data,
+    // and the sysvar itself as the sole readonly account meta.
+    let metas = vec![AccountMeta::new_readonly(instructions_sysvar_id(), false)];
+    send_instruction(&mut svm, program_id(), vec![41], metas, &payer, &[])
+        .expect("read_instructions should succeed");
+}
+
+#[test]
+fn read_instructions_rejects_wrong_sysvar() {
+    let (mut svm, payer) = setup();
+    // Passing rent instead of the instructions sysvar trips the `T::SYSVAR_ID`
+    // compare in `Sysvar::load`, before `SysvarLoad::read` borrows any data.
+    assert_single_account_instruction_rejects(
+        &mut svm,
+        &payer,
+        41,
+        rent_sysvar_id(),
+        "wrong sysvar should be rejected for instructions",
     );
 }
 

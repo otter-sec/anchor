@@ -135,7 +135,7 @@ pub fn discover_dep_src_roots(workspace_root: &Path) -> Vec<PathBuf> {
 
 /// Discover path dependencies from a crate's `Cargo.toml` and return their
 /// resolved absolute directories. These are local deps like
-/// `anchor-lang-v2 = { path = "../../../../lang-v2" }` — their source
+/// `anchor-lang = { path = "../../../../lang-v2" }` — their source
 /// root is the resolved path itself, which needs to be in `src_roots` so
 /// relative DWARF paths like `src/lib.rs` resolve to the right crate
 /// instead of colliding with a same-named file at the workspace root.

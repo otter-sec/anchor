@@ -4,7 +4,7 @@ use {
 };
 
 #[cfg(any(feature = "guardrails", test))]
-use anchor_lang_v2::{programs::Token2022, require_eq, Id};
+use anchor_lang::{programs::Token2022, require_eq, Id};
 
 #[cfg(feature = "guardrails")]
 #[inline]

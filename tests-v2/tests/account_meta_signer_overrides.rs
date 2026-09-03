@@ -1,4 +1,4 @@
-use {anchor_lang_v2::ToAccountMetas, solana_pubkey::Pubkey};
+use {anchor_lang::ToAccountMetas, solana_pubkey::Pubkey};
 
 #[test]
 fn signer_override_changes_signer_fields_only() {

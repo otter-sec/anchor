@@ -5,7 +5,7 @@
 //! bare-bump (runtime find) and explicit stored-bump variants.
 
 use {
-    anchor_lang_v2::solana_program::instruction::{AccountMeta, Instruction},
+    anchor_lang::solana_program::instruction::{AccountMeta, Instruction},
     litesvm::{types::TransactionResult, LiteSVM},
     sha2::{Digest, Sha256},
     solana_account::Account,

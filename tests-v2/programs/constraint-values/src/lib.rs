@@ -1,6 +1,6 @@
 use {
-    anchor_lang_v2::prelude::*,
-    anchor_spl_v2::{
+    anchor_lang::prelude::*,
+    anchor_spl::{
         mint::{self, Mint},
         token::Token,
     },

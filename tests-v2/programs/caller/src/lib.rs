@@ -1,4 +1,4 @@
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR");
 
@@ -33,6 +33,19 @@ pub mod caller {
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
         callee::cpi::set_data(cpi_ctx, value)?;
+        Ok(())
+    }
+
+    /// CPIs into `set_data_from_bytes`, whose `&[u8]` argument gives the
+    /// generated instruction struct a lifetime parameter. Exercises the
+    /// ref-args branch of the auto-generated cpi wrapper.
+    pub fn proxy_set_data_from_bytes(ctx: &mut Context<ProxySetData>, bytes: &[u8]) -> Result<()> {
+        let cpi_accounts = callee::cpi::accounts::SetData {
+            data: ctx.accounts.callee_data.cpi_handle_mut(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        callee::cpi::set_data_from_bytes(cpi_ctx, bytes);
         Ok(())
     }
 

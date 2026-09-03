@@ -1,4 +1,4 @@
-use {crate::state::Oracle, anchor_lang_v2::prelude::*};
+use {crate::state::Oracle, anchor_lang::prelude::*};
 
 #[derive(Accounts)]
 pub struct Initialize {

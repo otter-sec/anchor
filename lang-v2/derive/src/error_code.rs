@@ -61,7 +61,7 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
                 let __code = (#name::#variant_ident as u32)
                     .checked_add(#offset)
                     .expect("error code overflowed");
-                __parts.push(anchor_lang_v2::__alloc::format!(
+                __parts.push(anchor_lang::__alloc::format!(
                     "{{\"code\":{}{}",
                     __code,
                     #suffix,
@@ -75,11 +75,11 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
     );
 
     let from_impl = quote! {
-        impl From<#name> for anchor_lang_v2::Error {
+        impl From<#name> for anchor_lang::Error {
             #[inline(always)]
             fn from(e: #name) -> Self {
                 // Guarenteed not to overflow in `build_idl_errors_json`
-                anchor_lang_v2::Error::Custom(e as u32 + #offset)
+                anchor_lang::Error::Custom(e as u32 + #offset)
             }
         }
     };
@@ -93,12 +93,12 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
         #[cfg(feature = "idl-build")]
         impl #name {
             #[doc(hidden)]
-            pub fn __idl_errors() -> anchor_lang_v2::__alloc::string::String {
-                let mut __parts: anchor_lang_v2::__alloc::vec::Vec<
-                    anchor_lang_v2::__alloc::string::String
-                > = anchor_lang_v2::__alloc::vec::Vec::new();
+            pub fn __idl_errors() -> anchor_lang::__alloc::string::String {
+                let mut __parts: anchor_lang::__alloc::vec::Vec<
+                    anchor_lang::__alloc::string::String
+                > = anchor_lang::__alloc::vec::Vec::new();
                 #(#idl_entry_pushes)*
-                let mut __payload = anchor_lang_v2::__alloc::string::String::from("[");
+                let mut __payload = anchor_lang::__alloc::string::String::from("[");
                 let mut __first = true;
                 for __part in &__parts {
                     if !__first {

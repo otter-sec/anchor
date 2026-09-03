@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::solana_program::instruction::{AccountMeta, Instruction},
+    anchor_lang::solana_program::instruction::{AccountMeta, Instruction},
     litesvm::LiteSVM,
     proptest::prelude::*,
     sha2::{Digest, Sha256},
@@ -1438,7 +1438,7 @@ impl TokenAccountExtensionCase {
 fn init_extension_bytes<S, T>(state: &mut StateWithExtensionsMut<S>, payload: &[u8])
 where
     S: spl_token_2022_interface::extension::BaseState,
-    T: spl_token_2022_interface::extension::Extension + anchor_lang_v2::bytemuck::Pod + Default,
+    T: spl_token_2022_interface::extension::Extension + anchor_lang::bytemuck::Pod + Default,
 {
     state.init_extension::<T>(true).unwrap();
     let extension_data = state.get_extension_bytes_mut::<T>().unwrap();

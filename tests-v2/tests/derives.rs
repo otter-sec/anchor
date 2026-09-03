@@ -9,7 +9,7 @@
 //! lang-v2/derive/src/*.rs.
 
 use {
-    anchor_lang_v2::solana_program::instruction::AccountMeta,
+    anchor_lang::solana_program::instruction::AccountMeta,
     litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_pubkey::Pubkey,
@@ -300,7 +300,7 @@ fn emit_wincode_event_logs_program_data() {
     let counter = do_initialize(&mut svm, &payer);
 
     // bump with amount=12345, step=-7. `emit!` inside the handler fires a
-    // wincode-serialized Bumped event.
+    // Wincode-serialized Bumped event; `#[event]` supplies AnchorSerialize.
     let mut data = vec![1];
     data.extend_from_slice(&12345u64.to_le_bytes());
     data.extend_from_slice(&(-7i32).to_le_bytes());
@@ -319,7 +319,8 @@ fn emit_wincode_event_logs_program_data() {
         "discriminator mismatch"
     );
 
-    // Default-mode event uses wincode with a borsh-compatible wire format:
+    // Default-mode event uses Wincode with a borsh-compatible wire format;
+    // `#[event]` derives AnchorSerialize automatically:
     // u64 LE (8) + i32 LE (4) + bool (1 byte). Total = 21 including disc.
     assert_eq!(bytes.len(), 21);
     let amount = u64::from_le_bytes(bytes[8..16].try_into().unwrap());

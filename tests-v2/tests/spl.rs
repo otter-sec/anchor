@@ -1,4 +1,4 @@
-//! Integration tests for `anchor-spl-v2`'s Mint/TokenAccount surface.
+//! Integration tests for `anchor-spl`'s Mint/TokenAccount surface.
 //!
 //! Exercises the full spl-v2 API:
 //!   - Init paths: `#[account(init, mint::*)]` and `#[account(init, token::*)]`
@@ -10,7 +10,7 @@
 //!   - `get_associated_token_address` derivation
 
 use {
-    anchor_lang_v2::solana_program::instruction::AccountMeta,
+    anchor_lang::solana_program::instruction::AccountMeta,
     litesvm::LiteSVM,
     solana_account::Account,
     solana_keypair::Keypair,
@@ -75,7 +75,7 @@ fn native_mint_id() -> Pubkey {
 }
 
 fn token_2022_native_mint_id() -> Pubkey {
-    anchor_spl_v2::token_2022::native_mint::id()
+    anchor_spl::token_2022::native_mint::id()
 }
 
 fn ata_program_id() -> Pubkey {
@@ -2945,7 +2945,7 @@ fn interface_mint_token_program_constraint_rejects_wrong_program() {
 
 // ---- Token-2022 extension parsing ------------------------------------------
 
-/// Helpers for building TLV values matching the `anchor-spl-v2::extensions`
+/// Helpers for building TLV values matching the `anchor-spl::extensions`
 /// struct layouts exactly. All fields are alignment-1, so raw byte-level
 /// construction is safe.
 

@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{prelude::Address, solana_program::instruction::AccountMeta, InstructionData},
+    anchor_lang::{prelude::Address, solana_program::instruction::AccountMeta, InstructionData},
     litesvm::LiteSVM,
     solana_account::Account,
     solana_keypair::Keypair,

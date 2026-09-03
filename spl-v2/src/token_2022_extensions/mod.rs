@@ -33,7 +33,7 @@ pub use {
 mod tests {
     use {
         super::common::validate_token_2022_program,
-        anchor_lang_v2::{programs::Token2022, Id},
+        anchor_lang::{programs::Token2022, Id},
         pinocchio::address::Address,
         solana_program_error::ProgramError,
     };

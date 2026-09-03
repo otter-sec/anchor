@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         solana_program::instruction::AccountMeta, Discriminator, Id, InstructionData,
         ToAccountMetas,
     },

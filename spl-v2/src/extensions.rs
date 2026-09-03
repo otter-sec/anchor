@@ -8,7 +8,7 @@
 //! # Usage
 //!
 //! ```ignore
-//! use anchor_spl_v2::{
+//! use anchor_spl::{
 //!     extensions::{MetadataPointer, TransferFeeConfig},
 //!     token_interface::TokenInterfaceAccountExtensions,
 //! };

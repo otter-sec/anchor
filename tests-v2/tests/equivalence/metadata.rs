@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::solana_program::instruction::{AccountMeta, Instruction},
+    anchor_lang::solana_program::instruction::{AccountMeta, Instruction},
     litesvm::LiteSVM,
     proptest::prelude::*,
     sha2::{Digest, Sha256},

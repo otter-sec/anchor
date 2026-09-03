@@ -1,5 +1,5 @@
 [package]
-name = "anchor-spl-v2"
+name = "anchor-spl"
 version.workspace = true
 edition = "2021"
 repository = "https://github.com/otter-sec/anchor"
@@ -16,13 +16,13 @@ guardrails = []
 metadata = ["dep:mpl-token-metadata"]
 
 [dependencies]
-anchor-lang-v2 = { workspace = true }
+anchor-lang = { workspace = true }
 pinocchio = { workspace = true }
 pinocchio-token = "0.6"
 pinocchio-token-2022 = "0.3"
 bytemuck = { version = "1", features = ["derive"] }
 borsh = "1.6.1"
-solana-address = { version = "2.0", features = ["bytemuck"] }
+solana-address = { version = "2.7.0", features = ["bytemuck"] }
 solana-instruction = "3.0"
 solana-program-error = "3.0"
 solana-pubkey = "3.0"
@@ -34,7 +34,7 @@ spl-token-metadata-interface = "0.8"
 mpl-token-metadata = { version = "=5.1.2-alpha.2", optional = true }
 
 [dev-dependencies]
-anchor-lang-v2 = { workspace = true, features = ["testing"] }
+anchor-lang = { workspace = true, features = ["testing"] }
 borsh = "1.6.1"
 # Cross-checks `Mint` / `TokenAccount` layout against the canonical
 # `spl-token-interface` types (see `tests/miri_spl_pod.rs`). Dev-only.

@@ -8,7 +8,7 @@
 //! Token-2022 for base token instructions. The `token` account types themselves
 //! remain strict Token Program account layouts. For account validation that must
 //! accept both Token and Token-2022 owners, use
-//! `anchor_lang_v2::prelude::InterfaceAccount` with the `token_interface`
+//! `anchor_lang::prelude::InterfaceAccount` with the `token_interface`
 //! module's token account types.
 
 #![no_std]

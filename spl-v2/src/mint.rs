@@ -5,7 +5,7 @@
 
 use {
     crate::token::{coption_is_some, create_token_account, validate_coption_tag},
-    anchor_lang_v2::{
+    anchor_lang::{
         accounts::{Account, SlabInit, SlabSchema},
         programs::Token,
         require, require_eq, AccountConstraint, Id,
@@ -59,11 +59,11 @@ unsafe impl Zeroable for Mint {}
 // it out of the user's IDL `types[]` array (matches v1's `impl_idl_build!`
 // behavior for this type).
 #[doc(hidden)]
-impl anchor_lang_v2::IdlAccountType for Mint {}
+impl anchor_lang::IdlAccountType for Mint {}
 
 // On-chain size — SPL Token program requires 82 bytes. Used by
 // `#[account(init, mint::*)]` as the default when `space` is omitted.
-impl anchor_lang_v2::Space for Mint {
+impl anchor_lang::Space for Mint {
     const INIT_SPACE: usize = core::mem::size_of::<Self>();
 }
 

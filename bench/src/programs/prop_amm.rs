@@ -14,7 +14,7 @@ pub mod anchor_v1 {
     use {
         super::{oracle_keypair, prop_amm_program_id},
         crate::bench::{BenchContext, BenchInstruction},
-        anchor_lang::{
+        anchor_lang_v1::{
             solana_program::system_program, InstructionData, ToAccountMetas,
         },
         anyhow::Result,
@@ -29,7 +29,7 @@ pub mod anchor_v1 {
     fn preinit_oracle(ctx: &mut BenchContext, authority: Pubkey, price: u64) -> Result<Pubkey> {
         let mut data = vec![0u8; 48];
         data[0..8].copy_from_slice(
-            &<::prop_amm_v1::Oracle as anchor_lang::Discriminator>::DISCRIMINATOR[..8]
+            &<::prop_amm_v1::Oracle as anchor_lang_v1::Discriminator>::DISCRIMINATOR[..8]
                 .try_into()
                 .unwrap_or([0u8; 8]),
         );
@@ -106,8 +106,9 @@ pub mod anchor_v2 {
     use {
         super::{oracle_keypair, prop_amm_program_id},
         crate::bench::{keypair_for_account, BenchContext, BenchInstruction},
-        anchor_lang::solana_program::{instruction::AccountMeta, system_program},
-        anchor_lang_v2::InstructionData,
+        anchor_lang::{
+            solana_program::instruction::AccountMeta, system_program, InstructionData,
+        },
         anyhow::Result,
         solana_account::Account as SolanaAccount,
         solana_pubkey::Pubkey,
@@ -127,7 +128,7 @@ pub mod anchor_v2 {
     fn preinit_oracle(ctx: &mut BenchContext, authority: Pubkey, price: u64) -> Result<Pubkey> {
         let mut data = vec![0u8; 48];
         data[0..8].copy_from_slice(
-            &<prop_amm_v2::state::Oracle as anchor_lang_v2::Discriminator>::DISCRIMINATOR[..8]
+            &<prop_amm_v2::state::Oracle as anchor_lang::Discriminator>::DISCRIMINATOR[..8]
                 .try_into()
                 .unwrap_or([0u8; 8]),
         );

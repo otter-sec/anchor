@@ -1,7 +1,7 @@
 use {
     super::common::validate_token_2022_program,
     crate::{token_2022::spl_token_2022, token_shared::multisig_signer_addresses},
-    anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
+    anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
 };

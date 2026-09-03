@@ -6,7 +6,7 @@
 //! Run: `cargo +nightly miri test --test miri_pod_vec`
 //! (or: `MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test ...`)
 
-use anchor_lang_v2::pod::{PodU64, PodVec};
+use anchor_lang::pod::{PodU64, PodVec};
 
 #[test]
 fn default_is_empty() {

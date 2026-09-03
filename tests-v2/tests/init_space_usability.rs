@@ -3,7 +3,7 @@
 //! arrays of aliases, and nested dynamic collections.
 
 use {
-    anchor_lang_v2::solana_program::instruction::AccountMeta,
+    anchor_lang::solana_program::instruction::AccountMeta,
     litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_pubkey::Pubkey,

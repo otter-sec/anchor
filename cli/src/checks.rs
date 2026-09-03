@@ -25,12 +25,12 @@ pub fn check_overflow(cargo_toml_path: impl AsRef<Path>) -> Result<bool> {
 
 /// Per-manifest detection of which Anchor generation a program targets.
 /// Returns `(lang_crate, spl_crate)` — `("anchor-lang", "anchor-spl")` for v1,
-/// `("anchor-lang-v2", "anchor-spl-v2")` for v2, `None` if neither lang crate
+/// `("anchor-lang", "anchor-spl")` for v2, `None` if neither lang crate
 /// is depended on. Callers use this to surface generation-appropriate crate
 /// names in diagnostics instead of hardcoding the v1 names.
 fn anchor_crate_names(manifest: &cargo_toml::Manifest) -> Option<(&'static str, &'static str)> {
-    if manifest.dependencies.contains_key("anchor-lang-v2") {
-        Some(("anchor-lang-v2", "anchor-spl-v2"))
+    if manifest.dependencies.contains_key("anchor-lang") {
+        Some(("anchor-lang", "anchor-spl"))
     } else if manifest.dependencies.contains_key("anchor-lang") {
         Some(("anchor-lang", "anchor-spl"))
     } else {
@@ -40,7 +40,7 @@ fn anchor_crate_names(manifest: &cargo_toml::Manifest) -> Option<(&'static str, 
 
 /// Check whether there is a mismatch between the current CLI version and:
 ///
-/// - `anchor-lang` / `anchor-lang-v2` crate version
+/// - `anchor-lang` / `anchor-lang` crate version
 /// - `@anchor-lang/core` package version
 ///
 /// This function logs warnings in the case of a mismatch.
@@ -57,7 +57,7 @@ pub fn check_anchor_version(cfg: &WithPath<Config>) -> Result<()> {
         .filter_map(|path| cargo_toml::Manifest::from_path(path).ok())
         .collect();
 
-    for dep_name in ["anchor-lang", "anchor-lang-v2"] {
+    for dep_name in ["anchor-lang", "anchor-lang"] {
         let mismatched = manifests
             .iter()
             .filter_map(|m| m.dependencies.get(dep_name))
@@ -177,7 +177,7 @@ pub fn check_idl_build_feature() -> Result<()> {
     let manifest = Manifest::from_path(&manifest_path)?;
 
     // Pick crate names based on the generation this program targets. If
-    // neither `anchor-lang` nor `anchor-lang-v2` is a dep, fall back to v1
+    // neither `anchor-lang` nor `anchor-lang` is a dep, fall back to v1
     // names — that branch's suggestion is harmless (the program has bigger
     // problems than `idl-build` wiring) and keeps the diagnostic flow simple.
     let (lang_crate, spl_crate) =

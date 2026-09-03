@@ -7,10 +7,10 @@
 extern crate alloc;
 
 #[cfg(feature = "guardrails")]
-use anchor_lang_v2::{require, Id};
+use anchor_lang::{require, Id};
 use {
     alloc::vec::Vec,
-    anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
+    anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
     spl_token_2022_interface as spl_token_2022,
@@ -27,8 +27,8 @@ pub(crate) fn multisig_signer_addresses<'a>(accounts: &[CpiHandle<'a>]) -> Vec<&
 #[inline]
 pub(crate) fn validate_token_interface_program(program_id: &Address) -> Result<(), ProgramError> {
     require!(
-        anchor_lang_v2::address_eq(program_id, &anchor_lang_v2::programs::Token::id())
-            || anchor_lang_v2::address_eq(program_id, &anchor_lang_v2::programs::Token2022::id()),
+        anchor_lang::address_eq(program_id, &anchor_lang::programs::Token::id())
+            || anchor_lang::address_eq(program_id, &anchor_lang::programs::Token2022::id()),
         ProgramError::IncorrectProgramId
     );
     Ok(())
@@ -442,7 +442,7 @@ pub fn sync_native<'a>(ctx: CpiContext<'a, SyncNative<'a>>) -> Result<(), Progra
 mod tests {
     use {
         super::*,
-        anchor_lang_v2::{
+        anchor_lang::{
             programs::Token,
             testing::{AccountBuffer, MIN_ACCOUNT_BUF},
             Id,

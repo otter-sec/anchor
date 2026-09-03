@@ -11,7 +11,7 @@
 
 use {
     crate::bench::{keypair_for_account, BenchContext, BenchInstruction},
-    anchor_lang::solana_program::{instruction::AccountMeta, system_program},
+    anchor_lang_v1::solana_program::{instruction::AccountMeta, system_program},
     anyhow::Result,
     solana_account::Account as SolanaAccount,
     solana_pubkey::Pubkey,
@@ -53,7 +53,7 @@ fn make_raw_ix_data(disc: u8, amount: u64) -> Vec<u8> {
 pub mod anchor_v1 {
     use {
         super::*,
-        anchor_lang::{InstructionData, ToAccountMetas},
+        anchor_lang_v1::{InstructionData, ToAccountMetas},
     };
 
     pub fn build_deposit_case(ctx: &mut BenchContext) -> Result<BenchInstruction> {
@@ -96,7 +96,7 @@ pub mod anchor_v1 {
 }
 
 pub mod anchor_v2 {
-    use {super::*, anchor_lang_v2::InstructionData};
+    use {super::*, anchor_lang::InstructionData};
 
     pub fn build_deposit_case(ctx: &mut BenchContext) -> Result<BenchInstruction> {
         let user = keypair_for_account("vault-deposit-user");

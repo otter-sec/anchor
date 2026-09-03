@@ -1,8 +1,8 @@
 #![cfg(feature = "metadata")]
 
 use {
-    anchor_lang_v2::{testing::AccountBuffer, AccountDeserialize, AnchorAccount},
-    anchor_spl_v2::metadata::{self, MasterEditionAccount, MetadataAccount, TokenRecordAccount},
+    anchor_lang::{testing::AccountBuffer, AccountDeserialize, AnchorAccount},
+    anchor_spl::metadata::{self, MasterEditionAccount, MetadataAccount, TokenRecordAccount},
     borsh::{to_vec, BorshSerialize},
     solana_program_error::ProgramError,
     solana_pubkey::Pubkey,

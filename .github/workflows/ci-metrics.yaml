@@ -1,0 +1,49 @@
+name: CI Metrics
+
+on:
+  workflow_run:
+    workflows: [Tests, Template Tests]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  summarize:
+    name: Summarize CI usage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish timing summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          CREATED_AT: ${{ github.event.workflow_run.created_at }}
+          UPDATED_AT: ${{ github.event.workflow_run.updated_at }}
+        run: |
+          job_metrics=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" \
+            | jq -rs '
+                [.[].jobs[]
+                 | select(.started_at != null and .completed_at != null)
+                 | {name, minutes: (((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) / 60)}]
+                | {count: length, runner_minutes: (map(.minutes) | add // 0), slowest: max_by(.minutes)}')
+
+          wall_minutes=$(jq -nr \
+            --arg start "$CREATED_AT" --arg end "$UPDATED_AT" \
+            '((($end | fromdateiso8601) - ($start | fromdateiso8601)) / 60)')
+
+          {
+            echo "## $WORKFLOW timing"
+            echo
+            echo "| Jobs | Wall time | Runner-minutes | Slowest job |"
+            echo "| ---: | ---: | ---: | --- |"
+            printf '| %s | %.1f min | %.1f min | %s (%.1f min) |\n' \
+              "$(jq -r '.count' <<<"$job_metrics")" "$wall_minutes" \
+              "$(jq -r '.runner_minutes' <<<"$job_metrics")" \
+              "$(jq -r '.slowest.name' <<<"$job_metrics")" \
+              "$(jq -r '.slowest.minutes' <<<"$job_metrics")"
+            echo
+            echo "[View workflow run]($RUN_URL)"
+          } >> "$GITHUB_STEP_SUMMARY"

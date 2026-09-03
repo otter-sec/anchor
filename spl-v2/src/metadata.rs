@@ -10,7 +10,7 @@ extern crate alloc;
 pub use mpl_token_metadata;
 
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         require, AccountDeserialize, AnchorAccount, CpiContext, CpiHandle, CpiHandleMut, Id,
         IdlAccountType, Result, ToCpiAccounts,
     },
@@ -23,7 +23,7 @@ use {
     solana_pubkey::Pubkey,
 };
 
-pub const ID: Address = anchor_lang_v2::address!("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+pub const ID: Address = anchor_lang::address!("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
 pub fn approve_collection_authority<'info>(
     ctx: CpiContext<'info, ApproveCollectionAuthority<'info>>,
 ) -> Result<()> {
@@ -1040,7 +1040,7 @@ impl Id for Metadata {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anchor_lang_v2::{
+    use anchor_lang::{
         testing::{AccountBuffer, MIN_ACCOUNT_BUF},
         ToCpiHandle, ToCpiHandleMut,
     };

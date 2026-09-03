@@ -1,5 +1,5 @@
 use {
-    anchor_lang_v2::{
+    anchor_lang::{
         accounts::Account, bytemuck,
         solana_program::instruction::{AccountMeta, Instruction},
         InstructionData, Space, ToAccountMetas,
@@ -29,11 +29,11 @@ fn send(svm: &mut LiteSVM, ix: Instruction, signers: &[&Keypair]) -> TxResult {
     svm.send_transaction(tx)
 }
 
-fn counter_address() -> anchor_lang_v2::Address {
+fn counter_address() -> anchor_lang::Address {
     nested_v2::accounts::Initialize::find_counter_address().0
 }
 
-fn config_address() -> anchor_lang_v2::Address {
+fn config_address() -> anchor_lang::Address {
     nested_v2::accounts::Initialize::find_config_address().0
 }
 

@@ -13,7 +13,7 @@
 //! The trait + helpers are unconditionally compiled — empty default-method
 //! impls cost nothing in BPF. End-user crates opt into IDL emission via
 //! their own local `idl-build` feature; the macro emissions in
-//! `anchor-derive-accounts-v2` are gated on that user-side feature.
+//! `anchor-derive-accounts` are gated on that user-side feature.
 //!
 //! This module is exposed only for IDL generation; it is NOT part of the
 //! stable API and is subject to change.
@@ -39,7 +39,9 @@ extern crate alloc;
 /// data type lands in `types[]` too.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` has no IDL type information",
-    note = "plain structs used as instruction arguments or nested fields need `#[derive(IdlType)]`; account and event types get this automatically from `#[account]` / `#[event]`"
+    note = "plain structs used as instruction arguments or nested fields need \
+            `#[derive(IdlType)]`; account and event types get this automatically from \
+            `#[account]` / `#[event]`"
 )]
 pub trait IdlAccountType {
     /// `{"name":"X","discriminator":[…]}` for the program-level `accounts[]`.
@@ -118,20 +120,46 @@ impl_idl_account_type_noop!(
     pinocchio::address::Address,
 );
 
-// Pod integer wrappers — treated the same as their native counterparts for
-// IDL purposes (they map to `"u64"`, `"i32"`, etc. via `rust_type_to_idl`'s
-// string-based dispatch). The blanket impl here keeps the trait resolvable
-// when users reference them from nested structs.
-impl_idl_account_type_noop!(
-    crate::pod::PodBool,
-    crate::pod::PodU16,
-    crate::pod::PodU32,
-    crate::pod::PodU64,
-    crate::pod::PodU128,
-    crate::pod::PodI16,
-    crate::pod::PodI32,
-    crate::pod::PodI64,
-    crate::pod::PodI128,
+// Pod scalar wrappers still lower like their native counterparts when they
+// appear directly in a field type, but generic bytemuck helpers like `PodVec`
+// can reference them by name. Register them as alias defs so those named
+// references resolve in the final IDL.
+macro_rules! impl_idl_account_type_pod_alias {
+    ($(($t:path, $name:literal, $alias:literal)),* $(,)?) => {
+        $(
+            #[doc(hidden)]
+            impl IdlAccountType for $t {
+                const __IDL_TYPE_DEF: Option<&'static str> = Some(concat!(
+                    "{\"name\":\"",
+                    $name,
+                    "\",\"type\":{\"kind\":\"type\",\"alias\":\"",
+                    $alias,
+                    "\"}}"
+                ));
+
+                fn __register_idl_deps(
+                    _accounts: &mut alloc::vec::Vec<&'static str>,
+                    types: &mut alloc::vec::Vec<&'static str>,
+                ) {
+                    if let Some(t) = <Self as IdlAccountType>::__IDL_TYPE_DEF {
+                        types.push(t);
+                    }
+                }
+            }
+        )*
+    };
+}
+
+impl_idl_account_type_pod_alias!(
+    (crate::pod::PodBool, "PodBool", "bool"),
+    (crate::pod::PodU16, "PodU16", "u16"),
+    (crate::pod::PodU32, "PodU32", "u32"),
+    (crate::pod::PodU64, "PodU64", "u64"),
+    (crate::pod::PodU128, "PodU128", "u128"),
+    (crate::pod::PodI16, "PodI16", "i16"),
+    (crate::pod::PodI32, "PodI32", "i32"),
+    (crate::pod::PodI64, "PodI64", "i64"),
+    (crate::pod::PodI128, "PodI128", "i128"),
 );
 
 #[doc(hidden)]
@@ -190,18 +218,82 @@ impl<T: IdlAccountType, const N: usize> IdlAccountType for [T; N] {
 }
 
 // `PodVec<T, MAX>` — the zero-copy bounded-capacity analog of `Vec<T>`.
-// Forward `__register_idl_deps` so a `#[account]` zero-copy type holding
-// a `PodVec<Inner, 16>` still pulls `Inner` into the IDL's `types[]`.
+// It contributes a generic type definition so downstream `declare_program!`
+// consumers can reconstruct the length prefix plus fixed-capacity backing
+// array, then recurses into the element type.
 #[doc(hidden)]
 impl<T, const MAX: usize> IdlAccountType for crate::pod::PodVec<T, MAX>
 where
     T: bytemuck::Pod + IdlAccountType,
 {
+    const __IDL_TYPE_DEF: Option<&'static str> = Some(
+        "{\"name\":\"PodVec\",\"generics\":[{\"kind\":\"type\",\"name\":\"T\"},\
+         {\"kind\":\"const\",\"name\":\"MAX\",\"type\":\"usize\"}],\
+         \"serialization\":\"bytemuck\",\"repr\":{\"kind\":\"c\"},\
+         \"type\":{\"kind\":\"struct\",\"fields\":[{\"name\":\"len\",\"type\":{\"defined\":{\"name\":\"PodU16\"}}},\
+         {\"name\":\"data\",\"type\":{\"array\":[{\"generic\":\"T\"},{\"generic\":\"MAX\"}]}}]}}",
+    );
+
     fn __register_idl_deps(
         accounts: &mut alloc::vec::Vec<&'static str>,
         types: &mut alloc::vec::Vec<&'static str>,
     ) {
+        if let Some(t) = <Self as IdlAccountType>::__IDL_TYPE_DEF {
+            types.push(t);
+        }
+        crate::pod::PodU16::__register_idl_deps(accounts, types);
         T::__register_idl_deps(accounts, types);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IdlAccountType;
+
+    #[test]
+    fn pod_vec_registers_length_wrapper_for_native_elements() {
+        let mut accounts = alloc::vec::Vec::new();
+        let mut types = alloc::vec::Vec::new();
+
+        <crate::pod::PodVec<u8, 4> as IdlAccountType>::__register_idl_deps(
+            &mut accounts,
+            &mut types,
+        );
+
+        assert!(
+            types.iter().any(|ty| ty.contains("\"name\":\"PodVec\"")),
+            "PodVec should register its own type definition: {types:?}"
+        );
+        assert!(
+            types
+                .iter()
+                .any(|ty| ty.contains("\"name\":\"PodU16\"") && ty.contains("\"alias\":\"u16\"")),
+            "PodVec should register its PodU16 length wrapper: {types:?}"
+        );
+    }
+
+    #[test]
+    fn pod_vec_registers_defined_element_wrappers() {
+        let mut accounts = alloc::vec::Vec::new();
+        let mut types = alloc::vec::Vec::new();
+
+        <crate::pod::PodVec<crate::pod::PodU64, 4> as IdlAccountType>::__register_idl_deps(
+            &mut accounts,
+            &mut types,
+        );
+
+        assert!(
+            types
+                .iter()
+                .any(|ty| ty.contains("\"name\":\"PodU16\"") && ty.contains("\"alias\":\"u16\"")),
+            "PodVec should keep its PodU16 length helper defined: {types:?}"
+        );
+        assert!(
+            types
+                .iter()
+                .any(|ty| ty.contains("\"name\":\"PodU64\"") && ty.contains("\"alias\":\"u64\"")),
+            "PodVec should register named pod element wrappers: {types:?}"
+        );
     }
 }
 
@@ -225,4 +317,44 @@ pub fn __idl_const_seed_json(value: impl AsRef<[u8]>) -> alloc::string::String {
     }
     s.push_str("]}");
     s
+}
+
+pub fn __idl_const_seeds_json<I, B>(values: I) -> alloc::string::String
+where
+    I: IntoIterator<Item = B>,
+    B: AsRef<[u8]>,
+{
+    let mut s = alloc::string::String::from("[");
+    let mut first = true;
+    for value in values {
+        if !first {
+            s.push(',');
+        }
+        first = false;
+        s.push_str(&__idl_const_seed_json(value));
+    }
+    s.push(']');
+    s
+}
+
+/// Quote and escape an arbitrary string as a JSON string literal.
+#[doc(hidden)]
+pub fn __idl_json_string(value: &str) -> alloc::string::String {
+    let mut out = alloc::string::String::with_capacity(value.len() + 2);
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{08}' => out.push_str("\\b"),
+            '\u{0C}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ch if ch <= '\u{1F}' => out.push_str(&alloc::format!("\\u{:04x}", ch as u32)),
+            ch => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
 }

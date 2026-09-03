@@ -17,7 +17,7 @@
 //! the semantics shifted and the v2 docs / API guidance should be
 //! reviewed.
 
-use anchor_lang_v2::pod::{PodU64, PodVec};
+use anchor_lang::pod::{PodU64, PodVec};
 
 #[test]
 fn len_is_not_clamped_to_max_on_read() {

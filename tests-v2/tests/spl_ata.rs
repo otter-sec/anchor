@@ -4,7 +4,7 @@
 //! the validation failures can mutate around.
 
 use {
-    anchor_lang_v2::{solana_program::instruction::AccountMeta, ToAccountMetas},
+    anchor_lang::{solana_program::instruction::AccountMeta, ToAccountMetas},
     litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_pubkey::Pubkey,

@@ -14,7 +14,7 @@
 //! guard, this closes the remaining runtime-validation gap documented
 //! in the PodVec API comments.
 
-use anchor_lang_v2::pod::{CapacityError, PodU64, PodVec};
+use anchor_lang::pod::{CapacityError, PodU64, PodVec};
 
 // -- is_valid_len / validate ---------------------------------------------
 

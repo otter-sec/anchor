@@ -26,7 +26,7 @@ fn write_source(path: &std::path::Path, constant_name: &str) {
         path,
         format!(
             r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_program!(bad);
 
@@ -57,7 +57,7 @@ fn setup_case(case_name: &str, constant_name: &str) -> (PathBuf, PathBuf, PathBu
     let src_dir = crate_dir.join("src");
     let idl_dir = crate_dir.join("idls");
     let target_dir = crate_dir.join("target");
-    let anchor_lang_v2 = manifest_dir
+    let anchor_lang = manifest_dir
         .parent()
         .expect("tests-v2 should live under the workspace root")
         .join("lang-v2");
@@ -78,12 +78,11 @@ edition = "2021"
 publish = false
 
 [dependencies]
-anchor-lang-v2 = {{ path = "{}" }}
-wincode = {{ version = "0.5", features = ["derive"] }}
+anchor-lang = {{ path = "{}" }}
 
 [workspace]
 "#,
-            anchor_lang_v2.display()
+            anchor_lang.display()
         ),
     )
     .unwrap();
