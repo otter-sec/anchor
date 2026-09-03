@@ -2,7 +2,7 @@ extern crate alloc;
 
 use {
     crate::{address_eq, require, CpiHandle, ToCpiAccounts},
-    alloc::{collections::BTreeSet, vec::Vec},
+    alloc::vec::Vec,
     core::mem::MaybeUninit,
     pinocchio::{
         address::Address,
@@ -162,8 +162,11 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
     ///
     /// The instruction's program id must match this context's program. Account
     /// metas for the fixed [`ToCpiAccounts`] fields are taken from the
-    /// instruction as supplied; `remaining_accounts` are appended to both the
-    /// instruction's metas and the CPI handles, so the two stay in sync.
+    /// instruction as supplied. Any metas the instruction carries beyond that
+    /// prefix are treated as builder-supplied metas for the leading
+    /// `remaining_accounts`, in order. `metas` are appended only for the
+    /// remaining handles the instruction does not already cover, so metas and
+    /// handles stay paired one-to-one.
     ///
     /// Optional `None` sentinel slots must appear in the same positions as in
     /// [`ToCpiAccounts::to_instruction_accounts`]; only those indices may omit
@@ -176,28 +179,28 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
 
         let mut handles = self.accounts.to_cpi_handles();
 
-        if !self.remaining_accounts.is_empty() {
-            // Ignore duplicates by tracking seen addresses in a `BTreeSet`.
-            let mut seen: BTreeSet<Address> = ix.accounts.iter().map(|meta| meta.pubkey).collect();
-
-            for handle in &self.remaining_accounts {
-                if seen.insert(*handle.address()) {
-                    let meta = if handle.is_writable() {
-                        AccountMeta::new(*handle.address(), handle.is_signer())
-                    } else {
-                        AccountMeta::new_readonly(*handle.address(), handle.is_signer())
-                    };
-                    ix.accounts.push(meta);
-                }
-                handles.push(*handle);
-            }
-        }
-
         let mut optional_sentinel_flags = self.accounts.optional_account_sentinel_flags();
         require!(
             optional_sentinel_flags.len() <= ix.accounts.len(),
             ProgramError::InvalidArgument
         );
+
+        // Metas past the fixed prefix already cover the leading remaining
+        // accounts, in order. Append only the rest, keeping metas and handles
+        // paired one-to-one.
+        let prebuilt_remaining_metas = ix.accounts.len() - optional_sentinel_flags.len();
+        require!(
+            prebuilt_remaining_metas <= self.remaining_accounts.len(),
+            ProgramError::NotEnoughAccountKeys
+        );
+        for handle in &self.remaining_accounts[prebuilt_remaining_metas..] {
+            ix.accounts.push(if handle.is_writable() {
+                AccountMeta::new(*handle.address(), handle.is_signer())
+            } else {
+                AccountMeta::new_readonly(*handle.address(), handle.is_signer())
+            });
+        }
+        handles.extend(self.remaining_accounts.iter().copied());
         // Trailing metas (e.g. remaining accounts already baked into `ix`) are
         // never treated as optional sentinels from this accounts struct.
         optional_sentinel_flags.resize(ix.accounts.len(), false);
