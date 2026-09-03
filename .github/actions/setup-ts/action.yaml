@@ -20,8 +20,6 @@ runs:
         path: |
           ./ts/dist/
         key: solana-${{ runner.os }}-v0000-${{ env.NODE_VERSION }}-${{ hashFiles('./ts/**/*.ts') }}
-    - run: cd ts/packages/borsh && yarn --frozen-lockfile && yarn build && yarn link && cd ../../../
-      shell: bash
     - run: cd ts/packages/anchor-errors && yarn --frozen-lockfile && yarn build && yarn link && cd ../../../
       shell: bash
     - run: cd ts/packages/anchor && yarn --frozen-lockfile && yarn build:node && yarn link && cd ../../../
@@ -30,7 +28,7 @@ runs:
       shell: bash
     - run: cd ts/packages/spl-token && yarn --frozen-lockfile && yarn build:node && yarn link && cd ../../../
       shell: bash
-    - run: cd examples/tutorial && yarn link @anchor-lang/core @anchor-lang/borsh && yarn --frozen-lockfile && cd ../../
+    - run: cd examples/tutorial && yarn link @anchor-lang/core && yarn --frozen-lockfile && cd ../../
       shell: bash
-    - run: cd tests && yarn link @anchor-lang/core @anchor-lang/borsh @anchor-lang/spl-associated-token-account @anchor-lang/spl-token && yarn --frozen-lockfile && cd ..
+    - run: cd tests && yarn link @anchor-lang/core @anchor-lang/spl-associated-token-account @anchor-lang/spl-token && yarn --frozen-lockfile && cd ..
       shell: bash

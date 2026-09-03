@@ -184,7 +184,6 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: "20.18.0"
-      - run: cd ts/packages/borsh && yarn --frozen-lockfile && yarn build
       - run: cd ts/packages/anchor-errors && yarn --frozen-lockfile && yarn build
       - run: cd ts/packages/anchor && yarn --frozen-lockfile
       - run: cd ts/packages/anchor && yarn test

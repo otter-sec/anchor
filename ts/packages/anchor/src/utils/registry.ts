@@ -1,7 +1,11 @@
-import BN from "bn.js";
 import fetch from "cross-fetch";
-import * as borsh from "@anchor-lang/borsh";
+import { Address, getStructCodec, getU32Codec, getU64Codec } from "@solana/kit";
 import { Connection, PublicKey } from "@solana/web3.js";
+import {
+  getAnchorOptionCodec,
+  getPublicKeyCodec,
+  getRustEnumCodec,
+} from "../coder/borsh/codecs.js";
 
 /**
  * Returns a verified build from the anchor registry. null if no such
@@ -31,7 +35,7 @@ export async function verifiedBuild(
   const build = latestBuilds[0];
 
   // Has the program been upgraded since the last build?
-  if (programData.slot.toNumber() !== build.verified_slot) {
+  if (Number(programData.slot) !== build.verified_slot) {
     return null;
   }
 
@@ -53,7 +57,7 @@ export async function fetchData(
   }
   const { program } = decodeUpgradeableLoaderState(accountInfo.data);
   const programdataAccountInfo = await connection.getAccountInfo(
-    program.programdataAddress
+    new PublicKey(program.programdataAddress)
   );
   if (programdataAccountInfo === null) {
     throw new Error("program data account not found");
@@ -64,33 +68,36 @@ export async function fetchData(
   return programData;
 }
 
-const UPGRADEABLE_LOADER_STATE_LAYOUT = borsh.rustEnum(
+// The BPF upgradeable loader state enum uses a u32 discriminant, unlike
+// borsh's default u8.
+const UPGRADEABLE_LOADER_STATE_CODEC = getRustEnumCodec(
   [
-    borsh.struct([], "uninitialized"),
-    borsh.struct(
-      [borsh.option(borsh.publicKey(), "authorityAddress")],
-      "buffer"
-    ),
-    borsh.struct([borsh.publicKey("programdataAddress")], "program"),
-    borsh.struct(
-      [
-        borsh.u64("slot"),
-        borsh.option(borsh.publicKey(), "upgradeAuthorityAddress"),
-      ],
-      "programData"
-    ),
+    ["uninitialized", getStructCodec([])],
+    [
+      "buffer",
+      getStructCodec([
+        ["authorityAddress", getAnchorOptionCodec(getPublicKeyCodec())],
+      ]),
+    ],
+    ["program", getStructCodec([["programdataAddress", getPublicKeyCodec()]])],
+    [
+      "programData",
+      getStructCodec([
+        ["slot", getU64Codec()],
+        ["upgradeAuthorityAddress", getAnchorOptionCodec(getPublicKeyCodec())],
+      ]),
+    ],
   ],
-  undefined,
-  borsh.u32()
+  getU32Codec()
 );
 
 export function decodeUpgradeableLoaderState(data: Buffer): any {
-  return UPGRADEABLE_LOADER_STATE_LAYOUT.decode(data);
+  return UPGRADEABLE_LOADER_STATE_CODEC.decode(data);
 }
 
 export type ProgramData = {
-  slot: BN;
-  upgradeAuthorityAddress: PublicKey | null;
+  slot: bigint;
+  upgradeAuthorityAddress: Address | null;
 };
 
 export type Build = {

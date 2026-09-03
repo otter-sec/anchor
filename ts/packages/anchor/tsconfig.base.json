@@ -4,6 +4,7 @@
   ],
   "compilerOptions": {
     "sourceMap": true,
+    "useDefineForClassFields": false,
     "declaration": true,
     "declarationMap": true,
     "allowSyntheticDefaultImports": true,

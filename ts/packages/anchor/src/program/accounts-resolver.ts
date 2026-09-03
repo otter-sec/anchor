@@ -27,6 +27,10 @@ import {
   isPartialAccounts,
 } from "./namespace/methods";
 
+function toBn(value: bigint | number | string | BN): BN {
+  return new BN(typeof value === "bigint" ? value.toString() : value);
+}
+
 export type AccountsGeneric = {
   [name: string]: PublicKey | AccountsGeneric;
 };
@@ -343,7 +347,7 @@ export class AccountsResolver<IDL extends Idl> {
                 const account = await this._accountStore.fetchAccount({
                   publicKey: accountKey,
                 });
-                this.set([...path, name], account[name]);
+                this.set([...path, name], translateAddress(account[name]));
               }
             }
           } catch {}
@@ -459,26 +463,26 @@ export class AccountsResolver<IDL extends Idl> {
     switch (type) {
       case "u8":
       case "i8":
-        return Buffer.from([value]);
+        return Buffer.from([Number(value)]);
       case "u16":
       case "i16":
-        return new BN(value).toArrayLike(Buffer, "le", 2);
+        return toBn(value).toArrayLike(Buffer, "le", 2);
       case "u32":
       case "i32":
-        return new BN(value).toArrayLike(Buffer, "le", 4);
+        return toBn(value).toArrayLike(Buffer, "le", 4);
       case "u64":
       case "i64":
-        return new BN(value).toArrayLike(Buffer, "le", 8);
+        return toBn(value).toArrayLike(Buffer, "le", 8);
       case "u128":
       case "i128":
-        return new BN(value).toArrayLike(Buffer, "le", 16);
+        return toBn(value).toArrayLike(Buffer, "le", 16);
       case "u256":
       case "i256":
-        return new BN(value).toArrayLike(Buffer, "le", 32);
+        return toBn(value).toArrayLike(Buffer, "le", 32);
       case "string":
         return Buffer.from(value);
       case "pubkey":
-        return value.toBuffer();
+        return translateAddress(value).toBuffer();
       case "bytes":
         return Buffer.from(value);
       default:

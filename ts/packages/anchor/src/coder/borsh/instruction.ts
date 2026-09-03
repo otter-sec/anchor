@@ -1,7 +1,5 @@
-import bs58 from "bs58";
 import { Buffer } from "buffer";
-import { Layout } from "buffer-layout";
-import * as borsh from "@anchor-lang/borsh";
+import { getBase58Encoder, getStructCodec } from "@solana/kit";
 import { AccountMeta, PublicKey } from "@solana/web3.js";
 import {
   handleDefinedFields,
@@ -16,42 +14,42 @@ import {
   IdlDiscriminator,
 } from "../../idl.js";
 import { IdlCoder } from "./idl.js";
+import { IdlCodec } from "./codecs.js";
 import { InstructionCoder } from "../index.js";
 
 /**
  * Encodes and decodes program instructions.
  */
 export class BorshInstructionCoder implements InstructionCoder {
-  // Instruction args layout. Maps namespaced method
-  private ixLayouts: Map<
+  // Instruction args codec. Maps namespaced method
+  private ixCodecs: Map<
     string,
-    { discriminator: IdlDiscriminator; layout: Layout }
+    { discriminator: IdlDiscriminator; codec: IdlCodec }
   >;
 
   public constructor(private idl: Idl) {
-    const ixLayouts = idl.instructions.map((ix) => {
+    const ixCodecs = idl.instructions.map((ix) => {
       const name = ix.name;
-      const fieldLayouts = ix.args.map((arg) =>
-        IdlCoder.fieldLayout(arg, idl.types)
-      );
-      const layout = borsh.struct(fieldLayouts, name);
-      return [name, { discriminator: ix.discriminator, layout }] as const;
+      const fieldCodecs = ix.args.map((arg): [string, IdlCodec] => [
+        arg.name,
+        IdlCoder.fieldCodec(arg, idl.types),
+      ]);
+      const codec = getStructCodec(fieldCodecs);
+      return [name, { discriminator: ix.discriminator, codec }] as const;
     });
-    this.ixLayouts = new Map(ixLayouts);
+    this.ixCodecs = new Map(ixCodecs);
   }
 
   /**
    * Encodes a program instruction.
    */
   public encode(ixName: string, ix: any): Buffer {
-    const buffer = Buffer.alloc(1000); // TODO: use a tighter buffer.
-    const encoder = this.ixLayouts.get(ixName);
+    const encoder = this.ixCodecs.get(ixName);
     if (!encoder) {
       throw new Error(`Unknown method: ${ixName}`);
     }
 
-    const len = encoder.layout.encode(ix, buffer);
-    const data = buffer.slice(0, len);
+    const data = Buffer.from(encoder.codec.encode(ix) as Uint8Array);
 
     return Buffer.concat([Buffer.from(encoder.discriminator), data]);
   }
@@ -64,16 +62,19 @@ export class BorshInstructionCoder implements InstructionCoder {
     encoding: "hex" | "base58" = "hex"
   ): Instruction | null {
     if (typeof ix === "string") {
-      ix = encoding === "hex" ? Buffer.from(ix, "hex") : bs58.decode(ix);
+      ix =
+        encoding === "hex"
+          ? Buffer.from(ix, "hex")
+          : Buffer.from(getBase58Encoder().encode(ix) as Uint8Array);
     }
 
-    for (const [name, layout] of this.ixLayouts) {
-      const givenDisc = ix.subarray(0, layout.discriminator.length);
-      const matches = givenDisc.equals(Buffer.from(layout.discriminator));
+    for (const [name, { discriminator, codec }] of this.ixCodecs) {
+      const givenDisc = ix.subarray(0, discriminator.length);
+      const matches = givenDisc.equals(Buffer.from(discriminator));
       if (matches) {
         return {
           name,
-          data: layout.layout.decode(ix.subarray(givenDisc.length)),
+          data: codec.decode(ix.subarray(givenDisc.length)) as Object,
         };
       }
     }

@@ -3,8 +3,8 @@ import { isBrowser } from "./utils/common.js";
 
 export { default as BN } from "bn.js";
 export * as web3 from "@solana/web3.js";
-export { some } from "@anchor-lang/borsh";
-export type { Some } from "@anchor-lang/borsh";
+export { some, none } from "@solana/kit";
+export type { Option, Some, None } from "@solana/kit";
 export {
   default as Provider,
   getProvider,

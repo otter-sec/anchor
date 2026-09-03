@@ -1,22 +1,22 @@
 import { Buffer } from "buffer";
-import { Layout } from "buffer-layout";
 import * as base64 from "../../utils/bytes/base64.js";
 import { Idl, IdlDiscriminator } from "../../idl.js";
 import { IdlCoder } from "./idl.js";
+import { IdlCodec } from "./codecs.js";
 import { EventCoder } from "../index.js";
 
 export class BorshEventCoder implements EventCoder {
   /**
-   * Maps account type identifier to a layout.
+   * Maps event type identifier to a codec.
    */
-  private layouts: Map<
+  private codecs: Map<
     string,
-    { discriminator: IdlDiscriminator; layout: Layout }
+    { discriminator: IdlDiscriminator; codec: IdlCodec }
   >;
 
   public constructor(idl: Idl) {
     if (!idl.events) {
-      this.layouts = new Map();
+      this.codecs = new Map();
       return;
     }
 
@@ -25,7 +25,7 @@ export class BorshEventCoder implements EventCoder {
       throw new Error("Events require `idl.types`");
     }
 
-    const layouts = idl.events.map((ev) => {
+    const codecs = idl.events.map((ev) => {
       const typeDef = types.find((ty) => ty.name === ev.name);
       if (!typeDef) {
         throw new Error(`Event not found: ${ev.name}`);
@@ -34,11 +34,11 @@ export class BorshEventCoder implements EventCoder {
         ev.name,
         {
           discriminator: ev.discriminator,
-          layout: IdlCoder.typeDefLayout({ typeDef, types }),
+          codec: IdlCoder.typeDefCodec({ typeDef, types }),
         },
       ] as const;
     });
-    this.layouts = new Map(layouts);
+    this.codecs = new Map(codecs);
   }
 
   public decode(log: string): {
@@ -53,13 +53,13 @@ export class BorshEventCoder implements EventCoder {
       return null;
     }
 
-    for (const [name, layout] of this.layouts) {
-      const givenDisc = logArr.subarray(0, layout.discriminator.length);
-      const matches = givenDisc.equals(Buffer.from(layout.discriminator));
+    for (const [name, entry] of this.codecs) {
+      const givenDisc = logArr.subarray(0, entry.discriminator.length);
+      const matches = givenDisc.equals(Buffer.from(entry.discriminator));
       if (matches) {
         return {
           name,
-          data: layout.layout.decode(logArr.subarray(givenDisc.length)),
+          data: entry.codec.decode(logArr.subarray(givenDisc.length)),
         };
       }
     }

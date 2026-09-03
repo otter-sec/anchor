@@ -19,7 +19,8 @@ export default {
       tsconfig: "./tsconfig.base.json",
       moduleResolution: "node",
       outDir: "types",
-      target: "es2019",
+      target: "es2022",
+      lib: ["esnext", "dom"],
       outputToFilesystem: false,
     }),
     replace({
@@ -31,7 +32,7 @@ export default {
     }),
   ],
   external: [
-    "@anchor-lang/borsh",
+    "@solana/kit",
     "@solana/web3.js",
     "bn.js",
     "bs58",

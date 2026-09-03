@@ -10,7 +10,7 @@ import {
   InstructionContextFn,
   MakeInstructionsNamespace,
 } from "./types";
-import { IdlCoder } from "../../coder/borsh/idl";
+import { IdlCoder } from "../../coder/borsh/idl.js";
 import { decode } from "../../utils/bytes/base64";
 
 // Recursively walk composite account groups so a nested `#[account(mut)]`
@@ -50,7 +50,7 @@ export default class ViewFactory {
         throw new Error("View expected return type");
       }
 
-      const coder = IdlCoder.fieldLayout({ type: returnType }, idl.types);
+      const coder = IdlCoder.fieldCodec({ type: returnType }, idl.types);
       return coder.decode(returnData);
     };
     return view;

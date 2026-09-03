@@ -1,5 +1,32 @@
-import { Layout } from "buffer-layout";
-import * as borsh from "@anchor-lang/borsh";
+import {
+  addCodecSizePrefix,
+  getArrayCodec,
+  getBooleanCodec,
+  getBytesCodec,
+  getF32Codec,
+  getF64Codec,
+  getI8Codec,
+  getI16Codec,
+  getI32Codec,
+  getI64Codec,
+  getI128Codec,
+  getStructCodec,
+  getU8Codec,
+  getU16Codec,
+  getU32Codec,
+  getU64Codec,
+  getU128Codec,
+  getUtf8Codec,
+} from "@solana/kit";
+import {
+  getAnchorOptionCodec,
+  getCOptionCodec,
+  getI256Codec,
+  getPublicKeyCodec,
+  getRustEnumCodec,
+  getU256Codec,
+  IdlCodec,
+} from "./codecs.js";
 import {
   IdlField,
   IdlTypeDef,
@@ -14,102 +41,98 @@ import { IdlError } from "../../error.js";
 type PartialField = { name?: string } & Pick<IdlField, "type">;
 
 export class IdlCoder {
-  public static fieldLayout(
+  /**
+   * Get the codec of the given IDL field type.
+   */
+  public static fieldCodec(
     field: PartialField,
     types: IdlTypeDef[] = [],
     genericArgs?: IdlGenericArg[] | null
-  ): Layout {
-    const fieldName = field.name;
+  ): IdlCodec {
     switch (field.type) {
       case "bool": {
-        return borsh.bool(fieldName);
+        return getBooleanCodec();
       }
       case "u8": {
-        return borsh.u8(fieldName);
+        return getU8Codec();
       }
       case "i8": {
-        return borsh.i8(fieldName);
+        return getI8Codec();
       }
       case "u16": {
-        return borsh.u16(fieldName);
+        return getU16Codec();
       }
       case "i16": {
-        return borsh.i16(fieldName);
+        return getI16Codec();
       }
       case "u32": {
-        return borsh.u32(fieldName);
+        return getU32Codec();
       }
       case "i32": {
-        return borsh.i32(fieldName);
+        return getI32Codec();
       }
       case "f32": {
-        return borsh.f32(fieldName);
+        return getF32Codec();
       }
       case "u64": {
-        return borsh.u64(fieldName);
+        return getU64Codec();
       }
       case "i64": {
-        return borsh.i64(fieldName);
+        return getI64Codec();
       }
       case "f64": {
-        return borsh.f64(fieldName);
+        return getF64Codec();
       }
       case "u128": {
-        return borsh.u128(fieldName);
+        return getU128Codec();
       }
       case "i128": {
-        return borsh.i128(fieldName);
+        return getI128Codec();
       }
       case "u256": {
-        return borsh.u256(fieldName);
+        return getU256Codec();
       }
       case "i256": {
-        return borsh.i256(fieldName);
+        return getI256Codec();
       }
       case "bytes": {
-        return borsh.vecU8(fieldName);
+        return addCodecSizePrefix(getBytesCodec(), getU32Codec());
       }
       case "string": {
-        return borsh.str(fieldName);
+        return addCodecSizePrefix(getUtf8Codec(), getU32Codec());
       }
       case "pubkey": {
-        return borsh.publicKey(fieldName);
+        return getPublicKeyCodec();
       }
       default: {
         if ("option" in field.type) {
-          return borsh.option(
-            IdlCoder.fieldLayout(
-              { type: field.type.option },
-              types,
-              genericArgs
-            ),
-            fieldName
+          return getAnchorOptionCodec(
+            IdlCoder.fieldCodec({ type: field.type.option }, types, genericArgs)
           );
         }
         if ("coption" in field.type) {
-          return borsh.coption(
-            IdlCoder.fieldLayout(
+          return getCOptionCodec(
+            IdlCoder.fieldCodec(
               { type: field.type.coption },
               types,
               genericArgs
-            ),
-            fieldName
+            )
           );
         }
         if ("vec" in field.type) {
-          return borsh.vec(
-            IdlCoder.fieldLayout({ type: field.type.vec }, types, genericArgs),
-            fieldName
+          return getArrayCodec(
+            IdlCoder.fieldCodec({ type: field.type.vec }, types, genericArgs)
           );
         }
         if ("array" in field.type) {
           let [type, len] = field.type.array;
           len = IdlCoder.resolveArrayLen(len, genericArgs);
 
-          return borsh.array(
-            IdlCoder.fieldLayout({ type }, types, genericArgs),
-            len,
-            fieldName
+          return getArrayCodec(
+            IdlCoder.fieldCodec({ type }, types, genericArgs),
+            {
+              size: len,
+            }
           );
         }
         if ("defined" in field.type) {
@@ -123,11 +146,10 @@ export class IdlCoder {
             throw new IdlError(`Type not found: ${field.name}`);
           }
 
-          return IdlCoder.typeDefLayout({
+          return IdlCoder.typeDefCodec({
             typeDef,
             types,
             genericArgs: genericArgs ?? field.type.defined.generics,
-            name: fieldName,
           });
         }
         if ("generic" in field.type) {
@@ -136,7 +158,7 @@ export class IdlCoder {
             throw new IdlError(`Invalid generic field: ${field.name}`);
           }
 
-          return IdlCoder.fieldLayout(
+          return IdlCoder.fieldCodec(
             { ...field, type: genericArg.type },
             types
           );
@@ -150,26 +172,24 @@ export class IdlCoder {
   }
 
   /**
-   * Get the type layout of the given defined type(struct or enum).
+   * Get the codec of the given defined type (struct or enum).
    */
-  public static typeDefLayout({
+  public static typeDefCodec({
     typeDef,
     types,
-    name,
     genericArgs,
   }: {
     typeDef: IdlTypeDef;
     types: IdlTypeDef[];
     genericArgs?: IdlGenericArg[] | null;
-    name?: string;
-  }): Layout {
+  }): IdlCodec {
     switch (typeDef.type.kind) {
       case "struct": {
-        const fieldLayouts = handleDefinedFields(
+        const fieldCodecs = handleDefinedFields(
           typeDef.type.fields,
-          () => [],
+          (): [string, IdlCodec][] => [],
           (fields) =>
-            fields.map((f) => {
+            fields.map((f): [string, IdlCodec] => {
               const genArgs = genericArgs
                 ? IdlCoder.resolveGenericArgs({
                     type: f.type,
@@ -177,10 +197,10 @@ export class IdlCoder {
                     genericArgs,
                   })
                 : genericArgs;
-              return IdlCoder.fieldLayout(f, types, genArgs);
+              return [f.name, IdlCoder.fieldCodec(f, types, genArgs)];
             }),
           (fields) =>
-            fields.map((f, i) => {
+            fields.map((f, i): [string, IdlCodec] => {
               const genArgs = genericArgs
                 ? IdlCoder.resolveGenericArgs({
                     type: f,
@@ -188,64 +208,66 @@ export class IdlCoder {
                     genericArgs,
                   })
                 : genericArgs;
-              return IdlCoder.fieldLayout(
-                { name: i.toString(), type: f },
-                types,
-                genArgs
-              );
-            })
-        );
-
-        return borsh.struct(fieldLayouts, name);
-      }
-
-      case "enum": {
-        const variants = typeDef.type.variants.map((variant) => {
-          const fieldLayouts = handleDefinedFields(
-            variant.fields,
-            () => [],
-            (fields) =>
-              fields.map((f) => {
-                const genArgs = genericArgs
-                  ? IdlCoder.resolveGenericArgs({
-                      type: f.type,
-                      typeDef,
-                      genericArgs,
-                    })
-                  : genericArgs;
-                return IdlCoder.fieldLayout(f, types, genArgs);
-              }),
-            (fields) =>
-              fields.map((f, i) => {
-                const genArgs = genericArgs
-                  ? IdlCoder.resolveGenericArgs({
-                      type: f,
-                      typeDef,
-                      genericArgs,
-                    })
-                  : genericArgs;
-                return IdlCoder.fieldLayout(
+              return [
+                i.toString(),
+                IdlCoder.fieldCodec(
                   { name: i.toString(), type: f },
                   types,
                   genArgs
-                );
-              })
-          );
+                ),
+              ];
+            })
+        );
 
-          return borsh.struct(fieldLayouts, variant.name);
-        });
+        return getStructCodec(fieldCodecs);
+      }
 
-        if (name !== undefined) {
-          // Buffer-layout lib requires the name to be null (on construction)
-          // when used as a field.
-          return borsh.rustEnum(variants).replicate(name);
-        }
+      case "enum": {
+        const variants = typeDef.type.variants.map(
+          (variant): [string, IdlCodec] => {
+            const fieldCodecs = handleDefinedFields(
+              variant.fields,
+              (): [string, IdlCodec][] => [],
+              (fields) =>
+                fields.map((f): [string, IdlCodec] => {
+                  const genArgs = genericArgs
+                    ? IdlCoder.resolveGenericArgs({
+                        type: f.type,
+                        typeDef,
+                        genericArgs,
+                      })
+                    : genericArgs;
+                  return [f.name, IdlCoder.fieldCodec(f, types, genArgs)];
+                }),
+              (fields) =>
+                fields.map((f, i): [string, IdlCodec] => {
+                  const genArgs = genericArgs
+                    ? IdlCoder.resolveGenericArgs({
+                        type: f,
+                        typeDef,
+                        genericArgs,
+                      })
+                    : genericArgs;
+                  return [
+                    i.toString(),
+                    IdlCoder.fieldCodec(
+                      { name: i.toString(), type: f },
+                      types,
+                      genArgs
+                    ),
+                  ];
+                })
+            );
 
-        return borsh.rustEnum(variants, name);
+            return [variant.name, getStructCodec(fieldCodecs)];
+          }
+        );
+
+        return getRustEnumCodec(variants);
       }
 
       case "type": {
-        return IdlCoder.fieldLayout({ type: typeDef.type.alias, name }, types);
+        return IdlCoder.fieldCodec({ type: typeDef.type.alias }, types);
       }
     }
   }
