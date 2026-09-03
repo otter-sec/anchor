@@ -6814,61 +6814,45 @@ mod tests {
     }
 
     #[test]
-    fn handler_wrapper_defaults_to_inline_never() {
-        let attr = handler_wrapper_inline_attr(&[]);
-
-        assert_eq!(quote!(#attr).to_string(), "# [inline (never)]");
-    }
-
-    #[test]
-    fn handler_wrapper_preserves_rust_inline_attributes() {
-        for (attr, expected) in [
-            (syn::parse_quote!(#[inline]), "# [inline]"),
-            (syn::parse_quote!(#[inline(always)]), "# [inline (always)]"),
-            (syn::parse_quote!(#[inline(never)]), "# [inline (never)]"),
-            (
-                syn::parse_quote!(#[cfg_attr(feature = "fast", inline(always))]),
-                "# [cfg_attr (feature = \"fast\" , inline (always))]",
-            ),
-        ] {
-            let attr = handler_wrapper_inline_attr(&[attr]);
-            assert_eq!(quote!(#attr).to_string(), expected);
-        }
-    }
-
-    #[test]
     fn process_handler_applies_inline_policy_to_generated_wrapper() {
         let mod_name: syn::Ident = syn::parse_quote!(my_program);
         let program_id: syn::Expr = syn::parse_quote!(crate::ID);
-        let default_handler: syn::ItemFn = syn::parse_quote! {
-            pub fn default_handler(ctx: &mut Context<MyAccounts>) -> Result<()> {
-                let _ = ctx;
-                Ok(())
-            }
-        };
-        let always_handler: syn::ItemFn = syn::parse_quote! {
-            #[inline(always)]
-            pub fn fast_handler(ctx: &mut Context<MyAccounts>, amount: u64) -> Result<()> {
-                let _ = (ctx, amount);
-                Ok(())
-            }
-        };
-
-        let default_wrapper = process_handler(&default_handler, &mod_name, None, &program_id)
-            .wrapper
-            .to_string();
-        let always_wrapper = process_handler(&always_handler, &mod_name, None, &program_id)
-            .wrapper
-            .to_string();
-
-        assert!(
-            default_wrapper.contains("# [inline (never)] pub fn default_handler"),
-            "expected non-inlined default wrapper: {default_wrapper}"
-        );
-        assert!(
-            always_wrapper.contains("# [inline (always)] pub fn fast_handler"),
-            "expected explicit inline override: {always_wrapper}"
-        );
+        for (handler, expected) in [
+            (
+                syn::parse_quote! {
+                    pub fn default_handler(ctx: &mut Context<MyAccounts>) -> Result<()> {
+                        let _ = ctx;
+                        Ok(())
+                    }
+                },
+                "# [inline (never)] pub fn default_handler",
+            ),
+            (
+                syn::parse_quote! {
+                    #[inline(always)]
+                    pub fn fast_handler(ctx: &mut Context<MyAccounts>, amount: u64) -> Result<()> {
+                        let _ = (ctx, amount);
+                        Ok(())
+                    }
+                },
+                "# [inline (always)] pub fn fast_handler",
+            ),
+            (
+                syn::parse_quote! {
+                    #[cfg_attr(feature = "fast", inline(always))]
+                    pub fn conditional_handler(ctx: &mut Context<MyAccounts>) -> Result<()> {
+                        let _ = ctx;
+                        Ok(())
+                    }
+                },
+                "# [cfg_attr (feature = \"fast\" , inline (always))] pub fn conditional_handler",
+            ),
+        ] {
+            let wrapper = process_handler(&handler, &mod_name, None, &program_id)
+                .wrapper
+                .to_string();
+            assert!(wrapper.contains(expected), "unexpected wrapper: {wrapper}");
+        }
     }
 
     #[test]
