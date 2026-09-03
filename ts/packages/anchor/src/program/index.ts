@@ -276,20 +276,20 @@ export class Program<IDL extends Idl = Idl> {
    */
   public discriminator(
     kind: "instruction" | "account" | "event",
-    name: string,
+    name: string
   ): Buffer {
     const section =
       kind === "instruction"
         ? this._rawIdl.instructions
         : kind === "account"
-          ? this._rawIdl.accounts ?? []
-          : this._rawIdl.events ?? [];
-    const entry = (section as Array<{ name: string; discriminator?: number[] }>).find(
-      (e) => e.name === name,
-    );
+        ? this._rawIdl.accounts ?? []
+        : this._rawIdl.events ?? [];
+    const entry = (
+      section as Array<{ name: string; discriminator?: number[] }>
+    ).find((e) => e.name === name);
     if (!entry?.discriminator) {
       throw new Error(
-        `anchor: no ${kind} named '${name}' with a discriminator in the IDL`,
+        `anchor: no ${kind} named '${name}' with a discriminator in the IDL`
       );
     }
     return Buffer.from(entry.discriminator);

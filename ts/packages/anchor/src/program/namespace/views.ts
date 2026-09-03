@@ -1,5 +1,9 @@
 import { PublicKey } from "@solana/web3.js";
-import { Idl, IdlInstructionAccountItem, isCompositeAccounts } from "../../idl.js";
+import {
+  Idl,
+  IdlInstructionAccountItem,
+  isCompositeAccounts,
+} from "../../idl.js";
 import { SimulateFn } from "./simulate.js";
 import {
   AllInstructions,
@@ -13,7 +17,9 @@ import { decode } from "../../utils/bytes/base64";
 // still disqualifies an instruction from being surfaced as a view.
 function hasWritableAccount(accounts: IdlInstructionAccountItem[]): boolean {
   return accounts.some((a) =>
-    isCompositeAccounts(a) ? hasWritableAccount(a.accounts) : a.writable === true
+    isCompositeAccounts(a)
+      ? hasWritableAccount(a.accounts)
+      : a.writable === true
   );
 }
 
