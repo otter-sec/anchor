@@ -49,7 +49,16 @@ such as:
 By contrast, protections that primarily prevent accidental misuse,
 developer mistakes, or incorrect program construction should generally
 be considered defense-in-depth or anti-footgun measures rather than
-security boundaries.
+security boundaries. For example, duplicate mutable account checks help
+prevent multiple mutable references to the same account in an
+instruction, but bypassing this check is not by itself a security
+boundary violation.
+
+Compile-time checks that are part of the IDL building process are also
+not security boundaries when they can be bypassed by disabling IDL
+generation with `--no-idl`. These checks can help catch incorrect
+program definitions during development, but they do not enforce a
+security property at runtime.
 
 If you are unsure whether an issue crosses a security boundary, please
 report it through the security reporting process with a proof of concept
