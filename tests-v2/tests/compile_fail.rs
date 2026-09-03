@@ -1902,7 +1902,7 @@ fn close_destination_must_be_mutable() {
     CompileCase::new(
         "close_destination_must_be_mutable",
         r#"
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
