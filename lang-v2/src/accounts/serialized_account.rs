@@ -336,6 +336,12 @@ where
         if !destination.is_writable() {
             return Err(super::slab::cold_not_writable());
         }
+        // Guardrail: self-close would credit the lamports and then zero them on
+        // the same account, burning them.
+        #[cfg(feature = "guardrails")]
+        if pinocchio::address::address_eq(destination.address(), self.view.address()) {
+            return Err(super::slab::cold_self_close());
+        }
         self.assert_mutable_loaded();
         let mut self_view = self.view;
         let dest_lamports = destination

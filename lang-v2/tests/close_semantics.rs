@@ -144,7 +144,6 @@ fn close_zeros_the_48_byte_header() {
     );
 }
 
-
 #[test]
 fn close_rejects_non_writable_destination() {
     let mut buf = AccountBuffer::<256>::new();
@@ -448,6 +447,57 @@ fn slab_close_scrubs_discriminator_to_closed_sentinel() {
         &data[..8],
         &[u8::MAX; 8][..],
         "Slab::close must scrub the discriminator to the closed sentinel"
+    );
+}
+
+#[test]
+fn close_rejects_self_as_destination() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_vault_buf(&mut buf);
+
+    let view = unsafe { buf.view() };
+    // Same account handed in as the close destination.
+    let self_as_dest = unsafe { buf.view() };
+    let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+
+    let err = vault.close(self_as_dest).unwrap_err();
+
+    assert_eq!(err, ErrorCode::ConstraintClose.into());
+
+    // Without the guard, close credits the balance to self and then zeroes it,
+    // burning the lamports. Nothing should have moved.
+    let raw = unsafe { &*(buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        raw.lamports, 1_000_000_000,
+        "rejected self-close must not burn the account's lamports"
+    );
+    assert_ne!(
+        raw.data_len, 0,
+        "rejected self-close must not close the account"
+    );
+}
+
+#[test]
+fn slab_close_rejects_self_as_destination() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf);
+
+    let view = unsafe { buf.view() };
+    let self_as_dest = unsafe { buf.view() };
+    let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
+
+    let err = counter.close(self_as_dest).unwrap_err();
+
+    assert_eq!(err, ErrorCode::ConstraintClose.into());
+
+    let raw = unsafe { &*(buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        raw.lamports, 1_000_000_000,
+        "rejected self-close must not burn the account's lamports"
+    );
+    assert_ne!(
+        raw.data_len, 0,
+        "rejected self-close must not close the account"
     );
 }
 
