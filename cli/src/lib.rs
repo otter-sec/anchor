@@ -141,6 +141,11 @@ pub(crate) fn no_dna_enabled() -> bool {
     std::env::var(NO_DNA_ENV).is_ok_and(|value| !value.trim().is_empty())
 }
 
+/// Exit code to propagate for a test run that completed but failed.
+fn test_failure_exit_code(status: &std::process::ExitStatus) -> Option<i32> {
+    (!status.success()).then(|| status.code().unwrap_or(1))
+}
+
 fn os_version() -> String {
     #[cfg(target_os = "macos")]
     if let Some(version) = macos_version() {
@@ -4671,6 +4676,11 @@ fn run_test_suite(
                     handle.shutdown();
                 }
             }
+            if let Ok(exit) = &test_result {
+                if let Some(code) = test_failure_exit_code(&exit.status) {
+                    std::process::exit(code);
+                }
+            }
             return Ok(());
         } else {
             println!("Local validator still running. Press Ctrl + C quit.");
@@ -4695,8 +4705,8 @@ fn run_test_suite(
     // Must exist *after* shutting down the validator and log streams.
     match test_result {
         Ok(exit) => {
-            if !exit.status.success() {
-                std::process::exit(exit.status.code().unwrap());
+            if let Some(code) = test_failure_exit_code(&exit.status) {
+                std::process::exit(code);
             }
         }
         Err(err) => {
