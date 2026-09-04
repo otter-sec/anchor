@@ -401,6 +401,74 @@ fn pop_after_external_shrink_uses_effective_len() {
     assert_eq!(slab.len(), 0);
 }
 
+#[test]
+fn drop_repairs_stale_len_after_external_shrink_without_tail_mutation() {
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
+
+    let view = unsafe { buf.view() };
+    let slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    assert_eq!(slab.len(), 3);
+    assert_eq!(slab.capacity(), 4);
+
+    // External resize: capacity drops to 1 while the slab stays in scope.
+    buf.set_data_len((ITEMS_OFFSET + ITEM_SIZE) as u64);
+    assert_eq!(slab.capacity(), 1);
+
+    // Dropping without any tail mutation should still persist a repaired
+    // len so future loads do not reject `len > capacity`.
+    drop(slab);
+
+    let reloaded = CounterLedger::load(view).unwrap();
+    assert_eq!(reloaded.capacity(), 1);
+    assert_eq!(reloaded.len(), 1);
+}
+
+#[test]
+fn predicates_use_effective_len_after_external_shrink() {
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
+
+    let view = unsafe { buf.view() };
+    let slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+
+    // Shrink below stored len while the wrapper is retained.
+    buf.set_data_len((ITEMS_OFFSET + ITEM_SIZE) as u64);
+    assert_eq!(slab.len(), 3);
+    assert_eq!(slab.capacity(), 1);
+
+    // Pre-fix: is_empty/is_full used raw len and reported neither empty nor
+    // full. Post-fix they track the live tail (min(len, capacity) == 1).
+    assert!(!slab.is_empty());
+    assert!(slab.is_full());
+}
+
+#[test]
+fn pop_repairs_stale_len_when_capacity_is_zero() {
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
+
+    let view = unsafe { buf.view() };
+    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+
+    // Shrink to the structural minimum: zero item capacity, but the stored
+    // len field is still present and still holds 3.
+    buf.set_data_len(ITEMS_OFFSET as u64);
+    assert_eq!(slab.capacity(), 0);
+    assert_eq!(slab.len(), 3);
+    assert!(slab.is_empty());
+    assert!(slab.is_full());
+
+    // Pre-fix: pop returned None without write_len, leaving len=3 so a
+    // later load rejected len > capacity. Post-fix: repair first.
+    assert_eq!(slab.pop(), None);
+    assert_eq!(slab.len(), 0);
+
+    // Drop the retained wrapper and reload — validation must succeed.
+    drop(slab);
+    let view = unsafe { buf.view() };
+    let reloaded = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    assert!(reloaded.is_empty());
+    assert_eq!(reloaded.len(), 0);
+}
+
 // -- Regression: swap_remove respects effective_len after shrink ------
 
 #[test]
