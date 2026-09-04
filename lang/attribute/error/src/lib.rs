@@ -8,7 +8,7 @@ use {
     },
     proc_macro::TokenStream,
     quote::quote,
-    syn::{parse_macro_input, Expr},
+    syn::parse_macro_input,
 };
 
 /// Generates `Error` and `type Result<T> = Result<T, Error>` types to be
@@ -96,32 +96,7 @@ pub fn error_code(
 pub fn error(ts: proc_macro::TokenStream) -> TokenStream {
     let input = parse_macro_input!(ts as ErrorInput);
     let error_code = input.error_code;
-    create_error(error_code, true, None)
-}
-
-fn create_error(error_code: Expr, source: bool, account_name: Option<Expr>) -> TokenStream {
-    let error_origin = match (source, account_name) {
-        (false, None) => quote! { None },
-        (false, Some(account_name)) => quote! {
-            Some(anchor_lang::error::ErrorOrigin::AccountName(#account_name.to_string()))
-        },
-        (true, _) => quote! {
-            Some(anchor_lang::error::ErrorOrigin::Source(anchor_lang::error::Source {
-                filename: file!(),
-                line: line!()
-            }))
-        },
-    };
-
     TokenStream::from(quote! {
-        anchor_lang::error::Error::from(
-            anchor_lang::error::AnchorError {
-                error_name: #error_code.name(),
-                error_code_number: #error_code.into(),
-                error_msg: #error_code.to_string(),
-                error_origin: #error_origin,
-                compared_values: None
-            }
-        )
+        anchor_lang::__anchor_error!(#error_code, source)
     })
 }

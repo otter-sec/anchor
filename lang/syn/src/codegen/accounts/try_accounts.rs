@@ -400,9 +400,12 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
             quote! {
                 for key in #composite_name.duplicate_mutable_account_keys() {
                     if !__mutable_accounts.insert(key) {
-                        return Err(anchor_lang::error::Error::from(
-                            anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount
-                        ).with_account_name(format!("{}", key)));
+                        return Err(anchor_lang::error::__anchor_with_account_name!(
+                            anchor_lang::error::Error::from(
+                                anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount
+                            ),
+                            format!("{}", key)
+                        ));
                     }
                 }
             }

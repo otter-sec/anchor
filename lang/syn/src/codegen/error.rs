@@ -81,15 +81,7 @@ pub fn generate(error: Error) -> proc_macro2::TokenStream {
 
         impl From<#enum_name> for anchor_lang::error::Error {
             fn from(error_code: #enum_name) -> anchor_lang::error::Error {
-                anchor_lang::error::Error::from(
-                    anchor_lang::error::AnchorError {
-                        error_name: error_code.name(),
-                        error_code_number: error_code.into(),
-                        error_msg: error_code.to_string(),
-                        error_origin: None,
-                        compared_values: None
-                    }
-                )
+                anchor_lang::__anchor_error!(error_code)
             }
         }
 

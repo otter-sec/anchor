@@ -11,11 +11,82 @@ use {
 /// The starting point for user defined error codes.
 pub const ERROR_CODE_OFFSET: u32 = 6000;
 
+/// Construct an Anchor error while keeping diagnostic generation controlled by
+/// the `anchor-lang/private-program` feature. This is exported for Anchor's
+/// generated code and is not a stable public API.
+#[cfg(not(feature = "private-program"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __anchor_error {
+    ($error_code:expr) => {{
+        let error_code = $error_code;
+        $crate::Error::from($crate::AnchorError {
+            error_name: error_code.name(),
+            error_code_number: error_code.into(),
+            error_msg: error_code.to_string(),
+            error_origin: None,
+            compared_values: None,
+        })
+    }};
+    ($error_code:expr, source) => {{
+        let error_code = $error_code;
+        $crate::Error::from($crate::AnchorError {
+            error_name: error_code.name(),
+            error_code_number: error_code.into(),
+            error_msg: error_code.to_string(),
+            error_origin: Some($crate::ErrorOrigin::Source($crate::Source {
+                filename: file!(),
+                line: line!(),
+            })),
+            compared_values: None,
+        })
+    }};
+}
+
+#[cfg(feature = "private-program")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __anchor_error {
+    ($error_code:expr) => {{
+        let error_code_number: u32 = ($error_code).into();
+        $crate::Error::from($crate::AnchorError {
+            error_name: ::std::string::String::new(),
+            error_code_number,
+            error_msg: ::std::string::String::new(),
+            error_origin: None,
+            compared_values: None,
+        })
+    }};
+    ($error_code:expr, source) => {
+        $crate::__anchor_error!($error_code)
+    };
+}
+
+#[cfg(not(feature = "private-program"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __anchor_with_account_name {
+    ($error:expr, $account_name:expr) => {
+        ($error).with_account_name($account_name)
+    };
+}
+
+#[cfg(feature = "private-program")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __anchor_with_account_name {
+    ($error:expr, $account_name:expr) => {{
+        let error = $error;
+        error
+    }};
+}
+
 // `#[error_code]` macro below accesses `anchor_lang::error::...` so set up
 // a fake module for it.
 mod anchor_lang {
+    pub(crate) use crate::__anchor_error;
     pub(crate) mod error {
-        pub(crate) use crate::{AnchorError, Error};
+        pub(crate) use crate::Error;
     }
 }
 
@@ -347,11 +418,23 @@ impl From<ProgramErrorWithOrigin> for Error {
 }
 
 impl From<TryFromIntError> for Error {
+    #[cfg(not(feature = "private-program"))]
     fn from(e: TryFromIntError) -> Self {
         Self::AnchorError(Box::new(AnchorError {
             error_name: ErrorCode::InvalidNumericConversion.name(),
             error_code_number: ErrorCode::InvalidNumericConversion.into(),
             error_msg: format!("{e}"),
+            error_origin: None,
+            compared_values: None,
+        }))
+    }
+
+    #[cfg(feature = "private-program")]
+    fn from(_: TryFromIntError) -> Self {
+        Self::AnchorError(Box::new(AnchorError {
+            error_name: String::new(),
+            error_code_number: ErrorCode::InvalidNumericConversion.into(),
+            error_msg: String::new(),
             error_origin: None,
             compared_values: None,
         }))
@@ -365,6 +448,7 @@ impl From<std::convert::Infallible> for Error {
 }
 
 impl Error {
+    #[cfg(not(feature = "private-program"))]
     pub fn log(&self) {
         match self {
             Error::ProgramError(program_error) => program_error.log(),
@@ -372,6 +456,11 @@ impl Error {
         }
     }
 
+    #[cfg(feature = "private-program")]
+    #[inline(always)]
+    pub fn log(&self) {}
+
+    #[cfg(not(feature = "private-program"))]
     pub fn with_account_name(mut self, account_name: impl ToString) -> Self {
         match &mut self {
             Error::AnchorError(ae) => {
@@ -384,6 +473,13 @@ impl Error {
         self
     }
 
+    #[cfg(feature = "private-program")]
+    #[inline(always)]
+    pub fn with_account_name(self, _: impl ToString) -> Self {
+        self
+    }
+
+    #[cfg(not(feature = "private-program"))]
     pub fn with_source(mut self, source: Source) -> Self {
         match &mut self {
             Error::AnchorError(ae) => {
@@ -396,6 +492,13 @@ impl Error {
         self
     }
 
+    #[cfg(feature = "private-program")]
+    #[inline(always)]
+    pub fn with_source(self, _: Source) -> Self {
+        self
+    }
+
+    #[cfg(not(feature = "private-program"))]
     pub fn with_pubkeys(mut self, pubkeys: (Pubkey, Pubkey)) -> Self {
         let pubkeys = Some(ComparedValues::Pubkeys((pubkeys.0, pubkeys.1)));
         match &mut self {
@@ -405,6 +508,13 @@ impl Error {
         self
     }
 
+    #[cfg(feature = "private-program")]
+    #[inline(always)]
+    pub fn with_pubkeys(self, _: (Pubkey, Pubkey)) -> Self {
+        self
+    }
+
+    #[cfg(not(feature = "private-program"))]
     pub fn with_values(mut self, values: (impl ToString, impl ToString)) -> Self {
         match &mut self {
             Error::AnchorError(ae) => {
@@ -420,6 +530,12 @@ impl Error {
                 )))
             }
         };
+        self
+    }
+
+    #[cfg(feature = "private-program")]
+    #[inline(always)]
+    pub fn with_values(self, _: (impl ToString, impl ToString)) -> Self {
         self
     }
 }
@@ -446,6 +562,7 @@ impl Display for ProgramErrorWithOrigin {
 }
 
 impl ProgramErrorWithOrigin {
+    #[cfg(not(feature = "private-program"))]
     pub fn log(&self) {
         match &self.error_origin {
             None => {
@@ -494,13 +611,31 @@ impl ProgramErrorWithOrigin {
         }
     }
 
+    #[cfg(feature = "private-program")]
+    #[inline(always)]
+    pub fn log(&self) {}
+
+    #[cfg(not(feature = "private-program"))]
     pub fn with_source(mut self, source: Source) -> Self {
         self.error_origin = Some(ErrorOrigin::Source(source));
         self
     }
 
+    #[cfg(feature = "private-program")]
+    #[inline(always)]
+    pub fn with_source(self, _: Source) -> Self {
+        self
+    }
+
+    #[cfg(not(feature = "private-program"))]
     pub fn with_account_name(mut self, account_name: impl ToString) -> Self {
         self.error_origin = Some(ErrorOrigin::AccountName(account_name.to_string()));
+        self
+    }
+
+    #[cfg(feature = "private-program")]
+    #[inline(always)]
+    pub fn with_account_name(self, _: impl ToString) -> Self {
         self
     }
 }
@@ -537,6 +672,7 @@ pub struct AnchorError {
 }
 
 impl AnchorError {
+    #[cfg(not(feature = "private-program"))]
     pub fn log(&self) {
         match &self.error_origin {
             None => {
@@ -584,13 +720,31 @@ impl AnchorError {
         }
     }
 
+    #[cfg(feature = "private-program")]
+    #[inline(always)]
+    pub fn log(&self) {}
+
+    #[cfg(not(feature = "private-program"))]
     pub fn with_source(mut self, source: Source) -> Self {
         self.error_origin = Some(ErrorOrigin::Source(source));
         self
     }
 
+    #[cfg(feature = "private-program")]
+    #[inline(always)]
+    pub fn with_source(self, _: Source) -> Self {
+        self
+    }
+
+    #[cfg(not(feature = "private-program"))]
     pub fn with_account_name(mut self, account_name: impl ToString) -> Self {
         self.error_origin = Some(ErrorOrigin::AccountName(account_name.to_string()));
+        self
+    }
+
+    #[cfg(feature = "private-program")]
+    #[inline(always)]
+    pub fn with_account_name(self, _: impl ToString) -> Self {
         self
     }
 }

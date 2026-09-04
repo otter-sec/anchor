@@ -135,7 +135,7 @@ pub fn idl_accounts_and_functions() -> proc_macro2::TokenStream {
             data_len: u64,
         ) -> anchor_lang::Result<()> {
             #[cfg(not(feature = "no-log-ix-name"))]
-            anchor_lang::prelude::msg!("Instruction: IdlCreateAccount");
+            anchor_lang::__anchor_log_instruction!("Instruction: IdlCreateAccount");
 
             if program_id != accounts.program.key {
                 return Err(anchor_lang::error::ErrorCode::IdlInstructionInvalidProgram.into());
@@ -202,7 +202,7 @@ pub fn idl_accounts_and_functions() -> proc_macro2::TokenStream {
             data_len: u64,
         ) -> anchor_lang::Result<()> {
             #[cfg(not(feature = "no-log-ix-name"))]
-            anchor_lang::prelude::msg!("Instruction: IdlResizeAccount");
+            anchor_lang::__anchor_log_instruction!("Instruction: IdlResizeAccount");
 
             let data_len: usize = data_len as usize;
 
@@ -249,7 +249,7 @@ pub fn idl_accounts_and_functions() -> proc_macro2::TokenStream {
             accounts: &mut IdlCloseAccount,
         ) -> anchor_lang::Result<()> {
             #[cfg(not(feature = "no-log-ix-name"))]
-            anchor_lang::prelude::msg!("Instruction: IdlCloseAccount");
+            anchor_lang::__anchor_log_instruction!("Instruction: IdlCloseAccount");
 
             Ok(())
         }
@@ -260,7 +260,7 @@ pub fn idl_accounts_and_functions() -> proc_macro2::TokenStream {
             accounts: &mut IdlCreateBuffer,
         ) -> anchor_lang::Result<()> {
             #[cfg(not(feature = "no-log-ix-name"))]
-            anchor_lang::prelude::msg!("Instruction: IdlCreateBuffer");
+            anchor_lang::__anchor_log_instruction!("Instruction: IdlCreateBuffer");
 
             let mut buffer = &mut accounts.buffer;
             buffer.authority = *accounts.authority.key;
@@ -274,7 +274,7 @@ pub fn idl_accounts_and_functions() -> proc_macro2::TokenStream {
             idl_data: Vec<u8>,
         ) -> anchor_lang::Result<()> {
             #[cfg(not(feature = "no-log-ix-name"))]
-            anchor_lang::prelude::msg!("Instruction: IdlWrite");
+            anchor_lang::__anchor_log_instruction!("Instruction: IdlWrite");
 
             let prev_len: usize = ::std::convert::TryInto::<usize>::try_into(accounts.idl.data_len).unwrap();
             let new_len: usize = prev_len.checked_add(idl_data.len()).unwrap() as usize;
@@ -296,7 +296,7 @@ pub fn idl_accounts_and_functions() -> proc_macro2::TokenStream {
             new_authority: Pubkey,
         ) -> anchor_lang::Result<()> {
             #[cfg(not(feature = "no-log-ix-name"))]
-            anchor_lang::prelude::msg!("Instruction: IdlSetAuthority");
+            anchor_lang::__anchor_log_instruction!("Instruction: IdlSetAuthority");
 
             accounts.idl.authority = new_authority;
             Ok(())
@@ -308,7 +308,7 @@ pub fn idl_accounts_and_functions() -> proc_macro2::TokenStream {
             accounts: &mut IdlSetBuffer,
         ) -> anchor_lang::Result<()> {
             #[cfg(not(feature = "no-log-ix-name"))]
-            anchor_lang::prelude::msg!("Instruction: IdlSetBuffer");
+            anchor_lang::__anchor_log_instruction!("Instruction: IdlSetBuffer");
 
             accounts.idl.data_len = accounts.buffer.data_len;
 

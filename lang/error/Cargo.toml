@@ -13,6 +13,7 @@ workspace = true
 [features]
 default = ["borsh"]
 borsh = ["dep:borsh", "solana-program-error/borsh"]
+private-program = []
 
 [dependencies]
 anchor-attribute-error = { workspace = true }

@@ -110,7 +110,7 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                     __ix_data: &'info [u8],
                 ) -> anchor_lang::Result<()> {
                     #[cfg(not(feature = "no-log-ix-name"))]
-                    anchor_lang::prelude::msg!(#ix_name_log);
+                    anchor_lang::__anchor_log_instruction!(#ix_name_log);
 
                     #param_validation
                     // Deserialize data.

@@ -42,6 +42,8 @@ mod common;
 pub mod context;
 pub use anchor_lang_error as error;
 #[doc(hidden)]
+pub use anchor_lang_error::__anchor_error;
+#[doc(hidden)]
 pub mod event;
 #[doc(hidden)]
 pub mod idl;
@@ -155,6 +157,13 @@ pub use anchor_attribute_event::{emit_cpi, event_cpi};
 pub use idl::IdlBuild;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
+
+#[cfg(not(feature = "private-program"))]
+#[path = "private_program/original.rs"]
+mod private_program;
+#[cfg(feature = "private-program")]
+#[path = "private_program/private.rs"]
+mod private_program;
 
 // Deprecated message for AccountInfo usage in Accounts struct
 #[deprecated(

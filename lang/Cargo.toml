@@ -43,6 +43,7 @@ lazy-account = [
     "anchor-attribute-account/lazy-account",
     "anchor-derive-serde/lazy-account",
 ]
+private-program = ["anchor-lang-error/private-program"]
 
 [dependencies]
 anchor-attribute-access-control = { workspace = true }
