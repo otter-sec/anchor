@@ -277,6 +277,142 @@ describe("coder.types", () => {
     });
   });
 
+  test("Encodes omitted and undefined optional fields as None", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "basic_0",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [],
+      types: [
+        {
+          name: "OptionTest",
+          type: {
+            kind: "struct",
+            fields: [
+              { name: "text", type: { option: "string" } },
+              { name: "flag", type: { option: "bool" } },
+              { name: "amount", type: { option: "u64" } },
+              { name: "cAmount", type: { coption: "u64" } },
+            ],
+          },
+        },
+      ],
+    };
+
+    const coder = new BorshCoder(idl);
+
+    // Omitted fields, explicit undefined and null all encode a None tag
+    // (and, for coption, a zero-filled payload slot).
+    const expected = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    const omitted = coder.types.encode("OptionTest", {});
+    const explicitUndefined = coder.types.encode("OptionTest", {
+      text: undefined,
+      flag: undefined,
+      amount: undefined,
+      cAmount: undefined,
+    });
+    const explicitNull = coder.types.encode("OptionTest", {
+      text: null,
+      flag: null,
+      amount: null,
+      cAmount: null,
+    });
+    assert.deepStrictEqual([...omitted], expected);
+    assert.deepStrictEqual([...explicitUndefined], expected);
+    assert.deepStrictEqual([...explicitNull], expected);
+
+    assert.deepStrictEqual(coder.types.decode("OptionTest", omitted), {
+      text: null,
+      flag: null,
+      amount: null,
+      cAmount: null,
+    });
+
+    // Round-trips present values.
+    const some = coder.types.encode("OptionTest", {
+      text: "hi",
+      flag: true,
+      amount: 5n,
+      cAmount: 7n,
+    });
+    assert.deepStrictEqual(coder.types.decode("OptionTest", some), {
+      text: "hi",
+      flag: true,
+      amount: 5n,
+      cAmount: 7n,
+    });
+  });
+
+  test("Throws when decoding an invalid bool byte", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "basic_0",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [],
+      types: [
+        {
+          name: "BoolTest",
+          type: {
+            kind: "struct",
+            fields: [{ name: "flag", type: "bool" }],
+          },
+        },
+      ],
+    };
+
+    const coder = new BorshCoder(idl);
+
+    assert.deepStrictEqual(
+      [...coder.types.encode("BoolTest", { flag: true })],
+      [1]
+    );
+    assert.deepStrictEqual(coder.types.decode("BoolTest", Buffer.from([0])), {
+      flag: false,
+    });
+    assert.throws(
+      () => coder.types.decode("BoolTest", Buffer.from([2])),
+      /Invalid bool: 2/
+    );
+  });
+
+  test("Accepts public keys from duplicate web3.js installs", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "basic_0",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [],
+      types: [
+        {
+          name: "KeyTest",
+          type: {
+            kind: "struct",
+            fields: [{ name: "key", type: "pubkey" }],
+          },
+        },
+      ],
+    };
+
+    const coder = new BorshCoder(idl);
+    const key = new PublicKey("J2XMGdW2qQLx7rAdwWtSZpTXDgAQ988BLP9QTgUZvm54");
+    // A PublicKey-shaped object that is not an instance of our PublicKey,
+    // as produced by a duplicate @solana/web3.js install.
+    const foreignKey = { toBase58: () => key.toBase58() } as PublicKey;
+
+    const encoded = coder.types.encode("KeyTest", { key: foreignKey });
+    assert.deepStrictEqual(coder.types.decode("KeyTest", encoded), {
+      key: key.toBase58(),
+    });
+  });
+
   test("Can encode and decode bytes and vectors", () => {
     const idl: Idl = {
       address: "Test111111111111111111111111111111111111111",

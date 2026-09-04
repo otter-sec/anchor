@@ -1,7 +1,6 @@
 import {
   addCodecSizePrefix,
   getArrayCodec,
-  getBooleanCodec,
   getBytesCodec,
   getF32Codec,
   getF64Codec,
@@ -20,6 +19,7 @@ import {
 } from "@solana/kit";
 import {
   getAnchorOptionCodec,
+  getBoolCodec,
   getCOptionCodec,
   getI256Codec,
   getPublicKeyCodec,
@@ -51,7 +51,7 @@ export class IdlCoder {
   ): IdlCodec {
     switch (field.type) {
       case "bool": {
-        return getBooleanCodec();
+        return getBoolCodec();
       }
       case "u8": {
         return getU8Codec();

@@ -2,15 +2,14 @@ import {
   Address,
   assertNumberIsBetweenForCodec,
   Codec,
-  combineCodec,
   Endian,
   FixedSizeCodec,
   getAddressCodec,
   getDiscriminatedUnionCodec,
   getI128Codec,
-  getOptionDecoder,
-  getOptionEncoder,
+  getOptionCodec,
   getTupleCodec,
+  getU8Codec,
   getU32Codec,
   getU128Codec,
   isFixedSize,
@@ -18,10 +17,9 @@ import {
   NumberCodecConfig,
   OptionOrNullable,
   transformCodec,
-  transformDecoder,
   unwrapOption,
 } from "@solana/kit";
-import { PublicKey } from "@solana/web3.js";
+import type { PublicKey } from "@solana/web3.js";
 
 /**
  * A codec for a value whose shape is only known at runtime, e.g. because it
@@ -40,7 +38,24 @@ export function getPublicKeyCodec(): FixedSizeCodec<
   32
 > {
   return transformCodec(getAddressCodec(), (value: Address | PublicKey) =>
-    value instanceof PublicKey ? (value.toBase58() as Address) : value
+    typeof value === "string" ? value : (value.toBase58() as Address)
+  );
+}
+
+/**
+ * Boolean codec: a single byte holding 0 or 1. Unlike Kit's boolean codec,
+ * decoding any other byte throws, matching Rust borsh deserialization.
+ */
+export function getBoolCodec(): FixedSizeCodec<boolean, boolean, 1> {
+  return transformCodec(
+    getU8Codec(),
+    (value: boolean) => (value ? 1 : 0),
+    (byte) => {
+      if (byte !== 0 && byte !== 1) {
+        throw new Error(`Invalid bool: ${byte}`);
+      }
+      return byte === 1;
+    }
   );
 }
 
@@ -49,15 +64,17 @@ export function getPublicKeyCodec(): FixedSizeCodec<
  *
  * This is Kit's option codec with the decoded `Option<T>` unwrapped to
  * `T | null`, which collapses nested options on decode. Encoding accepts
- * `null` for `None` and Kit's `some()` and `none()` wrappers to
- * disambiguate nested options (e.g. `some(null)` encodes `Some(None)`).
+ * `null` or `undefined` (e.g. an omitted field) for `None` and Kit's
+ * `some()` and `none()` wrappers to disambiguate nested options (e.g.
+ * `some(null)` encodes `Some(None)`).
  */
 export function getAnchorOptionCodec<TFrom, TTo extends TFrom = TFrom>(
   inner: Codec<TFrom, TTo>
-): Codec<OptionOrNullable<TFrom>, TTo | null> {
-  return combineCodec(
-    getOptionEncoder(inner),
-    transformDecoder(getOptionDecoder(inner), (option) => unwrapOption(option))
+): Codec<OptionOrNullable<TFrom> | undefined, TTo | null> {
+  return transformCodec(
+    getOptionCodec(inner),
+    (value: OptionOrNullable<TFrom> | undefined) => value ?? null,
+    (option) => unwrapOption(option)
   );
 }
 
@@ -72,22 +89,14 @@ export function getAnchorOptionCodec<TFrom, TTo extends TFrom = TFrom>(
  */
 export function getCOptionCodec<TFrom, TTo extends TFrom = TFrom>(
   inner: Codec<TFrom, TTo>
-): Codec<OptionOrNullable<TFrom>, TTo | null> {
+): Codec<OptionOrNullable<TFrom> | undefined, TTo | null> {
   const prefix = getU32Codec();
-  if (isFixedSize(inner)) {
-    return combineCodec(
-      getOptionEncoder(inner, { noneValue: "zeroes", prefix }),
-      transformDecoder(
-        getOptionDecoder(inner, { noneValue: "zeroes", prefix }),
-        (option) => unwrapOption(option)
-      )
-    );
-  }
-  return combineCodec(
-    getOptionEncoder(inner, { prefix }),
-    transformDecoder(getOptionDecoder(inner, { prefix }), (option) =>
-      unwrapOption(option)
-    )
+  return transformCodec(
+    isFixedSize(inner)
+      ? getOptionCodec(inner, { noneValue: "zeroes", prefix })
+      : getOptionCodec(inner, { prefix }),
+    (value: OptionOrNullable<TFrom> | undefined) => value ?? null,
+    (option) => unwrapOption(option)
   );
 }
 
