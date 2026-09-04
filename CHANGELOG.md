@@ -12,6 +12,14 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+### Fixes
+
+### Breaking
+
+## [1.2.0] - 2026-09-04
+
+### Features
+
 - avm: Allow resolving Solana/platform-tools versions from an explicit Anchor version. ([#4799](https://github.com/otter-sec/anchor/pull/4799)).
 - cli: Generate a TypeScript error constants file from the IDL during `anchor build` ([#3827](https://github.com/solana-foundation/anchor/pull/3827)).
 - lang: Always derive `Clone` and `Debug` for generated types in `declare_program!` ([#4723](https://github.com/solana-foundation/anchor/pull/4723)).
