@@ -25,7 +25,7 @@ idl-build = ["anchor-syn/idl-build"]
 lazy-account = ["anchor-lang/lazy-account"]
 
 [dependencies]
-anchor-syn = { workspace = true }
+anchor-syn = { workspace = true, optional = true }
 proc-macro-crate = "3.4.0"
 proc-macro2 = "1"
 quote = "1"
