@@ -16,6 +16,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Breaking
 
+- ts: Replace the borsh coder with `@solana/kit` codecs and remove the `@anchor-lang/borsh` package. Decoded values are now Kit-native: 64-bit and larger integers decode to `bigint`, public keys to `Address` and bytes to `ReadonlyUint8Array` ([#4985](https://github.com/otter-sec/anchor/pull/4985)).
+
 ## [2.0.0-rc.1] - 2026-08-12
 
 ### Features
