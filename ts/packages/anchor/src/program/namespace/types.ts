@@ -169,8 +169,9 @@ export type DecodeType<T extends IdlType, Defined> = IdlType extends T
 
 /**
  * JS type accepted for the given IDL type when encoding, e.g. as an
- * instruction argument. Note that user-defined types (`defined`) currently
- * resolve to their decoded shapes.
+ * instruction argument. Optional values accept `null` and `undefined` for
+ * `None`. Note that user-defined types (`defined`) currently resolve to
+ * their decoded shapes.
  */
 export type EncodeType<T extends IdlType, Defined> = IdlType extends T
   ? unknown
@@ -183,11 +184,13 @@ export type EncodeType<T extends IdlType, Defined> = IdlType extends T
       | EncodeType<T["option"], Defined>
       | Option<EncodeType<T["option"], Defined>>
       | null
+      | undefined
   : T extends { coption: IdlType }
   ?
       | EncodeType<T["coption"], Defined>
       | Option<EncodeType<T["coption"], Defined>>
       | null
+      | undefined
   : T extends { vec: IdlType }
   ? EncodeType<T["vec"], Defined>[]
   : T extends { array: [defined: IdlType, size: IdlArrayLen] }
