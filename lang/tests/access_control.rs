@@ -63,6 +63,16 @@ fn no_checks() -> Result<()> {
     Ok(())
 }
 
+#[access_control(check_key(key))]
+fn arg_forwarded(key: u8) -> Result<()> {
+    Ok(())
+}
+
+#[access_control(check_key(key + 6), check_msg(msg))]
+fn arg_expression(key: u8, msg: &str) -> Result<()> {
+    Ok(())
+}
+
 #[test]
 fn nested_calls_parse() {
     nested_call().unwrap();
@@ -87,4 +97,14 @@ fn failing_check_short_circuits() {
 #[test]
 fn empty_args_compile() {
     no_checks().unwrap();
+}
+
+#[test]
+fn checks_read_fn_args() {
+    arg_forwarded(7).unwrap();
+}
+
+#[test]
+fn checks_take_expressions_over_fn_args() {
+    arg_expression(1, "some message").unwrap();
 }

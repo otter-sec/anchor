@@ -5,10 +5,10 @@ use {
     syn::{parse::Parser, parse_macro_input, punctuated::Punctuated, Expr, Token},
 };
 
-/// Executes the given access control method before running the decorated
+/// Executes the given access control methods before running the decorated
 /// instruction handler. Any method in scope of the attribute can be invoked
-/// with any arguments from the associated instruction handler. Multiple
-/// methods may be provided, separated by commas; they run in order.
+/// with any arguments from the associated instruction handler. Each method
+/// must return `Result<()>`.
 ///
 /// # Example
 ///
@@ -57,6 +57,16 @@ use {
 /// on the `Accounts` struct, particularly when instruction arguments are
 /// needed. Here, we use the given `bump_seed` to verify it creates a valid
 /// program-derived address.
+///
+/// Multiple methods may be provided, separated by commas; they run in order:
+///
+/// ```ignore
+/// #[access_control(is_admin(&ctx), not_paused(&ctx.accounts.config))]
+/// pub fn set_fee(ctx: Context<SetFee>, new_fee: u64) -> Result<()> {
+///     ctx.accounts.config.fee = new_fee;
+///     Ok(())
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn access_control(
     args: proc_macro::TokenStream,
