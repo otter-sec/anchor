@@ -128,8 +128,23 @@ pub fn gen_lazy(strct: &syn::ItemStruct) -> syn::Result<TokenStream> {
 
                     // Deserialize and write
                     let offset = self.#offset_of_ident();
+                    let data = self.__info.data.borrow();
+                    
+                    // Bounds check for offset before calculating size (important for unsized types)
+                    // For unsized types, size_of needs to read from data buffer starting at offset
+                    if offset > data.len() {
+                        return Err(anchor_lang::error::ErrorCode::AccountDidNotDeserialize.into());
+                    }
+                    
+                    drop(data);  // Drop borrow before calling size_of which may borrow data again
                     let size = self.#size_of_ident();
                     let data = self.__info.data.borrow();
+                    
+                    // Bounds check: ensure the field data is within the account buffer
+                    if offset.saturating_add(size) > data.len() {
+                        return Err(anchor_lang::error::ErrorCode::AccountDidNotDeserialize.into());
+                    }
+                    
                     let val = anchor_lang::AnchorDeserialize::try_from_slice(
                         &data[offset..offset + size]
                     )?;
@@ -239,7 +254,13 @@ pub fn gen_lazy(strct: &syn::ItemStruct) -> syn::Result<TokenStream> {
                 if all_uninit {
                     // Nothing is initialized, initialize all
                     let offset = #disc_len;
-                    let mut data = self.__info.data.borrow();
+                    let data = self.__info.data.borrow();
+                    
+                    // Bounds check: ensure there's data after the discriminator
+                    if offset > data.len() {
+                        return Err(anchor_lang::error::ErrorCode::AccountDidNotDeserialize.into());
+                    }
+                    
                     let val = anchor_lang::AnchorDeserialize::deserialize(&mut &data[offset..])?;
                     unsafe { self.__account.borrow_mut().as_mut_ptr().write(val) };
 
