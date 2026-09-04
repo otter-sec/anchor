@@ -36,8 +36,15 @@ const IDL_PATH = path.join("target", "idl", "bench.json");
     .filter((version) => !bench.get(version).disabled);
   const buildEnv = {
     ...process.env,
+    // The benchmark suite runs on a legacy validator that cannot load v3
+    // programs. Keep its artifacts compatible with historical measurements.
+    ANCHOR_BUILD_SBF_ARCH: "v2",
     RUSTC_BOOTSTRAP: "1",
-    RUSTFLAGS: "-Z emit-stack-sizes",
+    CARGO_TARGET_SBF_SOLANA_SOLANA_RUSTFLAGS: "-Z emit-stack-sizes",
+    CARGO_TARGET_SBPF_SOLANA_SOLANA_RUSTFLAGS: "-Z emit-stack-sizes",
+    CARGO_TARGET_SBPFV1_SOLANA_SOLANA_RUSTFLAGS: "-Z emit-stack-sizes",
+    CARGO_TARGET_SBPFV2_SOLANA_SOLANA_RUSTFLAGS: "-Z emit-stack-sizes",
+    CARGO_TARGET_SBPFV3_SOLANA_SOLANA_RUSTFLAGS: "-Z emit-stack-sizes",
   };
 
   const setProjectVersion = async (version: Version) => {
@@ -113,7 +120,9 @@ const IDL_PATH = path.join("target", "idl", "bench.json");
     // The current TypeScript client needs the current IDL format, including
     // when a historical CLI is responsible for starting the validator.
     await fs.rm(IDL_PATH, { force: true });
-    const buildResult = spawn("anchor", ["build", "--skip-lint"]);
+    const buildResult = spawn("anchor", ["build", "--skip-lint"], {
+      env: buildEnv,
+    });
     if (buildResult.status !== 0) {
       throw new Error("Failed to build the current benchmark program.");
     }
