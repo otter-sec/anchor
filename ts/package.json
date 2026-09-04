@@ -6,6 +6,7 @@
     "tests"
   ],
   "resolutions": {
-    "**/@types/node": "^20.19.0"
+    "**/@types/node": "^20.19.0",
+    "**/commander": "^14.0.0"
   }
 }
