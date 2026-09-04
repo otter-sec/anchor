@@ -2187,6 +2187,16 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .into()
         }
     };
+    // Tuple (`struct Foo(u64)`) and unit (`struct Foo;`) structs are rejected outright
+    if !matches!(fields, Fields::Named(_)) {
+        return syn::Error::new(
+            name.span(),
+            "`#[account]` only supports structs with named fields (tuple and unit structs are \
+             not supported)",
+        )
+        .to_compile_error()
+        .into();
+    }
     if is_borsh {
         if let Err(err) = reject_float_fields("`#[account(borsh)]`", fields) {
             return err.to_compile_error().into();
