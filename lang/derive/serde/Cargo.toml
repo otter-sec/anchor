@@ -34,4 +34,4 @@ syn = { workspace = true, features = ["full"] }
 [dev-dependencies]
 # Serialization macros require `anchor-lang` to be available to locate `borsh`
 # This is required for doc testing
-anchor-lang = { workspace = true }
+anchor-lang = { path = "../../" }
