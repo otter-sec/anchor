@@ -2103,6 +2103,57 @@ const _: usize = Slab::<GoodHeader, ()>::space_for(0);
 }
 
 #[test]
+fn podvec_oversized_max_default_does_not_compile() {
+    CompileCase::new(
+        "podvec_oversized_max_default",
+        r#"
+use anchor_lang_v2::pod::{PodU8, PodVec};
+
+// Public item so the lib target monomorphizes Default (private fns may be skipped).
+pub fn force_default() {
+    let _ = PodVec::<PodU8, 70000>::default();
+}
+"#,
+    )
+    .build()
+    .expect_fail(&["MAX must be <= 65_535"]);
+}
+
+#[test]
+fn podvec_oversized_max_capacity_does_not_compile() {
+    CompileCase::new(
+        "podvec_oversized_max_capacity",
+        r#"
+use anchor_lang_v2::pod::{PodU8, PodVec};
+
+// Evaluating CAPACITY forces the MAX <= u16::MAX assert.
+const _: usize = PodVec::<PodU8, 70000>::CAPACITY;
+"#,
+    )
+    .build()
+    .expect_fail(&["MAX must be <= 65_535"]);
+}
+
+#[test]
+fn podvec_oversized_max_account_field_does_not_compile() {
+    CompileCase::new(
+        "podvec_oversized_max_account_field",
+        r#"
+use anchor_lang_v2::prelude::*;
+use anchor_lang_v2::pod::{PodU8, PodVec};
+
+declare_id!("PodVecMax1111111111111111111111111111111111");
+
+#[account]
+pub struct Oversized {
+    pub items: PodVec<PodU8, 70000>,
+}
+"#,
+    )
+    .expect_fail(&["PodVec's length prefix is a u16"]);
+}
+
+#[test]
 fn realloc_on_unchecked_account_does_not_compile() {
     CompileCase::new(
         "realloc_on_unchecked_account",

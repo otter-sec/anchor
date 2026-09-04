@@ -2340,7 +2340,10 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .iter()
                 .filter_map(|field| {
                     let field_name = field.ident.as_ref()?.to_string();
-                    let msg = diagnose_non_pod_field(&field.ty, &field_name, &name_str)?;
+                    let msg = diagnose_non_pod_field(&field.ty, &field_name, &name_str)
+                        .or_else(|| {
+                            diagnose_oversized_pod_vec(&field.ty, &field_name, &name_str)
+                        })?;
                     let cfg_attrs = cfg_attrs(&field.attrs);
                     let span = field.ty.span();
                     Some(quote::quote_spanned!(span=>
@@ -2657,6 +2660,44 @@ fn diagnose_non_pod_field(ty: &Type, field_name: &str, struct_name: &str) -> Opt
         )),
         _ => None,
     }
+}
+
+/// Reject `PodVec<T, MAX>` account fields whose `MAX` exceeds the `PodU16`
+/// length prefix (`u16::MAX`). The inherent `_MAX_FITS_U16` assert only fires
+/// once a method monomorphizes it; catching the literal here fails at
+/// `#[account]` expansion before the type is accepted as a zero-copy field.
+fn diagnose_oversized_pod_vec(ty: &Type, field_name: &str, struct_name: &str) -> Option<String> {
+    let Type::Path(tp) = ty else { return None };
+    let seg = tp.path.segments.last()?;
+    if seg.ident != "PodVec" {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
+        return None;
+    };
+    for arg in &args.args {
+        let syn::GenericArgument::Const(expr) = arg else {
+            continue;
+        };
+        let syn::Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Int(n),
+            ..
+        }) = expr
+        else {
+            continue;
+        };
+        let Ok(val) = n.base10_parse::<u128>() else {
+            continue;
+        };
+        if val > u16::MAX as u128 {
+            return Some(format!(
+                "field `{field_name}` on `#[account] struct {struct_name}` uses \
+                 `PodVec<_, {val}>`, but PodVec's length prefix is a u16 (max 65535). \
+                 Reduce MAX to <= 65535, or use a larger length-prefix wrapper."
+            ));
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
