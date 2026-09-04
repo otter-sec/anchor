@@ -51,7 +51,7 @@ use {
         prelude::BorshAccount,
         testing::AccountBuffer,
         AccountClose, AccountRealloc, AnchorAccount, AnchorDeserialize, AnchorSerialize,
-        Discriminator, Owner,
+        Discriminator, ErrorCode, Owner,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::{account::RuntimeAccount, address::Address},
@@ -141,6 +141,36 @@ fn close_zeros_the_48_byte_header() {
         dest_raw.lamports,
         100 + 1_000_000_000,
         "destination should have received all self lamports"
+    );
+}
+
+#[test]
+fn close_rejects_non_writable_destination() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_vault_buf(&mut buf);
+
+    let dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, false, false);
+    dest_buf.set_lamports(100);
+
+    let view = unsafe { buf.view() };
+    let dest_view = unsafe { dest_buf.view() };
+    let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+
+    let err = vault.close(dest_view).unwrap_err();
+
+    assert_eq!(err, ErrorCode::ConstraintMut.into());
+
+    // Nothing should have moved: the account being closed is untouched.
+    let raw = unsafe { &*(buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        raw.lamports, 1_000_000_000,
+        "rejected close must not drain the account being closed"
+    );
+    let dest_raw = unsafe { &*(dest_buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        dest_raw.lamports, 100,
+        "rejected close must not credit the non-writable destination"
     );
 }
 
@@ -417,6 +447,86 @@ fn slab_close_scrubs_discriminator_to_closed_sentinel() {
         &data[..8],
         &[u8::MAX; 8][..],
         "Slab::close must scrub the discriminator to the closed sentinel"
+    );
+}
+
+#[test]
+fn close_rejects_self_as_destination() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_vault_buf(&mut buf);
+
+    let view = unsafe { buf.view() };
+    // Same account handed in as the close destination.
+    let self_as_dest = unsafe { buf.view() };
+    let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+
+    let err = vault.close(self_as_dest).unwrap_err();
+
+    assert_eq!(err, ErrorCode::ConstraintClose.into());
+
+    // Without the guard, close credits the balance to self and then zeroes it,
+    // burning the lamports. Nothing should have moved.
+    let raw = unsafe { &*(buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        raw.lamports, 1_000_000_000,
+        "rejected self-close must not burn the account's lamports"
+    );
+    assert_ne!(
+        raw.data_len, 0,
+        "rejected self-close must not close the account"
+    );
+}
+
+#[test]
+fn slab_close_rejects_self_as_destination() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf);
+
+    let view = unsafe { buf.view() };
+    let self_as_dest = unsafe { buf.view() };
+    let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
+
+    let err = counter.close(self_as_dest).unwrap_err();
+
+    assert_eq!(err, ErrorCode::ConstraintClose.into());
+
+    let raw = unsafe { &*(buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        raw.lamports, 1_000_000_000,
+        "rejected self-close must not burn the account's lamports"
+    );
+    assert_ne!(
+        raw.data_len, 0,
+        "rejected self-close must not close the account"
+    );
+}
+
+#[test]
+fn slab_close_rejects_non_writable_destination() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf);
+
+    let dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, false, false);
+    dest_buf.set_lamports(100);
+
+    let view = unsafe { buf.view() };
+    let dest_view = unsafe { dest_buf.view() };
+    let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
+
+    let err = counter.close(dest_view).unwrap_err();
+
+    assert_eq!(err, ErrorCode::ConstraintMut.into());
+
+    let raw = unsafe { &*(buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        raw.lamports, 1_000_000_000,
+        "rejected close must not drain the account being closed"
+    );
+    let dest_raw = unsafe { &*(dest_buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        dest_raw.lamports, 100,
+        "rejected close must not credit the non-writable destination"
     );
 }
 

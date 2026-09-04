@@ -31,16 +31,22 @@ pub(super) fn cold_owner_error(view: &AccountView) -> ProgramError {
 /// Whether the runtime account header reflects a completed close.
 #[inline(always)]
 pub(super) fn is_closed(view: &AccountView) -> bool {
-    view.lamports() == 0
-        && view.data_len() == 0
-        && view.owned_by(&crate::programs::System::id())
+    view.lamports() == 0 && view.data_len() == 0 && view.owned_by(&crate::programs::System::id())
 }
 
-/// Error for read-only account passed to `load_mut`.
+/// Error for read-only account passed to `load_mut`, and for a non-writable
+/// `close` destination.
 #[cfg(feature = "guardrails")]
 #[inline(always)]
 pub(super) fn cold_not_writable() -> ProgramError {
     crate::ErrorCode::ConstraintMut.into()
+}
+
+/// Error for a `close` destination that aliases the account being closed.
+#[cfg(feature = "guardrails")]
+#[inline(always)]
+pub(super) fn cold_self_close() -> ProgramError {
+    crate::ErrorCode::ConstraintClose.into()
 }
 
 /// Capacity from live `data_len` / `items_offset` / `item_size`. Returns 0
@@ -834,11 +840,7 @@ where
 
     #[inline(always)]
     fn cpi_handle(&self) -> crate::CpiHandle<'_> {
-        crate::CpiHandle::readonly_with_flags(
-            self.account(),
-            !self.is_mutable,
-            self.is_mutable,
-        )
+        crate::CpiHandle::readonly_with_flags(self.account(), !self.is_mutable, self.is_mutable)
     }
 
     #[inline(always)]
@@ -854,6 +856,18 @@ where
 {
     fn close(&mut self, mut destination: AccountView) -> pinocchio::ProgramResult {
         self.assert_mutable();
+        // Guardrail: catches "forgot `#[account(mut)]`" on the close
+        // destination early with a clear error.
+        #[cfg(feature = "guardrails")]
+        if !destination.is_writable() {
+            return Err(cold_not_writable());
+        }
+        // Guardrail: self-close would credit the lamports and then zero them on
+        // the same account, burning them.
+        #[cfg(feature = "guardrails")]
+        if pinocchio::address::address_eq(destination.address(), self.view.address()) {
+            return Err(cold_self_close());
+        }
         let mut self_view = self.view;
         let dest_lamports = destination
             .lamports()
