@@ -4,7 +4,7 @@
 //! Categories tried in order:
 //!
 //! 1. **Stdlib** — path lies under one of the platform-tools rewrite
-//!    targets (e.g. `~/.cache/solana/v1.52/.../rust/library/`). The crate
+//!    targets (e.g. `~/.cache/solana/v1.57/.../rust/library/`). The crate
 //!    name is the first segment after `library/` (`core`, `alloc`, `std`).
 //! 2. **Cargo registry crate** — path under
 //!    `$CARGO_HOME/registry/src/<index>/<name>-<version>/`.

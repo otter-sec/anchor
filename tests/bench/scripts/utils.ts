@@ -465,7 +465,7 @@ export class Toml {
     cb: (previous: string) => string,
     opts?: { insideQuotes: boolean }
   ) {
-    const valuePattern = opts?.insideQuotes ? '"([^\"]*)"' : "(.*)";
+    const valuePattern = opts?.insideQuotes ? '"([^"]*)"' : "(.*)";
     this.#text = this.#text.replace(
       new RegExp(`(${key}\\s*=\\s*)${valuePattern}`),
       (_line, prefix, value) =>

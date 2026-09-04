@@ -18,95 +18,95 @@ The stack size of the `try_accounts` function is measured.
 
 Solana version: 3.1.10
 
-| Instruction                    | Stack Memory | -   |
-| ------------------------------ | ------------ | --- |
-| account_info1                  | 64           | -   |
-| account_info2                  | 128          | -   |
-| account_info4                  | 448          | -   |
-| account_info8                  | 960          | -   |
-| account_empty_init1            | 448          | -   |
-| account_empty_init2            | 576          | -   |
-| account_empty_init4            | 960          | -   |
-| account_empty_init8            | 1,728        | -   |
-| account_empty1                 | 64           | -   |
-| account_empty2                 | 64           | -   |
-| account_empty4                 | 128          | -   |
-| account_empty8                 | 256          | -   |
-| account_sized_init1            | 448          | -   |
-| account_sized_init2            | 640          | -   |
-| account_sized_init4            | 1,024        | -   |
-| account_sized_init8            | 1,792        | -   |
-| account_sized1                 | 64           | -   |
-| account_sized2                 | 64           | -   |
-| account_sized4                 | 128          | -   |
-| account_sized8                 | 384          | -   |
-| account_unsized_init1          | 448          | -   |
-| account_unsized_init2          | 640          | -   |
-| account_unsized_init4          | 1,088        | -   |
-| account_unsized_init8          | 1,920        | -   |
-| account_unsized1               | 64           | -   |
-| account_unsized2               | 128          | -   |
-| account_unsized4               | 256          | -   |
-| account_unsized8               | 512          | -   |
-| boxed_account_empty_init1      | 448          | -   |
-| boxed_account_empty_init2      | 576          | -   |
-| boxed_account_empty_init4      | 960          | -   |
-| boxed_account_empty_init8      | 1,728        | -   |
-| boxed_account_empty1           | 64           | -   |
-| boxed_account_empty2           | 64           | -   |
-| boxed_account_empty4           | 64           | -   |
-| boxed_account_empty8           | 192          | -   |
-| boxed_account_sized_init1      | 448          | -   |
-| boxed_account_sized_init2      | 576          | -   |
-| boxed_account_sized_init4      | 960          | -   |
-| boxed_account_sized_init8      | 1,728        | -   |
-| boxed_account_sized1           | 64           | -   |
-| boxed_account_sized2           | 64           | -   |
-| boxed_account_sized4           | 64           | -   |
-| boxed_account_sized8           | 192          | -   |
-| boxed_account_unsized_init1    | 448          | -   |
-| boxed_account_unsized_init2    | 576          | -   |
-| boxed_account_unsized_init4    | 960          | -   |
-| boxed_account_unsized_init8    | 1,728        | -   |
-| boxed_account_unsized1         | 64           | -   |
-| boxed_account_unsized2         | 64           | -   |
-| boxed_account_unsized4         | 64           | -   |
-| boxed_account_unsized8         | 192          | -   |
-| boxed_interface_account_mint1  | 128          | -   |
-| boxed_interface_account_mint2  | 128          | -   |
-| boxed_interface_account_mint4  | 192          | -   |
-| boxed_interface_account_mint8  | 320          | -   |
-| boxed_interface_account_token1 | 256          | -   |
-| boxed_interface_account_token2 | 256          | -   |
-| boxed_interface_account_token4 | 256          | -   |
-| boxed_interface_account_token8 | 384          | -   |
-| interface_account_mint1        | 192          | -   |
-| interface_account_mint2        | 320          | -   |
-| interface_account_mint4        | 640          | -   |
-| interface_account_mint8        | 1,408        | -   |
-| interface_account_token1       | 256          | -   |
-| interface_account_token2       | 512          | -   |
-| interface_account_token4       | 1,024        | -   |
-| interface1                     | 64           | -   |
-| interface2                     | 64           | -   |
-| interface4                     | 128          | -   |
-| interface8                     | 256          | -   |
-| program1                       | 64           | -   |
-| program2                       | 64           | -   |
-| program4                       | 128          | -   |
-| program8                       | 256          | -   |
-| signer1                        | 64           | -   |
-| signer2                        | 64           | -   |
-| signer4                        | 128          | -   |
-| signer8                        | 256          | -   |
-| system_account1                | 64           | -   |
-| system_account2                | 64           | -   |
-| system_account4                | 128          | -   |
-| system_account8                | 256          | -   |
-| unchecked_account1             | 64           | -   |
-| unchecked_account2             | 64           | -   |
-| unchecked_account4             | 128          | -   |
-| unchecked_account8             | 256          | -   |
+| Instruction                    | Stack Memory | -                      |
+| ------------------------------ | ------------ | ---------------------- |
+| account_info1                  | 64           | -                      |
+| account_info2                  | 128          | -                      |
+| account_info4                  | 384          | 🟢 **-64 (14.29%)**    |
+| account_info8                  | 960          | -                      |
+| account_empty_init1            | 256          | 🟢 **-192 (42.86%)**   |
+| account_empty_init2            | 320          | 🟢 **-256 (44.44%)**   |
+| account_empty_init4            | 384          | 🟢 **-576 (60.00%)**   |
+| account_empty_init8            | 576          | 🟢 **-1,152 (66.67%)** |
+| account_empty1                 | 64           | -                      |
+| account_empty2                 | 64           | -                      |
+| account_empty4                 | 128          | -                      |
+| account_empty8                 | 192          | 🟢 **-64 (25.00%)**    |
+| account_sized_init1            | 320          | 🟢 **-128 (28.57%)**   |
+| account_sized_init2            | 320          | 🟢 **-320 (50.00%)**   |
+| account_sized_init4            | 448          | 🟢 **-576 (56.25%)**   |
+| account_sized_init8            | 640          | 🟢 **-1,152 (64.29%)** |
+| account_sized1                 | 64           | -                      |
+| account_sized2                 | 64           | -                      |
+| account_sized4                 | 192          | 🔴 **+64 (50.00%)**    |
+| account_sized8                 | 320          | 🟢 **-64 (16.67%)**    |
+| account_unsized_init1          | 320          | 🟢 **-128 (28.57%)**   |
+| account_unsized_init2          | 384          | 🟢 **-256 (40.00%)**   |
+| account_unsized_init4          | 512          | 🟢 **-576 (52.94%)**   |
+| account_unsized_init8          | 768          | 🟢 **-1,152 (60.00%)** |
+| account_unsized1               | 64           | -                      |
+| account_unsized2               | 128          | -                      |
+| account_unsized4               | 256          | -                      |
+| account_unsized8               | 512          | -                      |
+| boxed_account_empty_init1      | 256          | 🟢 **-192 (42.86%)**   |
+| boxed_account_empty_init2      | 320          | 🟢 **-256 (44.44%)**   |
+| boxed_account_empty_init4      | 384          | 🟢 **-576 (60.00%)**   |
+| boxed_account_empty_init8      | 576          | 🟢 **-1,152 (66.67%)** |
+| boxed_account_empty1           | 64           | -                      |
+| boxed_account_empty2           | 64           | -                      |
+| boxed_account_empty4           | 64           | -                      |
+| boxed_account_empty8           | 192          | -                      |
+| boxed_account_sized_init1      | 256          | 🟢 **-192 (42.86%)**   |
+| boxed_account_sized_init2      | 320          | 🟢 **-256 (44.44%)**   |
+| boxed_account_sized_init4      | 384          | 🟢 **-576 (60.00%)**   |
+| boxed_account_sized_init8      | 576          | 🟢 **-1,152 (66.67%)** |
+| boxed_account_sized1           | 64           | -                      |
+| boxed_account_sized2           | 64           | -                      |
+| boxed_account_sized4           | 64           | -                      |
+| boxed_account_sized8           | 192          | -                      |
+| boxed_account_unsized_init1    | 256          | 🟢 **-192 (42.86%)**   |
+| boxed_account_unsized_init2    | 320          | 🟢 **-256 (44.44%)**   |
+| boxed_account_unsized_init4    | 384          | 🟢 **-576 (60.00%)**   |
+| boxed_account_unsized_init8    | 576          | 🟢 **-1,152 (66.67%)** |
+| boxed_account_unsized1         | 64           | -                      |
+| boxed_account_unsized2         | 64           | -                      |
+| boxed_account_unsized4         | 64           | -                      |
+| boxed_account_unsized8         | 192          | -                      |
+| boxed_interface_account_mint1  | 192          | 🔴 **+64 (50.00%)**    |
+| boxed_interface_account_mint2  | 192          | 🔴 **+64 (50.00%)**    |
+| boxed_interface_account_mint4  | 192          | -                      |
+| boxed_interface_account_mint8  | 256          | 🟢 **-64 (20.00%)**    |
+| boxed_interface_account_token1 | 256          | -                      |
+| boxed_interface_account_token2 | 256          | -                      |
+| boxed_interface_account_token4 | 256          | -                      |
+| boxed_interface_account_token8 | 384          | -                      |
+| interface_account_mint1        | 192          | -                      |
+| interface_account_mint2        | 320          | -                      |
+| interface_account_mint4        | 704          | 🔴 **+64 (10.00%)**    |
+| interface_account_mint8        | 1,344        | 🟢 **-64 (4.55%)**     |
+| interface_account_token1       | 256          | -                      |
+| interface_account_token2       | 512          | -                      |
+| interface_account_token4       | 1,024        | -                      |
+| interface1                     | 64           | -                      |
+| interface2                     | 64           | -                      |
+| interface4                     | 128          | -                      |
+| interface8                     | 192          | 🟢 **-64 (25.00%)**    |
+| program1                       | 64           | -                      |
+| program2                       | 64           | -                      |
+| program4                       | 128          | -                      |
+| program8                       | 192          | 🟢 **-64 (25.00%)**    |
+| signer1                        | 64           | -                      |
+| signer2                        | 64           | -                      |
+| signer4                        | 128          | -                      |
+| signer8                        | 192          | 🟢 **-64 (25.00%)**    |
+| system_account1                | 64           | -                      |
+| system_account2                | 64           | -                      |
+| system_account4                | 128          | -                      |
+| system_account8                | 192          | 🟢 **-64 (25.00%)**    |
+| unchecked_account1             | 64           | -                      |
+| unchecked_account2             | 64           | -                      |
+| unchecked_account4             | 64           | 🟢 **-64 (50.00%)**    |
+| unchecked_account8             | 64           | 🟢 **-192 (75.00%)**   |
 
 ### Notable changes
 

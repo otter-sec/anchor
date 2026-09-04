@@ -145,7 +145,7 @@ pub enum PlatformToolsCommand {
     /// Install a platform-tools version. With no argument, installs the
     /// project-resolved version.
     Install {
-        /// Platform-tools version, e.g. `v1.54` (the leading `v` is optional).
+        /// Platform-tools version, e.g. `v1.57` (the leading `v` is optional).
         version: Option<String>,
         /// Re-download and replace an existing install.
         #[clap(long)]
@@ -155,7 +155,7 @@ pub enum PlatformToolsCommand {
     List,
     /// Remove an installed platform-tools version.
     Uninstall {
-        /// Platform-tools version to remove, e.g. `v1.54`.
+        /// Platform-tools version to remove, e.g. `v1.57`.
         version: String,
     },
 }
