@@ -110,16 +110,16 @@ fn gen_cpi_instructions(idl: &Idl) -> proc_macro2::TokenStream {
 
 fn gen_cpi_return_type() -> proc_macro2::TokenStream {
     quote! {
-        #[derive(Debug, Clone, Copy)]
+        #[derive(Debug, Clone)]
         pub struct Return<T> {
             phantom: ::std::marker::PhantomData<T>,
             program_id: anchor_lang::solana_program::pubkey::Pubkey,
-            return_data: anchor_lang::__private::CpiReturnData,
+            return_data: Option<anchor_lang::__private::CpiReturnData>,
         }
 
         impl<T: AnchorDeserialize> Return<T> {
             pub fn get(&self) -> T {
-                self.return_data.get(self.program_id)
+                self.return_data.as_ref().unwrap().get(self.program_id)
             }
 
             /// Read return data without validating the program_id.
