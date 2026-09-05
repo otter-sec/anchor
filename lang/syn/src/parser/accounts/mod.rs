@@ -430,8 +430,14 @@ pub fn parse_account_field(f: &syn::Field) -> ParseResult<AccountField> {
 }
 
 fn is_field_primitive(f: &syn::Field) -> ParseResult<bool> {
+    let (ident, _, _) = ident_string(f)?;
+    let segments: Vec<&str> = ident.split("::").collect();
+    if segments.len() > 1 && segments.first() != Some(&"anchor_lang") {
+        return Ok(false);
+    }
+    let last_ident = segments.last().copied().unwrap_or(&ident);
     let r = matches!(
-        ident_string(f)?.0.as_str(),
+        last_ident,
         "Sysvar"
             | "AccountInfo"
             | "UncheckedAccount"
@@ -451,7 +457,12 @@ fn is_field_primitive(f: &syn::Field) -> ParseResult<bool> {
 
 fn parse_ty(f: &syn::Field) -> ParseResult<(Ty, bool)> {
     let (ident, optional, path) = ident_string(f)?;
-    let ty = match ident.as_str() {
+    let segments: Vec<&str> = ident.split("::").collect();
+    if segments.len() > 1 && segments.first() != Some(&"anchor_lang") {
+        return Err(ParseError::new(f.ty.span(), "invalid account type given"));
+    }
+    let last_ident = segments.last().copied().unwrap_or(&ident);
+    let ty = match last_ident {
         "Sysvar" => Ty::Sysvar(parse_sysvar(&path)?),
         "AccountInfo" => Ty::AccountInfo,
         "UncheckedAccount" => Ty::UncheckedAccount,
@@ -529,19 +540,15 @@ fn ident_string(f: &syn::Field) -> ParseResult<(String, bool, Path)> {
     {
         return Ok(("InterfaceAccount".to_string(), optional, path));
     }
-    // TODO: allow segmented paths.
-    if path.segments.len() != 1 {
-        return Err(ParseError::new(
-            f.ty.span(),
-            "segmented paths are not currently allowed",
-        ));
+    let mut path_no_args = path.clone();
+    for s in &mut path_no_args.segments {
+        s.arguments = syn::PathArguments::None;
     }
-
-    let segments = path
-        .segments
-        .first()
-        .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?;
-    Ok((segments.ident.to_string(), optional, path))
+    Ok((
+        parser::tts_to_string(&path_no_args).replace(' ', ""),
+        optional,
+        path,
+    ))
 }
 
 fn parse_program_account_loader(path: &syn::Path) -> ParseResult<AccountLoaderTy> {
@@ -571,7 +578,7 @@ fn parse_migration_ty(path: &syn::Path) -> ParseResult<MigrationTy> {
     // Migration<'info, From, To>
     let segments = path
         .segments
-        .first()
+        .last()
         .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?;
     match &segments.arguments {
         syn::PathArguments::AngleBracketed(args) => {
@@ -636,7 +643,7 @@ fn parse_interface_ty(path: &syn::Path) -> ParseResult<InterfaceTy> {
 fn parse_program_account(path: &syn::Path) -> ParseResult<syn::TypePath> {
     let segments = path
         .segments
-        .first()
+        .last()
         .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?;
     match &segments.arguments {
         syn::PathArguments::AngleBracketed(args) => {
@@ -694,7 +701,7 @@ fn parse_account(mut path: &syn::Path) -> ParseResult<syn::TypePath> {
     if path_str.starts_with("Box<Account<") || path_str.starts_with("Box<InterfaceAccount<") {
         let segments = path
             .segments
-            .first()
+            .last()
             .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?;
         match &segments.arguments {
             syn::PathArguments::AngleBracketed(args) => {
@@ -732,7 +739,7 @@ fn parse_account(mut path: &syn::Path) -> ParseResult<syn::TypePath> {
 
     let segments = path
         .segments
-        .first()
+        .last()
         .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?;
     match &segments.arguments {
         syn::PathArguments::AngleBracketed(args) => {
@@ -765,7 +772,7 @@ fn parse_account(mut path: &syn::Path) -> ParseResult<syn::TypePath> {
 fn parse_sysvar(path: &syn::Path) -> ParseResult<SysvarTy> {
     let segments = path
         .segments
-        .first()
+        .last()
         .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?;
     let account_ident = match &segments.arguments {
         syn::PathArguments::AngleBracketed(args) => {
@@ -789,7 +796,7 @@ fn parse_sysvar(path: &syn::Path) -> ParseResult<SysvarTy> {
                             "segmented paths are not currently allowed",
                         ));
                     }
-                    let path_segment = ty_path.path.segments.first().ok_or_else(|| {
+                    let path_segment = ty_path.path.segments.last().ok_or_else(|| {
                         ParseError::new(ty_path.path.span(), "expected a path segment")
                     })?;
                     path_segment.ident.clone()
