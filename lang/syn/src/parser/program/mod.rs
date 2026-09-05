@@ -85,14 +85,36 @@ fn function_type(method: &syn::ItemFn) -> FunctionType {
     }
 }
 
-fn ctx_accounts_ident(path_ty: &syn::PatType) -> ParseResult<proc_macro2::Ident> {
+impl crate::Ix {
+    /// Path to the struct deriving `Accounts`, as written in `Context<...>`,
+    /// normalized to be relative to the crate root.
+    ///
+    /// Recomputed from `raw_method` instead of being stored as a field so that
+    /// `Ix` remains constructible with the same fields as before.
+    pub(crate) fn anchor_path(&self) -> syn::Path {
+        #[allow(
+            clippy::expect_used,
+            reason = "the instruction was validated when the program was parsed"
+        )]
+        let (ctx, _) = instructions::parse_args(&self.raw_method)
+            .expect("`Ix::raw_method` has a `Context<...>` argument");
+        #[allow(
+            clippy::expect_used,
+            reason = "the instruction was validated when the program was parsed"
+        )]
+        ctx_accounts_path(&ctx.raw_arg)
+            .expect("`Ix::raw_method` has a valid `Context<...>` accounts path")
+    }
+}
+
+fn ctx_accounts_path(path_ty: &syn::PatType) -> ParseResult<syn::Path> {
     let p = match &*path_ty.ty {
         syn::Type::Path(p) => &p.path,
         _ => return Err(ParseError::new(path_ty.ty.span(), "invalid type")),
     };
     let segment = p
         .segments
-        .first()
+        .last()
         .ok_or_else(|| ParseError::new(p.segments.span(), "expected generic arguments here"))?;
 
     let generic_args = match &segment.arguments {
@@ -118,10 +140,91 @@ fn ctx_accounts_ident(path_ty: &syn::PatType) -> ParseResult<proc_macro2::Ident>
             ));
         }
     };
-    Ok(path
+    if path.leading_colon.is_some() {
+        return Err(ParseError::new(
+            path.span(),
+            "paths with a leading `::` are not supported in `Context<...>`; use a path relative \
+             to the crate root",
+        ));
+    }
+
+    // Strip generic arguments (e.g. `Foo<'info>`) from all segments so the
+    // path can be interpolated in non-generic positions (e.g.
+    // `#path::try_accounts`), and strip a leading `crate` segment so the path
+    // is always relative to the crate root.
+    let mut segments = path
         .segments
+        .iter()
+        .map(|segment| syn::PathSegment::from(segment.ident.clone()))
+        .collect::<Vec<_>>();
+    if segments
         .first()
-        .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?
-        .ident
-        .clone())
+        .is_some_and(|segment| segment.ident == "crate")
+    {
+        segments.remove(0);
+    }
+    if segments.iter().any(|segment| {
+        segment.ident == "self" || segment.ident == "super" || segment.ident == "crate"
+    }) {
+        return Err(ParseError::new(
+            path.span(),
+            "`self` and `super` are not supported in `Context<...>` accounts paths; use a path \
+             relative to the crate root",
+        ));
+    }
+    if segments.is_empty() {
+        return Err(ParseError::new(path.span(), "expected a path segment"));
+    }
+
+    Ok(syn::Path {
+        leading_colon: None,
+        segments: segments.into_iter().collect(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn anchor_path_is_normalized_relative_to_the_crate_root() {
+        let program = syn::parse_str::<crate::Program>(
+            r#"
+            pub mod example {
+                pub fn init(ctx: Context<instructions::init::Init>) -> Result<()> {
+                    Ok(())
+                }
+
+                pub fn update(ctx: Context<crate::instructions::Update<'info>>) -> Result<()> {
+                    Ok(())
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let segments = |path: &syn::Path| {
+            path.segments
+                .iter()
+                .map(|segment| segment.ident.to_string())
+                .collect::<Vec<_>>()
+        };
+
+        let mut ixs = program.ixs.iter();
+
+        let init = ixs.next().unwrap();
+        assert_eq!(init.anchor_ident, "Init");
+        assert_eq!(
+            segments(&init.anchor_path()),
+            ["instructions", "init", "Init"]
+        );
+
+        // A leading `crate` segment and generic arguments are stripped.
+        let update = ixs.next().unwrap();
+        assert_eq!(update.anchor_ident, "Update");
+        let update_path = update.anchor_path();
+        assert_eq!(segments(&update_path), ["instructions", "Update"]);
+        assert!(update_path
+            .segments
+            .iter()
+            .all(|segment| segment.arguments.is_none()));
+    }
 }

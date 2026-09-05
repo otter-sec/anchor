@@ -1,9 +1,10 @@
 use {
     crate::{
-        codegen::program::common::{generate_ix_variant, generate_ix_variant_name},
+        codegen::program::common::{
+            generate_ix_variant, generate_ix_variant_name, generated_accounts_mod_path,
+        },
         Program,
     },
-    heck::SnakeCase,
     quote::{quote, ToTokens},
 };
 
@@ -129,28 +130,17 @@ pub fn generate_accounts(program: &Program) -> proc_macro2::TokenStream {
 
     // Go through instruction accounts.
     for ix in &program.ixs {
-        let anchor_ident = &ix.anchor_ident;
-        // TODO: move to fn and share with accounts.rs.
-        let macro_name = format!(
-            "__cpi_client_accounts_{}",
-            anchor_ident.to_string().to_snake_case()
-        );
-        let cfgs = &ix.cfgs;
-        accounts.insert(macro_name, cfgs.as_slice());
+        let mod_path = generated_accounts_mod_path(&ix.anchor_path(), "__cpi_client_accounts_");
+        accounts.insert(mod_path, ix.cfgs.as_slice());
     }
 
     // Build the tokens from all accounts
     let account_structs: Vec<proc_macro2::TokenStream> = accounts
         .iter()
-        .map(|(macro_name, cfgs)| {
-            #[allow(
-                clippy::unwrap_used,
-                reason = "computed from valid Rust identifier via snake_case"
-            )]
-            let macro_name: proc_macro2::TokenStream = macro_name.parse().unwrap();
+        .map(|(mod_path, cfgs)| {
             quote! {
                 #(#cfgs)*
-                pub use crate::#macro_name::*;
+                pub use #mod_path::*;
             }
         })
         .collect();
