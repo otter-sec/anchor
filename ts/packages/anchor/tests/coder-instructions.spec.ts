@@ -1,5 +1,7 @@
 import * as assert from "assert";
 import BN from "bn.js";
+import { PublicKey } from "@solana/web3.js";
+import { Buffer } from "buffer";
 import { BorshCoder } from "../src";
 import { Idl, IdlType } from "../src/idl";
 import { toInstruction } from "../src/program/common";
@@ -660,5 +662,47 @@ describe("coder.instructions", () => {
     );
     assert.strictEqual(decoded?.data["wrapper"].Fields.someArg, null);
     assert.ok(decoded?.data["wrapper"].Fields.someArg2.eq(new BN(0x3030)));
+  });
+
+  test("encodes instruction arguments larger than 1000 bytes without truncation", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "test",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [
+        {
+          name: "initialize",
+          discriminator: [0, 1, 2, 3, 4, 5, 6, 7],
+          accounts: [],
+          args: [
+            {
+              name: "keys",
+              type: {
+                vec: "pubkey",
+              },
+            },
+          ],
+        },
+      ],
+      types: [],
+    };
+
+    const idlIx = idl.instructions[0];
+    const coder = new BorshCoder(idl);
+
+    // 32 public keys serialize to 4 + 32*32 = 1028 bytes, exceeding the
+    // encoder's default 1000-byte scratch buffer.
+    const keys = Array.from({ length: 32 }, (_, i) =>
+      new PublicKey(Buffer.alloc(32, i))
+    );
+
+    const encoded = coder.instruction.encode(idlIx.name, { keys });
+    const decoded = coder.instruction.decode(encoded);
+
+    assert.strictEqual(encoded.length, 8 + 4 + 32 * 32);
+    assert.deepStrictEqual(decoded?.data["keys"], keys);
   });
 });
