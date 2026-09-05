@@ -1,6 +1,6 @@
 use {
     crate::{codegen::program::common::*, parser, Program},
-    heck::CamelCase,
+    heck::ToUpperCamelCase,
     quote::{quote, quote_spanned, ToTokens},
     syn::Type,
 };
@@ -73,7 +73,8 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
         .map(|ix| {
             let name = &ix.raw_method.sig.ident.to_string();
             let ix_cfgs = &ix.cfgs;
-            let Ok(ix_name_camel) = syn::parse_str::<syn::Ident>(&name.to_camel_case()) else {
+            let Ok(ix_name_camel) = syn::parse_str::<syn::Ident>(&name.to_upper_camel_case())
+            else {
                 return quote_spanned! { ix.raw_method.sig.ident.span()=>
                     compile_error!("failed to parse ix method name after conversion to camelCase");
                 };

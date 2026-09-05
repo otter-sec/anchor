@@ -3,7 +3,7 @@ use {
         codegen::program::common::{generate_ix_variant, generate_ix_variant_name},
         Program,
     },
-    heck::SnakeCase,
+    heck::ToSnakeCase,
     quote::{quote, ToTokens},
 };
 

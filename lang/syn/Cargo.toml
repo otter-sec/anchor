@@ -30,7 +30,7 @@ bs58 = "0.5"
 
 # `idl-build` feature only
 cargo_toml = { workspace = true, optional = true }
-heck = "0.3"
+heck = { workspace = true }
 # `Span::local_file` required by the `idl-build` feature was stabilized in `1.0.100`
 proc-macro2 = { version = "1.0.100", features = ["span-locations"] }
 quote = "1"
