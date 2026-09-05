@@ -67,18 +67,18 @@ pub fn gen_lazy(input: proc_macro::TokenStream) -> syn::Result<proc_macro2::Toke
 }
 
 fn sum_fields(fields: &Fields) -> proc_macro2::TokenStream {
-    let names = fields
-        .iter()
-        .enumerate()
-        .map(|(i, _)| format_ident!("s{i}"))
-        .collect::<Vec<_>>();
-    let declarations = fields.iter().enumerate().map(|(i, field)| {
+    let mut names = Vec::new();
+    let mut declarations = Vec::new();
+
+    for (i, field) in fields.iter().enumerate() {
         let ty = &field.ty;
-        let name = &names[i];
-        let sum = &names[..i];
+        let name = format_ident!("s{i}");
+        let sum = names.clone();
         let buf = quote! { &buf[0 #(+ #sum)*..] };
-        quote! { let #name = <#ty as anchor_lang::__private::Lazy>::size_of(#buf) }
-    });
+        declarations
+            .push(quote! { let #name = <#ty as anchor_lang::__private::Lazy>::size_of(#buf) });
+        names.push(name);
+    }
 
     quote! {
        #(#declarations;)*
