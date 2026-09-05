@@ -381,6 +381,71 @@ describe("coder.types", () => {
     );
   });
 
+  test("Throws when decoding an invalid option tag", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "basic_0",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [],
+      types: [
+        {
+          name: "OptionTest",
+          type: {
+            kind: "struct",
+            fields: [{ name: "maybe", type: { option: "u8" } }],
+          },
+        },
+        {
+          name: "COptionFixedTest",
+          type: {
+            kind: "struct",
+            fields: [{ name: "maybe", type: { coption: "u64" } }],
+          },
+        },
+        {
+          name: "COptionVariableTest",
+          type: {
+            kind: "struct",
+            fields: [{ name: "maybe", type: { coption: "string" } }],
+          },
+        },
+      ],
+    };
+
+    const coder = new BorshCoder(idl);
+
+    // Tags 0 and 1 still round-trip.
+    assert.deepStrictEqual(coder.types.decode("OptionTest", Buffer.from([0])), {
+      maybe: null,
+    });
+    assert.deepStrictEqual(
+      coder.types.decode("OptionTest", Buffer.from([1, 5])),
+      { maybe: 5 }
+    );
+
+    // Kit would decode any other tag as None; borsh rejects it.
+    assert.throws(
+      () => coder.types.decode("OptionTest", Buffer.from([2, 5])),
+      /Invalid option tag: 2/
+    );
+    assert.throws(
+      () =>
+        coder.types.decode(
+          "COptionFixedTest",
+          Buffer.from([2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        ),
+      /Invalid option tag: 2/
+    );
+    assert.throws(
+      () =>
+        coder.types.decode("COptionVariableTest", Buffer.from([2, 0, 0, 0])),
+      /Invalid option tag: 2/
+    );
+  });
+
   test("Accepts public keys from duplicate web3.js installs", () => {
     const idl: Idl = {
       address: "Test111111111111111111111111111111111111111",

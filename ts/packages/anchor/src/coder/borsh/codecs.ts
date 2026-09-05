@@ -60,7 +60,28 @@ export function getBoolCodec(): FixedSizeCodec<boolean, boolean, 1> {
 }
 
 /**
+ * Option tag codec: the given number codec, except that decoding a tag other
+ * than 0 or 1 throws. Kit's option codec treats any tag other than 1 as
+ * `None`; borsh deserialization (and v1) reject it.
+ */
+function getOptionPrefixCodec<TSize extends number>(
+  prefix: FixedSizeCodec<bigint | number, number, TSize>
+): FixedSizeCodec<bigint | number, number, TSize> {
+  return transformCodec(
+    prefix,
+    (tag: bigint | number) => tag,
+    (tag) => {
+      if (tag !== 0 && tag !== 1) {
+        throw new Error(`Invalid option tag: ${tag}`);
+      }
+      return tag;
+    }
+  );
+}
+
+/**
  * Borsh `Option<T>`: u8 tag (0 = None, 1 = Some) followed by the payload.
+ * Decoding any other tag throws, matching Rust borsh deserialization.
  *
  * This is Kit's option codec with the decoded `Option<T>` unwrapped to
  * `T | null`, which collapses nested options on decode. Encoding accepts
@@ -72,7 +93,7 @@ export function getAnchorOptionCodec<TFrom, TTo extends TFrom = TFrom>(
   inner: Codec<TFrom, TTo>
 ): Codec<OptionOrNullable<TFrom> | undefined, TTo | null> {
   return transformCodec(
-    getOptionCodec(inner),
+    getOptionCodec(inner, { prefix: getOptionPrefixCodec(getU8Codec()) }),
     (value: OptionOrNullable<TFrom> | undefined) => value ?? null,
     (option) => unwrapOption(option)
   );
@@ -83,14 +104,14 @@ export function getAnchorOptionCodec<TFrom, TTo extends TFrom = TFrom>(
  * payload. Used by native Solana account layouts (e.g. SPL Mint/Account)
  * and by programs that want wire compatibility with them. For fixed-size
  * inners, `None` values still occupy the payload slot (zero-filled) so
- * downstream offsets line up.
+ * downstream offsets line up. Decoding any other tag throws.
  *
  * Inputs and outputs behave like {@link getAnchorOptionCodec}.
  */
 export function getCOptionCodec<TFrom, TTo extends TFrom = TFrom>(
   inner: Codec<TFrom, TTo>
 ): Codec<OptionOrNullable<TFrom> | undefined, TTo | null> {
-  const prefix = getU32Codec();
+  const prefix = getOptionPrefixCodec(getU32Codec());
   return transformCodec(
     isFixedSize(inner)
       ? getOptionCodec(inner, { noneValue: "zeroes", prefix })
