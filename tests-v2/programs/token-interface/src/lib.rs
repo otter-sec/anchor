@@ -99,7 +99,7 @@ pub mod token_interface_test {
 
 #[derive(Accounts)]
 pub struct CheckTokenProgram {
-    pub token_program: Interface<'static, TokenInterface>,
+    pub token_program: Interface<TokenInterface>,
 }
 
 #[derive(Accounts)]
@@ -107,7 +107,7 @@ pub struct InitInterfaceMint {
     #[account(mut)]
     pub payer: Signer,
     pub authority: UncheckedAccount,
-    pub token_program: Interface<'static, TokenInterface>,
+    pub token_program: Interface<TokenInterface>,
     #[account(
         init,
         payer = payer,
@@ -124,7 +124,7 @@ pub struct InitInterfaceMintPda {
     #[account(mut)]
     pub payer: Signer,
     pub authority: UncheckedAccount,
-    pub token_program: Interface<'static, TokenInterface>,
+    pub token_program: Interface<TokenInterface>,
     #[account(
         init,
         payer = payer,
@@ -144,7 +144,7 @@ pub struct InitInterfaceTokenAccount {
     pub payer: Signer,
     pub mint: InterfaceAccount<Mint>,
     pub authority: UncheckedAccount,
-    pub token_program: Interface<'static, TokenInterface>,
+    pub token_program: Interface<TokenInterface>,
     #[account(
         init,
         payer = payer,
@@ -162,7 +162,7 @@ pub struct InitInterfaceTokenAccountPda {
     pub payer: Signer,
     pub mint: InterfaceAccount<Mint>,
     pub authority: UncheckedAccount,
-    pub token_program: Interface<'static, TokenInterface>,
+    pub token_program: Interface<TokenInterface>,
     #[account(
         init,
         payer = payer,
@@ -184,7 +184,7 @@ pub struct InitInterfaceTokenAccountPda {
 pub struct CheckInterfaceTokenConstraints {
     pub mint: InterfaceAccount<Mint>,
     pub authority: UncheckedAccount,
-    pub token_program: Interface<'static, TokenInterface>,
+    pub token_program: Interface<TokenInterface>,
     #[account(
         token::mint = mint,
         token::authority = authority,
@@ -196,7 +196,7 @@ pub struct CheckInterfaceTokenConstraints {
 #[derive(Accounts)]
 pub struct CheckInterfaceMintConstraints {
     pub authority: UncheckedAccount,
-    pub token_program: Interface<'static, TokenInterface>,
+    pub token_program: Interface<TokenInterface>,
     #[account(
         mint::decimals = 6,
         mint::authority = authority,
@@ -212,7 +212,7 @@ pub struct MintToInterfaceAccount {
     #[account(mut, token::mint = mint, token::token_program = token_program)]
     pub to: InterfaceAccount<TokenAccount>,
     pub authority: Signer,
-    pub token_program: Interface<'static, TokenInterface>,
+    pub token_program: Interface<TokenInterface>,
 }
 
 #[derive(Accounts)]
@@ -220,7 +220,7 @@ pub struct InitInterfaceMintDecimals9 {
     #[account(mut)]
     pub payer: Signer,
     pub authority: UncheckedAccount,
-    pub token_program: Interface<'static, TokenInterface>,
+    pub token_program: Interface<TokenInterface>,
     #[account(
         init,
         payer = payer,
@@ -238,7 +238,7 @@ pub struct InitInterfaceMintWithFreezeAuthority {
     pub payer: Signer,
     pub authority: UncheckedAccount,
     pub freeze_authority: UncheckedAccount,
-    pub token_program: Interface<'static, TokenInterface>,
+    pub token_program: Interface<TokenInterface>,
     #[account(
         init,
         payer = payer,

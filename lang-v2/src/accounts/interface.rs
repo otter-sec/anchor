@@ -6,12 +6,12 @@ use {
 };
 
 /// Program account wrapper that accepts any address declared by `T::ids()`.
-pub struct Interface<'info, T: Ids> {
+pub struct Interface<T: Ids> {
     view: AccountView,
-    _phantom: PhantomData<&'info T>,
+    _phantom: PhantomData<T>,
 }
 
-impl<T: Ids> Interface<'_, T> {
+impl<T: Ids> Interface<T> {
     /// Returns the account's address.
     #[inline(always)]
     pub fn address(&self) -> &Address {
@@ -19,7 +19,7 @@ impl<T: Ids> Interface<'_, T> {
     }
 }
 
-impl<T: Ids> AnchorAccount for Interface<'_, T> {
+impl<T: Ids> AnchorAccount for Interface<T> {
     type Data = AccountView;
 
     #[inline(always)]
@@ -44,7 +44,7 @@ impl<T: Ids> AnchorAccount for Interface<'_, T> {
     }
 }
 
-impl<T: Ids> Deref for Interface<'_, T> {
+impl<T: Ids> Deref for Interface<T> {
     type Target = AccountView;
 
     #[inline(always)]
@@ -53,28 +53,28 @@ impl<T: Ids> Deref for Interface<'_, T> {
     }
 }
 
-impl<T: Ids> AsRef<AccountView> for Interface<'_, T> {
+impl<T: Ids> AsRef<AccountView> for Interface<T> {
     #[inline(always)]
     fn as_ref(&self) -> &AccountView {
         &self.view
     }
 }
 
-impl<T: Ids> AsRef<Address> for Interface<'_, T> {
+impl<T: Ids> AsRef<Address> for Interface<T> {
     #[inline(always)]
     fn as_ref(&self) -> &Address {
         self.view.address()
     }
 }
 
-impl<T: Ids> crate::ToCpiHandle for Interface<'_, T> {
+impl<T: Ids> crate::ToCpiHandle for Interface<T> {
     #[inline(always)]
     fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
         crate::AnchorAccount::cpi_handle(self)
     }
 }
 
-impl<T: Ids> crate::ToCpiHandleMut for Interface<'_, T> {
+impl<T: Ids> crate::ToCpiHandleMut for Interface<T> {
     #[inline(always)]
     fn try_to_cpi_handle_mut(
         &mut self,
@@ -84,4 +84,4 @@ impl<T: Ids> crate::ToCpiHandleMut for Interface<'_, T> {
 }
 
 #[doc(hidden)]
-impl<T: Ids> crate::IdlAccountType for Interface<'_, T> {}
+impl<T: Ids> crate::IdlAccountType for Interface<T> {}
