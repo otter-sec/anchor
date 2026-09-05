@@ -1,7 +1,7 @@
 import { Buffer } from "buffer";
-import { Layout } from "buffer-layout";
 import { Idl } from "../../idl.js";
 import { IdlCoder } from "./idl.js";
+import { IdlCodec } from "./codecs.js";
 import { TypesCoder } from "../index.js";
 
 /**
@@ -9,42 +9,39 @@ import { TypesCoder } from "../index.js";
  */
 export class BorshTypesCoder<N extends string = string> implements TypesCoder {
   /**
-   * Maps type name to a layout.
+   * Maps type name to a codec.
    */
-  private typeLayouts: Map<N, Layout>;
+  private typeCodecs: Map<N, IdlCodec>;
 
   public constructor(idl: Idl) {
     const types = idl.types;
     if (!types) {
-      this.typeLayouts = new Map();
+      this.typeCodecs = new Map();
       return;
     }
 
-    const layouts: [N, Layout][] = types
+    const codecs: [N, IdlCodec][] = types
       .filter((ty) => !ty.generics)
       .map((ty) => [
         ty.name as N,
-        IdlCoder.typeDefLayout({ typeDef: ty, types }),
+        IdlCoder.typeDefCodec({ typeDef: ty, types }),
       ]);
-    this.typeLayouts = new Map(layouts);
+    this.typeCodecs = new Map(codecs);
   }
 
   public encode<T = any>(name: N, type: T): Buffer {
-    const buffer = Buffer.alloc(1000); // TODO: use a tighter buffer.
-    const layout = this.typeLayouts.get(name);
-    if (!layout) {
+    const codec = this.typeCodecs.get(name);
+    if (!codec) {
       throw new Error(`Unknown type: ${name}`);
     }
-    const len = layout.encode(type, buffer);
-
-    return buffer.slice(0, len);
+    return Buffer.from(codec.encode(type) as Uint8Array);
   }
 
   public decode<T = any>(name: N, data: Buffer): T {
-    const layout = this.typeLayouts.get(name);
-    if (!layout) {
+    const codec = this.typeCodecs.get(name);
+    if (!codec) {
       throw new Error(`Unknown type: ${name}`);
     }
-    return layout.decode(data);
+    return codec.decode(data) as T;
   }
 }

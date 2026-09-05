@@ -1,5 +1,5 @@
 import { PublicKey } from "@solana/web3.js";
-import BN from "bn.js";
+import { Address, Option, ReadonlyUint8Array } from "@solana/kit";
 import {
   Idl,
   IdlInstructionAccounts as IdlInstructionAccounts,
@@ -120,21 +120,41 @@ export type MethodsFn<
   Ret
 > = (...args: ArgsTuple<I["args"], IdlTypes<IDL>>) => Ret;
 
-type TypeMap = {
-  pubkey: PublicKey;
+/**
+ * JS representations of decoded IDL values. These are Kit-native: `Address`
+ * (base58 string) for public keys and `bigint` for 64-bit+ integers.
+ */
+type DecodedTypeMap = {
+  pubkey: Address;
   bool: boolean;
   string: string;
-  bytes: Buffer;
+  bytes: ReadonlyUint8Array;
 } & {
   [K in "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "f32" | "f64"]: number;
 } & {
-  [K in "u64" | "i64" | "u128" | "i128" | "u256" | "i256"]: BN;
+  [K in "u64" | "i64" | "u128" | "i128" | "u256" | "i256"]: bigint;
+};
+
+/**
+ * JS representations accepted when encoding IDL values, e.g. as instruction
+ * arguments. These mirror Kit's `TFrom` codec inputs: slightly looser than
+ * {@link DecodedTypeMap}, plus `PublicKey` for public keys.
+ */
+type EncodedTypeMap = {
+  pubkey: Address | PublicKey;
+  bool: boolean;
+  string: string;
+  bytes: Uint8Array;
+} & {
+  [K in "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "f32" | "f64"]: number;
+} & {
+  [K in "u64" | "i64" | "u128" | "i128" | "u256" | "i256"]: bigint | number;
 };
 
 export type DecodeType<T extends IdlType, Defined> = IdlType extends T
   ? unknown
-  : T extends keyof TypeMap
-  ? TypeMap[T]
+  : T extends keyof DecodedTypeMap
+  ? DecodedTypeMap[T]
   : T extends { defined: { name: keyof Defined } }
   ? Defined[T["defined"]["name"]]
   : T extends { option: IdlType }
@@ -148,11 +168,41 @@ export type DecodeType<T extends IdlType, Defined> = IdlType extends T
   : unknown;
 
 /**
+ * JS type accepted for the given IDL type when encoding, e.g. as an
+ * instruction argument. Optional values accept `null` and `undefined` for
+ * `None`. Note that user-defined types (`defined`) currently resolve to
+ * their decoded shapes.
+ */
+export type EncodeType<T extends IdlType, Defined> = IdlType extends T
+  ? unknown
+  : T extends keyof EncodedTypeMap
+  ? EncodedTypeMap[T]
+  : T extends { defined: { name: keyof Defined } }
+  ? Defined[T["defined"]["name"]]
+  : T extends { option: IdlType }
+  ?
+      | EncodeType<T["option"], Defined>
+      | Option<EncodeType<T["option"], Defined>>
+      | null
+      | undefined
+  : T extends { coption: IdlType }
+  ?
+      | EncodeType<T["coption"], Defined>
+      | Option<EncodeType<T["coption"], Defined>>
+      | null
+      | undefined
+  : T extends { vec: IdlType }
+  ? EncodeType<T["vec"], Defined>[]
+  : T extends { array: [defined: IdlType, size: IdlArrayLen] }
+  ? EncodeType<T["array"][0], Defined>[]
+  : unknown;
+
+/**
  * Tuple of arguments.
  */
 type ArgsTuple<A extends IdlField[], Defined> = {
   [K in keyof A]: A[K] extends IdlField
-    ? DecodeType<A[K]["type"], Defined>
+    ? EncodeType<A[K]["type"], Defined>
     : unknown;
 } & unknown[];
 /**

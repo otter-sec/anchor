@@ -55,7 +55,6 @@ publish() {
 
 base="ts/packages"
 
-publish "$base/borsh"
 publish "$base/anchor-errors"
 publish "$base/anchor"
 #publish "$base/spl-associated-token-account"

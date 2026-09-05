@@ -1,8 +1,8 @@
-import bs58 from "bs58";
 import { Buffer } from "buffer";
-import { Layout } from "buffer-layout";
+import { getBase58Decoder } from "@solana/kit";
 import { Idl, IdlDiscriminator } from "../../idl.js";
 import { IdlCoder } from "./idl.js";
+import { IdlCodec } from "./codecs.js";
 import { AccountsCoder } from "../index.js";
 
 /**
@@ -12,16 +12,16 @@ export class BorshAccountsCoder<A extends string = string>
   implements AccountsCoder
 {
   /**
-   * Maps account type identifier to a layout.
+   * Maps account type identifier to a codec.
    */
-  private accountLayouts: Map<
+  private accountCodecs: Map<
     A,
-    { discriminator: IdlDiscriminator; layout: Layout }
+    { discriminator: IdlDiscriminator; codec: IdlCodec }
   >;
 
   public constructor(private idl: Idl) {
     if (!idl.accounts) {
-      this.accountLayouts = new Map();
+      this.accountCodecs = new Map();
       return;
     }
 
@@ -30,7 +30,7 @@ export class BorshAccountsCoder<A extends string = string>
       throw new Error("Accounts require `idl.types`");
     }
 
-    const layouts = idl.accounts.map((acc) => {
+    const codecs = idl.accounts.map((acc) => {
       const typeDef = types.find((ty) => ty.name === acc.name);
       if (!typeDef) {
         throw new Error(`Account not found: ${acc.name}`);
@@ -39,22 +39,20 @@ export class BorshAccountsCoder<A extends string = string>
         acc.name as A,
         {
           discriminator: acc.discriminator,
-          layout: IdlCoder.typeDefLayout({ typeDef, types }),
+          codec: IdlCoder.typeDefCodec({ typeDef, types }),
         },
       ] as const;
     });
 
-    this.accountLayouts = new Map(layouts);
+    this.accountCodecs = new Map(codecs);
   }
 
   public async encode<T = any>(accountName: A, account: T): Promise<Buffer> {
-    const buffer = Buffer.alloc(1000); // TODO: use a tighter buffer.
-    const layout = this.accountLayouts.get(accountName);
-    if (!layout) {
+    const entry = this.accountCodecs.get(accountName);
+    if (!entry) {
       throw new Error(`Unknown account: ${accountName}`);
     }
-    const len = layout.layout.encode(account, buffer);
-    const accountData = buffer.slice(0, len);
+    const accountData = Buffer.from(entry.codec.encode(account) as Uint8Array);
     const discriminator = this.accountDiscriminator(accountName);
     return Buffer.concat([discriminator, accountData]);
   }
@@ -62,16 +60,16 @@ export class BorshAccountsCoder<A extends string = string>
   public decode<T = any>(accountName: A, data: Buffer): T {
     // Assert the account discriminator is correct.
     const discriminator = this.accountDiscriminator(accountName);
-    if (discriminator.compare(data.slice(0, discriminator.length))) {
+    if (discriminator.compare(data.subarray(0, discriminator.length))) {
       throw new Error("Invalid account discriminator");
     }
     return this.decodeUnchecked(accountName, data);
   }
 
   public decodeAny<T = any>(data: Buffer): T {
-    for (const [name, layout] of this.accountLayouts) {
-      const givenDisc = data.subarray(0, layout.discriminator.length);
-      const matches = givenDisc.equals(Buffer.from(layout.discriminator));
+    for (const [name, entry] of this.accountCodecs) {
+      const givenDisc = data.subarray(0, entry.discriminator.length);
+      const matches = givenDisc.equals(Buffer.from(entry.discriminator));
       if (matches) return this.decodeUnchecked(name, data);
     }
 
@@ -82,18 +80,18 @@ export class BorshAccountsCoder<A extends string = string>
     // Chop off the discriminator before decoding.
     const discriminator = this.accountDiscriminator(accountName);
     const data = acc.subarray(discriminator.length);
-    const layout = this.accountLayouts.get(accountName);
-    if (!layout) {
+    const entry = this.accountCodecs.get(accountName);
+    if (!entry) {
       throw new Error(`Unknown account: ${accountName}`);
     }
-    return layout.layout.decode(data);
+    return entry.codec.decode(data) as T;
   }
 
   public memcmp(accountName: A, appendData?: Buffer): any {
     const discriminator = this.accountDiscriminator(accountName);
     return {
       offset: 0,
-      bytes: bs58.encode(
+      bytes: getBase58Decoder().decode(
         appendData ? Buffer.concat([discriminator, appendData]) : discriminator
       ),
     };
