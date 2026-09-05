@@ -7,6 +7,13 @@ import {
 } from "@solana/web3.js";
 
 import { AnchorProvider, Wallet } from "../src";
+import {
+  deserializeTransaction as deserializeV1Transaction,
+  toTransaction as toV1Transaction,
+  type V1TransactionConfig,
+} from "../src/utils/v1";
+
+Object.assign(globalThis, { crypto: require("crypto").webcrypto });
 
 // `AnchorProvider.sendAll` and `AnchorProvider.simulate` used to unconditionally
 // overwrite `tx.recentBlockhash` with a freshly-fetched value, which clobbered
@@ -21,6 +28,7 @@ const STOP = new Error("__stop_after_blockhash_assignment__");
 function makeFixture() {
   const walletKp = Keypair.generate();
   let getLatestBlockhashCalls = 0;
+  let rawTransaction: Uint8Array | undefined;
 
   const connection = {
     commitment: "processed",
@@ -34,7 +42,10 @@ function makeFixture() {
     _rpcRequest: async () => {
       throw STOP;
     },
-    sendRawTransaction: async () => "fake-sig",
+    sendRawTransaction: async (raw: Uint8Array) => {
+      rawTransaction = raw;
+      return "fake-sig";
+    },
     confirmTransaction: async () => ({ value: { err: null } }),
   } as unknown as Connection;
 
@@ -52,6 +63,7 @@ function makeFixture() {
   return {
     provider: new AnchorProvider(connection, wallet),
     getLatestBlockhashCalls: () => getLatestBlockhashCalls,
+    rawTransaction: () => rawTransaction,
   };
 }
 
@@ -69,6 +81,43 @@ function legacyTx(blockhash?: string): Transaction {
 }
 
 describe("AnchorProvider blockhash handling (#3375)", () => {
+  describe("transaction-v1", () => {
+    const v1Config: V1TransactionConfig = {
+      priorityFeeLamports: BigInt(5_000),
+      computeUnitLimit: 300_000,
+      loadedAccountsDataSizeLimit: 65_536,
+      heapSize: 32_768,
+    };
+
+    it("compiles legacy Anchor instructions into a v1 transaction", () => {
+      const tx = legacyTx(PRESET_BLOCKHASH);
+      const v1 = toV1Transaction(tx, {
+        payerKey: PublicKey.default,
+        recentBlockhash: PRESET_BLOCKHASH,
+        transactionConfig: v1Config,
+      });
+
+      expect(v1.version).toBe(1);
+      expect(v1.message.transactionConfig).toEqual(v1Config);
+      expect(v1.message.compiledInstructions).toHaveLength(1);
+    });
+
+    it("signs and sends a v1 transaction with the provider payer", async () => {
+      const { provider, getLatestBlockhashCalls, rawTransaction } =
+        makeFixture();
+
+      await expect(provider.sendV1(legacyTx(), v1Config)).resolves.toBe(
+        "fake-sig"
+      );
+
+      expect(getLatestBlockhashCalls()).toBe(1);
+      const raw = rawTransaction();
+      expect(raw).toBeDefined();
+      if (!raw) throw new Error("Expected a serialized transaction");
+      expect(deserializeV1Transaction(raw).version).toBe(1);
+    });
+  });
+
   describe("sendAll", () => {
     it("preserves a caller-provided recentBlockhash", async () => {
       const { provider, getLatestBlockhashCalls } = makeFixture();

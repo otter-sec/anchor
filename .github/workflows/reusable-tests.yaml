@@ -66,10 +66,10 @@ jobs:
       - run: cargo test --workspace --exclude avm --features allow-missing-optionals,anchor-debug,derive,event-cpi,init-if-needed,lazy-account
       # using singlethreaded testing for avm so that tests that change files do not conflict with each other
       - run: cargo test --package avm -- --test-threads=1
+      - run: cd ts && yarn --frozen-lockfile
       # Init local borsh package
-      - run: cd ts/packages/borsh && yarn --frozen-lockfile && yarn build
-      - run: cd ts/packages/anchor-errors && yarn --frozen-lockfile && yarn build
-      - run: cd ts/packages/anchor && yarn --frozen-lockfile
+      - run: cd ts/packages/borsh && yarn build
+      - run: cd ts/packages/anchor-errors && yarn build
       - run: cd ts/packages/anchor && yarn test
       - run: cd ts/packages/anchor && yarn lint
       - run: cd examples/tutorial && yarn --frozen-lockfile

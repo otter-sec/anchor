@@ -4,9 +4,11 @@
   "packageManager": "yarn@1.22.22",
   "resolutions": {
     "@babel/runtime": "^7.26.10",
+    "@types/node": "14.18.63",
     "@solana/web3.js": "1.69.1",
     "base-x": "3.0.11",
     "bn.js": "5.2.3",
+    "@noble/hashes": "1.8.0",
     "lodash": "4.18.1",
     "serialize-javascript": "7.0.5",
     "uuid": "11.1.1",
