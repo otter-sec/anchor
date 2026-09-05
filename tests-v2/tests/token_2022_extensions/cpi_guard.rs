@@ -37,12 +37,25 @@ fn cpi_guard_toggles_fail_under_cpi_without_mutating_state() {
             Meta::new_readonly(owner.pubkey(), true),
             Meta::new_readonly(token_2022_program_id(), false),
         ];
-        expect_program_failure(
+        expect_cpi_guard_settings_locked(
             send(&mut svm, id, vec![discrim], metas, &payer, &[&owner]),
             &format!("cpi-guard {label} should be rejected when invoked through CPI"),
         );
         assert_cpi_guard(&svm, account, false);
     }
+}
+
+fn expect_cpi_guard_settings_locked<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) {
+    let Err(error) = result else {
+        panic!("{context}");
+    };
+    let error = error.to_string();
+    // TokenError::CpiGuardSettingsLocked == Custom(41) / 0x29. The deprecated
+    // helpers return that error instead of panicking through a Result API.
+    assert!(
+        error.contains("Custom(41)") || error.contains("0x29") || error.contains("CpiGuardSettingsLocked"),
+        "{context}: expected CpiGuardSettingsLocked (Custom(41)), got:\n{error}"
+    );
 }
 
 fn assert_cpi_guard(svm: &litesvm::LiteSVM, account: Pubkey, expected_enabled: bool) {
