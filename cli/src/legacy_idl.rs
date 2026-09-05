@@ -9,7 +9,7 @@ use {
         abs_path::AbsolutePath,
         cluster_url,
         config::{Config, ConfigOverride, WithPath},
-        create_client, prepend_compute_unit_ix, with_workspace,
+        create_client, no_dna_enabled, prepend_compute_unit_ix, with_workspace,
     },
     anchor_cli_macros::AbsolutePath,
     anchor_lang::{
@@ -17,7 +17,7 @@ use {
         AccountDeserialize, AnchorDeserialize, AnchorSerialize, Discriminator,
     },
     anchor_lang_idl::types::Idl,
-    anyhow::{anyhow, Result},
+    anyhow::{anyhow, bail, Result},
     clap::Parser,
     flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression},
     solana_instruction::{AccountMeta, Instruction},
@@ -33,6 +33,13 @@ use {
 ///
 /// These commands interact with the old Anchor IDL instruction protocol stored
 /// on-chain. They will be removed in a future Anchor release.
+const NO_DNA_LEGACY_IDL_ERASE_AUTHORITY_HELP: &str =
+    "NO_DNA disables the interactive confirmation. Pass --bypass-warning explicitly to erase the \
+     IDL authority non-interactively.";
+const NO_DNA_LEGACY_IDL_ERASE_AUTHORITY_ERROR: &str =
+    "Cannot prompt for confirmation because NO_DNA is set. Re-run with --bypass-warning to erase \
+     the IDL authority.";
+
 #[derive(Debug, Parser, AbsolutePath)]
 pub enum LegacyIdlCommand {
     /// [DEPRECATED] Close the legacy IDL account and recover rent.
@@ -86,9 +93,13 @@ pub enum LegacyIdlCommand {
         priority_fee: Option<u64>,
     },
     /// [DEPRECATED] Remove the ability to modify the legacy IDL account.
+    #[clap(after_help = NO_DNA_LEGACY_IDL_ERASE_AUTHORITY_HELP)]
     EraseAuthority {
         #[clap(short, long)]
         program_id: Pubkey,
+        /// Bypass warning prompts
+        #[clap(long)]
+        bypass_warning: bool,
         #[clap(long)]
         priority_fee: Option<u64>,
     },
@@ -184,8 +195,9 @@ pub fn handle_legacy_idl_command(
         ),
         LegacyIdlCommand::EraseAuthority {
             program_id,
+            bypass_warning,
             priority_fee,
-        } => idl_erase_authority(cfg_override, program_id, priority_fee),
+        } => idl_erase_authority(cfg_override, program_id, bypass_warning, priority_fee),
         LegacyIdlCommand::Authority { program_id } => idl_authority(cfg_override, program_id),
         LegacyIdlCommand::Init {
             program_id,
@@ -480,17 +492,21 @@ fn idl_set_authority(
 fn idl_erase_authority(
     cfg_override: &ConfigOverride,
     program_id: Pubkey,
+    bypass_warning: bool,
     priority_fee: Option<u64>,
 ) -> Result<()> {
-    println!("Are you sure you want to erase the IDL authority: [y/n]");
+    if should_prompt_for_idl_erase_authority(no_dna_enabled(), bypass_warning)? {
+        println!("Are you sure you want to erase the IDL authority: [y/n]");
 
-    let stdin = std::io::stdin();
-    let mut stdin_lines = stdin.lock().lines();
-    let input = stdin_lines.next().unwrap().unwrap();
-    if input != "y" {
-        println!("Not erasing.");
-        return Ok(());
+        let stdin = std::io::stdin();
+        let mut stdin_lines = stdin.lock().lines();
+        let input = stdin_lines.next().unwrap().unwrap();
+        if input != "y" {
+            println!("Not erasing.");
+            return Ok(());
+        }
     }
+
     idl_set_authority(
         cfg_override,
         program_id,
@@ -499,6 +515,19 @@ fn idl_erase_authority(
         false,
         priority_fee,
     )
+}
+
+fn should_prompt_for_idl_erase_authority(
+    no_dna_enabled: bool,
+    bypass_warning: bool,
+) -> Result<bool> {
+    if bypass_warning {
+        return Ok(false);
+    }
+    if no_dna_enabled {
+        bail!(NO_DNA_LEGACY_IDL_ERASE_AUTHORITY_ERROR);
+    }
+    Ok(true)
 }
 
 fn idl_close_account(
