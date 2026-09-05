@@ -13,9 +13,12 @@
 //!
 //! Installation: download the matching tarball from `anza-xyz/platform-tools`
 //! GitHub releases and extract into `$AVM_HOME/platform-tools/<version>/`.
-//! Asset naming follows what `cargo-build-sbf` looks for upstream. Current
-//! releases use `platform-tools-{os}-{arch}.tar.bz2`; early releases use
-//! `solana-sbf-tools` names with or without an architecture suffix.
+//! Experimental point releases can instead name a GitHub Actions run in the
+//! embedded map; those artifact zips are downloaded through nightly.link and
+//! unpacked before the normal tarball extraction. Asset naming follows what
+//! `cargo-build-sbf` looks for upstream. Current releases use
+//! `platform-tools-{os}-{arch}.tar.bz2`; early releases use `solana-sbf-tools`
+//! names with or without an architecture suffix.
 use {
     crate::{
         resolve::{resolve_solana_version, SolanaResolution, SolanaResolutionSource},
@@ -40,6 +43,8 @@ const PLATFORM_TOOLS_MAP_TOML: &str = include_str!("../platform-tools-map.toml")
 #[derive(Debug, Deserialize)]
 struct PlatformToolsMap {
     fallback: String,
+    #[serde(default)]
+    ci_artifacts: HashMap<String, u64>,
     entries: Vec<MapEntry>,
 }
 
@@ -54,6 +59,7 @@ struct MapEntry {
 #[derive(Debug)]
 struct ParsedMap {
     fallback: String,
+    ci_artifacts: HashMap<String, u64>,
     /// Sorted ascending by Solana version.
     entries: Vec<PlatformToolsMapEntry>,
 }
@@ -96,6 +102,7 @@ static MAP: LazyLock<ParsedMap> = LazyLock::new(|| {
 
     ParsedMap {
         fallback: raw.fallback,
+        ci_artifacts: raw.ci_artifacts,
         entries,
     }
 });
@@ -610,6 +617,24 @@ pub fn download_url(version: &str) -> String {
     )
 }
 
+/// Whether `version` is temporarily sourced from a successful GitHub Actions
+/// build rather than a published platform-tools release.
+pub fn uses_ci_artifact(version: &str) -> bool {
+    let version = if version.starts_with('v') {
+        version.to_string()
+    } else {
+        format!("v{version}")
+    };
+    MAP.ci_artifacts.contains_key(&version)
+}
+
+fn ci_artifact_download_url(version: &str, run_id: u64) -> String {
+    format!(
+        "https://nightly.link/anza-xyz/platform-tools/actions/runs/{run_id}/{}.zip",
+        asset_name(version)
+    )
+}
+
 /// Download and extract platform-tools `version` into `$AVM_HOME/platform-tools/<version>/`.
 ///
 /// When `force` is false and the target directory already exists with a
@@ -644,10 +669,25 @@ pub fn install_platform_tools(version: &str, force: bool) -> Result<()> {
 
     // Cleanup on any error from here on.
     let result = (|| -> Result<()> {
-        let url = download_url(&version);
         let archive_path = staging.join(asset_name(&version));
-        println!("Downloading {url}");
-        download_to(&url, &archive_path)?;
+        if let Some(run_id) = MAP.ci_artifacts.get(&version) {
+            let url = ci_artifact_download_url(&version, *run_id);
+            let artifact_zip = staging.join(format!("{}.zip", asset_name(&version)));
+            println!("Downloading experimental CI artifact {url}");
+            download_to(&url, &artifact_zip)?;
+            extract_zip(&artifact_zip, &staging)?;
+            let _ = fs::remove_file(&artifact_zip);
+            if !archive_path.is_file() {
+                bail!(
+                    "CI artifact for platform-tools {version} did not contain {}",
+                    asset_name(&version)
+                );
+            }
+        } else {
+            let url = download_url(&version);
+            println!("Downloading {url}");
+            download_to(&url, &archive_path)?;
+        }
 
         println!("Extracting {}", archive_path.display());
         extract_tar_bz2(&archive_path, &staging)?;
@@ -758,6 +798,24 @@ fn extract_tar_bz2(archive: &Path, dest_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn extract_zip(archive: &Path, dest_dir: &Path) -> Result<()> {
+    let status = Command::new("unzip")
+        .arg("-q")
+        .arg(archive)
+        .arg("-d")
+        .arg(dest_dir)
+        .status()
+        .context("Spawning `unzip`")?;
+    if !status.success() {
+        bail!(
+            "`unzip -q {} -d {}` exited with status {status}",
+            archive.display(),
+            dest_dir.display()
+        );
+    }
+    Ok(())
+}
+
 /// Force the map to parse at startup, surfacing any embedded-data bugs as a
 /// clear error instead of a panic in a random first user.
 pub fn validate_embedded_map() -> Result<()> {
@@ -832,7 +890,7 @@ mod tests {
         assert_eq!(
             entries
                 .iter()
-                .find(|entry| entry.platform_tools == "v1.47")
+                .find(|entry| entry.platform_tools == "v1.51.1")
                 .unwrap()
                 .rustc,
             v("1.84.1")
@@ -852,15 +910,16 @@ mod tests {
     #[test]
     fn exact_entry_match() {
         let res = resolve_for_solana(&fake_solana("3.0.0"));
-        assert_eq!(res.version, "v1.51");
+        assert_eq!(res.version, "v1.51.1");
         assert!(matches!(res.source, PlatformToolsSource::Mapped { .. }));
     }
 
     #[test]
     fn between_entries_picks_floor() {
-        // 2.2.5 sits between (2.2.3 → v1.45) and (2.2.8 → v1.46) → floor is v1.45.
+        // 2.2.5 sits between two Solana releases that both use the patched
+        // v1.46 line, so the floor remains v1.46.1.
         let res = resolve_for_solana(&fake_solana("2.2.5"));
-        assert_eq!(res.version, "v1.45");
+        assert_eq!(res.version, "v1.46.1");
         assert_eq!(res.rustc, v("1.79.0"));
     }
 
@@ -881,8 +940,8 @@ mod tests {
 
     #[test]
     fn lookup_for_solana_version_works() {
-        assert_eq!(lookup_for_solana_version(&v("3.0.0")).unwrap(), "v1.51");
-        assert_eq!(lookup_for_solana_version(&v("4.5.0")).unwrap(), "v1.54");
+        assert_eq!(lookup_for_solana_version(&v("3.0.0")).unwrap(), "v1.51.1");
+        assert_eq!(lookup_for_solana_version(&v("4.5.0")).unwrap(), "v1.56");
         // Below earliest → error from this lower-level helper.
         assert!(lookup_for_solana_version(&v("0.1.0")).is_err());
     }
@@ -890,7 +949,7 @@ mod tests {
     #[test]
     fn explicit_solana_resolution_uses_the_map_without_project_metadata() {
         let mapped = resolve_platform_tools_for_solana_version(&v("3.1.10"));
-        assert_eq!(mapped.version, "v1.52");
+        assert_eq!(mapped.version, "v1.56");
         assert!(matches!(
             mapped.source,
             PlatformToolsSource::ExplicitSolana {
@@ -923,7 +982,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(res.version, "v1.48");
+        assert_eq!(res.version, "v1.51.1");
         assert_eq!(res.rustc, v("1.84.1"));
         assert!(matches!(
             res.source,
@@ -935,7 +994,7 @@ mod tests {
     fn semver_solana_req_uses_newest_hosted_candidate_without_rust_requirement() {
         let res = resolve_for_project_solana(&fake_solana_req("2.2.1", "2.2.1"), None).unwrap();
 
-        assert_eq!(res.version, "v1.48");
+        assert_eq!(res.version, "v1.51.1");
         assert_eq!(res.rustc, v("1.84.1"));
         assert!(matches!(
             res.source,
@@ -953,7 +1012,7 @@ mod tests {
         let msg = err.to_string();
 
         assert!(msg.contains("Solana requirement `=2.2.1`"));
-        assert!(msg.contains("platform-tools v1.44 with rustc 1.79.0"));
+        assert!(msg.contains("platform-tools v1.46.1 with rustc 1.79.0"));
         assert!(msg.contains("indexmap 2.12.1 requires rustc 1.82.0"));
     }
 
@@ -1018,6 +1077,20 @@ mod tests {
         let url = download_url("v1.54");
         assert!(url.starts_with("https://github.com/anza-xyz/platform-tools/releases/download/"));
         assert!(url.ends_with(&asset_name("v1.55")));
+    }
+
+    #[test]
+    fn ci_artifact_versions_accept_optional_v_prefix() {
+        assert!(uses_ci_artifact("v1.42.1"));
+        assert!(uses_ci_artifact("1.42.1"));
+        assert!(!uses_ci_artifact("v1.42"));
+    }
+
+    #[test]
+    fn ci_artifact_url_targets_the_mapped_run_and_host_asset() {
+        let url = ci_artifact_download_url("v1.42.1", 33803112214);
+        assert!(url.contains("/actions/runs/33803112214/"));
+        assert!(url.ends_with(&format!("{}.zip", asset_name("v1.42.1"))));
     }
 
     // ── looks_installed ─────────────────────────────────────────────────────

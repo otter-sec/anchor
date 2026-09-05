@@ -16,10 +16,20 @@
 # release. Source of truth: `src/version` in solana-labs/rust or anza-xyz/rust
 # on the tool release's tag or `solana-tools-<platform_tools>` branch.
 #
+# EXPERIMENT: the point releases below are successful platform-tools PR builds,
+# not published releases yet. `ci_artifacts` maps them to the Actions run that
+# produced their archives. AVM downloads those temporary artifacts through
+# nightly.link until the corresponding GitHub releases exist.
+#
 # `fallback` is used when the project does not pin a Solana version at all.
 # Keep it equal to the platform-tools version of the newest entry below.
 
-fallback = "v1.54"
+fallback = "v1.56"
+
+[ci_artifacts]
+"v1.42.1" = 33803112214
+"v1.46.1" = 33426681142
+"v1.51.1" = 33425918843
 
 [[entries]]
 solana = "1.14.16"
@@ -43,55 +53,55 @@ rustc = "1.72.0"
 
 [[entries]]
 solana = "1.18.8"
-platform_tools = "v1.41"
+platform_tools = "v1.42.1"
 rustc = "1.75.0"
 
 [[entries]]
 solana = "2.0.5"
-platform_tools = "v1.42"
+platform_tools = "v1.42.1"
 rustc = "1.75.0"
 
 [[entries]]
 solana = "2.1.0"
-platform_tools = "v1.43"
+platform_tools = "v1.46.1"
 rustc = "1.79.0"
 
 [[entries]]
 solana = "2.2.1"
-platform_tools = "v1.44"
+platform_tools = "v1.46.1"
 rustc = "1.79.0"
 
 [[entries]]
 solana = "2.2.3"
-platform_tools = "v1.45"
+platform_tools = "v1.46.1"
 rustc = "1.79.0"
 
 [[entries]]
 solana = "2.2.8"
-platform_tools = "v1.46"
+platform_tools = "v1.46.1"
 rustc = "1.79.0"
 
 [[entries]]
 solana = "2.2.11"
-platform_tools = "v1.47"
+platform_tools = "v1.51.1"
 rustc = "1.84.1"
 
 [[entries]]
 solana = "2.2.15"
-platform_tools = "v1.48"
+platform_tools = "v1.51.1"
 rustc = "1.84.1"
 
 [[entries]]
 solana = "3.0.0"
-platform_tools = "v1.51"
+platform_tools = "v1.51.1"
 rustc = "1.84.1"
 
 [[entries]]
 solana = "3.1.1"
-platform_tools = "v1.52"
+platform_tools = "v1.56"
 rustc = "1.89.0"
 
 [[entries]]
 solana = "4.0.0"
-platform_tools = "v1.54"
+platform_tools = "v1.56"
 rustc = "1.89.0"

@@ -377,7 +377,7 @@ fn avm_subcommands_resolve_solana_and_platform_tools_from_project() {
     assert_success(&platform_tools);
     let platform_tools_stdout = command_stdout(platform_tools);
     assert!(
-        platform_tools_stdout.contains("platform-tools v1.48"),
+        platform_tools_stdout.contains("platform-tools v1.51.1"),
         "{platform_tools_stdout}"
     );
     assert!(
@@ -403,7 +403,7 @@ fn avm_platform_tools_resolve_accepts_explicit_solana_or_anchor_versions() {
         ],
     );
     assert_success(&solana);
-    assert_eq!(command_stdout(solana), "v1.52\n");
+    assert_eq!(command_stdout(solana), "v1.56\n");
 
     let anchor = fixture.run_avm(
         &project,
@@ -412,7 +412,7 @@ fn avm_platform_tools_resolve_accepts_explicit_solana_or_anchor_versions() {
     assert_success(&anchor);
     let anchor_stdout = command_stdout(anchor);
     assert!(
-        anchor_stdout.contains("platform-tools v1.52"),
+        anchor_stdout.contains("platform-tools v1.56"),
         "{anchor_stdout}"
     );
     assert!(
