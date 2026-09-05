@@ -1,6 +1,7 @@
 name: Downstream Builds
 
 on:
+  pull_request:
   workflow_dispatch:
   schedule:
     - cron: "0 0 * * *"
@@ -75,7 +76,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: otter-sec/anchor
-          ref: master
+          ref: refs/pull/4990/head
           path: avm-source
           persist-credentials: false
 
@@ -99,9 +100,9 @@ jobs:
         name: Cache AVM target
         with:
           path: avm-target/
-          key: cargo-target-${{ runner.os }}-downstream-avm-master-${{ hashFiles('avm-source/Cargo.lock', 'avm-source/avm/src/**') }}
+          key: cargo-target-${{ runner.os }}-downstream-avm-pr4990-${{ hashFiles('avm-source/Cargo.lock', 'avm-source/avm/src/**', 'avm-source/avm/*.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-downstream-avm-master-
+            cargo-target-${{ runner.os }}-downstream-avm-pr4990-
 
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         name: Cache ${{ matrix.name }} Cargo home
@@ -158,9 +159,9 @@ jobs:
           path: |
             ~/.cache/solana/
             ~/.local/share/solana/
-          key: downstream-solana-${{ runner.os }}-v0002-${{ matrix.directory }}-${{ steps.solana.outputs.version }}
+          key: downstream-solana-${{ runner.os }}-v0005-point-only-${{ matrix.directory }}-${{ steps.solana.outputs.version }}-${{ hashFiles('avm-source/avm/platform-tools-map.toml') }}
           restore-keys: |
-            downstream-solana-${{ runner.os }}-v0002-${{ matrix.directory }}-
+            downstream-solana-${{ runner.os }}-v0005-point-only-${{ matrix.directory }}-${{ steps.solana.outputs.version }}-
 
       - name: Install project Solana CLI
         working-directory: ${{ steps.project.outputs.path }}
@@ -174,6 +175,54 @@ jobs:
           "$solana_bin/solana" --version
         shell: bash
 
+      - name: Install mapped platform-tools release
+        working-directory: ${{ steps.project.outputs.path }}
+        env:
+          SOLANA_VERSION: ${{ steps.solana.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          version="$(
+            avm platform-tools resolve \
+              --solana-version "$SOLANA_VERSION" \
+              --output version
+          )"
+          echo "Resolved platform-tools $version for Solana $SOLANA_VERSION"
+
+          case "$version" in
+            v1.42.1|v1.46.1|v1.51.1|v1.56)
+              avm platform-tools install "$version"
+
+              installed_dir="$HOME/.avm/platform-tools/$version"
+              cache_dir="$HOME/.cache/solana/$version/platform-tools"
+              test -x "$installed_dir/rust/bin/rustc"
+              rm -rf "$cache_dir"
+              mkdir -p "$(dirname "$cache_dir")"
+              cp -a "$installed_dir" "$cache_dir"
+
+              real_cargo_build_sbf="$(command -v cargo-build-sbf)"
+              wrapper_dir="$RUNNER_TEMP/patched-platform-tools-bin"
+              mkdir -p "$wrapper_dir"
+              printf '%s\n' \
+                '#!/usr/bin/env bash' \
+                'if [[ "${1:-}" == "build-sbf" ]]; then' \
+                '  shift' \
+                'fi' \
+                'exec "$REAL_CARGO_BUILD_SBF" --tools-version "$PATCHED_PLATFORM_TOOLS_VERSION" "$@"' \
+                > "$wrapper_dir/cargo-build-sbf"
+              chmod +x "$wrapper_dir/cargo-build-sbf"
+
+              echo "REAL_CARGO_BUILD_SBF=$real_cargo_build_sbf" >> "$GITHUB_ENV"
+              echo "PATCHED_PLATFORM_TOOLS_VERSION=$version" >> "$GITHUB_ENV"
+              echo "$wrapper_dir" >> "$GITHUB_PATH"
+              "$cache_dir/rust/bin/rustc" --version
+              ;;
+            *)
+              echo "No release substitution is configured for $version"
+              ;;
+          esac
+        shell: bash
+
       - run: solana-keygen new --no-bip39-passphrase
       - run: solana config set --url localhost
 
@@ -181,10 +230,10 @@ jobs:
         name: Cache ${{ matrix.name }} target
         with:
           path: ${{ matrix.build_path }}/target/
-          key: cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.build_path)) }}-${{ github.run_id }}
+          key: cargo-target-${{ runner.os }}-downstream-point-only-v0001-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.build_path)) }}-${{ github.run_id }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.build_path)) }}-
-            cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-
+            cargo-target-${{ runner.os }}-downstream-point-only-v0001-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.build_path)) }}-
+            cargo-target-${{ runner.os }}-downstream-point-only-v0001-${{ matrix.directory }}-
 
       - name: Build ${{ matrix.repository }}
         working-directory: ${{ matrix.build_path }}
