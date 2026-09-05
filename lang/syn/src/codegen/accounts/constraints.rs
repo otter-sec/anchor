@@ -1875,7 +1875,6 @@ fn generate_account_ref(field: &Field) -> proc_macro2::TokenStream {
         _ => quote!(AsRef::<AccountInfo>::as_ref(&#name)),
     }
 }
-
 fn generate_realloc_payer_ref(
     payer: &syn::Expr,
     accs: &AccountsStruct,
@@ -1889,4 +1888,102 @@ fn generate_realloc_payer_ref(
             _ => None,
         })
         .unwrap_or_else(|| quote!(&#payer.to_account_info()))
+}
+
+#[cfg(all(test, feature = "init-if-needed"))]
+mod tests {
+    use {
+        super::*,
+        crate::{parser::accounts, AccountField},
+        syn::parse_quote,
+    };
+
+    #[test]
+    fn init_if_needed_mint_codegen_revalidates_extension_constraints(
+    ) -> std::result::Result<(), String> {
+        let accounts_struct = parse_quote! {
+            pub struct InitIfNeededMintWithExtensions<'info> {
+                #[account(mut)]
+                pub payer: Signer<'info>,
+                pub authority: Signer<'info>,
+                #[account(
+                    init_if_needed,
+                    signer,
+                    payer = payer,
+                    mint::token_program = token_program,
+                    mint::decimals = 0,
+                    mint::authority = authority,
+                    mint::freeze_authority = authority,
+                    extensions::group_member_pointer::authority = authority,
+                    extensions::group_member_pointer::member_address = mint,
+                )]
+                pub mint: Box<InterfaceAccount<'info, Mint>>,
+                pub system_program: Program<'info, System>,
+                pub token_program: Program<'info, Token2022>,
+            }
+        };
+
+        let accounts = accounts::parse(&accounts_struct).map_err(|err| err.to_string())?;
+        let mint = if let Some(AccountField::Field(field)) = accounts.fields.get(2) {
+            field
+        } else {
+            return Err("expected third account field to be a mint field".into());
+        };
+
+        let generated = generate(mint, &accounts).to_string();
+
+        assert!(
+            generated.contains("ConstraintMintGroupMemberPointerExtension"),
+            "expected init_if_needed mint codegen to retain group member pointer checks on reused \
+             mints, got: {generated}",
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn init_if_needed_mint_codegen_revalidates_implicit_reuse_checks(
+    ) -> std::result::Result<(), String> {
+        let accounts_struct = parse_quote! {
+            pub struct InitIfNeededMintWithImplicitChecks<'info> {
+                #[account(mut)]
+                pub payer: Signer<'info>,
+                pub authority: Signer<'info>,
+                #[account(
+                    init_if_needed,
+                    signer,
+                    payer = payer,
+                    mint::decimals = 0,
+                    mint::authority = authority,
+                    extensions::group_member_pointer::authority = authority,
+                    extensions::group_member_pointer::member_address = mint,
+                )]
+                pub mint: Box<InterfaceAccount<'info, Mint>>,
+                pub system_program: Program<'info, System>,
+                pub token_program: Program<'info, Token2022>,
+            }
+        };
+
+        let accounts = accounts::parse(&accounts_struct).map_err(|err| err.to_string())?;
+        let mint = if let Some(AccountField::Field(field)) = accounts.fields.get(2) {
+            field
+        } else {
+            return Err("expected third account field to be a mint field".into());
+        };
+
+        let generated = generate(mint, &accounts).to_string();
+
+        assert!(
+            generated.contains("ConstraintMintFreezeAuthority"),
+            "expected init_if_needed mint codegen to retain the implicit None freeze authority \
+             check on reused mints, got: {generated}",
+        );
+        assert!(
+            generated.contains("ConstraintMintTokenProgram"),
+            "expected init_if_needed mint codegen to retain the effective token program check on \
+             reused mints, got: {generated}",
+        );
+
+        Ok(())
+    }
 }
