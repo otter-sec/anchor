@@ -3593,18 +3593,28 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                 });
             }
             "type" => {
-                let alias = type_obj.get("alias").ok_or_else(|| {
+                let alias_value = type_obj.get("alias").ok_or_else(|| {
                     syn::Error::new(
                         ident.span(),
                         format!("type alias `{name}` is missing alias"),
                     )
                 })?;
-                let alias = declare_idl_type_to_tokens(alias, ident.span())?;
-                let impl_generics = &generics.impl_generics;
-                out.push(quote! {
-                    #(#docs)*
-                    pub type #ident #impl_generics = #alias;
-                });
+                let alias = declare_idl_type_to_tokens(alias_value, ident.span())?;
+                let idl_impl = gen_declare_program_idl_account_type_impl(
+                    &ident,
+                    &generics,
+                    idl_account_entry.as_ref(),
+                    &idl_type_def,
+                    &[alias.clone()],
+                );
+                out.push(gen_declare_program_type_alias(
+                    &ident,
+                    &generics,
+                    &docs,
+                    alias_value,
+                    alias,
+                    idl_impl,
+                ));
             }
             _ => {
                 return Err(syn::Error::new(
@@ -4109,6 +4119,54 @@ fn gen_declare_program_type_generics(
         idl_where_clause,
         pod_where_clause,
     })
+}
+
+fn declare_idl_type_is_pod_primitive(value: &serde_json::Value) -> bool {
+    value.as_str().is_some_and(|name| {
+        matches!(
+            name,
+            "bool" | "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "f32" | "u64" | "i64" | "f64"
+                | "u128" | "i128"
+        )
+    })
+}
+
+fn gen_declare_program_type_alias(
+    ident: &Ident,
+    generics: &DeclareTypeGenerics,
+    docs: &[TokenStream2],
+    alias_value: &serde_json::Value,
+    alias: TokenStream2,
+    idl_impl: TokenStream2,
+) -> TokenStream2 {
+    let impl_generics = &generics.impl_generics;
+    let ty_generics = &generics.ty_generics;
+    let is_pod_primitive = declare_idl_type_is_pod_primitive(alias_value);
+    let extra_derives = if is_pod_primitive {
+        quote! {
+            Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug,
+        }
+    } else {
+        quote! {}
+    };
+    let pod_impls = if is_pod_primitive {
+        let where_clause = &generics.pod_where_clause;
+        quote! {
+            unsafe impl #impl_generics anchor_lang::bytemuck::Pod for #ident #ty_generics #where_clause {}
+            unsafe impl #impl_generics anchor_lang::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
+        }
+    } else {
+        quote! {}
+    };
+
+    quote! {
+        #(#docs)*
+        #[repr(transparent)]
+        #[derive(Clone, #extra_derives anchor_lang::wincode::SchemaRead, anchor_lang::wincode::SchemaWrite)]
+        pub struct #ident #impl_generics(pub #alias);
+        #idl_impl
+        #pod_impls
+    }
 }
 
 fn gen_declare_program_idl_account_type_impl(
