@@ -69,20 +69,7 @@
           ]
         },
         {
-          "name": "account",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  101,
-                  101,
-                  100
-                ]
-              }
-            ]
-          }
+          "name": "account"
         },
         {
           "name": "nested",
@@ -94,20 +81,7 @@
               ]
             },
             {
-              "name": "account",
-              "pda": {
-                "seeds": [
-                  {
-                    "kind": "const",
-                    "value": [
-                      115,
-                      101,
-                      101,
-                      100
-                    ]
-                  }
-                ]
-              }
+              "name": "account"
             }
           ]
         }

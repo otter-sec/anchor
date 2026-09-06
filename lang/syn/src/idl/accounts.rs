@@ -221,6 +221,10 @@ fn get_pda(acc: &Field, accounts: &AccountsStruct) -> TokenStream {
 
     // Seeds
     let seed_constraints = acc.constraints.seeds.as_ref();
+    // `find_program_address` only derives the canonical bump.
+    if matches!(seed_constraints, Some(constraints) if constraints.bump.is_some()) {
+        return quote! { None };
+    }
     let pda = seed_constraints
         .map(|seed| seed.seeds.iter().map(parse_default))
         .and_then(|seeds| seeds.collect::<Result<Vec<_>>>().ok())

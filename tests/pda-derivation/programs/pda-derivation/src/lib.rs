@@ -44,6 +44,10 @@ pub mod pda_derivation {
         Ok(())
     }
 
+    pub fn explicit_bump(_ctx: Context<ExplicitBump>, _bump: u8) -> Result<()> {
+        Ok(())
+    }
+
     pub fn associated_token_resolution(_ctx: Context<AssociatedTokenResolution>) -> Result<()> {
         Ok(())
     }
@@ -173,6 +177,14 @@ pub struct TestSeedConstant<'info> {
     )]
     account: Account<'info, MyAccount>,
     system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(bump: u8)]
+pub struct ExplicitBump<'info> {
+    #[account(seeds = [b"explicit-bump"], bump = bump)]
+    /// CHECK: Address is validated by the PDA constraints.
+    pub pda: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]

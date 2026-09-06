@@ -6,6 +6,27 @@ import { PdaDerivation } from "../target/types/pda_derivation";
 import { expect } from "chai";
 const encode = anchor.utils.bytes.utf8.encode;
 
+function findNonCanonicalPda(
+  seeds: Buffer[],
+  programId: PublicKey
+): [PublicKey, number] {
+  const [, canonicalBump] = PublicKey.findProgramAddressSync(seeds, programId);
+
+  for (let bump = canonicalBump - 1; bump >= 0; bump--) {
+    try {
+      const pda = PublicKey.createProgramAddressSync(
+        [...seeds, Buffer.from([bump])],
+        programId
+      );
+      return [pda, bump];
+    } catch {
+      // This bump is on-curve; keep looking.
+    }
+  }
+
+  throw new Error("Unable to find a non-canonical PDA");
+}
+
 describe("typescript", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
@@ -106,6 +127,35 @@ describe("typescript", () => {
 
   it("Can use constant seed ref", async () => {
     await program.methods.testSeedConstant().rpc();
+  });
+
+  it("Does not auto-resolve explicit-bump PDAs", async () => {
+    const seeds = [Buffer.from("explicit-bump")];
+    const [nonCanonicalPda, bump] = findNonCanonicalPda(
+      seeds,
+      program.programId
+    );
+    const [canonicalPda] = PublicKey.findProgramAddressSync(
+      seeds,
+      program.programId
+    );
+    expect(nonCanonicalPda.equals(canonicalPda)).is.false;
+
+    const pdaAccount = program.idl.instructions
+      .find((ix) => ix.name === "explicitBump")!
+      .accounts.find((acc) => acc.name === "pda")!;
+    expect(pdaAccount).not.to.have.property("pda");
+
+    const keys = await program.methods
+      .explicitBump(bump)
+      .accountsPartial({})
+      .pubkeys();
+    expect(keys.pda).to.be.undefined;
+
+    await program.methods
+      .explicitBump(bump)
+      .accounts({ pda: nonCanonicalPda })
+      .rpc();
   });
 
   it("Can resolve associated token accounts", async () => {
