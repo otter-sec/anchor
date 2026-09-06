@@ -66,6 +66,9 @@ describe("auction-house", () => {
   let metadata: PublicKey;
   let auctionHouse: PublicKey;
   let auctionHouseFeeAccount: PublicKey;
+  let auctionHouseTreasury: PublicKey;
+  let sellerTradeState: PublicKey;
+  let buyerTradeState: PublicKey;
 
   // Buyer specific vars.
   const buyerWallet = Keypair.generate();
@@ -160,8 +163,43 @@ describe("auction-house", () => {
       [PREFIX, _auctionHouse.toBuffer(), FEE_PAYER],
       AUCTION_HOUSE_PROGRAM_ID
     );
+    const [_auctionHouseTreasury] = await PublicKey.findProgramAddress(
+      [PREFIX, _auctionHouse.toBuffer(), TREASURY],
+      AUCTION_HOUSE_PROGRAM_ID
+    );
+    const buyerPrice = new u64(2 * 10 ** 9);
+    const tokenSize = new u64(1);
+    const [_sellerTradeState] = await PublicKey.findProgramAddress(
+      [
+        PREFIX,
+        sellerWallet.publicKey.toBuffer(),
+        _auctionHouse.toBuffer(),
+        sellerTokenAccount.toBuffer(),
+        treasuryMint.toBuffer(),
+        nftMintClient.publicKey.toBuffer(),
+        buyerPrice.toArrayLike(Buffer, "le", 8),
+        tokenSize.toArrayLike(Buffer, "le", 8),
+      ],
+      AUCTION_HOUSE_PROGRAM_ID
+    );
+    const [_buyerTradeState] = await PublicKey.findProgramAddress(
+      [
+        PREFIX,
+        buyerWallet.publicKey.toBuffer(),
+        _auctionHouse.toBuffer(),
+        sellerTokenAccount.toBuffer(),
+        treasuryMint.toBuffer(),
+        nftMintClient.publicKey.toBuffer(),
+        buyerPrice.toArrayLike(Buffer, "le", 8),
+        tokenSize.toArrayLike(Buffer, "le", 8),
+      ],
+      AUCTION_HOUSE_PROGRAM_ID
+    );
     auctionHouse = _auctionHouse;
     auctionHouseFeeAccount = _auctionHouseFeeAccount;
+    auctionHouseTreasury = _auctionHouseTreasury;
+    sellerTradeState = _sellerTradeState;
+    buyerTradeState = _buyerTradeState;
   });
 
   it("Funds the buyer with lamports so that it can bid", async () => {
@@ -243,6 +281,8 @@ describe("auction-house", () => {
         receiptAccount: buyerWallet.publicKey,
         treasuryMint,
         authority,
+        auctionHouse,
+        auctionHouseFeeAccount,
       })
       .signers([authorityKeypair])
       .rpc();
@@ -261,6 +301,8 @@ describe("auction-house", () => {
         metadata,
         authority,
         treasuryMint,
+        auctionHouse,
+        auctionHouseFeeAccount,
       })
       .signers([authorityKeypair])
       .rpc();
@@ -278,6 +320,9 @@ describe("auction-house", () => {
         tokenAccount: sellerTokenAccount,
         authority,
         treasuryMint,
+        auctionHouse,
+        auctionHouseFeeAccount,
+        tradeState: sellerTradeState,
       })
       .signers([authorityKeypair])
       .rpc();
@@ -295,6 +340,8 @@ describe("auction-house", () => {
         metadata,
         authority,
         treasuryMint,
+        auctionHouse,
+        auctionHouseFeeAccount,
       })
       .signers([authorityKeypair])
       .rpc();
@@ -315,6 +362,8 @@ describe("auction-house", () => {
         tokenAccount: sellerTokenAccount,
         metadata,
         authority,
+        auctionHouse,
+        auctionHouseFeeAccount,
       })
       .signers([authorityKeypair])
       .rpc();
@@ -325,10 +374,6 @@ describe("auction-house", () => {
   it("Executes a trade", async () => {
     const [buyerEscrow] = await PublicKey.findProgramAddress(
       [PREFIX, auctionHouse.toBuffer(), buyerWallet.publicKey.toBuffer()],
-      AUCTION_HOUSE_PROGRAM_ID
-    );
-    const [auctionHouseTreasury] = await PublicKey.findProgramAddress(
-      [PREFIX, auctionHouse.toBuffer(), TREASURY],
       AUCTION_HOUSE_PROGRAM_ID
     );
     const airdropSig = await authorityClient.provider.connection.requestAirdrop(
@@ -360,6 +405,11 @@ describe("auction-house", () => {
         sellerPaymentReceiptAccount: sellerWallet.publicKey,
         buyerReceiptTokenAccount: buyerTokenAccount,
         authority,
+        auctionHouse,
+        auctionHouseFeeAccount,
+        auctionHouseTreasury,
+        buyerTradeState,
+        sellerTradeState,
       })
       .rpc();
 
@@ -386,6 +436,8 @@ describe("auction-house", () => {
         authority,
         treasuryMint,
         feeWithdrawalDestination,
+        auctionHouse,
+        auctionHouseFeeAccount,
       })
       .rpc();
     console.log("withdrawFromFee:", txSig);
@@ -398,6 +450,8 @@ describe("auction-house", () => {
         treasuryMint,
         authority,
         treasuryWithdrawalDestination,
+        auctionHouse,
+        auctionHouseTreasury,
       })
       .rpc();
     console.log("txSig:", txSig);
@@ -423,6 +477,7 @@ describe("auction-house", () => {
           feeWithdrawalDestination,
           treasuryWithdrawalDestination,
           treasuryWithdrawalDestinationOwner,
+          auctionHouse,
         })
         .instruction()
     );

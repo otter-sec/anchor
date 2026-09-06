@@ -51,6 +51,7 @@ describe("basic-4", () => {
     await program.methods
       .increment()
       .accounts({
+        counter: counterPubkey,
         authority: provider.wallet.publicKey,
       })
       .rpc();

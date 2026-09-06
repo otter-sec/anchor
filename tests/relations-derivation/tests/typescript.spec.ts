@@ -22,14 +22,14 @@ describe("typescript", () => {
   });
 
   it("Derives relationss", async () => {
+    const [account] = await PublicKey.findProgramAddress(
+      [Buffer.from("seed", "utf-8")],
+      program.programId
+    );
     const tx = await program.methods.testRelation().accounts({
+      account,
       nested: {
-        account: (
-          await PublicKey.findProgramAddress(
-            [Buffer.from("seed", "utf-8")],
-            program.programId
-          )
-        )[0],
+        account,
       },
     });
 
