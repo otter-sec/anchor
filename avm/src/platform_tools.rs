@@ -13,8 +13,9 @@
 //!
 //! Installation: download the matching tarball from `anza-xyz/platform-tools`
 //! GitHub releases and extract into `$AVM_HOME/platform-tools/<version>/`.
-//! Asset naming follows what `cargo-build-sbf` looks for upstream:
-//! `platform-tools-{linux|osx|windows}-{x86_64|aarch64}.tar.bz2`.
+//! Asset naming follows what `cargo-build-sbf` looks for upstream. Current
+//! releases use `platform-tools-{os}-{arch}.tar.bz2`; early releases use
+//! `solana-sbf-tools` names with or without an architecture suffix.
 use {
     crate::{
         resolve::{resolve_solana_version, SolanaResolution, SolanaResolutionSource},
@@ -117,6 +118,8 @@ pub enum PlatformToolsSource {
     },
     /// Project did not pin Solana → use the map's hardcoded fallback.
     Fallback,
+    /// Directly requested with `avm platform-tools resolve --solana-version`.
+    ExplicitSolana { solana: Version, below_map: bool },
 }
 
 impl PlatformToolsSource {
@@ -134,6 +137,16 @@ impl PlatformToolsSource {
                 solana_source.describe()
             ),
             Self::Fallback => "fallback (no Solana version pinned)".to_string(),
+            Self::ExplicitSolana {
+                solana,
+                below_map: false,
+            } => {
+                format!("explicit Solana {solana} → map")
+            }
+            Self::ExplicitSolana {
+                solana,
+                below_map: true,
+            } => format!("explicit Solana {solana} predates map; using earliest entry"),
         }
     }
 }
@@ -157,6 +170,40 @@ pub fn resolve_platform_tools(start: &Path) -> Result<PlatformToolsResolution> {
     match resolve_solana_version(start)? {
         Some(solana_res) => resolve_for_project_solana(&solana_res, required_rust.as_ref()),
         None => resolve_fallback(required_rust.as_ref()),
+    }
+}
+
+/// Resolve platform-tools for an explicit Solana CLI version.
+///
+/// Unlike [`resolve_platform_tools`], this does not inspect the project or
+/// consider its Cargo dependency Rust-version requirements.
+pub fn resolve_platform_tools_for_solana_version(solana: &Version) -> PlatformToolsResolution {
+    let entries = &MAP.entries;
+    match entries.iter().rposition(|entry| entry.solana <= *solana) {
+        Some(idx) => {
+            let entry = &entries[idx];
+            PlatformToolsResolution {
+                version: entry.platform_tools.clone(),
+                rustc: entry.rustc.clone(),
+                source: PlatformToolsSource::ExplicitSolana {
+                    solana: solana.clone(),
+                    below_map: false,
+                },
+            }
+        }
+        None => {
+            let earliest = entries
+                .first()
+                .expect("platform-tools map must have at least one entry");
+            PlatformToolsResolution {
+                version: earliest.platform_tools.clone(),
+                rustc: earliest.rustc.clone(),
+                source: PlatformToolsSource::ExplicitSolana {
+                    solana: solana.clone(),
+                    below_map: true,
+                },
+            }
+        }
     }
 }
 
@@ -522,35 +569,31 @@ pub fn read_installed_platform_tools() -> Result<Vec<String>> {
     Ok(out)
 }
 
-/// Asset file name to download from anza-xyz/platform-tools releases for the
-/// current host (e.g. `"platform-tools-linux-x86_64.tar.bz2"`).
-pub fn host_asset_name() -> &'static str {
-    // Mirrors cargo-build-sbf's naming. The four supported combinations are
-    // baked in so a misconfigured host fails to compile instead of trying to
-    // download a non-existent asset at runtime.
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    {
-        "platform-tools-linux-x86_64.tar.bz2"
-    }
-    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    {
-        "platform-tools-linux-aarch64.tar.bz2"
-    }
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    {
-        "platform-tools-osx-x86_64.tar.bz2"
-    }
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    {
-        "platform-tools-osx-aarch64.tar.bz2"
-    }
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    {
-        "platform-tools-windows-x86_64.tar.bz2"
-    }
-    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
-    {
-        "platform-tools-windows-aarch64.tar.bz2"
+/// Asset file name to download from anza-xyz/platform-tools releases.
+fn asset_name(version: &str) -> String {
+    let os = if cfg!(target_os = "linux") {
+        "linux"
+    } else if cfg!(target_os = "macos") {
+        "osx"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        unreachable!("unsupported host OS")
+    };
+    let arch = if cfg!(target_arch = "x86_64") {
+        "x86_64"
+    } else if cfg!(target_arch = "aarch64") {
+        "aarch64"
+    } else {
+        unreachable!("unsupported host architecture")
+    };
+
+    match version {
+        "v1.29" | "v1.30" | "v1.31" | "v1.32" | "v1.33" => {
+            format!("solana-sbf-tools-{os}.tar.bz2")
+        }
+        "v1.34" | "v1.35" => format!("solana-sbf-tools-{os}-{arch}.tar.bz2"),
+        _ => format!("platform-tools-{os}-{arch}.tar.bz2"),
     }
 }
 
@@ -563,7 +606,7 @@ pub fn download_url(version: &str) -> String {
     };
     format!(
         "https://github.com/anza-xyz/platform-tools/releases/download/{version}/{}",
-        host_asset_name()
+        asset_name(&version)
     )
 }
 
@@ -602,7 +645,7 @@ pub fn install_platform_tools(version: &str, force: bool) -> Result<()> {
     // Cleanup on any error from here on.
     let result = (|| -> Result<()> {
         let url = download_url(&version);
-        let archive_path = staging.join(host_asset_name());
+        let archive_path = staging.join(asset_name(&version));
         println!("Downloading {url}");
         download_to(&url, &archive_path)?;
 
@@ -844,6 +887,32 @@ mod tests {
         assert!(lookup_for_solana_version(&v("0.1.0")).is_err());
     }
 
+    #[test]
+    fn explicit_solana_resolution_uses_the_map_without_project_metadata() {
+        let mapped = resolve_platform_tools_for_solana_version(&v("3.1.10"));
+        assert_eq!(mapped.version, "v1.52");
+        assert!(matches!(
+            mapped.source,
+            PlatformToolsSource::ExplicitSolana {
+                solana,
+                below_map: false,
+            } if solana == v("3.1.10")
+        ));
+
+        let below_map = resolve_platform_tools_for_solana_version(&v("1.0.0"));
+        assert_eq!(
+            below_map.version,
+            MAP.entries.first().unwrap().platform_tools
+        );
+        assert!(matches!(
+            below_map.source,
+            PlatformToolsSource::ExplicitSolana {
+                below_map: true,
+                ..
+            }
+        ));
+    }
+
     // ── Rust-version aware resolution ───────────────────────────────────────
 
     #[test]
@@ -911,43 +980,11 @@ mod tests {
         assert!(metadata.is_none());
     }
 
-    // ── Specific known transitions ──────────────────────────────────────────
-
-    #[test]
-    fn known_transition_1_18_0_to_v1_39() {
-        assert_eq!(lookup_for_solana_version(&v("1.18.0")).unwrap(), "v1.39");
-    }
-
-    #[test]
-    fn known_transition_1_18_8_to_v1_41() {
-        assert_eq!(lookup_for_solana_version(&v("1.18.8")).unwrap(), "v1.41");
-    }
-
-    #[test]
-    fn known_transition_2_0_5_to_v1_42() {
-        assert_eq!(lookup_for_solana_version(&v("2.0.5")).unwrap(), "v1.42");
-    }
-
-    #[test]
-    fn known_transition_2_1_0_to_v1_43() {
-        assert_eq!(lookup_for_solana_version(&v("2.1.0")).unwrap(), "v1.43");
-    }
-
-    #[test]
-    fn known_transition_3_0_0_to_v1_51() {
-        assert_eq!(lookup_for_solana_version(&v("3.0.0")).unwrap(), "v1.51");
-    }
-
-    #[test]
-    fn known_transition_4_0_0_to_v1_54() {
-        assert_eq!(lookup_for_solana_version(&v("4.0.0")).unwrap(), "v1.54");
-    }
-
     // ── URL + asset naming ──────────────────────────────────────────────────
 
     #[test]
-    fn host_asset_name_uses_supported_combo() {
-        let name = host_asset_name();
+    fn asset_names_cover_legacy_and_current_releases() {
+        let name = asset_name("v1.55");
         assert!(name.starts_with("platform-tools-"));
         assert!(name.ends_with(".tar.bz2"));
         let middle = name
@@ -956,6 +993,16 @@ mod tests {
         let (os, arch) = middle.split_once('-').expect("os-arch");
         assert!(matches!(os, "linux" | "osx" | "windows"));
         assert!(matches!(arch, "x86_64" | "aarch64"));
+
+        for version in ["v1.29", "v1.30", "v1.31", "v1.32", "v1.33"] {
+            assert!(asset_name(version).starts_with("solana-sbf-tools-"));
+            assert!(!asset_name(version).contains("x86_64"));
+            assert!(!asset_name(version).contains("aarch64"));
+        }
+        for version in ["v1.34", "v1.35"] {
+            assert!(asset_name(version).starts_with("solana-sbf-tools-"));
+            assert!(asset_name(version).contains(arch));
+        }
     }
 
     #[test]
@@ -970,7 +1017,7 @@ mod tests {
     fn download_url_targets_anza_platform_tools() {
         let url = download_url("v1.54");
         assert!(url.starts_with("https://github.com/anza-xyz/platform-tools/releases/download/"));
-        assert!(url.ends_with(host_asset_name()));
+        assert!(url.ends_with(&asset_name("v1.55")));
     }
 
     // ── looks_installed ─────────────────────────────────────────────────────

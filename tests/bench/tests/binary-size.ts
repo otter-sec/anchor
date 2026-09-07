@@ -4,7 +4,7 @@ import path from "path";
 
 import { BenchData, BinarySize } from "../scripts/utils";
 
-const IDL = require("../target/idl/bench.json");
+const PROGRAM_NAME = "bench";
 
 describe("Binary size", () => {
   const binarySize: BinarySize = {};
@@ -15,9 +15,9 @@ describe("Binary size", () => {
     });
     const metadata = JSON.parse(output);
     const stat = await fs.stat(
-      path.join(metadata.target_directory, "deploy", `${IDL.metadata.name}.so`)
+      path.join(metadata.target_directory, "deploy", `${PROGRAM_NAME}.so`)
     );
-    binarySize[IDL.metadata.name] = stat.size;
+    binarySize[PROGRAM_NAME] = stat.size;
   });
 
   after(async () => {

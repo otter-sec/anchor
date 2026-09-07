@@ -1,3 +1,9 @@
+validator = "legacy"
+
+[toolchain]
+anchor_version = "1.1.2"
+solana_version = "3.1.10"
+
 [provider]
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"

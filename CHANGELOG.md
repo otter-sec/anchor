@@ -13,6 +13,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 ### Features
 
 - lang: Add `Account::skip_exit` and `InterfaceAccount::skip_exit` to skip automatic serialization of mutable accounts on instruction exit.
+- avm: Allow resolving Solana/platform-tools versions from an explicit Anchor version. ([#4799](https://github.com/otter-sec/anchor/pull/4799)).
+- cli: Generate a TypeScript error constants file from the IDL during `anchor build` ([#3827](https://github.com/solana-foundation/anchor/pull/3827)).
 - lang: Always derive `Clone` and `Debug` for generated types in `declare_program!` ([#4723](https://github.com/solana-foundation/anchor/pull/4723)).
 - spl: Add pausable mint extension support ([#4092](https://github.com/solana-foundation/anchor/pull/4092)).
 - spl: Add `create_native_mint` and `initialize_non_transferable_mint` helpers ([#3512](https://github.com/otter-sec/anchor/pull/3512)).
@@ -49,6 +51,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Sync type derives and simplify internal args creation in `declare_program!` ([#4667](https://github.com/solana-foundation/anchor/pull/4667)).
 - lang: Improve `std` hygiene inside macros ([#4700](https://github.com/solana-foundation/anchor/pull/4700)).
 - cli: Honor the SIMD-0431 minimum extend program size when extending program data ([#4785](https://github.com/otter-sec/anchor/pull/4785)).
+- client: Do not panic in `parse_logs_response` when logs continue after a top-level instruction returns, e.g. the runtime's trailing `"Log truncated"` marker ([#4967](https://github.com/solana-foundation/anchor/pull/4967)).
 
 ### Breaking
 

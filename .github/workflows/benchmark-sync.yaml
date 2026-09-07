@@ -1,0 +1,53 @@
+name: Benchmark Sync
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'tests/bench/**'
+  pull_request:
+    branches:
+      - master
+      - anchor-next
+    paths:
+      - 'tests/bench/**'
+
+permissions:
+  contents: read
+
+env:
+  SOLANA_VERSION: 3.1.10
+  NODE_VERSION: 22.22.3
+  SURFPOOL_CLI_VERSION: 1.2.0
+  CARGO_CACHE_PATH: |
+    ~/.cargo/bin/
+    ~/.cargo/registry/index/
+    ~/.cargo/registry/cache/
+    ~/.cargo/git/db/
+    ./target/
+
+jobs:
+  benchmark-sync:
+    name: Benchmark Sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup/
+      - uses: ./.github/actions/setup-ts/
+      - uses: ./.github/actions/setup-solana/
+      - uses: ./.github/actions/setup-surfpool/
+
+      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+        name: Cache Cargo registry + index
+        with:
+          path: ${{ env.CARGO_CACHE_PATH }}
+          key: cargo-${{ runner.os }}-debug-bench-sync-${{ hashFiles('**/Cargo.lock') }}
+
+      - run: cargo install --path cli anchor-cli --locked --force --debug --features idl-localnet-testing
+      - run: cargo install --path avm --locked --force
+      - run: cd tests/bench && anchor run sync
+      - uses: ./.github/actions/git-diff/

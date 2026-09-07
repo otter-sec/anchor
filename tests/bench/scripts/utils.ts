@@ -1,19 +1,26 @@
 import * as fs from "fs/promises";
 import path from "path";
-import { execSync, spawnSync } from "child_process";
+import { spawnSync } from "child_process";
 
 /** Version that is used in bench data file */
 export type Version = "unreleased" | (`${number}.${number}.${number}` & {});
 
+/** Platform-tools version used to build benchmark programs. */
+export type PlatformToolsVersion = `v${number}.${number}`;
+
 /** Persistent benchmark data(mapping of `Version -> Data`) */
 type Bench = {
   [key: string]: {
+    /** Whether this Anchor version lacks a binary release and is skipped during sync. */
+    disabled?: boolean;
     /**
      * Storing Solana version used in the release to:
      * - Be able to build older versions
      * - Adjust for the changes in platform-tools
      */
     solanaVersion: Version;
+    /** Platform-tools version used to build the benchmark program */
+    platformToolsVersion: PlatformToolsVersion;
     /** Benchmark results for a version */
     result: BenchResult;
   };
@@ -51,6 +58,9 @@ export const BENCH_DIR_PATH = path.join("..", "..", "bench");
 /** Command line argument for Anchor version */
 export const ANCHOR_VERSION_ARG = "--anchor-version";
 
+/** Environment variable containing the benchmark result version. */
+export const BENCHMARK_VERSION_ENV = "ANCHOR_BENCHMARK_VERSION";
+
 /** Utility class to handle benchmark data related operations */
 export class BenchData {
   /** Benchmark data filepath */
@@ -80,7 +90,10 @@ export class BenchData {
 
   /** Save the benchmark data file. */
   async save() {
-    await fs.writeFile(BenchData.#PATH, JSON.stringify(this.#data, null, 2));
+    await fs.writeFile(
+      BenchData.#PATH,
+      `${JSON.stringify(this.#data, null, 2)}\n`
+    );
   }
 
   /** Get the stored results based on version. */
@@ -93,6 +106,14 @@ export class BenchData {
     return Object.keys(this.#data) as Version[];
   }
 
+  /** Record the platform-tools version used for a benchmark version. */
+  setPlatformToolsVersion(
+    version: Version,
+    platformToolsVersion: PlatformToolsVersion
+  ) {
+    this.#data[version].platformToolsVersion = platformToolsVersion;
+  }
+
   /** Compare benchmark changes. */
   compare<K extends keyof BenchResult>({
     newResult,
@@ -100,6 +121,7 @@ export class BenchData {
     changeCb,
     noChangeCb,
     treshold = 0,
+    throwOnChange = true,
   }: {
     /** New bench result */
     newResult: BenchResult[K];
@@ -115,6 +137,8 @@ export class BenchData {
     noChangeCb?: (args: { name: string; value: number }) => void;
     /** Change threshold percentage(maximum allowed difference between results) */
     treshold?: number;
+    /** Whether changes should fail when running in CI */
+    throwOnChange?: boolean;
   }) {
     let needsUpdate = false;
     const executeChangeCb = (...args: Parameters<typeof changeCb>) => {
@@ -171,7 +195,7 @@ export class BenchData {
         absDelta > newMaximumAllowedDelta
       ) {
         // Throw in CI
-        if (process.env.CI) {
+        if (process.env.CI && throwOnChange) {
           throw new Error(
             [
               `Key '${name}' has changed more than ${treshold}% but is not saved.`,
@@ -441,9 +465,11 @@ export class Toml {
     cb: (previous: string) => string,
     opts?: { insideQuotes: boolean }
   ) {
+    const valuePattern = opts?.insideQuotes ? '"([^"]*)"' : "(.*)";
     this.#text = this.#text.replace(
-      new RegExp(`${key}\\s*=\\s*${opts?.insideQuotes ? `"(.*)"` : "(.*)"}`),
-      (line, value) => line.replace(value, cb(value))
+      new RegExp(`(${key}\\s*=\\s*)${valuePattern}`),
+      (_line, prefix, value) =>
+        `${prefix}${opts?.insideQuotes ? `"${cb(value)}"` : cb(value)}`
     );
   }
 }
@@ -472,9 +498,9 @@ export class LockFile {
     try {
       await fs.rename(this.#CARGO_LOCK, this.#getLockPath(version));
     } catch {
-      // Lock file doesn't exist
-      // Run the tests to create the lock file
-      const result = runAnchorTest();
+      // Lock file doesn't exist. Use the benchmark test script so the build
+      // emits the stack-size metadata required by its tests.
+      const result = spawn("./test.sh", []);
 
       // Check failure
       if (result.status !== 0) {
@@ -491,40 +517,15 @@ export class LockFile {
   }
 }
 
-/** Utility class to manage versions */
-export class VersionManager {
-  /** Set the active Solana version with `solana-install init` command. */
-  static setSolanaVersion(version: Version) {
-    const activeVersion = this.#getSolanaVersion();
-    if (activeVersion === version) return;
-
-    // `solana-install` is renamed to `agave-install` in Solana v2
-    // https://github.com/anza-xyz/agave/wiki/Agave-Transition
-    const cmdName = activeVersion.startsWith("1")
-      ? "solana-install"
-      : "agave-install";
-    spawn(cmdName, ["init", version], {
-      logOutput: true,
-      throwOnError: { msg: `Failed to set Solana version to ${version}` },
-    });
-  }
-
-  /** Get the active Solana version. */
-  static #getSolanaVersion() {
-    // `solana-cli 1.14.16 (src:0fb2ffda; feat:3488713414)\n`
-    const result = execSync("solana --version");
-    const output = Buffer.from(result.buffer).toString();
-    const solanaVersion = /(\d\.\d{1,3}\.\d{1,3})/.exec(output)![1].trim();
-    return solanaVersion as Version;
-  }
-}
-
 /**
  * Get Anchor version from the passed arguments.
  *
  * Defaults to `unreleased`.
  */
 export const getVersionFromArgs = () => {
+  const benchmarkVersion = process.env[BENCHMARK_VERSION_ENV];
+  if (benchmarkVersion) return benchmarkVersion as Version;
+
   const args = process.argv;
   const anchorVersionArgIndex = args.indexOf(ANCHOR_VERSION_ARG);
   return anchorVersionArgIndex === -1
@@ -536,26 +537,35 @@ export const getVersionFromArgs = () => {
 export const spawn = (
   cmd: string,
   args: string[],
-  opts?: { logOutput?: boolean; throwOnError?: { msg: string } }
+  opts?: {
+    env?: NodeJS.ProcessEnv;
+    logOutput?: boolean;
+    maxBuffer?: number;
+    throwOnError?: { msg: string };
+  }
 ) => {
-  const result = spawnSync(cmd, args);
+  const result = spawnSync(cmd, args, {
+    env: opts?.env,
+    maxBuffer: opts?.maxBuffer,
+  });
   const success = result.status === 0;
   if (opts?.logOutput || !success) {
     console.log(
       `Output of \`${cmd} ${args.join(" ")}\`:`,
-      result.output.toString()
+      result.error ?? result.output?.toString()
     );
   }
 
   if (opts?.throwOnError && !success) {
-    throw new Error(opts.throwOnError.msg);
+    throw new Error(
+      result.error
+        ? `${opts.throwOnError.msg} ${result.error.message}`
+        : opts.throwOnError.msg
+    );
   }
 
   return result;
 };
-
-/** Run `anchor test` command. */
-export const runAnchorTest = () => spawn("anchor", ["test", "--skip-lint"]);
 
 /** Format number with `en-US` locale. */
 export const formatNumber = (number: number) => number.toLocaleString("en-US");

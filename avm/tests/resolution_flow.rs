@@ -386,6 +386,60 @@ fn avm_subcommands_resolve_solana_and_platform_tools_from_project() {
     );
 }
 
+#[test]
+fn avm_platform_tools_resolve_accepts_explicit_solana_or_anchor_versions() {
+    let fixture = Fixture::new();
+    let project = fixture.project("empty");
+
+    let solana = fixture.run_avm(
+        &project,
+        [
+            "platform-tools",
+            "resolve",
+            "--solana-version",
+            "3.1.10",
+            "--output",
+            "version",
+        ],
+    );
+    assert_success(&solana);
+    assert_eq!(command_stdout(solana), "v1.52\n");
+
+    let anchor = fixture.run_avm(
+        &project,
+        ["platform-tools", "resolve", "--anchor-version", "1.0.2"],
+    );
+    assert_success(&anchor);
+    let anchor_stdout = command_stdout(anchor);
+    assert!(
+        anchor_stdout.contains("platform-tools v1.52"),
+        "{anchor_stdout}"
+    );
+    assert!(
+        anchor_stdout.contains("explicit Anchor 1.0.2 → Solana 3.1.10 → map"),
+        "{anchor_stdout}"
+    );
+
+    let conflicting = fixture.run_avm(
+        &project,
+        [
+            "platform-tools",
+            "resolve",
+            "--solana-version",
+            "3.1.10",
+            "--anchor-version",
+            "1.0.2",
+        ],
+    );
+    assert!(!conflicting.status.success());
+    assert!(
+        String::from_utf8_lossy(&conflicting.stderr)
+            .contains("cannot be used with '--anchor-version <ANCHOR_VERSION>'"),
+        "{}",
+        String::from_utf8_lossy(&conflicting.stderr)
+    );
+}
+
 fn create_tar_gz(archive: &Path, source_dir: &Path, entry: &str) {
     let output = Command::new("tar")
         .arg("-czf")
