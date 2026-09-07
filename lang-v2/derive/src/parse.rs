@@ -2348,18 +2348,23 @@ pub fn parse_field(
         None => (None, None, None),
     };
     let idl_docs = crate::idl::extract_doc_lines(&field.attrs);
-    let idl_pda = attrs.seeds.as_ref().and_then(|seeds_expr| {
-        let seeds = crate::idl::classify_seed_list(seeds_expr, field_names, ix_arg_names)?;
-        let program = match attrs.seeds_program.as_ref() {
-            Some(program_expr) => Some(crate::idl::classify_program_seed(
-                program_expr,
-                field_names,
-                ix_arg_names,
-            )?),
-            None => None,
-        };
-        Some(IdlPdaMeta { seeds, program })
-    });
+    let idl_pda = if matches!(attrs.bump.as_ref(), Some(Some(_))) {
+        // Explicit bumps may be non-canonical, so clients need the address.
+        None
+    } else {
+        attrs.seeds.as_ref().and_then(|seeds_expr| {
+            let seeds = crate::idl::classify_seed_list(seeds_expr, field_names, ix_arg_names)?;
+            let program = match attrs.seeds_program.as_ref() {
+                Some(program_expr) => Some(crate::idl::classify_program_seed(
+                    program_expr,
+                    field_names,
+                    ix_arg_names,
+                )?),
+                None => None,
+            };
+            Some(IdlPdaMeta { seeds, program })
+        })
+    };
     let idl_field_ty: Option<syn::Type> = {
         let base_ty = option_inner.unwrap_or(field_ty);
         if let Type::Path(_) = base_ty {
