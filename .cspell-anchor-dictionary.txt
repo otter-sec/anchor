@@ -36,6 +36,7 @@ duplicative
 footguns
 flamegraph
 flamegraphs
+footgun
 fumadocs
 Fumadocs
 getrandom
