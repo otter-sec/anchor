@@ -10,3 +10,18 @@ runs:
       shell: bash
     - run: git submodule update --init --recursive --depth 1
       shell: bash
+    - name: Set up sccache
+      if: ${{ env.CACHE == 'true' }}
+      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      with:
+        version: v0.16.0
+    - name: Enable sccache for Rust
+      if: ${{ env.CACHE == 'true' }}
+      shell: bash
+      run: |
+        echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+        echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
+        echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+        if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.pull_request.head.repo.fork }}" == "true" ]]; then
+          echo "SCCACHE_GHA_RW_MODE=READ_ONLY" >> "$GITHUB_ENV"
+        fi

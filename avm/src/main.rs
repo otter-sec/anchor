@@ -1,7 +1,7 @@
 use {
     anyhow::{anyhow, Context, Error, Result},
     avm::{InstallTarget, Resolution},
-    clap::{CommandFactory, Parser, Subcommand},
+    clap::{CommandFactory, Parser, Subcommand, ValueEnum},
     semver::Version,
     std::{
         ffi::OsStr,
@@ -131,7 +131,17 @@ pub enum PlatformToolsCommand {
     /// in `Anchor.toml` and the `solana-program` dep in `Cargo.toml`, then maps
     /// the resolved Solana version to a platform-tools version via the static map
     /// derived from `cargo-build-sbf`'s `DEFAULT_PLATFORM_TOOLS_VERSION`.
-    Resolve,
+    Resolve {
+        /// Resolve platform-tools for this Solana CLI version instead of the project.
+        #[clap(long, conflicts_with = "anchor_version")]
+        solana_version: Option<Version>,
+        /// Map this Anchor CLI version to Solana before resolving platform-tools.
+        #[clap(long, conflicts_with = "solana_version")]
+        anchor_version: Option<Version>,
+        /// Select whether to print diagnostics or only the platform-tools version.
+        #[clap(long, value_enum, default_value_t = PlatformToolsResolveOutput::Human)]
+        output: PlatformToolsResolveOutput,
+    },
     /// Install a platform-tools version. With no argument, installs the
     /// project-resolved version.
     Install {
@@ -148,6 +158,12 @@ pub enum PlatformToolsCommand {
         /// Platform-tools version to remove, e.g. `v1.54`.
         version: String,
     },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum PlatformToolsResolveOutput {
+    Human,
+    Version,
 }
 
 /// Returns true if `pre` is a semver pre-release tag (`rc.`, `beta.`, `alpha.`),
@@ -288,15 +304,41 @@ pub fn entry(opts: Cli) -> Result<()> {
             }
         },
         Commands::PlatformTools { command } => match command {
-            PlatformToolsCommand::Resolve => {
-                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                let res = avm::resolve_platform_tools(&cwd)?;
-                println!(
-                    "platform-tools {} (rustc {}, {})",
-                    res.version,
-                    res.rustc,
-                    res.source.describe()
-                );
+            PlatformToolsCommand::Resolve {
+                solana_version,
+                anchor_version,
+                output,
+            } => {
+                let (res, source) = if let Some(solana) = solana_version {
+                    let res = avm::resolve_platform_tools_for_solana_version(&solana);
+                    let source = res.source.describe();
+                    (res, source)
+                } else if let Some(anchor) = anchor_version {
+                    let solana = avm::solana::lookup_solana_for_anchor_version(&anchor)
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "No Solana CLI mapping exists for Anchor {anchor}. Pass \
+                                 --solana-version to choose one explicitly."
+                            )
+                        })?;
+                    let res = avm::resolve_platform_tools_for_solana_version(&solana);
+                    (
+                        res,
+                        format!("explicit Anchor {anchor} → Solana {solana} → map"),
+                    )
+                } else {
+                    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                    let res = avm::resolve_platform_tools(&cwd)?;
+                    let source = res.source.describe();
+                    (res, source)
+                };
+                match output {
+                    PlatformToolsResolveOutput::Human => println!(
+                        "platform-tools {} (rustc {}, {source})",
+                        res.version, res.rustc
+                    ),
+                    PlatformToolsResolveOutput::Version => println!("{}", res.version),
+                }
                 Ok(())
             }
             PlatformToolsCommand::Install { version, force } => {

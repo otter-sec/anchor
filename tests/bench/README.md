@@ -8,11 +8,11 @@ We run the same tests that measure some metric for each Anchor version starting 
 
 ## Scripts
 
-| :memo: TL;DR                                                                                                                   |
-| :----------------------------------------------------------------------------------------------------------------------------- |
-| If you've made changes to programs or tests in this directory, run `anchor run sync`, otherwise run `anchor test --skip-lint`. |
+| :memo: TL;DR                                                                                                     |
+| :--------------------------------------------------------------------------------------------------------------- |
+| If you've made changes to programs or tests in this directory, run `anchor run sync`, otherwise run `./test.sh`. |
 
-`anchor test --skip-lint`: Run all tests and update benchmark files when necessary. This is the only command that needs to be run for most use cases.
+`./test.sh`: Run all tests and update benchmark files when necessary. This is the only command that needs to be run for most use cases.
 
 ---
 

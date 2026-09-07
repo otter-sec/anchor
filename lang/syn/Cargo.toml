@@ -11,11 +11,11 @@ edition = "2021"
 workspace = true
 
 [lints.clippy]
-unwrap-used = "deny"
-expect-used = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
 panic = "deny"
 unimplemented = "deny"
-indexing-slicing = "deny"
+indexing_slicing = "deny"
 
 [features]
 allow-missing-optionals = []
