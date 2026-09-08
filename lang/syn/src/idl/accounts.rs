@@ -206,24 +206,31 @@ fn get_pda(acc: &Field, accounts: &AccountsStruct) -> TokenStream {
     // Parse Seeds
     let pda = seed_constraints
         .and_then(|seed| {
-            // Try to parse every seed in the list.
-            // Collect into a Vec<Result> so we can inspect individual failures.
-            let results: Vec<Result<TokenStream, _>> =
-                seed.seeds.iter().map(parse_default).collect();
+            let mut parsed_seeds = Vec::new();
+            let mut unsupported_seeds = Vec::new();
 
-            // CHECK FOR ERRORS:
-            // If `any` seed failed to parse (returns Err), it means the user used syntax that IDL doesn't support
-            if results.iter().any(|r| r.is_err()) {
-                warn_skipped_pda_seed(
-                    acc,
-                    "Seeds contain unsupported complex expressions (e.g., function calls)",
-                );
+            for expr in seed.seeds.iter() {
+                match parse_default(expr) {
+                    Ok(parsed) => parsed_seeds.push(parsed),
+                    Err(_) => unsupported_seeds.push(expr),
+                }
+            }
+
+            if !unsupported_seeds.is_empty() {
+                for expr in unsupported_seeds {
+                    warn_skipped_pda_seed(
+                        acc,
+                        &format!(
+                            "Unsupported seed expression `{}`",
+                            expr.to_token_stream()
+                        ),
+                    );
+                }
 
                 // Return None. This is safe; it simply omits the `pda` field from the JSON,
                 None
             } else {
-                // If all seeds parsed correctly, unwrap them and return the vector.
-                Some(results.into_iter().map(|r| r.unwrap()).collect::<Vec<_>>())
+                Some(parsed_seeds)
             }
         })
         .and_then(|seeds| {
@@ -236,7 +243,10 @@ fn get_pda(acc: &Field, accounts: &AccountsStruct) -> TokenStream {
                     Err(_) => {
                         warn_skipped_pda_seed(
                             acc,
-                            "seeds::program contains unsupported complex expressions (e.g., function calls)",
+                            &format!(
+                                "seeds::program contains unsupported expression `{}`",
+                                program.to_token_stream()
+                            ),
                         );
                         return None;
                     }
@@ -532,4 +542,98 @@ fn get_relations(acc: &Field, accounts: &AccountsStruct) -> TokenStream {
         .flatten()
         .collect::<Vec<_>>();
     quote! { vec![#(#relations.into()),*] }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    #[test]
+    fn test_get_pda_supported_seeds() {
+        let accounts: AccountsStruct = parse_quote! {
+            pub struct Test<'info> {
+                #[account(seeds = [b"pool", token_a.key().as_ref()], bump)]
+                pub pool: AccountInfo<'info>,
+            }
+        };
+        let field = match &accounts.fields[0] {
+            AccountField::Field(f) => f,
+            _ => panic!("expected field"),
+        };
+        let pda = get_pda(field, &accounts);
+        let pda_str = pda.to_string();
+        assert!(pda_str.contains("IdlPda"));
+    }
+
+    #[test]
+    fn test_get_pda_unsupported_seeds() {
+        let accounts: AccountsStruct = parse_quote! {
+            pub struct Test<'info> {
+                #[account(seeds = [b"pool", &max_key(a, b)], bump)]
+                pub pool: AccountInfo<'info>,
+            }
+        };
+        let field = match &accounts.fields[0] {
+            AccountField::Field(f) => f,
+            _ => panic!("expected field"),
+        };
+        let pda = get_pda(field, &accounts);
+        let pda_str = pda.to_string();
+        assert_eq!(pda_str, "None");
+    }
+
+    #[test]
+    fn test_get_pda_init_seeds() {
+        let accounts: AccountsStruct = parse_quote! {
+            pub struct Test<'info> {
+                #[account(init, seeds = [b"pool"], bump, payer = payer, space = 8)]
+                pub pool: AccountInfo<'info>,
+                #[account(mut)]
+                pub payer: Signer<'info>,
+                pub system_program: Program<'info, System>,
+            }
+        };
+        let field = match &accounts.fields[0] {
+            AccountField::Field(f) => f,
+            _ => panic!("expected field"),
+        };
+        let pda = get_pda(field, &accounts);
+        let pda_str = pda.to_string();
+        assert!(pda_str.contains("IdlPda"));
+    }
+
+    #[test]
+    fn test_get_pda_unsupported_seeds_program() {
+        let accounts: AccountsStruct = parse_quote! {
+            pub struct Test<'info> {
+                #[account(seeds = [b"pool"], bump, seeds::program = &custom_program(x))]
+                pub pool: AccountInfo<'info>,
+            }
+        };
+        let field = match &accounts.fields[0] {
+            AccountField::Field(f) => f,
+            _ => panic!("expected field"),
+        };
+        let pda = get_pda(field, &accounts);
+        let pda_str = pda.to_string();
+        assert_eq!(pda_str, "None");
+    }
+
+    #[test]
+    fn test_get_pda_multiple_unsupported_seeds() {
+        let accounts: AccountsStruct = parse_quote! {
+            pub struct Test<'info> {
+                #[account(seeds = [b"pool", &max_key(a, b), &min_key(c, d)], bump)]
+                pub pool: AccountInfo<'info>,
+            }
+        };
+        let field = match &accounts.fields[0] {
+            AccountField::Field(f) => f,
+            _ => panic!("expected field"),
+        };
+        let pda = get_pda(field, &accounts);
+        let pda_str = pda.to_string();
+        assert_eq!(pda_str, "None");
+    }
 }
