@@ -1,4 +1,5 @@
 import { PublicKey } from "@solana/web3.js";
+import BN from "bn.js";
 
 import { AccountsResolver } from "../src/program/accounts-resolver";
 import { Idl } from "../src";
@@ -230,5 +231,87 @@ describe("AccountsResolver", () => {
     expect(err.message).toMatch(/Unresolved accounts: `badPda`/);
     expect(err.message).not.toMatch(/`resolvedPda`/);
     expect(err.message).toMatch(/`badPda`: Unable to find argument for seed/);
+  });
+
+  it("resolves token account delegatedAmount seed", async () => {
+    const tokenAccountPubkey = new PublicKey(
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+    );
+    const programId = new PublicKey(
+      "Test111111111111111111111111111111111111111"
+    );
+
+    // Mock token account buffer (165 bytes).
+    // DelegatedAmount is a u64 at byte offset 121.
+    const tokenAccountData = Buffer.alloc(165);
+    const delegatedAmountVal = 42;
+    new BN(delegatedAmountVal)
+      .toArrayLike(Buffer, "le", 8)
+      .copy(tokenAccountData, 121);
+
+    const idl: Idl = {
+      address: programId.toBase58(),
+      metadata: { name: "test", version: "0.0.0", spec: "0.1.0" },
+      instructions: [
+        {
+          name: "doThing",
+          discriminator: [0, 0, 0, 0, 0, 0, 0, 0],
+          args: [],
+          accounts: [
+            {
+              name: "tokenAccount",
+            },
+            {
+              name: "pda",
+              pda: {
+                seeds: [
+                  {
+                    kind: "account",
+                    path: "tokenAccount.delegatedAmount",
+                    account: "tokenAccount",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const mockProvider = {
+      connection: {
+        getAccountInfo: jest.fn().mockResolvedValue({
+          data: tokenAccountData,
+        }),
+      },
+    };
+
+    const accounts = { tokenAccount: tokenAccountPubkey };
+    const resolver = new AccountsResolver(
+      [],
+      accounts,
+      mockProvider as any,
+      programId,
+      idl.instructions[0] as any,
+      {} as any,
+      []
+    );
+
+    await resolver.resolve();
+
+    const expectedSeedBuffer = new BN(delegatedAmountVal).toArrayLike(
+      Buffer,
+      "le",
+      8
+    );
+    const [expectedPda] = PublicKey.findProgramAddressSync(
+      [expectedSeedBuffer],
+      programId
+    );
+
+    expect(accounts).toEqual({
+      tokenAccount: tokenAccountPubkey,
+      pda: expectedPda,
+    });
   });
 });

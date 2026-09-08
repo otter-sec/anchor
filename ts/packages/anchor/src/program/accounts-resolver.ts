@@ -621,7 +621,6 @@ export class AccountsResolver<IDL extends Idl> {
             return "pubkey";
           case "amount":
           case "delegatedAmount":
-          case "delagatedAmount":
             return "u64";
           default:
             throw new Error(`Unknown token account path: ${path}`);
