@@ -266,8 +266,12 @@ impl<'info, B, T: ZeroCopy + Owner> Accounts<'info, B> for AccountLoader<'info, 
 impl<'info, T: ZeroCopy + Owner> AccountsExit<'info> for AccountLoader<'info, T> {
     // The account *cannot* be loaded when this is called.
     fn exit(&self, program_id: &Pubkey) -> Result<()> {
-        // Only persist if the owner is the current program and the account is not closed.
-        if &T::owner() == program_id && !crate::common::is_closed(self.acc_info) {
+        // Only persist if the account is still owned by the current program
+        // and not closed.
+        if &T::owner() == program_id
+            && self.acc_info.owner == program_id
+            && !crate::common::is_closed(self.acc_info)
+        {
             // Guard against truncation: refuse to rewrite the discriminator over an undersized buffer.
             let required = T::DISCRIMINATOR.len() + mem::size_of::<T>();
             if self.acc_info.try_data_len()? < required {

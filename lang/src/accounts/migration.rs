@@ -358,8 +358,9 @@ where
     To: AccountSerialize + Owner,
 {
     fn exit(&self, program_id: &Pubkey) -> Result<()> {
-        // Check if account is closed
-        if crate::common::is_closed(self.info) {
+        // Skip if the account is closed or no longer owned by the current
+        // program.
+        if crate::common::is_closed(self.info) || self.info.owner != program_id {
             return Ok(());
         }
 

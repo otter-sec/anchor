@@ -257,8 +257,14 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone> Account<'a, T> {
         expected_owner: &Pubkey,
         program_id: &Pubkey,
     ) -> Result<()> {
-        // Only persist if the owner is the current program and the account is not closed.
-        if expected_owner == program_id && !crate::common::is_closed(self.info) {
+        // Only persist if the account is still owned by the current program
+        // and not closed. Ownership can move away mid-instruction (e.g. when
+        // reassigned via CPI); writing then fails under direct mapping with
+        // `ExternalAccountDataModified` and is pointless otherwise.
+        if expected_owner == program_id
+            && self.info.owner == program_id
+            && !crate::common::is_closed(self.info)
+        {
             let mut data = self.info.try_borrow_mut_data()?;
             let dst: &mut [u8] = &mut data;
             let mut writer = BpfWriter::new(dst);

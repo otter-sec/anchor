@@ -14,6 +14,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang: Skip re-serializing `Account`, `AccountLoader`, `LazyAccount` and `Migration` on exit when the account is no longer owned by the program, e.g. after being reassigned via CPI in the same instruction.
+
 ### Breaking
 
 ## [1.2.0] - 2026-09-04
