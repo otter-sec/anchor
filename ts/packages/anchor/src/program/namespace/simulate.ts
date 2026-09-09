@@ -1,6 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 import Provider from "../../provider.js";
-import { SuccessfulTxSimulationResponse } from "src/utils/rpc.js";
+import { SuccessfulTxSimulationResponse } from "../../utils/rpc.js";
 import { splitArgsAndCtx } from "../context.js";
 import { TransactionFn } from "./transaction.js";
 import { EventParser, Event } from "../event.js";
@@ -52,7 +52,7 @@ export default class SimulateFactory {
       const events: Event[] = [];
       if (idl.events) {
         let parser = new EventParser(programId, coder);
-        for (const event of parser.parseLogs(logs)) {
+        for (const event of parser.parseLogs([...logs])) {
           events.push(event);
         }
       }

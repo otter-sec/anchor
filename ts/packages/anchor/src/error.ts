@@ -1,5 +1,7 @@
+import { SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM } from "@solana/kit";
 import { PublicKey } from "@solana/web3.js";
 import * as errors from "@anchor-lang/errors";
+import { findSolanaError } from "./utils/common.js";
 import * as features from "./utils/features.js";
 
 export class IdlError extends Error {
@@ -212,29 +214,8 @@ export class ProgramError extends Error {
     err: any,
     idlErrors: Map<number, string>
   ): ProgramError | null {
-    const errString: string = err.toString();
-    // TODO: don't rely on the error string. web3.js should preserve the error
-    //       code information instead of giving us an untyped string.
-    let unparsedErrorCode: string;
-    if (errString.includes("custom program error:")) {
-      let components = errString.split("custom program error: ");
-      if (components.length !== 2) {
-        return null;
-      } else {
-        unparsedErrorCode = components[1];
-      }
-    } else {
-      const matches = errString.match(/"Custom":([0-9]+)}/g);
-      if (!matches || matches.length > 1) {
-        return null;
-      }
-      unparsedErrorCode = matches[0].match(/([0-9]+)/g)![0];
-    }
-
-    let errorCode: number;
-    try {
-      errorCode = parseInt(unparsedErrorCode);
-    } catch (parseErr) {
+    let errorCode: number | null = ProgramError.parseErrorCode(err);
+    if (errorCode === null) {
       return null;
     }
 
@@ -252,6 +233,47 @@ export class ProgramError extends Error {
 
     // Unable to parse the error. Just return the untranslated error.
     return null;
+  }
+
+  /**
+   * Extracts the custom program error code from the given error, or returns
+   * `null` when the error does not carry one.
+   */
+  private static parseErrorCode(err: any): number | null {
+    // Kit nests the instruction error as a `SolanaError` in the cause chain
+    // (e.g. below a preflight failure), carrying the code in its context.
+    const customError = findSolanaError(
+      err,
+      SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM
+    );
+    if (customError) {
+      return Number(customError.context.code);
+    }
+
+    // Fall back to parsing the error string, e.g. for errors surfaced by the
+    // legacy web3.js paths or raw RPC simulation results.
+    const errString: string = err.toString();
+    let unparsedErrorCode: string;
+    if (errString.includes("custom program error:")) {
+      let components = errString.split("custom program error: ");
+      if (components.length !== 2) {
+        return null;
+      } else {
+        unparsedErrorCode = components[1];
+      }
+    } else {
+      const matches = errString.match(/"Custom":([0-9]+)}/g);
+      if (!matches || matches.length > 1) {
+        return null;
+      }
+      unparsedErrorCode = matches[0].match(/([0-9]+)/g)![0];
+    }
+
+    try {
+      return parseInt(unparsedErrorCode);
+    } catch (parseErr) {
+      return null;
+    }
   }
 
   get program(): PublicKey | undefined {
