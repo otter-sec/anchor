@@ -18,6 +18,7 @@
 //! `solana-sbf-tools` names with or without an architecture suffix.
 use {
     crate::{
+        download_response_to_writer,
         resolve::{resolve_solana_version, SolanaResolution, SolanaResolutionSource},
         solana::installable_solana_cli_versions_for_req,
         AVM_HOME, DOWNLOAD_CLIENT,
@@ -719,7 +720,7 @@ fn looks_installed(dir: &Path) -> bool {
 }
 
 fn download_to(url: &str, dest: &Path) -> Result<()> {
-    let mut response = DOWNLOAD_CLIENT
+    let response = DOWNLOAD_CLIENT
         .get(url)
         .send()
         .with_context(|| format!("Sending GET {url}"))?;
@@ -728,8 +729,7 @@ fn download_to(url: &str, dest: &Path) -> Result<()> {
     }
     let mut file =
         fs::File::create(dest).with_context(|| format!("Creating {}", dest.display()))?;
-    response
-        .copy_to(&mut file)
+    download_response_to_writer(response, "Downloading platform-tools", &mut file)
         .with_context(|| format!("Writing {}", dest.display()))?;
     Ok(())
 }
