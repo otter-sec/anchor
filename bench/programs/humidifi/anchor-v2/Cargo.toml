@@ -16,7 +16,7 @@ profile = ["anchor-v2-testing/profile"]
 
 [dev-dependencies]
 anchor-v2-testing = { path = "../../../../v2-testing" }
-litesvm = "0.11"
+litesvm = "0.13.1"
 solana-account = "3"
 solana-instruction = "3"
 solana-pubkey = "4"

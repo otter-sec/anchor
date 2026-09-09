@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 env:
-  SOLANA_VERSION: "3.1.10"
+  SOLANA_VERSION: "4.1.2"
   SBF_TOOLS_VERSION: "v1.52"
 
 jobs:

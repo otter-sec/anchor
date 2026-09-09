@@ -271,7 +271,7 @@ fn cargo_toml(name: &str, test_template: Option<&TestTemplate>) -> String {
         Some(TestTemplate::Mollusk) => {
             r#"
 [dev-dependencies]
-mollusk-svm = "~0.10"
+mollusk-svm = "0.13"
 solana-account = "3"
 solana-pubkey = "4"
 solana-sdk-ids = "3"

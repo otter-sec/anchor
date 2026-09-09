@@ -181,6 +181,36 @@ fn init_data(svm: &mut LiteSVM, payer: &Keypair, authority_key: &Pubkey) -> Pubk
     data
 }
 
+#[test]
+fn init_creates_prefunded_pda() {
+    let (mut svm, payer, authority) = setup();
+    let data = data_pda();
+    let prefund_lamports = 1_000_000;
+    svm.airdrop(&data, prefund_lamports).expect("prefund PDA");
+
+    init_data(&mut svm, &payer, &authority.pubkey());
+
+    let account = svm.get_account(&data).expect("initialized account");
+    assert_eq!(account.owner, program_id());
+    assert!(account.lamports >= prefund_lamports);
+    assert_eq!(read_value(&svm, &data), Some(42));
+}
+
+#[test]
+fn init_creates_fully_prefunded_pda_without_top_up() {
+    let (mut svm, payer, authority) = setup();
+    let data = data_pda();
+    let prefund_lamports = 10_000_000;
+    svm.airdrop(&data, prefund_lamports).expect("prefund PDA");
+
+    init_data(&mut svm, &payer, &authority.pubkey());
+
+    let account = svm.get_account(&data).expect("initialized account");
+    assert_eq!(account.owner, program_id());
+    assert_eq!(account.lamports, prefund_lamports);
+    assert_eq!(read_value(&svm, &data), Some(42));
+}
+
 // ---- 1. address = expr -----------------------------------------------------
 
 #[test]
