@@ -13,7 +13,7 @@ on:
 
 env:
   SOLANA_VERSION: "3.1.10"
-  NODE_VERSION: "20"
+  NODE_VERSION: "22"
   SURFPOOL_CLI_VERSION: "1.2.0"
 
 jobs:

@@ -16,6 +16,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Breaking
 
+- ts: Require Node.js >=22.12 ([#5005](https://github.com/otter-sec/anchor/pull/5005)).
 - ts: Replace the borsh coder with `@solana/kit` codecs and remove the `@anchor-lang/borsh` package ([#4985](https://github.com/otter-sec/anchor/pull/4985)).
 
 ## [2.0.0-rc.1] - 2026-08-12

@@ -19,7 +19,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=20.18"
+    "node": ">=22.12"
   },
   "scripts": {
     "build": "rimraf dist/ && yarn build:node && yarn build:browser",
@@ -58,7 +58,7 @@
     "@types/bs58": "^4.0.1",
     "@types/crypto-hash": "^1.1.2",
     "@types/jest": "^27.4.1",
-    "@types/node": "^20.19.0",
+    "@types/node": "^22.0.0",
     "@types/pako": "^1.0.1",
     "@typescript-eslint/eslint-plugin": "^4.6.0",
     "@typescript-eslint/parser": "^4.6.0",
