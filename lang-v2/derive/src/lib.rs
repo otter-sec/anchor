@@ -3163,10 +3163,12 @@ fn validate_discriminator_prefixes(
     Ok(())
 }
 
-fn validate_instruction_discriminator_prefixes(
+fn instruction_discriminator_validation_tokens(
     handlers: &[&syn::ItemFn],
     discrim_attrs: &[Option<DiscrimAttr>],
-) -> syn::Result<()> {
+    mode: ProgramMode,
+) -> syn::Result<TokenStream2> {
+    let mut validations = TokenStream2::new();
     let discriminators: Vec<_> = handlers
         .iter()
         .enumerate()
@@ -3180,23 +3182,77 @@ fn validate_instruction_discriminator_prefixes(
         })
         .collect();
 
-    for (outer_name, outer_disc, outer_span) in &discriminators {
-        for (inner_name, inner_disc, _) in &discriminators {
-            if outer_name != inner_name && outer_disc.starts_with(inner_disc) {
-                return Err(syn::Error::new(
-                    *outer_span,
+    for i in 0..discriminators.len() {
+        for j in (i + 1)..discriminators.len() {
+            let (first_name, first_disc, first_span) = &discriminators[i];
+            let (second_name, second_disc, second_span) = &discriminators[j];
+            let first_custom = discrim_attrs[i].is_some();
+            let second_custom = discrim_attrs[j].is_some();
+            let mixed_mode = mode == ProgramMode::Executable && first_custom != second_custom;
+            let overlapping =
+                first_disc.starts_with(second_disc) || second_disc.starts_with(first_disc);
+
+            if !mixed_mode && !overlapping {
+                continue;
+            }
+
+            let (message, span) = if mixed_mode {
+                (
+                    "if any instruction in `#[program]` uses `#[discrim = N]`, all must".into(),
+                    *second_span,
+                )
+            } else if first_custom
+                && second_custom
+                && first_disc.len() == 1
+                && second_disc.len() == 1
+                && first_disc == second_disc
+            {
+                (
                     format!(
-                        "Ambiguous discriminators for instructions: `{inner_name}` discriminator \
-                         {} is a prefix of `{outer_name}` discriminator {}",
-                        format_discriminator_bytes(inner_disc),
-                        format_discriminator_bytes(outer_disc),
+                        "duplicate `#[discrim = {}]` on instruction `{}`",
+                        first_disc[0], second_name
                     ),
-                ));
+                    *second_span,
+                )
+            } else if first_disc.starts_with(second_disc) {
+                (
+                    format!(
+                        "Ambiguous discriminators for instructions: `{second_name}` discriminator \
+                         {} is a prefix of `{first_name}` discriminator {}",
+                        format_discriminator_bytes(second_disc),
+                        format_discriminator_bytes(first_disc),
+                    ),
+                    *first_span,
+                )
+            } else {
+                (
+                    format!(
+                        "Ambiguous discriminators for instructions: `{first_name}` discriminator \
+                         {} is a prefix of `{second_name}` discriminator {}",
+                        format_discriminator_bytes(first_disc),
+                        format_discriminator_bytes(second_disc),
+                    ),
+                    *second_span,
+                )
+            };
+
+            if has_cfg_attrs(&handlers[i].attrs) || has_cfg_attrs(&handlers[j].attrs) {
+                let first_cfg_attrs = cfg_attrs(&handlers[i].attrs);
+                let second_cfg_attrs = cfg_attrs(&handlers[j].attrs);
+                validations.extend(quote! {
+                    #(#first_cfg_attrs)*
+                    #(#second_cfg_attrs)*
+                    const _: () = {
+                        compile_error!(#message);
+                    };
+                });
+            } else {
+                return Err(syn::Error::new(span, message));
             }
         }
     }
 
-    Ok(())
+    Ok(validations)
 }
 
 fn format_discriminator_bytes(discriminator: &[u8]) -> String {
@@ -5343,32 +5399,9 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         Err(e) => return e.to_compile_error(),
     };
 
-    let has_cfg_gated_handlers = handlers.iter().any(|handler| has_cfg_attrs(&handler.attrs));
     let has_any_discrim = discrim_attrs.iter().any(|d| d.is_some());
-    let has_all_discrim = discrim_attrs.iter().all(|d| d.is_some());
-    if config.mode == ProgramMode::Executable
-        && has_any_discrim
-        && !has_all_discrim
-        && !has_cfg_gated_handlers
-    {
-        // Point at the first handler missing #[discrim = N] for clarity.
-        let missing = handlers
-            .iter()
-            .zip(discrim_attrs.iter())
-            .find(|(_, d)| d.is_none())
-            .map(|(handler, _)| handler.sig.ident.span())
-            .unwrap_or_else(proc_macro2::Span::call_site);
-        return syn::Error::new(
-            missing,
-            "if any instruction in `#[program]` uses `#[discrim = N]`, all must",
-        )
-        .to_compile_error();
-    }
-
     if config.mode == ProgramMode::Executable && has_any_discrim {
-        let mut seen =
-            (!has_cfg_gated_handlers).then(std::collections::HashMap::<u8, proc_macro2::Span>::new);
-        for (i, d) in discrim_attrs.iter().enumerate() {
+        for d in &discrim_attrs {
             let Some(d) = d.as_ref() else {
                 continue;
             };
@@ -5380,26 +5413,13 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                 )
                 .to_compile_error();
             }
-            let byte = d.bytes[0];
-            let span = d.span;
-            if let Some(seen) = &mut seen {
-                if let Some(_first_span) = seen.insert(byte, span) {
-                    return syn::Error::new(
-                        span,
-                        format!(
-                            "duplicate `#[discrim = {}]` on instruction `{}`",
-                            byte, handlers[i].sig.ident
-                        ),
-                    )
-                    .to_compile_error();
-                }
-            }
-        }
-    } else if config.mode == ProgramMode::Interface && !has_cfg_gated_handlers {
-        if let Err(err) = validate_instruction_discriminator_prefixes(&handlers, &discrim_attrs) {
-            return err.to_compile_error();
         }
     }
+    let discriminator_validation =
+        match instruction_discriminator_validation_tokens(&handlers, &discrim_attrs, config.mode) {
+            Ok(tokens) => tokens,
+            Err(err) => return err.to_compile_error(),
+        };
     let discrim_attrs: Vec<Option<Vec<u8>>> = discrim_attrs
         .iter()
         .map(|d| d.as_ref().map(|d| d.bytes.clone()))
@@ -5664,6 +5684,8 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
     }
 
     quote! {
+        #discriminator_validation
+
         #mod_vis mod #mod_name {
             #(#other_items)*
             #(#handlers)*
