@@ -448,20 +448,20 @@ macro_rules! err {
 /// ```
 #[macro_export]
 macro_rules! require {
-    ($invariant:expr, $error:tt $(,)?) => {
+    ($invariant:expr, $error:tt $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if !($invariant) {
             return Err($crate::ErrorCode::$error.into());
         }
-    };
-    ($invariant:expr, $error:expr $(,)?) => {
+    }};
+    ($invariant:expr, $error:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if !($invariant) {
             return Err(core::convert::Into::into($error));
         }
-    };
+    }};
 }
 
 /// Ensures two NON-PUBKEY values are equal.
@@ -480,20 +480,20 @@ macro_rules! require {
 /// ```
 #[macro_export]
 macro_rules! require_eq {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 != $value2 {
             $crate::msg!("require_eq violation");
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
         if $value1 != $value2 {
             $crate::msg!("require_eq violation");
             return Err($crate::ErrorCode::RequireEqViolated.into());
         }
-    };
+    }};
 }
 
 /// Ensures two NON-PUBKEY values are not equal.
@@ -512,7 +512,7 @@ macro_rules! require_eq {
 /// ```
 #[macro_export]
 macro_rules! require_neq {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 == $value2 {
@@ -523,8 +523,8 @@ macro_rules! require_neq {
             );
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
         if $value1 == $value2 {
             $crate::msg!(
                 "require_neq violation: left = {}, right = {}",
@@ -533,7 +533,7 @@ macro_rules! require_neq {
             );
             return Err($crate::ErrorCode::RequireNeqViolated.into());
         }
-    };
+    }};
 }
 
 /// Ensures two pubkey/address values are equal.
@@ -551,20 +551,20 @@ macro_rules! require_neq {
 /// ```
 #[macro_export]
 macro_rules! require_keys_eq {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 != $value2 {
             $crate::msg!("require_keys_eq violation");
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
         if $value1 != $value2 {
             $crate::msg!("require_keys_eq violation");
             return Err($crate::ErrorCode::RequireKeysEqViolated.into());
         }
-    };
+    }};
 }
 
 /// Ensures two pubkey/address values are not equal.
@@ -582,20 +582,20 @@ macro_rules! require_keys_eq {
 /// ```
 #[macro_export]
 macro_rules! require_keys_neq {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 == $value2 {
             $crate::msg!("require_keys_neq violation");
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
         if $value1 == $value2 {
             $crate::msg!("require_keys_neq violation");
             return Err($crate::ErrorCode::RequireKeysNeqViolated.into());
         }
-    };
+    }};
 }
 
 /// Ensures the first value is greater than the second.
@@ -612,7 +612,7 @@ macro_rules! require_keys_neq {
 /// ```
 #[macro_export]
 macro_rules! require_gt {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 <= $value2 {
@@ -623,8 +623,8 @@ macro_rules! require_gt {
             );
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
         if $value1 <= $value2 {
             $crate::msg!(
                 "require_gt violation: left = {}, right = {}",
@@ -633,7 +633,7 @@ macro_rules! require_gt {
             );
             return Err($crate::ErrorCode::RequireGtViolated.into());
         }
-    };
+    }};
 }
 
 /// Ensures the first value is greater than or equal to the second.
@@ -650,7 +650,7 @@ macro_rules! require_gt {
 /// ```
 #[macro_export]
 macro_rules! require_gte {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 < $value2 {
@@ -661,8 +661,8 @@ macro_rules! require_gte {
             );
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
         if $value1 < $value2 {
             $crate::msg!(
                 "require_gte violation: left = {}, right = {}",
@@ -671,5 +671,5 @@ macro_rules! require_gte {
             );
             return Err($crate::ErrorCode::RequireGteViolated.into());
         }
-    };
+    }};
 }
