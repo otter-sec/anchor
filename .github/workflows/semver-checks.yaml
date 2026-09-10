@@ -45,5 +45,20 @@ jobs:
       - name: Check semver compatibility
         uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2
         with:
-          exclude: avm, anchor-cli
+          # Anchor's macro crates are internal codegen plumbing, not public API.
+          # Only `anchor-syn` is checked today, as semver-checks skips `proc-macro` crates.
+          exclude: >-
+            avm,
+            anchor-cli,
+            anchor-syn,
+            anchor-attribute-access-control,
+            anchor-attribute-account,
+            anchor-attribute-constant,
+            anchor-attribute-error,
+            anchor-attribute-event,
+            anchor-attribute-program,
+            anchor-derive-accounts,
+            anchor-derive-serde,
+            anchor-derive-space,
+            anchor-cli-macros
           baseline-rev: ${{ github.event.pull_request.base.sha }}

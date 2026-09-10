@@ -14,6 +14,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang: Resolve the IDL `address` from `ID` at IDL-build time instead of stringifying the `declare_id!` input, so a program id given as an expression (e.g. `env!`) no longer produces a mangled address ([#5010](https://github.com/otter-sec/anchor/pull/5010)).
+
 ### Breaking
 
 ## [1.2.0] - 2026-09-04
