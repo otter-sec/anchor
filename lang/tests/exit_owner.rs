@@ -1,8 +1,6 @@
 //! `exit` must not re-serialize an account whose ownership moved away from the program
 //! mid-instruction (e.g. reassigned via CPI); such a write fails under direct mapping.
 
-#[cfg(feature = "lazy-account")]
-use anchor_lang::accounts::lazy_account::LazyAccount;
 use anchor_lang::{
     accounts::{account_loader::AccountLoader, migration::Migration},
     prelude::*,
@@ -100,21 +98,6 @@ fn exit_with_data_borrowed<'info>(
     exit().is_ok()
 }
 
-#[cfg(feature = "lazy-account")]
-fn lazy_account_exit_succeeds(new_owner: Option<&Pubkey>) -> bool {
-    let key = Pubkey::new_unique();
-    let owner = crate::ID;
-    let mut lamports = 0;
-    let mut data = Data::DISCRIMINATOR.to_vec();
-    data.extend_from_slice(&0u64.to_le_bytes());
-    let info = AccountInfo::new(&key, false, true, &mut lamports, &mut data, &owner, false);
-    let account: LazyAccount<Data> = LazyAccount::try_from_unchecked(&info).unwrap();
-    if let Some(new_owner) = new_owner {
-        info.assign(new_owner);
-    }
-    exit_with_data_borrowed(&info, || account.exit(&crate::ID))
-}
-
 fn migration_exit_succeeds(new_owner: Option<&Pubkey>) -> bool {
     let key = Pubkey::new_unique();
     let owner = crate::ID;
@@ -130,18 +113,6 @@ fn migration_exit_succeeds(new_owner: Option<&Pubkey>) -> bool {
     exit_with_data_borrowed(&info, || AccountsExit::exit(&account, &crate::ID))
 }
 
-#[cfg(feature = "lazy-account")]
-#[test]
-fn lazy_account_exit_writes_when_owned() {
-    assert!(!lazy_account_exit_succeeds(None));
-}
-
-#[cfg(feature = "lazy-account")]
-#[test]
-fn lazy_account_exit_skips_when_owner_changed() {
-    assert!(lazy_account_exit_succeeds(Some(&Pubkey::new_unique())));
-}
-
 #[test]
 fn migration_exit_writes_when_owned() {
     assert!(!migration_exit_succeeds(None));
@@ -150,4 +121,34 @@ fn migration_exit_writes_when_owned() {
 #[test]
 fn migration_exit_skips_when_owner_changed() {
     assert!(migration_exit_succeeds(Some(&Pubkey::new_unique())));
+}
+
+#[cfg(feature = "lazy-account")]
+mod lazy_account {
+    use super::*;
+    use anchor_lang::accounts::lazy_account::LazyAccount;
+
+    fn lazy_account_exit_succeeds(new_owner: Option<&Pubkey>) -> bool {
+        let key = Pubkey::new_unique();
+        let owner = crate::ID;
+        let mut lamports = 0;
+        let mut data = Data::DISCRIMINATOR.to_vec();
+        data.extend_from_slice(&0u64.to_le_bytes());
+        let info = AccountInfo::new(&key, false, true, &mut lamports, &mut data, &owner, false);
+        let account: LazyAccount<Data> = LazyAccount::try_from_unchecked(&info).unwrap();
+        if let Some(new_owner) = new_owner {
+            info.assign(new_owner);
+        }
+        exit_with_data_borrowed(&info, || account.exit(&crate::ID))
+    }
+
+    #[test]
+    fn lazy_account_exit_writes_when_owned() {
+        assert!(!lazy_account_exit_succeeds(None));
+    }
+
+    #[test]
+    fn lazy_account_exit_skips_when_owner_changed() {
+        assert!(lazy_account_exit_succeeds(Some(&Pubkey::new_unique())));
+    }
 }
