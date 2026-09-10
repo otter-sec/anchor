@@ -39,9 +39,10 @@ pub enum MigrationInner<From, To> {
 /// schema (`To`). During deserialization, the account must be in the `From` format -
 /// accounts already in the `To` format will be rejected with an error.
 ///
-/// The migrated data is stored in memory and will be serialized to the account when the
-/// instruction exits. On exit, the account must be in the migrated state or an error will
-/// be returned.
+/// The migrated data is stored in memory and will be serialized to the account
+/// when the instruction exits, provided the account is still owned by the
+/// program and has not been closed. On exit, the account must be in the
+/// migrated state or an error will be returned.
 ///
 /// This type is typically used with the `realloc` constraint to resize the account
 /// during migration.

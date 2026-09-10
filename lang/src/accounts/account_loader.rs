@@ -29,6 +29,9 @@ use {
 /// - `load` when the account is not mutable
 /// - `load_mut` when the account is mutable
 ///
+/// On exit, the account discriminator is written back only if the account is
+/// still owned by the program and has not been closed.
+///
 /// For more details on zero-copy-deserialization, see the
 /// [`account`](crate::account) attribute.
 /// <p style=";padding:0.75em;border: 1px solid #ee6868">

@@ -40,6 +40,15 @@ use {
 /// - `Account.info.owner == T::owner()`
 /// - `!(Account.info.owner == SystemProgram && Account.info.lamports() == 0)`
 ///
+/// # Persistence
+///
+/// When the instruction returns, `mut` accounts are serialized back into the
+/// account data only if the account is still owned by the program and has
+/// not been closed. If ownership moved during the instruction, for example
+/// because the account was reassigned via CPI, the data is left untouched.
+/// Call [`exit`](crate::AccountsExit::exit) before such a CPI if pending
+/// changes must be persisted first.
+///
 /// # Example
 /// ```ignore
 /// use anchor_lang::prelude::*;

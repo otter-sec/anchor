@@ -10,6 +10,15 @@ See the account types
 [source code](https://github.com/otter-sec/anchor/tree/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/accounts)
 for implementation details.
 
+<Callout title="Persistence on exit">
+  Typed accounts (`Account`, `AccountLoader`, `LazyAccount`, `Migration`) are
+  written back to the account data when the instruction returns only if the
+  account is still owned by the program and has not been closed. If ownership
+  moved during the instruction, for example because the account was reassigned
+  via CPI, the data is left untouched. Call `exit` before such a CPI if pending
+  changes must be persisted first.
+</Callout>
+
 ## Account Types
 
 ### `Account<'info, T>`

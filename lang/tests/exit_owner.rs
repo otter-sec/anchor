@@ -125,8 +125,7 @@ fn migration_exit_skips_when_owner_changed() {
 
 #[cfg(feature = "lazy-account")]
 mod lazy_account {
-    use super::*;
-    use anchor_lang::accounts::lazy_account::LazyAccount;
+    use {super::*, anchor_lang::accounts::lazy_account::LazyAccount};
 
     fn lazy_account_exit_succeeds(new_owner: Option<&Pubkey>) -> bool {
         let key = Pubkey::new_unique();
