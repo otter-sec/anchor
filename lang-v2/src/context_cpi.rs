@@ -8,7 +8,7 @@ use {
         address::Address,
         instruction::{InstructionAccount, InstructionView},
     },
-    solana_instruction::Instruction,
+    solana_instruction::{AccountMeta, Instruction},
     solana_program_error::{ProgramError, ProgramResult},
 };
 
@@ -161,26 +161,46 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
     /// Invoke a fully built instruction using this context's CPI handles.
     ///
     /// The instruction's program id must match this context's program. Account
-    /// metas are taken from the instruction, while account handles are collected
-    /// from [`ToCpiAccounts`] and `remaining_accounts`.
+    /// metas for the fixed [`ToCpiAccounts`] fields are taken from the
+    /// instruction as supplied. Any metas the instruction carries beyond that
+    /// prefix are treated as builder-supplied metas for the leading
+    /// `remaining_accounts`, in order. `metas` are appended only for the
+    /// remaining handles the instruction does not already cover, so metas and
+    /// handles stay paired one-to-one.
     ///
     /// Optional `None` sentinel slots must appear in the same positions as in
     /// [`ToCpiAccounts::to_instruction_accounts`]; only those indices may omit
     /// handles for readonly program-id metas.
-    pub fn invoke_ix(&self, ix: Instruction) -> ProgramResult {
+    pub fn invoke_ix(&self, mut ix: Instruction) -> ProgramResult {
         require!(
             address_eq(self.program, &ix.program_id),
             ProgramError::IncorrectProgramId
         );
 
         let mut handles = self.accounts.to_cpi_handles();
-        handles.extend(self.remaining_accounts.iter().copied());
 
         let mut optional_sentinel_flags = self.accounts.optional_account_sentinel_flags();
         require!(
             optional_sentinel_flags.len() <= ix.accounts.len(),
             ProgramError::InvalidArgument
         );
+
+        // Metas past the fixed prefix already cover the leading remaining
+        // accounts, in order. Append only the rest, keeping metas and handles
+        // paired one-to-one.
+        let prebuilt_remaining_metas = ix.accounts.len() - optional_sentinel_flags.len();
+        require!(
+            prebuilt_remaining_metas <= self.remaining_accounts.len(),
+            ProgramError::NotEnoughAccountKeys
+        );
+        for handle in &self.remaining_accounts[prebuilt_remaining_metas..] {
+            ix.accounts.push(if handle.is_writable() {
+                AccountMeta::new(*handle.address(), handle.is_signer())
+            } else {
+                AccountMeta::new_readonly(*handle.address(), handle.is_signer())
+            });
+        }
+        handles.extend(self.remaining_accounts.iter().copied());
         // Trailing metas (e.g. remaining accounts already baked into `ix`) are
         // never treated as optional sentinels from this accounts struct.
         optional_sentinel_flags.resize(ix.accounts.len(), false);

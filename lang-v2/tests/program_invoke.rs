@@ -564,6 +564,60 @@ fn invoke_ix_rejects_live_borrow_for_writable_meta() {
     assert_eq!(err, ProgramError::AccountBorrowFailed);
 }
 
+
+#[test]
+fn invoke_ix_validates_remaining_account_borrow_state() {
+    let program = ID;
+    let buffer = account_view([1; 32], true);
+    let view = unsafe { buffer.view() };
+    let accounts = ReadonlyCpi {
+        account: view.to_cpi_handle(),
+    };
+    let ix = Instruction {
+        program_id: program,
+        accounts: vec![AccountMeta::new_readonly(*view.address(), false)],
+        data: vec![],
+    };
+
+    let remaining_buffer = account_view([2; 32], true);
+    let mut remaining_view = unsafe { remaining_buffer.view() };
+    let borrow_view = remaining_view;
+    let _borrow = borrow_view.try_borrow().unwrap();
+    let remaining_handle = CpiHandle::writable(&mut remaining_view);
+
+    let err = CpiContext::new(&program, accounts)
+        .with_remaining_accounts(vec![remaining_handle])
+        .invoke_ix(ix)
+        .unwrap_err();
+
+    assert_eq!(err, ProgramError::AccountBorrowFailed);
+}
+
+
+#[test]
+fn invoke_ix_accepts_remaining_accounts_alongside_fixed_accounts() {
+    let program = ID;
+    let buffer = account_view([1; 32], true);
+    let view = unsafe { buffer.view() };
+    let accounts = ReadonlyCpi {
+        account: view.to_cpi_handle(),
+    };
+    let ix = Instruction {
+        program_id: program,
+        accounts: vec![AccountMeta::new_readonly(*view.address(), false)],
+        data: vec![],
+    };
+
+    let remaining_buffer = account_view([2; 32], true);
+    let remaining_view = unsafe { remaining_buffer.view() };
+    let remaining_handle = remaining_view.to_cpi_handle();
+
+    CpiContext::new(&program, accounts)
+        .with_remaining_accounts(vec![remaining_handle])
+        .invoke_ix(ix)
+        .unwrap();
+}
+
 #[test]
 fn invoke_ix_accepts_mutable_slab_handle() {
     let program = ID;
