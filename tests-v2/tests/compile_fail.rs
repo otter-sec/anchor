@@ -1898,6 +1898,42 @@ pub struct Close {
 }
 
 #[test]
+fn close_destination_must_be_mutable() {
+    CompileCase::new(
+        "close_destination_must_be_mutable",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct Data {
+    pub value: u64,
+}
+
+#[program]
+pub mod close_destination_must_be_mutable {
+    use super::*;
+
+    #[discrim = 0]
+    pub fn close(ctx: &mut Context<Close>) -> Result<()> {
+        let _ = ctx;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Close {
+    #[account(mut, close = receiver)]
+    pub data: Account<Data>,
+    pub receiver: SystemAccount,
+}
+"#,
+    )
+    .expect_fail(&["the destination specified for a close constraint must be mutable"]);
+}
+
+#[test]
 fn account_attrs_on_nested_field_do_not_compile() {
     CompileCase::new(
         "account_attrs_on_nested_field",
