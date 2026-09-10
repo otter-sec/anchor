@@ -14,7 +14,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
-- lang: Skip re-serializing `Account`, `AccountLoader`, `LazyAccount` and `Migration` on exit when the account is no longer owned by the program, e.g. after being reassigned via CPI in the same instruction.
+- lang: Skip re-serializing accounts on exit when the account is no longer owned by the program. ([#5011](https://github.com/otter-sec/anchor/pull/5011)).
 
 ### Breaking
 
