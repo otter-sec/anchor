@@ -14,8 +14,21 @@ use {
     proc_macro2::{Span, TokenStream as TokenStream2},
     quote::quote,
     syn::{
-        parse::Parser, parse_macro_input, spanned::Spanned, Data, DeriveInput, Expr, Fields, FnArg,
-        Ident, ItemMod, ItemStruct, Pat, Type,
+        parse::{Parse, ParseStream, Parser},
+        parse_macro_input,
+        spanned::Spanned,
+        Data,
+        DeriveInput,
+        Expr,
+        Fields,
+        FnArg,
+        Ident,
+        ItemMod,
+        ItemStruct,
+        Lit,
+        Pat,
+        Token,
+        Type,
     },
 };
 
@@ -2190,10 +2203,11 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
 
 #[proc_macro_attribute]
 pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let is_borsh = match parse_account_mode(attr) {
-        Ok(b) => b,
+    let args = match parse_account_args(attr) {
+        Ok(args) => args,
         Err(err) => return err.to_compile_error().into(),
     };
+    let is_borsh = args.is_borsh;
     let input = parse_macro_input!(item as DeriveInput);
     let name = &input.ident;
     let name_str = name.to_string();
@@ -2226,6 +2240,10 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
     let hash = sha2::Sha256::digest(format!("account:{name_str}").as_bytes());
     let disc_bytes = &hash[..8];
     let disc_literals: Vec<_> = disc_bytes.iter().map(|b| quote! { #b }).collect();
+    let discriminator = args
+        .discriminator
+        .clone()
+        .unwrap_or_else(|| quote! { &[#(#disc_literals),*] });
 
     let struct_docs = idl::extract_doc_lines(attrs);
     let idl_validation_tokens = if is_borsh {
@@ -2249,10 +2267,32 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
         };
         idl::TypeKind::BytemuckRepr(repr)
     };
-    let idl_account_entry = match idl::build_account_entry_string(&name_str, disc_bytes) {
-        Some(s) => quote! { Some(#s) },
-        None => quote! { None },
+    let idl_account_entry = if args.discriminator.is_some() {
+        quote! { None }
+    } else {
+        match idl::build_account_entry_string(&name_str, disc_bytes) {
+            Some(s) => quote! { Some(#s) },
+            None => quote! { None },
+        }
     };
+    let idl_account_entry_fn = args.discriminator.map(|_| {
+        quote! {
+            fn __idl_account_entry() -> Option<&'static str> {
+                let __disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
+                let mut __s = anchor_lang::__alloc::string::String::from(
+                    concat!("{\"name\":\"", #name_str, "\",\"discriminator\":[")
+                );
+                for (index, byte) in __disc.iter().enumerate() {
+                    if index != 0 {
+                        __s.push(',');
+                    }
+                    __s.push_str(&anchor_lang::__alloc::string::ToString::to_string(byte));
+                }
+                __s.push_str("]}");
+                Some(anchor_lang::__alloc::boxed::Box::leak(__s.into_boxed_str()))
+            }
+        }
+    });
     let idl_type_def = idl::build_struct_type_def_emission(
         &name_str,
         &struct_docs,
@@ -2456,13 +2496,14 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
             const OWNER: anchor_lang::Address = crate::ID;
         }
         impl anchor_lang::Discriminator for #name {
-            const DISCRIMINATOR: &'static [u8] = &[#(#disc_literals),*];
+            const DISCRIMINATOR: &'static [u8] = #discriminator;
         }
         #account_deserialize_impl
         #[cfg(feature = "idl-build")]
         #[doc(hidden)]
         impl anchor_lang::IdlAccountType for #name {
             const __IDL_ACCOUNT_ENTRY: Option<&'static str> = #idl_account_entry;
+            #idl_account_entry_fn
             fn __idl_type_def() -> Option<&'static str> {
                 #idl_type_def
             }
@@ -6256,25 +6297,84 @@ enum EventMode {
 /// Under the hood the borsh mode encodes/decodes via wincode using
 /// `BORSH_CONFIG`, so the on-chain bytes still match what a borsh library
 /// would produce, while paying for wincode's faster encode/decode path.
-fn parse_account_mode(attr: TokenStream) -> Result<bool, syn::Error> {
-    if attr.is_empty() {
-        return Ok(false);
-    }
-    let attr2: proc_macro2::TokenStream = attr.into();
-    let ident: syn::Ident = syn::parse2(attr2.clone()).map_err(|_| {
-        syn::Error::new_spanned(
-            &attr2,
-            "expected `#[account]` or `#[account(borsh)]` — no other arguments are supported",
-        )
-    })?;
-    if ident == "borsh" {
-        Ok(true)
-    } else {
+struct AccountArgs {
+    is_borsh: bool,
+    discriminator: Option<TokenStream2>,
+}
+
+enum AccountArg {
+    Borsh,
+    Discriminator(TokenStream2),
+}
+
+impl Parse for AccountArg {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let key: Ident = input.parse()?;
+        if key == "borsh" {
+            return Ok(Self::Borsh);
+        }
+        if key == "discriminator" {
+            input.parse::<Token![=]>()?;
+            let expr: Expr = input.parse()?;
+            let value = match &expr {
+                Expr::Lit(expr) if matches!(expr.lit, Lit::Int(_)) => quote! { &[#expr] },
+                Expr::Array(_) => quote! { &#expr },
+                _ => quote! { #expr },
+            };
+            return Ok(Self::Discriminator(value));
+        }
         Err(syn::Error::new_spanned(
-            ident,
-            "unknown `#[account]` mode — only `borsh` is accepted",
+            key,
+            "unknown `#[account]` argument — only `borsh` and `discriminator = ...` are accepted",
         ))
     }
+}
+
+fn parse_account_args(attr: TokenStream) -> Result<AccountArgs, syn::Error> {
+    if attr.is_empty() {
+        return Ok(AccountArgs {
+            is_borsh: false,
+            discriminator: None,
+        });
+    }
+    let attr2: proc_macro2::TokenStream = attr.into();
+    let parser = syn::punctuated::Punctuated::<AccountArg, Token![,]>::parse_terminated;
+    let args = parser.parse2(attr2.clone()).map_err(|_| {
+        syn::Error::new_spanned(
+            &attr2,
+            "expected `#[account]`, `#[account(borsh)]`, or `#[account(discriminator = ...)]`",
+        )
+    })?;
+
+    let mut is_borsh = false;
+    let mut discriminator = None;
+    for arg in args {
+        match arg {
+            AccountArg::Borsh => {
+                if is_borsh {
+                    return Err(syn::Error::new(
+                        Span::call_site(),
+                        "duplicate `borsh` in `#[account]`",
+                    ));
+                }
+                is_borsh = true;
+            }
+            AccountArg::Discriminator(value) => {
+                if discriminator.is_some() {
+                    return Err(syn::Error::new(
+                        Span::call_site(),
+                        "duplicate `discriminator` in `#[account]`",
+                    ));
+                }
+                discriminator = Some(value);
+            }
+        }
+    }
+
+    Ok(AccountArgs {
+        is_borsh,
+        discriminator,
+    })
 }
 
 fn parse_event_mode(attr: TokenStream) -> Result<EventMode, syn::Error> {

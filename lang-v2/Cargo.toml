@@ -104,6 +104,10 @@ name = "account_wrapper_checks"
 required-features = ["testing"]
 
 [[test]]
+name = "account_identity"
+required-features = ["testing"]
+
+[[test]]
 name = "optional_mut_duplicate_check"
 required-features = ["testing"]
 
