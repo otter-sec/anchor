@@ -14,8 +14,8 @@ use {
     proc_macro2::{Span, TokenStream as TokenStream2},
     quote::quote,
     syn::{
-        parse::Parser, parse_macro_input, spanned::Spanned, Data, DeriveInput, Expr, Fields, FnArg,
-        Ident, ItemMod, ItemStruct, Pat, Type,
+        parse::{Parse, ParseStream, Parser}, parse_macro_input, spanned::Spanned, Data,
+        DeriveInput, Expr, Fields, FnArg, Ident, ItemMod, ItemStruct, LitStr, Pat, Token, Type,
     },
 };
 
@@ -5900,14 +5900,16 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 /// ```
 #[proc_macro_attribute]
 pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let mode = match parse_event_mode(attr) {
-        Ok(mode) => mode,
+    let args = match parse_event_args(attr) {
+        Ok(args) => args,
         Err(err) => return err.to_compile_error().into(),
     };
+    let mode = args.mode;
 
     let input = parse_macro_input!(item as DeriveInput);
     let name = input.ident.clone();
     let name_str = name.to_string();
+    let event_name = args.name.unwrap_or_else(|| name_str.clone());
     let vis = &input.vis;
     let attrs = &input.attrs;
     let fields = match &input.data {
@@ -5924,7 +5926,7 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
     use sha2::Digest;
-    let hash = sha2::Sha256::digest(format!("event:{name_str}").as_bytes());
+    let hash = sha2::Sha256::digest(format!("event:{event_name}").as_bytes());
     let disc_bytes = &hash[..8];
     let disc_literals: Vec<_> = disc_bytes.iter().map(|b| quote! { #b }).collect();
 
@@ -5957,16 +5959,17 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
         Vec::new()
     };
     let event_type_def = idl::build_struct_type_def_emission(
-        &name_str,
+        &event_name,
         &struct_docs,
         fields,
         type_kind,
         &input.generics,
     );
     let event_disc_json = idl::disc_json(disc_bytes);
+    let event_name_json = serde_json::to_string(&event_name).expect("event name is serializable");
     let event_header_json = format!(
-        "{{\"event\":{{\"name\":\"{}\",\"discriminator\":{}}},\"types\":[",
-        name_str, event_disc_json,
+        "{{\"event\":{{\"name\":{},\"discriminator\":{}}},\"types\":[",
+        event_name_json, event_disc_json,
     );
     // Field types for the transitive type walk. The event itself pushes
     // `type_def_json` into the types accumulator via its `__IDL_TYPE_DEF`
@@ -6277,25 +6280,88 @@ fn parse_account_mode(attr: TokenStream) -> Result<bool, syn::Error> {
     }
 }
 
-fn parse_event_mode(attr: TokenStream) -> Result<EventMode, syn::Error> {
-    if attr.is_empty() {
-        return Ok(EventMode::Wincode);
-    }
-    let attr2: proc_macro2::TokenStream = attr.into();
-    let ident: syn::Ident = syn::parse2(attr2.clone()).map_err(|_| {
-        syn::Error::new_spanned(
-            &attr2,
-            "expected `#[event]` or `#[event(bytemuck)]` — no other arguments are supported",
-        )
-    })?;
-    if ident == "bytemuck" {
-        Ok(EventMode::Bytemuck)
-    } else {
+struct EventArgs {
+    mode: EventMode,
+    name: Option<String>,
+}
+
+enum EventArg {
+    Bytemuck,
+    Name(LitStr),
+}
+
+impl Parse for EventArg {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let key: Ident = input.parse()?;
+        if key == "bytemuck" {
+            return Ok(Self::Bytemuck);
+        }
+        if key == "name" {
+            input.parse::<Token![=]>()?;
+            return Ok(Self::Name(input.parse()?));
+        }
         Err(syn::Error::new_spanned(
-            ident,
-            "unknown `#[event]` mode — only `bytemuck` is accepted",
+            key,
+            "unknown `#[event]` argument — only `bytemuck` and `name = \"...\"` are accepted",
         ))
     }
+}
+
+fn parse_event_args(attr: TokenStream) -> Result<EventArgs, syn::Error> {
+    if attr.is_empty() {
+        return Ok(EventArgs {
+            mode: EventMode::Wincode,
+            name: None,
+        });
+    }
+    let attr2: proc_macro2::TokenStream = attr.into();
+    let parser = syn::punctuated::Punctuated::<EventArg, Token![,]>::parse_terminated;
+    let args = parser.parse2(attr2.clone()).map_err(|_| {
+        syn::Error::new_spanned(
+            &attr2,
+            "expected `#[event]`, `#[event(bytemuck)]`, or `#[event(name = \"...\")]`",
+        )
+    })?;
+
+    let mut mode = EventMode::Wincode;
+    let mut name = None;
+    for arg in args {
+        match arg {
+            EventArg::Bytemuck => {
+                if matches!(mode, EventMode::Bytemuck) {
+                    return Err(syn::Error::new(
+                        Span::call_site(),
+                        "duplicate `bytemuck` in `#[event]`",
+                    ));
+                }
+                mode = EventMode::Bytemuck;
+            }
+            EventArg::Name(value) => {
+                if name.is_some() {
+                    return Err(syn::Error::new_spanned(
+                        value,
+                        "duplicate `name` in `#[event]`",
+                    ));
+                }
+                let value = value.value();
+                if !is_valid_event_name(&value) {
+                    return Err(syn::Error::new(
+                        Span::call_site(),
+                        "event `name` must be a non-empty Rust/IDL identifier",
+                    ));
+                }
+                name = Some(value);
+            }
+        }
+    }
+
+    Ok(EventArgs { mode, name })
+}
+
+fn is_valid_event_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c == '_' || c.is_ascii_alphabetic())
+        && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
 }
 
 /// Targeted diagnostics for common non-Pod field types on

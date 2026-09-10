@@ -1579,3 +1579,34 @@ pub struct BorshTupleData(pub u64, pub u32);
         &["`#[account]` only supports structs with named fields"],
     );
 }
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn event_name_override_binds_wire_and_idl_identity() {
+    cargo_test_pass_case(
+        "event_name_override",
+        r#"
+use anchor_lang::prelude::*;
+
+#[event(name = "ReceiptV1")]
+pub struct Receipt { pub amount: u64 }
+
+#[cfg(all(test, feature = "idl-build"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn override_changes_wire_and_idl_identity() {
+        assert_eq!(Receipt::DISCRIMINATOR, [40, 147, 163, 222, 187, 159, 205, 141]);
+        assert!(<Receipt as IdlAccountType>::__idl_type_def()
+            .unwrap()
+            .contains("ReceiptV1"));
+    }
+}
+"#,
+        &["idl-build"],
+    );
+}
