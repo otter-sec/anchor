@@ -611,38 +611,50 @@ impl<T: bytemuck::Pod, const MAX: usize> PodVec<T, MAX> {
     // Compile-time check: MAX must fit in the u16 length prefix. Without
     // this guard, `try_push` / `pop` / `truncate` / `set_from_slice` /
     // `try_extend_from_slice` silently truncate `usize → u16` and corrupt
-    // `len` when the in-memory vec exceeds u16::MAX items. Catch at
-    // monomorphization so `PodVec<T, N>` with `N > 65_535` fails to compile.
+    // `len` when the in-memory vec exceeds u16::MAX items. Exposed as
+    // `CAPACITY` and forced from `Default` / `len` / `write_len` so
+    // declaration, sizing, and read-only use fail at monomorphization —
+    // not only on the first mutation.
     const _MAX_FITS_U16: () = assert!(
         MAX <= u16::MAX as usize,
         "PodVec<T, MAX>: MAX must be <= 65_535 (u16::MAX). Use a larger length-prefix wrapper for \
          capacities beyond this."
     );
 
+    /// Maximum element capacity. Evaluating this associated const forces the
+    /// `MAX <= u16::MAX` check at monomorphization time.
+    pub const CAPACITY: usize = {
+        #[allow(clippy::let_unit_value)]
+        let _ = Self::_MAX_FITS_U16;
+        MAX
+    };
+
     // --- Length / capacity ---
 
     /// Returns the number of populated elements.
     #[inline(always)]
     pub fn len(&self) -> usize {
+        let _ = Self::CAPACITY;
         self.len.get() as usize
     }
 
     /// Returns `true` if no elements are populated.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
+        let _ = Self::CAPACITY;
         self.len.is_zero()
     }
 
     /// Returns `true` if the vector is at capacity.
     #[inline(always)]
     pub fn is_full(&self) -> bool {
-        self.len() == MAX
+        self.len() == Self::CAPACITY
     }
 
     /// Returns the maximum capacity.
     #[inline(always)]
     pub const fn capacity(&self) -> usize {
-        MAX
+        Self::CAPACITY
     }
 
     // --- Validation (for `PodVec`s cast from attacker-controlled bytes) ---
@@ -657,6 +669,7 @@ impl<T: bytemuck::Pod, const MAX: usize> PodVec<T, MAX> {
     /// [`validate`]: Self::validate
     #[inline(always)]
     pub fn is_valid_len(&self) -> bool {
+        let _ = Self::CAPACITY;
         self.len() <= MAX
     }
 
@@ -811,12 +824,10 @@ impl<T: bytemuck::Pod, const MAX: usize> PodVec<T, MAX> {
 
     /// Centralised `len` write: every length-mutating method funnels
     /// through here so `Self::_MAX_FITS_U16` is forced at monomorphization
-    /// time. Without this, a `PodVec<T, 70_000>` could compile and silently
-    /// truncate its prefix through any direct `self.len = ...` write.
+    /// time (alongside `Default` / `capacity` / `len`).
     #[inline(always)]
     fn write_len(&mut self, new_len: usize) {
-        #[allow(clippy::let_unit_value)]
-        let _ = Self::_MAX_FITS_U16;
+        let _ = Self::CAPACITY;
         self.len = PodU16::from(new_len as u16);
     }
 
@@ -966,6 +977,7 @@ impl<'a, T: bytemuck::Pod, const MAX: usize> IntoIterator for &'a mut PodVec<T, 
 
 impl<T: bytemuck::Pod, const MAX: usize> Default for PodVec<T, MAX> {
     fn default() -> Self {
+        let _ = Self::CAPACITY;
         // Safety: PodVec is Pod, so all-zeros is a valid representation.
         unsafe { core::mem::zeroed() }
     }

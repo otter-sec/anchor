@@ -2409,9 +2409,11 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .map(|field| {
                     let ty = &field.ty;
                     let cfg_attrs = cfg_attrs(&field.attrs);
+                    let capacity_check = pod_vec_capacity_check(ty);
                     quote! {
                         #(#cfg_attrs)*
                         {
+                            #capacity_check
                             __size += core::mem::size_of::<#ty>();
                         }
                     }
@@ -2687,6 +2689,19 @@ fn diagnose_non_pod_field(ty: &Type, field_name: &str, struct_name: &str) -> Opt
         )),
         _ => None,
     }
+}
+
+/// Force the capacity invariant while evaluating the account's layout const,
+/// even if no `PodVec` methods are used. Rust resolves and evaluates `MAX`,
+/// including named constants and const expressions that the macro cannot
+/// evaluate from syntax alone.
+fn pod_vec_capacity_check(ty: &Type) -> Option<TokenStream2> {
+    let Type::Path(tp) = ty else { return None };
+    let seg = tp.path.segments.last()?;
+    if seg.ident != "PodVec" {
+        return None;
+    }
+    Some(quote::quote_spanned!(ty.span()=> let _ = <#ty>::CAPACITY;))
 }
 
 // ---------------------------------------------------------------------------

@@ -2103,6 +2103,117 @@ const _: usize = Slab::<GoodHeader, ()>::space_for(0);
 }
 
 #[test]
+fn podvec_oversized_max_default_does_not_compile() {
+    CompileCase::new(
+        "podvec_oversized_max_default",
+        r#"
+use anchor_lang::pod::{PodU8, PodVec};
+
+// Public item so the lib target monomorphizes Default (private fns may be skipped).
+pub fn force_default() {
+    let _ = PodVec::<PodU8, 70000>::default();
+}
+"#,
+    )
+    .build()
+    .expect_fail(&["MAX must be <= 65_535"]);
+}
+
+#[test]
+fn podvec_oversized_max_capacity_does_not_compile() {
+    CompileCase::new(
+        "podvec_oversized_max_capacity",
+        r#"
+use anchor_lang::pod::{PodU8, PodVec};
+
+// Evaluating CAPACITY forces the MAX <= u16::MAX assert.
+const _: usize = PodVec::<PodU8, 70000>::CAPACITY;
+"#,
+    )
+    .build()
+    .expect_fail(&["MAX must be <= 65_535"]);
+}
+
+#[test]
+fn podvec_oversized_max_account_field_does_not_compile() {
+    CompileCase::new(
+        "podvec_oversized_max_account_field",
+        r#"
+use anchor_lang::prelude::*;
+use anchor_lang::pod::{PodU8, PodVec};
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct Oversized {
+    pub items: PodVec<PodU8, 70000>,
+}
+"#,
+    )
+    .expect_fail(&["MAX must be <= 65_535"]);
+}
+
+#[test]
+fn podvec_oversized_max_const_account_field_does_not_compile() {
+    let source = r#"
+use anchor_lang::prelude::*;
+use anchor_lang::pod::{PodU64, PodVec};
+
+declare_id!("11111111111111111111111111111111");
+
+pub const MAX_VALIDATORS: usize = 70000;
+
+pub struct Limits;
+impl Limits {
+    pub const MAX: usize = MAX_VALIDATORS;
+}
+
+#[account]
+#[repr(C)]
+pub struct ValidatorRegistry {
+    pub count: PodU64,
+    pub validators: PodVec<PodU64, CAPACITY_EXPR>,
+}
+"#;
+
+    for (name, capacity) in [
+        ("podvec_account_named_const", "MAX_VALIDATORS"),
+        ("podvec_account_const_expr", "{ u16::MAX as usize + 1 }"),
+        ("podvec_account_associated_const", "{ Limits::MAX }"),
+    ] {
+        CompileCase::new(name, &source.replace("CAPACITY_EXPR", capacity))
+            .expect_fail(&["MAX must be <= 65_535"]);
+    }
+}
+
+#[test]
+fn podvec_max_u16_const_account_field_compiles() {
+    CompileCase::new(
+        "podvec_max_u16_const_account_field",
+        r#"
+use anchor_lang::prelude::*;
+use anchor_lang::pod::{PodU64, PodVec};
+
+declare_id!("11111111111111111111111111111111");
+
+pub const MAX_VALIDATORS: usize = u16::MAX as usize;
+
+#[account]
+pub struct ValidatorRegistry {
+    pub count: PodU64,
+    pub validators: PodVec<PodU64, MAX_VALIDATORS>,
+    pub empty: anchor_lang::pod::PodVec<PodU64, 0>,
+    #[cfg(any())]
+    pub disabled: PodVec<PodU64, { u16::MAX as usize + 1 }>,
+    #[cfg(any())]
+    pub also_disabled: PodVec<PodU64, UNKNOWN_CAPACITY>,
+}
+"#,
+    )
+    .expect_pass();
+}
+
+#[test]
 fn realloc_on_unchecked_account_does_not_compile() {
     CompileCase::new(
         "realloc_on_unchecked_account",
