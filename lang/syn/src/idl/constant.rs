@@ -4,7 +4,7 @@ use {
         defined::gen_idl_type,
     },
     crate::parser::docs,
-    heck::SnakeCase,
+    heck::ToSnakeCase,
     proc_macro2::TokenStream,
     quote::{format_ident, quote},
 };
