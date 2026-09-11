@@ -483,7 +483,7 @@ fn build_program_ctx(
         Ok(x) => x,
         Err(e) => {
             // Common cause: bench-style workspaces produce a raw cargo
-            // SBF ELF in `target/sbpf-solana-solana/release/` that
+            // SBF ELF in `target/<sbpf-target>/release/` that
             // solana-sbpf can't parse without `cargo build-sbf`'s
             // post-link step. Surface this clearly so the user knows
             // what to do instead of silently dropping the trace.

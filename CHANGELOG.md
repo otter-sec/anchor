@@ -21,6 +21,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 ### Features
 
 - avm: Allow resolving Solana/platform-tools versions from an explicit Anchor version. ([#4799](https://github.com/otter-sec/anchor/pull/4799)).
+- cli: Add `--arch` and `--tools-version` flags to select the SBPF architecture and platform-tools version used by `anchor build`. ([#4684](https://github.com/otter-sec/anchor/pull/4684)).
 - cli: Generate a TypeScript error constants file from the IDL during `anchor build` ([#3827](https://github.com/solana-foundation/anchor/pull/3827)).
 - lang: Always derive `Clone` and `Debug` for generated types in `declare_program!` ([#4723](https://github.com/solana-foundation/anchor/pull/4723)).
 - spl: Add pausable mint extension support ([#4092](https://github.com/solana-foundation/anchor/pull/4092)).

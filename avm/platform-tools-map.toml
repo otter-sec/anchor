@@ -1,4 +1,4 @@
-# Static map from Solana release → bundled `platform-tools` version.
+# Static map from Solana release → corresponding `platform-tools` version.
 #
 # Source of truth: `DEFAULT_PLATFORM_TOOLS_VERSION` (or its predecessors, the
 # `platform_tools_version` / `sbf_tools_version` literals) in cargo-build-sbf:
@@ -7,6 +7,9 @@
 #   2.0.x – 2.3.x : anza-xyz/agave, sdk/cargo-build-sbf/src/main.rs
 #                   (then platform-tools-sdk/cargo-build-sbf/src/main.rs from 2.2)
 #   3.0.x+ : anza-xyz/agave, platform-tools-sdk/cargo-build-sbf/src/toolchain.rs
+#
+# In some cases, we override to a different `platform-tools` version due to issues
+# with specific toolchains.
 #
 # Resolution: given a requested Solana version `S`, pick the entry with the
 # largest `solana` key that is `<= S`. Entries MUST be ordered by `solana` so
@@ -19,7 +22,7 @@
 # `fallback` is used when the project does not pin a Solana version at all.
 # Keep it equal to the platform-tools version of the newest entry below.
 
-fallback = "v1.54"
+fallback = "v1.57"
 
 [[entries]]
 solana = "1.14.16"
@@ -93,5 +96,10 @@ rustc = "1.89.0"
 
 [[entries]]
 solana = "4.0.0"
-platform_tools = "v1.54"
+platform_tools = "v1.56"
 rustc = "1.89.0"
+
+[[entries]]
+solana = "4.2.0"
+platform_tools = "v1.57"
+rustc = "1.95.0"

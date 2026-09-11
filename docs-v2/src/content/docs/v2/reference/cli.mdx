@@ -108,8 +108,14 @@ Useful flags:
 | `<dim>--idl</dim> <dim><dir></dim>` | Write IDL JSON to a custom directory. |
 | `<dim>--idl-ts</dim> <dim><dir></dim>` | Write TypeScript IDL types to a custom directory. |
 | `<dim>--ignore-keys</dim>` | Skip the program-keypair and `declare_id!{:rs}` mismatch check. |
+| `<dim>--tools-version</dim> <dim><version></dim>` | Platform tools version to pass to `$ <blue>cargo</blue> build-sbf` (defaults to `<dim>v1.57</dim>`). |
+| `<dim>--arch</dim> <dim><arch></dim>` | SBPF architecture to pass to `$ <blue>cargo</blue> build-sbf` (defaults to `<dim>v3</dim>`). |
 | `<dim>--verifiable</dim>` | Build in a deterministic Docker environment. |
 | `<dim>--no-docs</dim>` | Suppress doc strings in IDL output. |
+
+Programs built with `<dim>--arch</dim> v3` require compatible local test tooling:
+platform-tools v1.53 or newer, a Solana/Agave 4.0 or newer
+`solana-test-validator`, Surfpool 1.4 or newer, and LiteSVM 0.13.1 or newer.
 
 Forward arguments to `$ <blue>cargo</blue> build-sbf` after `<dim>--</dim>`:
 

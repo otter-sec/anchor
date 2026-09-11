@@ -14,99 +14,97 @@ The programs and their tests are located in [/tests/bench](https://github.com/ot
 
 ## [Unreleased]
 
-Solana version: 3.1.10
+Solana version: 4.2.0
 
 | Instruction                 | Compute Units | -   |
 | --------------------------- | ------------- | --- |
-| accountInfo1                | 702           | -   |
-| accountInfo2                | 1,115         | -   |
-| accountInfo4                | 1,921         | -   |
-| accountInfo8                | 3,480         | -   |
-| accountEmptyInit1           | 4,716         | -   |
-| accountEmpty1               | 738           | -   |
-| accountEmptyInit2           | 8,379         | -   |
-| accountEmpty2               | 1,138         | -   |
-| accountEmptyInit4           | 15,699        | -   |
-| accountEmpty4               | 1,923         | -   |
-| accountEmptyInit8           | 30,347        | -   |
-| accountEmpty8               | 3,500         | -   |
-| accountSizedInit1           | 4,810         | -   |
-| accountSized1               | 786           | -   |
-| accountSizedInit2           | 8,546         | -   |
-| accountSized2               | 1,198         | -   |
-| accountSizedInit4           | 16,020        | -   |
-| accountSized4               | 2,031         | -   |
-| accountSizedInit8           | 30,931        | -   |
-| accountSized8               | 3,694         | -   |
-| accountUnsizedInit1         | 4,913         | -   |
-| accountUnsized1             | 814           | -   |
-| accountUnsizedInit2         | 8,733         | -   |
-| accountUnsized2             | 1,240         | -   |
-| accountUnsizedInit4         | 16,343        | -   |
-| accountUnsized4             | 2,093         | -   |
-| accountUnsizedInit8         | 31,553        | -   |
-| accountUnsized8             | 3,797         | -   |
-| boxedAccountEmptyInit1      | 4,810         | -   |
-| boxedAccountEmpty1          | 831           | -   |
-| boxedAccountEmptyInit2      | 8,496         | -   |
-| boxedAccountEmpty2          | 1,253         | -   |
-| boxedAccountEmptyInit4      | 15,859        | -   |
-| boxedAccountEmpty4          | 2,077         | -   |
-| boxedAccountEmptyInit8      | 30,594        | -   |
-| boxedAccountEmpty8          | 3,797         | -   |
-| boxedAccountSizedInit1      | 4,898         | -   |
-| boxedAccountSized1          | 877           | -   |
-| boxedAccountSizedInit2      | 8,648         | -   |
-| boxedAccountSized2          | 1,318         | -   |
-| boxedAccountSizedInit4      | 16,139        | -   |
-| boxedAccountSized4          | 2,185         | -   |
-| boxedAccountSizedInit8      | 31,130        | -   |
-| boxedAccountSized8          | 3,984         | -   |
-| boxedAccountUnsizedInit1    | 4,990         | -   |
-| boxedAccountUnsized1        | 907           | -   |
-| boxedAccountUnsizedInit2    | 8,808         | -   |
-| boxedAccountUnsized2        | 1,352         | -   |
-| boxedAccountUnsizedInit4    | 16,435        | -   |
-| boxedAccountUnsized4        | 2,234         | -   |
-| boxedAccountUnsizedInit8    | 31,698        | -   |
-| boxedAccountUnsized8        | 4,063         | -   |
-| boxedInterfaceAccountMint1  | 1,090         | -   |
-| boxedInterfaceAccountMint2  | 1,486         | -   |
-| boxedInterfaceAccountMint4  | 2,268         | -   |
-| boxedInterfaceAccountMint8  | 3,907         | -   |
-| boxedInterfaceAccountToken1 | 1,217         | -   |
-| boxedInterfaceAccountToken2 | 1,728         | -   |
-| boxedInterfaceAccountToken4 | 2,740         | -   |
-| boxedInterfaceAccountToken8 | 4,839         | -   |
-| interfaceAccountMint1       | 1,105         | -   |
-| interfaceAccountMint2       | 1,490         | -   |
-| interfaceAccountMint4       | 2,268         | -   |
-| interfaceAccountMint8       | 3,835         | -   |
-| interfaceAccountToken1      | 1,237         | -   |
-| interfaceAccountToken2      | 1,749         | -   |
-| interfaceAccountToken4      | 2,775         | -   |
-| interface1                  | 883           | -   |
-| interface2                  | 1,029         | -   |
-| interface4                  | 1,308         | -   |
-| interface8                  | 1,873         | -   |
-| program1                    | 899           | -   |
-| program2                    | 1,035         | -   |
-| program4                    | 1,308         | -   |
-| program8                    | 1,861         | -   |
-| signer1                     | 888           | -   |
-| signer2                     | 1,237         | -   |
-| signer4                     | 1,920         | -   |
-| signer8                     | 3,293         | -   |
-| systemAccount1              | 910           | -   |
-| systemAccount2              | 1,269         | -   |
-| systemAccount4              | 1,972         | -   |
-| systemAccount8              | 3,385         | -   |
-| uncheckedAccount1           | 896           | -   |
-| uncheckedAccount2           | 1,227         | -   |
-| uncheckedAccount4           | 1,875         | -   |
-| uncheckedAccount8           | 3,171         | -   |
-
-### Notable changes
+| accountInfo1                | 588           | -   |
+| accountInfo2                | 959           | -   |
+| accountInfo4                | 1,678         | -   |
+| accountInfo8                | 3,150         | -   |
+| accountEmptyInit1           | 4,212         | -   |
+| accountEmpty1               | 603           | -   |
+| accountEmptyInit2           | 7,529         | -   |
+| accountEmpty2               | 934           | -   |
+| accountEmptyInit4           | 14,164        | -   |
+| accountEmpty4               | 1,615         | -   |
+| accountEmptyInit8           | 27,496        | -   |
+| accountEmpty8               | 2,991         | -   |
+| accountSizedInit1           | 4,271         | -   |
+| accountSized1               | 609           | -   |
+| accountSizedInit2           | 7,647         | -   |
+| accountSized2               | 967           | -   |
+| accountSizedInit4           | 14,414        | -   |
+| accountSized4               | 1,685         | -   |
+| accountSizedInit8           | 27,964        | -   |
+| accountSized8               | 3,125         | -   |
+| accountUnsizedInit1         | 4,359         | -   |
+| accountUnsized1             | 622           | -   |
+| accountUnsizedInit2         | 7,830         | -   |
+| accountUnsized2             | 994           | -   |
+| accountUnsizedInit4         | 14,734        | -   |
+| accountUnsized4             | 1,746         | -   |
+| accountUnsizedInit8         | 28,603        | -   |
+| accountUnsized8             | 3,253         | -   |
+| boxedAccountEmptyInit1      | 4,244         | -   |
+| boxedAccountEmpty1          | 610           | -   |
+| boxedAccountEmptyInit2      | 7,591         | -   |
+| boxedAccountEmpty2          | 976           | -   |
+| boxedAccountEmptyInit4      | 14,289        | -   |
+| boxedAccountEmpty4          | 1,698         | -   |
+| boxedAccountEmptyInit8      | 27,742        | -   |
+| boxedAccountEmpty8          | 3,201         | -   |
+| boxedAccountSizedInit1      | 4,298         | -   |
+| boxedAccountSized1          | 631           | -   |
+| boxedAccountSizedInit2      | 7,701         | -   |
+| boxedAccountSized2          | 1,012         | -   |
+| boxedAccountSizedInit4      | 14,505        | -   |
+| boxedAccountSized4          | 1,767         | -   |
+| boxedAccountSizedInit8      | 28,174        | -   |
+| boxedAccountSized8          | 3,337         | -   |
+| boxedAccountUnsizedInit1    | 4,373         | -   |
+| boxedAccountUnsized1        | 641           | -   |
+| boxedAccountUnsizedInit2    | 7,849         | -   |
+| boxedAccountUnsized2        | 1,034         | -   |
+| boxedAccountUnsizedInit4    | 14,807        | -   |
+| boxedAccountUnsized4        | 1,815         | -   |
+| boxedAccountUnsizedInit8    | 28,766        | -   |
+| boxedAccountUnsized8        | 3,439         | -   |
+| boxedInterfaceAccountMint1  | 808           | -   |
+| boxedInterfaceAccountMint2  | 1,179         | -   |
+| boxedInterfaceAccountMint4  | 1,911         | -   |
+| boxedInterfaceAccountMint8  | 3,431         | -   |
+| boxedInterfaceAccountToken1 | 926           | -   |
+| boxedInterfaceAccountToken2 | 1,413         | -   |
+| boxedInterfaceAccountToken4 | 2,383         | -   |
+| boxedInterfaceAccountToken8 | 4,375         | -   |
+| interfaceAccountMint1       | 799           | -   |
+| interfaceAccountMint2       | 1,163         | -   |
+| interfaceAccountMint4       | 1,887         | -   |
+| interfaceAccountMint8       | 3,339         | -   |
+| interfaceAccountToken1      | 935           | -   |
+| interfaceAccountToken2      | 1,422         | -   |
+| interfaceAccountToken4      | 2,406         | -   |
+| interface1                  | 574           | -   |
+| interface2                  | 701           | -   |
+| interface4                  | 946           | -   |
+| interface8                  | 1,436         | -   |
+| program1                    | 568           | -   |
+| program2                    | 683           | -   |
+| program4                    | 914           | -   |
+| program8                    | 1,370         | -   |
+| signer1                     | 558           | -   |
+| signer2                     | 866           | -   |
+| signer4                     | 1,463         | -   |
+| signer8                     | 2,663         | -   |
+| systemAccount1              | 566           | -   |
+| systemAccount2              | 882           | -   |
+| systemAccount4              | 1,493         | -   |
+| systemAccount8              | 2,723         | -   |
+| uncheckedAccount1           | 547           | -   |
+| uncheckedAccount2           | 832           | -   |
+| uncheckedAccount4           | 1,396         | -   |
+| uncheckedAccount8           | 2,523         | -   |
 
 ---
 
@@ -114,95 +112,95 @@ Solana version: 3.1.10
 
 Solana version: 3.1.10
 
-| Instruction                 | Compute Units | -   |
-| --------------------------- | ------------- | --- |
-| accountInfo1                | 702           | -   |
-| accountInfo2                | 1,115         | -   |
-| accountInfo4                | 1,921         | -   |
-| accountInfo8                | 3,480         | -   |
-| accountEmptyInit1           | 4,716         | -   |
-| accountEmpty1               | 738           | -   |
-| accountEmptyInit2           | 8,379         | -   |
-| accountEmpty2               | 1,138         | -   |
-| accountEmptyInit4           | 15,699        | -   |
-| accountEmpty4               | 1,923         | -   |
-| accountEmptyInit8           | 30,347        | -   |
-| accountEmpty8               | 3,500         | -   |
-| accountSizedInit1           | 4,810         | -   |
-| accountSized1               | 786           | -   |
-| accountSizedInit2           | 8,546         | -   |
-| accountSized2               | 1,198         | -   |
-| accountSizedInit4           | 16,020        | -   |
-| accountSized4               | 2,031         | -   |
-| accountSizedInit8           | 30,931        | -   |
-| accountSized8               | 3,694         | -   |
-| accountUnsizedInit1         | 4,913         | -   |
-| accountUnsized1             | 814           | -   |
-| accountUnsizedInit2         | 8,733         | -   |
-| accountUnsized2             | 1,240         | -   |
-| accountUnsizedInit4         | 16,343        | -   |
-| accountUnsized4             | 2,093         | -   |
-| accountUnsizedInit8         | 31,553        | -   |
-| accountUnsized8             | 3,797         | -   |
-| boxedAccountEmptyInit1      | 4,810         | -   |
-| boxedAccountEmpty1          | 831           | -   |
-| boxedAccountEmptyInit2      | 8,496         | -   |
-| boxedAccountEmpty2          | 1,253         | -   |
-| boxedAccountEmptyInit4      | 15,859        | -   |
-| boxedAccountEmpty4          | 2,077         | -   |
-| boxedAccountEmptyInit8      | 30,594        | -   |
-| boxedAccountEmpty8          | 3,797         | -   |
-| boxedAccountSizedInit1      | 4,898         | -   |
-| boxedAccountSized1          | 877           | -   |
-| boxedAccountSizedInit2      | 8,648         | -   |
-| boxedAccountSized2          | 1,318         | -   |
-| boxedAccountSizedInit4      | 16,139        | -   |
-| boxedAccountSized4          | 2,185         | -   |
-| boxedAccountSizedInit8      | 31,130        | -   |
-| boxedAccountSized8          | 3,984         | -   |
-| boxedAccountUnsizedInit1    | 4,990         | -   |
-| boxedAccountUnsized1        | 907           | -   |
-| boxedAccountUnsizedInit2    | 8,808         | -   |
-| boxedAccountUnsized2        | 1,352         | -   |
-| boxedAccountUnsizedInit4    | 16,435        | -   |
-| boxedAccountUnsized4        | 2,234         | -   |
-| boxedAccountUnsizedInit8    | 31,698        | -   |
-| boxedAccountUnsized8        | 4,063         | -   |
-| boxedInterfaceAccountMint1  | 1,090         | -   |
-| boxedInterfaceAccountMint2  | 1,486         | -   |
-| boxedInterfaceAccountMint4  | 2,268         | -   |
-| boxedInterfaceAccountMint8  | 3,907         | -   |
-| boxedInterfaceAccountToken1 | 1,217         | -   |
-| boxedInterfaceAccountToken2 | 1,728         | -   |
-| boxedInterfaceAccountToken4 | 2,740         | -   |
-| boxedInterfaceAccountToken8 | 4,839         | -   |
-| interfaceAccountMint1       | 1,105         | -   |
-| interfaceAccountMint2       | 1,490         | -   |
-| interfaceAccountMint4       | 2,268         | -   |
-| interfaceAccountMint8       | 3,835         | -   |
-| interfaceAccountToken1      | 1,237         | -   |
-| interfaceAccountToken2      | 1,749         | -   |
-| interfaceAccountToken4      | 2,775         | -   |
-| interface1                  | 883           | -   |
-| interface2                  | 1,029         | -   |
-| interface4                  | 1,308         | -   |
-| interface8                  | 1,873         | -   |
-| program1                    | 899           | -   |
-| program2                    | 1,035         | -   |
-| program4                    | 1,308         | -   |
-| program8                    | 1,861         | -   |
-| signer1                     | 888           | -   |
-| signer2                     | 1,237         | -   |
-| signer4                     | 1,920         | -   |
-| signer8                     | 3,293         | -   |
-| systemAccount1              | 910           | -   |
-| systemAccount2              | 1,269         | -   |
-| systemAccount4              | 1,972         | -   |
-| systemAccount8              | 3,385         | -   |
-| uncheckedAccount1           | 896           | -   |
-| uncheckedAccount2           | 1,227         | -   |
-| uncheckedAccount4           | 1,875         | -   |
-| uncheckedAccount8           | 3,171         | -   |
+| Instruction                 | Compute Units | -                      |
+| --------------------------- | ------------- | ---------------------- |
+| accountInfo1                | 588           | 🟢 **-114 (16.24%)**   |
+| accountInfo2                | 959           | 🟢 **-156 (13.99%)**   |
+| accountInfo4                | 1,678         | 🟢 **-243 (12.65%)**   |
+| accountInfo8                | 3,150         | 🟢 **-330 (9.48%)**    |
+| accountEmptyInit1           | 4,212         | 🟢 **-496 (10.54%)**   |
+| accountEmpty1               | 603           | 🟢 **-135 (18.29%)**   |
+| accountEmptyInit2           | 7,529         | 🟢 **-841 (10.05%)**   |
+| accountEmpty2               | 934           | 🟢 **-204 (17.93%)**   |
+| accountEmptyInit4           | 14,164        | 🟢 **-1,524 (9.71%)**  |
+| accountEmpty4               | 1,615         | 🟢 **-308 (16.02%)**   |
+| accountEmptyInit8           | 27,496        | 🟢 **-2,836 (9.35%)**  |
+| accountEmpty8               | 2,991         | 🟢 **-509 (14.54%)**   |
+| accountSizedInit1           | 4,271         | 🟢 **-531 (11.06%)**   |
+| accountSized1               | 609           | 🟢 **-177 (22.52%)**   |
+| accountSizedInit2           | 7,647         | 🟢 **-890 (10.43%)**   |
+| accountSized2               | 967           | 🟢 **-231 (19.28%)**   |
+| accountSizedInit4           | 14,414        | 🟢 **-1,595 (9.96%)**  |
+| accountSized4               | 1,685         | 🟢 **-346 (17.04%)**   |
+| accountSizedInit8           | 27,964        | 🟢 **-2,952 (9.55%)**  |
+| accountSized8               | 3,125         | 🟢 **-569 (15.40%)**   |
+| accountUnsizedInit1         | 4,359         | 🟢 **-546 (11.13%)**   |
+| accountUnsized1             | 622           | 🟢 **-192 (23.59%)**   |
+| accountUnsizedInit2         | 7,830         | 🟢 **-894 (10.25%)**   |
+| accountUnsized2             | 994           | 🟢 **-246 (19.84%)**   |
+| accountUnsizedInit4         | 14,734        | 🟢 **-1,598 (9.78%)**  |
+| accountUnsized4             | 1,746         | 🟢 **-347 (16.58%)**   |
+| accountUnsizedInit8         | 28,603        | 🟢 **-2,935 (9.31%)**  |
+| accountUnsized8             | 3,253         | 🟢 **-544 (14.33%)**   |
+| boxedAccountEmptyInit1      | 4,244         | 🟢 **-558 (11.62%)**   |
+| boxedAccountEmpty1          | 610           | 🟢 **-221 (26.59%)**   |
+| boxedAccountEmptyInit2      | 7,591         | 🟢 **-896 (10.56%)**   |
+| boxedAccountEmpty2          | 976           | 🟢 **-277 (22.11%)**   |
+| boxedAccountEmptyInit4      | 14,289        | 🟢 **-1,559 (9.84%)**  |
+| boxedAccountEmpty4          | 1,698         | 🟢 **-379 (18.25%)**   |
+| boxedAccountEmptyInit8      | 27,742        | 🟢 **-2,837 (9.28%)**  |
+| boxedAccountEmpty8          | 3,201         | 🟢 **-596 (15.70%)**   |
+| boxedAccountSizedInit1      | 4,298         | 🟢 **-592 (12.11%)**   |
+| boxedAccountSized1          | 631           | 🟢 **-246 (28.05%)**   |
+| boxedAccountSizedInit2      | 7,701         | 🟢 **-938 (10.86%)**   |
+| boxedAccountSized2          | 1,012         | 🟢 **-306 (23.22%)**   |
+| boxedAccountSizedInit4      | 14,505        | 🟢 **-1,623 (10.06%)** |
+| boxedAccountSized4          | 1,767         | 🟢 **-418 (19.13%)**   |
+| boxedAccountSizedInit8      | 28,174        | 🟢 **-2,941 (9.45%)**  |
+| boxedAccountSized8          | 3,337         | 🟢 **-647 (16.24%)**   |
+| boxedAccountUnsizedInit1    | 4,373         | 🟢 **-609 (12.22%)**   |
+| boxedAccountUnsized1        | 641           | 🟢 **-266 (29.33%)**   |
+| boxedAccountUnsizedInit2    | 7,849         | 🟢 **-950 (10.80%)**   |
+| boxedAccountUnsized2        | 1,034         | 🟢 **-318 (23.52%)**   |
+| boxedAccountUnsizedInit4    | 14,807        | 🟢 **-1,617 (9.85%)**  |
+| boxedAccountUnsized4        | 1,815         | 🟢 **-419 (18.76%)**   |
+| boxedAccountUnsizedInit8    | 28,766        | 🟢 **-2,917 (9.21%)**  |
+| boxedAccountUnsized8        | 3,439         | 🟢 **-624 (15.36%)**   |
+| boxedInterfaceAccountMint1  | 808           | 🟢 **-282 (25.87%)**   |
+| boxedInterfaceAccountMint2  | 1,179         | 🟢 **-307 (20.66%)**   |
+| boxedInterfaceAccountMint4  | 1,911         | 🟢 **-357 (15.74%)**   |
+| boxedInterfaceAccountMint8  | 3,431         | 🟢 **-460 (11.82%)**   |
+| boxedInterfaceAccountToken1 | 926           | 🟢 **-291 (23.91%)**   |
+| boxedInterfaceAccountToken2 | 1,413         | 🟢 **-315 (18.23%)**   |
+| boxedInterfaceAccountToken4 | 2,383         | 🟢 **-357 (13.03%)**   |
+| boxedInterfaceAccountToken8 | 4,375         | 🟢 **-448 (9.29%)**    |
+| interfaceAccountMint1       | 799           | 🟢 **-306 (27.69%)**   |
+| interfaceAccountMint2       | 1,163         | 🟢 **-327 (21.95%)**   |
+| interfaceAccountMint4       | 1,887         | 🟢 **-381 (16.80%)**   |
+| interfaceAccountMint8       | 3,339         | 🟢 **-480 (12.57%)**   |
+| interfaceAccountToken1      | 935           | 🟢 **-302 (24.41%)**   |
+| interfaceAccountToken2      | 1,422         | 🟢 **-327 (18.70%)**   |
+| interfaceAccountToken4      | 2,406         | 🟢 **-369 (13.30%)**   |
+| interface1                  | 574           | 🟢 **-309 (34.99%)**   |
+| interface2                  | 701           | 🟢 **-328 (31.88%)**   |
+| interface4                  | 946           | 🟢 **-362 (27.68%)**   |
+| interface8                  | 1,436         | 🟢 **-437 (23.33%)**   |
+| program1                    | 568           | 🟢 **-324 (36.32%)**   |
+| program2                    | 683           | 🟢 **-352 (34.01%)**   |
+| program4                    | 914           | 🟢 **-394 (30.12%)**   |
+| program8                    | 1,370         | 🟢 **-491 (26.38%)**   |
+| signer1                     | 558           | 🟢 **-330 (37.16%)**   |
+| signer2                     | 866           | 🟢 **-371 (29.99%)**   |
+| signer4                     | 1,463         | 🟢 **-457 (23.80%)**   |
+| signer8                     | 2,663         | 🟢 **-630 (19.13%)**   |
+| systemAccount1              | 566           | 🟢 **-344 (37.80%)**   |
+| systemAccount2              | 882           | 🟢 **-387 (30.50%)**   |
+| systemAccount4              | 1,493         | 🟢 **-479 (24.29%)**   |
+| systemAccount8              | 2,723         | 🟢 **-662 (19.56%)**   |
+| uncheckedAccount1           | 547           | 🟢 **-349 (38.95%)**   |
+| uncheckedAccount2           | 832           | 🟢 **-395 (32.19%)**   |
+| uncheckedAccount4           | 1,396         | 🟢 **-479 (25.55%)**   |
+| uncheckedAccount8           | 2,523         | 🟢 **-648 (20.44%)**   |
 
 ### Notable changes
 
@@ -218,66 +216,66 @@ Solana version: 3.1.10
 | accountInfo2                | 1,115         | -   |
 | accountInfo4                | 1,921         | -   |
 | accountInfo8                | 3,480         | -   |
-| accountEmptyInit1           | 4,716         | -   |
+| accountEmptyInit1           | 4,708         | -   |
 | accountEmpty1               | 738           | -   |
-| accountEmptyInit2           | 8,379         | -   |
+| accountEmptyInit2           | 8,370         | -   |
 | accountEmpty2               | 1,138         | -   |
-| accountEmptyInit4           | 15,699        | -   |
+| accountEmptyInit4           | 15,688        | -   |
 | accountEmpty4               | 1,923         | -   |
-| accountEmptyInit8           | 30,347        | -   |
+| accountEmptyInit8           | 30,332        | -   |
 | accountEmpty8               | 3,500         | -   |
-| accountSizedInit1           | 4,810         | -   |
+| accountSizedInit1           | 4,802         | -   |
 | accountSized1               | 786           | -   |
-| accountSizedInit2           | 8,546         | -   |
+| accountSizedInit2           | 8,537         | -   |
 | accountSized2               | 1,198         | -   |
-| accountSizedInit4           | 16,020        | -   |
+| accountSizedInit4           | 16,009        | -   |
 | accountSized4               | 2,031         | -   |
-| accountSizedInit8           | 30,931        | -   |
+| accountSizedInit8           | 30,916        | -   |
 | accountSized8               | 3,694         | -   |
-| accountUnsizedInit1         | 4,913         | -   |
+| accountUnsizedInit1         | 4,905         | -   |
 | accountUnsized1             | 814           | -   |
-| accountUnsizedInit2         | 8,733         | -   |
+| accountUnsizedInit2         | 8,724         | -   |
 | accountUnsized2             | 1,240         | -   |
-| accountUnsizedInit4         | 16,343        | -   |
+| accountUnsizedInit4         | 16,332        | -   |
 | accountUnsized4             | 2,093         | -   |
-| accountUnsizedInit8         | 31,553        | -   |
+| accountUnsizedInit8         | 31,538        | -   |
 | accountUnsized8             | 3,797         | -   |
-| boxedAccountEmptyInit1      | 4,810         | -   |
+| boxedAccountEmptyInit1      | 4,802         | -   |
 | boxedAccountEmpty1          | 831           | -   |
-| boxedAccountEmptyInit2      | 8,496         | -   |
+| boxedAccountEmptyInit2      | 8,487         | -   |
 | boxedAccountEmpty2          | 1,253         | -   |
-| boxedAccountEmptyInit4      | 15,859        | -   |
+| boxedAccountEmptyInit4      | 15,848        | -   |
 | boxedAccountEmpty4          | 2,077         | -   |
-| boxedAccountEmptyInit8      | 30,594        | -   |
+| boxedAccountEmptyInit8      | 30,579        | -   |
 | boxedAccountEmpty8          | 3,797         | -   |
-| boxedAccountSizedInit1      | 4,898         | -   |
+| boxedAccountSizedInit1      | 4,890         | -   |
 | boxedAccountSized1          | 877           | -   |
-| boxedAccountSizedInit2      | 8,648         | -   |
+| boxedAccountSizedInit2      | 8,639         | -   |
 | boxedAccountSized2          | 1,318         | -   |
-| boxedAccountSizedInit4      | 16,139        | -   |
+| boxedAccountSizedInit4      | 16,128        | -   |
 | boxedAccountSized4          | 2,185         | -   |
-| boxedAccountSizedInit8      | 31,130        | -   |
+| boxedAccountSizedInit8      | 31,115        | -   |
 | boxedAccountSized8          | 3,984         | -   |
-| boxedAccountUnsizedInit1    | 4,990         | -   |
+| boxedAccountUnsizedInit1    | 4,982         | -   |
 | boxedAccountUnsized1        | 907           | -   |
-| boxedAccountUnsizedInit2    | 8,808         | -   |
+| boxedAccountUnsizedInit2    | 8,799         | -   |
 | boxedAccountUnsized2        | 1,352         | -   |
-| boxedAccountUnsizedInit4    | 16,435        | -   |
+| boxedAccountUnsizedInit4    | 16,424        | -   |
 | boxedAccountUnsized4        | 2,234         | -   |
-| boxedAccountUnsizedInit8    | 31,698        | -   |
+| boxedAccountUnsizedInit8    | 31,683        | -   |
 | boxedAccountUnsized8        | 4,063         | -   |
 | boxedInterfaceAccountMint1  | 1,090         | -   |
 | boxedInterfaceAccountMint2  | 1,486         | -   |
 | boxedInterfaceAccountMint4  | 2,268         | -   |
-| boxedInterfaceAccountMint8  | 3,907         | -   |
+| boxedInterfaceAccountMint8  | 3,891         | -   |
 | boxedInterfaceAccountToken1 | 1,217         | -   |
 | boxedInterfaceAccountToken2 | 1,728         | -   |
 | boxedInterfaceAccountToken4 | 2,740         | -   |
-| boxedInterfaceAccountToken8 | 4,839         | -   |
+| boxedInterfaceAccountToken8 | 4,823         | -   |
 | interfaceAccountMint1       | 1,105         | -   |
 | interfaceAccountMint2       | 1,490         | -   |
 | interfaceAccountMint4       | 2,268         | -   |
-| interfaceAccountMint8       | 3,835         | -   |
+| interfaceAccountMint8       | 3,819         | -   |
 | interfaceAccountToken1      | 1,237         | -   |
 | interfaceAccountToken2      | 1,749         | -   |
 | interfaceAccountToken4      | 2,775         | -   |
@@ -285,7 +283,7 @@ Solana version: 3.1.10
 | interface2                  | 1,029         | -   |
 | interface4                  | 1,308         | -   |
 | interface8                  | 1,873         | -   |
-| program1                    | 899           | -   |
+| program1                    | 892           | -   |
 | program2                    | 1,035         | -   |
 | program4                    | 1,308         | -   |
 | program8                    | 1,861         | -   |
@@ -310,95 +308,95 @@ Solana version: 3.1.10
 
 Solana version: 3.1.10
 
-| Instruction                 | Compute Units | -   |
-| --------------------------- | ------------- | --- |
-| accountInfo1                | 702           | -   |
-| accountInfo2                | 1,115         | -   |
-| accountInfo4                | 1,921         | -   |
-| accountInfo8                | 3,480         | -   |
-| accountEmptyInit1           | 4,716         | -   |
-| accountEmpty1               | 738           | -   |
-| accountEmptyInit2           | 8,379         | -   |
-| accountEmpty2               | 1,138         | -   |
-| accountEmptyInit4           | 15,699        | -   |
-| accountEmpty4               | 1,923         | -   |
-| accountEmptyInit8           | 30,347        | -   |
-| accountEmpty8               | 3,500         | -   |
-| accountSizedInit1           | 4,810         | -   |
-| accountSized1               | 786           | -   |
-| accountSizedInit2           | 8,546         | -   |
-| accountSized2               | 1,198         | -   |
-| accountSizedInit4           | 16,020        | -   |
-| accountSized4               | 2,031         | -   |
-| accountSizedInit8           | 30,931        | -   |
-| accountSized8               | 3,694         | -   |
-| accountUnsizedInit1         | 4,913         | -   |
-| accountUnsized1             | 814           | -   |
-| accountUnsizedInit2         | 8,733         | -   |
-| accountUnsized2             | 1,240         | -   |
-| accountUnsizedInit4         | 16,343        | -   |
-| accountUnsized4             | 2,093         | -   |
-| accountUnsizedInit8         | 31,553        | -   |
-| accountUnsized8             | 3,797         | -   |
-| boxedAccountEmptyInit1      | 4,810         | -   |
-| boxedAccountEmpty1          | 831           | -   |
-| boxedAccountEmptyInit2      | 8,496         | -   |
-| boxedAccountEmpty2          | 1,253         | -   |
-| boxedAccountEmptyInit4      | 15,859        | -   |
-| boxedAccountEmpty4          | 2,077         | -   |
-| boxedAccountEmptyInit8      | 30,594        | -   |
-| boxedAccountEmpty8          | 3,797         | -   |
-| boxedAccountSizedInit1      | 4,898         | -   |
-| boxedAccountSized1          | 877           | -   |
-| boxedAccountSizedInit2      | 8,648         | -   |
-| boxedAccountSized2          | 1,318         | -   |
-| boxedAccountSizedInit4      | 16,139        | -   |
-| boxedAccountSized4          | 2,185         | -   |
-| boxedAccountSizedInit8      | 31,130        | -   |
-| boxedAccountSized8          | 3,984         | -   |
-| boxedAccountUnsizedInit1    | 4,990         | -   |
-| boxedAccountUnsized1        | 907           | -   |
-| boxedAccountUnsizedInit2    | 8,808         | -   |
-| boxedAccountUnsized2        | 1,352         | -   |
-| boxedAccountUnsizedInit4    | 16,435        | -   |
-| boxedAccountUnsized4        | 2,234         | -   |
-| boxedAccountUnsizedInit8    | 31,698        | -   |
-| boxedAccountUnsized8        | 4,063         | -   |
-| boxedInterfaceAccountMint1  | 1,090         | -   |
-| boxedInterfaceAccountMint2  | 1,486         | -   |
-| boxedInterfaceAccountMint4  | 2,268         | -   |
-| boxedInterfaceAccountMint8  | 3,907         | -   |
-| boxedInterfaceAccountToken1 | 1,217         | -   |
-| boxedInterfaceAccountToken2 | 1,728         | -   |
-| boxedInterfaceAccountToken4 | 2,740         | -   |
-| boxedInterfaceAccountToken8 | 4,839         | -   |
-| interfaceAccountMint1       | 1,105         | -   |
-| interfaceAccountMint2       | 1,490         | -   |
-| interfaceAccountMint4       | 2,268         | -   |
-| interfaceAccountMint8       | 3,835         | -   |
-| interfaceAccountToken1      | 1,237         | -   |
-| interfaceAccountToken2      | 1,749         | -   |
-| interfaceAccountToken4      | 2,775         | -   |
-| interface1                  | 883           | -   |
-| interface2                  | 1,029         | -   |
-| interface4                  | 1,308         | -   |
-| interface8                  | 1,873         | -   |
-| program1                    | 899           | -   |
-| program2                    | 1,035         | -   |
-| program4                    | 1,308         | -   |
-| program8                    | 1,861         | -   |
-| signer1                     | 888           | -   |
-| signer2                     | 1,237         | -   |
-| signer4                     | 1,920         | -   |
-| signer8                     | 3,293         | -   |
-| systemAccount1              | 910           | -   |
-| systemAccount2              | 1,269         | -   |
-| systemAccount4              | 1,972         | -   |
-| systemAccount8              | 3,385         | -   |
-| uncheckedAccount1           | 896           | -   |
-| uncheckedAccount2           | 1,227         | -   |
-| uncheckedAccount4           | 1,875         | -   |
-| uncheckedAccount8           | 3,171         | -   |
+| Instruction                 | Compute Units | -                  |
+| --------------------------- | ------------- | ------------------ |
+| accountInfo1                | 702           | -                  |
+| accountInfo2                | 1,115         | -                  |
+| accountInfo4                | 1,921         | -                  |
+| accountInfo8                | 3,480         | -                  |
+| accountEmptyInit1           | 4,708         | 🟢 **-8 (0.17%)**  |
+| accountEmpty1               | 738           | -                  |
+| accountEmptyInit2           | 8,370         | 🟢 **-9 (0.11%)**  |
+| accountEmpty2               | 1,138         | -                  |
+| accountEmptyInit4           | 15,688        | 🟢 **-11 (0.07%)** |
+| accountEmpty4               | 1,923         | -                  |
+| accountEmptyInit8           | 30,332        | 🟢 **-15 (0.05%)** |
+| accountEmpty8               | 3,500         | -                  |
+| accountSizedInit1           | 4,802         | 🟢 **-8 (0.17%)**  |
+| accountSized1               | 786           | -                  |
+| accountSizedInit2           | 8,537         | 🟢 **-9 (0.11%)**  |
+| accountSized2               | 1,198         | -                  |
+| accountSizedInit4           | 16,009        | 🟢 **-11 (0.07%)** |
+| accountSized4               | 2,031         | -                  |
+| accountSizedInit8           | 30,916        | 🟢 **-15 (0.05%)** |
+| accountSized8               | 3,694         | -                  |
+| accountUnsizedInit1         | 4,905         | 🟢 **-8 (0.16%)**  |
+| accountUnsized1             | 814           | -                  |
+| accountUnsizedInit2         | 8,724         | 🟢 **-9 (0.10%)**  |
+| accountUnsized2             | 1,240         | -                  |
+| accountUnsizedInit4         | 16,332        | 🟢 **-11 (0.07%)** |
+| accountUnsized4             | 2,093         | -                  |
+| accountUnsizedInit8         | 31,538        | 🟢 **-15 (0.05%)** |
+| accountUnsized8             | 3,797         | -                  |
+| boxedAccountEmptyInit1      | 4,802         | 🟢 **-8 (0.17%)**  |
+| boxedAccountEmpty1          | 831           | -                  |
+| boxedAccountEmptyInit2      | 8,487         | 🟢 **-9 (0.11%)**  |
+| boxedAccountEmpty2          | 1,253         | -                  |
+| boxedAccountEmptyInit4      | 15,848        | 🟢 **-11 (0.07%)** |
+| boxedAccountEmpty4          | 2,077         | -                  |
+| boxedAccountEmptyInit8      | 30,579        | 🟢 **-15 (0.05%)** |
+| boxedAccountEmpty8          | 3,797         | -                  |
+| boxedAccountSizedInit1      | 4,890         | 🟢 **-8 (0.16%)**  |
+| boxedAccountSized1          | 877           | -                  |
+| boxedAccountSizedInit2      | 8,639         | 🟢 **-9 (0.10%)**  |
+| boxedAccountSized2          | 1,318         | -                  |
+| boxedAccountSizedInit4      | 16,128        | 🟢 **-11 (0.07%)** |
+| boxedAccountSized4          | 2,185         | -                  |
+| boxedAccountSizedInit8      | 31,115        | 🟢 **-15 (0.05%)** |
+| boxedAccountSized8          | 3,984         | -                  |
+| boxedAccountUnsizedInit1    | 4,982         | 🟢 **-8 (0.16%)**  |
+| boxedAccountUnsized1        | 907           | -                  |
+| boxedAccountUnsizedInit2    | 8,799         | 🟢 **-9 (0.10%)**  |
+| boxedAccountUnsized2        | 1,352         | -                  |
+| boxedAccountUnsizedInit4    | 16,424        | 🟢 **-11 (0.07%)** |
+| boxedAccountUnsized4        | 2,234         | -                  |
+| boxedAccountUnsizedInit8    | 31,683        | 🟢 **-15 (0.05%)** |
+| boxedAccountUnsized8        | 4,063         | -                  |
+| boxedInterfaceAccountMint1  | 1,090         | -                  |
+| boxedInterfaceAccountMint2  | 1,486         | -                  |
+| boxedInterfaceAccountMint4  | 2,268         | -                  |
+| boxedInterfaceAccountMint8  | 3,891         | 🟢 **-16 (0.41%)** |
+| boxedInterfaceAccountToken1 | 1,217         | -                  |
+| boxedInterfaceAccountToken2 | 1,728         | -                  |
+| boxedInterfaceAccountToken4 | 2,740         | -                  |
+| boxedInterfaceAccountToken8 | 4,823         | 🟢 **-16 (0.33%)** |
+| interfaceAccountMint1       | 1,105         | -                  |
+| interfaceAccountMint2       | 1,490         | -                  |
+| interfaceAccountMint4       | 2,268         | -                  |
+| interfaceAccountMint8       | 3,819         | 🟢 **-16 (0.42%)** |
+| interfaceAccountToken1      | 1,237         | -                  |
+| interfaceAccountToken2      | 1,749         | -                  |
+| interfaceAccountToken4      | 2,775         | -                  |
+| interface1                  | 883           | -                  |
+| interface2                  | 1,029         | -                  |
+| interface4                  | 1,308         | -                  |
+| interface8                  | 1,873         | -                  |
+| program1                    | 892           | 🟢 **-7 (0.78%)**  |
+| program2                    | 1,035         | -                  |
+| program4                    | 1,308         | -                  |
+| program8                    | 1,861         | -                  |
+| signer1                     | 888           | -                  |
+| signer2                     | 1,237         | -                  |
+| signer4                     | 1,920         | -                  |
+| signer8                     | 3,293         | -                  |
+| systemAccount1              | 910           | -                  |
+| systemAccount2              | 1,269         | -                  |
+| systemAccount4              | 1,972         | -                  |
+| systemAccount8              | 3,385         | -                  |
+| uncheckedAccount1           | 896           | -                  |
+| uncheckedAccount2           | 1,227         | -                  |
+| uncheckedAccount4           | 1,875         | -                  |
+| uncheckedAccount8           | 3,171         | -                  |
 
 ### Notable changes
 

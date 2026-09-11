@@ -104,7 +104,7 @@ jobs:
           max_attempts: 3
           retry_on: error
           shell: bash
-          command: cargo build-sbf --tools-version v1.52 --install-only
+          command: cargo build-sbf --tools-version v1.57 --install-only
 
       # Cache the generated project's `target/` so subsequent runs reuse
       # compiled deps. Restored before `anchor init` (which is invoked with
@@ -203,7 +203,7 @@ jobs:
           max_attempts: 3
           retry_on: error
           shell: bash
-          command: cargo build-sbf --tools-version v1.52 --install-only
+          command: cargo build-sbf --tools-version v1.57 --install-only
 
       # Cache cargo `target/` and `node_modules/` for the generated project.
       # `anchor init --force` leaves both alone, so the dirs survive a fresh
