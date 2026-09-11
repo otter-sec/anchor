@@ -288,6 +288,109 @@ pub mod __private {
     use crate::CpiHandle;
     use pinocchio::account::AccountView;
 
+    /// Compile-time markers used by the derive macros to keep the
+    /// Borsh-shaped Wincode surfaces free of floating-point fields
+    /// transitively. Floats intentionally have no implementation.
+    pub trait BorshSerializeCompatible {
+        type Fields;
+    }
+    pub trait BorshDeserializeCompatible {
+        type Fields;
+    }
+
+    pub trait BorshSerializeCompatibilityProof {}
+    pub trait BorshDeserializeCompatibilityProof {}
+    pub struct BorshSerializeFields<H: ?Sized, T: ?Sized>(core::marker::PhantomData<fn(H) -> T>);
+    pub struct BorshDeserializeFields<H: ?Sized, T: ?Sized>(core::marker::PhantomData<fn(H) -> T>);
+    pub struct BorshSerializeFieldsEnd;
+    pub struct BorshDeserializeFieldsEnd;
+
+    impl BorshSerializeCompatibilityProof for BorshSerializeFieldsEnd {}
+    impl BorshDeserializeCompatibilityProof for BorshDeserializeFieldsEnd {}
+
+    macro_rules! impl_compatibility_proof {
+        ($fields:ident, $marker:path, $proof:path) => {
+            impl<H: $marker + ?Sized, T: $proof + ?Sized> $proof for $fields<H, T>
+            where
+                <H as $marker>::Fields: $proof,
+            {}
+        };
+    }
+
+    impl_compatibility_proof!(
+        BorshSerializeFields,
+        BorshSerializeCompatible,
+        BorshSerializeCompatibilityProof
+    );
+    impl_compatibility_proof!(
+        BorshDeserializeFields,
+        BorshDeserializeCompatible,
+        BorshDeserializeCompatibilityProof
+    );
+
+    macro_rules! impl_primitive {
+        ($($ty:ty),* $(,)?) => {
+            $(
+                impl BorshSerializeCompatible for $ty {
+                    type Fields = BorshSerializeFieldsEnd;
+                }
+                impl BorshDeserializeCompatible for $ty {
+                    type Fields = BorshDeserializeFieldsEnd;
+                }
+            )*
+        };
+    }
+
+    impl_primitive!(
+        bool, u8, u16, u32, u64, u128, usize,
+        i8, i16, i32, i64, i128, isize,
+        char,
+        crate::Address,
+    );
+
+    impl<'a, T: BorshSerializeCompatible + ?Sized> BorshSerializeCompatible for &'a T {
+        type Fields = <T as BorshSerializeCompatible>::Fields;
+    }
+    impl<'a, T: BorshDeserializeCompatible + ?Sized> BorshDeserializeCompatible for &'a T {
+        type Fields = <T as BorshDeserializeCompatible>::Fields;
+    }
+    impl<'a, T: BorshSerializeCompatible + ?Sized> BorshSerializeCompatible for &'a mut T {
+        type Fields = <T as BorshSerializeCompatible>::Fields;
+    }
+    impl<'a, T: BorshDeserializeCompatible + ?Sized> BorshDeserializeCompatible for &'a mut T {
+        type Fields = <T as BorshDeserializeCompatible>::Fields;
+    }
+    impl<T: BorshSerializeCompatible> BorshSerializeCompatible for Option<T> {
+        type Fields = <T as BorshSerializeCompatible>::Fields;
+    }
+    impl<T: BorshDeserializeCompatible> BorshDeserializeCompatible for Option<T> {
+        type Fields = <T as BorshDeserializeCompatible>::Fields;
+    }
+    impl<T: BorshSerializeCompatible> BorshSerializeCompatible for alloc::vec::Vec<T> {
+        type Fields = <T as BorshSerializeCompatible>::Fields;
+    }
+    impl<T: BorshDeserializeCompatible> BorshDeserializeCompatible for alloc::vec::Vec<T> {
+        type Fields = <T as BorshDeserializeCompatible>::Fields;
+    }
+    impl<T: BorshSerializeCompatible> BorshSerializeCompatible for [T] {
+        type Fields = <T as BorshSerializeCompatible>::Fields;
+    }
+    impl<T: BorshDeserializeCompatible> BorshDeserializeCompatible for [T] {
+        type Fields = <T as BorshDeserializeCompatible>::Fields;
+    }
+    impl<T: BorshSerializeCompatible, const N: usize> BorshSerializeCompatible for [T; N] {
+        type Fields = <T as BorshSerializeCompatible>::Fields;
+    }
+    impl<T: BorshDeserializeCompatible, const N: usize> BorshDeserializeCompatible for [T; N] {
+        type Fields = <T as BorshDeserializeCompatible>::Fields;
+    }
+    impl BorshSerializeCompatible for alloc::string::String {
+        type Fields = BorshSerializeFieldsEnd;
+    }
+    impl BorshDeserializeCompatible for alloc::string::String {
+        type Fields = BorshDeserializeFieldsEnd;
+    }
+
     /// Used by `#[derive(InitSpace)]` on enums to pick the largest variant size.
     pub const fn max(a: usize, b: usize) -> usize {
         [a, b][(a < b) as usize]

@@ -694,6 +694,54 @@ pub struct Price {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn nested_float_aliases_are_rejected_on_borsh_accounts() {
+    compile_pass_case(
+        "nested_safe_borsh_account",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct SafeInner {
+    pub value: u64,
+}
+
+#[account(borsh)]
+pub struct SafeAccount {
+    pub value: SafeInner,
+}
+"#,
+    );
+
+    compile_fail_case(
+        "nested_float_alias_borsh_account",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+type FloatAlias = f64;
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct HiddenFloat {
+    pub value: FloatAlias,
+}
+
+#[account(borsh)]
+pub struct Price {
+    pub value: HiddenFloat,
+}
+"#,
+        &["BorshSerializeCompatible", "BorshDeserializeCompatible"],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn cfg_gated_public_handlers_do_not_emit_missing_wrappers() {
     compile_pass_case(
         "cfg_gated_handler",
