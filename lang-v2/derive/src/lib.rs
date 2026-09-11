@@ -2108,6 +2108,18 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 __base_offset: usize,
                 __ix_data: &'ix [u8],
             ) -> anchor_lang::Result<(Self, #bumps_name, Self::IxArgs<'ix>)> {
+                if let Some(__dups) = __duplicates {
+                    let __shifted_mut_mask = anchor_lang::mut_mask_or_shifted(
+                        [0u64; 4],
+                        <Self as anchor_lang::TryAccounts>::MUT_MASK,
+                        __base_offset,
+                    );
+                    if __dups.intersects(&__shifted_mut_mask) {
+                        return Err(
+                            anchor_lang::ErrorCode::ConstraintDuplicateMutableAccount.into(),
+                        );
+                    }
+                }
                 let (mut __accounts, __bumps, __ix_args) =
                     <Self as anchor_lang::TryAccounts>::validate_accounts(
                         __program_id,
@@ -2598,10 +2610,7 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
                     &input.generics,
                 ),
                 cfg_variant_dep_walkers(&data.variants),
-                wincode_idl_override_tokens_for_variants(
-                    "`#[derive(IdlType)]`",
-                    &data.variants,
-                ),
+                wincode_idl_override_tokens_for_variants("`#[derive(IdlType)]`", &data.variants),
             )
         }
         Data::Union(_) => {

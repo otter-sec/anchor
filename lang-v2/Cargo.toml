@@ -184,3 +184,7 @@ required-features = ["testing"]
 [[test]]
 name = "init_if_needed_reuse_validation"
 required-features = ["testing"]
+
+[[test]]
+name = "direct_try_accounts_duplicate"
+required-features = ["testing"]
