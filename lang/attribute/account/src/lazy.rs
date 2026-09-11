@@ -43,24 +43,18 @@ pub fn gen_lazy(strct: &syn::ItemStruct) -> syn::Result<TokenStream> {
             let offset_of_ident = to_private_ident(format!("offset_of_{field_ident}"));
             let size_of_ident = to_private_ident(format!("size_of_{field_ident}"));
 
-            #[allow(
-                clippy::unwrap_used,
-                reason = "field i-1 always exists when iterating field i"
-            )]
-            let offset = i.eq(&0).then(|| quote!(#disc_len)).unwrap_or_else(|| {
+            let offset = if i == 0 {
+                quote!(#disc_len)
+            } else {
                 // Current offset is the previous field's offset + size
-                strct
-                    .fields
-                    .iter()
-                    .nth(i - 1)
-                    .map(|field| {
-                        let field_ident = to_field_ident(field, i - 1);
-                        let offset_of_ident = to_private_ident(format!("offset_of_{field_ident}"));
-                        let size_of_ident = to_private_ident(format!("size_of_{field_ident}"));
-                        quote! { self.#offset_of_ident() + self.#size_of_ident() }
-                    })
-                    .expect("Previous field should always exist when i > 0")
-            });
+                let Some(field) = strct.fields.iter().nth(i - 1) else {
+                    unreachable!("Previous field should always exist when i > 0");
+                };
+                let field_ident = to_field_ident(field, i - 1);
+                let offset_of_ident = to_private_ident(format!("offset_of_{field_ident}"));
+                let size_of_ident = to_private_ident(format!("size_of_{field_ident}"));
+                quote! { self.#offset_of_ident() + self.#size_of_ident() }
+            };
 
             let ty = &field.ty;
             let ty_as_lazy = quote! { <#ty as anchor_lang::__private::Lazy> };

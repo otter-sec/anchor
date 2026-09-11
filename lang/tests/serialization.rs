@@ -124,7 +124,7 @@ fn test_type_alias_recursive_edge_serialization() {
     assert_eq!(AliasNode::try_from_slice(&data).unwrap(), node);
 }
 
-#[cfg(not(feature = "lazy-account"))]
+#[cfg(all(not(feature = "lazy-account"), not(feature = "idl-build")))]
 #[test]
 /// Test for <https://github.com/otter-sec/anchor/issues/4377>;
 /// ensure that user-provided `borsh` attributes are applied.
