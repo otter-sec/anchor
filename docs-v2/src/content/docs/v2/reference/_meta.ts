@@ -11,7 +11,8 @@ export default {
     'feature-flags': { order: 4 },
     'anchor-toml': { label: 'Anchor.toml', order: 5 },
     cli: { label: 'Anchor CLI', order: 6 },
-    'examples-and-benchmarks': { order: 7 },
-    'alpha-limitations': { order: 8 },
+    'no-dna': { label: 'NO_DNA', order: 7 },
+    'examples-and-benchmarks': { order: 8 },
+    'alpha-limitations': { order: 9 },
   },
 } satisfies MetaFile
