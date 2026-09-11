@@ -49,15 +49,26 @@ pub fn generate(
                 };
                 #[allow(
                     clippy::unwrap_used,
-                    reason = "computed from valid Rust identifiers via snake_case"
+                    clippy::expect_used,
+                    reason = "symbol path is always non-empty and is a valid Rust path"
                 )]
-                let symbol: proc_macro2::TokenStream = format!(
-                    "__client_accounts_{0}::{1}",
-                    s.symbol.to_snake_case(),
-                    s.symbol,
-                )
-                .parse()
-                .unwrap();
+                let symbol: proc_macro2::TokenStream = {
+                    let symbol_path = s.symbol.split("::").collect::<Vec<_>>();
+                    let name = symbol_path
+                        .last()
+                        .expect("symbol path must have at least one segment");
+                    let prefix = symbol_path
+                        .get(..symbol_path.len().saturating_sub(1))
+                        .unwrap_or(&[]);
+                    let helper_mod = format!("__client_accounts_{}", name.to_snake_case());
+                    if prefix.is_empty() {
+                        format!("{helper_mod}::{name}")
+                    } else {
+                        format!("{}::{helper_mod}::{name}", prefix.join("::"),)
+                    }
+                    .parse()
+                    .expect("generated module path must be valid Rust tokens")
+                };
                 quote! {
                     #docs
                     pub #name: #symbol
@@ -145,15 +156,34 @@ pub fn generate(
     let re_exports: Vec<proc_macro2::TokenStream> = {
         // First, dedup the exports.
         let mut re_exports = std::collections::HashSet::new();
+        // We need to keep track of the names we've already re-exported to avoid
+        // name collisions in the generated module.
+        let mut re_exported_names = std::collections::HashSet::new();
+
         for f in accs.fields.iter().filter_map(|f: &AccountField| match f {
             AccountField::CompositeField(s) => Some(s),
             AccountField::Field(_) => None,
         }) {
-            re_exports.insert(format!(
-                "__client_accounts_{0}::{1}",
-                f.symbol.to_snake_case(),
-                f.symbol,
-            ));
+            let symbol_path = f.symbol.split("::").collect::<Vec<_>>();
+            let name = symbol_path.last().copied().unwrap_or_default(); // Never empty for valid Rust paths
+
+            // If we've already re-exported something with this name, skip it to
+            // avoid a "name defined multiple times" error.
+            if re_exported_names.contains(name) {
+                continue;
+            }
+
+            let prefix = symbol_path
+                .get(..symbol_path.len().saturating_sub(1))
+                .unwrap_or(&[]);
+            let helper_mod = format!("__client_accounts_{}", name.to_snake_case());
+
+            if prefix.is_empty() {
+                re_exports.insert(format!("{helper_mod}::{name}"));
+            } else {
+                re_exports.insert(format!("{}::{helper_mod}::{name}", prefix.join("::")));
+            }
+            re_exported_names.insert(name.to_string());
         }
 
         re_exports
@@ -187,7 +217,8 @@ pub fn generate(
         ///
         /// To access the struct in this module, one should use the sibling
         /// `accounts` module (also generated), which re-exports this.
-        pub(crate) mod #account_mod_name {
+        #[doc(hidden)]
+        pub mod #account_mod_name {
             use super::*;
             use anchor_lang::prelude::borsh;
             #(#re_exports)*
