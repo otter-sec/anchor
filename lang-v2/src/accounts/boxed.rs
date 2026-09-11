@@ -13,6 +13,8 @@ impl<T: AnchorAccount> AnchorAccount for Box<T> {
     type Data = T;
     const IS_SIGNER: bool = T::IS_SIGNER;
     const MIN_DATA_LEN: usize = T::MIN_DATA_LEN;
+    const RELAX_READONLY_CPI_BORROW_FROM_MUT: bool =
+        T::RELAX_READONLY_CPI_BORROW_FROM_MUT;
 
     fn load(view: AccountView) -> Result<Self, ProgramError> {
         T::load(view).map(Box::new)
@@ -36,6 +38,18 @@ impl<T: AnchorAccount> AnchorAccount for Box<T> {
 
     fn account(&self) -> &AccountView {
         (**self).account()
+    }
+
+    #[inline(always)]
+    fn cpi_handle(&self) -> crate::CpiHandle<'_> {
+        <T as AnchorAccount>::cpi_handle(self.as_ref())
+    }
+
+    #[inline(always)]
+    fn try_cpi_handle_mut(
+        &mut self,
+    ) -> Result<crate::CpiHandleMut<'_>, ProgramError> {
+        <T as AnchorAccount>::try_cpi_handle_mut(self.as_mut())
     }
 
     fn exit(&mut self) -> pinocchio::ProgramResult {
