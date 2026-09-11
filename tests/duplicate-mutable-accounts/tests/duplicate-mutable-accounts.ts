@@ -274,4 +274,184 @@ describe("duplicate-mutable-accounts", () => {
       );
     }
   });
+
+  // --- `zero` aliasing an `init` account ---
+  //
+  // `init` runs before every other constraint, so by the time a `zero` constraint is checked the
+  // init'd account is already program-owned and zero-filled, and its discriminator is not written
+  // until exit. A single fresh account must not be accepted for both fields, in either
+  // declaration order, and whether or not the two fields sit in composites.
+
+  // Capture rather than assert inside the `try`, so a failed expectation is not swallowed by
+  // the very `catch` that is meant to inspect the program's error.
+  const captureError = async (promise: Promise<unknown>) => {
+    try {
+      await promise;
+      return undefined;
+    } catch (e) {
+      return e;
+    }
+  };
+
+  const expectBlocked = async (
+    promise: Promise<unknown>,
+    what: string,
+    code = "ConstraintDuplicateMutableAccount"
+  ) => {
+    const e = await captureError(promise);
+    assert.isDefined(e, `${what}: expected the transaction to be rejected`);
+    assert.instanceOf(e, AnchorError, `${what}: got a non-Anchor error: ${e}`);
+    assert.strictEqual(
+      (e as AnchorError).error.errorCode.code,
+      code,
+      `${what}: unexpected error code`
+    );
+  };
+
+  it("Should block the same fresh account used for `zero` then `init`", async () => {
+    // Flat structs are handled by the `zero` constraint's own uniqueness scan
+    // (the duplicate-mutable check only includes `init` accounts when composites
+    // are present), so the error surfaces as ConstraintZero.
+    const aliased = anchor.web3.Keypair.generate();
+    await expectBlocked(
+      program.methods
+        .zeroThenInit()
+        .accounts({
+          zeroAccount: aliased.publicKey,
+          initAccount: aliased.publicKey,
+          payer: user_wallet.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .signers([user_wallet, aliased])
+        .rpc(),
+      "`zero` before `init` with one account",
+      "ConstraintZero"
+    );
+  });
+
+  it("Should block the same fresh account used for `init` then `zero`", async () => {
+    const aliased = anchor.web3.Keypair.generate();
+    await expectBlocked(
+      program.methods
+        .initThenZero()
+        .accounts({
+          initAccount: aliased.publicKey,
+          zeroAccount: aliased.publicKey,
+          payer: user_wallet.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .signers([user_wallet, aliased])
+        .rpc(),
+      "`init` before `zero` with one account",
+      "ConstraintZero"
+    );
+  });
+
+  it("Should block a `zero, dup` account aliasing a later `init` account", async () => {
+    // `dup` skips the duplicate-mutable check, so this is caught by the `zero` uniqueness scan
+    // instead and surfaces as ConstraintZero.
+    const aliased = anchor.web3.Keypair.generate();
+    await expectBlocked(
+      program.methods
+        .zeroDupThenInit()
+        .accounts({
+          zeroAccount: aliased.publicKey,
+          initAccount: aliased.publicKey,
+          payer: user_wallet.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .signers([user_wallet, aliased])
+        .rpc(),
+      "`zero, dup` aliasing a later `init`",
+      "ConstraintZero"
+    );
+  });
+
+  it("Should block `init` and `zero` aliased across two composites", async () => {
+    const aliased = anchor.web3.Keypair.generate();
+    await expectBlocked(
+      program.methods
+        .compositeInitAndZero()
+        .accounts({
+          initPart: {
+            counter: aliased.publicKey,
+            payer: user_wallet.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+          },
+          zeroPart: { counter: aliased.publicKey },
+        })
+        .signers([user_wallet, aliased])
+        .rpc(),
+      "`init` and `zero` in separate composites with one account"
+    );
+  });
+
+  it("Should block a direct `zero` field aliasing an `init` inside a composite", async () => {
+    const aliased = anchor.web3.Keypair.generate();
+    await expectBlocked(
+      program.methods
+        .mixedZeroAndCompositeInit()
+        .accounts({
+          zeroAccount: aliased.publicKey,
+          initPart: {
+            counter: aliased.publicKey,
+            payer: user_wallet.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+          },
+        })
+        .signers([user_wallet, aliased])
+        .rpc(),
+      "direct `zero` aliasing a composite `init`"
+    );
+  });
+
+  it("Should still allow `zero` and `init` on genuinely different accounts", async () => {
+    const zeroKp = anchor.web3.Keypair.generate();
+    const initKp = anchor.web3.Keypair.generate();
+
+    await program.methods
+      .zeroThenInit()
+      .preInstructions([
+        await program.account.counter.createInstruction(zeroKp),
+      ])
+      .accounts({
+        zeroAccount: zeroKp.publicKey,
+        initAccount: initKp.publicKey,
+        payer: user_wallet.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([user_wallet, zeroKp, initKp])
+      .rpc();
+
+    const zeroData = await program.account.counter.fetch(zeroKp.publicKey);
+    const initData = await program.account.counter.fetch(initKp.publicKey);
+    assert.strictEqual(zeroData.count.toNumber(), 1);
+    assert.strictEqual(initData.count.toNumber(), 2);
+  });
+
+  it("Should still allow composite `zero` and `init` on different accounts", async () => {
+    const zeroKp = anchor.web3.Keypair.generate();
+    const initKp = anchor.web3.Keypair.generate();
+
+    await program.methods
+      .compositeInitAndZero()
+      .preInstructions([
+        await program.account.counter.createInstruction(zeroKp),
+      ])
+      .accounts({
+        initPart: {
+          counter: initKp.publicKey,
+          payer: user_wallet.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        },
+        zeroPart: { counter: zeroKp.publicKey },
+      })
+      .signers([user_wallet, zeroKp, initKp])
+      .rpc();
+
+    const initData = await program.account.counter.fetch(initKp.publicKey);
+    const zeroData = await program.account.counter.fetch(zeroKp.publicKey);
+    assert.strictEqual(initData.count.toNumber(), 1);
+    assert.strictEqual(zeroData.count.toNumber(), 2);
+  });
 });
