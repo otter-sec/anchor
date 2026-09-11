@@ -1,6 +1,6 @@
 use {
     super::common::{get_idl_module_path, get_no_docs},
-    crate::parser::docs,
+    crate::parser::{docs, is_bytemuck_derive},
     proc_macro2::TokenStream,
     quote::quote,
     syn::{spanned::Spanned, Result},
@@ -325,16 +325,6 @@ where
         },
         defined,
     ))
-}
-
-fn is_bytemuck_derive(path: &syn::Path, expected_leaf: &str) -> bool {
-    let mut segments = path.segments.iter();
-
-    matches!(
-        (segments.next(), segments.next(), segments.next()),
-        (Some(first), Some(second), None)
-            if first.ident == "bytemuck" && second.ident == expected_leaf
-    )
 }
 
 fn trim_attr_start(value: &str) -> &str {
