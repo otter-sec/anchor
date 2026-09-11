@@ -806,7 +806,7 @@ fn generate_constraint_init_group(
             };
             let owner_optional_check = check_scope.generate_check(owner);
             let freeze_authority_optional_check = match freeze_authority {
-                Some(fa) => check_scope.generate_check(fa),
+                Some(fa) => generate_optional_account_check(&mut check_scope, fa),
                 None => quote! {},
             };
 
@@ -936,10 +936,7 @@ fn generate_constraint_init_group(
                 quote! {Option::<&::anchor_spl::token_interface::ExtensionsVec>::Some(&vec![#(#extensions),*])}
             };
 
-            let freeze_authority = match freeze_authority {
-                Some(fa) => quote! { Option::<&anchor_lang::prelude::Pubkey>::Some(&#fa.key()) },
-                None => quote! { Option::<&anchor_lang::prelude::Pubkey>::None },
-            };
+            let freeze_authority = generate_option_pubkey_ref(freeze_authority.as_ref());
 
             let group_pointer_authority = match group_pointer_authority {
                 Some(gpa) => quote! { Option::<anchor_lang::prelude::Pubkey>::Some(#gpa.key()) },
@@ -1456,10 +1453,12 @@ fn generate_constraint_mint(
     let mut optional_check_scope = OptionalCheckScope::new_with_field(accs, name);
     let mint_authority_check = match &c.mint_authority {
         Some(mint_authority) => {
-            let mint_authority_optional_check = optional_check_scope.generate_check(mint_authority);
+            let mint_authority_optional_check =
+                generate_optional_account_check(&mut optional_check_scope, mint_authority);
+            let expected = generate_coption_pubkey(mint_authority);
             quote! {
                 #mint_authority_optional_check
-                if #name.mint_authority != anchor_lang::solana_program::program_option::COption::Some(#mint_authority.key()) {
+                if #name.mint_authority != #expected {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintMintAuthority.into());
                 }
             }
@@ -1469,10 +1468,11 @@ fn generate_constraint_mint(
     let freeze_authority_check = match &c.freeze_authority {
         Some(freeze_authority) => {
             let freeze_authority_optional_check =
-                optional_check_scope.generate_check(freeze_authority);
+                generate_optional_account_check(&mut optional_check_scope, freeze_authority);
+            let expected = generate_coption_pubkey(freeze_authority);
             quote! {
                 #freeze_authority_optional_check
-                if #name.freeze_authority != anchor_lang::solana_program::program_option::COption::Some(#freeze_authority.key()) {
+                if #name.freeze_authority != #expected {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintFreezeAuthority.into());
                 }
             }
@@ -1745,6 +1745,31 @@ impl<'a> OptionalCheckScope<'a> {
                 quote! {}
             }
         }
+    }
+}
+
+fn generate_optional_account_check(scope: &mut OptionalCheckScope, expr: &Expr) -> TokenStream {
+    if parser::expr_is_none(expr) {
+        quote! {}
+    } else {
+        scope.generate_check(expr)
+    }
+}
+
+fn generate_coption_pubkey(expr: &Expr) -> TokenStream {
+    if parser::expr_is_none(expr) {
+        quote! { anchor_lang::solana_program::program_option::COption::None }
+    } else {
+        quote! { anchor_lang::solana_program::program_option::COption::Some(#expr.key()) }
+    }
+}
+
+fn generate_option_pubkey_ref(expr: Option<&Expr>) -> TokenStream {
+    match expr {
+        Some(fa) if !parser::expr_is_none(fa) => {
+            quote! { Option::<&anchor_lang::prelude::Pubkey>::Some(&#fa.key()) }
+        }
+        _ => quote! { Option::<&anchor_lang::prelude::Pubkey>::None },
     }
 }
 

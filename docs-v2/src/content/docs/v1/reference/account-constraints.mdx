@@ -237,6 +237,8 @@ Creates or validates token accounts with the specified mint and authority:
 
 Creates or validates mint accounts with the specified parameters:
 
+You can set `mint::authority{:rs}` or `mint::freeze_authority{:rs}` to `None{:rs}` to require that authority not to be set. With `init{:rs}`, `mint::freeze_authority = None{:rs}` creates a mint with no freeze authority. `mint::authority = None{:rs}` cannot be used with `init{:rs}` because SPL Token requires a mint authority at initialization.
+
 ```rust showLineNumbers=false
 #[account(
     mint::authority = <target_account>,
@@ -247,6 +249,11 @@ Creates or validates mint accounts with the specified parameters:
     mint::authority = <target_account>,
     mint::decimals = <expr>,
     mint::freeze_authority = <target_account>
+)]
+
+#[account(
+    mint::authority = None,
+    mint::freeze_authority = None
 )]
 ```
 

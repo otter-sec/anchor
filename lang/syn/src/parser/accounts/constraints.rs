@@ -1064,7 +1064,16 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
                             InitKind::Mint {
                                 decimals: d.clone().into_inner().decimals,
                                 owner: match &mint_authority {
-                                    Some(a) => a.clone().into_inner().mint_auth,
+                                    Some(a) => {
+                                        let auth = a.clone().into_inner().mint_auth;
+                                        if parser::expr_is_none(&auth) {
+                                            return Err(ParseError::new(
+                                                a.span(),
+                                                "mint::authority = None is not supported with init",
+                                            ));
+                                        }
+                                        auth
+                                    }
                                     None => {
                                         return Err(ParseError::new(
                                             d.span(),
