@@ -18,6 +18,6 @@
 #[macro_export]
 macro_rules! include_asm {
     () => {
-        core::arch::global_asm!(include_str!(concat!(env!("OUT_DIR"), "/combined.s")));
+        include!(concat!(env!("OUT_DIR"), "/combined.rs"));
     };
 }

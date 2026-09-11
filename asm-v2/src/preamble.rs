@@ -6,42 +6,63 @@
 //! - `StructName__INIT_SPACE` — 8 + size_of (total account allocation)
 //! - `StructName__field` — byte offset of each field
 //!
-//! Offsets are computed from `#[repr(C)]` layout rules (which `#[account]`
-//! enforces via bytemuck Pod). Fields must be primitive numeric types or
-//! fixed-size arrays of them — no generics, no references.
+//! Offsets and sizes are evaluated by rustc in the program crate through
+//! `core::mem::offset_of!` and `core::mem::size_of!` const operands. The build
+//! script only discovers eligible structs and emits the public `.equ` names.
 
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
 };
-use syn::{Meta, Token, punctuated::Punctuated};
+use syn::{punctuated::Punctuated, Meta, Token};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RustConstOperand {
+    pub(crate) name: String,
+    pub(crate) expression: String,
+}
 
 /// Parse `lib.rs` and generate `.equ` preamble for all `#[account]` structs.
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn generate(lib_rs: &Path) -> String {
-    generate_tracked(lib_rs).0
+    generate_with_operands(lib_rs).0
 }
 
 /// Like [`generate`], but also returns every Rust source file that was parsed
 /// while walking the module tree. Callers can use the returned paths to emit
 /// `cargo:rerun-if-changed=` directives.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn generate_tracked(lib_rs: &Path) -> (String, Vec<PathBuf>) {
-    let root_dir = lib_rs.parent().unwrap_or_else(|| Path::new("."));
-    let mut visited = HashSet::new();
-    let output = generate_file(lib_rs, root_dir, &mut visited);
-    let mut visited_files: Vec<_> = visited.into_iter().collect();
-    visited_files.sort();
-    (output, visited_files)
+    let (preamble, _, files) = generate_with_operands(lib_rs);
+    (preamble, files)
 }
 
-fn generate_file(path: &Path, module_dir: &Path, visited: &mut HashSet<PathBuf>) -> String {
+pub(crate) fn generate_with_operands(
+    lib_rs: &Path,
+) -> (String, Vec<RustConstOperand>, Vec<PathBuf>) {
+    let root_dir = lib_rs.parent().unwrap_or_else(|| Path::new("."));
+    let mut visited = HashSet::new();
+    let mut operands = Vec::new();
+    let output = generate_file(lib_rs, root_dir, &mut visited, &[], &mut operands);
+    let mut visited_files: Vec<_> = visited.into_iter().collect();
+    visited_files.sort();
+    (output, operands, visited_files)
+}
+
+fn generate_file(
+    path: &Path,
+    module_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+    module_path: &[String],
+    operands: &mut Vec<RustConstOperand>,
+) -> String {
     let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     if !visited.insert(canonical) {
         return String::new();
     }
 
-    let source = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let source =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let file = match syn::parse_file(&source) {
         Ok(f) => f,
         Err(e) => {
@@ -52,7 +73,15 @@ fn generate_file(path: &Path, module_dir: &Path, visited: &mut HashSet<PathBuf>)
 
     let mut out = String::new();
     let source_dir = path.parent().unwrap_or_else(|| Path::new("."));
-    visit_items(&file.items, source_dir, module_dir, visited, &mut out);
+    visit_items(
+        &file.items,
+        source_dir,
+        module_dir,
+        visited,
+        module_path,
+        operands,
+        &mut out,
+    );
     out
 }
 
@@ -61,18 +90,28 @@ fn visit_items(
     source_dir: &Path,
     module_dir: &Path,
     visited: &mut HashSet<PathBuf>,
+    module_path: &[String],
+    operands: &mut Vec<RustConstOperand>,
     out: &mut String,
 ) {
     for item in items {
         match item {
-            syn::Item::Struct(s) if cfg_enabled(&s.attrs) && has_account_attr(s) => {
-                if let Some(block) = emit_struct(s) {
+            syn::Item::Struct(s)
+                if has_account_attr(s) && cfg_enabled(&s.attrs) == CfgState::Enabled =>
+            {
+                if let Some(block) = emit_struct(s, module_path, operands) {
                     out.push_str(&block);
                 }
             }
-            syn::Item::Mod(m) if cfg_enabled(&m.attrs) => {
-                visit_module(m, source_dir, module_dir, visited, out)
-            }
+            syn::Item::Mod(m) if cfg_enabled(&m.attrs) == CfgState::Enabled => visit_module(
+                m,
+                source_dir,
+                module_dir,
+                visited,
+                module_path,
+                operands,
+                out,
+            ),
             _ => {}
         }
     }
@@ -83,13 +122,31 @@ fn visit_module(
     source_dir: &Path,
     module_dir: &Path,
     visited: &mut HashSet<PathBuf>,
+    module_path: &[String],
+    operands: &mut Vec<RustConstOperand>,
     out: &mut String,
 ) {
+    let mut child_module_path = module_path.to_vec();
+    child_module_path.push(module.ident.to_string());
     if let Some((_, items)) = &module.content {
         let child_dir = inline_module_dir(source_dir, module_dir, module);
-        visit_items(items, &child_dir, &child_dir, visited, out);
+        visit_items(
+            items,
+            &child_dir,
+            &child_dir,
+            visited,
+            &child_module_path,
+            operands,
+            out,
+        );
     } else if let Some((path, child_dir)) = resolve_module_file(source_dir, module_dir, module) {
-        out.push_str(&generate_file(&path, &child_dir, visited));
+        out.push_str(&generate_file(
+            &path,
+            &child_dir,
+            visited,
+            &child_module_path,
+            operands,
+        ));
     }
 }
 
@@ -133,7 +190,9 @@ fn explicit_module_dir(path: &Path) -> PathBuf {
     if path.is_dir() || path.extension().is_none() {
         path.to_path_buf()
     } else {
-        path.parent().unwrap_or_else(|| Path::new(".")).to_path_buf()
+        path.parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf()
     }
 }
 
@@ -158,7 +217,13 @@ fn module_path_attr(source_dir: &Path, module: &syn::ItemMod) -> Option<PathBuf>
             Some(path.value())
         })
         .map(PathBuf::from)
-        .map(|path| if path.is_absolute() { path } else { source_dir.join(path) })
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                source_dir.join(path)
+            }
+        })
 }
 
 /// Check if a struct should have assembly constants generated.
@@ -195,55 +260,111 @@ fn is_exact_repr_c(attr: &syn::Attribute) -> bool {
         return false;
     }
 
-    let Ok(args) =
-        list.parse_args_with(syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated)
-    else {
+    let Ok(args) = list.parse_args_with(
+        syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+    ) else {
         return false;
     };
 
     args.len() == 1 && matches!(args.first(), Some(syn::Meta::Path(path)) if path.is_ident("C"))
 }
 
-fn cfg_enabled(attrs: &[syn::Attribute]) -> bool {
-    attrs.iter().filter(|attr| attr.path().is_ident("cfg")).all(eval_cfg_attr)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CfgState {
+    Enabled,
+    Disabled,
+    Unknown,
 }
 
-fn eval_cfg_attr(attr: &syn::Attribute) -> bool {
+fn cfg_enabled(attrs: &[syn::Attribute]) -> CfgState {
+    attrs
+        .iter()
+        .filter_map(|attr| {
+            if attr.path().is_ident("cfg") {
+                Some(eval_cfg_attr(attr))
+            } else if attr.path().is_ident("cfg_attr") {
+                Some(CfgState::Unknown)
+            } else {
+                None
+            }
+        })
+        .fold(CfgState::Enabled, combine_all)
+}
+
+fn combine_all(left: CfgState, right: CfgState) -> CfgState {
+    match (left, right) {
+        (CfgState::Disabled, _) | (_, CfgState::Disabled) => CfgState::Disabled,
+        (CfgState::Unknown, _) | (_, CfgState::Unknown) => CfgState::Unknown,
+        _ => CfgState::Enabled,
+    }
+}
+
+fn eval_cfg_attr(attr: &syn::Attribute) -> CfgState {
     let Ok(meta) = attr.parse_args::<Meta>() else {
-        return false;
+        return CfgState::Unknown;
     };
     eval_cfg_meta(&meta)
 }
 
-fn eval_cfg_meta(meta: &Meta) -> bool {
+fn eval_cfg_meta(meta: &Meta) -> CfgState {
     match meta {
         Meta::Path(path) => path
             .get_ident()
             .map(|ident| cfg_flag_is_set(&ident.to_string()))
-            .unwrap_or(false),
+            .unwrap_or(CfgState::Unknown),
         Meta::NameValue(nv) => {
             let Some(key) = nv.path.get_ident().map(|ident| ident.to_string()) else {
-                return false;
+                return CfgState::Unknown;
             };
             let syn::Expr::Lit(syn::ExprLit {
                 lit: syn::Lit::Str(value),
                 ..
             }) = &nv.value
             else {
-                return false;
+                return CfgState::Unknown;
             };
             cfg_key_matches(&key, &value.value())
         }
         Meta::List(list) if list.path.is_ident("all") => parse_cfg_list(list)
-            .map(|items| items.iter().all(eval_cfg_meta))
-            .unwrap_or(false),
+            .map(|items| {
+                items
+                    .into_iter()
+                    .map(|item| eval_cfg_meta(&item))
+                    .fold(CfgState::Enabled, combine_all)
+            })
+            .unwrap_or(CfgState::Unknown),
         Meta::List(list) if list.path.is_ident("any") => parse_cfg_list(list)
-            .map(|items| items.iter().any(eval_cfg_meta))
-            .unwrap_or(false),
+            .map(|items| combine_any(items.into_iter().map(|item| eval_cfg_meta(&item))))
+            .unwrap_or(CfgState::Unknown),
         Meta::List(list) if list.path.is_ident("not") => parse_cfg_list(list)
-            .map(|items| items.len() == 1 && !eval_cfg_meta(&items[0]))
-            .unwrap_or(false),
-        _ => false,
+            .and_then(|items| (items.len() == 1).then(|| eval_cfg_meta(&items[0])))
+            .map(|state| match state {
+                CfgState::Enabled => CfgState::Disabled,
+                CfgState::Disabled => CfgState::Enabled,
+                CfgState::Unknown => CfgState::Unknown,
+            })
+            .unwrap_or(CfgState::Unknown),
+        _ => CfgState::Unknown,
+    }
+}
+
+fn combine_any(states: impl Iterator<Item = CfgState>) -> CfgState {
+    let mut saw_unknown = false;
+    let mut saw_state = false;
+    for state in states {
+        saw_state = true;
+        match state {
+            CfgState::Enabled => return CfgState::Enabled,
+            CfgState::Unknown => saw_unknown = true,
+            CfgState::Disabled => {}
+        }
+    }
+    if saw_unknown {
+        CfgState::Unknown
+    } else if saw_state {
+        CfgState::Disabled
+    } else {
+        CfgState::Disabled
     }
 }
 
@@ -253,26 +374,65 @@ fn parse_cfg_list(list: &syn::MetaList) -> Option<Vec<Meta>> {
         .map(|items| items.into_iter().collect())
 }
 
-fn cfg_flag_is_set(flag: &str) -> bool {
+fn cfg_flag_is_set(flag: &str) -> CfgState {
+    if !is_supported_cfg_key(flag) {
+        return CfgState::Unknown;
+    }
     let env_key = format!("CARGO_CFG_{}", cfg_env_name(flag));
-    std::env::var_os(&env_key).is_some()
+    if std::env::var_os(&env_key).is_some() {
+        CfgState::Enabled
+    } else {
+        CfgState::Disabled
+    }
 }
 
-fn cfg_key_matches(key: &str, value: &str) -> bool {
+fn cfg_key_matches(key: &str, value: &str) -> CfgState {
     if key == "feature" {
         let feature_key = format!("CARGO_FEATURE_{}", cfg_env_name(value));
-        if std::env::var_os(&feature_key).is_some() {
-            return true;
-        }
+        return if std::env::var_os(&feature_key).is_some() {
+            CfgState::Enabled
+        } else {
+            CfgState::Disabled
+        };
     }
-
+    if !is_supported_cfg_key(key) {
+        return CfgState::Unknown;
+    }
     let env_key = format!("CARGO_CFG_{}", cfg_env_name(key));
     let Some(raw) = std::env::var_os(&env_key) else {
-        return false;
+        return CfgState::Disabled;
     };
-    raw.to_string_lossy()
-        .split(',')
-        .any(|entry| entry == value)
+    if raw.to_string_lossy().split(',').any(|entry| entry == value) {
+        CfgState::Enabled
+    } else {
+        CfgState::Disabled
+    }
+}
+
+fn is_supported_cfg_key(key: &str) -> bool {
+    matches!(
+        key,
+        "debug_assertions"
+            | "doc"
+            | "doctest"
+            | "miri"
+            | "panic"
+            | "proc_macro"
+            | "test"
+            | "unix"
+            | "windows"
+            | "target_arch"
+            | "target_endian"
+            | "target_env"
+            | "target_family"
+            | "target_feature"
+            | "target_has_atomic"
+            | "target_os"
+            | "target_pointer_width"
+            | "target_vendor"
+            | "target_thread_local"
+            | "compile_mode"
+    )
 }
 
 fn cfg_env_name(value: &str) -> String {
@@ -284,157 +444,103 @@ fn cfg_env_name(value: &str) -> String {
 }
 
 /// Emit `.equ` constants for a single struct.
-fn emit_struct(s: &syn::ItemStruct) -> Option<String> {
+fn emit_struct(
+    s: &syn::ItemStruct,
+    module_path: &[String],
+    operands: &mut Vec<RustConstOperand>,
+) -> Option<String> {
     let name = &s.ident;
     let fields = match &s.fields {
         syn::Fields::Named(f) => &f.named,
         _ => return None,
     };
 
+    let mut enabled_fields = Vec::new();
+    for field in fields {
+        match cfg_enabled(&field.attrs) {
+            CfgState::Enabled => enabled_fields.push(field),
+            CfgState::Disabled => {}
+            CfgState::Unknown => return None,
+        }
+    }
+
+    let type_path = rust_type_path(module_path, name);
     let mut out = String::new();
     out.push_str(&format!("# {name} field offsets and sizes.\n"));
-    out.push_str(&format!(
-        "# {}\n",
-        "-".repeat(70)
-    ));
+    out.push_str(&format!("# {}\n", "-".repeat(70)));
 
-    // Compute repr(C) layout: fields in declaration order, each aligned
-    // to its natural alignment, struct padded to max alignment at end.
-    let mut offset: usize = 0;
-    let mut max_align: usize = 1;
-
-    for field in fields {
-        if !cfg_enabled(&field.attrs) {
-            continue;
-        }
-
+    for field in enabled_fields {
         let field_name = field.ident.as_ref()?;
 
         // Skip fields starting with _ (padding).
         let name_str = field_name.to_string();
         if name_str.starts_with('_') {
-            let (size, align) = type_layout(&field.ty)?;
-            offset = align_up(offset, align);
-            offset += size;
-            if align > max_align {
-                max_align = align;
-            }
             continue;
         }
 
-        let (size, align) = type_layout(&field.ty)?;
-        offset = align_up(offset, align);
-
-        out.push_str(&format!(".equ {name}__{field_name}, {offset}\n"));
-
-        offset += size;
-        if align > max_align {
-            max_align = align;
-        }
+        let operand_name = operand_name(module_path, name, &name_str);
+        out.push_str(&format!(".equ {name}__{field_name}, {{{operand_name}}}\n"));
+        operands.push(RustConstOperand {
+            name: operand_name,
+            expression: format!("core::mem::offset_of!({type_path}, {field_name}) as i32"),
+        });
     }
 
-    // Pad to struct alignment.
-    let struct_size = align_up(offset, max_align);
-
-    out.push_str(&format!(".equ {name}__SIZE, {struct_size}\n"));
+    let size_operand = operand_name(module_path, name, "SIZE");
+    out.push_str(&format!(".equ {name}__SIZE, {{{size_operand}}}\n"));
+    operands.push(RustConstOperand {
+        name: size_operand,
+        expression: format!("core::mem::size_of::<{type_path}>() as i32"),
+    });
     out.push_str(&format!(".equ {name}__DISC_SIZE, 8\n"));
+    let init_space_operand = operand_name(module_path, name, "INIT_SPACE");
     out.push_str(&format!(
-        ".equ {name}__INIT_SPACE, {}\n",
-        8 + struct_size
+        ".equ {name}__INIT_SPACE, {{{init_space_operand}}}\n"
     ));
-    out.push_str(&format!(
-        "# {}\n\n",
-        "-".repeat(70)
-    ));
+    operands.push(RustConstOperand {
+        name: init_space_operand,
+        expression: format!("(8 + core::mem::size_of::<{type_path}>()) as i32"),
+    });
+    out.push_str(&format!("# {}\n\n", "-".repeat(70)));
 
     Some(out)
 }
 
-/// Returns (size, alignment) for a type, matching `#[repr(C)]` / Pod layout.
-/// Only handles the types that make sense in `#[account]` structs.
-fn type_layout(ty: &syn::Type) -> Option<(usize, usize)> {
-    match ty {
-        syn::Type::Path(tp) => {
-            let seg = tp.path.segments.last()?;
-            let name = seg.ident.to_string();
-            match name.as_str() {
-                "u8" | "i8" | "bool" => Some((1, 1)),
-                "u16" | "i16" => Some((2, 2)),
-                "u32" | "i32" | "f32" => Some((4, 4)),
-                "u64" | "i64" | "f64" => Some((8, 8)),
-                "u128" | "i128" => Some((16, 8)),
-                // Anchor v2 Address = [u8; 32], alignment 1
-                "Address" | "Pubkey" => Some((32, 1)),
-                // PodBool = u8
-                "PodBool" => Some((1, 1)),
-                // Pod wrappers — alignment 1, stored as [u8; N]
-                "PodU16" | "PodI16" => Some((2, 1)),
-                "PodU32" | "PodI32" => Some((4, 1)),
-                "PodU64" | "PodI64" => Some((8, 1)),
-                "PodU128" | "PodI128" => Some((16, 1)),
-                // PodVec<T, MAX> — need to inspect generic args
-                "PodVec" => pod_vec_layout(&seg.arguments),
-                _ => None,
+fn rust_type_path(module_path: &[String], name: &syn::Ident) -> String {
+    let mut path = String::from("crate");
+    for segment in module_path {
+        path.push_str("::");
+        path.push_str(segment);
+    }
+    path.push_str("::");
+    path.push_str(&name.to_string());
+    path
+}
+
+fn operand_name(module_path: &[String], name: &syn::Ident, suffix: &str) -> String {
+    let mut parts = vec![String::from("__anchor_asm")];
+    parts.extend(module_path.iter().map(|segment| sanitize_ident(segment)));
+    parts.push(sanitize_ident(&name.to_string()));
+    parts.push(sanitize_ident(suffix));
+    parts.join("_")
+}
+
+fn sanitize_ident(value: &str) -> String {
+    let value = value.strip_prefix("r#").unwrap_or(value);
+    let mut result: String = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '_'
             }
-        }
-        syn::Type::Array(arr) => {
-            let (elem_size, elem_align) = type_layout(&arr.elem)?;
-            let len = array_len(&arr.len)?;
-            Some((elem_size * len, elem_align))
-        }
-        _ => None,
+        })
+        .collect();
+    if result.is_empty() || result.starts_with(|ch: char| ch.is_ascii_digit()) {
+        result.insert(0, '_');
     }
-}
-
-/// Compute layout for `PodVec<T, MAX>`: `[len: PodU16 (2 bytes, align 1)][padding?][T; MAX]`.
-fn pod_vec_layout(args: &syn::PathArguments) -> Option<(usize, usize)> {
-    let syn::PathArguments::AngleBracketed(ab) = args else {
-        return None;
-    };
-    let mut iter = ab.args.iter();
-
-    // First arg: element type
-    let syn::GenericArgument::Type(elem_ty) = iter.next()? else {
-        return None;
-    };
-    let (elem_size, elem_align) = type_layout(elem_ty)?;
-
-    // Second arg: MAX capacity (const generic)
-    let max = match iter.next()? {
-        syn::GenericArgument::Const(expr) => const_expr_value(expr)?,
-        syn::GenericArgument::Type(syn::Type::Path(_)) => {
-            // Could be a const path like MAX_SIGNERS — can't resolve,
-            // skip this struct.
-            return None;
-        }
-        _ => return None,
-    };
-
-    let data_offset = align_up(2, elem_align);
-    let size = align_up(data_offset + elem_size * max, elem_align);
-    Some((size, elem_align))
-}
-
-/// Extract a usize from a const expression (integer literal).
-fn const_expr_value(expr: &syn::Expr) -> Option<usize> {
-    if let syn::Expr::Lit(syn::ExprLit {
-        lit: syn::Lit::Int(i),
-        ..
-    }) = expr
-    {
-        i.base10_parse().ok()
-    } else {
-        None
-    }
-}
-
-/// Extract array length from a const expression.
-fn array_len(expr: &syn::Expr) -> Option<usize> {
-    const_expr_value(expr)
-}
-
-fn align_up(offset: usize, align: usize) -> usize {
-    (offset + align - 1) & !(align - 1)
+    result
 }
 
 #[cfg(test)]
@@ -455,8 +561,10 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir =
-            std::env::temp_dir().join(format!("anchor-asm-v2-{name}-{}-{unique}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "anchor-asm-v2-{name}-{}-{unique}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -478,6 +586,14 @@ mod tests {
         }
     }
 
+    fn assert_placeholder(result: &str, struct_name: &str, field_name: &str) {
+        let prefix = format!(".equ {struct_name}__{field_name}, {{");
+        assert!(
+            result.contains(&prefix),
+            "missing placeholder {prefix:?}: {result}"
+        );
+    }
+
     #[test]
     fn test_simple_struct() {
         let source = r#"
@@ -491,10 +607,10 @@ mod tests {
         let tmp = std::env::temp_dir().join("anchor_asm_test_lib.rs");
         std::fs::write(&tmp, source).unwrap();
         let result = generate(&tmp);
-        assert!(result.contains(".equ Counter__value, 0"));
-        assert!(result.contains(".equ Counter__bump, 8"));
-        assert!(result.contains(".equ Counter__SIZE, 16"));
-        assert!(result.contains(".equ Counter__INIT_SPACE, 24"));
+        assert_placeholder(&result, "Counter", "value");
+        assert_placeholder(&result, "Counter", "bump");
+        assert_placeholder(&result, "Counter", "SIZE");
+        assert_placeholder(&result, "Counter", "INIT_SPACE");
         std::fs::remove_file(tmp).ok();
     }
 
@@ -511,8 +627,8 @@ mod tests {
         std::fs::write(&tmp, source).unwrap();
         let result = generate(&tmp);
         // Address is 32 bytes, align 1
-        assert!(result.contains(".equ Config__admin, 0"));
-        assert!(result.contains(".equ Config__bump, 32"));
+        assert_placeholder(&result, "Config", "admin");
+        assert_placeholder(&result, "Config", "bump");
         std::fs::remove_file(tmp).ok();
     }
 
@@ -593,8 +709,8 @@ mod tests {
         let tmp = std::env::temp_dir().join("anchor_asm_test_attrs.rs");
         std::fs::write(&tmp, source).unwrap();
         let result = generate(&tmp);
-        assert!(result.contains(".equ ZeroCopy__value, 0"));
-        assert!(result.contains(".equ PlainPod__value, 0"));
+        assert_placeholder(&result, "ZeroCopy", "value");
+        assert_placeholder(&result, "PlainPod", "value");
         assert!(!result.contains("BorshBacked__value"));
         assert!(!result.contains("MacroArgs__value"));
         assert!(!result.contains("BorshReprC__value"));
@@ -625,20 +741,38 @@ mod tests {
 
         with_env_var("CARGO_FEATURE_ASM_CFG_FIELD", None, || {
             let result = generate(&tmp);
-            assert!(result.contains(".equ CfgFieldLayout__tag, 0"));
-            assert!(result.contains(".equ CfgFieldLayout__bump, 1"));
-            assert!(result.contains(".equ CfgFieldLayout__SIZE, 2"));
+            assert_placeholder(&result, "CfgFieldLayout", "tag");
+            assert_placeholder(&result, "CfgFieldLayout", "bump");
+            assert_placeholder(&result, "CfgFieldLayout", "SIZE");
             assert!(!result.contains("CfgFieldLayout__gated"));
         });
 
         with_env_var("CARGO_FEATURE_ASM_CFG_FIELD", Some("1"), || {
             let result = generate(&tmp);
-            assert!(result.contains(".equ CfgFieldLayout__tag, 0"));
-            assert!(result.contains(".equ CfgFieldLayout__gated, 8"));
-            assert!(result.contains(".equ CfgFieldLayout__bump, 16"));
-            assert!(result.contains(".equ CfgFieldLayout__SIZE, 24"));
+            assert_placeholder(&result, "CfgFieldLayout", "tag");
+            assert_placeholder(&result, "CfgFieldLayout", "gated");
+            assert_placeholder(&result, "CfgFieldLayout", "bump");
+            assert_placeholder(&result, "CfgFieldLayout", "SIZE");
         });
 
+        std::fs::remove_file(tmp).ok();
+    }
+
+    #[test]
+    fn test_generate_drops_struct_with_unknown_cfg() {
+        let source = r#"
+            #[repr(C)]
+            pub struct UnknownCfg {
+                pub tag: u8,
+                #[cfg(unsupported_predicate = "value")]
+                pub gated: u64,
+                pub bump: u8,
+            }
+        "#;
+        let tmp = std::env::temp_dir().join("anchor_asm_test_unknown_cfg.rs");
+        std::fs::write(&tmp, source).unwrap();
+        let result = generate(&tmp);
+        assert!(!result.contains("UnknownCfg__"));
         std::fs::remove_file(tmp).ok();
     }
 
@@ -700,9 +834,9 @@ mod tests {
         .unwrap();
 
         let result = generate(&lib_rs);
-        assert!(result.contains(".equ NestedInline__value, 0"));
-        assert!(result.contains(".equ NestedFile__value, 0"));
-        assert!(result.contains(".equ RootFile__value, 0"));
+        assert_placeholder(&result, "NestedInline", "value");
+        assert_placeholder(&result, "NestedFile", "value");
+        assert_placeholder(&result, "RootFile", "value");
         assert!(!result.contains("NestedPacked__value"));
         assert!(!result.contains("NestedBorsh__value"));
 
@@ -735,7 +869,7 @@ mod tests {
 
         with_env_var("CARGO_FEATURE_ASM_CFG_MODULE", Some("1"), || {
             let result = generate(&lib_rs);
-            assert!(result.contains(".equ NestedEnabled__value, 0"));
+            assert_placeholder(&result, "NestedEnabled", "value");
         });
 
         std::fs::remove_dir_all(dir).ok();
@@ -761,7 +895,7 @@ mod tests {
         .unwrap();
 
         let result = generate(&lib_rs);
-        assert!(result.contains(".equ NestedFromModRs__value, 0"));
+        assert_placeholder(&result, "NestedFromModRs", "value");
 
         std::fs::remove_dir_all(dir).ok();
     }
@@ -786,7 +920,7 @@ mod tests {
         .unwrap();
 
         let result = generate(&lib_rs);
-        assert!(result.contains(".equ PathAttrState__value, 0"));
+        assert_placeholder(&result, "PathAttrState", "value");
 
         std::fs::remove_dir_all(dir).ok();
     }
@@ -817,7 +951,7 @@ mod tests {
         .unwrap();
 
         let result = generate(&lib_rs);
-        assert!(result.contains(".equ CustomState__value, 0"));
+        assert_placeholder(&result, "CustomState", "value");
 
         std::fs::remove_dir_all(dir).ok();
     }
@@ -852,7 +986,7 @@ mod tests {
         .unwrap();
 
         let result = generate(&lib_rs);
-        assert!(result.contains(".equ InlinePathState__value, 0"));
+        assert_placeholder(&result, "InlinePathState", "value");
 
         std::fs::remove_dir_all(dir).ok();
     }
@@ -885,7 +1019,7 @@ mod tests {
         .unwrap();
 
         let (result, visited_files) = generate_tracked(&lib_rs);
-        assert!(result.contains(".equ NestedTracked__value, 0"));
+        assert_placeholder(&result, "NestedTracked", "value");
 
         let canon = |path: &Path| std::fs::canonicalize(path).unwrap();
         assert!(visited_files.contains(&canon(&lib_rs)));
@@ -896,7 +1030,41 @@ mod tests {
     }
 
     #[test]
-    fn test_pod_vec_layout_respects_element_alignment() {
+    fn test_generate_uses_rustc_operands_for_qualified_types() {
+        let source = r#"
+            mod domain {
+                #[repr(C)]
+                pub struct Address {
+                    pub city: [u8; 64],
+                    pub zip: u32,
+                }
+            }
+
+            #[repr(C)]
+            pub struct Registry {
+                pub owner: Address,
+                pub home: domain::Address,
+                pub admin: Address,
+            }
+        "#;
+        let tmp = std::env::temp_dir().join("anchor_asm_test_qualified_type.rs");
+        std::fs::write(&tmp, source).unwrap();
+        let (result, operands, _) = generate_with_operands(&tmp);
+        assert!(result.contains(".equ Registry__admin, {__anchor_asm_Registry_admin}"));
+        assert!(result.contains(".equ Registry__SIZE, {__anchor_asm_Registry_SIZE}"));
+        assert!(operands.iter().any(|operand| {
+            operand.name == "__anchor_asm_Registry_admin"
+                && operand.expression == "core::mem::offset_of!(crate::Registry, admin) as i32"
+        }));
+        assert!(operands.iter().any(|operand| {
+            operand.name == "__anchor_asm_Registry_SIZE"
+                && operand.expression == "core::mem::size_of::<crate::Registry>() as i32"
+        }));
+        std::fs::remove_file(tmp).ok();
+    }
+
+    #[test]
+    fn test_generate_emits_operands_for_generic_repr_c_fields() {
         let source = r#"
             #[repr(C)]
             pub struct Holder {
@@ -908,15 +1076,15 @@ mod tests {
         let tmp = std::env::temp_dir().join("anchor_asm_test_pod_vec.rs");
         std::fs::write(&tmp, source).unwrap();
         let result = generate(&tmp);
-        assert!(result.contains(".equ Holder__prefix, 0"));
-        assert!(result.contains(".equ Holder__values, 2"));
-        assert!(result.contains(".equ Holder__suffix, 6"));
-        assert!(result.contains(".equ Holder__SIZE, 8"));
+        assert_placeholder(&result, "Holder", "prefix");
+        assert_placeholder(&result, "Holder", "values");
+        assert_placeholder(&result, "Holder", "suffix");
+        assert_placeholder(&result, "Holder", "SIZE");
         std::fs::remove_file(tmp).ok();
     }
 
     #[test]
-    fn test_pod_vec_layout_stays_padding_free_for_align1_elements() {
+    fn test_generate_emits_operands_for_array_like_repr_c_fields() {
         let source = r#"
             #[repr(C)]
             pub struct ByteHolder {
@@ -928,15 +1096,15 @@ mod tests {
         let tmp = std::env::temp_dir().join("anchor_asm_test_pod_vec_u8.rs");
         std::fs::write(&tmp, source).unwrap();
         let result = generate(&tmp);
-        assert!(result.contains(".equ ByteHolder__prefix, 0"));
-        assert!(result.contains(".equ ByteHolder__values, 1"));
-        assert!(result.contains(".equ ByteHolder__suffix, 4"));
-        assert!(result.contains(".equ ByteHolder__SIZE, 5"));
+        assert_placeholder(&result, "ByteHolder", "prefix");
+        assert_placeholder(&result, "ByteHolder", "values");
+        assert_placeholder(&result, "ByteHolder", "suffix");
+        assert_placeholder(&result, "ByteHolder", "SIZE");
         std::fs::remove_file(tmp).ok();
     }
 
     #[test]
-    fn test_u128_uses_solana_alignment() {
+    fn test_generate_emits_operands_for_u128_fields() {
         let source = r#"
             #[repr(C)]
             pub struct Wide {
@@ -948,15 +1116,15 @@ mod tests {
         let tmp = std::env::temp_dir().join("anchor_asm_test_u128.rs");
         std::fs::write(&tmp, source).unwrap();
         let result = generate(&tmp);
-        assert!(result.contains(".equ Wide__tag, 0"));
-        assert!(result.contains(".equ Wide__value, 8"));
-        assert!(result.contains(".equ Wide__bump, 24"));
-        assert!(result.contains(".equ Wide__SIZE, 32"));
+        assert_placeholder(&result, "Wide", "tag");
+        assert_placeholder(&result, "Wide", "value");
+        assert_placeholder(&result, "Wide", "bump");
+        assert_placeholder(&result, "Wide", "SIZE");
         std::fs::remove_file(tmp).ok();
     }
 
     #[test]
-    fn test_i128_uses_solana_alignment() {
+    fn test_generate_emits_operands_for_i128_fields() {
         let source = r#"
             #[repr(C)]
             pub struct SignedWide {
@@ -968,10 +1136,10 @@ mod tests {
         let tmp = std::env::temp_dir().join("anchor_asm_test_i128.rs");
         std::fs::write(&tmp, source).unwrap();
         let result = generate(&tmp);
-        assert!(result.contains(".equ SignedWide__tag, 0"));
-        assert!(result.contains(".equ SignedWide__value, 8"));
-        assert!(result.contains(".equ SignedWide__bump, 24"));
-        assert!(result.contains(".equ SignedWide__SIZE, 32"));
+        assert_placeholder(&result, "SignedWide", "tag");
+        assert_placeholder(&result, "SignedWide", "value");
+        assert_placeholder(&result, "SignedWide", "bump");
+        assert_placeholder(&result, "SignedWide", "SIZE");
         std::fs::remove_file(tmp).ok();
     }
 }
