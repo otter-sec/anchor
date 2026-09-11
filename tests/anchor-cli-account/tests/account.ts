@@ -74,5 +74,9 @@ describe("Test CLI account commands", () => {
         "Values deserialized incorrectly"
       );
     }
+    assert(
+      output.opt_field === null,
+      "Option::None deserialized incorrectly (expected null)"
+    );
   });
 });

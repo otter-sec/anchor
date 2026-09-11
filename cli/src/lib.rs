@@ -4003,7 +4003,7 @@ fn deserialize_idl_type_to_json(
             let is_present = <u8 as AnchorDeserialize>::deserialize(data)?;
 
             if is_present == 0 {
-                JsonValue::String("None".to_string())
+                JsonValue::Null
             } else {
                 deserialize_idl_type_to_json(ty, data, parent_idl)?
             }
@@ -7260,6 +7260,18 @@ mod tests {
         std::collections::{HashMap, HashSet},
         tempfile::tempdir,
     };
+
+    #[test]
+    fn test_deserialize_idl_option_none_to_json_null() {
+        let idl_type = IdlType::Option(Box::new(IdlType::String));
+        let mut data: &[u8] = &[0]; // is_present = 0, meaning None
+        let idl: Idl = serde_json::from_str(
+            r#"{"address":"","metadata":{"name":"","version":"","spec":""},"instructions":[]}"#,
+        )
+        .unwrap();
+        let json = deserialize_idl_type_to_json(&idl_type, &mut data, &idl).unwrap();
+        assert_eq!(json, JsonValue::Null);
+    }
 
     #[test]
     fn test_init_accepts_anchor_version() {
