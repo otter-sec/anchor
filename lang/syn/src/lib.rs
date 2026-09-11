@@ -104,7 +104,8 @@ pub struct Ix {
     pub cfgs: Vec<Attribute>,
     pub args: Vec<IxArg>,
     pub returns: IxReturn,
-    // The ident for the struct deriving Accounts.
+    // The ident for the struct deriving Accounts (the last segment of the
+    // path written in `Context<...>`).
     pub anchor_ident: Ident,
     /// Overrides coming from the `#[instruction]` attribute
     pub overrides: Option<Overrides>,
