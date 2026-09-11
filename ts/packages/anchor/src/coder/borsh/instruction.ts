@@ -48,7 +48,6 @@ export class BorshInstructionCoder implements InstructionCoder {
    * Encodes a program instruction.
    */
   public encode(ixName: string, ix: any): Buffer {
-    const buffer = Buffer.alloc(1000); // TODO: use a tighter buffer.
     const encoder = this.ixLayouts.get(ixName);
     if (!encoder) {
       throw new Error(`Unknown method: ${ixName}`);
@@ -89,8 +88,7 @@ export class BorshInstructionCoder implements InstructionCoder {
       ix,
       this.idl.types
     );
-    const len = encoder.layout.encode(ixWithDefinedOptions, buffer);
-    const data = buffer.slice(0, len);
+    const data = borsh.encodeLayout(encoder.layout, ixWithDefinedOptions);
 
     return Buffer.concat([Buffer.from(encoder.discriminator), data]);
   }
