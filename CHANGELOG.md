@@ -14,6 +14,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- deps: Bump `heck` 0.3 -> 0.5 across `anchor-syn`, `anchor-attribute-program`, `anchor-lang-idl`, and `cli` to drop the unbounded `unicode-segmentation` dependency that could pull in an edition2024 requirement unsupported by the SBF toolchain ([#4960](https://github.com/otter-sec/anchor/pull/4960)).
+
 ### Breaking
 
 ## [1.2.0] - 2026-09-04
