@@ -118,10 +118,24 @@ fn ctx_accounts_ident(path_ty: &syn::PatType) -> ParseResult<proc_macro2::Ident>
             ));
         }
     };
-    Ok(path
+    let accounts_path = if path.segments.first().map(|s| s.ident == "Box").unwrap_or(false) {
+        let seg = path.segments.first().unwrap();
+        if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
+            if let Some(syn::GenericArgument::Type(syn::Type::Path(inner_path))) = args.args.first() {
+                &inner_path.path
+            } else {
+                path
+            }
+        } else {
+            path
+        }
+    } else {
+        path
+    };
+    Ok(accounts_path
         .segments
         .first()
-        .ok_or_else(|| ParseError::new(path.span(), "expected a path segment"))?
+        .ok_or_else(|| ParseError::new(accounts_path.span(), "expected a path segment"))?
         .ident
         .clone())
 }

@@ -57,3 +57,21 @@ fn underscore_instruction_arg_is_rejected() {
     let err = program.unwrap_err().to_string();
     assert_eq!(err, "expected named argument");
 }
+
+#[test]
+fn context_boxed_accounts_is_accepted() {
+    let program = syn::parse_str::<anchor_syn::Program>(
+        r#"
+        pub mod example {
+            pub fn initialize(ctx: Context<Box<Initialize>>) -> Result<()> {
+                Ok(())
+            }
+        }
+        "#,
+    )
+    .unwrap();
+
+    assert_eq!(program.ixs.len(), 1);
+    assert_eq!(program.ixs[0].anchor_ident.to_string(), "Initialize");
+}
+
