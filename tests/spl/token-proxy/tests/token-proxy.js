@@ -1,9 +1,9 @@
-const anchor = require("@coral-xyz/anchor");
+const anchor = require("@anchor-lang/core");
 const { assert } = require("chai");
 const {
   splTokenProgram,
   SPL_TOKEN_PROGRAM_ID,
-} = require("@coral-xyz/spl-token");
+} = require("@anchor-lang/spl-token");
 
 describe("program", () => {
   const provider = anchor.AnchorProvider.local();

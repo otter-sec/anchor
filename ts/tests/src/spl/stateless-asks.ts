@@ -1,6 +1,6 @@
-import { splStatelessAsksProgram } from "@coral-xyz/spl-stateless-asks";
-import { splTokenProgram } from "@coral-xyz/spl-token";
-import { BN } from "@coral-xyz/anchor";
+import { splStatelessAsksProgram } from "@anchor-lang/spl-stateless-asks";
+import { splTokenProgram } from "@anchor-lang/spl-token";
+import { BN } from "@anchor-lang/core";
 import { Keypair, PublicKey } from "@solana/web3.js";
 
 import {

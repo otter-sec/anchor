@@ -1,5 +1,5 @@
-import * as anchor from "@coral-xyz/anchor";
-import NodeWallet from "@coral-xyz/anchor/dist/cjs/nodewallet";
+import * as anchor from "@anchor-lang/core";
+import NodeWallet from "@anchor-lang/core/dist/cjs/nodewallet";
 
 import { TOKEN_PROGRAM_ID, Token } from "@solana/spl-token";
 import { assert } from "chai";

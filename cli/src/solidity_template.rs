@@ -42,7 +42,7 @@ contract {} {{
 
 pub fn mocha(name: &str) -> String {
     format!(
-        r#"const anchor = require("@coral-xyz/anchor");
+        r#"const anchor = require("@anchor-lang/core");
 
 describe("{}", () => {{
   // Configure the client to use the local cluster.
@@ -89,7 +89,7 @@ describe("{}", () => {{
 
 pub fn jest(name: &str) -> String {
     format!(
-        r#"const anchor = require("@coral-xyz/anchor");
+        r#"const anchor = require("@anchor-lang/core");
 
 describe("{}", () => {{
   // Configure the client to use the local cluster.
@@ -110,8 +110,8 @@ describe("{}", () => {{
 
 pub fn ts_mocha(name: &str) -> String {
     format!(
-        r#"import * as anchor from "@coral-xyz/anchor";
-import {{ Program }} from "@coral-xyz/anchor";
+        r#"import * as anchor from "@anchor-lang/core";
+import {{ Program }} from "@anchor-lang/core";
 import {{ {} }} from "../target/types/{}";
 
 describe("{}", () => {{

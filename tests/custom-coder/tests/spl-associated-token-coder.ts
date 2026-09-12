@@ -1,6 +1,6 @@
-import { Native, AnchorProvider, setProvider } from "@coral-xyz/anchor";
-import { splAssociatedTokenAccountProgram } from "@coral-xyz/spl-associated-token-account";
-import { splTokenProgram } from "@coral-xyz/spl-token";
+import { Native, AnchorProvider, setProvider } from "@anchor-lang/core";
+import { splAssociatedTokenAccountProgram } from "@anchor-lang/spl-associated-token-account";
+import { splTokenProgram } from "@anchor-lang/spl-token";
 import { Keypair, PublicKey, SYSVAR_RENT_PUBKEY } from "@solana/web3.js";
 import * as assert from "assert";
 

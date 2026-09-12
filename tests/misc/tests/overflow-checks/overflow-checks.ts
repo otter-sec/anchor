@@ -1,4 +1,4 @@
-import * as anchor from "@coral-xyz/anchor";
+import * as anchor from "@anchor-lang/core";
 
 import { OverflowChecks } from "../../target/types/overflow_checks";
 

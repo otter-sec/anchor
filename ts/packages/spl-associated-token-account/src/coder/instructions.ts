@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as B from "@native-to-anchor/buffer-layout";
-import { Idl, InstructionCoder } from "@coral-xyz/anchor";
+import { Idl, InstructionCoder } from "@anchor-lang/core";
 
 export class SplAssociatedTokenAccountInstructionCoder
   implements InstructionCoder

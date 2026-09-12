@@ -1,5 +1,5 @@
 {
-  "name": "@coral-xyz/tests",
+  "name": "@anchor-lang/tests",
   "version": "0.1.0",
   "private": true,
   "main": "index.js",

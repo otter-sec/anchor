@@ -1,5 +1,5 @@
 {
-  "name": "@coral-xyz/anchor-errors",
+  "name": "@anchor-lang/errors",
   "version": "0.31.1",
   "description": "Anchor error codes",
   "main": "dist/index.js",
@@ -8,6 +8,10 @@
     ".": "./dist/index.js"
   },
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/otter-sec/anchor.git"
+  },
   "publishConfig": {
     "access": "public"
   },

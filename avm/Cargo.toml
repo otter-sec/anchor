@@ -1,6 +1,7 @@
 [package]
 name = "avm"
 version = "0.31.1"
+publish = false
 edition = "2021"
 
 [[bin]]

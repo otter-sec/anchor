@@ -1,4 +1,4 @@
-const anchor = require("@coral-xyz/anchor");
+const anchor = require("@anchor-lang/core");
 
 describe("basic-0", () => {
   // Configure the client to use the local cluster.

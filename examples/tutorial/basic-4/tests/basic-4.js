@@ -1,5 +1,5 @@
 const assert = require("assert");
-const anchor = require("@coral-xyz/anchor");
+const anchor = require("@anchor-lang/core");
 
 describe("basic-4", () => {
   const provider = anchor.AnchorProvider.local();

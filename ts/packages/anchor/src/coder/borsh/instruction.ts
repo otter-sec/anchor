@@ -1,7 +1,7 @@
 import bs58 from "bs58";
 import { Buffer } from "buffer";
 import { Layout } from "buffer-layout";
-import * as borsh from "@coral-xyz/borsh";
+import * as borsh from "@anchor-lang/borsh";
 import { AccountMeta, PublicKey } from "@solana/web3.js";
 import {
   handleDefinedFields,

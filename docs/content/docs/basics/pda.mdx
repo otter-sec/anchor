@@ -313,8 +313,8 @@ derivation. This removes the need to explicitly derive the PDA when building the
 instruction.
 
 ```ts {13}
-import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
+import * as anchor from "@anchor-lang/core";
+import { Program } from "@anchor-lang/core";
 import { HelloAnchor } from "../target/types/hello_anchor";
 
 describe("hello_anchor", () => {

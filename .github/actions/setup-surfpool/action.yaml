@@ -1,0 +1,35 @@
+name: "Setup Surfpool"
+description: "Installs and caches the Surfpool CLI"
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+      name: Cache Surfpool Binary
+      id: cache-surfpool
+      with:
+        path: ~/.local/bin/surfpool
+        key: surfpool-${{ runner.os }}-v${{ env.SURFPOOL_CLI_VERSION }}
+
+    # zizmor: literal hardcoded path, no user input — safe to write to GITHUB_PATH
+    - shell: bash
+      run: echo "$HOME/.local/bin" >> $GITHUB_PATH # zizmor: ignore[github-env]
+
+    - uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4 # v2
+      if: steps.cache-surfpool.outputs.cache-hit != 'true'
+      with:
+        retry_wait_seconds: 300
+        timeout_minutes: 2
+        max_attempts: 10
+        retry_on: error
+        shell: bash
+        command: |
+          set -euxo pipefail
+          echo "Installing Surfpool version ${{ env.SURFPOOL_CLI_VERSION }}"
+          mkdir -p "$HOME/.local/bin"
+          curl -sL -o /tmp/surfpool.tar.gz "https://github.com/solana-foundation/surfpool/releases/download/v${{ env.SURFPOOL_CLI_VERSION }}/surfpool-linux-x64.tar.gz"
+          tar -xzf /tmp/surfpool.tar.gz -C "$HOME/.local/bin"
+          chmod +x "$HOME/.local/bin/surfpool"
+          rm /tmp/surfpool.tar.gz
+
+    - shell: bash
+      run: surfpool -V

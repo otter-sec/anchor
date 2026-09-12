@@ -1,4 +1,4 @@
-import { Idl, TypesCoder } from "@coral-xyz/anchor";
+import { Idl, TypesCoder } from "@anchor-lang/core";
 
 export class SplStatelessAsksTypesCoder implements TypesCoder {
   constructor(_idl: Idl) {}

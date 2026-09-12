@@ -1,5 +1,5 @@
 import { Buffer } from "buffer";
-import { AnchorProvider, BN, Program, web3 } from "@coral-xyz/anchor";
+import { AnchorProvider, BN, Program, web3 } from "@anchor-lang/core";
 
 export const Magic = 0xa1b2c3d4;
 export const Version1 = 1;

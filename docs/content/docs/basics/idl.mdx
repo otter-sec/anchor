@@ -151,8 +151,8 @@ The IDL file is then used to generate a client for interacting with the program,
 simplifying the process of invoking the program instruction.
 
 ```ts title="test.ts"
-import * as anchor from "@coral-xyz/anchor";
-import { Program, BN } from "@coral-xyz/anchor";
+import * as anchor from "@anchor-lang/core";
+import { Program, BN } from "@anchor-lang/core";
 import { HelloAnchor } from "../target/types/hello_anchor";
 import { Keypair } from "@solana/web3.js";
 import assert from "assert";
@@ -316,8 +316,8 @@ The IDL file is then used to generate a client for interacting with the program,
 simplifying the process of fetching and deserializing account data.
 
 ```ts title="test.ts"
-import * as anchor from "@coral-xyz/anchor";
-import { Program, BN } from "@coral-xyz/anchor";
+import * as anchor from "@anchor-lang/core";
+import { Program, BN } from "@anchor-lang/core";
 import { HelloAnchor } from "../target/types/hello_anchor";
 import { Keypair } from "@solana/web3.js";
 import assert from "assert";

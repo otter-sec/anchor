@@ -5,7 +5,7 @@ import {
   BN,
   getProvider,
   setProvider,
-} from "@coral-xyz/anchor";
+} from "@anchor-lang/core";
 import {
   Transaction,
   Keypair,

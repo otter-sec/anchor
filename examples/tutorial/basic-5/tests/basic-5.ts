@@ -1,4 +1,4 @@
-import * as anchor from "@coral-xyz/anchor";
+import * as anchor from "@anchor-lang/core";
 import { Basic5 } from "../target/types/basic_5";
 
 describe("basic-5", () => {

@@ -6,19 +6,19 @@ description:
 ---
 
 Anchor provides a Typescript client library
-([@coral-xyz/anchor](https://github.com/coral-xyz/anchor/tree/0e5285aecdf410fa0779b7cd09a47f235882c156/ts/packages/anchor))
+([@anchor-lang/core](https://github.com/coral-xyz/anchor/tree/0e5285aecdf410fa0779b7cd09a47f235882c156/ts/packages/anchor))
 that simplifies the process of interacting with Solana programs from the client
 in JavaScript or TypeScript.
 
 <Callout type="info">
-  The `@coral-xyz/anchor` library is only compatible with the legacy version
+  The `@anchor-lang/core` library is only compatible with the legacy version
   (v1) of `@solana/web3.js` and `@solana/spl-token`. It is not compatible with
   the new version (v2) of `@solana/web3.js`.
 </Callout>
 
 ## Client Program
 
-To interact with an Anchor program using `@coral-xyz/anchor`, you'll need to
+To interact with an Anchor program using `@anchor-lang/core`, you'll need to
 create a
 [`Program`](https://github.com/coral-xyz/anchor/blob/0e5285aecdf410fa0779b7cd09a47f235882c156/ts/packages/anchor/src/program/index.ts#L58)
 instance using the program's [IDL file](/docs/basics/idl).
@@ -39,7 +39,7 @@ When integrating with a frontend using the
 to set up the `AnchorProvider` and `Program`.
 
 ```ts title="example"
-import { Program, AnchorProvider, setProvider } from "@coral-xyz/anchor";
+import { Program, AnchorProvider, setProvider } from "@anchor-lang/core";
 import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import type { HelloAnchor } from "./idlType";
 import idl from "./idl.json";
@@ -73,7 +73,7 @@ a connected wallet.
 
 ```ts
 import { clusterApiUrl, Connection, PublicKey } from "@solana/web3.js";
-import { Program } from "@coral-xyz/anchor";
+import { Program } from "@anchor-lang/core";
 import type { HelloAnchor } from "./idlType";
 import idl from "./idl.json";
 
@@ -95,8 +95,8 @@ Anchor workspace (like React or Node.js) where you'll need to manually create
 the `Program` instance.
 
 ```ts
-import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
+import * as anchor from "@anchor-lang/core";
+import { Program } from "@anchor-lang/core";
 import { HelloAnchor } from "../target/types/hello_anchor";
 
 describe("hello_anchor", () => {
@@ -386,7 +386,7 @@ const accounts = await program.account.newAccount.fetchMultiple([
 
 ## Example
 
-The example below demonstrates how to use `@coral-xyz/anchor` to interact with a
+The example below demonstrates how to use `@anchor-lang/core` to interact with a
 simple Anchor program. The program has two instructions:
 
 - `initialize` – Creates and initializes a counter account to store a value
@@ -630,7 +630,7 @@ import {
   Transaction,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
-import { Program } from "@coral-xyz/anchor";
+import { Program } from "@anchor-lang/core";
 import type { Example } from "./idl/example.ts";
 import idl from "./idl/example.json";
 

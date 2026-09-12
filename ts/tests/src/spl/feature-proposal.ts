@@ -1,6 +1,6 @@
-import { splFeatureProposalProgram } from "@coral-xyz/spl-feature-proposal";
-import { splTokenProgram } from "@coral-xyz/spl-token";
-import { BN } from "@coral-xyz/anchor";
+import { splFeatureProposalProgram } from "@anchor-lang/spl-feature-proposal";
+import { splTokenProgram } from "@anchor-lang/spl-token";
+import { BN } from "@anchor-lang/core";
 import {
   Keypair,
   PublicKey,

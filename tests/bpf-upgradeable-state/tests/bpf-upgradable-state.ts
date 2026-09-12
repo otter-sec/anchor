@@ -1,5 +1,5 @@
-import * as anchor from "@coral-xyz/anchor";
-import { AnchorError, Program } from "@coral-xyz/anchor";
+import * as anchor from "@anchor-lang/core";
+import { AnchorError, Program } from "@anchor-lang/core";
 import { PublicKey } from "@solana/web3.js";
 import { assert } from "chai";
 import { BpfUpgradeableState } from "../target/types/bpf_upgradeable_state";

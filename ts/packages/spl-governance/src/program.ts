@@ -1,5 +1,5 @@
 import { PublicKey } from "@solana/web3.js";
-import { Program, AnchorProvider } from "@coral-xyz/anchor";
+import { Program, AnchorProvider } from "@anchor-lang/core";
 
 import { SplGovernanceCoder } from "./coder";
 

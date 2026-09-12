@@ -1,7 +1,7 @@
 import assert from "assert";
-import { splRecordProgram } from "@coral-xyz/spl-record";
+import { splRecordProgram } from "@anchor-lang/spl-record";
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { BN } from "@coral-xyz/anchor";
+import { BN } from "@anchor-lang/core";
 
 import { SPL_RECORD_PROGRAM_ID } from "../constants";
 import {

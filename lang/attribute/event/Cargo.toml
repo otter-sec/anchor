@@ -2,7 +2,7 @@
 name = "anchor-attribute-event"
 version = "0.31.1"
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/coral-xyz/anchor"
+repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
 description = "Anchor attribute macro for defining an event"
 rust-version = "1.60"

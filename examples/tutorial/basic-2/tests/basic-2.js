@@ -1,5 +1,5 @@
 const assert = require("assert");
-const anchor = require("@coral-xyz/anchor");
+const anchor = require("@anchor-lang/core");
 const { SystemProgram } = anchor.web3;
 
 describe("basic-2", () => {
