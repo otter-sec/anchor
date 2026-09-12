@@ -1,6 +1,6 @@
 [package]
 name = "anchor-attribute-event"
-version = "0.31.1"
+version = "0.31.2"
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
 repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
@@ -17,7 +17,7 @@ event-cpi = ["anchor-syn/event-cpi"]
 idl-build = ["anchor-syn/idl-build"]
 
 [dependencies]
-anchor-syn = { path = "../../syn", version = "0.31.1", features = ["hash"] }
+anchor-syn = { path = "../../syn", version = "0.31.2", features = ["hash"] }
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "1", features = ["full"] }

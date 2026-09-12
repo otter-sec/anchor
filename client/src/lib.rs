@@ -50,7 +50,7 @@
 //!
 //! More examples can be found in [here].
 //!
-//! [here]: https://github.com/coral-xyz/anchor/tree/v0.31.1/client/example/src
+//! [here]: https://github.com/coral-xyz/anchor/tree/v0.31.2/client/example/src
 //!
 //! # Features
 //!
@@ -59,7 +59,7 @@
 //! The client is blocking by default. To enable asynchronous client, add `async` feature:
 //!
 //! ```toml
-//! anchor-client = { version = "0.31.1 ", features = ["async"] }
+//! anchor-client = { version = "0.31.2 ", features = ["async"] }
 //! ````
 //!
 //! ## `mock`

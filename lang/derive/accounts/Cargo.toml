@@ -1,6 +1,6 @@
 [package]
 name = "anchor-derive-accounts"
-version = "0.31.1"
+version = "0.31.2"
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
 repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
@@ -17,6 +17,6 @@ idl-build = ["anchor-syn/idl-build"]
 init-if-needed = ["anchor-syn/init-if-needed"]
 
 [dependencies]
-anchor-syn = { path = "../../syn", version = "0.31.1" }
+anchor-syn = { path = "../../syn", version = "0.31.2" }
 quote = "1"
 syn = { version = "1", features = ["full"] }

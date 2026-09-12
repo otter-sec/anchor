@@ -16,6 +16,14 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Breaking
 
+## [0.31.2] - 2026-09-12
+
+### Features
+
+### Fixes
+
+### Breaking
+
 ## [0.31.1] - 2025-04-19
 
 This release uses a new docker image found at `solanafoundation/anchor` for the `anchor verify` command. New images will be pushed to this organization in the future.

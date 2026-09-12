@@ -50,7 +50,7 @@ pub fn program(
 ///
 /// A full on-chain CPI usage example can be found [here].
 ///
-/// [here]: https://github.com/coral-xyz/anchor/tree/v0.31.1/tests/declare-program
+/// [here]: https://github.com/coral-xyz/anchor/tree/v0.31.2/tests/declare-program
 #[proc_macro]
 pub fn declare_program(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     parse_macro_input!(input as DeclareProgram)
@@ -92,9 +92,9 @@ pub fn declare_program(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
 /// ```
 #[cfg(feature = "interface-instructions")]
 #[deprecated(
-    since = "0.31.1",
+    since = "0.31.2",
     note = "Use `#[instruction(discriminator = <EXPR>)]` instead.
-    See examples in https://github.com/coral-xyz/anchor/tree/v0.31.1/tests/spl/transfer-hook"
+    See examples in https://github.com/coral-xyz/anchor/tree/v0.31.2/tests/spl/transfer-hook"
 )]
 #[proc_macro_attribute]
 pub fn interface(

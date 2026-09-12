@@ -102,7 +102,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-access-control"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "anchor-syn",
  "proc-macro2",
@@ -112,7 +112,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-account"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "anchor-syn",
  "bs58",
@@ -123,7 +123,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-constant"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -132,7 +132,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-error"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-event"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "anchor-syn",
  "proc-macro2",
@@ -151,7 +151,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-program"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "anchor-lang-idl",
  "anchor-syn",
@@ -166,7 +166,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-cli"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "anchor-client",
  "anchor-lang",
@@ -202,7 +202,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-client"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "anchor-lang",
  "anyhow",
@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-accounts"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -228,7 +228,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-serde"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "anchor-syn",
  "borsh-derive-internal",
@@ -239,7 +239,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-space"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-lang"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "anchor-attribute-access-control",
  "anchor-attribute-account",
@@ -291,7 +291,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-spl"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "anchor-lang",
  "borsh 0.10.3",
@@ -307,7 +307,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-syn"
-version = "0.31.1"
+version = "0.31.2"
 dependencies = [
  "anyhow",
  "bs58",
