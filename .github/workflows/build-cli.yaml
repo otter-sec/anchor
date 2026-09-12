@@ -1,0 +1,101 @@
+name: Build CLI
+
+on:
+  workflow_call:
+    inputs:
+      dry_run:
+        description: "If true, use 'dry-run' as the version string instead of the tag"
+        required: true
+        type: boolean
+      dist:
+        description: "Directory name for distribution artifacts (e.g. dist-v1.2.3 or dist-dry-run)"
+        required: true
+        type: string
+
+jobs:
+  build-cli:
+    name: Build binaries${{ inputs.dry_run && ' (dry-run)' || '' }} (${{matrix.os}})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    strategy:
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-unknown-linux-gnu
+          - x86_64-apple-darwin
+          - x86_64-pc-windows-msvc
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+
+          - target: x86_64-apple-darwin
+            os: macos-latest
+
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev
+
+      # FIXME: The global system LLVM on GitHub is very outdated, and LTO causes link errors
+      - name: Build release binary (macOS)
+        if: runner.os == 'macOS'
+        env:
+          CARGO_PROFILE_RELEASE_LTO: "off"
+          RUSTFLAGS: -C embed-bitcode=no
+        run: cargo build --package anchor-cli --release --locked --target ${{ matrix.target }}
+
+      - name: Build release binary
+        if: runner.os != 'macOS'
+        run: cargo build --package anchor-cli --release --locked --target ${{ matrix.target }}
+
+      - name: Prepare
+        id: prepare
+        shell: bash
+        env:
+          DIST: ${{ inputs.dist }}
+        run: |
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            version="dry-run"
+          else
+            version=$(echo $GITHUB_REF_NAME | cut -dv -f2)
+          fi
+          ext=""
+          [[ "${{ matrix.os }}" == windows-latest ]] && ext=".exe"
+
+          mkdir "$DIST"
+          mv "target/${{ matrix.target }}/release/anchor$ext" "$DIST/anchor-$version-${{ matrix.target }}$ext"
+
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Attest build provenance
+        # `id-token: write` is not granted for PRs from forks
+        if: ${{ github.event.pull_request.head.repo.fork != true }}
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: ${{ inputs.dist }}/anchor-${{ steps.prepare.outputs.version }}-${{ matrix.target }}*
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: anchor-${{ steps.prepare.outputs.version }}-${{ matrix.target }}
+          path: ${{ inputs.dist }}
+          overwrite: true
+          retention-days: 1

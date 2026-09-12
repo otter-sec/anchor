@@ -1,5 +1,5 @@
 {
-  "name": "@coral-xyz/borsh",
+  "name": "@anchor-lang/borsh",
   "version": "0.32.1",
   "description": "Anchor Borsh",
   "main": "dist/index.js",
@@ -8,6 +8,10 @@
     ".": "./dist/index.js"
   },
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/otter-sec/anchor.git"
+  },
   "publishConfig": {
     "access": "public"
   },

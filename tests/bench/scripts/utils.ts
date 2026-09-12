@@ -470,24 +470,45 @@ export class LockFile {
   /** Cache the current Cargo.lock in `./locks`. */
   static async cache(version: Version) {
     try {
-      await fs.rename(this.#CARGO_LOCK, this.#getLockPath(version));
+      await fs.access(this.#CARGO_LOCK);
     } catch {
-      // Lock file doesn't exist
-      // Run the tests to create the lock file
-      const result = runAnchorTest();
-
-      // Check failure
-      if (result.status !== 0) {
-        throw new Error(`Failed to create ${this.#CARGO_LOCK}`);
+      // `cargo-build-sbf` on supported legacy Solana versions uses Cargo 1.79.
+      // Start from the latest release lock rather than resolving current crates,
+      // some of which now require the Edition 2024-aware Cargo lockfile format.
+      const locks = (await fs.readdir("locks"))
+        .filter((file) => /^\d+\.\d+\.\d+\.lock$/.test(file))
+        .sort();
+      const latestLock = locks[locks.length - 1];
+      if (!latestLock) {
+        throw new Error(`No cached ${this.#CARGO_LOCK} is available`);
       }
 
-      await this.cache(version);
+      const lockFile = await fs.readFile(
+        path.join("locks", latestLock),
+        "utf8"
+      );
+      await fs.writeFile(this.#CARGO_LOCK, this.#forLegacyCargo(lockFile));
     }
+
+    // Build the benchmarks to update the cached lockfile for this release.
+    const result = runAnchorTest();
+    if (result.status !== 0) {
+      throw new Error(`Failed to create ${this.#CARGO_LOCK}`);
+    }
+
+    const lockFile = await fs.readFile(this.#CARGO_LOCK, "utf8");
+    await fs.writeFile(this.#CARGO_LOCK, this.#forLegacyCargo(lockFile));
+    await fs.rename(this.#CARGO_LOCK, this.#getLockPath(version));
   }
 
   /** Get the lock file path from the given version. */
   static #getLockPath(version: Version) {
     return path.join("locks", `${version}.lock`);
+  }
+
+  /** Cargo 1.79 supports lockfile version 3, but not version 4. */
+  static #forLegacyCargo(lockFile: string) {
+    return lockFile.replace(/^version = 4$/m, "version = 3");
   }
 }
 
@@ -539,7 +560,7 @@ export const spawn = (
   opts?: { logOutput?: boolean; throwOnError?: { msg: string } }
 ) => {
   const result = spawnSync(cmd, args);
-  if (opts?.logOutput) {
+  if (opts?.logOutput || result.status !== 0) {
     console.log(result.output.toString());
   }
 

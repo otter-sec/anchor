@@ -1,5 +1,5 @@
 {
-  "name": "@coral-xyz/spl-binary-option",
+  "name": "@anchor-lang/spl-binary-option",
   "description": "Anchor client for Solana Program Library Binary Option",
   "version": "0.1.0",
   "author": "acheron <acheroncrypto@gmail.com>",
@@ -27,7 +27,7 @@
     "watch": "tsc -p tsconfig.cjs.json --watch"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "=0.32.1",
+    "@anchor-lang/core": "=0.32.1",
     "@native-to-anchor/buffer-layout": "=0.1.0"
   },
   "devDependencies": {

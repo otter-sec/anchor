@@ -1,8 +1,8 @@
-import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
+import * as anchor from "@anchor-lang/core";
+import { Program } from "@anchor-lang/core";
 import { PublicKey, Keypair } from "@solana/web3.js";
 import { TokenExtensions } from "../target/types/token_extensions";
-import { ASSOCIATED_PROGRAM_ID } from "@coral-xyz/anchor/dist/cjs/utils/token";
+import { ASSOCIATED_PROGRAM_ID } from "@anchor-lang/core/dist/cjs/utils/token";
 import { it } from "node:test";
 
 const TOKEN_2022_PROGRAM_ID = new anchor.web3.PublicKey(

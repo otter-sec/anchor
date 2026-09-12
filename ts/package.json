@@ -1,5 +1,5 @@
 {
-  "name": "@coral-xyz/monorepo",
+  "name": "@anchor-lang/monorepo",
   "private": true,
   "workspaces": [
     "packages/*",

@@ -2,7 +2,7 @@
 // It is not expected users directly test with this example. For a more
 // ergonomic example, see `tests/basic-0.js` in this workspace.
 
-const anchor = require("@coral-xyz/anchor");
+const anchor = require("@anchor-lang/core");
 
 // Configure the local cluster.
 anchor.setProvider(anchor.AnchorProvider.local());

@@ -2,7 +2,7 @@
 name = "anchor-derive-serde"
 version = "0.32.1"
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
-repository = "https://github.com/coral-xyz/anchor"
+repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
 description = "Anchor Derive macro for serialization and deserialization"
 edition = "2021"

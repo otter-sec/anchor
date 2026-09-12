@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as B from "@native-to-anchor/buffer-layout";
-import { AccountsCoder, Idl } from "@coral-xyz/anchor";
-import { IdlTypeDef } from "@coral-xyz/anchor/dist/cjs/idl";
+import { AccountsCoder, Idl } from "@anchor-lang/core";
+import { IdlTypeDef } from "@anchor-lang/core/dist/cjs/idl";
 
 export class SplStatelessAsksAccountsCoder<A extends string = string>
   implements AccountsCoder

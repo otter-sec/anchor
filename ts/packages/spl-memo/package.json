@@ -1,5 +1,5 @@
 {
-  "name": "@coral-xyz/spl-memo",
+  "name": "@anchor-lang/spl-memo",
   "description": "Anchor client for Solana Program Library Memo",
   "version": "3.0.1",
   "author": "acheron <acheroncrypto@gmail.com>",
@@ -27,7 +27,7 @@
     "watch": "tsc -p tsconfig.cjs.json --watch"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "=0.32.1"
+    "@anchor-lang/core": "=0.32.1"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "=21.0.2",

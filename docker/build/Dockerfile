@@ -10,7 +10,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 ARG SOLANA_CLI
 ARG ANCHOR_CLI
-ARG NODE_VERSION="v20.18.0"
+ARG NODE_VERSION="v22.22.3"
 
 ENV HOME="/root"
 ENV PATH="${HOME}/.cargo/bin:${PATH}"
@@ -41,7 +41,7 @@ RUN . $NVM_DIR/nvm.sh && \
 RUN sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_CLI}/install)"
 
 # Install anchor.
-RUN cargo install --git https://github.com/coral-xyz/anchor --tag ${ANCHOR_CLI} anchor-cli --locked
+RUN cargo install --git https://github.com/otter-sec/anchor --tag ${ANCHOR_CLI} anchor-cli --locked
 
 # Build a dummy program to bootstrap the BPF SDK (doing this speeds up builds).
 RUN mkdir -p /tmp && cd tmp && anchor init dummy && cd dummy && anchor build

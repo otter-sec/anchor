@@ -1,5 +1,5 @@
-import * as anchor from "@coral-xyz/anchor";
-import { AnchorProvider, Program } from "@coral-xyz/anchor";
+import * as anchor from "@anchor-lang/core";
+import { AnchorProvider, Program } from "@anchor-lang/core";
 import { PublicKey } from "@solana/web3.js";
 import { expect } from "chai";
 import { RelationsDerivation } from "../target/types/relations_derivation";

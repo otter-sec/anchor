@@ -1,5 +1,5 @@
-import * as anchor from "@coral-xyz/anchor";
-import { Program, AnchorError } from "@coral-xyz/anchor";
+import * as anchor from "@anchor-lang/core";
+import { Program, AnchorError } from "@anchor-lang/core";
 import {
   PublicKey,
   Keypair,

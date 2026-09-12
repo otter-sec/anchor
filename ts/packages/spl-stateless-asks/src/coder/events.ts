@@ -1,5 +1,5 @@
-import { Idl, Event, EventCoder } from "@coral-xyz/anchor";
-import { IdlEvent } from "@coral-xyz/anchor/dist/cjs/idl";
+import { Idl, Event, EventCoder } from "@anchor-lang/core";
+import { IdlEvent } from "@anchor-lang/core/dist/cjs/idl";
 
 export class SplStatelessAsksEventsCoder implements EventCoder {
   constructor(_idl: Idl) {}

@@ -1,0 +1,155 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to bump to without the v[...] prefix (e.g. 1.0.0-rc.5)"
+        required: true
+        type: string
+      create_ts_docs_pr:
+        description: "Create a PR to publish TS docs for this version"
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  prepare-release-bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Force fetch upstream tags
+        run: git fetch --tags --force
+
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: "20.18.0"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Enable corepack (yarn)
+        run: corepack enable
+
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential libudev-dev
+
+      - uses: ./.github/actions/setup-solana/
+        env:
+          SOLANA_CLI_VERSION: "2.3.0"
+
+      - uses: ./.github/actions/setup-surfpool/
+        env:
+          SURFPOOL_CLI_VERSION: "1.5.0"
+
+      - name: Install cargo-release
+        run: cargo install cargo-release --version 1.1.1 --locked
+
+      - name: Bump version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -xeou pipefail
+
+          ./setup-tests.sh
+          ./bump-version.sh "$VERSION"
+
+      # I would love to automatically create a PR here, but GitHub does not allow triggering CI jobs
+      # on automatically created PRs to prevent recursion
+      - name: Create release bump branch
+        env:
+          VERSION: ${{ inputs.version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -xeou pipefail
+
+          BRANCH="release-bump/$VERSION"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "v$VERSION"
+          git push --set-upstream origin "$BRANCH"
+
+  # I would love to automatically push this to the branch, but again, GitHub does not
+  # allow for this.
+  prepare-ts-docs:
+    runs-on: ubuntu-latest
+    needs: prepare-release-bump
+    if: ${{ inputs.create_ts_docs_pr }}
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Force fetch upstream tags
+        run: git fetch --tags --force
+
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: "20.18.0"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Enable corepack (yarn)
+        run: corepack enable
+
+      - name: Generate TS docs
+        run: |
+          set -xeou pipefail
+
+          cd ts/packages/borsh && yarn --frozen-lockfile && yarn build && yarn link --force && cd ../../../
+          cd ts/packages/anchor-errors && yarn --frozen-lockfile && yarn build && yarn link --force && cd ../../../
+          cd ts/packages/anchor && yarn --frozen-lockfile && yarn build:node && yarn link && cd ../../../
+
+          cd ts/packages/anchor/
+          yarn docs
+
+      - name: Create TS docs PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -xeuo pipefail
+
+          DOCS_DIST="docs/src/.vuepress/dist"
+          DOCS_TMP="$RUNNER_TEMP/ts-docs"
+          BRANCH="ts-docs/$VERSION"
+
+          test -d "$DOCS_DIST"
+          mkdir -p "$DOCS_TMP"
+          cp -a "$DOCS_DIST"/. "$DOCS_TMP"/
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+
+          git switch -c "$BRANCH" origin/gh-pages
+
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a "$DOCS_TMP"/. .
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No TS docs changes to publish."
+          else
+            git commit -m "v$VERSION"
+            git push --set-upstream origin "$BRANCH"
+          fi

@@ -1,4 +1,4 @@
-const anchor = require("@coral-xyz/anchor");
+const anchor = require("@anchor-lang/core");
 const splToken = require("@solana/spl-token");
 const { assert } = require("chai");
 

@@ -30,7 +30,7 @@ runs:
       shell: bash
     - run: cd ts/packages/spl-token && yarn --frozen-lockfile && yarn build:node && yarn link && cd ../../../
       shell: bash
-    - run: cd examples/tutorial && yarn link @coral-xyz/anchor @coral-xyz/borsh && yarn --frozen-lockfile && cd ../../
+    - run: cd examples/tutorial && yarn link @anchor-lang/core @anchor-lang/borsh && yarn --frozen-lockfile && cd ../../
       shell: bash
-    - run: cd tests && yarn link @coral-xyz/anchor @coral-xyz/borsh @coral-xyz/spl-associated-token-account @coral-xyz/spl-token && yarn --frozen-lockfile && cd ..
+    - run: cd tests && yarn link @anchor-lang/core @anchor-lang/borsh @anchor-lang/spl-associated-token-account @anchor-lang/spl-token && yarn --frozen-lockfile && cd ..
       shell: bash

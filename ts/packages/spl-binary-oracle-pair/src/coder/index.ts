@@ -1,4 +1,4 @@
-import { Idl, Coder } from "@coral-xyz/anchor";
+import { Idl, Coder } from "@anchor-lang/core";
 
 import { SplBinaryOraclePairAccountsCoder } from "./accounts";
 import { SplBinaryOraclePairEventsCoder } from "./events";

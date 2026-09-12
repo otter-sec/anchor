@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
-import { splNameServiceProgram } from "@coral-xyz/spl-name-service";
-import { BN } from "@coral-xyz/anchor";
+import { splNameServiceProgram } from "@anchor-lang/spl-name-service";
+import { BN } from "@anchor-lang/core";
 
 import { SPL_NAME_SERVICE_PROGRAM_ID } from "../constants";
 import { confirmTx, getProvider, loadKp, test } from "../utils";

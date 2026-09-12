@@ -1,5 +1,5 @@
 const { assert } = require("chai");
-const anchor = require("@coral-xyz/anchor");
+const anchor = require("@anchor-lang/core");
 const BN = anchor.BN;
 const OpenOrders = require("@project-serum/serum").OpenOrders;
 const TOKEN_PROGRAM_ID = require("@solana/spl-token").TOKEN_PROGRAM_ID;

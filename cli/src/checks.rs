@@ -28,7 +28,7 @@ pub fn check_overflow(cargo_toml_path: impl AsRef<Path>) -> Result<bool> {
 /// Check whether there is a mismatch between the current CLI version and:
 ///
 /// - `anchor-lang` crate version
-/// - `@coral-xyz/anchor` package version
+/// - `@anchor-lang/core` package version
 ///
 /// This function logs warnings in the case of a mismatch.
 pub fn check_anchor_version(cfg: &WithPath<Config>) -> Result<()> {
@@ -64,7 +64,7 @@ pub fn check_anchor_version(cfg: &WithPath<Config>) -> Result<()> {
     };
     let mismatched_ts_version = package_json
         .get("dependencies")
-        .and_then(|deps| deps.get("@coral-xyz/anchor"))
+        .and_then(|deps| deps.get("@anchor-lang/core"))
         .and_then(|ver| ver.as_str())
         .and_then(|ver| VersionReq::parse(ver).ok())
         .filter(|ver| !ver.matches(&cli_version));
@@ -78,10 +78,10 @@ pub fn check_anchor_version(cfg: &WithPath<Config>) -> Result<()> {
         };
 
         eprintln!(
-            "WARNING: `@coral-xyz/anchor` version({ver}) and the current CLI version\
+            "WARNING: `@anchor-lang/core` version({ver}) and the current CLI version\
                 ({cli_version}) don't match.\n\n\t\
                 This can lead to unwanted behavior. To fix, upgrade the package by running:\n\n\t\
-                {update_cmd} @coral-xyz/anchor@{cli_version}\n"
+                {update_cmd} @anchor-lang/core@{cli_version}\n"
         );
     }
 

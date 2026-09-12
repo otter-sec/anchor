@@ -1,4 +1,4 @@
-const anchor = require("@coral-xyz/anchor");
+const anchor = require("@anchor-lang/core");
 const { assert } = require("chai");
 const {
   ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -11,7 +11,7 @@ const {
   createMint,
   createTokenAccount,
 } = require("./utils");
-const { token } = require("@coral-xyz/anchor/dist/cjs/utils");
+const { token } = require("@anchor-lang/core/dist/cjs/utils");
 
 describe("ido-pool", () => {
   const provider = anchor.AnchorProvider.local();

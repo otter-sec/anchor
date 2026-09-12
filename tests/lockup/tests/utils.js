@@ -1,4 +1,4 @@
-const anchor = require("@coral-xyz/anchor");
+const anchor = require("@anchor-lang/core");
 const serumCmn = require("@project-serum/common");
 
 async function createBalanceSandbox(provider, r, registrySigner) {

@@ -1,5 +1,5 @@
-import * as anchor from "@coral-xyz/anchor";
-import { AnchorError, Program } from "@coral-xyz/anchor";
+import * as anchor from "@anchor-lang/core";
+import { AnchorError, Program } from "@anchor-lang/core";
 import splToken from "@solana/spl-token";
 import { DeclareId } from "../target/types/declare_id";
 import { assert } from "chai";

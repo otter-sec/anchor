@@ -1,5 +1,5 @@
 import { Layout } from "buffer-layout";
-import * as borsh from "@coral-xyz/borsh";
+import * as borsh from "@anchor-lang/borsh";
 import {
   IdlField,
   IdlTypeDef,

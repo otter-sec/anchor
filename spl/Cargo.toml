@@ -5,6 +5,7 @@ authors = ["Anchor Maintainers <accounts@200ms.io>"]
 edition = "2021"
 license = "Apache-2.0"
 description = "CPI clients for SPL programs"
+repository = "https://github.com/otter-sec/anchor"
 
 [package.metadata.docs.rs]
 all-features = true

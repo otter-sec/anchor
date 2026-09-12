@@ -1,7 +1,7 @@
 import camelCase from "camelcase";
 import { Buffer } from "buffer";
 import { PublicKey } from "@solana/web3.js";
-import * as borsh from "@coral-xyz/borsh";
+import * as borsh from "@anchor-lang/borsh";
 
 export type Idl = {
   address: string;

@@ -3,7 +3,7 @@ name = "anchor-cli"
 version = "0.32.1"
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
 edition = "2021"
-repository = "https://github.com/coral-xyz/anchor"
+repository = "https://github.com/otter-sec/anchor"
 description = "Anchor CLI"
 license = "Apache-2.0"
 
