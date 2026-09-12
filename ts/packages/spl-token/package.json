@@ -1,7 +1,7 @@
 {
   "name": "@anchor-lang/spl-token",
   "description": "Anchor client for Solana Program Library Token",
-  "version": "0.32.1",
+  "version": "0.32.2",
   "author": "acheron <acheroncrypto@gmail.com>",
   "license": "Apache-2.0",
   "repository": {
@@ -27,7 +27,7 @@
     "watch": "tsc -p tsconfig.cjs.json --watch"
   },
   "dependencies": {
-    "@anchor-lang/core": "=0.32.1",
+    "@anchor-lang/core": "=0.32.2",
     "@native-to-anchor/buffer-layout": "=0.1.0"
   },
   "devDependencies": {

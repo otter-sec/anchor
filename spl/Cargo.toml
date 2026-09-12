@@ -1,6 +1,6 @@
 [package]
 name = "anchor-spl"
-version = "0.32.1"
+version = "0.32.2"
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
 edition = "2021"
 license = "Apache-2.0"
@@ -32,7 +32,7 @@ token_2022_extensions = [
 ]
 
 [dependencies]
-anchor-lang = { path = "../lang", version = "0.32.1", features = ["derive"] }
+anchor-lang = { path = "../lang", version = "0.32.2", features = ["derive"] }
 borsh = { version = "0.10.3", optional = true }
 mpl-token-metadata = { version = "5", optional = true }
 spl-associated-token-account = { version = "7", features = ["no-entrypoint"], optional = true }

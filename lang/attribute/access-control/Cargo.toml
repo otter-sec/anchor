@@ -1,6 +1,6 @@
 [package]
 name = "anchor-attribute-access-control"
-version = "0.32.1"
+version = "0.32.2"
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
 repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
@@ -14,7 +14,7 @@ proc-macro = true
 anchor-debug = ["anchor-syn/anchor-debug"]
 
 [dependencies]
-anchor-syn = { path = "../../syn", version = "0.32.1" }
+anchor-syn = { path = "../../syn", version = "0.32.2" }
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "1", features = ["full"] }

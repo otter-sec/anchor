@@ -1,6 +1,6 @@
 [package]
 name = "anchor-attribute-account"
-version = "0.32.1"
+version = "0.32.2"
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
 repository = "https://github.com/otter-sec/anchor"
 license = "Apache-2.0"
@@ -16,7 +16,7 @@ idl-build = ["anchor-syn/idl-build"]
 lazy-account = []
 
 [dependencies]
-anchor-syn = { path = "../../syn", version = "0.32.1", features = ["hash"] }
+anchor-syn = { path = "../../syn", version = "0.32.2", features = ["hash"] }
 bs58 = "0.5"
 proc-macro2 = "1"
 quote = "1"

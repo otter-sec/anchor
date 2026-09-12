@@ -1,6 +1,6 @@
 [package]
 name = "anchor-client"
-version = "0.32.1"
+version = "0.32.2"
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
 edition = "2021"
 license = "Apache-2.0"
@@ -17,7 +17,7 @@ debug = []
 mock = []
 
 [dependencies]
-anchor-lang = { path = "../lang", version = "0.32.1" }
+anchor-lang = { path = "../lang", version = "0.32.2" }
 anyhow = "1"
 futures = "0.3"
 regex = "1"

@@ -1,6 +1,6 @@
 [package]
 name = "anchor-cli"
-version = "0.32.1"
+version = "0.32.2"
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
 edition = "2021"
 repository = "https://github.com/otter-sec/anchor"
@@ -15,8 +15,8 @@ path = "src/bin/main.rs"
 dev = []
 
 [dependencies]
-anchor-client = { path = "../client", version = "0.32.1" }
-anchor-lang = { path = "../lang", version = "0.32.1" }
+anchor-client = { path = "../client", version = "0.32.2" }
+anchor-lang = { path = "../lang", version = "0.32.2" }
 anchor-lang-idl = { path = "../idl", version = "0.1.2", features = ["build", "convert"] }
 anyhow = "1.0.32"
 base64 = "0.21"
