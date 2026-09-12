@@ -110,6 +110,104 @@ Solana version: 1.18.17
 
 ---
 
+## [0.30.2]
+
+Solana version: 1.18.17
+
+| Instruction                    | Stack Memory | -   |
+| ------------------------------ | ------------ | --- |
+| account_info1                  | 144          | -   |
+| account_info2                  | 144          | -   |
+| account_info4                  | 144          | -   |
+| account_info8                  | 144          | -   |
+| account_empty_init1            | 144          | -   |
+| account_empty_init2            | 144          | -   |
+| account_empty_init4            | 192          | -   |
+| account_empty_init8            | 224          | -   |
+| account_empty1                 | 144          | -   |
+| account_empty2                 | 144          | -   |
+| account_empty4                 | 144          | -   |
+| account_empty8                 | 144          | -   |
+| account_sized_init1            | 176          | -   |
+| account_sized_init2            | 192          | -   |
+| account_sized_init4            | 224          | -   |
+| account_sized_init8            | 288          | -   |
+| account_sized1                 | 144          | -   |
+| account_sized2                 | 144          | -   |
+| account_sized4                 | 144          | -   |
+| account_sized8                 | 144          | -   |
+| account_unsized_init1          | 192          | -   |
+| account_unsized_init2          | 224          | -   |
+| account_unsized_init4          | 288          | -   |
+| account_unsized_init8          | 416          | -   |
+| account_unsized1               | 144          | -   |
+| account_unsized2               | 144          | -   |
+| account_unsized4               | 144          | -   |
+| account_unsized8               | 144          | -   |
+| boxed_account_empty_init1      | 144          | -   |
+| boxed_account_empty_init2      | 144          | -   |
+| boxed_account_empty_init4      | 192          | -   |
+| boxed_account_empty_init8      | 224          | -   |
+| boxed_account_empty1           | 144          | -   |
+| boxed_account_empty2           | 144          | -   |
+| boxed_account_empty4           | 144          | -   |
+| boxed_account_empty8           | 144          | -   |
+| boxed_account_sized_init1      | 144          | -   |
+| boxed_account_sized_init2      | 144          | -   |
+| boxed_account_sized_init4      | 192          | -   |
+| boxed_account_sized_init8      | 224          | -   |
+| boxed_account_sized1           | 144          | -   |
+| boxed_account_sized2           | 144          | -   |
+| boxed_account_sized4           | 144          | -   |
+| boxed_account_sized8           | 144          | -   |
+| boxed_account_unsized_init1    | 144          | -   |
+| boxed_account_unsized_init2    | 144          | -   |
+| boxed_account_unsized_init4    | 192          | -   |
+| boxed_account_unsized_init8    | 224          | -   |
+| boxed_account_unsized1         | 144          | -   |
+| boxed_account_unsized2         | 144          | -   |
+| boxed_account_unsized4         | 144          | -   |
+| boxed_account_unsized8         | 144          | -   |
+| boxed_interface_account_mint1  | 144          | -   |
+| boxed_interface_account_mint2  | 144          | -   |
+| boxed_interface_account_mint4  | 144          | -   |
+| boxed_interface_account_mint8  | 144          | -   |
+| boxed_interface_account_token1 | 144          | -   |
+| boxed_interface_account_token2 | 144          | -   |
+| boxed_interface_account_token4 | 144          | -   |
+| boxed_interface_account_token8 | 144          | -   |
+| interface_account_mint1        | 144          | -   |
+| interface_account_mint2        | 144          | -   |
+| interface_account_mint4        | 144          | -   |
+| interface_account_mint8        | 144          | -   |
+| interface_account_token1       | 144          | -   |
+| interface_account_token2       | 144          | -   |
+| interface_account_token4       | 144          | -   |
+| interface1                     | 144          | -   |
+| interface2                     | 144          | -   |
+| interface4                     | 144          | -   |
+| interface8                     | 144          | -   |
+| program1                       | 144          | -   |
+| program2                       | 144          | -   |
+| program4                       | 144          | -   |
+| program8                       | 144          | -   |
+| signer1                        | 144          | -   |
+| signer2                        | 144          | -   |
+| signer4                        | 144          | -   |
+| signer8                        | 144          | -   |
+| system_account1                | 144          | -   |
+| system_account2                | 144          | -   |
+| system_account4                | 144          | -   |
+| system_account8                | 144          | -   |
+| unchecked_account1             | 144          | -   |
+| unchecked_account2             | 144          | -   |
+| unchecked_account4             | 144          | -   |
+| unchecked_account8             | 144          | -   |
+
+### Notable changes
+
+---
+
 ## [0.30.1]
 
 Solana version: 1.18.17

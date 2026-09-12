@@ -1,6 +1,6 @@
 [package]
 name = "anchor-lang"
-version = "0.30.1"
+version = "0.30.2"
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
 repository = "https://github.com/otter-sec/anchor"
 edition = "2021"
@@ -38,15 +38,15 @@ init-if-needed = ["anchor-derive-accounts/init-if-needed"]
 interface-instructions = ["anchor-attribute-program/interface-instructions"]
 
 [dependencies]
-anchor-attribute-access-control = { path = "./attribute/access-control", version = "0.30.1" }
-anchor-attribute-account = { path = "./attribute/account", version = "0.30.1" }
-anchor-attribute-constant = { path = "./attribute/constant", version = "0.30.1" }
-anchor-attribute-error = { path = "./attribute/error", version = "0.30.1" }
-anchor-attribute-event = { path = "./attribute/event", version = "0.30.1" }
-anchor-attribute-program = { path = "./attribute/program", version = "0.30.1" }
-anchor-derive-accounts = { path = "./derive/accounts", version = "0.30.1" }
-anchor-derive-serde = { path = "./derive/serde", version = "0.30.1" }
-anchor-derive-space = { path = "./derive/space", version = "0.30.1" }
+anchor-attribute-access-control = { path = "./attribute/access-control", version = "0.30.2" }
+anchor-attribute-account = { path = "./attribute/account", version = "0.30.2" }
+anchor-attribute-constant = { path = "./attribute/constant", version = "0.30.2" }
+anchor-attribute-error = { path = "./attribute/error", version = "0.30.2" }
+anchor-attribute-event = { path = "./attribute/event", version = "0.30.2" }
+anchor-attribute-program = { path = "./attribute/program", version = "0.30.2" }
+anchor-derive-accounts = { path = "./derive/accounts", version = "0.30.2" }
+anchor-derive-serde = { path = "./derive/serde", version = "0.30.2" }
+anchor-derive-space = { path = "./derive/space", version = "0.30.2" }
 
 # `anchor-lang-idl` should only be included with `idl-build` feature
 anchor-lang-idl = { path = "../idl", version = "0.1.1", optional = true }
