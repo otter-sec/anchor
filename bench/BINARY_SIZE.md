@@ -24,6 +24,18 @@ Solana version: 1.18.17
 
 ---
 
+## [0.30.2]
+
+Solana version: 1.18.17
+
+| Program | Binary Size | -   |
+| ------- | ----------- | --- |
+| bench   | 791,008     | -   |
+
+### Notable changes
+
+---
+
 ## [0.30.1]
 
 Solana version: 1.18.17
