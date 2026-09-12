@@ -48,17 +48,9 @@ git grep -l "$old_version" -- $allow_globs |
 
 # Avoid updating the docs for pre-release builds
 if [[ "$is_prerelease" -eq 0 ]]; then
-    latest_stable_version=$(
-        git tag --sort=-version:refname | \
-            grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
-            head -n1 | \
-            sed 's/^v//'
-    )
-    # Forks used for release preparation may not retain upstream tags.
-    # The checked-out version is the previous stable release in that case.
-    if [[ -z "$latest_stable_version" ]]; then
-        latest_stable_version="$old_version"
-    fi
+    # This is a point release, so the checked-out version is the prior stable
+    # documentation version. Global repository tags may belong to newer lines.
+    latest_stable_version="$old_version"
     latest_stable_version_regex=$(printf '%s\n' "$latest_stable_version" | sed 's/[.[\*^$()+?{}|\\]/\\&/g')
     echo "Latest stable version for documentation was $latest_stable_version..."
 
