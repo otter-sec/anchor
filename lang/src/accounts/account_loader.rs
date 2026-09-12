@@ -29,8 +29,9 @@ use {
 /// - `load` when the account is not mutable
 /// - `load_mut` when the account is mutable
 ///
-/// On exit, the account discriminator is written back only if the account is
-/// still owned by the program and has not been closed.
+/// On exit, the account discriminator is written back if the account is still
+/// owned by the program and has not been closed. If ownership moved during
+/// the instruction, a missing discriminator is an error.
 ///
 /// For more details on zero-copy-deserialization, see the
 /// [`account`](crate::account) attribute.
@@ -269,16 +270,17 @@ impl<'info, B, T: ZeroCopy + Owner> Accounts<'info, B> for AccountLoader<'info, 
 impl<'info, T: ZeroCopy + Owner> AccountsExit<'info> for AccountLoader<'info, T> {
     // The account *cannot* be loaded when this is called.
     fn exit(&self, program_id: &Pubkey) -> Result<()> {
-        // Only persist if the account is still owned by the current program
-        // and not closed.
-        if &T::owner() == program_id
-            && self.acc_info.owner == program_id
-            && !crate::common::is_closed(self.acc_info)
-        {
+        // Only persist if the owner is the current program and the account is not closed.
+        if &T::owner() == program_id && !crate::common::is_closed(self.acc_info) {
             // Guard against truncation: refuse to rewrite the discriminator over an undersized buffer.
             let required = T::DISCRIMINATOR.len() + mem::size_of::<T>();
             if self.acc_info.try_data_len()? < required {
                 return Err(ErrorCode::AccountDidNotDeserialize.into());
+            }
+            if self.acc_info.owner != program_id {
+                return crate::common::exit_unowned(self.acc_info, program_id, |writer| {
+                    Ok(writer.write_all(T::DISCRIMINATOR)?)
+                });
             }
             let mut data = self.acc_info.try_borrow_mut_data()?;
             let dst: &mut [u8] = &mut data;

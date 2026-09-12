@@ -43,11 +43,13 @@ use {
 /// # Persistence
 ///
 /// When the instruction returns, `mut` accounts are serialized back into the
-/// account data only if the account is still owned by the program and has
-/// not been closed. If ownership moved during the instruction, for example
-/// because the account was reassigned via CPI, the data is left untouched.
-/// Call [`exit`](crate::AccountsExit::exit) before such a CPI if pending
-/// changes must be persisted first.
+/// account data if the account is still owned by the program and has not
+/// been closed. If ownership moved during the instruction, for example
+/// because the account was reassigned via CPI, the account is not written:
+/// exit succeeds when the account data already matches the in-memory value
+/// and fails with `AccountOwnedByWrongProgram` otherwise. Call
+/// [`exit`](crate::AccountsExit::exit) before such a CPI to persist pending
+/// changes.
 ///
 /// # Example
 /// ```ignore
@@ -266,14 +268,13 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone> Account<'a, T> {
         expected_owner: &Pubkey,
         program_id: &Pubkey,
     ) -> Result<()> {
-        // Only persist if the account is still owned by the current program
-        // and not closed. Ownership can move away mid-instruction (e.g. when
-        // reassigned via CPI); writing then fails under direct mapping with
-        // `ExternalAccountDataModified` and is pointless otherwise.
-        if expected_owner == program_id
-            && self.info.owner == program_id
-            && !crate::common::is_closed(self.info)
-        {
+        // Only persist if the owner is the current program and the account is not closed.
+        if expected_owner == program_id && !crate::common::is_closed(self.info) {
+            if self.info.owner != program_id {
+                return crate::common::exit_unowned(self.info, program_id, |writer| {
+                    self.account.try_serialize(writer)
+                });
+            }
             let mut data = self.info.try_borrow_mut_data()?;
             let dst: &mut [u8] = &mut data;
             let mut writer = BpfWriter::new(dst);

@@ -12,11 +12,12 @@ for implementation details.
 
 <Callout title="Persistence on exit">
   Typed accounts (`Account`, `AccountLoader`, `LazyAccount`, `Migration`) are
-  written back to the account data when the instruction returns only if the
-  account is still owned by the program and has not been closed. If ownership
-  moved during the instruction, for example because the account was reassigned
-  via CPI, the data is left untouched. Call `exit` before such a CPI if pending
-  changes must be persisted first.
+  written back to the account data when the instruction returns if the account
+  is still owned by the program and has not been closed. If ownership moved
+  during the instruction, for example because the account was reassigned via
+  CPI, the account is not written: exit succeeds when the account data already
+  matches the in-memory value and fails with `AccountOwnedByWrongProgram`
+  otherwise. Call `exit` before such a CPI to persist pending changes.
 </Callout>
 
 ## Account Types

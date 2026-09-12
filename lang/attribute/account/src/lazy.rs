@@ -276,14 +276,19 @@ pub fn gen_lazy(strct: &syn::ItemStruct) -> syn::Result<TokenStream> {
             // initialized rather than deserializing the whole account, and then serializing it
             // back, which consumes a lot more CUs than it should for most accounts.
             fn exit(&self, program_id: &anchor_lang::prelude::Pubkey) -> anchor_lang::Result<()> {
-                // Only persist if the account is still owned by the current
-                // program and not closed.
+                // Only persist if the owner is the current program and the account is not closed
                 if &<#ident as anchor_lang::Owner>::owner() == program_id
-                    && self.__info.owner == program_id
                     && !anchor_lang::__private::is_closed(self.__info)
                 {
                     // Make sure all fields are initialized
                     let acc = self.load()?;
+                    if self.__info.owner != program_id {
+                        return anchor_lang::__private::exit_unowned(
+                            self.__info,
+                            program_id,
+                            |writer| acc.try_serialize(writer),
+                        );
+                    }
                     let mut data = self.__info.try_borrow_mut_data()?;
                     let dst: &mut [u8] = &mut data;
                     let mut writer = anchor_lang::__private::BpfWriter::new(dst);

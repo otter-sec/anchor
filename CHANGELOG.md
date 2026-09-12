@@ -14,7 +14,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
-- lang: Skip re-serializing accounts on exit when the account is no longer owned by the program. ([#5011](https://github.com/otter-sec/anchor/pull/5011)).
+- lang: On exit, do not write accounts that are no longer owned by the program: unchanged data is tolerated, unpersisted modifications are an error. ([#5011](https://github.com/otter-sec/anchor/pull/5011)).
 
 ### Breaking
 
