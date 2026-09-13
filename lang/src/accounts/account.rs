@@ -40,6 +40,17 @@ use {
 /// - `Account.info.owner == T::owner()`
 /// - `!(Account.info.owner == SystemProgram && Account.info.lamports() == 0)`
 ///
+/// # Persistence
+///
+/// When the instruction returns, `mut` accounts are serialized back into the
+/// account data if the account is still owned by the program and has not
+/// been closed. If ownership moved during the instruction, for example
+/// because the account was reassigned via CPI, the account is not written:
+/// exit succeeds when the account data already matches the in-memory value
+/// and fails with `AccountOwnedByWrongProgram` otherwise. Call
+/// [`exit`](crate::AccountsExit::exit) before such a CPI to persist pending
+/// changes.
+///
 /// # Example
 /// ```ignore
 /// use anchor_lang::prelude::*;
@@ -259,6 +270,11 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone> Account<'a, T> {
     ) -> Result<()> {
         // Only persist if the owner is the current program and the account is not closed.
         if expected_owner == program_id && !crate::common::is_closed(self.info) {
+            if self.info.owner != program_id {
+                return crate::common::exit_unowned(self.info, program_id, |writer| {
+                    self.account.try_serialize(writer)
+                });
+            }
             let mut data = self.info.try_borrow_mut_data()?;
             let dst: &mut [u8] = &mut data;
             let mut writer = BpfWriter::new(dst);

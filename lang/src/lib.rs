@@ -607,7 +607,10 @@ pub mod prelude {
 pub mod __private {
     use crate::solana_program::pubkey::Pubkey;
     pub use {
-        crate::{bpf_writer::BpfWriter, common::is_closed},
+        crate::{
+            bpf_writer::BpfWriter,
+            common::{exit_unowned, is_closed},
+        },
         anchor_attribute_account::ZeroCopyAccessor,
         base64, bytemuck,
     };
