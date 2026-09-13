@@ -27,6 +27,7 @@ pub fn is_closed(info: &AccountInfo) -> bool {
 /// Exit path for an account that is no longer owned by the program, e.g.
 /// after being reassigned via CPI. Mirrors the runtime: unchanged data is
 /// tolerated, a modification is an error.
+#[doc(hidden)]
 pub fn exit_unowned<F>(info: &AccountInfo, program_id: &Pubkey, serialize: F) -> Result<()>
 where
     F: FnOnce(&mut CompareWriter<'_>) -> Result<()>,
