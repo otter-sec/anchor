@@ -15,3 +15,6 @@ anchor idl build -o $dir/generics.json
 
 cd ../relations-derivation
 anchor idl build -o $dir/relations.json
+
+cd ../env-id
+ENV_ID_ADDRESS=EnvProgram111111111111111111111111111111111 anchor idl build -o $dir/env_id.json
