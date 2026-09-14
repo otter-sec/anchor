@@ -1,7 +1,9 @@
 extern crate proc_macro;
 
 use {
-    anchor_syn::{codegen::program::common::gen_discriminator, Overrides},
+    anchor_syn::{
+        codegen::program::common::gen_discriminator, parser::is_bytemuck_derive, Overrides,
+    },
     quote::{quote, quote_spanned, ToTokens},
     syn::{
         parenthesized,
@@ -544,14 +546,15 @@ pub fn zero_copy(
         if !attr.path().is_ident("derive") {
             continue;
         }
-        if let syn::Meta::List(list) = &attr.meta {
-            let tokens_str = list.tokens.to_string();
-            if tokens_str.contains("bytemuck :: Pod") {
+        if let Err(err) = attr.parse_nested_meta(|meta| {
+            if is_bytemuck_derive(&meta.path, "Pod") {
                 has_pod_attr = true;
-            }
-            if tokens_str.contains("bytemuck :: Zeroable") {
+            } else if is_bytemuck_derive(&meta.path, "Zeroable") {
                 has_zeroable_attr = true;
             }
+            Ok(())
+        }) {
+            return err.into_compile_error().into();
         }
     }
 
