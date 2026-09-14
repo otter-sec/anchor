@@ -60,6 +60,20 @@ const WRITE_COMPUTE_UNIT_LIMIT: u32 = 3_000;
 /// the latest snapshot.
 const BUFFER_STABILIZE_MAX_WAIT_SECS: u64 = 60;
 
+/// Error returned when `NO_DNA` disables the destructive confirmation prompt.
+const NO_DNA_PROGRAM_CLOSE_ERROR: &str = "Cannot prompt for confirmation because NO_DNA is set. \
+                                          Re-run with --bypass-warning to close the account.";
+
+fn should_prompt_for_program_close(no_dna_enabled: bool, bypass_warning: bool) -> Result<bool> {
+    if bypass_warning {
+        return Ok(false);
+    }
+    if no_dna_enabled {
+        bail!(NO_DNA_PROGRAM_CLOSE_ERROR);
+    }
+    Ok(true)
+}
+
 /// If `--buffer` is absent, inject a per-program persistent path at
 /// `target/deploy/{program_name}-upgrade-buffer.json`. Creates the keypair
 /// file on first run; subsequent runs reuse it so a failed deploy/upgrade
@@ -2180,7 +2194,7 @@ fn program_close(
     // Determine recipient
     let recipient_pubkey = recipient.unwrap_or_else(|| authority_keypair.pubkey());
 
-    if !bypass_warning {
+    if should_prompt_for_program_close(crate::no_dna_enabled(), bypass_warning)? {
         println!();
         println!(
             "WARNING: This will close the {} account and reclaim all lamports.",
@@ -2924,5 +2938,17 @@ resolver = "2"
             adjust_extend_bytes(1, MAX_PERMITTED_DATA_LENGTH as usize),
             1
         );
+    }
+
+    #[test]
+    fn program_close_requires_explicit_bypass_under_no_dna() {
+        let err = should_prompt_for_program_close(true, false).unwrap_err();
+        assert!(
+            err.to_string().contains("--bypass-warning"),
+            "unexpected error: {err}"
+        );
+
+        assert!(!should_prompt_for_program_close(true, true).unwrap());
+        assert!(should_prompt_for_program_close(false, false).unwrap());
     }
 }

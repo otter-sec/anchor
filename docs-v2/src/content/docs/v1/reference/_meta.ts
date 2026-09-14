@@ -8,8 +8,9 @@ export default {
     'account-constraints': { order: 1 },
     'anchor-toml': { order: 2 },
     cli: { label: 'Anchor CLI', order: 3 },
-    avm: { label: 'Anchor version manager', order: 4 },
-    'rust-to-js-types': { label: 'Rust to JS type conversion', order: 5 },
-    examples: { order: 6 },
+    'no-dna': { label: 'NO_DNA', order: 4 },
+    avm: { label: 'Anchor version manager', order: 5 },
+    'rust-to-js-types': { label: 'Rust to JS type conversion', order: 6 },
+    examples: { order: 7 },
   },
 } satisfies MetaFile
