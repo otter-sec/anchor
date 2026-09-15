@@ -14,6 +14,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang: Accept arbitrary expressions in `declare_id!`. ([#5010](https://github.com/otter-sec/anchor/pull/5010)).
+
 ### Breaking
 
 ## [1.2.0] - 2026-09-04

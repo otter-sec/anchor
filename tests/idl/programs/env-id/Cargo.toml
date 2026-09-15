@@ -1,0 +1,18 @@
+[package]
+name = "env-id"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "env_id"
+
+[features]
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = { path = "../../../../lang" }
