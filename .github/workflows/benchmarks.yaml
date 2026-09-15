@@ -1,0 +1,129 @@
+name: Benchmarks
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/benchmarks.yaml'
+      - 'bench/bench'
+      - 'bench/Cargo.toml'
+      - 'bench/fixture/**'
+      - 'bench/locks/**'
+      - 'bench/results.json'
+      - 'bench/src/**'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    name: Prepare benchmark sync
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.versions.outputs.versions }}
+    steps:
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: changes
+        name: Check benchmark changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          sync=true
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]] &&
+            git diff --quiet "$BASE_SHA...$HEAD_SHA" -- \
+              .github/workflows/benchmarks.yaml \
+              bench/bench \
+              bench/Cargo.toml \
+              bench/fixture \
+              bench/locks \
+              bench/results.json \
+              bench/src; then
+            sync=false
+          fi
+          echo "sync=$sync" >> "$GITHUB_OUTPUT"
+      - id: versions
+        name: Read versions
+        env:
+          SYNC: ${{ steps.changes.outputs.sync }}
+        shell: bash
+        run: |
+          versions=(unreleased)
+          if [[ "$SYNC" == "true" ]]; then
+            while IFS= read -r version; do
+              [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+              [[ -f "bench/locks/$version.lock" ]] && versions+=("$version")
+            done < <(jq -r 'keys[]' bench/results.json)
+          fi
+          printf 'versions=%s\n' "$(jq -cn --args '$ARGS.positional' "${versions[@]}")" >> "$GITHUB_OUTPUT"
+
+  setup-avm:
+    name: Setup AVM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup/
+      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ./target/
+          key: benchmarks-avm-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - run: cargo install --path avm --locked --force
+      - run: chmod +x ~/.cargo/bin/avm
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: avm-binary
+          path: ~/.cargo/bin/avm
+
+  benchmarks:
+    needs: [matrix, setup-avm]
+    name: Benchmark ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON(needs.matrix.outputs.versions) }}
+    steps:
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup/
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: avm-binary
+          path: ~/.cargo/bin/
+      - run: chmod +x ~/.cargo/bin/avm
+
+      - name: Add Solana binaries to PATH
+        run: echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+        name: Cache benchmark toolchains
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/solana/
+            ~/.local/share/solana/
+            ./bench/.cache/
+            ./target/
+          key: benchmarks-${{ runner.os }}-${{ matrix.version }}-${{ hashFiles('Cargo.lock', 'bench/locks/*.lock') }}
+
+      - run: ./bench/bench "$BENCHMARK_VERSION" --check --verbose
+        env:
+          BENCH_AVM: avm
+          BENCHMARK_VERSION: ${{ matrix.version }}

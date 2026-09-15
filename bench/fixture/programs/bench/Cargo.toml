@@ -1,8 +1,8 @@
 [package]
 name = "bench"
 version = "0.1.0"
-description = "Created with Anchor"
 edition = "2021"
+publish = false
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -11,7 +11,12 @@ crate-type = ["cdylib", "lib"]
 no-entrypoint = []
 cpi = ["no-entrypoint"]
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+no-log-ix-name = []
 
 [dependencies]
-anchor-lang = { path = "../../../../lang" }
-anchor-spl = { path = "../../../../spl" }
+# Written by the benchmark entrypoint in its disposable work directory.
+anchor-lang = "=0.0.0"
+anchor-spl = "=0.0.0"
