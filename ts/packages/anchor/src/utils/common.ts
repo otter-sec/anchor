@@ -1,3 +1,4 @@
+import { isSolanaError, SolanaError, SolanaErrorCode } from "@solana/kit";
 import { Transaction, VersionedTransaction } from "@solana/web3.js";
 
 /**
@@ -32,3 +33,19 @@ export const isVersionedTransaction = (
 ): tx is VersionedTransaction => {
   return "version" in tx;
 };
+
+/**
+ * Finds a Kit `SolanaError` with the given code in the cause chain of the
+ * given error, including the error itself.
+ */
+export function findSolanaError<TCode extends SolanaErrorCode>(
+  err: unknown,
+  code: TCode
+): SolanaError<TCode> | undefined {
+  for (let cause: unknown = err; cause instanceof Error; cause = cause.cause) {
+    if (isSolanaError(cause, code)) {
+      return cause;
+    }
+  }
+  return undefined;
+}

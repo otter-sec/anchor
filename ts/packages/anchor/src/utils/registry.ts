@@ -1,4 +1,3 @@
-import fetch from "cross-fetch";
 import { Address, getStructCodec, getU32Codec, getU64Codec } from "@solana/kit";
 import { Connection, PublicKey } from "@solana/web3.js";
 import {

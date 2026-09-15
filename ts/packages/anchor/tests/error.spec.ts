@@ -1,4 +1,8 @@
-import { ProgramErrorStack, AnchorError } from "../src/error";
+import {
+  SolanaError,
+  SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM,
+} from "@solana/kit";
+import { ProgramErrorStack, AnchorError, ProgramError } from "../src/error";
 
 describe("ProgramErrorStack", () => {
   test("basic", () => {
@@ -326,5 +330,37 @@ describe("AnchorError", () => {
     expect(anchorError.errorLogs).toEqual([
       "Program log: AnchorError occurred. Error Code: OracleMismatchError. Error Number: 6021. Error Message: An unexpected oracle account was provided for the transaction..",
     ]);
+  });
+});
+
+describe("ProgramError", () => {
+  const idlErrors = new Map([[6000, "Example error"]]);
+
+  it("parses Kit custom instruction errors from the cause chain", () => {
+    const err = new Error("Transaction simulation failed", {
+      cause: new SolanaError(SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM, {
+        code: 6000,
+        index: 0,
+      }),
+    });
+    const programError = ProgramError.parse(err, idlErrors)!;
+    expect(programError).toBeInstanceOf(ProgramError);
+    expect(programError.code).toBe(6000);
+    expect(programError.msg).toBe("Example error");
+  });
+
+  it("parses web3.js-style custom program errors", () => {
+    const err = new Error(
+      "Transaction simulation failed: Error processing Instruction 0: " +
+        "custom program error: 0x1770"
+    );
+    const programError = ProgramError.parse(err, idlErrors)!;
+    expect(programError).toBeInstanceOf(ProgramError);
+    expect(programError.code).toBe(6000);
+    expect(programError.msg).toBe("Example error");
+  });
+
+  it("returns null for unrecognised errors", () => {
+    expect(ProgramError.parse(new Error("some error"), idlErrors)).toBeNull();
   });
 });
