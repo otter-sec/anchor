@@ -512,28 +512,24 @@ macro_rules! require_eq {
 /// ```
 #[macro_export]
 macro_rules! require_neq {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
-        if $value1 == $value2 {
-            $crate::msg!(
-                "require_neq violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
+        let __lhs = $value1;
+        let __rhs = $value2;
+        if __lhs == __rhs {
+            $crate::msg!("require_neq violation: left = {}, right = {}", __lhs, __rhs);
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
-        if $value1 == $value2 {
-            $crate::msg!(
-                "require_neq violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
+        let __lhs = $value1;
+        let __rhs = $value2;
+        if __lhs == __rhs {
+            $crate::msg!("require_neq violation: left = {}, right = {}", __lhs, __rhs);
             return Err($crate::ErrorCode::RequireNeqViolated.into());
         }
-    };
+    }};
 }
 
 /// Ensures two pubkey/address values are equal.
@@ -612,28 +608,24 @@ macro_rules! require_keys_neq {
 /// ```
 #[macro_export]
 macro_rules! require_gt {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
-        if $value1 <= $value2 {
-            $crate::msg!(
-                "require_gt violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
+        let __lhs = $value1;
+        let __rhs = $value2;
+        if __lhs <= __rhs {
+            $crate::msg!("require_gt violation: left = {}, right = {}", __lhs, __rhs);
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
-        if $value1 <= $value2 {
-            $crate::msg!(
-                "require_gt violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
+        let __lhs = $value1;
+        let __rhs = $value2;
+        if __lhs <= __rhs {
+            $crate::msg!("require_gt violation: left = {}, right = {}", __lhs, __rhs);
             return Err($crate::ErrorCode::RequireGtViolated.into());
         }
-    };
+    }};
 }
 
 /// Ensures the first value is greater than or equal to the second.
@@ -650,26 +642,22 @@ macro_rules! require_gt {
 /// ```
 #[macro_export]
 macro_rules! require_gte {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
-        if $value1 < $value2 {
-            $crate::msg!(
-                "require_gte violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
+        let __lhs = $value1;
+        let __rhs = $value2;
+        if __lhs < __rhs {
+            $crate::msg!("require_gte violation: left = {}, right = {}", __lhs, __rhs);
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
-        if $value1 < $value2 {
-            $crate::msg!(
-                "require_gte violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
+        let __lhs = $value1;
+        let __rhs = $value2;
+        if __lhs < __rhs {
+            $crate::msg!("require_gte violation: left = {}, right = {}", __lhs, __rhs);
             return Err($crate::ErrorCode::RequireGteViolated.into());
         }
-    };
+    }};
 }
