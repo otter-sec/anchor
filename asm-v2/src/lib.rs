@@ -34,8 +34,8 @@
 //! ```
 //!
 //! `build()` walks the assembly directory, expands `.include` directives,
-//! and writes a single `$OUT_DIR/combined.s`. `include_asm!()` wraps it
-//! in `global_asm!`.
+//! and writes `$OUT_DIR/combined.s` plus a Rust wrapper containing
+//! `global_asm!` const operands. `include_asm!()` includes that wrapper.
 //!
 //! ## Full mode — new programs with compile-time constants
 //!
@@ -56,7 +56,7 @@
 //! }
 //! ```
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
@@ -69,7 +69,7 @@ use std::path::{Path, PathBuf};
 #[macro_export]
 macro_rules! include_asm {
     () => {
-        core::arch::global_asm!(include_str!(concat!(env!("OUT_DIR"), "/combined.s")));
+        include!(concat!(env!("OUT_DIR"), "/combined.rs"));
     };
 }
 
@@ -77,23 +77,21 @@ macro_rules! include_asm {
 /// assembly source directory (relative to the crate root).
 ///
 /// Walks the directory for `.s` files, expands `.include` directives,
-/// and writes the concatenated result to `$OUT_DIR/combined.s`.
+/// and writes the concatenated result to `$OUT_DIR/combined.s` plus a Rust
+/// wrapper at `$OUT_DIR/combined.rs`.
 ///
 /// If `src/lib.rs` contains `#[repr(C)]` or `#[account]` structs,
 /// `.equ` constants for field offsets are prepended automatically. Any Rust
 /// modules parsed while generating that preamble are also registered as
 /// `cargo:rerun-if-changed` inputs.
 pub fn build(asm_dir: &str) {
-    let manifest_dir = PathBuf::from(
-        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"),
-    );
-    let out_dir = PathBuf::from(
-        std::env::var("OUT_DIR").expect("OUT_DIR not set"),
-    );
+    let manifest_dir =
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"));
     let asm_path = manifest_dir.join(asm_dir);
     let lib_rs = manifest_dir.join("src").join("lib.rs");
 
-    let (preamble, preamble_files) = preamble_for_build(&lib_rs);
+    let (preamble, operands, preamble_files) = preamble_for_build(&lib_rs);
 
     let combined = collect_asm(&asm_path);
 
@@ -104,6 +102,8 @@ pub fn build(asm_dir: &str) {
     };
 
     std::fs::write(out_dir.join("combined.s"), output).expect("write combined.s");
+    std::fs::write(out_dir.join("combined.rs"), render_combined_rs(&operands))
+        .expect("write combined.rs");
 
     println!("cargo:rerun-if-changed={asm_dir}");
     for path in preamble_files {
@@ -125,12 +125,26 @@ pub fn build_to(asm_dir: &Path, output_path: &Path) {
 
 mod preamble;
 
-fn preamble_for_build(lib_rs: &Path) -> (String, Vec<PathBuf>) {
+fn preamble_for_build(lib_rs: &Path) -> (String, Vec<preamble::RustConstOperand>, Vec<PathBuf>) {
     if lib_rs.exists() {
-        preamble::generate_tracked(lib_rs)
+        preamble::generate_with_operands(lib_rs)
     } else {
-        (String::new(), Vec::new())
+        (String::new(), Vec::new(), Vec::new())
     }
+}
+
+fn render_combined_rs(operands: &[preamble::RustConstOperand]) -> String {
+    let mut output = String::from(
+        "core::arch::global_asm!(\n    include_str!(concat!(env!(\"OUT_DIR\"), \"/combined.s\")),\n",
+    );
+    for operand in operands {
+        output.push_str(&format!(
+            "    {} = const {},\n",
+            operand.name, operand.expression
+        ));
+    }
+    output.push_str(");\n");
+    output
 }
 
 fn collect_asm(dir: &Path) -> String {
@@ -198,8 +212,8 @@ fn expand_includes(path: &Path, base_dir: &Path, stack: &mut Vec<PathBuf>) -> Re
 
     stack.push(canonical);
 
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let content =
+        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
 
     let mut out = String::new();
     let rel = path.strip_prefix(base_dir).unwrap_or(path);
@@ -269,8 +283,10 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir =
-            std::env::temp_dir().join(format!("anchor-asm-v2-lib-{name}-{}-{unique}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "anchor-asm-v2-lib-{name}-{}-{unique}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -315,8 +331,12 @@ mod tests {
         )
         .unwrap();
 
-        let (preamble, tracked_files) = preamble_for_build(&lib_rs);
-        assert!(preamble.contains(".equ BuildTracked__value, 0"));
+        let (preamble, operands, tracked_files) = preamble_for_build(&lib_rs);
+        assert!(preamble
+            .contains(".equ BuildTracked__value, {__anchor_asm_state_child_BuildTracked_value}"));
+        assert_eq!(operands.len(), 3);
+        let combined_rs = render_combined_rs(&operands);
+        assert!(combined_rs.contains("offset_of!(crate::state::child::BuildTracked, value)"));
 
         let canon = |path: &Path| std::fs::canonicalize(path).unwrap();
         assert!(tracked_files.contains(&canon(&lib_rs)));
