@@ -534,7 +534,10 @@ use {proc_macro::TokenStream, quote::ToTokens, syn::parse_macro_input};
 ///             <td>
 ///                 Can be used as a check or with <code>init</code> to create a mint
 ///                 account with the given mint decimals and mint authority.<br>
-///                 The freeze authority is optional when used with <code>init</code>.<br>
+///                 The freeze authority is optional when used with <code>init</code>.
+///                 <code>mint::authority = None</code> cannot be combined with
+///                 <code>init</code> because SPL Token requires a mint authority
+///                 at initialization.<br>
 ///                 When used as a check, it's possible to only specify a subset of the constraints.
 ///                 <br><br>
 ///                 Example:
