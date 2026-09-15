@@ -13,15 +13,24 @@ runs:
         path: |
           ./ts/node_modules/
         key: solana-${{ runner.os }}-v0000-${{ env.NODE_VERSION }}-${{ hashFiles('./ts/**/yarn.lock') }}
-    - run: cd ts/packages/borsh && yarn --frozen-lockfile && yarn build && yarn link && cd ../../../
+    - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+      name: Cache Typescript Dist
+      id: cache-typescript-dist
+      with:
+        path: |
+          ./ts/dist/
+        key: solana-${{ runner.os }}-v0000-${{ env.NODE_VERSION }}-${{ hashFiles('./ts/**/*.ts') }}
+    - run: cd ts && yarn --frozen-lockfile
       shell: bash
-    - run: cd ts/packages/anchor-errors && yarn --frozen-lockfile && yarn build && yarn link && cd ../../../
+    - run: cd ts/packages/borsh && yarn build && yarn link && cd ../../../
       shell: bash
-    - run: cd ts/packages/anchor && yarn --frozen-lockfile && yarn build:node && yarn link && cd ../../../
+    - run: cd ts/packages/anchor-errors && yarn build && yarn link && cd ../../../
       shell: bash
-    - run: cd ts/packages/spl-associated-token-account && yarn --frozen-lockfile && yarn build:node && yarn link && cd ../../../
+    - run: cd ts/packages/anchor && yarn build:node && yarn link && cd ../../../
       shell: bash
-    - run: cd ts/packages/spl-token && yarn --frozen-lockfile && yarn build:node && yarn link && cd ../../../
+    - run: cd ts/packages/spl-associated-token-account && yarn build:node && yarn link && cd ../../../
+      shell: bash
+    - run: cd ts/packages/spl-token && yarn build:node && yarn link && cd ../../../
       shell: bash
     - run: cd examples/tutorial && yarn link @anchor-lang/core @anchor-lang/borsh && yarn --frozen-lockfile && cd ../../
       shell: bash
