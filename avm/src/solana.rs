@@ -547,6 +547,13 @@ fn solana_install_data_dir() -> Result<std::path::PathBuf> {
         .join("install"))
 }
 
+/// Directory containing the active Solana release's executables.
+pub fn active_release_bin_path() -> Result<std::path::PathBuf> {
+    Ok(solana_install_data_dir()?
+        .join("active_release")
+        .join("bin"))
+}
+
 fn installer_command_available(installer: SolanaInstaller) -> Result<bool> {
     if read_command_version(installer.command())?.is_some() {
         return Ok(true);

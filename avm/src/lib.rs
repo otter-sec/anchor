@@ -1,4 +1,5 @@
 mod attestation;
+pub mod idl_nightly;
 pub mod platform_tools;
 pub mod resolve;
 pub mod solana;

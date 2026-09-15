@@ -19,6 +19,10 @@
 # release. Source of truth: `src/version` in solana-labs/rust or anza-xyz/rust
 # on the tool release's tag or `solana-tools-<platform_tools>` branch.
 #
+# `cargo_lock_v4` records whether the bundled Cargo rejects lockfile v4
+# (`unsupported`), accepts it only with `-Znext-lockfile-bump` (`opt-in`), or
+# accepts it without an unstable opt-in (`native`).
+#
 # `fallback` is used when the project does not pin a Solana version at all.
 # Keep it equal to the platform-tools version of the newest entry below.
 
@@ -28,78 +32,94 @@ fallback = "v1.57"
 solana = "1.14.16"
 platform_tools = "v1.29"
 rustc = "1.62.0"
+cargo_lock_v4 = "unsupported"
 
 [[entries]]
 solana = "1.15.0"
 platform_tools = "v1.32"
 rustc = "1.65.0"
+cargo_lock_v4 = "unsupported"
 
 [[entries]]
 solana = "1.16.0"
 platform_tools = "v1.37"
 rustc = "1.68.0"
+cargo_lock_v4 = "unsupported"
 
 [[entries]]
 solana = "1.18.0"
 platform_tools = "v1.39"
 rustc = "1.72.0"
+cargo_lock_v4 = "opt-in"
 
 [[entries]]
 solana = "1.18.8"
 platform_tools = "v1.41"
 rustc = "1.75.0"
+cargo_lock_v4 = "opt-in"
 
 [[entries]]
 solana = "2.0.5"
 platform_tools = "v1.42"
 rustc = "1.75.0"
+cargo_lock_v4 = "opt-in"
 
 [[entries]]
 solana = "2.1.0"
 platform_tools = "v1.43"
 rustc = "1.79.0"
+cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "2.2.1"
 platform_tools = "v1.44"
 rustc = "1.79.0"
+cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "2.2.3"
 platform_tools = "v1.45"
 rustc = "1.79.0"
+cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "2.2.8"
 platform_tools = "v1.46"
 rustc = "1.79.0"
+cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "2.2.11"
 platform_tools = "v1.47"
 rustc = "1.84.1"
+cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "2.2.15"
 platform_tools = "v1.48"
 rustc = "1.84.1"
+cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "3.0.0"
 platform_tools = "v1.51"
 rustc = "1.84.1"
+cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "3.1.1"
 platform_tools = "v1.52"
 rustc = "1.89.0"
+cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "4.0.0"
 platform_tools = "v1.56"
 rustc = "1.89.0"
+cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "4.2.0"
 platform_tools = "v1.57"
 rustc = "1.95.0"
+cargo_lock_v4 = "native"
