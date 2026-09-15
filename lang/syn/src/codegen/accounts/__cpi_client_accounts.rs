@@ -173,11 +173,25 @@ pub fn generate(
             })
             .collect()
     };
-    let generics = if account_struct_fields.is_empty() {
-        quote! {}
+    // Always emit `<'info>`: consumers (the `impl ToAccountInfos` below and the
+    // generated `cpi::<ix>(CpiContext<.., #name<'info>>)` fns) unconditionally
+    // expect it. When the accounts struct has no fields the lifetime would be
+    // unused (a hard E0392 that `#[allow(unused_lifetimes)]` cannot silence), so
+    // a hidden `PhantomData<&'info ()>` field binds it. The field derives
+    // `Default`, so callers still build the struct with `Foo { ..Default::default() }`.
+    let (phantom_field, extra_derives) = if account_struct_fields.is_empty() {
+        (
+            quote! {
+                #[doc(hidden)]
+                pub __anchor_phantom: ::core::marker::PhantomData<&'info ()>
+            },
+            // leading comma: spliced into `#[derive(Debug, Clone #extra_derives)]`
+            quote! { , Default },
+        )
     } else {
-        quote! {<'info>}
+        (quote! {}, quote! {})
     };
+    let generics = quote! {<'info>};
     #[allow(clippy::unwrap_used, reason = "hardcoded valid doc comment syntax")]
     let struct_doc = proc_macro2::TokenStream::from_str(&format!(
         "#[doc = \" Generated CPI struct of the accounts for [`{name}`].\"]"
@@ -197,9 +211,10 @@ pub fn generate(
             #(#re_exports)*
 
             #struct_doc
-            #[derive(Debug, Clone)]
+            #[derive(Debug, Clone #extra_derives)]
             pub struct #name #generics {
-                #(#account_struct_fields),*
+                #(#account_struct_fields,)*
+                #phantom_field
             }
 
             #[automatically_derived]
