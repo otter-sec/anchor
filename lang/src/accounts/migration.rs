@@ -39,9 +39,11 @@ pub enum MigrationInner<From, To> {
 /// schema (`To`). During deserialization, the account must be in the `From` format -
 /// accounts already in the `To` format will be rejected with an error.
 ///
-/// The migrated data is stored in memory and will be serialized to the account when the
-/// instruction exits. On exit, the account must be in the migrated state or an error will
-/// be returned.
+/// The migrated data is stored in memory and will be serialized to the account
+/// when the instruction exits. On exit, the account must be in the migrated
+/// state or an error will be returned. If ownership moved during the
+/// instruction, the account is not written: exit succeeds only when the
+/// account data already matches the migrated value.
 ///
 /// This type is typically used with the `realloc` constraint to resize the account
 /// during migration.
@@ -375,6 +377,12 @@ where
                 if &expected_owner != program_id {
                     return Err(Error::from(ErrorCode::InvalidProgramId)
                         .with_pubkeys((*program_id, expected_owner)));
+                }
+
+                if self.info.owner != program_id {
+                    return crate::common::exit_unowned(self.info, program_id, |writer| {
+                        to.try_serialize(writer)
+                    });
                 }
 
                 // Serialize the migrated data

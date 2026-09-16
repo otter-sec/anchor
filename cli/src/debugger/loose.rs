@@ -21,6 +21,7 @@
 //! errors instead of opaque "no traces" messages later.
 
 use {
+    crate::sbpf_target_triples,
     anyhow::{anyhow, Context, Result},
     serde::Deserialize,
     solana_keypair::read_keypair_file,
@@ -203,7 +204,7 @@ fn read_cargo_toml(path: &Path) -> Result<CargoToml> {
 /// 1. **`target/deploy/`** — `cargo-build-sbf`'s default output. Always
 ///    preferred when the same `<lib>.so` exists in both locations,
 ///    because this is the post-link form solana-sbpf can parse.
-/// 2. **`target/sbpf-solana-solana/release/`** — the cargo target dir
+/// 2. **`target/<sbpf-target>/release/`** — the cargo target dir
 ///    when SBF builds are driven directly (e.g. bench workspaces). Used
 ///    as a fallback only.
 ///
@@ -234,7 +235,7 @@ pub fn discover_programs(
 
     // Collect candidate (lib_name → preferred .so path). `target/deploy/`
     // always wins because it's the only form solana-sbpf can parse;
-    // `target/sbpf-solana-solana/release/` is a fallback for workspaces
+    // `target/<sbpf-target>/release/` is a fallback for workspaces
     // that haven't run `cargo build-sbf`.
     let mut lib_to_so: BTreeMap<String, PathBuf> = BTreeMap::new();
 
@@ -242,13 +243,15 @@ pub fn discover_programs(
     if deploy_dir.is_dir() {
         collect_so_paths(&deploy_dir, &mut lib_to_so);
     }
-    let sbf_release = workspace_root
-        .join("target")
-        .join("sbpf-solana-solana")
-        .join("release");
-    if sbf_release.is_dir() {
-        // Only fill gaps deploy/ didn't cover.
-        collect_so_paths_if_missing(&sbf_release, &mut lib_to_so);
+    for target_triple in sbpf_target_triples() {
+        let sbf_release = workspace_root
+            .join("target")
+            .join(target_triple)
+            .join("release");
+        if sbf_release.is_dir() {
+            // Only fill gaps deploy/ didn't cover.
+            collect_so_paths_if_missing(&sbf_release, &mut lib_to_so);
+        }
     }
 
     // Build the final pubkey → .so map. For each chosen .so we associate
@@ -454,8 +457,8 @@ fn find_declare_id(src: &str) -> Option<String> {
 
 /// Run `cargo build-sbf -p <pkg>` from the workspace root. This produces
 /// the post-linked `.so` + sibling keypair under `target/deploy/` that
-/// solana-sbpf can parse — the raw `cargo build --target sbpf-solana-solana`
-/// artifact in `target/sbpf-solana-solana/release/` is missing relocation
+/// solana-sbpf can parse — the raw `cargo build --target <sbpf-target>`
+/// artifact in `target/<sbpf-target>/release/` is missing relocation
 /// metadata our debugger needs.
 ///
 /// Skipping this step is the most common cause of "the debugger sees the

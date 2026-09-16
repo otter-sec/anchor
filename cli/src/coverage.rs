@@ -60,7 +60,7 @@ pub fn generate_lcov(
         };
 
         // DWARF lives in the unstripped sibling at
-        // `<workspace_root>/target/sbpf-solana-solana/release/<name>.so`.
+        // `<workspace_root>/target/<sbpf-target>/release/<name>.so`.
         // `find_unstripped_binary` walks up from `manifest_dir` to locate it
         // deterministically (no guessing, no SHA matching).
         let dwarf_path = find_unstripped_binary(deployed, manifest_dir)

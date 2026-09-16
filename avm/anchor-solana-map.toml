@@ -47,3 +47,7 @@ solana = "3.1.10"
 [[entries]]
 anchor = "1.0.2"
 solana = "3.1.10"
+
+[[entries]]
+anchor = "1.2.0"
+solana = "4.1.2"

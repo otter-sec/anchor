@@ -829,22 +829,19 @@ mod tests {
     #[test]
     fn lookup_solana_for_anchor_version_uses_floor() {
         assert_eq!(lookup_solana_for_anchor_version(&v("0.28.9")), None);
-        assert_eq!(
-            lookup_solana_for_anchor_version(&v("0.29.0")).unwrap(),
-            v("1.17.25")
-        );
-        assert_eq!(
-            lookup_solana_for_anchor_version(&v("0.30.2")).unwrap(),
-            v("1.18.17")
-        );
-        assert_eq!(
-            lookup_solana_for_anchor_version(&v("1.0.0-rc.1")).unwrap(),
-            v("3.1.10")
-        );
-        assert_eq!(
-            lookup_solana_for_anchor_version(&v("1.0.2")).unwrap(),
-            v("3.1.10")
-        );
+        for (anchor, solana) in [
+            ("0.29.0", "1.17.25"),
+            ("0.30.2", "1.18.17"),
+            ("1.0.0-rc.1", "3.1.10"),
+            ("1.0.2", "3.1.10"),
+            ("1.2.0", "4.1.2"),
+            ("1.2.1", "4.1.2"),
+        ] {
+            assert_eq!(
+                lookup_solana_for_anchor_version(&v(anchor)).unwrap(),
+                v(solana)
+            );
+        }
     }
 
     #[test]
