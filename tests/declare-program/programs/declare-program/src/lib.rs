@@ -94,6 +94,40 @@ pub mod declare_program {
 
         Ok(())
     }
+
+    // Compilation check for CPI into an instruction with no accounts (#4658).
+    // The accounts struct must stay fieldless and lifetime-free so it is still
+    // constructible with a literal `{}`, and `cpi::<ix>` must accept it.
+    pub fn cpi_no_accounts(ctx: Context<Cpi>) -> Result<()> {
+        let cpi_ctx = CpiContext::new(
+            ctx.accounts.external_program.key(),
+            external::cpi::accounts::TestCompilationNoAccounts {},
+        );
+        external::cpi::test_compilation_no_accounts(cpi_ctx)
+    }
+
+    // Same, for a fieldless accounts struct reached as a *composite* field. The
+    // composite's own shape decides its lifetime, not the enclosing struct's.
+    pub fn cpi_empty_composite(ctx: Context<Cpi>) -> Result<()> {
+        let cpi_ctx = CpiContext::new(
+            ctx.accounts.external_program.key(),
+            external::cpi::accounts::TestCompilationEmptyComposite {
+                empty_inner: external::cpi::accounts::TestCompilationNoAccounts {},
+                signer: ctx.accounts.authority.to_account_info(),
+            },
+        );
+        external::cpi::test_compilation_empty_composite(cpi_ctx)?;
+
+        // A struct whose only field is a fieldless composite binds no lifetime
+        // either, so it must not declare one (`E0392`).
+        let cpi_ctx = CpiContext::new(
+            ctx.accounts.external_program.key(),
+            external::cpi::accounts::TestCompilationOnlyEmptyComposite {
+                empty_only: external::cpi::accounts::TestCompilationNoAccounts {},
+            },
+        );
+        external::cpi::test_compilation_only_empty_composite(cpi_ctx)
+    }
 }
 
 #[derive(Accounts)]

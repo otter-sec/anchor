@@ -2,7 +2,7 @@ use {
     crate::{AccountField, AccountsStruct, Ty},
     heck::SnakeCase,
     quote::quote,
-    std::str::FromStr,
+    std::{collections::HashSet, str::FromStr},
 };
 
 // Generates the private `__cpi_client_accounts` mod implementation, containing
@@ -11,6 +11,31 @@ use {
 pub fn generate(
     accs: &AccountsStruct,
     program_id: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    generate_with_opts(accs, program_id, &HashSet::new())
+}
+
+/// Same as [`generate`], but omits `<'info>` on accounts structs that have no
+/// fields. `fieldless` must name *every* such struct in the program, because the
+/// lifetime has to be dropped both on the struct itself and on every composite
+/// field that refers to it.
+///
+/// The two consumers of this codegen know different things:
+///
+/// - `#[program]` (`codegen::program::cpi`) builds the accounts path from an
+///   identifier alone and always writes `#name<'info>`, so the struct must
+///   always carry the lifetime. An empty struct then has an unused lifetime
+///   (`E0392`, not silenceable by `allow`), so a hidden `PhantomData` field
+///   binds it.
+/// - `declare_program!` sees the whole IDL, so it can collect the fieldless
+///   struct names up front and emit the structs, their composite references and
+///   the `cpi::<ix>` signatures without the lifetime. That keeps fieldless
+///   structs constructible as `Foo {}`, which is public API for downstream users
+///   and must not break.
+pub fn generate_with_opts(
+    accs: &AccountsStruct,
+    program_id: proc_macro2::TokenStream,
+    fieldless: &HashSet<String>,
 ) -> proc_macro2::TokenStream {
     let name = &accs.ident;
     #[allow(
@@ -66,9 +91,18 @@ pub fn generate(
                     .parse()
                     .expect("generated module path must be valid Rust tokens")
                 };
+                // A fieldless composite is generated without `<'info>`, so the
+                // field that holds it must not ask for one either. `symbol` can
+                // be a qualified path, and `fieldless` holds bare struct names.
+                let symbol_name = s.symbol.rsplit("::").next().unwrap_or(&s.symbol);
+                let lifetime = if fieldless.contains(symbol_name) {
+                    quote!()
+                } else {
+                    quote!(<'info>)
+                };
                 quote! {
                     #docs
-                    pub #name: #symbol<'info>
+                    pub #name: #symbol #lifetime
                 }
             }
             AccountField::Field(f) => {
@@ -206,13 +240,15 @@ pub fn generate(
             })
             .collect()
     };
-    // Always emit `<'info>`: consumers (the `impl ToAccountInfos` below and the
-    // generated `cpi::<ix>(CpiContext<.., #name<'info>>)` fns) unconditionally
-    // expect it. When the accounts struct has no fields the lifetime would be
-    // unused (a hard E0392 that `#[allow(unused_lifetimes)]` cannot silence), so
-    // a hidden `PhantomData<&'info ()>` field binds it. The field derives
-    // `Default`, so callers still build the struct with `Foo { ..Default::default() }`.
-    let (phantom_field, extra_derives) = if account_struct_fields.is_empty() {
+    // See `generate_with_opts` for why an empty struct's lifetime is handled two
+    // different ways. When it is kept, a hidden `PhantomData<&'info ()>` field
+    // binds it so it is not an unused lifetime (`E0392`). That field derives
+    // `Default`, so the struct stays constructible as `Foo { ..Default::default() }`.
+    // `fieldless` is authoritative: a struct is listed there when nothing in it
+    // binds `'info`, which includes a struct whose only fields are themselves
+    // lifetime-free composites.
+    let omit_lifetime = fieldless.contains(&name.to_string());
+    let (phantom_field, extra_derives) = if account_struct_fields.is_empty() && !omit_lifetime {
         (
             quote! {
                 #[doc(hidden)]
@@ -224,7 +260,11 @@ pub fn generate(
     } else {
         (quote! {}, quote! {})
     };
-    let generics = quote! {<'info>};
+    let generics = if omit_lifetime {
+        quote! {}
+    } else {
+        quote! {<'info>}
+    };
     #[allow(clippy::unwrap_used, reason = "hardcoded valid doc comment syntax")]
     let struct_doc = proc_macro2::TokenStream::from_str(&format!(
         "#[doc = \" Generated CPI struct of the accounts for [`{name}`].\"]"
