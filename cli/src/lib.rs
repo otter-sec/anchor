@@ -50,7 +50,7 @@ use {
         string::ToString,
         sync::{LazyLock, OnceLock},
     },
-    template::{AnchorVersion, ProgramTemplate, TestTemplate},
+    template::{get_security_metadata_content, AnchorVersion, ProgramTemplate, TestTemplate},
 };
 
 mod abs_path;
@@ -248,6 +248,9 @@ pub enum Command {
         /// Install Solana agent skills
         #[clap(long)]
         install_agent_skills: bool,
+        /// Skip generating the default `security.json` metadata template
+        #[clap(long)]
+        no_security_metadata: bool,
     },
     /// Builds the workspace.
     #[clap(name = "build", alias = "b")]
@@ -467,6 +470,9 @@ pub enum Command {
         /// Don't upload IDL during deployment (IDL is uploaded by default)
         #[clap(long)]
         no_idl: bool,
+        /// Upload `security.json` on-chain after deployment
+        #[clap(long)]
+        security_metadata: bool,
         /// Arguments to pass to the underlying `solana program deploy` command.
         #[clap(required = false, last = true)]
         solana_args: Vec<String>,
@@ -712,6 +718,9 @@ pub enum ProgramCommand {
         /// Don't upload IDL during deployment (IDL is uploaded by default)
         #[clap(long)]
         no_idl: bool,
+        /// Upload `security.json` on-chain after deployment
+        #[clap(long)]
+        security_metadata: bool,
         /// Make the program immutable after deployment (cannot be upgraded)
         #[clap(long = "final")]
         make_final: bool,
@@ -1440,6 +1449,7 @@ fn process_command(opts: Opts) -> Result<()> {
             test_template,
             force,
             install_agent_skills,
+            no_security_metadata,
         } => init(
             &opts.cfg_override,
             name,
@@ -1452,6 +1462,7 @@ fn process_command(opts: Opts) -> Result<()> {
             test_template,
             force,
             install_agent_skills,
+            no_security_metadata,
         ),
         Command::Fuzz(cli) => crucible_fuzz_cli::run(cli),
         Command::New {
@@ -1517,6 +1528,7 @@ fn process_command(opts: Opts) -> Result<()> {
             program_keypair,
             verifiable,
             no_idl,
+            security_metadata,
             solana_args,
         } => {
             eprintln!(
@@ -1528,6 +1540,7 @@ fn process_command(opts: Opts) -> Result<()> {
                 program_keypair,
                 verifiable,
                 no_idl,
+                security_metadata,
                 solana_args,
             )
         }
@@ -1709,6 +1722,7 @@ fn init(
     test_template: TestTemplate,
     force: bool,
     install_agent_skills: bool,
+    no_security_metadata: bool,
 ) -> Result<()> {
     if !force {
         if Config::discover(cfg_override)?.is_some() {
@@ -1869,6 +1883,11 @@ fn init(
 
     if install_agent_skills {
         install_solana_skill();
+    }
+
+    if !no_security_metadata {
+        let content = get_security_metadata_content(&project_name);
+        fs::write("security.json", content)?;
     }
 
     println!("{project_name} initialized");
@@ -4305,7 +4324,7 @@ fn test(
             config_skip_local_validator,
         );
         if validator_plan.predeploy {
-            deploy(cfg_override, None, None, false, true, vec![])?;
+            deploy(cfg_override, None, None, false, true, false, vec![])?;
         }
 
         cfg.run_hooks(HookType::PreTest)?;
@@ -6237,6 +6256,7 @@ fn deploy(
     program_keypair: Option<PathBuf>,
     verifiable: bool,
     no_idl: bool,
+    security_metadata: bool,
     solana_args: Vec<String>,
 ) -> Result<()> {
     // Execute the code within the workspace
@@ -6272,6 +6292,7 @@ fn deploy(
                 None,  // max_len
                 false, // use_rpc
                 no_idl,
+                security_metadata,
                 false, // make_final
                 solana_args.clone(),
             )?;
@@ -7605,6 +7626,7 @@ mod tests {
             TestTemplate::default(),
             true,
             true,
+            true,
         )
         .unwrap();
     }
@@ -7628,6 +7650,7 @@ mod tests {
             TestTemplate::default(),
             true,
             true,
+            true,
         )
         .unwrap();
     }
@@ -7649,6 +7672,7 @@ mod tests {
             ProgramTemplate::default(),
             AnchorVersion::default(),
             TestTemplate::default(),
+            true,
             true,
             true,
         )
