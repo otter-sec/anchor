@@ -20,6 +20,7 @@ chrono = "0.4"
 clap = { version = "4.5.17", features = ["derive"] }
 clap_complete = "4.5.26"
 dirs = "4.0.0"
+indicatif.workspace = true
 
 # FIXME: `sigstore-verify` uses reqwest 0.13 whereas the workspace uses 0.12
 # to match the Solana crates. Use 0.13 here to avoid bundling two copies
