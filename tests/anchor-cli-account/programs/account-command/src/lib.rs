@@ -21,6 +21,7 @@ pub mod account_command {
             values,
             state: State::Confirmed { amount, memo },
         };
+        my_account.opt_field = None;
 
         Ok(())
     }
@@ -43,6 +44,7 @@ pub struct MyAccount {
     pub balance: f32,
     pub delegate_pubkey: Pubkey,
     pub sub: Sub,
+    pub opt_field: Option<String>,
 }
 
 #[derive(Accounts)]
