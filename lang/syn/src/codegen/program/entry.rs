@@ -1,11 +1,16 @@
-use {crate::Program, heck::CamelCase, quote::quote};
+use {crate::Program, heck::ToUpperCamelCase, quote::quote};
 
 pub fn generate(program: &Program) -> proc_macro2::TokenStream {
     #[allow(
         clippy::unwrap_used,
         reason = "camelCase of a valid Rust identifier is always a valid TokenStream"
     )]
-    let name: proc_macro2::TokenStream = program.name.to_string().to_camel_case().parse().unwrap();
+    let name: proc_macro2::TokenStream = program
+        .name
+        .to_string()
+        .to_upper_camel_case()
+        .parse()
+        .unwrap();
     quote! {
         #[cfg(not(feature = "no-entrypoint"))]
         anchor_lang::solana_program::entrypoint!(entry);

@@ -1,7 +1,7 @@
 use {
     super::common::{convert_idl_type_to_syn_type, gen_accounts_common},
     anchor_lang_idl::types::Idl,
-    heck::CamelCase,
+    heck::ToUpperCamelCase,
     quote::{format_ident, quote},
 };
 
@@ -25,7 +25,7 @@ pub fn gen_cpi_mod(idl: &Idl) -> proc_macro2::TokenStream {
 fn gen_cpi_instructions(idl: &Idl) -> proc_macro2::TokenStream {
     let ixs = idl.instructions.iter().map(|ix| {
         let method_name = format_ident!("{}", ix.name);
-        let accounts_ident = format_ident!("{}", ix.name.to_camel_case());
+        let accounts_ident = format_ident!("{}", ix.name.to_upper_camel_case());
 
         let accounts_generic = if ix.accounts.is_empty() {
            quote!()
