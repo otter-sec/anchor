@@ -11,6 +11,9 @@ export function decode(data: string): Buffer {
   if (data.indexOf("0x") === 0) {
     data = data.substr(2);
   }
+  if (/[^0-9a-fA-F]/.test(data)) {
+    throw new Error("Invalid hex string");
+  }
   if (data.length % 2 === 1) {
     data = "0" + data;
   }
