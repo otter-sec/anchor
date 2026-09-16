@@ -282,6 +282,13 @@ pub fn gen_lazy(strct: &syn::ItemStruct) -> syn::Result<TokenStream> {
                 {
                     // Make sure all fields are initialized
                     let acc = self.load()?;
+                    if self.__info.owner != program_id {
+                        return anchor_lang::__private::exit_unowned(
+                            self.__info,
+                            program_id,
+                            |writer| acc.try_serialize(writer),
+                        );
+                    }
                     let mut data = self.__info.try_borrow_mut_data()?;
                     let dst: &mut [u8] = &mut data;
                     let mut writer = anchor_lang::__private::BpfWriter::new(dst);
