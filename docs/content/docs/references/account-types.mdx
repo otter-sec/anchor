@@ -11,7 +11,8 @@ See the account types
 for implementation details.
 
 <Callout title="Persistence on exit">
-  Typed accounts (`Account`, `AccountLoader`, `LazyAccount`, `Migration`) are
+  Typed accounts (`Account`, `InterfaceAccount`, `AccountLoader`,
+  `LazyAccount`, `Migration`, also when wrapped in `Box` or `Option`) are
   written back to the account data when the instruction returns if the account
   is still owned by the program and has not been closed. If ownership moved
   during the instruction, for example because the account was reassigned via
