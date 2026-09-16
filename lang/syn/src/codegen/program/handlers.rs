@@ -42,7 +42,13 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
             };
 
             let ix_name_log = format!("Instruction: {ix_name}");
-            let accounts_struct_name = &ix.anchor_ident;
+            let accounts_struct_name = ix.anchor_path();
+            let accounts_struct_display = accounts_struct_name
+                .segments
+                .iter()
+                .map(|segment| segment.ident.to_string())
+                .collect::<Vec<_>>()
+                .join("::");
             let ret_type = &ix.returns.ty.to_token_stream();
             let cfgs = &ix.cfgs;
             let maybe_set_return_data = match ret_type.to_string().as_str() {
@@ -59,7 +65,7 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
             let actual_param_count = ix.args.len();
             let count_error_msg = format!(
                 "#[instruction(...)] on Account `{}<'_>` expects MORE args, the ix `{}(...)` has only {} args.",
-                accounts_struct_name,
+                accounts_struct_display,
                 ix_method_name_str,
                 actual_param_count,
             );

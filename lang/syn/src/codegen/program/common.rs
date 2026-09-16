@@ -47,3 +47,63 @@ pub fn generate_ix_variant(name: &str, args: &[IxArg]) -> Result<proc_macro2::To
 pub fn generate_ix_variant_name(name: &str) -> Result<syn::Ident> {
     syn::parse_str(&name.to_camel_case())
 }
+
+/// Path to the `__client_accounts_*` or `__cpi_client_accounts_*` module that
+/// `#[derive(Accounts)]` emits next to the accounts struct definition.
+///
+/// `instructions::init::Init` with prefix `__client_accounts_` becomes
+/// `crate::instructions::init::__client_accounts_init`.
+pub fn generated_accounts_mod_path(anchor_path: &syn::Path, prefix: &str) -> syn::Path {
+    use heck::SnakeCase;
+
+    let mut path = anchor_path.clone();
+    if let Some(last) = path.segments.last_mut() {
+        last.ident = syn::Ident::new(
+            &format!("{}{}", prefix, last.ident.to_string().to_snake_case()),
+            last.ident.span(),
+        );
+    }
+    path.segments.insert(
+        0,
+        syn::PathSegment::from(syn::Ident::new("crate", proc_macro2::Span::call_site())),
+    );
+    path
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, quote::ToTokens};
+
+    fn rewrite(path: &str, prefix: &str) -> String {
+        #[allow(clippy::unwrap_used, reason = "test inputs are valid paths")]
+        let path = syn::parse_str::<syn::Path>(path).unwrap();
+        generated_accounts_mod_path(&path, prefix)
+            .to_token_stream()
+            .to_string()
+            .replace(' ', "")
+    }
+
+    #[test]
+    fn single_segment() {
+        assert_eq!(
+            rewrite("Initialize", "__client_accounts_"),
+            "crate::__client_accounts_initialize"
+        );
+    }
+
+    #[test]
+    fn multi_segment() {
+        assert_eq!(
+            rewrite("instructions::init::Init", "__cpi_client_accounts_"),
+            "crate::instructions::init::__cpi_client_accounts_init"
+        );
+    }
+
+    #[test]
+    fn snake_cases_multi_word_ident() {
+        assert_eq!(
+            rewrite("ix::UpdateCounter", "__client_accounts_"),
+            "crate::ix::__client_accounts_update_counter"
+        );
+    }
+}

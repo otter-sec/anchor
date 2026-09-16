@@ -1,0 +1,20 @@
+[package]
+name = "caller"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "caller"
+
+[features]
+no-entrypoint = []
+
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = { path = "../../../../lang" }
+modularized = { path = "../modularized", features = ["cpi"] }

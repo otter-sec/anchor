@@ -1,0 +1,14 @@
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+modularized = "Modu1arized11111111111111111111111111111111"
+caller = "Modu1arizedCa11er11111111111111111111111111"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
