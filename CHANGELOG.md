@@ -14,7 +14,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
-- lang: Raise an error when modifying data in an account that has had it's ownership changed. ([#5011](https://github.com/otter-sec/anchor/pull/5011)).
+- lang: Raise an error when modifying data in an account that has had its ownership changed. ([#5011](https://github.com/otter-sec/anchor/pull/5011)).
 
 ### Breaking
 
