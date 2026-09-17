@@ -35,7 +35,6 @@ export default {
     "@solana/kit",
     "@solana/web3.js",
     "bn.js",
-    "bs58",
     "buffer",
     "camelcase",
     "eventemitter3",
