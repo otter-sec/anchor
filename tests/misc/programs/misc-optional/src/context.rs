@@ -659,6 +659,34 @@ pub struct TestMintMissMintAuthConstraint<'info> {
 }
 
 #[derive(Accounts)]
+pub struct TestInitMintNoFreeze<'info> {
+    #[account(
+        init,
+        mint::decimals = 6,
+        mint::authority = payer,
+        mint::freeze_authority = None,
+        payer = payer,
+    )]
+    pub mint: Option<Account<'info, Mint>>,
+    #[account(mut)]
+    pub payer: Option<Signer<'info>>,
+    pub system_program: Option<Program<'info, System>>,
+    pub token_program: Option<Program<'info, Token>>,
+}
+
+#[derive(Accounts)]
+pub struct TestMintNoneFreezeConstraint<'info> {
+    #[account(mint::freeze_authority = None)]
+    pub mint: Option<Account<'info, Mint>>,
+}
+
+#[derive(Accounts)]
+pub struct TestMintNoneAuthorityConstraint<'info> {
+    #[account(mint::authority = None, mint::freeze_authority = None)]
+    pub mint: Option<Account<'info, Mint>>,
+}
+
+#[derive(Accounts)]
 pub struct TestMintOnlyTokenProgramConstraint<'info> {
     #[account(
         mint::token_program = mint_token_program,

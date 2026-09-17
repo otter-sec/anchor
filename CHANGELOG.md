@@ -13,6 +13,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 ### Features
 
 - cli: Add `NO_DNA` mode to disable supported interactive prompts for CI, scripts, and agent runs ([#4773](https://github.com/otter-sec/anchor/pull/4773)).
+- lang: Allow `None` in `mint::authority` and `mint::freeze_authority` constraints ([#5007](https://github.com/otter-sec/anchor/pull/5007)).
 
 ### Fixes
 

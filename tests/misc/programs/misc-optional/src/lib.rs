@@ -380,6 +380,22 @@ pub mod misc_optional {
         Ok(())
     }
 
+    pub fn test_init_mint_no_freeze(_ctx: Context<TestInitMintNoFreeze>) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn test_mint_none_freeze_constraint(
+        _ctx: Context<TestMintNoneFreezeConstraint>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn test_mint_none_authority_constraint(
+        _ctx: Context<TestMintNoneAuthorityConstraint>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     pub fn test_mint_only_token_program_constraint(
         _ctx: Context<TestMintOnlyTokenProgramConstraint>,
     ) -> Result<()> {
