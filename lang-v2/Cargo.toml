@@ -44,7 +44,7 @@ anchor-derive-accounts = { workspace = true }
 # "account-resize" lets AccountView::resize enforce MAX_PERMITTED_DATA_INCREASE.
 pinocchio = { workspace = true, features = ["copy", "account-resize"] }
 pinocchio-system = "0.6.1"
-solana-address = { version = "2.7.0", features = ["bytemuck", "syscalls", "curve25519", "wincode"] }
+solana-address = { version = "2.6.1", features = ["bytemuck", "syscalls", "curve25519", "wincode"] }
 solana-instruction = { version = "3", default-features = false }
 solana-program-error = "3.0"
 solana-msg = { version = "3.1", default-features = false, features = ["alloc"] }
