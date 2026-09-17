@@ -182,6 +182,34 @@ pub struct CreateAccount<'info> {
     pub to: AccountInfo<'info>,
 }
 
+/// Like [`create_account`], but the `to` account may already hold lamports.
+/// `from` is only included (and must sign) when `lamports > 0`.
+pub fn create_account_allow_prefund<'info>(
+    ctx: CpiContext<'_, '_, '_, 'info, CreateAccountAllowPrefund<'info>>,
+    lamports: u64,
+    space: u64,
+    owner: &Pubkey,
+) -> Result<()> {
+    let ix = crate::solana_program::system_instruction::create_account_allow_prefund(
+        ctx.accounts.to.key,
+        (lamports > 0).then_some((ctx.accounts.from.key, lamports)),
+        space,
+        owner,
+    );
+    crate::solana_program::program::invoke_signed(
+        &ix,
+        &[ctx.accounts.to, ctx.accounts.from],
+        ctx.signer_seeds,
+    )
+    .map_err(Into::into)
+}
+
+#[derive(Accounts)]
+pub struct CreateAccountAllowPrefund<'info> {
+    pub from: AccountInfo<'info>,
+    pub to: AccountInfo<'info>,
+}
+
 pub fn create_account_with_seed<'info>(
     ctx: CpiContext<'_, '_, '_, 'info, CreateAccountWithSeed<'info>>,
     seed: &str,

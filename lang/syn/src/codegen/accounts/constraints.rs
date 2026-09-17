@@ -1804,26 +1804,12 @@ fn generate_create_account_or_fund_allocate_assign(
                 .minimum_balance(#space)
                 .max(1)
                 .saturating_sub(__current_lamports);
-            if required_lamports > 0 {
-                let cpi_accounts = anchor_lang::system_program::Transfer {
-                    from: #payer.to_account_info(),
-                    to: #field.to_account_info(),
-                };
-                let cpi_context = anchor_lang::context::CpiContext::new(system_program.key(), cpi_accounts);
-                anchor_lang::system_program::transfer(cpi_context, required_lamports)?;
-            }
-
-            let cpi_accounts = anchor_lang::system_program::Allocate {
-                account_to_allocate: #field.to_account_info()
+            let cpi_accounts = anchor_lang::system_program::CreateAccountAllowPrefund {
+                from: #payer.to_account_info(),
+                to: #field.to_account_info(),
             };
             let cpi_context = anchor_lang::context::CpiContext::new(system_program.key(), cpi_accounts);
-            anchor_lang::system_program::allocate(cpi_context.with_signer(&[#seeds_with_nonce]), #space as u64)?;
-
-            let cpi_accounts = anchor_lang::system_program::Assign {
-                account_to_assign: #field.to_account_info()
-            };
-            let cpi_context = anchor_lang::context::CpiContext::new(system_program.key(), cpi_accounts);
-            anchor_lang::system_program::assign(cpi_context.with_signer(&[#seeds_with_nonce]), #owner)?;
+            anchor_lang::system_program::create_account_allow_prefund(cpi_context.with_signer(&[#seeds_with_nonce]), required_lamports, #space as u64, #owner)?;
         }
     }
 }
