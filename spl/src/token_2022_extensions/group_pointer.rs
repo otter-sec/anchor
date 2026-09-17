@@ -42,7 +42,7 @@ pub fn group_pointer_update<'info>(
         ctx.accounts.token_program_id.key,
         ctx.accounts.mint.key,
         ctx.accounts.authority.key,
-        &[ctx.accounts.authority.key],
+        &[],
         group_address,
     )?;
     anchor_lang::solana_program::program::invoke_signed(
