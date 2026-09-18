@@ -4,7 +4,7 @@
 
 use {
     anchor_lang::{
-        prelude::{BorshAccount, Lamports},
+        prelude::{BorshAccount, ErrorCode, Lamports, Signer, UncheckedAccount},
         testing::AccountBuffer,
         AnchorAccount, AnchorDeserialize, AnchorSerialize, Discriminator, Owner,
     },
@@ -41,7 +41,7 @@ fn account_view_get_add_and_sub_lamports() {
     let buf = AccountBuffer::<128>::new();
     buf.init([0x11; 32], PROGRAM_ID, 0, false, true, false);
 
-    let view = unsafe { buf.view() };
+    let mut view = unsafe { buf.view() };
     assert_eq!(view.get_lamports(), 100);
 
     view.add_lamports(23).unwrap();
@@ -57,7 +57,7 @@ fn borsh_account_get_add_and_sub_lamports() {
     setup_counter_buf(&mut buf);
 
     let view = unsafe { buf.view() };
-    let account = BorshAccount::<Counter>::load(view).unwrap();
+    let mut account = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
     assert_eq!(account.get_lamports(), 100);
 
     account.add_lamports(900).unwrap();
@@ -75,7 +75,7 @@ fn add_lamports_rejects_overflow() {
     buf.init([0x22; 32], PROGRAM_ID, 0, false, true, false);
     buf.set_lamports(u64::MAX);
 
-    let view = unsafe { buf.view() };
+    let mut view = unsafe { buf.view() };
     assert_eq!(
         view.add_lamports(1).unwrap_err(),
         ProgramError::ArithmeticOverflow
@@ -89,10 +89,104 @@ fn sub_lamports_rejects_underflow() {
     buf.init([0x33; 32], PROGRAM_ID, 0, false, true, false);
     buf.set_lamports(0);
 
-    let view = unsafe { buf.view() };
+    let mut view = unsafe { buf.view() };
     assert_eq!(
         view.sub_lamports(1).unwrap_err(),
         ProgramError::ArithmeticOverflow
     );
     assert_eq!(view.get_lamports(), 0);
+}
+
+#[test]
+fn readonly_signer_cannot_sub_lamports() {
+    let buf = AccountBuffer::<128>::new();
+    buf.init([0x01; 32], PROGRAM_ID, 0, true, false, false);
+
+    let view = unsafe { buf.view() };
+    let mut signer = Signer::load(view).unwrap();
+    assert_eq!(signer.get_lamports(), 100);
+    assert_eq!(
+        signer.sub_lamports(1).map(|_| ()).unwrap_err(),
+        ErrorCode::ConstraintMut.into()
+    );
+    assert_eq!(signer.get_lamports(), 100);
+}
+
+#[test]
+fn readonly_unchecked_account_cannot_add_lamports() {
+    let buf = AccountBuffer::<128>::new();
+    buf.init([0x02; 32], PROGRAM_ID, 0, false, false, false);
+
+    let view = unsafe { buf.view() };
+    let mut account = UncheckedAccount::load(view).unwrap();
+    assert_eq!(account.get_lamports(), 100);
+    assert_eq!(
+        account.add_lamports(1).map(|_| ()).unwrap_err(),
+        ErrorCode::ConstraintMut.into()
+    );
+    assert_eq!(account.get_lamports(), 100);
+}
+
+#[test]
+fn readonly_loaded_serialized_account_rejected_despite_writable_meta() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_counter_buf(&mut buf);
+
+    let view = unsafe { buf.view() };
+    assert!(view.is_writable());
+    let mut account = BorshAccount::<Counter>::load(view).unwrap();
+    assert_eq!(account.get_lamports(), 100);
+    assert_eq!(
+        account.add_lamports(1).map(|_| ()).unwrap_err(),
+        ErrorCode::ConstraintMut.into()
+    );
+    assert_eq!(account.get_lamports(), 100);
+    assert_eq!(view.get_lamports(), 100);
+}
+
+#[test]
+fn mut_loaded_serialized_account_can_transfer_lamports() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_counter_buf(&mut buf);
+
+    let view = unsafe { buf.view() };
+    let mut account = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    account.sub_lamports(40).unwrap();
+    account.add_lamports(10).unwrap();
+    assert_eq!(account.get_lamports(), 70);
+    assert_eq!(view.get_lamports(), 70);
+}
+
+// `Box<T>` has no `AsRef<AccountView>`, so `LamportsMutable` resolves through
+// `DerefMut` to the inner wrapper's `is_mutable` override rather than the
+// `is_writable`-only default.
+#[test]
+fn readonly_loaded_boxed_account_rejected_despite_writable_meta() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_counter_buf(&mut buf);
+
+    let view = unsafe { buf.view() };
+    assert!(view.is_writable());
+    let mut account = <Box<BorshAccount<Counter>> as AnchorAccount>::load(view).unwrap();
+    assert_eq!(account.get_lamports(), 100);
+    assert_eq!(
+        account.add_lamports(1).map(|_| ()).unwrap_err(),
+        ErrorCode::ConstraintMut.into()
+    );
+    assert_eq!(account.get_lamports(), 100);
+    assert_eq!(view.get_lamports(), 100);
+}
+
+#[test]
+fn mut_loaded_boxed_account_can_transfer_lamports() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_counter_buf(&mut buf);
+
+    let view = unsafe { buf.view() };
+    let mut account =
+        unsafe { <Box<BorshAccount<Counter>> as AnchorAccount>::load_mut(view) }.unwrap();
+    account.sub_lamports(40).unwrap();
+    account.add_lamports(10).unwrap();
+    assert_eq!(account.get_lamports(), 70);
+    assert_eq!(view.get_lamports(), 70);
 }

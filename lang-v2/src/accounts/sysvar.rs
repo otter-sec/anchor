@@ -202,6 +202,8 @@ impl<T: SysvarLoad> AsRef<AccountView> for Sysvar<T> {
     }
 }
 
+impl<T: SysvarLoad> crate::LamportsMutable for Sysvar<T> {}
+
 impl<T: SysvarLoad> crate::ToCpiHandle for Sysvar<T> {
     #[inline(always)]
     fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {

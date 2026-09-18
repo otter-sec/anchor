@@ -1100,6 +1100,19 @@ where
     }
 }
 
+impl<H, T> crate::LamportsMutable for Slab<H, T>
+where
+    H: Pod + Zeroable + SlabSchema,
+{
+    #[inline(always)]
+    fn try_assert_lamports_mutable(&self) -> Result<(), ProgramError> {
+        if !self.is_mutable {
+            return Err(crate::ErrorCode::ConstraintMut.into());
+        }
+        Ok(())
+    }
+}
+
 impl<H, T> AsRef<Address> for Slab<H, T>
 where
     H: Pod + Zeroable + SlabSchema,

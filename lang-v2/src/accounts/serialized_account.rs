@@ -451,6 +451,20 @@ where
     }
 }
 
+impl<T, S> crate::LamportsMutable for SerializedAccount<T, S>
+where
+    T: Owner + Discriminator,
+    S: AnchorAccountSerialize<T>,
+{
+    #[inline(always)]
+    fn try_assert_lamports_mutable(&self) -> Result<(), ProgramError> {
+        if !self.is_mutable {
+            return Err(crate::ErrorCode::ConstraintMut.into());
+        }
+        Ok(())
+    }
+}
+
 impl<T, S> AsRef<Address> for SerializedAccount<T, S>
 where
     T: Owner + Discriminator,

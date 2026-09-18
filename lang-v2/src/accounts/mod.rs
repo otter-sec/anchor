@@ -70,6 +70,7 @@ macro_rules! view_wrapper_traits {
                 &self.view
             }
         }
+        impl crate::LamportsMutable for $Type {}
         impl AsRef<pinocchio::address::Address> for $Type {
             #[inline(always)]
             fn as_ref(&self) -> &pinocchio::address::Address {

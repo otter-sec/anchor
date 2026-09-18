@@ -60,6 +60,8 @@ impl<T: Ids> AsRef<AccountView> for Interface<T> {
     }
 }
 
+impl<T: Ids> crate::LamportsMutable for Interface<T> {}
+
 impl<T: Ids> AsRef<Address> for Interface<T> {
     #[inline(always)]
     fn as_ref(&self) -> &Address {

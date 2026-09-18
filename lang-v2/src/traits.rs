@@ -575,8 +575,29 @@ impl AccountViewCompat for AccountView {
     }
 }
 
+/// Mutability guard for the [`Lamports`] mutators.
+///
+/// The default implementation requires only the transaction-level writable
+/// bit (`AccountView::is_writable`). Wrappers that record whether they were
+/// loaded through [`AnchorAccount::load_mut`] — `Account<T>` / `Slab<H, T>`
+/// and `BorshAccount<T>` / `SerializedAccount<T, S>` — override
+/// [`LamportsMutable::try_assert_lamports_mutable`] to enforce that
+/// provenance as well, so a read-only wrapper cannot be mutated even when
+/// the same account was supplied writable elsewhere in the instruction.
+pub trait LamportsMutable: AsRef<AccountView> {
+    #[inline(always)]
+    fn try_assert_lamports_mutable(&self) -> Result<(), ProgramError> {
+        if !self.as_ref().is_writable() {
+            return Err(crate::ErrorCode::ConstraintMut.into());
+        }
+        Ok(())
+    }
+}
+
+impl LamportsMutable for AccountView {}
+
 /// Lamports related utility methods for accounts.
-pub trait Lamports: AsRef<AccountView> {
+pub trait Lamports: LamportsMutable {
     /// Get the lamports of the account.
     #[inline(always)]
     fn get_lamports(&self) -> u64 {
@@ -595,7 +616,8 @@ pub trait Lamports: AsRef<AccountView> {
     ///
     /// See [`Lamports::sub_lamports`] for subtracting lamports.
     #[inline(always)]
-    fn add_lamports(&self, amount: u64) -> Result<&Self, ProgramError> {
+    fn add_lamports(&mut self, amount: u64) -> Result<&mut Self, ProgramError> {
+        self.try_assert_lamports_mutable()?;
         let mut view = *self.as_ref();
         view.set_lamports(
             self.get_lamports()
@@ -618,7 +640,8 @@ pub trait Lamports: AsRef<AccountView> {
     ///
     /// See [`Lamports::add_lamports`] for adding lamports.
     #[inline(always)]
-    fn sub_lamports(&self, amount: u64) -> Result<&Self, ProgramError> {
+    fn sub_lamports(&mut self, amount: u64) -> Result<&mut Self, ProgramError> {
+        self.try_assert_lamports_mutable()?;
         let mut view = *self.as_ref();
         view.set_lamports(
             self.get_lamports()
@@ -629,7 +652,7 @@ pub trait Lamports: AsRef<AccountView> {
     }
 }
 
-impl<T: AsRef<AccountView>> Lamports for T {}
+impl<T: LamportsMutable> Lamports for T {}
 
 /// Declares which program owns accounts of this data type.
 ///
