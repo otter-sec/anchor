@@ -13,8 +13,7 @@ impl<T: AnchorAccount> AnchorAccount for Box<T> {
     type Data = T;
     const IS_SIGNER: bool = T::IS_SIGNER;
     const MIN_DATA_LEN: usize = T::MIN_DATA_LEN;
-    const RELAX_READONLY_CPI_BORROW_FROM_MUT: bool =
-        T::RELAX_READONLY_CPI_BORROW_FROM_MUT;
+    const RELAX_READONLY_CPI_BORROW_FROM_MUT: bool = T::RELAX_READONLY_CPI_BORROW_FROM_MUT;
 
     fn load(view: AccountView) -> Result<Self, ProgramError> {
         T::load(view).map(Box::new)
@@ -46,9 +45,7 @@ impl<T: AnchorAccount> AnchorAccount for Box<T> {
     }
 
     #[inline(always)]
-    fn try_cpi_handle_mut(
-        &mut self,
-    ) -> Result<crate::CpiHandleMut<'_>, ProgramError> {
+    fn try_cpi_handle_mut(&mut self) -> Result<crate::CpiHandleMut<'_>, ProgramError> {
         <T as AnchorAccount>::try_cpi_handle_mut(self.as_mut())
     }
 
@@ -96,6 +93,8 @@ impl<T: crate::AccountClose> crate::AccountClose for Box<T> {
 impl<T: crate::IdlAccountType> crate::IdlAccountType for Box<T> {
     const __IDL_ACCOUNT_ENTRY: Option<&'static str> = T::__IDL_ACCOUNT_ENTRY;
     const __IDL_TYPE_DEF: Option<&'static str> = T::__IDL_TYPE_DEF;
+    const __IDL_IS_SIGNER: bool = T::__IDL_IS_SIGNER;
+    const __IDL_ADDRESS: Option<&'static str> = T::__IDL_ADDRESS;
     fn __idl_account_entry() -> Option<&'static str> {
         T::__idl_account_entry()
     }
