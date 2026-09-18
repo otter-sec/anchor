@@ -196,6 +196,64 @@ path_contains() {
     esac
 }
 
+detect_shell_profile() {
+    [ -n "${HOME:-}" ] || return 1
+
+    case "$(basename "${SHELL:-}")" in
+        bash)
+            if [ "$(uname -s)" = "Darwin" ]; then
+                printf '%s\n' "$HOME/.bash_profile"
+            else
+                printf '%s\n' "$HOME/.bashrc"
+            fi
+            ;;
+        zsh)
+            printf '%s\n' "${ZDOTDIR:-$HOME}/.zshrc"
+            ;;
+        sh|dash|ksh)
+            printf '%s\n' "$HOME/.profile"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+escape_single_quotes() {
+    printf '%s' "$1" | sed "s/'/'\\\\''/g"
+}
+
+append_bin_dir_to_shell_profile() {
+    if [ "$(basename "${SHELL:-}")" = "fish" ]; then
+        if command -v fish >/dev/null 2>&1 \
+            && fish -c 'fish_add_path -- $argv[1]' "$BIN_DIR" 2>/dev/null; then
+            say "Added $BIN_DIR to Fish's universal fish_user_paths"
+            return 0
+        fi
+        return 1
+    fi
+
+    profile="$(detect_shell_profile)" || return 1
+    profile_dir="$(dirname "$profile")"
+    quoted_bin_dir="$(escape_single_quotes "$BIN_DIR")"
+
+    profile_line="export PATH='$quoted_bin_dir':\"\$PATH\""
+
+    if [ -f "$profile" ] && grep -Fqx "$profile_line" "$profile"; then
+        say "AVM is already configured in $profile"
+        return 0
+    fi
+
+    if mkdir -p "$profile_dir" 2>/dev/null \
+        && touch "$profile" 2>/dev/null \
+        && printf '\n# Added by AVM installer\n%s\n' "$profile_line" >> "$profile" 2>/dev/null; then
+        say "Added $BIN_DIR to PATH in $profile"
+        return 0
+    fi
+
+    return 1
+}
+
 backup_stable_avm() {
     backup="$BIN_DIR/avm-stable"
 
@@ -303,6 +361,11 @@ say "AVM: $BIN_DIR/avm"
 say "Anchor: $BIN_DIR/anchor"
 
 if ! path_contains "$BIN_DIR"; then
-    say "Add this to your shell profile if avm is not already on PATH:"
-    say "  export PATH=\"$BIN_DIR:\$PATH\""
+    if ! append_bin_dir_to_shell_profile; then
+        say "Add this to your shell profile if avm is not already on PATH:"
+        say "  export PATH=\"$BIN_DIR:\$PATH\""
+    fi
+
+    PATH="$BIN_DIR${PATH:+:$PATH}"
+    export PATH
 fi

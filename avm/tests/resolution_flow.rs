@@ -272,6 +272,7 @@ echo "fake stable avm"
             .env("AVM_HOME", &self.avm_home)
             .env("CARGO_HOME", &cargo_home)
             .env("HOME", &home)
+            .env("SHELL", "/bin/zsh")
             .env("AVM_INSTALL_TARGET", nightly_target())
             .env(
                 "AVM_NIGHTLY_MANIFEST_URL",
@@ -291,15 +292,19 @@ echo "fake stable avm"
             "{stdout}"
         );
         assert!(
-            stdout.contains("Add this to your shell profile if avm is not already on PATH:"),
-            "{stdout}"
-        );
-        assert!(
             stdout.contains(&format!(
-                "export PATH=\"{}:$PATH\"",
-                self.avm_home_bin().display()
+                "Added {} to PATH in {}",
+                self.avm_home_bin().display(),
+                home.join(".zshrc").display()
             )),
             "{stdout}"
+        );
+        assert_eq!(
+            fs::read_to_string(home.join(".zshrc")).expect(".zshrc"),
+            format!(
+                "\n# Added by AVM installer\nexport PATH='{}':\"$PATH\"\n",
+                self.avm_home_bin().display()
+            )
         );
         assert!(
             self.avm_home_bin().join("avm-nightly").is_file(),
@@ -323,6 +328,38 @@ echo "fake stable avm"
         assert!(
             !cargo_home.join("bin").exists(),
             "missing CARGO_HOME/bin should be a no-op, not an early exit"
+        );
+
+        let fallback_output = Command::new("sh")
+            .arg(&installer)
+            .env("AVM_HOME", &self.avm_home)
+            .env("CARGO_HOME", &cargo_home)
+            .env("HOME", &home)
+            .env("SHELL", "/bin/unsupported-shell")
+            .env("AVM_INSTALL_TARGET", nightly_target())
+            .env(
+                "AVM_NIGHTLY_MANIFEST_URL",
+                format!("file://{}", manifest.display()),
+            )
+            .env(
+                "AVM_NIGHTLY_BASE_URL",
+                format!("file://{}/", nightly_dir.display()),
+            )
+            .output()
+            .expect("run checkout installer without a supported shell");
+        assert_success(&fallback_output);
+
+        let fallback_stdout = String::from_utf8_lossy(&fallback_output.stdout);
+        assert!(
+            fallback_stdout.contains("Add this to your shell profile if avm is not already on PATH:"),
+            "{fallback_stdout}"
+        );
+        assert!(
+            fallback_stdout.contains(&format!(
+                "export PATH=\"{}:$PATH\"",
+                self.avm_home_bin().display()
+            )),
+            "{fallback_stdout}"
         );
     }
 
