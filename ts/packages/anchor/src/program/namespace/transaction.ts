@@ -1,4 +1,11 @@
-import { Transaction } from "@solana/web3.js";
+import {
+  addSignersToTransactionMessage,
+  appendTransactionMessageInstructions,
+  createTransactionMessage,
+  pipe,
+  TransactionMessage,
+  TransactionMessageWithSigners,
+} from "@solana/kit";
 import { Idl } from "../../idl.js";
 import { splitArgsAndCtx } from "../context.js";
 import { InstructionFn } from "./instruction.js";
@@ -13,17 +20,23 @@ export default class TransactionFactory {
     idlIx: I,
     ixFn: InstructionFn<IDL, I>
   ): TransactionFn<IDL, I> {
-    const txFn: TransactionFn<IDL, I> = (...args): Transaction => {
+    const txFn: TransactionFn<IDL, I> = (
+      ...args
+    ): ProgramTransactionMessage => {
       const [, ctx] = splitArgsAndCtx(idlIx, [...args]);
-      const tx = new Transaction();
-      if (ctx.preInstructions && ctx.instructions) {
-        throw new Error("instructions is deprecated, use preInstructions");
-      }
-      ctx.preInstructions?.forEach((ix) => tx.add(ix));
-      ctx.instructions?.forEach((ix) => tx.add(ix));
-      tx.add(ixFn(...args));
-      ctx.postInstructions?.forEach((ix) => tx.add(ix));
-      return tx;
+      return pipe(
+        createTransactionMessage({ version: 0 }),
+        (message) =>
+          appendTransactionMessageInstructions(
+            [
+              ...(ctx.preInstructions ?? []),
+              ixFn(...args),
+              ...(ctx.postInstructions ?? []),
+            ],
+            message
+          ),
+        (message) => addSignersToTransactionMessage(ctx.signers ?? [], message)
+      );
     };
 
     return txFn;
@@ -31,7 +44,27 @@ export default class TransactionFactory {
 }
 
 /**
- * The namespace provides functions to build [[Transaction]] objects for each
+ * A transaction message built by the transaction namespace: it carries the
+ * instructions and any signers given in the context, but no fee payer or
+ * lifetime. The provider adds both when sending; when signing manually,
+ * set them before compiling.
+ *
+ * ```typescript
+ * const message = await program.methods.increment().transactionMessage();
+ * const transaction = await signTransactionMessageWithSigners(
+ *   pipe(
+ *     message,
+ *     (m) => setTransactionMessageFeePayerSigner(wallet, m),
+ *     (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m)
+ *   )
+ * );
+ * ```
+ */
+export type ProgramTransactionMessage = TransactionMessage &
+  TransactionMessageWithSigners;
+
+/**
+ * The namespace provides functions to build transaction messages for each
  * method of a program.
  *
  * ## Usage
@@ -49,10 +82,10 @@ export default class TransactionFactory {
  *
  * ## Example
  *
- * To create an instruction for the `increment` method above,
+ * To create a transaction message for the `increment` method above,
  *
  * ```javascript
- * const tx = await program.transaction.increment({
+ * const message = await program.transaction.increment({
  *   accounts: {
  *     counter,
  *   },
@@ -62,12 +95,13 @@ export default class TransactionFactory {
 export type TransactionNamespace<
   IDL extends Idl = Idl,
   I extends AllInstructions<IDL> = AllInstructions<IDL>
-> = MakeInstructionsNamespace<IDL, I, Transaction>;
+> = MakeInstructionsNamespace<IDL, I, ProgramTransactionMessage>;
 
 /**
- * Tx is a function to create a `Transaction` for a given program instruction.
+ * Tx is a function to create a transaction message for a given program
+ * instruction.
  */
 export type TransactionFn<
   IDL extends Idl = Idl,
   I extends AllInstructions<IDL> = AllInstructions<IDL>
-> = InstructionContextFn<IDL, I, Transaction>;
+> = InstructionContextFn<IDL, I, ProgramTransactionMessage>;

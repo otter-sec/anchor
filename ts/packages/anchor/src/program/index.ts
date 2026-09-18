@@ -57,7 +57,7 @@ export * from "./namespace/index.js";
 export class Program<IDL extends Idl = Idl> {
   /**
    * Async methods to send signed transactions to *non*-state methods on the
-   * program, returning a [[TransactionSignature]].
+   * program, returning the transaction signature.
    *
    * ## Usage
    *
@@ -112,8 +112,8 @@ export class Program<IDL extends Idl = Idl> {
   readonly account: AccountNamespace<IDL>;
 
   /**
-   * The namespace provides functions to build [[TransactionInstruction]]
-   * objects for each method of a program.
+   * The namespace provides functions to build Kit `Instruction` objects for
+   * each method of a program.
    *
    * ## Usage
    *
@@ -144,7 +144,7 @@ export class Program<IDL extends Idl = Idl> {
   readonly instruction: InstructionNamespace<IDL>;
 
   /**
-   * The namespace provides functions to build [[Transaction]] objects for each
+   * The namespace provides functions to build transaction messages for each
    * method of a program.
    *
    * ## Usage
@@ -162,10 +162,10 @@ export class Program<IDL extends Idl = Idl> {
    *
    * ## Example
    *
-   * To create an instruction for the `increment` method above,
+   * To create a transaction message for the `increment` method above,
    *
    * ```javascript
-   * const tx = await program.transaction.increment({
+   * const message = await program.transaction.increment({
    *   accounts: {
    *     counter,
    *   },
@@ -265,11 +265,11 @@ export class Program<IDL extends Idl = Idl> {
    * discriminators and any future encoding changes.
    *
    * ```ts
-   * const ix = new TransactionInstruction({
-   *   programId: program.programId,
-   *   keys: [...],
+   * const ix: Instruction = {
+   *   programAddress: address(program.programId.toBase58()),
+   *   accounts: [...],
    *   data: program.discriminator("instruction", "increment"),
-   * });
+   * };
    * ```
    *
    * Throws if the name isn't in the IDL section.

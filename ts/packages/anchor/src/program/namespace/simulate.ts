@@ -24,7 +24,7 @@ export default class SimulateFactory {
     idl: IDL
   ): SimulateFn<IDL, I> {
     const simulate: SimulateFn<IDL> = async (...args) => {
-      const tx = txFn(...args);
+      const message = txFn(...args);
       const [, ctx] = splitArgsAndCtx(idlIx, [...args]);
       let resp: SuccessfulTxSimulationResponse | undefined = undefined;
       if (provider.simulate === undefined) {
@@ -33,8 +33,11 @@ export default class SimulateFactory {
         );
       }
       try {
-        resp = await provider!.simulate(
-          tx,
+        // The context signers are already attached to the message; passing
+        // them again only asks the provider to verify signatures when the
+        // caller provided signers, as before.
+        resp = await provider.simulate(
+          message,
           ctx.signers,
           ctx.options?.commitment
         );

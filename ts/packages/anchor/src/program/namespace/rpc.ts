@@ -1,4 +1,4 @@
-import { TransactionSignature } from "@solana/web3.js";
+import { Signature } from "@solana/kit";
 import Provider from "../../provider.js";
 import { Idl } from "../../idl.js";
 import { splitArgsAndCtx } from "../context.js";
@@ -18,7 +18,7 @@ export default class RpcFactory {
     provider: Provider
   ): RpcFn {
     const rpc: RpcFn<IDL, I> = async (...args) => {
-      const tx = txFn(...args);
+      const message = txFn(...args);
       const [, ctx] = splitArgsAndCtx(idlIx, [...args]);
       if (provider.sendAndConfirm === undefined) {
         throw new Error(
@@ -26,11 +26,8 @@ export default class RpcFactory {
         );
       }
       try {
-        return await provider.sendAndConfirm(
-          tx,
-          ctx.signers ?? [],
-          ctx.options
-        );
+        // The context signers are already attached to the message.
+        return await provider.sendAndConfirm(message, [], ctx.options);
       } catch (err) {
         throw translateError(err, idlErrors);
       }
@@ -44,8 +41,8 @@ export default class RpcFactory {
  * The namespace provides async methods to send signed transactions for each
  * *non*-state method on Anchor program.
  *
- * Keys are method names, values are RPC functions returning a
- * [[TransactionInstruction]].
+ * Keys are method names, values are RPC functions returning the signature of
+ * the sent transaction.
  *
  * ## Usage
  *
@@ -77,7 +74,7 @@ export default class RpcFactory {
 export type RpcNamespace<
   IDL extends Idl = Idl,
   I extends AllInstructions<IDL> = AllInstructions<IDL>
-> = MakeInstructionsNamespace<IDL, I, Promise<TransactionSignature>>;
+> = MakeInstructionsNamespace<IDL, I, Promise<Signature>>;
 
 /**
  * RpcFn is a single RPC method generated from an IDL, sending a transaction
@@ -86,4 +83,4 @@ export type RpcNamespace<
 export type RpcFn<
   IDL extends Idl = Idl,
   I extends AllInstructions<IDL> = AllInstructions<IDL>
-> = InstructionContextFn<IDL, I, Promise<TransactionSignature>>;
+> = InstructionContextFn<IDL, I, Promise<Signature>>;

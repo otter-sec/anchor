@@ -1,8 +1,9 @@
 import {
   AccountMeta,
-  PublicKey,
-  TransactionInstruction,
-} from "@solana/web3.js";
+  AccountRole,
+  Address as KitAddress,
+  Instruction,
+} from "@solana/kit";
 import {
   Idl,
   IdlInstructionAccountItem,
@@ -13,8 +14,8 @@ import {
 import { IdlError } from "../../error.js";
 import {
   Address,
+  toAddress,
   toInstruction,
-  translateAddress,
   validateAccounts,
 } from "../common.js";
 import { Accounts, splitArgsAndCtx } from "../context.js";
@@ -31,34 +32,33 @@ export default class InstructionNamespaceFactory {
   public static build<IDL extends Idl, I extends AllInstructions<IDL>>(
     idlIx: I,
     encodeFn: InstructionEncodeFn<I>,
-    programId: PublicKey
+    programAddress: KitAddress
   ): InstructionFn<IDL, I> {
     if (idlIx.name === "_inner") {
       throw new IdlError("the _inner name is reserved");
     }
 
-    const ix = (
-      ...args: InstructionContextFnArgs<IDL, I>
-    ): TransactionInstruction => {
+    const ix = (...args: InstructionContextFnArgs<IDL, I>): Instruction => {
       const [ixArgs, ctx] = splitArgsAndCtx(idlIx, [...args]);
       validateAccounts(idlIx.accounts, ctx.accounts);
       validateInstruction(idlIx, ...args);
 
-      const keys = ix.accounts(ctx.accounts);
+      const accounts = ix.accounts(ctx.accounts);
 
       if (ctx.remainingAccounts !== undefined) {
-        keys.push(...ctx.remainingAccounts);
+        accounts.push(...ctx.remainingAccounts);
       }
 
       if (features.isSet("debug-logs")) {
-        console.log("Outgoing account metas:", keys);
+        console.log("Outgoing account metas:", accounts);
       }
 
-      return new TransactionInstruction({
-        keys,
-        programId,
-        data: encodeFn(idlIx.name, toInstruction(idlIx, ...ixArgs)),
-      });
+      const data = encodeFn(idlIx.name, toInstruction(idlIx, ...ixArgs));
+      return {
+        programAddress,
+        accounts,
+        data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
+      };
     };
 
     // Utility fn for ordering the accounts for this instruction.
@@ -66,7 +66,7 @@ export default class InstructionNamespaceFactory {
       return InstructionNamespaceFactory.accountsArray(
         accs,
         idlIx.accounts,
-        programId,
+        programAddress,
         idlIx.name
       );
     };
@@ -77,7 +77,7 @@ export default class InstructionNamespaceFactory {
   public static accountsArray(
     ctx: Accounts | undefined,
     accounts: readonly IdlInstructionAccountItem[],
-    programId: PublicKey,
+    programAddress: KitAddress,
     ixName?: string
   ): AccountMeta[] {
     if (!ctx) {
@@ -91,40 +91,47 @@ export default class InstructionNamespaceFactory {
           return InstructionNamespaceFactory.accountsArray(
             rpcAccs,
             (acc as IdlInstructionAccounts).accounts,
-            programId,
+            programAddress,
             ixName
           ).flat();
         }
 
-        let pubkey: PublicKey;
+        let address: KitAddress;
         try {
-          pubkey = translateAddress(ctx[acc.name] as Address);
+          address = toAddress(ctx[acc.name] as Address);
         } catch (err) {
           throw new Error(
             `Wrong input type for account "${
               acc.name
             }" in the instruction accounts object${
               ixName !== undefined ? ' for instruction "' + ixName + '"' : ""
-            }. Expected PublicKey or string.`
+            }. Expected PublicKey or base58 string.`
           );
         }
 
-        const isOptional = acc.optional && pubkey.equals(programId);
+        // Optional accounts left unset are passed as the program itself,
+        // which must then be neither writable nor a signer.
+        const isOptional = acc.optional && address === programAddress;
         const isWritable = Boolean(acc.writable && !isOptional);
         const isSigner = Boolean(acc.signer && !isOptional);
-        return {
-          pubkey,
-          isWritable,
-          isSigner,
-        };
+        return { address, role: toAccountRole(isWritable, isSigner) };
       })
       .flat();
   }
 }
 
+function toAccountRole(isWritable: boolean, isSigner: boolean): AccountRole {
+  if (isSigner) {
+    return isWritable
+      ? AccountRole.WRITABLE_SIGNER
+      : AccountRole.READONLY_SIGNER;
+  }
+  return isWritable ? AccountRole.WRITABLE : AccountRole.READONLY;
+}
+
 /**
- * The namespace provides functions to build [[TransactionInstruction]]
- * objects for each method of a program.
+ * The namespace provides functions to build Kit `Instruction` objects for
+ * each method of a program.
  *
  * ## Usage
  *
@@ -157,7 +164,7 @@ export type InstructionNamespace<
 > = MakeInstructionsNamespace<
   IDL,
   I,
-  TransactionInstruction,
+  Instruction,
   {
     [M in keyof AllInstructionsMap<IDL>]: {
       accounts: (
@@ -168,14 +175,14 @@ export type InstructionNamespace<
 >;
 
 /**
- * Function to create a `TransactionInstruction` generated from an IDL.
+ * Function to create a Kit `Instruction` generated from an IDL.
  * Additionally it provides an `accounts` utility method, returning a list
  * of ordered accounts for the instruction.
  */
 export type InstructionFn<
   IDL extends Idl = Idl,
   I extends AllInstructions<IDL> = AllInstructions<IDL>
-> = InstructionContextFn<IDL, I, TransactionInstruction> &
+> = InstructionContextFn<IDL, I, Instruction> &
   IxProps<Accounts<I["accounts"][number]>>;
 
 type IxProps<A extends Accounts> = {

@@ -1,4 +1,5 @@
 import EventEmitter from "eventemitter3";
+import { address as kitAddress, Address as KitAddress } from "@solana/kit";
 import { PublicKey } from "@solana/web3.js";
 import {
   Idl,
@@ -57,6 +58,13 @@ export function validateAccounts(
 // Translates an address to a Pubkey.
 export function translateAddress(address: Address): PublicKey {
   return address instanceof PublicKey ? address : new PublicKey(address);
+}
+
+/**
+ * Translates an address to a Kit `Address`, validating it on the way.
+ */
+export function toAddress(address: Address): KitAddress {
+  return kitAddress(typeof address === "string" ? address : address.toBase58());
 }
 
 /**

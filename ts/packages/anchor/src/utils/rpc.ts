@@ -2,22 +2,23 @@ import { Buffer } from "buffer";
 import {
   AccountInfoBase,
   AccountInfoWithBase64EncodedData,
+  AccountMeta,
   Address as KitAddress,
+  appendTransactionMessageInstruction,
   Base64EncodedDataResponse,
+  createTransactionMessage,
+  ReadonlyUint8Array,
+  Signature,
 } from "@solana/kit";
 import {
   AccountInfo,
-  AccountMeta,
   Connection,
   PublicKey,
-  TransactionSignature,
-  Transaction,
-  TransactionInstruction,
   Commitment,
   Context,
 } from "@solana/web3.js";
 import { chunks } from "../utils/common.js";
-import { Address, translateAddress } from "../program/common.js";
+import { Address, toAddress } from "../program/common.js";
 import Provider, { getProvider } from "../provider.js";
 
 /**
@@ -27,21 +28,20 @@ import Provider, { getProvider } from "../provider.js";
 export async function invoke(
   programId: Address,
   accounts?: Array<AccountMeta>,
-  data?: Buffer,
+  data?: ReadonlyUint8Array,
   provider?: Provider
-): Promise<TransactionSignature> {
-  programId = translateAddress(programId);
+): Promise<Signature> {
   if (!provider) {
     provider = getProvider();
   }
 
-  const tx = new Transaction();
-  tx.add(
-    new TransactionInstruction({
-      programId,
-      keys: accounts ?? [],
-      data,
-    })
+  const message = appendTransactionMessageInstruction(
+    {
+      programAddress: toAddress(programId),
+      accounts: accounts ?? [],
+      ...(data ? { data } : {}),
+    },
+    createTransactionMessage({ version: 0 })
   );
 
   if (provider.sendAndConfirm === undefined) {
@@ -50,7 +50,7 @@ export async function invoke(
     );
   }
 
-  return await provider.sendAndConfirm(tx, []);
+  return await provider.sendAndConfirm(message, []);
 }
 
 const GET_MULTIPLE_ACCOUNTS_LIMIT: number = 99;

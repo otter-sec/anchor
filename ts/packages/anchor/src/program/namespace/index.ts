@@ -7,14 +7,18 @@ import TransactionFactory, { TransactionNamespace } from "./transaction.js";
 import RpcFactory, { RpcNamespace } from "./rpc.js";
 import AccountFactory, { AccountNamespace } from "./account.js";
 import SimulateFactory, { SimulateNamespace } from "./simulate.js";
-import { parseIdlErrors } from "../common.js";
+import { parseIdlErrors, toAddress } from "../common.js";
 import { MethodsBuilderFactory, MethodsNamespace } from "./methods";
 import ViewFactory, { ViewNamespace } from "./views";
 import { CustomAccountResolver } from "../accounts-resolver.js";
 
 // Re-exports.
 export { InstructionNamespace, InstructionFn } from "./instruction.js";
-export { TransactionNamespace, TransactionFn } from "./transaction.js";
+export {
+  TransactionNamespace,
+  TransactionFn,
+  ProgramTransactionMessage,
+} from "./transaction.js";
 export { RpcNamespace, RpcFn } from "./rpc.js";
 export { AccountNamespace, AccountClient, ProgramAccount } from "./account.js";
 export { SimulateNamespace, SimulateFn } from "./simulate.js";
@@ -57,6 +61,7 @@ export default class NamespaceFactory {
     const view: ViewNamespace = {};
 
     const idlErrors = parseIdlErrors(idl);
+    const programAddress = toAddress(programId);
 
     const account: AccountNamespace<IDL> = idl.accounts
       ? AccountFactory.build(idl, coder, programId, provider)
@@ -66,7 +71,7 @@ export default class NamespaceFactory {
       const ixItem = InstructionFactory.build<IDL, typeof idlIx>(
         idlIx,
         (ixName, ix) => coder.instruction.encode(ixName, ix),
-        programId
+        programAddress
       );
       const txItem = TransactionFactory.build(idlIx, ixItem);
       const rpcItem = RpcFactory.build(idlIx, txItem, idlErrors, provider);
@@ -89,7 +94,7 @@ export default class NamespaceFactory {
         rpcItem,
         simulateItem,
         viewItem,
-        account,
+        coder.accounts,
         idl.types || [],
         getCustomResolver?.(idlIx)
       );

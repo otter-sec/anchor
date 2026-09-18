@@ -1,9 +1,5 @@
 import {
-  AccountRole,
   Address,
-  address,
-  addSignersToTransactionMessage,
-  appendTransactionMessageInstructions,
   assertIsSendableTransaction,
   assertIsTransactionWithBlockhashLifetime,
   assertIsTransactionWithinSizeLimit,
@@ -12,56 +8,41 @@ import {
   ClientWithRpcSubscriptions,
   Commitment,
   compileTransaction,
-  createKeyPairSignerFromBytes,
   createSolanaRpc,
   createSolanaRpcSubscriptions,
-  createTransactionMessage,
   getBase64EncodedWireTransaction,
-  getCompiledTransactionMessageDecoder,
   getSignatureFromTransaction,
-  getTransactionDecoder,
-  Instruction,
+  getSignersFromTransactionMessage,
   isSolanaError,
+  isTransactionMessageWithBlockhashLifetime,
+  isTransactionMessageWithDurableNonceLifetime,
   isTransactionModifyingSigner,
   isTransactionPartialSigner,
-  partiallySignTransactionMessageWithSigners,
-  pipe,
+  isTransactionWithDurableNonceLifetime,
+  partiallySignTransactionWithSigners,
   Rpc,
   RpcSubscriptions,
+  sendAndConfirmDurableNonceTransactionFactory,
   sendAndConfirmTransactionFactory,
   setTransactionMessageFeePayer,
-  setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
   Signature,
-  signTransactionMessageWithSigners,
   SolanaRpcApiMainnet,
   SolanaRpcSubscriptionsApi,
   SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE,
   SOLANA_ERROR__TRANSACTION_ERROR__ALREADY_PROCESSED,
-  Transaction as KitTransaction,
+  Transaction,
+  TransactionMessage,
+  TransactionMessageWithFeePayer,
+  TransactionMessageWithLifetime,
+  TransactionMessageWithSigners,
   TransactionModifyingSigner,
   TransactionPartialSigner,
   TransactionSigner,
-  TransactionWithBlockhashLifetime,
   TransactionWithLifetime,
 } from "@solana/kit";
-import {
-  BlockhashWithExpiryBlockHeight,
-  Commitment as LegacyCommitment,
-  ConfirmOptions,
-  Connection,
-  PublicKey,
-  Signer,
-  Transaction,
-  TransactionInstruction,
-  TransactionSignature,
-  VersionedTransaction,
-} from "@solana/web3.js";
-import {
-  findSolanaError,
-  isBrowser,
-  isVersionedTransaction,
-} from "./utils/common.js";
+import { Connection, PublicKey } from "@solana/web3.js";
+import { findSolanaError, isBrowser } from "./utils/common.js";
 import { SuccessfulTxSimulationResponse } from "./utils/rpc.js";
 import { createLocalWallet } from "./wallet.js";
 
@@ -90,6 +71,31 @@ export type WalletSigner =
  */
 export type ClusterEndpoints = string | { url: string; websocketUrl?: string };
 
+/**
+ * Options controlling how transactions are sent and confirmed.
+ */
+export type ConfirmOptions = {
+  /** The commitment level to confirm the transaction at. */
+  commitment?: Commitment;
+  /** The commitment level to simulate the transaction at before sending. */
+  preflightCommitment?: Commitment;
+  /** Whether to skip the preflight simulation. */
+  skipPreflight?: boolean;
+  /** The maximum number of times the RPC node retries sending the transaction. */
+  maxRetries?: number;
+  /** The minimum slot the request may be evaluated at. */
+  minContextSlot?: number;
+};
+
+/**
+ * A transaction message together with the signers it needs on top of those
+ * already attached to it.
+ */
+export type TransactionMessageWithExtraSigners = {
+  message: TransactionMessage;
+  signers?: TransactionSigner[];
+};
+
 export default interface Provider {
   /** Kit RPC client for the Solana JSON-RPC API. */
   readonly rpc: Rpc<SolanaRpcApiMainnet>;
@@ -99,31 +105,28 @@ export default interface Provider {
   readonly wallet?: WalletSigner;
 
   /**
-   * @deprecated Legacy web3.js bridge, consumed by the program namespaces
-   * until their own migration to Kit. Requires the provider to know its
-   * cluster URL.
+   * @deprecated Legacy web3.js bridge, consumed by the account and event
+   * namespaces until their own migration to Kit. Requires the provider to
+   * know its cluster URL.
    */
   readonly connection: Connection;
   /** @deprecated Use `wallet.address` instead. */
   readonly publicKey?: PublicKey;
 
   sendAndConfirm?(
-    tx: Transaction | VersionedTransaction,
-    signers?: Signer[],
-    opts?: ConfirmOptionsWithBlockhash
-  ): Promise<TransactionSignature>;
-  sendAll?<T extends Transaction | VersionedTransaction>(
-    txWithSigners: {
-      tx: T;
-      signers?: Signer[];
-    }[],
+    message: TransactionMessage,
+    signers?: TransactionSigner[],
     opts?: ConfirmOptions
-  ): Promise<Array<TransactionSignature>>;
+  ): Promise<Signature>;
+  sendAll?(
+    messages: TransactionMessageWithExtraSigners[],
+    opts?: ConfirmOptions
+  ): Promise<Signature[]>;
   simulate?(
-    tx: Transaction | VersionedTransaction,
-    signers?: Signer[],
-    commitment?: LegacyCommitment,
-    includeAccounts?: boolean | PublicKey[]
+    message: TransactionMessage,
+    signers?: TransactionSigner[],
+    commitment?: Commitment,
+    includeAccounts?: boolean | Address[]
   ): Promise<SuccessfulTxSimulationResponse>;
 }
 
@@ -141,6 +144,9 @@ export class AnchorProvider implements Provider {
   #connection?: Connection;
   #sendAndConfirmTransaction: ReturnType<
     typeof sendAndConfirmTransactionFactory
+  >;
+  #sendAndConfirmDurableNonceTransaction: ReturnType<
+    typeof sendAndConfirmDurableNonceTransactionFactory
   >;
 
   /**
@@ -172,11 +178,16 @@ export class AnchorProvider implements Provider {
       rpc: this.rpc,
       rpcSubscriptions: this.rpcSubscriptions,
     });
+    this.#sendAndConfirmDurableNonceTransaction =
+      sendAndConfirmDurableNonceTransactionFactory({
+        rpc: this.rpc,
+        rpcSubscriptions: this.rpcSubscriptions,
+      });
   }
 
   /**
-   * @deprecated Legacy web3.js bridge, consumed by the program namespaces
-   * until their own migration to Kit.
+   * @deprecated Legacy web3.js bridge, consumed by the account and event
+   * namespaces until their own migration to Kit.
    */
   get connection(): Connection {
     if (!this.#connection) {
@@ -246,35 +257,35 @@ export class AnchorProvider implements Provider {
   }
 
   /**
-   * Sends the given transaction, paid for and signed by the provider's wallet.
+   * Sends the given transaction message, paid for and signed by the
+   * provider's wallet.
    *
-   * @param tx      The transaction to send.
-   * @param signers The signers of the transaction.
+   * The wallet pays the fees unless the message already has a fee payer. A
+   * message without a lifetime is given the latest blockhash. A message
+   * carrying a lifetime is sent as is and confirmed accordingly: until its
+   * blockhash expires, or, for a durable nonce (see Kit's
+   * `setTransactionMessageLifetimeUsingDurableNonce`), until the nonce
+   * account advances.
+   *
+   * @param message The transaction message to send.
+   * @param signers Signers needed on top of those attached to the message.
    * @param opts    Transaction confirmation options.
    */
   async sendAndConfirm(
-    tx: Transaction | VersionedTransaction,
-    signers?: Signer[],
-    opts?: ConfirmOptionsWithBlockhash
-  ): Promise<TransactionSignature> {
+    message: TransactionMessage,
+    signers?: TransactionSigner[],
+    opts?: ConfirmOptions
+  ): Promise<Signature> {
     opts = { ...this.opts, ...opts };
-    const commitment = toCommitment(opts.commitment) ?? "processed";
+    const commitment = opts.commitment ?? "processed";
+    const prepared = this.#prepare(message, signers ?? []);
 
-    if (isVersionedTransaction(tx)) {
-      if (signers) {
-        tx.sign(signers);
-      }
+    if (hasLifetime(prepared.message)) {
       const [signed] = await this.#walletSign([
-        attachBlockhashLifetime(
-          getTransactionDecoder().decode(tx.serialize()),
-          await this.#lastValidBlockHeight(opts, commitment)
-        ),
+        await this.#signWithSigners(prepared.message, prepared.signers),
       ]);
-      assertIsTransactionWithBlockhashLifetime(signed);
       return await this.#sendSigned(signed, opts, commitment);
     }
-
-    const extraSigners = await fromLegacySigners(signers ?? []);
 
     // Retry loop: on fast local validators (e.g. surfpool with 400ms slot
     // time), repeat calls to `getLatestBlockhash` can return the same
@@ -283,31 +294,20 @@ export class AnchorProvider implements Provider {
     // slot, refresh the blockhash, and retry.
     const ALREADY_PROCESSED_MAX_ATTEMPTS = 3;
     const ALREADY_PROCESSED_RETRY_DELAY_MS = 500;
-    const callerSetBlockhash =
-      !!tx.recentBlockhash && tx.recentBlockhash !== DEFAULT_RECENT_BLOCKHASH;
 
     for (let attempt = 0; attempt < ALREADY_PROCESSED_MAX_ATTEMPTS; attempt++) {
-      const lifetime = callerSetBlockhash
-        ? {
-            blockhash: tx.recentBlockhash as Blockhash,
-            lastValidBlockHeight: await this.#lastValidBlockHeight(
-              opts,
-              commitment
-            ),
-          }
-        : (
-            await this.rpc
-              .getLatestBlockhash({
-                commitment:
-                  toCommitment(opts.preflightCommitment) ?? commitment,
-              })
-              .send()
-          ).value;
-
-      const signed = await signTransactionMessageWithSigners(
-        this.#fromLegacyTransaction(tx, extraSigners, lifetime)
+      const lifetime = await this.#latestBlockhash(
+        opts.preflightCommitment ?? commitment
       );
-      assertIsTransactionWithBlockhashLifetime(signed);
+      const [signed] = await this.#walletSign([
+        await this.#signWithSigners(
+          setTransactionMessageLifetimeUsingBlockhash(
+            lifetime,
+            prepared.message
+          ),
+          prepared.signers
+        ),
+      ]);
 
       try {
         return await this.#sendSigned(signed, opts, commitment);
@@ -323,9 +323,7 @@ export class AnchorProvider implements Provider {
           (err instanceof Error &&
             err.message.includes("already been processed"));
         const canRetry =
-          isAlreadyProcessed &&
-          !callerSetBlockhash &&
-          attempt < ALREADY_PROCESSED_MAX_ATTEMPTS - 1;
+          isAlreadyProcessed && attempt < ALREADY_PROCESSED_MAX_ATTEMPTS - 1;
         if (!canRetry) {
           throw err;
         }
@@ -338,131 +336,98 @@ export class AnchorProvider implements Provider {
   }
 
   /**
-   * Similar to `sendAndConfirm`, but for an array of transactions and signers.
+   * Similar to `sendAndConfirm`, but for an array of transaction messages.
    *
    * The wallet co-signs the whole batch in a single request so that wallets
    * prompting the user for each signature only prompt once. As in v1, the
-   * extra signers sign before the wallet, so a modifying wallet that alters
+   * other signers sign before the wallet, so a modifying wallet that alters
    * a message invalidates their signatures.
    *
-   * @param txWithSigners Array of transactions and signers.
-   * @param opts          Transaction confirmation options.
+   * @param messages Transaction messages, each with its extra signers.
+   * @param opts     Transaction confirmation options.
    */
-  async sendAll<T extends Transaction | VersionedTransaction>(
-    txWithSigners: {
-      tx: T;
-      signers?: Signer[];
-    }[],
+  async sendAll(
+    messages: TransactionMessageWithExtraSigners[],
     opts?: ConfirmOptions
-  ): Promise<Array<TransactionSignature>> {
+  ): Promise<Signature[]> {
     opts = { ...this.opts, ...opts };
-    const commitment = toCommitment(opts.commitment) ?? "processed";
-    const lifetime = (
-      await this.rpc
-        .getLatestBlockhash({
-          commitment: toCommitment(opts.preflightCommitment) ?? commitment,
-        })
-        .send()
-    ).value;
+    const commitment = opts.commitment ?? "processed";
+    let lifetime: BlockhashLifetime | undefined;
 
-    const pending: (KitTransaction & TransactionWithLifetime)[] = [];
-    for (const { tx, signers } of txWithSigners) {
-      if (isVersionedTransaction(tx)) {
-        if (signers) {
-          tx.sign(signers);
-        }
-        pending.push(
-          attachBlockhashLifetime(
-            getTransactionDecoder().decode(tx.serialize()),
-            lifetime.lastValidBlockHeight
-          )
-        );
+    const pending: (Transaction & TransactionWithLifetime)[] = [];
+    for (const { message, signers } of messages) {
+      const prepared = this.#prepare(message, signers ?? []);
+      let withLifetime: PreparedMessage["message"] &
+        TransactionMessageWithLifetime;
+      if (hasLifetime(prepared.message)) {
+        withLifetime = prepared.message;
       } else {
-        const extraSigners = await fromLegacySigners(signers ?? []);
-        pending.push(
-          await partiallySignTransactionMessageWithSigners(
-            this.#fromLegacyTransaction(tx, extraSigners, lifetime, {
-              walletSigns: false,
-            })
-          )
+        lifetime ??= await this.#latestBlockhash(
+          opts.preflightCommitment ?? commitment
+        );
+        withLifetime = setTransactionMessageLifetimeUsingBlockhash(
+          lifetime,
+          prepared.message
         );
       }
+      pending.push(await this.#signWithSigners(withLifetime, prepared.signers));
     }
 
     const signedAll = await this.#walletSign(pending);
 
-    const sigs: TransactionSignature[] = [];
+    const signatures: Signature[] = [];
     for (const signed of signedAll) {
-      assertIsTransactionWithBlockhashLifetime(signed);
-      sigs.push(await this.#sendSigned(signed, opts, commitment));
+      signatures.push(await this.#sendSigned(signed, opts, commitment));
     }
-    return sigs;
+    return signatures;
   }
 
   /**
-   * Simulates the given transaction, returning emitted logs from execution.
+   * Simulates the given transaction message, returning emitted logs from
+   * execution.
    *
-   * @param tx        The transaction to simulate.
-   * @param signers   The signers of the transaction. If unset, the
-   *                  transaction is simulated without signature verification,
-   *                  which allows simulating without asking the wallet to
-   *                  sign.
+   * @param message   The transaction message to simulate.
+   * @param signers   Signers needed on top of those attached to the message.
+   *                  If unset, the transaction is simulated without
+   *                  signature verification, which allows simulating without
+   *                  asking the wallet to sign.
    * @param commitment The commitment to simulate against.
    * @param includeAccounts Post-simulation accounts to include in the
    *                  response: either an explicit list of addresses, or
    *                  `true` for every non-program account referenced by the
-   *                  transaction. Only supported for legacy transactions.
+   *                  transaction.
    */
   async simulate(
-    tx: Transaction | VersionedTransaction,
-    signers?: Signer[],
-    commitment?: LegacyCommitment,
-    includeAccounts?: boolean | PublicKey[]
+    message: TransactionMessage,
+    signers?: TransactionSigner[],
+    commitment?: Commitment,
+    includeAccounts?: boolean | Address[]
   ): Promise<SuccessfulTxSimulationResponse> {
-    const kitCommitment =
-      toCommitment(commitment) ??
-      toCommitment(this.opts.commitment) ??
-      "processed";
+    const kitCommitment = commitment ?? this.opts.commitment ?? "processed";
     const sigVerify = !!signers && signers.length > 0;
 
-    let wire: ReturnType<typeof getBase64EncodedWireTransaction>;
-    let addresses: Address[] | undefined;
-    if (isVersionedTransaction(tx)) {
-      if (sigVerify) {
-        tx.sign(signers!);
-        const { value } = await this.rpc
-          .getLatestBlockhash({ commitment: kitCommitment })
-          .send();
-        const [signed] = await this.#walletSign([
-          attachBlockhashLifetime(
-            getTransactionDecoder().decode(tx.serialize()),
-            value.lastValidBlockHeight
-          ),
-        ]);
-        wire = getBase64EncodedWireTransaction(signed);
-      } else {
-        wire = getBase64EncodedWireTransaction(
-          getTransactionDecoder().decode(tx.serialize())
+    const prepared = this.#prepare(message, signers ?? []);
+    const withLifetime = hasLifetime(prepared.message)
+      ? prepared.message
+      : setTransactionMessageLifetimeUsingBlockhash(
+          await this.#latestBlockhash(kitCommitment),
+          prepared.message
         );
-      }
-    } else {
-      const extraSigners = await fromLegacySigners(signers ?? []);
-      const lifetime = (
-        await this.rpc.getLatestBlockhash({ commitment: kitCommitment }).send()
-      ).value;
-      const message = this.#fromLegacyTransaction(tx, extraSigners, lifetime);
-      wire = getBase64EncodedWireTransaction(
-        sigVerify
-          ? await signTransactionMessageWithSigners(message)
-          : compileTransaction(message)
-      );
 
-      if (includeAccounts) {
-        addresses = Array.isArray(includeAccounts)
-          ? includeAccounts.map((key) => address(key.toBase58()))
-          : nonProgramAddresses(tx, this.publicKey);
-      }
-    }
+    const transaction = sigVerify
+      ? (
+          await this.#walletSign([
+            await this.#signWithSigners(withLifetime, prepared.signers),
+          ])
+        )[0]
+      : compileTransaction(withLifetime);
+    const wire = getBase64EncodedWireTransaction(transaction);
+
+    const addresses = includeAccounts
+      ? Array.isArray(includeAccounts)
+        ? includeAccounts
+        : nonProgramAddresses(withLifetime)
+      : undefined;
 
     const base = { encoding: "base64", commitment: kitCommitment } as const;
     const result = addresses
@@ -494,120 +459,148 @@ export class AnchorProvider implements Provider {
   }
 
   /**
-   * Builds a Kit transaction message from a legacy web3.js transaction.
-   *
-   * The wallet signs as the fee payer unless another fee payer is set on the
-   * transaction, in which case the wallet still co-signs any account it is
-   * referenced by. Pass `walletSigns: false` to leave every wallet signature
-   * slot open, e.g. to batch-sign afterwards.
+   * Gives the message a fee payer (the wallet, unless one is already set) and
+   * gathers every signer it needs besides the wallet: those attached to the
+   * message plus the extra ones provided.
    */
-  #fromLegacyTransaction(
-    tx: Transaction,
-    extraSigners: TransactionSigner[],
-    lifetime: Readonly<{ blockhash: Blockhash; lastValidBlockHeight: bigint }>,
-    { walletSigns = true }: { walletSigns?: boolean } = {}
-  ) {
-    // The message is rebuilt from `instructions` and `recentBlockhash`,
-    // whereas web3.js would compile a `nonceInfo` transaction with the nonce
-    // as its blockhash and the advance instruction prepended. Refuse rather
-    // than silently send a different transaction. Legacy transactions built
-    // that way by hand, and versioned transactions, are forwarded as is.
-    if (tx.nonceInfo) {
-      throw new Error(
-        "Transactions with `nonceInfo` are not supported by the provider. " +
-          "Set the nonce as `recentBlockhash` and add the advance nonce " +
-          "instruction first, or use a versioned transaction."
-      );
+  #prepare(
+    message: TransactionMessage,
+    extraSigners: TransactionSigner[]
+  ): PreparedMessage {
+    const withFeePayer = hasFeePayer(message)
+      ? message
+      : setTransactionMessageFeePayer(this.wallet.address, message);
+
+    const signers = new Map<Address, TransactionSigner>();
+    for (const signer of [
+      ...getSignersFromTransactionMessage(
+        message as TransactionMessage & TransactionMessageWithSigners
+      ),
+      ...extraSigners,
+    ]) {
+      if (
+        signer.address !== this.wallet.address &&
+        !signers.has(signer.address)
+      ) {
+        signers.set(signer.address, signer);
+      }
     }
 
-    const feePayer = address((tx.feePayer ?? this.publicKey).toBase58());
-    const signers = walletSigns ? [this.wallet, ...extraSigners] : extraSigners;
-    const feePayerSigner = signers.find(
-      (signer) => signer.address === feePayer
+    return { message: withFeePayer, signers: [...signers.values()] };
+  }
+
+  /**
+   * Compiles the message and has every signer it requires, besides the
+   * wallet, sign it. Signers not required by the compiled transaction are
+   * skipped, as Kit's key pair signers refuse to sign transactions they are
+   * not part of.
+   */
+  async #signWithSigners(
+    message: PreparedMessage["message"] & TransactionMessageWithLifetime,
+    signers: TransactionSigner[]
+  ): Promise<Transaction & TransactionWithLifetime> {
+    const transaction = compileTransaction(message);
+    const required = signers.filter(
+      (signer) => signer.address in transaction.signatures
     );
-    return pipe(
-      createTransactionMessage({ version: "legacy" }),
-      (message) =>
-        feePayerSigner
-          ? setTransactionMessageFeePayerSigner(feePayerSigner, message)
-          : setTransactionMessageFeePayer(feePayer, message),
-      (message) =>
-        setTransactionMessageLifetimeUsingBlockhash(lifetime, message),
-      (message) =>
-        appendTransactionMessageInstructions(
-          tx.instructions.map(fromLegacyInstruction),
-          message
-        ),
-      (message) => addSignersToTransactionMessage(signers, message)
+    if (required.length === 0) {
+      return transaction;
+    }
+    return await partiallySignTransactionWithSigners(
+      required.map((signer) => {
+        if (
+          !isTransactionPartialSigner(signer) &&
+          !isTransactionModifyingSigner(signer)
+        ) {
+          throw new Error(
+            `Signer ${signer.address} can only sign and send transactions ` +
+              "itself. The provider needs signers that can sign transactions " +
+              "before they are sent."
+          );
+        }
+        return signer;
+      }),
+      transaction
     );
   }
 
   /**
-   * Has the wallet sign the given Kit transactions, supporting both partial
-   * and modifying signers. The whole batch is signed in a single request so
-   * that wallets prompting the user only prompt once.
+   * Has the wallet sign the given transactions it is a required signer of,
+   * supporting both partial and modifying signers. The whole batch is signed
+   * in a single request so that wallets prompting the user only prompt once.
    */
   async #walletSign(
-    transactions: (KitTransaction & TransactionWithLifetime)[]
-  ): Promise<readonly (KitTransaction & TransactionWithLifetime)[]> {
+    transactions: (Transaction & TransactionWithLifetime)[]
+  ): Promise<(Transaction & TransactionWithLifetime)[]> {
+    const indices = transactions.flatMap((tx, index) =>
+      this.wallet.address in tx.signatures ? [index] : []
+    );
+    if (indices.length === 0) {
+      return transactions;
+    }
+    const toSign = indices.map((index) => {
+      const tx = transactions[index];
+      assertIsTransactionWithinSizeLimit(tx);
+      return tx;
+    });
+
+    // Unlike Kit, which favours modifying signers, a wallet implementing
+    // both interfaces signs partially: it signs last, after the other
+    // signers, so modifying the transaction would invalidate their
+    // signatures.
+    let signed: readonly (Transaction & TransactionWithLifetime)[];
     if (isTransactionPartialSigner(this.wallet)) {
-      const sized = transactions.map((tx) => {
-        assertIsTransactionWithinSizeLimit(tx);
-        return tx;
-      });
-      const signatureDictionaries = await this.wallet.signTransactions(sized);
-      return sized.map((tx, index) => ({
+      const signatureDictionaries = await this.wallet.signTransactions(toSign);
+      signed = toSign.map((tx, index) => ({
         ...tx,
         signatures: Object.freeze({
           ...tx.signatures,
           ...signatureDictionaries[index],
         }),
       }));
+    } else if (isTransactionModifyingSigner(this.wallet)) {
+      signed = await this.wallet.modifyAndSignTransactions(toSign);
+    } else {
+      throw new Error(
+        "The provider wallet must implement `signTransactions` or " +
+          "`modifyAndSignTransactions` to sign transactions before sending."
+      );
     }
-    if (isTransactionModifyingSigner(this.wallet)) {
-      return await this.wallet.modifyAndSignTransactions(transactions);
-    }
-    throw new Error(
-      "The provider wallet must implement `signTransactions` or " +
-        "`modifyAndSignTransactions` to sign transactions before sending."
-    );
+
+    const result = [...transactions];
+    indices.forEach((index, position) => {
+      result[index] = signed[position];
+    });
+    return result;
   }
 
-  /**
-   * The block height until which a transaction whose blockhash was provided
-   * by the caller is considered alive. The exact expiry of that blockhash is
-   * unknown, so the current blockhash's expiry serves as an upper bound.
-   */
-  async #lastValidBlockHeight(
-    opts: ConfirmOptionsWithBlockhash,
-    commitment: Commitment
-  ): Promise<bigint> {
-    if (opts.blockhash) {
-      return BigInt(opts.blockhash.lastValidBlockHeight);
-    }
+  async #latestBlockhash(commitment: Commitment): Promise<BlockhashLifetime> {
     const { value } = await this.rpc.getLatestBlockhash({ commitment }).send();
-    return value.lastValidBlockHeight;
+    return value;
   }
 
   async #sendSigned(
-    transaction: KitTransaction & TransactionWithBlockhashLifetime,
+    transaction: Transaction & TransactionWithLifetime,
     opts: ConfirmOptions,
     commitment: Commitment
-  ): Promise<TransactionSignature> {
+  ): Promise<Signature> {
     assertIsSendableTransaction(transaction);
     const signature = getSignatureFromTransaction(transaction);
+    const config = {
+      commitment,
+      skipPreflight: opts.skipPreflight,
+      preflightCommitment: opts.preflightCommitment ?? commitment,
+      maxRetries: opts.maxRetries != null ? BigInt(opts.maxRetries) : undefined,
+      minContextSlot:
+        opts.minContextSlot != null ? BigInt(opts.minContextSlot) : undefined,
+    };
     try {
-      await this.#sendAndConfirmTransaction(transaction, {
-        commitment,
-        skipPreflight: opts.skipPreflight,
-        preflightCommitment:
-          toCommitment(opts.preflightCommitment ?? opts.commitment) ??
-          commitment,
-        maxRetries:
-          opts.maxRetries != null ? BigInt(opts.maxRetries) : undefined,
-        minContextSlot:
-          opts.minContextSlot != null ? BigInt(opts.minContextSlot) : undefined,
-      });
+      if (isTransactionWithDurableNonceLifetime(transaction)) {
+        await this.#sendAndConfirmDurableNonceTransaction(transaction, config);
+      } else {
+        assertIsTransactionWithBlockhashLifetime(transaction);
+        await this.#sendAndConfirmTransaction(transaction, config);
+      }
       return signature;
     } catch (err) {
       throw await this.#enrichSendError(err, signature);
@@ -700,12 +693,35 @@ export class SimulateError extends Error {
   }
 }
 
-export type ConfirmOptionsWithBlockhash = ConfirmOptions & {
-  blockhash?: BlockhashWithExpiryBlockHeight;
+/**
+ * A transaction message with a fee payer, alongside the signers it requires
+ * besides the wallet.
+ */
+type PreparedMessage = {
+  message: TransactionMessage & TransactionMessageWithFeePayer;
+  signers: TransactionSigner[];
 };
 
-// The recentBlockhash placeholder web3.js serialises when none was set.
-const DEFAULT_RECENT_BLOCKHASH = "11111111111111111111111111111111";
+type BlockhashLifetime = Readonly<{
+  blockhash: Blockhash;
+  lastValidBlockHeight: bigint;
+}>;
+
+function hasFeePayer(
+  message: TransactionMessage
+): message is TransactionMessage & TransactionMessageWithFeePayer {
+  return "feePayer" in message && message.feePayer != null;
+}
+
+/** Whether the message carries a lifetime, blockhash or durable nonce. */
+function hasLifetime<TMessage extends TransactionMessage>(
+  message: TMessage
+): message is TMessage & TransactionMessageWithLifetime {
+  return (
+    isTransactionMessageWithBlockhashLifetime(message) ||
+    isTransactionMessageWithDurableNonceLifetime(message)
+  );
+}
 
 /**
  * Derives a websocket endpoint from an HTTP endpoint the same way web3.js
@@ -722,98 +738,22 @@ function makeWebsocketUrl(url: string): string {
 }
 
 /**
- * Coerces a legacy web3.js commitment (which includes deprecated aliases)
- * into a Kit commitment.
- */
-function toCommitment(
-  commitment: LegacyCommitment | undefined
-): Commitment | undefined {
-  switch (commitment) {
-    case undefined:
-      return undefined;
-    case "processed":
-    case "recent":
-      return "processed";
-    case "confirmed":
-    case "single":
-    case "singleGossip":
-      return "confirmed";
-    case "finalized":
-    case "root":
-    case "max":
-      return "finalized";
-  }
-}
-
-/**
- * Attaches a blockhash lifetime to a Kit transaction decoded from wire
- * bytes. The blockhash is read back from the compiled message; its exact
- * expiry is unknown, so the caller provides an upper bound (typically the
- * expiry of the latest blockhash).
- */
-function attachBlockhashLifetime(
-  tx: KitTransaction,
-  lastValidBlockHeight: bigint
-): KitTransaction & TransactionWithBlockhashLifetime {
-  const message = getCompiledTransactionMessageDecoder().decode(
-    tx.messageBytes
-  );
-  return {
-    ...tx,
-    lifetimeConstraint: {
-      blockhash: message.lifetimeToken as Blockhash,
-      lastValidBlockHeight,
-    },
-  };
-}
-
-function fromLegacyInstruction(ix: TransactionInstruction): Instruction {
-  return {
-    programAddress: address(ix.programId.toBase58()),
-    accounts: ix.keys.map((meta) => ({
-      address: address(meta.pubkey.toBase58()),
-      role: meta.isSigner
-        ? meta.isWritable
-          ? AccountRole.WRITABLE_SIGNER
-          : AccountRole.READONLY_SIGNER
-        : meta.isWritable
-        ? AccountRole.WRITABLE
-        : AccountRole.READONLY,
-    })),
-    ...(ix.data.length > 0 ? { data: new Uint8Array(ix.data) } : {}),
-  };
-}
-
-async function fromLegacySigners(
-  signers: Signer[]
-): Promise<TransactionSigner[]> {
-  return await Promise.all(
-    signers.map((signer) => createKeyPairSignerFromBytes(signer.secretKey))
-  );
-}
-
-/**
- * Every non-program account referenced by the given legacy transaction,
+ * Every non-program account referenced by the given transaction message,
  * mirroring the account list web3.js used to compile its messages from.
  */
 function nonProgramAddresses(
-  tx: Transaction,
-  defaultFeePayer: PublicKey
+  message: TransactionMessage & TransactionMessageWithFeePayer
 ): Address[] {
-  const programIds = new Set(
-    tx.instructions.map((ix) => ix.programId.toBase58())
+  const programAddresses = new Set<Address>(
+    message.instructions.map((ix) => ix.programAddress)
   );
-  const accounts = new Set<string>([
-    (tx.feePayer ?? defaultFeePayer).toBase58(),
-  ]);
-  for (const ix of tx.instructions) {
-    for (const meta of ix.keys) {
-      accounts.add(meta.pubkey.toBase58());
+  const accounts = new Set<Address>([message.feePayer.address]);
+  for (const ix of message.instructions) {
+    for (const meta of ix.accounts ?? []) {
+      accounts.add(meta.address);
     }
   }
-  return [...accounts]
-    .filter((account) => !programIds.has(account))
-    .map((account) => address(account));
+  return [...accounts].filter((account) => !programAddresses.has(account));
 }
 
 /**

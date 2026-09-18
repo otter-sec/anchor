@@ -15,7 +15,8 @@ export {
 export type {
   SolanaClient,
   ClusterEndpoints,
-  ConfirmOptionsWithBlockhash,
+  ConfirmOptions,
+  TransactionMessageWithExtraSigners,
   WalletSigner,
 } from "./provider.js";
 export { createWallet, createLocalWallet } from "./wallet.js";

@@ -1,131 +1,57 @@
+import { Keypair } from "@solana/web3.js";
 import {
-  ConfirmOptions,
-  Keypair,
-  PublicKey,
-  SystemProgram,
-  Transaction,
-} from "@solana/web3.js";
-import {
-  createSolanaRpcFromTransport,
-  getBase64Encoder,
-  getCompiledTransactionMessageDecoder,
-  getTransactionDecoder,
-  RpcTransport,
+  addSignersToTransactionMessage,
+  Blockhash,
+  getU32Codec,
+  Nonce,
+  partiallySignTransactionWithSigners,
+  setTransactionMessageFeePayer,
+  setTransactionMessageFeePayerSigner,
+  setTransactionMessageLifetimeUsingBlockhash,
+  setTransactionMessageLifetimeUsingDurableNonce,
   SolanaError,
   SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM,
-  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE,
+  Transaction,
+  TransactionModifyingSigner,
+  TransactionPartialSigner,
+  TransactionSigner,
 } from "@solana/kit";
-import { AnchorProvider, ProviderError, SolanaClient } from "../src/provider";
+import { AnchorProvider, ProviderError } from "../src/provider";
 import { ProgramError, translateError } from "../src/error";
 import { createWallet } from "../src/wallet";
+import {
+  BLOCKHASH,
+  confirmingResponders,
+  decodeWireTransaction,
+  expectFullySigned,
+  latestBlockhashResponse,
+  mockProvider,
+  nonceAccountResponse,
+  preflightFailureResponse,
+  randomAddress,
+  randomSigner,
+  signatureBase58,
+  simulationResponse,
+  SYSTEM_PROGRAM,
+  transferMessage,
+} from "./helpers/mock-provider";
 
-const BLOCKHASH = "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N";
-
-type RpcRequest = { method: string; params: unknown[] };
-type Responder = (request: RpcRequest) => unknown;
-
-/**
- * A provider over a mock HTTP transport: `responders` maps RPC method names
- * to functions returning the JSON-RPC `result` (or `{ error }` envelopes),
- * and every request is recorded in `requests`.
- */
-function mockProvider(
-  responders: Record<string, Responder>,
-  opts?: ConfirmOptions
-) {
-  const wallet = Keypair.generate();
-  const requests: RpcRequest[] = [];
-  const transport: RpcTransport = async ({ payload }) => {
-    const request = payload as RpcRequest & { id: string; jsonrpc: string };
-    requests.push(request);
-    const responder = responders[request.method];
-    if (!responder) {
-      throw new Error(`Unexpected RPC call: ${request.method}`);
-    }
-    const result = responder(request);
-    if (typeof result === "object" && result !== null && "error" in result) {
-      return result as any;
-    }
-    return { jsonrpc: "2.0", id: request.id, result } as any;
+/** A key pair wallet whose `signTransactions` calls are recorded. */
+function spiedWallet() {
+  const inner = createWallet(Keypair.generate().secretKey);
+  const signTransactions = jest.fn(inner.signTransactions);
+  const wallet: TransactionPartialSigner = {
+    address: inner.address,
+    signTransactions,
   };
-  const provider = new AnchorProvider(
-    {
-      rpc: createSolanaRpcFromTransport(transport),
-      rpcSubscriptions: {} as any,
-    } as SolanaClient,
-    createWallet(wallet.secretKey),
-    opts
-  );
-  return { provider, wallet, requests };
-}
-
-function latestBlockhashResponse() {
-  return {
-    context: { slot: 1 },
-    value: { blockhash: BLOCKHASH, lastValidBlockHeight: 100 },
-  };
-}
-
-function simulationResponse(overrides: Record<string, unknown> = {}) {
-  return {
-    context: { slot: 1 },
-    value: {
-      err: null,
-      logs: ["Program 11111111111111111111111111111111 invoke [1]"],
-      accounts: null,
-      unitsConsumed: 150,
-      returnData: null,
-      ...overrides,
-    },
-  };
-}
-
-function preflightFailureResponse(request: RpcRequest, err: unknown) {
-  return {
-    jsonrpc: "2.0",
-    id: (request as any).id,
-    error: {
-      code: SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE,
-      message: "Transaction simulation failed",
-      data: {
-        err,
-        logs: ["Program log: AnchorError thrown in programs/test/src/lib.rs"],
-        accounts: null,
-        unitsConsumed: 0,
-        returnData: null,
-      },
-    },
-  };
-}
-
-function transferTransaction(from: PublicKey): Transaction {
-  const tx = new Transaction();
-  tx.add(
-    SystemProgram.transfer({
-      fromPubkey: from,
-      toPubkey: Keypair.generate().publicKey,
-      lamports: 1,
-    })
-  );
-  return tx;
-}
-
-/** Decodes the base64 wire transaction sent as the first RPC param. */
-function decodeWireTransaction(request: RpcRequest) {
-  const bytes = getBase64Encoder().encode(request.params[0] as string);
-  const transaction = getTransactionDecoder().decode(bytes);
-  const message = getCompiledTransactionMessageDecoder().decode(
-    transaction.messageBytes
-  );
-  return { transaction, message };
+  return { wallet, signTransactions };
 }
 
 describe("AnchorProvider", () => {
   describe("construction", () => {
     it("exposes the wallet address as a legacy public key", () => {
       const { provider, wallet } = mockProvider({});
-      expect(provider.publicKey.toBase58()).toBe(wallet.publicKey.toBase58());
-      expect(provider.wallet.address).toBe(wallet.publicKey.toBase58());
+      expect(provider.publicKey.toBase58()).toBe(wallet.address);
     });
 
     it("does not expose the legacy connection when built from a Kit client", () => {
@@ -163,15 +89,13 @@ describe("AnchorProvider", () => {
   });
 
   describe("simulate", () => {
-    it("compiles legacy transactions with the wallet as fee payer", async () => {
+    it("compiles messages with the wallet as fee payer and a fresh blockhash", async () => {
       const { provider, wallet, requests } = mockProvider({
         getLatestBlockhash: latestBlockhashResponse,
         simulateTransaction: simulationResponse,
       });
 
-      const response = await provider.simulate(
-        transferTransaction(wallet.publicKey)
-      );
+      const response = await provider.simulate(transferMessage(wallet.address));
 
       expect(response.logs).toHaveLength(1);
       expect(response.unitsConsumed).toBe(150n);
@@ -179,13 +103,12 @@ describe("AnchorProvider", () => {
       const request = requests.find((r) => r.method === "simulateTransaction")!;
       const { message } = decodeWireTransaction(request);
       expect(message.lifetimeToken).toBe(BLOCKHASH);
-      expect(message.staticAccounts[0]).toBe(wallet.publicKey.toBase58());
-      expect(message.staticAccounts).toContain(
-        SystemProgram.programId.toBase58()
-      );
+      expect(message.staticAccounts[0]).toBe(wallet.address);
+      expect(message.staticAccounts).toContain(SYSTEM_PROGRAM);
+      expect((request.params[1] as any).sigVerify).toBeUndefined();
     });
 
-    it("signs a fee payer that appears only as fee payer", async () => {
+    it("keeps an explicit fee payer and signs for it", async () => {
       const { provider, wallet, requests } = mockProvider({
         getLatestBlockhash: latestBlockhashResponse,
         simulateTransaction: simulationResponse,
@@ -193,68 +116,51 @@ describe("AnchorProvider", () => {
 
       // Gas-sponsor pattern: the sponsor pays fees but is not referenced by
       // any instruction; it must still end up signing.
-      const sponsor = Keypair.generate();
-      const tx = transferTransaction(wallet.publicKey);
-      tx.feePayer = sponsor.publicKey;
-      await provider.simulate(tx, [sponsor]);
+      const sponsor = randomSigner();
+      const message = setTransactionMessageFeePayer(
+        sponsor.address,
+        transferMessage(wallet.address)
+      );
+      await provider.simulate(message, [sponsor.signer]);
 
       const request = requests.find((r) => r.method === "simulateTransaction")!;
-      const { transaction, message } = decodeWireTransaction(request);
-      expect(message.staticAccounts[0]).toBe(sponsor.publicKey.toBase58());
-      const signatures = Object.entries(transaction.signatures);
-      expect(signatures).toHaveLength(2);
-      for (const [, signature] of signatures) {
-        expect(signature).not.toBeNull();
-      }
+      const { transaction, message: compiled } = decodeWireTransaction(request);
+      expect(compiled.staticAccounts[0]).toBe(sponsor.address);
+      expectFullySigned(transaction, 2);
     });
 
     it("signs and verifies signatures when signers are provided", async () => {
-      const { provider, wallet, requests } = mockProvider({
+      const { provider, requests } = mockProvider({
         getLatestBlockhash: latestBlockhashResponse,
         simulateTransaction: simulationResponse,
       });
 
-      const extraSigner = Keypair.generate();
-      const tx = transferTransaction(extraSigner.publicKey);
-      tx.feePayer = wallet.publicKey;
-      await provider.simulate(tx, [extraSigner]);
+      const sender = randomSigner();
+      await provider.simulate(transferMessage(sender.address), [sender.signer]);
 
       const request = requests.find((r) => r.method === "simulateTransaction")!;
       expect((request.params[1] as any).sigVerify).toBe(true);
-
       // Both the wallet and the extra signer signed for real: the decoder
       // maps zeroed (missing) signatures to null.
-      const { transaction } = decodeWireTransaction(request);
-      const signatures = Object.entries(transaction.signatures);
-      expect(signatures).toHaveLength(2);
-      for (const [, signature] of signatures) {
-        expect(signature).not.toBeNull();
-      }
+      expectFullySigned(decodeWireTransaction(request).transaction, 2);
     });
 
-    it("maps legacy commitment aliases to Kit commitments", async () => {
+    it("keeps a lifetime already set on the message", async () => {
       const { provider, wallet, requests } = mockProvider({
-        getLatestBlockhash: latestBlockhashResponse,
         simulateTransaction: simulationResponse,
       });
 
-      await provider.simulate(
-        transferTransaction(wallet.publicKey),
-        undefined,
-        "recent"
+      const ownBlockhash =
+        "GHtXQBsoZHVnNFa9YevAzFr17DJjgHXk3ycTKD5xD3Zi" as Blockhash;
+      const message = setTransactionMessageLifetimeUsingBlockhash(
+        { blockhash: ownBlockhash, lastValidBlockHeight: 50n },
+        transferMessage(wallet.address)
       );
-      await provider.simulate(
-        transferTransaction(wallet.publicKey),
-        undefined,
-        "max"
-      );
+      await provider.simulate(message);
 
-      const [recent, max] = requests.filter(
-        (r) => r.method === "simulateTransaction"
-      );
-      expect((recent.params[1] as any).commitment).toBe("processed");
-      // "max" maps to "finalized", which Kit omits as the server default.
-      expect((max.params[1] as any).commitment).toBeUndefined();
+      expect(requests.map((r) => r.method)).toEqual(["simulateTransaction"]);
+      const { message: compiled } = decodeWireTransaction(requests[0]);
+      expect(compiled.lifetimeToken).toBe(ownBlockhash);
     });
 
     it("requests post-simulation accounts when includeAccounts is set", async () => {
@@ -268,18 +174,20 @@ describe("AnchorProvider", () => {
           }),
       });
 
-      const tx = transferTransaction(wallet.publicKey);
-      await provider.simulate(tx, undefined, undefined, true);
+      await provider.simulate(
+        transferMessage(wallet.address),
+        undefined,
+        undefined,
+        true
+      );
 
       const request = requests.find((r) => r.method === "simulateTransaction")!;
       const accountsConfig = (request.params[1] as any).accounts;
       // Every non-program account: the wallet (fee payer and sender) and
       // the recipient of the transfer.
       expect(accountsConfig.addresses).toHaveLength(2);
-      expect(accountsConfig.addresses).toContain(wallet.publicKey.toBase58());
-      expect(accountsConfig.addresses).not.toContain(
-        SystemProgram.programId.toBase58()
-      );
+      expect(accountsConfig.addresses).toContain(wallet.address);
+      expect(accountsConfig.addresses).not.toContain(SYSTEM_PROGRAM);
     });
 
     it("throws a SimulateError carrying logs when simulation fails", async () => {
@@ -292,7 +200,7 @@ describe("AnchorProvider", () => {
           }),
       });
 
-      const promise = provider.simulate(transferTransaction(wallet.publicKey));
+      const promise = provider.simulate(transferMessage(wallet.address));
       await expect(promise).rejects.toThrow('"Custom":6000');
       await expect(promise).rejects.toMatchObject({
         logs: ["Program log: Error: Custom(6000)"],
@@ -301,6 +209,136 @@ describe("AnchorProvider", () => {
   });
 
   describe("sendAndConfirm", () => {
+    it("sends a fully signed transaction and returns its signature", async () => {
+      const { provider, wallet, requests } = mockProvider(
+        confirmingResponders()
+      );
+
+      const signature = await provider.sendAndConfirm(
+        transferMessage(wallet.address)
+      );
+
+      const request = requests.find((r) => r.method === "sendTransaction")!;
+      const { transaction } = decodeWireTransaction(request);
+      expectFullySigned(transaction, 1);
+      expect(signature).toBe(signatureBase58(transaction));
+    });
+
+    it("uses the signers attached to the message", async () => {
+      const { provider, requests } = mockProvider(confirmingResponders());
+
+      const sender = randomSigner();
+      const message = addSignersToTransactionMessage(
+        [sender.signer],
+        transferMessage(sender.address)
+      );
+      await provider.sendAndConfirm(message);
+
+      const request = requests.find((r) => r.method === "sendTransaction")!;
+      expectFullySigned(decodeWireTransaction(request).transaction, 2);
+    });
+
+    it("uses a fee payer signer attached to the message", async () => {
+      const { provider, wallet, requests } = mockProvider(
+        confirmingResponders()
+      );
+
+      // The pattern recommended for manual signing: no `signers` argument,
+      // the sponsor is discovered from the message itself.
+      const sponsor = randomSigner();
+      const message = setTransactionMessageFeePayerSigner(
+        sponsor.signer,
+        transferMessage(wallet.address)
+      );
+      await provider.sendAndConfirm(message);
+
+      const request = requests.find((r) => r.method === "sendTransaction")!;
+      const { transaction, message: compiled } = decodeWireTransaction(request);
+      expect(compiled.staticAccounts[0]).toBe(sponsor.address);
+      expectFullySigned(transaction, 2);
+    });
+
+    it("skips signers the transaction does not require", async () => {
+      const { provider, wallet, requests } = mockProvider(
+        confirmingResponders()
+      );
+
+      // Kit key pair signers refuse to sign transactions they are not part
+      // of, so the provider must not hand them such transactions.
+      const bystander = randomSigner();
+      await provider.sendAndConfirm(transferMessage(wallet.address), [
+        bystander.signer,
+      ]);
+
+      const request = requests.find((r) => r.method === "sendTransaction")!;
+      expectFullySigned(decodeWireTransaction(request).transaction, 1);
+    });
+
+    it("rejects required signers that can only sign and send", async () => {
+      const { provider } = mockProvider(confirmingResponders());
+
+      const sendingOnly: TransactionSigner = {
+        address: randomAddress(),
+        signAndSendTransactions: async () => [],
+      };
+      const promise = provider.sendAndConfirm(
+        transferMessage(sendingOnly.address),
+        [sendingOnly]
+      );
+      await expect(promise).rejects.toThrow("can only sign and send");
+    });
+
+    it("does not refresh the blockhash of a message carrying its own", async () => {
+      const { provider, wallet, requests } = mockProvider(
+        confirmingResponders()
+      );
+
+      const message = setTransactionMessageLifetimeUsingBlockhash(
+        { blockhash: BLOCKHASH, lastValidBlockHeight: 50n },
+        transferMessage(wallet.address)
+      );
+      await provider.sendAndConfirm(message);
+
+      expect(requests.map((r) => r.method)).not.toContain("getLatestBlockhash");
+    });
+
+    it("confirms durable nonce messages through the nonce account", async () => {
+      const nonce = BLOCKHASH as string as Nonce;
+      const nonceAccountAddress = randomAddress();
+      const { provider, wallet, requests } = mockProvider({
+        ...confirmingResponders(),
+        getAccountInfo: nonceAccountResponse(nonce),
+      });
+
+      const message = setTransactionMessageLifetimeUsingDurableNonce(
+        { nonce, nonceAccountAddress, nonceAuthorityAddress: wallet.address },
+        transferMessage(wallet.address)
+      );
+      const signature = await provider.sendAndConfirm(message);
+
+      // Sent as is: the nonce is the lifetime token and the advance
+      // instruction comes first.
+      const sent = requests.find((r) => r.method === "sendTransaction")!;
+      const { transaction, message: compiled } = decodeWireTransaction(sent);
+      expect(signature).toBe(signatureBase58(transaction));
+      expect(compiled.lifetimeToken).toBe(nonce);
+      if (!("instructions" in compiled)) {
+        throw new Error("Expected a version 0 message");
+      }
+      const [advance] = compiled.instructions;
+      expect(compiled.staticAccounts[advance.programAddressIndex]).toBe(
+        SYSTEM_PROGRAM
+      );
+      expect(getU32Codec().decode(advance.data!)).toBe(4);
+
+      // Confirmed by watching the nonce account, not a blockhash expiry.
+      const methods = requests.map((r) => r.method);
+      expect(methods).not.toContain("getLatestBlockhash");
+      expect(methods).not.toContain("getEpochInfo");
+      const lookup = requests.find((r) => r.method === "getAccountInfo")!;
+      expect(lookup.params[0]).toBe(nonceAccountAddress);
+    });
+
     it("throws a ProviderError carrying logs on preflight failure", async () => {
       const { provider, wallet, requests } = mockProvider({
         getLatestBlockhash: latestBlockhashResponse,
@@ -310,9 +348,7 @@ describe("AnchorProvider", () => {
           }),
       });
 
-      const promise = provider.sendAndConfirm(
-        transferTransaction(wallet.publicKey)
-      );
+      const promise = provider.sendAndConfirm(transferMessage(wallet.address));
       await expect(promise).rejects.toThrow(ProviderError);
       await expect(promise).rejects.toThrow("Custom program error: #6000");
       await expect(promise).rejects.toMatchObject({
@@ -334,13 +370,13 @@ describe("AnchorProvider", () => {
               InstructionError: [0, { Custom: 6000 }],
             }),
         },
-        { commitment: "confirmed", preflightCommitment: "confirmed" }
+        { opts: { commitment: "confirmed", preflightCommitment: "confirmed" } }
       );
 
       // Only `skipPreflight` is given: the commitments come from the provider
       // rather than the library default (`processed` at this point).
       const promise = provider.sendAndConfirm(
-        transferTransaction(wallet.publicKey),
+        transferMessage(wallet.address),
         undefined,
         { skipPreflight: true }
       );
@@ -373,9 +409,7 @@ describe("AnchorProvider", () => {
         },
       });
 
-      const promise = provider.sendAndConfirm(
-        transferTransaction(wallet.publicKey)
-      );
+      const promise = provider.sendAndConfirm(transferMessage(wallet.address));
       await expect(promise).rejects.toThrow("Custom program error: #6000");
 
       expect(
@@ -385,6 +419,25 @@ describe("AnchorProvider", () => {
       expect(
         requests.filter((r) => r.method === "getLatestBlockhash")
       ).toHaveLength(3);
+    });
+
+    it("does not retry when the message carries its own blockhash", async () => {
+      const { provider, wallet, requests } = mockProvider({
+        getTransaction: () => null,
+        sendTransaction: (request) =>
+          preflightFailureResponse(request, "AlreadyProcessed"),
+      });
+
+      const message = setTransactionMessageLifetimeUsingBlockhash(
+        { blockhash: BLOCKHASH, lastValidBlockHeight: 50n },
+        transferMessage(wallet.address)
+      );
+      await expect(provider.sendAndConfirm(message)).rejects.toThrow(
+        ProviderError
+      );
+      expect(
+        requests.filter((r) => r.method === "sendTransaction")
+      ).toHaveLength(1);
     });
 
     it("recovers logs and translates errors of failed sends", async () => {
@@ -405,9 +458,7 @@ describe("AnchorProvider", () => {
         }),
       });
 
-      const promise = provider.sendAndConfirm(
-        transferTransaction(wallet.publicKey)
-      );
+      const promise = provider.sendAndConfirm(transferMessage(wallet.address));
       await expect(promise).rejects.toThrow(ProviderError);
       await expect(promise).rejects.toMatchObject({ logs });
 
@@ -419,24 +470,165 @@ describe("AnchorProvider", () => {
       expect(translated.code).toBe(6000);
       expect(translated.msg).toBe("Custom error");
     });
+  });
 
-    it("rejects transactions carrying nonceInfo rather than mistranslating them", async () => {
-      const { provider, wallet } = mockProvider({
-        getLatestBlockhash: latestBlockhashResponse,
+  describe("sendAll", () => {
+    it("signs the whole batch with the wallet in a single request", async () => {
+      const { wallet, signTransactions } = spiedWallet();
+      const { provider, requests } = mockProvider(confirmingResponders(), {
+        wallet,
       });
 
-      const tx = transferTransaction(wallet.publicKey);
-      tx.nonceInfo = {
-        nonce: BLOCKHASH,
-        nonceInstruction: SystemProgram.nonceAdvance({
-          noncePubkey: Keypair.generate().publicKey,
-          authorizedPubkey: wallet.publicKey,
-        }),
-      };
+      const sender = randomSigner();
+      const signatures = await provider.sendAll([
+        { message: transferMessage(wallet.address) },
+        { message: transferMessage(sender.address), signers: [sender.signer] },
+      ]);
 
-      await expect(provider.sendAndConfirm(tx)).rejects.toThrow(
-        "Transactions with `nonceInfo` are not supported"
+      expect(signatures).toHaveLength(2);
+      expect(signTransactions).toHaveBeenCalledTimes(1);
+      expect(signTransactions.mock.calls[0][0]).toHaveLength(2);
+
+      const sent = requests.filter((r) => r.method === "sendTransaction");
+      expect(sent).toHaveLength(2);
+      expectFullySigned(decodeWireTransaction(sent[0]).transaction, 1);
+      expectFullySigned(decodeWireTransaction(sent[1]).transaction, 2);
+      // A single blockhash fetch is shared across the batch.
+      expect(
+        requests.filter((r) => r.method === "getLatestBlockhash")
+      ).toHaveLength(1);
+    });
+
+    it("confirms each transaction by its own lifetime", async () => {
+      const nonce = BLOCKHASH as string as Nonce;
+      const nonceAccountAddress = randomAddress();
+      const { provider, wallet, requests } = mockProvider({
+        ...confirmingResponders(),
+        getAccountInfo: nonceAccountResponse(nonce),
+      });
+
+      const durable = setTransactionMessageLifetimeUsingDurableNonce(
+        { nonce, nonceAccountAddress, nonceAuthorityAddress: wallet.address },
+        transferMessage(wallet.address)
       );
+      const signatures = await provider.sendAll([
+        { message: durable },
+        { message: transferMessage(wallet.address) },
+      ]);
+
+      expect(signatures).toHaveLength(2);
+      const sent = requests
+        .filter((r) => r.method === "sendTransaction")
+        .map((r) => decodeWireTransaction(r).message.lifetimeToken);
+      expect(sent).toEqual([nonce, BLOCKHASH]);
+      // The blockhash is fetched for the second message only; the first is
+      // confirmed through its nonce account.
+      const methods = requests.map((r) => r.method);
+      expect(methods.filter((m) => m === "getLatestBlockhash")).toHaveLength(1);
+      expect(methods.filter((m) => m === "getAccountInfo")).toHaveLength(1);
+    });
+
+    it("skips the wallet for transactions it does not sign", async () => {
+      const { wallet, signTransactions } = spiedWallet();
+      const { provider, requests } = mockProvider(confirmingResponders(), {
+        wallet,
+      });
+
+      // Paid for and signed by the sponsor alone: the wallet has nothing to
+      // sign and must not be asked to.
+      const sponsor = randomSigner();
+      const message = setTransactionMessageFeePayer(
+        sponsor.address,
+        transferMessage(sponsor.address)
+      );
+      await provider.sendAll([{ message, signers: [sponsor.signer] }]);
+
+      expect(signTransactions).not.toHaveBeenCalled();
+      const sent = requests.find((r) => r.method === "sendTransaction")!;
+      expectFullySigned(decodeWireTransaction(sent).transaction, 1);
+    });
+
+    it("merges wallet signatures back into a mixed batch in order", async () => {
+      const { wallet, signTransactions } = spiedWallet();
+      const { provider, requests } = mockProvider(confirmingResponders(), {
+        wallet,
+      });
+
+      // Sponsor-paid, wallet-paid, sponsor-paid: the wallet only signs the
+      // middle one, and every signed transaction must land in its own slot.
+      const sponsor = randomSigner();
+      const sponsored = () => ({
+        message: setTransactionMessageFeePayer(
+          sponsor.address,
+          transferMessage(sponsor.address)
+        ),
+        signers: [sponsor.signer],
+      });
+      const signatures = await provider.sendAll([
+        sponsored(),
+        { message: transferMessage(wallet.address) },
+        sponsored(),
+      ]);
+
+      expect(signTransactions).toHaveBeenCalledTimes(1);
+      expect(signTransactions.mock.calls[0][0]).toHaveLength(1);
+
+      const sent = requests
+        .filter((r) => r.method === "sendTransaction")
+        .map((r) => decodeWireTransaction(r));
+      expect(sent.map((s) => s.message.staticAccounts[0])).toEqual([
+        sponsor.address,
+        wallet.address,
+        sponsor.address,
+      ]);
+      expect(sent.map((s) => signatureBase58(s.transaction))).toEqual(
+        signatures
+      );
+      for (const { transaction } of sent) {
+        expectFullySigned(transaction, 1);
+      }
+    });
+  });
+
+  describe("wallet kinds", () => {
+    it("signs through a modifying wallet", async () => {
+      const inner = createWallet(Keypair.generate().secretKey);
+      const modifyAndSignTransactions = jest.fn(
+        async (transactions: readonly Transaction[]) =>
+          await Promise.all(
+            transactions.map((tx) =>
+              partiallySignTransactionWithSigners([inner], tx)
+            )
+          )
+      );
+      const wallet: TransactionModifyingSigner = {
+        address: inner.address,
+        modifyAndSignTransactions,
+      };
+      const { provider, requests } = mockProvider(confirmingResponders(), {
+        wallet,
+      });
+
+      await provider.sendAndConfirm(transferMessage(wallet.address));
+
+      expect(modifyAndSignTransactions).toHaveBeenCalledTimes(1);
+      const sent = requests.find((r) => r.method === "sendTransaction")!;
+      expectFullySigned(decodeWireTransaction(sent).transaction, 1);
+    });
+
+    it("prefers partial signing for wallets implementing both", async () => {
+      const { wallet: partial, signTransactions } = spiedWallet();
+      const modifyAndSignTransactions = jest.fn();
+      const wallet: TransactionPartialSigner & TransactionModifyingSigner = {
+        ...partial,
+        modifyAndSignTransactions,
+      };
+      const { provider } = mockProvider(confirmingResponders(), { wallet });
+
+      await provider.sendAndConfirm(transferMessage(wallet.address));
+
+      expect(signTransactions).toHaveBeenCalledTimes(1);
+      expect(modifyAndSignTransactions).not.toHaveBeenCalled();
     });
   });
 });

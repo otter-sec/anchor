@@ -1,12 +1,11 @@
 import {
   AccountMeta,
-  ConfirmOptions,
-  PublicKey,
-  Signer,
-  Transaction,
-  TransactionInstruction,
-  TransactionSignature,
-} from "@solana/web3.js";
+  Instruction,
+  Signature,
+  TransactionSigner,
+} from "@solana/kit";
+import { PublicKey } from "@solana/web3.js";
+import { AccountsCoder } from "../../coder/index.js";
 import {
   Idl,
   IdlInstructionAccount,
@@ -14,7 +13,7 @@ import {
   IdlInstructionAccounts,
   IdlTypeDef,
 } from "../../idl.js";
-import Provider from "../../provider.js";
+import Provider, { ConfirmOptions } from "../../provider.js";
 import {
   AccountsGeneric,
   AccountsResolver,
@@ -22,11 +21,10 @@ import {
 } from "../accounts-resolver.js";
 import { Address, translateAddress } from "../common.js";
 import { Accounts } from "../context.js";
-import { AccountNamespace } from "./account.js";
 import { InstructionFn } from "./instruction.js";
 import { RpcFn } from "./rpc.js";
 import { SimulateFn, SimulateResponse } from "./simulate.js";
-import { TransactionFn } from "./transaction.js";
+import { ProgramTransactionMessage, TransactionFn } from "./transaction.js";
 import {
   AllInstructions,
   InstructionAccountAddresses,
@@ -50,7 +48,7 @@ export class MethodsBuilderFactory {
     rpcFn: RpcFn<IDL>,
     simulateFn: SimulateFn<IDL>,
     viewFn: ViewFn<IDL> | undefined,
-    accountNamespace: AccountNamespace<IDL>,
+    accountsCoder: AccountsCoder,
     idlTypes: IdlTypeDef[],
     customResolver?: CustomAccountResolver<IDL>
   ): MethodsFn<IDL, I, MethodsBuilder<IDL, I>> {
@@ -65,7 +63,7 @@ export class MethodsBuilderFactory {
         provider,
         programId,
         idlIx,
-        accountNamespace,
+        accountsCoder,
         idlTypes,
         customResolver
       );
@@ -159,9 +157,9 @@ export class MethodsBuilder<
 > {
   private _accounts: AccountsGeneric = {};
   private _remainingAccounts: Array<AccountMeta> = [];
-  private _signers: Array<Signer> = [];
-  private _preInstructions: Array<TransactionInstruction> = [];
-  private _postInstructions: Array<TransactionInstruction> = [];
+  private _signers: Array<TransactionSigner> = [];
+  private _preInstructions: Array<Instruction> = [];
+  private _postInstructions: Array<Instruction> = [];
   private _accountsResolver: AccountsResolver<IDL>;
   private _resolveAccounts: boolean = true;
 
@@ -175,7 +173,7 @@ export class MethodsBuilder<
     provider: Provider,
     programId: PublicKey,
     idlIx: AllInstructions<IDL>,
-    accountNamespace: AccountNamespace<IDL>,
+    accountsCoder: AccountsCoder,
     idlTypes: IdlTypeDef[],
     customResolver?: CustomAccountResolver<IDL>
   ) {
@@ -185,7 +183,7 @@ export class MethodsBuilder<
       provider,
       programId,
       idlIx,
-      accountNamespace,
+      accountsCoder,
       idlTypes,
       customResolver
     );
@@ -247,7 +245,7 @@ export class MethodsBuilder<
    *
    * @param signers signers to append
    */
-  public signers(signers: Array<Signer>) {
+  public signers(signers: Array<TransactionSigner>) {
     this._signers = this._signers.concat(signers);
     return this;
   }
@@ -273,7 +271,7 @@ export class MethodsBuilder<
    * @param ixs instructions
    * @param prepend whether to prepend to the existing previous instructions
    */
-  public preInstructions(ixs: Array<TransactionInstruction>, prepend = false) {
+  public preInstructions(ixs: Array<Instruction>, prepend = false) {
     if (prepend) {
       this._preInstructions = ixs.concat(this._preInstructions);
     } else {
@@ -289,7 +287,7 @@ export class MethodsBuilder<
    *
    * @param ixs instructions
    */
-  public postInstructions(ixs: Array<TransactionInstruction>) {
+  public postInstructions(ixs: Array<Instruction>) {
     this._postInstructions = this._postInstructions.concat(ixs);
     return this;
   }
@@ -316,11 +314,11 @@ export class MethodsBuilder<
   /**
    * Create an instruction based on the current configuration.
    *
-   * See {@link transaction} to create a transaction instead.
+   * See {@link transactionMessage} to create a transaction message instead.
    *
-   * @returns the transaction instruction
+   * @returns the instruction
    */
-  public async instruction(): Promise<TransactionInstruction> {
+  public async instruction(): Promise<Instruction> {
     if (this._resolveAccounts) {
       await this._accountsResolver.resolve();
     }
@@ -336,16 +334,18 @@ export class MethodsBuilder<
   }
 
   /**
-   * Create a transaction based on the current configuration.
+   * Create a transaction message based on the current configuration.
    *
-   * This method doesn't send the created transaction. Use {@link rpc} method
-   * to conveniently send an confirm the configured transaction.
+   * The message carries the instructions and signers but no fee payer nor
+   * lifetime: the provider sets both when sending, and when signing
+   * manually they must be set before compiling. Use {@link rpc} to
+   * conveniently send and confirm the configured transaction instead.
    *
    * See {@link instruction} to only create an instruction instead.
    *
-   * @returns the transaction
+   * @returns the transaction message
    */
-  public async transaction(): Promise<Transaction> {
+  public async transactionMessage(): Promise<ProgramTransactionMessage> {
     if (this._resolveAccounts) {
       await this._accountsResolver.resolve();
     }
@@ -425,7 +425,7 @@ export class MethodsBuilder<
    * @param options confirmation options
    * @returns the transaction signature
    */
-  public async rpc(options?: ConfirmOptions): Promise<TransactionSignature> {
+  public async rpc(options?: ConfirmOptions): Promise<Signature> {
     if (this._resolveAccounts) {
       await this._accountsResolver.resolve();
     }
@@ -448,7 +448,7 @@ export class MethodsBuilder<
    * @returns the transaction signature and account public keys
    */
   public async rpcAndKeys(options?: ConfirmOptions): Promise<{
-    signature: TransactionSignature;
+    signature: Signature;
     pubkeys: InstructionAccountAddresses<IDL, I>;
   }> {
     return {
@@ -470,8 +470,8 @@ export class MethodsBuilder<
    * ```
    */
   public async prepare(): Promise<{
-    instruction: TransactionInstruction;
-    signers: Signer[];
+    instruction: Instruction;
+    signers: TransactionSigner[];
     pubkeys: Partial<InstructionAccountAddresses<IDL, I>>;
   }> {
     return {
