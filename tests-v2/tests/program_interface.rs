@@ -135,3 +135,31 @@ fn repeated_account_struct_reexports_are_deduped() {
 fn cpi_account_surface_is_generated_for_nested_accounts() {
     let _ = cpi_account_type_is_generated;
 }
+
+#[test]
+fn optional_none_sentinel_uses_interface_program_id() {
+    let required = Pubkey::new_unique();
+    let metas = accounts::Maybe {
+        required,
+        optional: None,
+    }
+    .to_account_metas(None);
+
+    assert_eq!(metas.len(), 2);
+    assert_eq!(metas[0].pubkey, required);
+    assert_eq!(metas[1].pubkey, program_id());
+    assert!(!metas[1].is_writable);
+    assert!(!metas[1].is_signer);
+}
+
+#[test]
+fn default_pda_derivation_uses_interface_program_id() {
+    let (pda, _) = accounts::PdaOnly::find_vault_address();
+    let (expected, _) = Pubkey::find_program_address(&[b"vault"], &program_id());
+
+    assert_eq!(pda.to_bytes(), expected.to_bytes());
+    assert_ne!(
+        expected,
+        Pubkey::find_program_address(&[b"vault"], &Pubkey::default()).0
+    );
+}

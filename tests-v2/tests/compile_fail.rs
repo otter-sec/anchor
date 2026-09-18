@@ -195,6 +195,7 @@ pub mod declared {
         anchor_lang::address!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
 
     #[derive(Accounts)]
+    #[accounts_program_id(ID)]
     pub struct Invoke {
         #[account(signer)]
         pub authority: Signer,
@@ -294,6 +295,7 @@ const EXTERNAL_ID: Address =
     anchor_lang::address!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
 
 #[derive(Accounts)]
+#[accounts_program_id(EXTERNAL_ID)]
 pub struct Maybe {
     pub required: UncheckedAccount,
     pub optional: Option<UncheckedAccount>,
@@ -312,6 +314,79 @@ pub mod program_interface_optional_cpi {
 "#,
     )
     .features(&["cpi"])
+    .expect_pass();
+}
+
+#[test]
+fn program_interface_rejects_mismatched_accounts_program_id() {
+    CompileCase::new(
+        "program_interface_mismatched_program_id",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+const EXTERNAL_ID: Address =
+    anchor_lang::address!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
+
+#[derive(Accounts)]
+pub struct Maybe {
+    pub required: UncheckedAccount,
+    pub optional: Option<UncheckedAccount>,
+}
+
+#[program(interface, program_id = EXTERNAL_ID)]
+pub mod program_interface_mismatched_program_id {
+    use super::*;
+
+    #[discrim = [1]]
+    pub fn maybe(ctx: &mut Context<Maybe>) -> Result<()> {
+        let _ = ctx;
+        unreachable!()
+    }
+}
+"#,
+    )
+    .expect_fail(&["interface program_id does not match accounts_program_id"]);
+}
+
+#[test]
+fn program_interface_accepts_matching_accounts_program_id() {
+    CompileCase::new(
+        "program_interface_matching_program_id",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+const EXTERNAL_ID: Address =
+    anchor_lang::address!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
+
+#[derive(Accounts)]
+#[accounts_program_id(EXTERNAL_ID)]
+pub struct Maybe {
+    pub required: UncheckedAccount,
+    pub optional: Option<UncheckedAccount>,
+}
+
+#[program(interface, program_id = EXTERNAL_ID)]
+pub mod program_interface_matching_program_id {
+    use super::*;
+
+    #[discrim = [1]]
+    pub fn maybe(ctx: &mut Context<Maybe>) -> Result<()> {
+        let _ = ctx;
+        unreachable!()
+    }
+}
+
+pub fn none_sentinel(required: Address) -> Vec<anchor_lang::AccountMeta> {
+    crate::accounts::Maybe {
+        required,
+        optional: None,
+    }
+    .to_account_metas(None)
+}
+"#,
+    )
     .expect_pass();
 }
 
@@ -391,6 +466,7 @@ const EXTERNAL_ID: Address =
     anchor_lang::address!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
 
 #[derive(Accounts)]
+#[accounts_program_id(EXTERNAL_ID)]
 pub struct Empty {}
 
 #[program(interface, program_id = EXTERNAL_ID)]

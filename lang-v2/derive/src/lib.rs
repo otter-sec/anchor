@@ -23,6 +23,13 @@ use {
 // #[derive(Accounts)]
 // ---------------------------------------------------------------------------
 
+/// Generate account validation, client builders, and CPI account structs.
+///
+/// Optional account `None` sentinels and default PDA derivation use
+/// `crate::ID` unless the struct is stamped with
+/// `#[accounts_program_id(X)]`. Interface crates whose
+/// `#[program(interface, program_id = X)]` is not this crate's ID must set
+/// that attribute so sentinels and PDAs match the callee.
 #[proc_macro_derive(Accounts, attributes(account, instruction, accounts_program_id))]
 pub fn derive_accounts(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -986,9 +993,15 @@ fn parse_instruction_attrs(attrs: &[syn::Attribute]) -> syn::Result<Vec<(Ident, 
     Ok(result)
 }
 
-/// Parse the internal `#[accounts_program_id(expr)]` override used by
-/// `declare_program!` for generated account structs. Ordinary user-written
-/// `#[derive(Accounts)]` structs continue to default to the current crate's ID.
+/// Parse `#[accounts_program_id(expr)]` on an Accounts struct.
+///
+/// This is the program id used for optional-account `None` sentinels and
+/// default PDA derivation (`seeds::program` unset). `declare_program!`
+/// stamps generated structs with the IDL program's `ID`. Hand-written
+/// interface crates should set it to the same `X` as
+/// `#[program(interface, program_id = X)]`. Unannotated structs default to
+/// `crate::ID`. `X` must be a compile-time `Address` (`const` item,
+/// `crate::ID`, or `address!("...")`).
 fn parse_accounts_program_id_attr(attrs: &[syn::Attribute]) -> syn::Result<Expr> {
     let mut program_id = None;
     for attr in attrs {
@@ -2034,6 +2047,8 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             pub mod #cpi_mod_name {
                 extern crate alloc;
                 use super::*;
+                #[doc(hidden)]
+                pub const __ANCHOR_ACCOUNTS_PROGRAM_ID: anchor_lang::Address = #accounts_program_id;
                 #[derive(anchor_lang::ToCpiAccounts)]
                 #[accounts_program_id(#accounts_program_id)]
                 pub struct #name<'a> {
@@ -2708,6 +2723,12 @@ fn pod_vec_capacity_check(ty: &Type) -> Option<TokenStream2> {
 // #[program]
 // ---------------------------------------------------------------------------
 
+/// Marks a program module.
+///
+/// `#[program(interface, program_id = X)]` emits client and CPI bindings for
+/// an external program. Stamp referenced `#[derive(Accounts)]` structs with
+/// `#[accounts_program_id(X)]` so optional-account sentinels and default
+/// PDAs use `X` rather than this crate's `ID`.
 #[proc_macro_attribute]
 pub fn program(attr: TokenStream, item: TokenStream) -> TokenStream {
     let config = match parse_program_config(attr) {
@@ -4999,8 +5020,9 @@ fn process_handler(
     handler: &syn::ItemFn,
     mod_name: &Ident,
     discrim_bytes: Option<&[u8]>,
-    program_id: &Expr,
+    config: &ProgramConfig,
 ) -> HandlerCodegen {
+    let program_id = &config.program_id;
     let fn_name = &handler.sig.ident;
     let fn_name_str = fn_name.to_string();
     let handler_cfg_attrs = cfg_attrs(&handler.attrs);
@@ -5307,6 +5329,27 @@ fn process_handler(
     let cpi_accounts_reexport = quote! {
         pub use #cpi_mod::#accounts_ident;
     };
+    // Emitted in `cpi` (which `use super::*`s), not `cpi::accounts`, so a
+    // user `program_id = declared::ID` path resolves the same way the
+    // instruction builder's `#program_id` does.
+    let cpi_mod_from_cpi = accounts_type.helper_module_path("__cpi_accounts_", 1, fn_name.span());
+    let accounts_program_id_check = if config.mode == ProgramMode::Interface {
+        quote! {
+            const _: () = {
+                let __interface_id = (#program_id).to_bytes();
+                let __accounts_id = #cpi_mod_from_cpi::__ANCHOR_ACCOUNTS_PROGRAM_ID.to_bytes();
+                let mut __i = 0;
+                while __i < 32 {
+                    if __interface_id[__i] != __accounts_id[__i] {
+                        panic!("interface program_id does not match accounts_program_id");
+                    }
+                    __i += 1;
+                }
+            };
+        }
+    } else {
+        quote! {}
+    };
 
     // CPI wrapper function — mirrors the handler's argument list (sans
     // `ctx: &mut Context<_>`), packs them into the client-side
@@ -5333,6 +5376,7 @@ fn process_handler(
             (quote! { -> anchor_lang::Result<()> }, quote! { Ok(()) })
         };
         quote! {
+            #accounts_program_id_check
             #(#handler_cfg_attrs)*
             pub fn #fn_name #lt_decl(
                 __ctx: anchor_lang::CpiContext<'a, accounts::#accounts_ident<'a>>,
@@ -5452,7 +5496,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
     let codegen: Vec<HandlerCodegen> = handlers
         .iter()
         .enumerate()
-        .map(|(i, h)| process_handler(h, mod_name, discrim_attrs[i].as_deref(), &config.program_id))
+        .map(|(i, h)| process_handler(h, mod_name, discrim_attrs[i].as_deref(), config))
         .collect();
     let handler_errors: Vec<_> = codegen.iter().filter_map(|c| c.error.as_ref()).collect();
     if !handler_errors.is_empty() {
@@ -6917,7 +6961,10 @@ mod tests {
     #[test]
     fn process_handler_applies_inline_policy_to_generated_wrapper() {
         let mod_name: syn::Ident = syn::parse_quote!(my_program);
-        let program_id: syn::Expr = syn::parse_quote!(crate::ID);
+        let config = ProgramConfig {
+            mode: ProgramMode::Executable,
+            program_id: syn::parse_quote!(crate::ID),
+        };
         for (handler, expected) in [
             (
                 syn::parse_quote! {
@@ -6949,7 +6996,7 @@ mod tests {
                 "# [cfg_attr (feature = \"fast\" , inline (always))] pub fn conditional_handler",
             ),
         ] {
-            let wrapper = process_handler(&handler, &mod_name, None, &program_id)
+            let wrapper = process_handler(&handler, &mod_name, None, &config)
                 .wrapper
                 .to_string();
             assert!(wrapper.contains(expected), "unexpected wrapper: {wrapper}");
@@ -6967,9 +7014,12 @@ mod tests {
             }
         };
         let mod_name: syn::Ident = syn::parse_quote!(my_program);
-        let program_id: syn::Expr = syn::parse_quote!(crate::ID);
+        let config = ProgramConfig {
+            mode: ProgramMode::Executable,
+            program_id: syn::parse_quote!(crate::ID),
+        };
 
-        let generated = process_handler(&handler, &mod_name, None, &program_id);
+        let generated = process_handler(&handler, &mod_name, None, &config);
         let wrapper = generated.wrapper.to_string();
 
         assert!(
@@ -7088,6 +7138,91 @@ mod tests {
         assert!(
             !generated.contains("default_allocator"),
             "interface mode must not emit entrypoint runtime: {generated}"
+        );
+    }
+
+    #[test]
+    fn accounts_derive_exposes_accounts_program_id_const() {
+        let default_input: syn::DeriveInput = syn::parse_quote! {
+            pub struct Empty {}
+        };
+        let default_generated = impl_accounts(&default_input).to_string();
+        assert!(
+            default_generated.contains("pub const __ANCHOR_ACCOUNTS_PROGRAM_ID"),
+            "Accounts derive should expose the program id used for optional sentinels and default PDAs: {default_generated}"
+        );
+        assert!(
+            default_generated.contains("crate :: ID"),
+            "unannotated Accounts should default the exposed program id to crate::ID: {default_generated}"
+        );
+
+        let override_input: syn::DeriveInput = syn::parse_quote! {
+            #[accounts_program_id(declared::ID)]
+            pub struct Empty {}
+        };
+        let override_generated = impl_accounts(&override_input).to_string();
+        assert!(
+            override_generated.contains("pub const __ANCHOR_ACCOUNTS_PROGRAM_ID"),
+            "Accounts derive should expose an overridden accounts program id: {override_generated}"
+        );
+        assert!(
+            override_generated.contains("declared :: ID"),
+            "#[accounts_program_id] should flow into the exposed const: {override_generated}"
+        );
+    }
+
+    #[test]
+    fn program_interface_mode_asserts_accounts_program_id() {
+        let module: syn::ItemMod = syn::parse_quote! {
+            pub mod external_program {
+                use super::*;
+
+                #[discrim = [1, 2, 3, 4]]
+                pub fn do_it(ctx: &mut Context<MyAccounts>, amount: u64) -> Result<()> {
+                    let _ = (ctx, amount);
+                    unreachable!()
+                }
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Interface,
+            program_id: syn::parse_quote!(super::ID),
+        };
+
+        let generated = impl_program(&module, &config).to_string();
+
+        assert!(
+            generated.contains("__ANCHOR_ACCOUNTS_PROGRAM_ID"),
+            "interface mode should compare against the Accounts-side program id const: {generated}"
+        );
+        assert!(
+            generated.contains("interface program_id does not match accounts_program_id"),
+            "interface mode should emit a compile-time mismatch diagnostic: {generated}"
+        );
+    }
+
+    #[test]
+    fn executable_program_mode_skips_accounts_program_id_assertion() {
+        let module: syn::ItemMod = syn::parse_quote! {
+            pub mod demo_program {
+                use super::*;
+
+                pub fn rotate(ctx: &mut Context<RotateAuthority>) -> Result<()> {
+                    let _ = ctx;
+                    Ok(())
+                }
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Executable,
+            program_id: syn::parse_quote!(crate::ID),
+        };
+
+        let generated = impl_program(&module, &config).to_string();
+
+        assert!(
+            !generated.contains("interface program_id does not match accounts_program_id"),
+            "executable programs share crate::ID by construction and should not emit the interface assertion: {generated}"
         );
     }
 

@@ -5,8 +5,7 @@ declare_id!("11111111111111111111111111111111");
 pub mod declared {
     use super::*;
 
-    pub const ID: Address =
-        anchor_lang::address!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
+    pub const ID: Address = anchor_lang::address!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
 }
 
 #[derive(Clone, Copy, anchor_lang::AnchorSerialize)]
@@ -16,14 +15,17 @@ pub struct ComplexArgs {
 }
 
 #[derive(Accounts)]
+#[accounts_program_id(declared::ID)]
 pub struct Empty {}
 
 #[derive(Accounts)]
+#[accounts_program_id(declared::ID)]
 pub struct AuthorityOnly {
     pub authority: Signer,
 }
 
 #[derive(Accounts)]
+#[accounts_program_id(declared::ID)]
 pub struct Mixed {
     #[account(mut)]
     pub data: UncheckedAccount,
@@ -32,9 +34,24 @@ pub struct Mixed {
 }
 
 #[derive(Accounts)]
+#[accounts_program_id(declared::ID)]
 pub struct NestedOuter {
     pub nested: Nested<AuthorityOnly>,
     #[account(mut)]
+    pub vault: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+#[accounts_program_id(declared::ID)]
+pub struct Maybe {
+    pub required: UncheckedAccount,
+    pub optional: Option<UncheckedAccount>,
+}
+
+#[derive(Accounts)]
+#[accounts_program_id(declared::ID)]
+pub struct PdaOnly {
+    #[account(seeds = [b"vault"], bump)]
     pub vault: UncheckedAccount,
 }
 
@@ -78,6 +95,16 @@ pub mod program {
 
     #[discrim = [50, 51, 52, 53]]
     pub fn reuse_accounts(_ctx: &mut Context<Mixed>) -> Result<()> {
+        unreachable!()
+    }
+
+    #[discrim = [60]]
+    pub fn maybe(_ctx: &mut Context<Maybe>) -> Result<()> {
+        unreachable!()
+    }
+
+    #[discrim = [61]]
+    pub fn pda_only(_ctx: &mut Context<PdaOnly>) -> Result<()> {
         unreachable!()
     }
 }

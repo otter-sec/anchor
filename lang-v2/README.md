@@ -126,6 +126,28 @@ let metas = multisig_v2::accounts::CreateResolved { creator: creator.pubkey() }
 
 In v1, the caller built the `AccountMeta` vector by hand on every call — deriving the PDA, wiring up `system_program`, and keeping the order in sync with the handler's `#[derive(Accounts)]`.
 
+## Interface programs
+
+`#[program(interface, program_id = X)]` generates client and CPI bindings for someone else's program. `#[derive(Accounts)]` still defaults optional-account `None` sentinels and PDA derivation to `crate::ID`. If `X` is not this crate's ID, stamp the Accounts structs so those values match the callee:
+
+```rust
+#[derive(Accounts)]
+#[accounts_program_id(declared::ID)]
+pub struct Foo {
+    pub optional: Option<UncheckedAccount>,
+}
+
+#[program(interface, program_id = declared::ID)]
+pub mod foo_interface {
+    use super::*;
+    pub fn ix(_ctx: &mut Context<Foo>) -> Result<()> {
+        unreachable!()
+    }
+}
+```
+
+v2 emits a compile error when the two IDs disagree.
+
 ## Extensibility
 
 An important implication of our trait-based framework is: **you can write your own Anchor extensions.**
