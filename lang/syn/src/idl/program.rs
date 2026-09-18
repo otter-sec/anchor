@@ -7,7 +7,7 @@ use {
         parser::{context::CrateContext, docs},
         Program,
     },
-    heck::CamelCase,
+    heck::ToUpperCamelCase,
     proc_macro2::TokenStream,
     quote::{format_ident, quote},
     syn::{spanned::Spanned, Result},
@@ -34,7 +34,7 @@ pub fn gen_idl_print_fn_program(program: &Program) -> TokenStream {
         .iter()
         .map(|ix| {
             let name = ix.ident.to_string();
-            let name_pascal = format_ident!("{}", name.to_camel_case());
+            let name_pascal = format_ident!("{}", name.to_upper_camel_case());
             let ctx_ident = &ix.anchor_ident;
             let cfgs = &ix.cfgs;
 

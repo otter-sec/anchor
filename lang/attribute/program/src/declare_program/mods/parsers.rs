@@ -1,7 +1,7 @@
 use {
     super::common::{get_all_instruction_accounts, get_canonical_program_id},
     anchor_lang_idl::types::{Idl, IdlInstructionAccountItem, IdlInstructionAccounts},
-    heck::CamelCase,
+    heck::ToUpperCamelCase,
     quote::{format_ident, quote},
 };
 
@@ -119,7 +119,7 @@ fn gen_instruction(idl: &Idl) -> proc_macro2::TokenStream {
     let variants = idl
         .instructions
         .iter()
-        .map(|ix| format_ident!("{}", ix.name.to_camel_case())).map(
+        .map(|ix| format_ident!("{}", ix.name.to_upper_camel_case())).map(
         |name| quote! { #name { accounts: client::accounts::#name, args: client::args::#name } },
     );
     let if_statements = {
@@ -128,7 +128,7 @@ fn gen_instruction(idl: &Idl) -> proc_macro2::TokenStream {
             ix_accs: &[IdlInstructionAccountItem],
             all_ix_accs: &[IdlInstructionAccounts],
         ) -> proc_macro2::TokenStream {
-            let name = format_ident!("{}", name.to_camel_case());
+            let name = format_ident!("{}", name.to_upper_camel_case());
             let fields = ix_accs.iter().map(|acc| match acc {
                 IdlInstructionAccountItem::Single(acc) => {
                     let name = format_ident!("{}", acc.name);
@@ -190,7 +190,7 @@ fn gen_instruction(idl: &Idl) -> proc_macro2::TokenStream {
         idl.instructions
             .iter()
             .map(|ix| {
-                let name = format_ident!("{}", ix.name.to_camel_case());
+                let name = format_ident!("{}", ix.name.to_upper_camel_case());
                 let accounts = gen_accounts(&ix.name, &ix.accounts, &all_ix_accs);
                 quote! {
                     if ix.data.starts_with(client::args::#name::DISCRIMINATOR) {
