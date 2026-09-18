@@ -37,8 +37,8 @@ use {
         request::RpcRequest,
         response::{Response as RpcResponse, RpcLogsResponse},
     },
-    solana_signer::{EncodableKey, Signer},
     solana_sdk_ids::bpf_loader_upgradeable,
+    solana_signer::{EncodableKey, Signer},
     std::{
         collections::{BTreeMap, HashMap, HashSet},
         ffi::OsString,
@@ -3266,6 +3266,48 @@ fn write_idl(idl: &Idl, out: OutFile) -> Result<()> {
 
     Ok(())
 }
+
+/// Authenticate an `anchor account` fetch against the IDL before decoding.
+///
+/// Mirrors on-chain `Account<T>`: the account must be owned by the IDL
+/// program, and its leading bytes must equal the requested type's
+/// discriminator. `strip_prefix` also rejects data shorter than the
+/// discriminator instead of panicking on `&data[disc_len..]`.
+fn validate_and_strip_account_data<'a>(
+    idl: &Idl,
+    account_type_name: &str,
+    address: &Pubkey,
+    owner: &Pubkey,
+    data: &'a [u8],
+) -> Result<&'a [u8]> {
+    // Parse the program ID from the IDL
+    let program_id = idl
+        .address
+        .parse::<Pubkey>()
+        .with_context(|| format!("invalid program address in IDL: {}", idl.address))?;
+    // Validate the owner matches the program ID
+    if owner != &program_id {
+        return Err(anyhow!(
+            "Account {address} owner {owner} does not match IDL program id {program_id}"
+        ));
+    }
+    // Find the account type in the IDL
+    let acc = idl
+        .accounts
+        .iter()
+        .find(|acc| acc.name == account_type_name)
+        .ok_or_else(|| anyhow!("Account `{account_type_name}` not found in IDL"))?;
+    // Strip the discriminator from the data and return the remaining data or
+    // an error if the data is too short or the account type is wrong
+    data.strip_prefix(acc.discriminator.as_slice())
+        .ok_or_else(|| {
+            anyhow!(
+                "Account {address} does not match discriminator of `{account_type_name}` \
+                 (data too short or wrong account type)"
+            )
+        })
+}
+
 fn account(
     cfg_override: &ConfigOverride,
     account_type: String,
@@ -3320,14 +3362,14 @@ fn account(
             .unwrap_or(Cluster::Localnet),
     };
 
-    let data = create_client(cluster.url()).get_account_data(&address)?;
-    let disc_len = idl
-        .accounts
-        .iter()
-        .find(|acc| acc.name == account_type_name)
-        .map(|acc| acc.discriminator.len())
-        .ok_or_else(|| anyhow!("Account `{account_type_name}` not found in IDL"))?;
-    let mut data_view = &data[disc_len..];
+    let account = create_client(cluster.url()).get_account(&address)?;
+    let mut data_view = validate_and_strip_account_data(
+        &idl,
+        account_type_name,
+        &address,
+        &account.owner,
+        &account.data,
+    )?;
 
     let deserialized_json =
         deserialize_idl_defined_type_to_json(&idl, account_type_name, &mut data_view)?;
@@ -6528,5 +6570,111 @@ mod tests {
         assert!(ts.contains(r#""generic": "itemType""#));
         assert!(ts.contains(r#""name": "seedPrefix""#));
         assert!(ts.contains(r#""value": "SEED_PREFIX""#));
+    }
+
+    const ACCOUNT_DISC: [u8; 8] = [8, 7, 6, 5, 4, 3, 2, 1];
+    const ACCOUNT_TYPE: &str = "Vault";
+    const PROGRAM_ID: &str = "Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp";
+
+    fn account_decode_idl() -> Idl {
+        Idl {
+            address: PROGRAM_ID.to_string(),
+            metadata: anchor_lang_idl::types::IdlMetadata {
+                name: "vault".to_string(),
+                version: "0.1.0".to_string(),
+                spec: "0.1.0".to_string(),
+                description: None,
+                repository: None,
+                dependencies: Vec::new(),
+                contact: None,
+                deployments: None,
+            },
+            docs: Vec::new(),
+            instructions: Vec::new(),
+            accounts: vec![anchor_lang_idl::types::IdlAccount {
+                name: ACCOUNT_TYPE.to_string(),
+                discriminator: ACCOUNT_DISC.to_vec(),
+            }],
+            events: Vec::new(),
+            errors: Vec::new(),
+            types: Vec::new(),
+            constants: Vec::new(),
+        }
+    }
+
+    fn program_pubkey() -> Pubkey {
+        PROGRAM_ID.parse().unwrap()
+    }
+
+    fn decode_account<'a>(owner: &Pubkey, data: &'a [u8]) -> Result<&'a [u8]> {
+        let address = Pubkey::new_from_array([9; 32]);
+        validate_and_strip_account_data(&account_decode_idl(), ACCOUNT_TYPE, &address, owner, data)
+    }
+
+    #[test]
+    fn account_decode_accepts_matching_owner_and_discriminator() {
+        let owner = program_pubkey();
+        let mut data = ACCOUNT_DISC.to_vec();
+        data.extend_from_slice(&[42, 43, 44]);
+
+        let payload = decode_account(&owner, &data).unwrap();
+        assert_eq!(payload, &[42, 43, 44]);
+    }
+
+    #[test]
+    fn account_decode_rejects_foreign_owner() {
+        let owner = Pubkey::new_from_array([1; 32]);
+        let mut data = ACCOUNT_DISC.to_vec();
+        data.extend_from_slice(&[42]);
+
+        let err = decode_account(&owner, &data).unwrap_err().to_string();
+        assert!(
+            err.contains("does not match IDL program id"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn account_decode_rejects_wrong_discriminator() {
+        let owner = program_pubkey();
+        let mut data = vec![0u8; 8];
+        data.extend_from_slice(&[42]);
+
+        let err = decode_account(&owner, &data).unwrap_err().to_string();
+        assert!(
+            err.contains("does not match discriminator"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn account_decode_rejects_short_and_empty_data_without_panic() {
+        let owner = program_pubkey();
+        for data in [Vec::new(), vec![0u8; 4], ACCOUNT_DISC[..4].to_vec()] {
+            let err = decode_account(&owner, &data).unwrap_err().to_string();
+            assert!(
+                err.contains("does not match discriminator"),
+                "unexpected error for {data:?}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn account_decode_rejects_unknown_account_type() {
+        let owner = program_pubkey();
+        let address = Pubkey::new_from_array([9; 32]);
+        let err = validate_and_strip_account_data(
+            &account_decode_idl(),
+            "Missing",
+            &address,
+            &owner,
+            &ACCOUNT_DISC,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("Account `Missing` not found in IDL"),
+            "unexpected error: {err}"
+        );
     }
 }
