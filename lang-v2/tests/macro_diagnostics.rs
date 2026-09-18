@@ -674,6 +674,39 @@ pub struct Noop {}
     );
 
     compile_fail_case(
+        "float_instruction_attr_arg",
+        r#"
+use anchor_lang::prelude::*;
+
+#[derive(Accounts)]
+#[instruction(price: f64)]
+pub struct SetPrice {
+    pub data: UncheckedAccount,
+}
+"#,
+        &[
+            "`f32` and `f64` instruction arguments are not supported",
+            "use an integer or fixed-point representation",
+        ],
+    );
+
+    compile_fail_case(
+        "float_instruction_attr_alias",
+        r#"
+use anchor_lang::prelude::*;
+
+type Price = f64;
+
+#[derive(Accounts)]
+#[instruction(price: Price)]
+pub struct SetPrice {
+    pub data: UncheckedAccount,
+}
+"#,
+        &["BorshDeserializeCompatible"],
+    );
+
+    compile_fail_case(
         "float_borsh_account",
         r#"
 use anchor_lang::prelude::*;
@@ -721,6 +754,54 @@ pub struct Price {
             "`f32` and `f64` are not supported on `#[derive(IdlType)]`",
             "use an integer or fixed-point representation",
         ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn nested_float_aliases_are_rejected_on_borsh_accounts() {
+    compile_pass_case(
+        "nested_safe_borsh_account",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct SafeInner {
+    pub value: u64,
+}
+
+#[account(borsh)]
+pub struct SafeAccount {
+    pub value: SafeInner,
+}
+"#,
+    );
+
+    compile_fail_case(
+        "nested_float_alias_borsh_account",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+type FloatAlias = f64;
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct HiddenFloat {
+    pub value: FloatAlias,
+}
+
+#[account(borsh)]
+pub struct Price {
+    pub value: HiddenFloat,
+}
+"#,
+        &["BorshSerializeCompatible", "BorshDeserializeCompatible"],
     );
 }
 
