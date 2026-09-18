@@ -72,6 +72,7 @@ solana-rpc-client-api.workspace = true
 solana-pubsub-client.workspace = true
 solana-transaction-status-client-types.workspace = true
 syn = { version = "1.0.60", features = ["full", "extra-traits"] }
+url = "2"
 tempfile = "3"
 tiny-bip39 = "2.0"
 pbkdf2 = "0.12"

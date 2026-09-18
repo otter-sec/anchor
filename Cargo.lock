@@ -253,6 +253,7 @@ dependencies = [
  "tiny-bip39",
  "toml 0.7.8",
  "two-face",
+ "url",
  "walkdir",
 ]
 

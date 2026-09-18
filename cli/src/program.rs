@@ -2,7 +2,7 @@ use {
     crate::{
         config::{Config, Program, WithPath},
         metadata::SecurityCommand,
-        target_dir, ConfigOverride, ProgramCommand, DEFAULT_MAX_SIGN_ATTEMPTS,
+        redact_url, target_dir, ConfigOverride, ProgramCommand, DEFAULT_MAX_SIGN_ATTEMPTS,
     },
     anchor_lang_idl::types::Idl,
     anyhow::{anyhow, bail, Result},
@@ -556,7 +556,7 @@ fn deploy_workspace(
         // Anchor workspace - we have cluster/wallet config
         let url = crate::cluster_url(&cfg, &cfg.test_validator, &cfg.surfpool_config);
         let keypair = cfg.provider.wallet.to_string();
-        println!("Deploying cluster: {url}");
+        println!("Deploying cluster: {}", redact_url(&url));
         println!("Upgrade authority: {keypair}");
     } else {
         // Cargo workspace - cluster/wallet will come from Solana CLI config or flags

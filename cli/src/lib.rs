@@ -51,6 +51,7 @@ use {
         sync::{LazyLock, OnceLock},
     },
     template::{get_security_metadata_content, AnchorVersion, ProgramTemplate, TestTemplate},
+    url::Url,
 };
 
 mod abs_path;
@@ -6238,6 +6239,23 @@ pub(crate) fn cluster_url(
     }
 }
 
+/// Strips the query string, fragment and any userinfo from `url` so that
+/// secrets embedded in RPC URLs (e.g. `?api-key=...`) aren't printed to
+/// stdout, terminal scrollback or CI logs. Falls back to the original
+/// string if it isn't a parseable URL.
+pub(crate) fn redact_url(url: &str) -> String {
+    match Url::parse(url) {
+        Ok(mut parsed) => {
+            parsed.set_query(None);
+            parsed.set_fragment(None);
+            let _ = parsed.set_username("");
+            let _ = parsed.set_password(None);
+            parsed.to_string()
+        }
+        Err(_) => url.to_string(),
+    }
+}
+
 fn clean(cfg_override: &ConfigOverride) -> Result<()> {
     // Get workspace root - either from Anchor.toml or use current directory
     let workspace_root = if let Ok(Some(cfg)) = Config::discover(cfg_override) {
@@ -6305,7 +6323,7 @@ fn deploy(
 
         cfg.run_hooks(HookType::PreDeploy)?;
         // Deploy the programs.
-        println!("Deploying cluster: {url}");
+        println!("Deploying cluster: {}", redact_url(&url));
         println!("Upgrade authority: {keypair}");
 
         for program in cfg.get_programs(program_name)? {
@@ -6789,7 +6807,10 @@ fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Res
             .unwrap();
 
         let cfg_cluster = cfg.provider.cluster.to_owned();
-        println!("Syncing program ids for the configured cluster ({cfg_cluster})\n");
+        println!(
+            "Syncing program ids for the configured cluster ({})\n",
+            redact_url(&cfg_cluster.to_string())
+        );
 
         let mut changed_src = false;
         for program in cfg.get_programs(program_name)? {
@@ -7472,6 +7493,39 @@ mod tests {
         std::collections::{HashMap, HashSet},
         tempfile::tempdir,
     };
+
+    #[test]
+    fn test_redact_url_strips_query_string() {
+        assert_eq!(
+            redact_url("https://devnet.helius-rpc.com/?api-key=super-secret"),
+            "https://devnet.helius-rpc.com/"
+        );
+    }
+
+    #[test]
+    fn test_redact_url_strips_userinfo() {
+        assert_eq!(
+            redact_url("https://user:pass@my-rpc.example.com/rpc"),
+            "https://my-rpc.example.com/rpc"
+        );
+    }
+
+    #[test]
+    fn test_redact_url_leaves_plain_url_untouched() {
+        assert_eq!(
+            redact_url("https://api.devnet.solana.com"),
+            "https://api.devnet.solana.com/"
+        );
+        assert_eq!(
+            redact_url("http://127.0.0.1:8899"),
+            "http://127.0.0.1:8899/"
+        );
+    }
+
+    #[test]
+    fn test_redact_url_falls_back_on_unparseable_input() {
+        assert_eq!(redact_url("not-a-url"), "not-a-url");
+    }
 
     #[test]
     fn test_init_accepts_anchor_version() {
