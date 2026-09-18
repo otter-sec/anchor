@@ -4297,9 +4297,7 @@ fn deserialize_idl_type_to_json(
                 .try_into()
                 .unwrap();
 
-            // Every Borsh element consumes at least one byte, so a count
-            // larger than the remaining buffer cannot be valid. Reject it
-            // before allocating to avoid a data-controlled `with_capacity`.
+            // Don't call `with_capacity` with a count larger than the remaining bytes.
             if size > data.len() {
                 return Err(anyhow!(
                     "vec length {size} exceeds remaining account data ({} bytes)",
