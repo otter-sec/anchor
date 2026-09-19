@@ -729,7 +729,7 @@ mod tests {
         assert_eq!(
             entries
                 .iter()
-                .find(|entry| entry.platform_tools == "v1.47")
+                .find(|entry| entry.platform_tools == "v1.51.1")
                 .unwrap()
                 .rustc,
             v("1.84.1")
@@ -737,11 +737,26 @@ mod tests {
         assert_eq!(
             entries
                 .iter()
-                .find(|entry| entry.platform_tools == "v1.41")
+                .find(|entry| entry.platform_tools == "v1.42.1")
                 .unwrap()
                 .cargo_lock_v4,
             CargoLockV4Support::OptIn
         );
+    }
+
+    #[test]
+    fn every_mapped_platform_tools_release_supports_sbpf_v3() {
+        let v3_backports = ["v1.42.1", "v1.46.1", "v1.51.1"];
+        let first_native_v3 = v("1.56.0");
+
+        assert!(MAP.entries.iter().all(|entry| {
+            v3_backports.contains(&entry.platform_tools.as_str()) || {
+                let version = entry.platform_tools.trim_start_matches('v');
+                let version =
+                    Version::parse(version).or_else(|_| Version::parse(&format!("{version}.0")));
+                version.is_ok_and(|version| version > first_native_v3)
+            }
+        }));
     }
 
     #[test]
@@ -757,15 +772,15 @@ mod tests {
     #[test]
     fn exact_entry_match() {
         let res = resolve_for_solana(&fake_solana("3.0.0"));
-        assert_eq!(res.version, "v1.51");
+        assert_eq!(res.version, "v1.51.1");
         assert!(matches!(res.source, PlatformToolsSource::Mapped { .. }));
     }
 
     #[test]
     fn between_entries_picks_floor() {
-        // 2.2.5 sits between (2.2.3 → v1.45) and (2.2.8 → v1.46) → floor is v1.45.
+        // 2.2.5 sits between 2.2.3 and 2.2.8, both mapped to the Rust 1.79 v3 backport.
         let res = resolve_for_solana(&fake_solana("2.2.5"));
-        assert_eq!(res.version, "v1.45");
+        assert_eq!(res.version, "v1.46.1");
         assert_eq!(res.rustc, v("1.79.0"));
     }
 
@@ -786,7 +801,7 @@ mod tests {
 
     #[test]
     fn lookup_for_solana_version_works() {
-        assert_eq!(lookup_for_solana_version(&v("3.0.0")).unwrap(), "v1.51");
+        assert_eq!(lookup_for_solana_version(&v("3.0.0")).unwrap(), "v1.51.1");
         assert_eq!(lookup_for_solana_version(&v("4.5.0")).unwrap(), "v1.57");
         // Below earliest → error from this lower-level helper.
         assert!(lookup_for_solana_version(&v("0.1.0")).is_err());
@@ -795,7 +810,7 @@ mod tests {
     #[test]
     fn explicit_solana_resolution_uses_the_map_without_project_metadata() {
         let mapped = resolve_platform_tools_for_solana_version(&v("3.1.10"));
-        assert_eq!(mapped.version, "v1.52");
+        assert_eq!(mapped.version, "v1.57");
         assert!(matches!(
             mapped.source,
             PlatformToolsSource::ExplicitSolana {
@@ -822,7 +837,7 @@ mod tests {
     fn semver_solana_req_uses_newest_hosted_candidate() {
         let res = resolve_for_project_solana(&fake_solana_req("2.2.1", "2.2.1")).unwrap();
 
-        assert_eq!(res.version, "v1.48");
+        assert_eq!(res.version, "v1.51.1");
         assert_eq!(res.rustc, v("1.84.1"));
         assert!(matches!(
             res.source,
@@ -834,7 +849,7 @@ mod tests {
     fn exact_solana_req_uses_pinned_candidate() {
         let res = resolve_for_project_solana(&fake_solana_req("=2.2.1", "2.2.1")).unwrap();
 
-        assert_eq!(res.version, "v1.44");
+        assert_eq!(res.version, "v1.46.1");
         assert_eq!(res.rustc, v("1.79.0"));
         assert!(matches!(
             res.source,
@@ -845,50 +860,46 @@ mod tests {
     // ── Specific known transitions ──────────────────────────────────────────
 
     #[test]
-    fn known_transition_1_18_0_to_v1_39() {
-        assert_eq!(lookup_for_solana_version(&v("1.18.0")).unwrap(), "v1.39");
+    fn known_transition_1_18_0_to_v1_42_1() {
+        assert_eq!(lookup_for_solana_version(&v("1.18.0")).unwrap(), "v1.42.1");
     }
 
     #[test]
-    fn known_transition_1_17_25_to_v1_37() {
-        assert_eq!(lookup_for_solana_version(&v("1.17.25")).unwrap(), "v1.37");
+    fn known_transition_1_17_25_to_v1_42_1() {
+        assert_eq!(lookup_for_solana_version(&v("1.17.25")).unwrap(), "v1.42.1");
     }
 
     #[test]
-    fn known_transition_1_18_8_to_v1_41() {
-        assert_eq!(lookup_for_solana_version(&v("1.18.8")).unwrap(), "v1.41");
+    fn known_transition_1_18_8_to_v1_42_1() {
+        assert_eq!(lookup_for_solana_version(&v("1.18.8")).unwrap(), "v1.42.1");
     }
 
     #[test]
-    fn known_transition_2_0_5_to_v1_42() {
-        assert_eq!(lookup_for_solana_version(&v("2.0.5")).unwrap(), "v1.42");
+    fn known_transition_2_0_5_to_v1_42_1() {
+        assert_eq!(lookup_for_solana_version(&v("2.0.5")).unwrap(), "v1.42.1");
     }
 
     #[test]
-    fn known_transition_2_1_0_to_v1_43() {
-        assert_eq!(lookup_for_solana_version(&v("2.1.0")).unwrap(), "v1.43");
+    fn known_transition_2_1_0_to_v1_46_1() {
+        assert_eq!(lookup_for_solana_version(&v("2.1.0")).unwrap(), "v1.46.1");
     }
 
     #[test]
-    fn known_transition_3_0_0_to_v1_51() {
-        assert_eq!(lookup_for_solana_version(&v("3.0.0")).unwrap(), "v1.51");
+    fn known_transition_3_0_0_to_v1_51_1() {
+        assert_eq!(lookup_for_solana_version(&v("3.0.0")).unwrap(), "v1.51.1");
     }
 
     #[test]
-    fn known_transition_4_0_0_to_v1_56() {
-        assert_eq!(lookup_for_solana_version(&v("4.0.0")).unwrap(), "v1.56");
+    fn known_transition_4_0_0_to_v1_57() {
+        assert_eq!(lookup_for_solana_version(&v("4.0.0")).unwrap(), "v1.57");
     }
 
     #[test]
-    fn cargo_lock_v4_opt_in_is_scoped_to_compatible_legacy_cargo() {
+    fn cargo_lock_v4_support_matches_the_v3_backports() {
         let dir = tempfile::TempDir::new().unwrap();
         fs::write(dir.path().join("Cargo.lock"), "version = 4\n").unwrap();
 
-        let unsupported = resolve_for_solana(&fake_solana("1.17.25"));
-        let error = cargo_lock_v4_requires_opt_in(dir.path(), &unsupported).unwrap_err();
-        assert!(error.to_string().contains("platform-tools v1.37"));
-
-        let opt_in = resolve_for_solana(&fake_solana("1.18.17"));
+        let opt_in = resolve_for_solana(&fake_solana("1.17.25"));
         assert!(cargo_lock_v4_requires_opt_in(dir.path(), &opt_in).unwrap());
 
         let native = resolve_for_solana(&fake_solana("2.1.0"));

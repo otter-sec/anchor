@@ -8,8 +8,10 @@
 #                   (then platform-tools-sdk/cargo-build-sbf/src/main.rs from 2.2)
 #   3.0.x+ : anza-xyz/agave, platform-tools-sdk/cargo-build-sbf/src/toolchain.rs
 #
-# In some cases, we override to a different `platform-tools` version due to issues
-# with specific toolchains.
+# The mapped releases must support SBPF arch v3. Where the release-native tools
+# predate v3, use the compatible v3 backport that retains the same Rust minor:
+# v1.42.1 (Rust 1.75), v1.46.1 (Rust 1.79), or v1.51.1 (Rust 1.84.1).
+# v1.57 and later support v3 directly.
 #
 # Resolution: given a requested Solana version `S`, pick the entry with the
 # largest `solana` key that is `<= S`. Entries MUST be ordered by `solana` so
@@ -30,92 +32,92 @@ fallback = "v1.57"
 
 [[entries]]
 solana = "1.14.16"
-platform_tools = "v1.29"
-rustc = "1.62.0"
-cargo_lock_v4 = "unsupported"
+platform_tools = "v1.42.1"
+rustc = "1.75.0"
+cargo_lock_v4 = "opt-in"
 
 [[entries]]
 solana = "1.15.0"
-platform_tools = "v1.32"
-rustc = "1.65.0"
-cargo_lock_v4 = "unsupported"
+platform_tools = "v1.42.1"
+rustc = "1.75.0"
+cargo_lock_v4 = "opt-in"
 
 [[entries]]
 solana = "1.16.0"
-platform_tools = "v1.37"
-rustc = "1.68.0"
-cargo_lock_v4 = "unsupported"
+platform_tools = "v1.42.1"
+rustc = "1.75.0"
+cargo_lock_v4 = "opt-in"
 
 [[entries]]
 solana = "1.18.0"
-platform_tools = "v1.39"
-rustc = "1.72.0"
+platform_tools = "v1.42.1"
+rustc = "1.75.0"
 cargo_lock_v4 = "opt-in"
 
 [[entries]]
 solana = "1.18.8"
-platform_tools = "v1.41"
+platform_tools = "v1.42.1"
 rustc = "1.75.0"
 cargo_lock_v4 = "opt-in"
 
 [[entries]]
 solana = "2.0.5"
-platform_tools = "v1.42"
+platform_tools = "v1.42.1"
 rustc = "1.75.0"
 cargo_lock_v4 = "opt-in"
 
 [[entries]]
 solana = "2.1.0"
-platform_tools = "v1.43"
+platform_tools = "v1.46.1"
 rustc = "1.79.0"
 cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "2.2.1"
-platform_tools = "v1.44"
+platform_tools = "v1.46.1"
 rustc = "1.79.0"
 cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "2.2.3"
-platform_tools = "v1.45"
+platform_tools = "v1.46.1"
 rustc = "1.79.0"
 cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "2.2.8"
-platform_tools = "v1.46"
+platform_tools = "v1.46.1"
 rustc = "1.79.0"
 cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "2.2.11"
-platform_tools = "v1.47"
+platform_tools = "v1.51.1"
 rustc = "1.84.1"
 cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "2.2.15"
-platform_tools = "v1.48"
+platform_tools = "v1.51.1"
 rustc = "1.84.1"
 cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "3.0.0"
-platform_tools = "v1.51"
+platform_tools = "v1.51.1"
 rustc = "1.84.1"
 cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "3.1.1"
-platform_tools = "v1.52"
-rustc = "1.89.0"
+platform_tools = "v1.57"
+rustc = "1.95.0"
 cargo_lock_v4 = "native"
 
 [[entries]]
 solana = "4.0.0"
-platform_tools = "v1.56"
-rustc = "1.89.0"
+platform_tools = "v1.57"
+rustc = "1.95.0"
 cargo_lock_v4 = "native"
 
 [[entries]]
