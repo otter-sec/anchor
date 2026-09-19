@@ -7,6 +7,9 @@ declare_id!("9AbShpmjP5WcQLSBW1NQmczpYVmT2CR2FLFoQdxxk47d");
 pub mod limits {
     pub const NAME: usize = 16;
     pub const ITEMS: usize = 4;
+    pub const ADD_A: usize = 1;
+    pub const ADD_B: usize = 3;
+    pub const SUB_N: usize = 10;
 }
 
 pub type Scalar = f32;
@@ -47,6 +50,12 @@ pub struct PointCloud {
     pub points: [Vector2; limits::ITEMS],
 }
 
+#[derive(InitSpace)]
+pub struct CompoundArrayLengths {
+    pub additive: [u16; limits::ADD_A + limits::ADD_B],
+    pub subtractive: [u64; limits::SUB_N - 1],
+}
+
 #[program]
 pub mod init_space_usability {
     use super::*;
@@ -58,6 +67,7 @@ pub mod init_space_usability {
         require_space::<Nested>(84)?;
         require_space::<Image>(12)?;
         require_space::<PointCloud>(32)?;
+        require_space::<CompoundArrayLengths>(80)?;
         Ok(())
     }
 

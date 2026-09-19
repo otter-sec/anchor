@@ -161,7 +161,7 @@ fn len_from_type(ty: Type, attrs: &mut Option<VecDeque<TokenStream2>>) -> TokenS
         Type::Array(TypeArray { elem, len, .. }) => {
             let array_len = len.to_token_stream();
             let type_len = len_from_type(*elem, attrs);
-            quote!((#array_len * #type_len))
+            quote!(((#array_len) * #type_len))
         }
         Type::Path(ty_path) => {
             if let Some(type_name) = builtin_type_name(&ty_path) {
