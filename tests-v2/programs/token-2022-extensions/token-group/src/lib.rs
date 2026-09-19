@@ -42,7 +42,6 @@ pub mod token_2022_ext_token_group {
 pub struct InitializeGroup {
     #[account(mut, unsafe(dup))]
     pub group: UncheckedAccount,
-    #[account(unsafe(dup))]
     pub mint: UncheckedAccount,
     pub mint_authority: Signer,
     pub token_program: UncheckedAccount,
@@ -52,7 +51,6 @@ pub struct InitializeGroup {
 pub struct InitializeMember {
     #[account(mut, unsafe(dup))]
     pub member: UncheckedAccount,
-    #[account(unsafe(dup))]
     pub member_mint: UncheckedAccount,
     pub member_mint_authority: Signer,
     #[account(mut)]

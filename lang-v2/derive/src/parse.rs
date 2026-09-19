@@ -104,6 +104,7 @@ pub struct IdlPdaMeta {
 
 pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
     let mut explicit_mut = None;
+    let mut dup_span = None;
     let mut realloc_zero_seen = false;
     let mut result = AccountAttrs {
         is_mut: false,
@@ -234,7 +235,7 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
                                     return Err(duplicate_singleton(inner.span(), "unsafe(dup)"));
                                 }
                                 result.is_dup = true;
-                                result.is_mut = true;
+                                dup_span = Some(inner.span());
                             }
                             _ => {
                                 return Err(syn::Error::new(
@@ -513,6 +514,15 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
         if result.is_zeroed {
             return Err(syn::Error::new(span, "mut cannot be provided with zeroed"));
         }
+    }
+
+    if result.is_dup && !result.is_mut {
+        let span = dup_span.unwrap_or_else(proc_macro2::Span::call_site);
+        return Err(syn::Error::new(
+            span,
+            "`unsafe(dup)` only opts out of duplicate-account checks and does not make the \
+             account writable; add an explicit `mut` if writable access is intended",
+        ));
     }
 
     if result.close.is_some() && (result.is_init || result.is_init_if_needed || result.is_zeroed) {
@@ -3486,6 +3496,46 @@ mod tests {
         let parsed_attrs = parse_account_attrs(&attrs).unwrap();
         assert!(!parsed_attrs.is_mut);
         assert_eq!(parsed_attrs.close.unwrap().to_string(), "receiver");
+    }
+
+    #[test]
+    fn unsafe_dup_alone_is_rejected() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(unsafe(dup))]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("bare unsafe(dup) must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string().contains("does not make the account writable"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn unsafe_dup_with_mut_is_accepted_in_either_order() {
+        for tokens in [
+            quote::quote!(#[account(unsafe(dup), mut)]),
+            quote::quote!(#[account(mut, unsafe(dup))]),
+        ] {
+            let attrs: Vec<Attribute> = vec![syn::parse_quote!(#tokens)];
+            let parsed = parse_account_attrs(&attrs)
+                .unwrap_or_else(|err| panic!("mut + unsafe(dup) must parse: {err}"));
+            assert!(parsed.is_dup, "expected is_dup for {tokens}");
+            assert!(parsed.is_mut, "expected is_mut for {tokens}");
+        }
+    }
+
+    #[test]
+    fn unsafe_dup_with_init_is_accepted() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(init, payer = payer, unsafe(dup))]
+        )];
+        let parsed = parse_account_attrs(&attrs).expect("init implies mut, so unsafe(dup) is valid");
+        assert!(parsed.is_dup);
+        assert!(parsed.is_mut);
+        assert!(parsed.is_init);
     }
 
     #[test]
