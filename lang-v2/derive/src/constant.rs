@@ -25,12 +25,11 @@ pub fn expand(input: TokenStream) -> TokenStream {
         #[test]
         fn #fn_name() {
             let value = format!("{:?}", #expr);
-            // `value` is a JSON string — escape embedded quotes / backslashes.
-            let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+            let value_json = anchor_lang::idl_build::__idl_json_string(&value);
             println!("--- IDL begin const ---");
             println!(
-                "{{\"name\":\"{}\",\"type\":{},\"value\":\"{}\"}}",
-                #name, #ty_json, escaped,
+                "{{\"name\":\"{}\",\"type\":{},\"value\":{}}}",
+                #name, #ty_json, value_json,
             );
             println!("--- IDL end const ---");
         }
