@@ -346,7 +346,8 @@ Examples: [Github](https://github.com/solana-developers/anchor-examples/tree/mai
 
 ## Token Extensions Constraints
 
-Note that these extensions are not checked when used with `init_if_needed`.
+These extensions are checked both when the mint is initialized and when an
+existing mint is reused with `init_if_needed`.
 
 ### `#[account(extensions::close_authority::*)]`
 

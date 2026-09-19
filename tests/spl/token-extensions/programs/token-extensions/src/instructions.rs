@@ -195,6 +195,27 @@ pub struct CheckMintExtensionConstraints<'info> {
 }
 
 #[derive(Accounts)]
+pub struct CheckInitIfNeededMintExtensionConstraints<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub authority: Signer<'info>,
+    #[account(
+        init_if_needed,
+        signer,
+        payer = payer,
+        mint::token_program = token_program,
+        mint::decimals = 0,
+        mint::authority = authority,
+        mint::freeze_authority = authority,
+        extensions::group_member_pointer::authority = authority,
+        extensions::group_member_pointer::member_address = mint,
+    )]
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token2022>,
+}
+
+#[derive(Accounts)]
 pub struct CreateGroupPointerMint<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -233,6 +254,36 @@ pub fn update_group_pointer_handler(
     };
     let cpi_ctx = CpiContext::new(*ctx.accounts.token_program.key, cpi_accounts);
     token_2022_extensions::group_pointer::group_pointer_update(cpi_ctx, new_group_address)
+}
+
+#[derive(Accounts)]
+pub struct UpdateGroupMemberPointer<'info> {
+    pub authority: Signer<'info>,
+    #[account(mut)]
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
+    pub token_program: Program<'info, Token2022>,
+}
+
+pub fn update_group_member_pointer_handler(
+    ctx: Context<UpdateGroupMemberPointer>,
+    new_member_address: Option<Pubkey>,
+) -> Result<()> {
+    let cpi_accounts = token_2022_extensions::group_member_pointer::GroupMemberPointerUpdate {
+        token_program_id: ctx.accounts.token_program.to_account_info(),
+        mint: ctx.accounts.mint.to_account_info(),
+        authority: ctx.accounts.authority.to_account_info(),
+    };
+    let cpi_ctx = CpiContext::new(*ctx.accounts.token_program.key, cpi_accounts);
+    token_2022_extensions::group_member_pointer::group_member_pointer_update(
+        cpi_ctx,
+        new_member_address,
+    )
+}
+
+pub fn check_init_if_needed_mint_extension_constraints_handler(
+    _ctx: Context<CheckInitIfNeededMintExtensionConstraints>,
+) -> Result<()> {
+    Ok(())
 }
 
 #[derive(Accounts)]

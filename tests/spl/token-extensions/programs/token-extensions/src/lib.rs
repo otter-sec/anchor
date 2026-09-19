@@ -29,6 +29,12 @@ pub mod token_extensions {
         Ok(())
     }
 
+    pub fn check_init_if_needed_mint_extension_constraints(
+        ctx: Context<CheckInitIfNeededMintExtensionConstraints>,
+    ) -> Result<()> {
+        instructions::check_init_if_needed_mint_extension_constraints_handler(ctx)
+    }
+
     pub fn create_group_pointer_mint(_ctx: Context<CreateGroupPointerMint>) -> Result<()> {
         Ok(())
     }
@@ -38,6 +44,13 @@ pub mod token_extensions {
         new_group_address: Option<Pubkey>,
     ) -> Result<()> {
         instructions::update_group_pointer_handler(ctx, new_group_address)
+    }
+
+    pub fn update_group_member_pointer(
+        ctx: Context<UpdateGroupMemberPointer>,
+        new_member_address: Option<Pubkey>,
+    ) -> Result<()> {
+        instructions::update_group_member_pointer_handler(ctx, new_member_address)
     }
 
     pub fn check_toggle_pause(ctx: Context<CheckTogglePause>) -> Result<()> {

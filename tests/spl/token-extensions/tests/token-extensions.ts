@@ -91,6 +91,79 @@ describe("token extensions", () => {
       .rpc();
   });
 
+  describe("init_if_needed mint extension reuse", () => {
+    const reusedMint = new Keypair();
+
+    it("creates a reusable mint with token extensions", async () => {
+      const [extraMetasAccount] = PublicKey.findProgramAddressSync(
+        [
+          anchor.utils.bytes.utf8.encode("extra-account-metas"),
+          reusedMint.publicKey.toBuffer(),
+        ],
+        program.programId
+      );
+
+      await program.methods
+        .createMintAccount({
+          name: "reuse",
+          symbol: "rse",
+          uri: "https://reuse.test",
+        })
+        .accountsStrict({
+          payer: payer.publicKey,
+          authority: payer.publicKey,
+          receiver: payer.publicKey,
+          mint: reusedMint.publicKey,
+          mintTokenAccount: associatedAddress({
+            mint: reusedMint.publicKey,
+            owner: payer.publicKey,
+          }),
+          extraMetasAccount,
+          systemProgram: anchor.web3.SystemProgram.programId,
+          associatedTokenProgram: ASSOCIATED_PROGRAM_ID,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+        })
+        .signers([reusedMint, payer])
+        .rpc();
+    });
+
+    it("throws if init_if_needed reuses a mint with the wrong group member pointer", async () => {
+      await program.methods
+        .updateGroupMemberPointer(Keypair.generate().publicKey)
+        .accountsStrict({
+          authority: payer.publicKey,
+          mint: reusedMint.publicKey,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+        })
+        .signers([payer])
+        .rpc();
+
+      try {
+        await program.methods
+          .checkInitIfNeededMintExtensionConstraints()
+          .accountsStrict({
+            payer: payer.publicKey,
+            authority: payer.publicKey,
+            mint: reusedMint.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+            tokenProgram: TOKEN_2022_PROGRAM_ID,
+          })
+          .signers([reusedMint, payer])
+          .rpc();
+        assert.fail(
+          "expected ConstraintMintGroupMemberPointerExtensionMemberAddress"
+        );
+      } catch (err) {
+        assert.ok(err instanceof AnchorError);
+        assert.equal(
+          (err as AnchorError).error.errorCode.code,
+          "ConstraintMintGroupMemberPointerExtensionMemberAddress"
+        );
+        assert.equal((err as AnchorError).error.errorCode.number, 2029);
+      }
+    });
+  });
+
   describe("group_pointer_update", () => {
     let groupPointerMint = new Keypair();
 
