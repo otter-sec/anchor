@@ -136,7 +136,8 @@ pub type BorshConfig = wincode::config::Configuration<
 >;
 
 /// `#[derive(IdlType)]` — register a plain struct in the IDL's `types[]`
-/// array.
+/// array. Add `#[idl(bytemuck)]` to an explicitly `#[repr(C)]`, Pod-safe
+/// nested type when it is stored in a zero-copy account or bytemuck event.
 ///
 /// **Opaque / unstable.** Apply this derive on user types you want to
 /// surface in the generated IDL; do not call any of the emitted associated

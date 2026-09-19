@@ -53,6 +53,22 @@ fn plain_enum_emits_variants() {
 }
 
 #[test]
+fn opted_in_nested_pod_emits_bytemuck_layout() {
+    let json = <accounts_test::NestedPod as IdlAccountType>::__idl_type_def()
+        .expect("NestedPod should emit an IDL type");
+    assert!(json.contains("\"serialization\":\"bytemuck\""), "{json}");
+    assert!(json.contains("\"repr\":{\"kind\":\"c\"}"), "{json}");
+}
+
+#[test]
+fn unannotated_repr_c_idl_type_remains_borsh() {
+    let json = <accounts_test::PlainReprC as IdlAccountType>::__idl_type_def()
+        .expect("PlainReprC should emit an IDL type");
+    assert!(!json.contains("\"serialization\""), "{json}");
+    assert!(!json.contains("\"repr\""), "{json}");
+}
+
+#[test]
 fn plain_arg_struct_registers_as_type_not_account() {
     let mut accounts: Vec<&'static str> = Vec::new();
     let mut types: Vec<&'static str> = Vec::new();

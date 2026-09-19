@@ -45,6 +45,19 @@ pub struct LedgerEntry {
     pub amount: u64,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, IdlType)]
+#[idl(bytemuck)]
+pub struct NestedPod {
+    pub value: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, IdlType)]
+pub struct PlainReprC {
+    pub value: u64,
+}
+
 /// Plain instruction-argument struct — not an account, not an event. The
 /// `IdlType` derive is what lets the idl-build arg-type walk resolve it
 /// (`IdlAccountType`); without it `--features idl-build` fails to compile.
