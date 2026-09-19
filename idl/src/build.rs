@@ -4,7 +4,7 @@ use {
     regex::Regex,
     serde::Deserialize,
     std::{
-        collections::BTreeMap,
+        collections::{BTreeMap, BTreeSet},
         env, mem,
         path::{Path, PathBuf},
         process::{Command, Stdio},
@@ -225,7 +225,9 @@ fn build(
                             idl.types = {
                                 let prog_ty = mem::take(&mut idl.types);
                                 let mut types = mem::take(&mut types);
-                                types.extend(prog_ty.into_iter().map(|ty| (ty.name.clone(), ty)));
+                                for ty in prog_ty {
+                                    insert_type(&mut types, ty)?;
+                                }
                                 types.into_values().collect()
                             };
                         }
@@ -257,7 +259,9 @@ fn build(
 
                     let event = serde_json::from_str::<IdlBuildEventPrint>(&lines.join("\n"))?;
                     events.push(event.event);
-                    types.extend(event.types.into_iter().map(|ty| (ty.name.clone(), ty)));
+                    for ty in event.types {
+                        insert_type(&mut types, ty)?;
+                    }
                     state = State::Pass;
                     continue;
                 }
@@ -339,6 +343,20 @@ fn convert_module_paths(idl: Idl) -> Idl {
     serde_json::from_str(&idl).expect("Invalid IDL")
 }
 
+fn insert_type(types: &mut BTreeMap<String, IdlTypeDef>, ty: IdlTypeDef) -> Result<()> {
+    match types.entry(ty.name.clone()) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(ty);
+            Ok(())
+        }
+        std::collections::btree_map::Entry::Occupied(entry) if entry.get() == &ty => Ok(()),
+        std::collections::btree_map::Entry::Occupied(entry) => Err(anyhow!(
+            "Conflicting IDL type definitions for `{}`",
+            entry.key()
+        )),
+    }
+}
+
 /// Alphabetically sort fields for consistency.
 fn sort(mut idl: Idl) -> Idl {
     idl.accounts.sort_by(|a, b| a.name.cmp(&b.name));
@@ -371,25 +389,32 @@ fn verify(idl: &Idl) -> Result<()> {
     // Check potential discriminator collisions
     macro_rules! check_discriminator_collision {
         ($field:ident) => {
-            if let Some((outer, inner)) = idl.$field.iter().find_map(|outer| {
-                idl.$field
-                    .iter()
-                    .filter(|inner| inner.name != outer.name)
-                    .find(|inner| outer.discriminator.starts_with(&inner.discriminator))
-                    .map(|inner| (outer, inner))
-            }) {
-                return Err(anyhow!(
-                    "Ambiguous discriminators for {} `{}` and `{}`",
-                    stringify!($field),
-                    outer.name,
-                    inner.name
-                ));
+            for (outer_index, outer) in idl.$field.iter().enumerate() {
+                for inner in idl.$field.iter().skip(outer_index + 1) {
+                    if outer.discriminator.starts_with(&inner.discriminator)
+                        || inner.discriminator.starts_with(&outer.discriminator)
+                    {
+                        return Err(anyhow!(
+                            "Ambiguous discriminators for {} `{}` and `{}`",
+                            stringify!($field),
+                            outer.name,
+                            inner.name
+                        ));
+                    }
+                }
             }
         };
     }
     check_discriminator_collision!(accounts);
     check_discriminator_collision!(events);
     check_discriminator_collision!(instructions);
+
+    let mut event_names = BTreeSet::new();
+    for event in &idl.events {
+        if !event_names.insert(&event.name) {
+            return Err(anyhow!("Duplicate event name `{}`", event.name));
+        }
+    }
 
     // Disallow all zero account discriminators
     if let Some(account) = idl

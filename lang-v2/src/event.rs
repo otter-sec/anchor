@@ -6,6 +6,10 @@ pub const EVENT_IX_TAG_LE: &[u8] = &EVENT_IX_TAG.to_le_bytes();
 
 /// Trait for event structs. Implemented by the `#[event]` attribute macro.
 ///
+/// The optional `#[event(name = "...")]` argument overrides the event's
+/// wire and IDL name, which can be used to disambiguate same-named events in
+/// different modules.
+///
 /// Two serialization modes are emitted by the macro, both exposed via the
 /// single `data()` entry point:
 /// - default (`#[event]`) — wincode with a borsh-compatible wire format
