@@ -3,7 +3,9 @@ title: 1.1.1
 description: Anchor release notes for 1.1.1.
 ---
 
-See the full [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.1.1/CHANGELOG.md#111---2026-06-25).
+`1.1.1` is the first `1.1` feature release. Highlights include opt-in legacy IDL handlers, quieter `#[event_cpi]{:rs}`, OtterSec verified builds, and CLI build, path, and key improvements. The full list lives in the [`CHANGELOG.md{:file}`](https://github.com/otter-sec/anchor/blob/v1.1.1/CHANGELOG.md#111---2026-06-25).
+
+---
 
 ## How to upgrade
 
@@ -13,7 +15,19 @@ See the full [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.1.1/CHANGEL
 
 2. Update TS package(s) to `1.1.1`.
 
-## Recommended Solana Version
+To install the new `anchor-cli` via AVM:
+
+```console
+$ <blue>avm</blue> install 1.1.1
+```
+
+Or directly from the repository:
+
+```console
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor <dim>--tag</dim> v1.1.1 anchor-cli <dim>--locked</dim>
+```
+
+## Recommended Solana version
 
 The recommended Solana version is `3.1.10`, unchanged from `1.0.0`.
 
@@ -38,6 +52,18 @@ pub mod my_program {
 
 And interact with it using `$ <blue>anchor</blue> legacy-idl`.
 
+### Versioned transactions in `anchor-client`
+
+The Rust `anchor-client` crate can build and send versioned transactions.
+
+### MSRV and `syn` 2
+
+`anchor-lang` requires Rust `1.89`. `anchor-syn` migrated from syn 1.x to syn 2.0, so IDL generation accepts modern Rust syntax that previously failed the build.
+
+### CPI return `program_id` checks
+
+CPI return values now verify the source `program_id{:rs}` before they are consumed, so a callee cannot plant return data under another program's identity.
+
 ## CLI
 
 ### Remove hard build error with mismatched keys
@@ -53,3 +79,29 @@ The CLI now performs more reliable normalization of input paths. This means that
 ### Optimized build times
 
 Previously, the CLI built programs in a naive order, which resulted in bottlenecking on certain dependencies. The CLI will now attempt to be smarter when building packages, which can provide compile-time speedups of up to 50%.
+
+### Custom target directories
+
+Build, test, deploy, and IDL paths resolve the Cargo target directory through `cargo metadata`, so `CARGO_TARGET_DIR` and workspace-level overrides work instead of assuming `target/{:dir}`.
+
+### Named scripts
+
+`Anchor.toml{:file}` can define multiple named scripts. Run them with `$ <blue>anchor</blue> test <dim>--script</dim> <name>` or `$ <blue>anchor</blue> run <name>` (`r` is an alias for `run`).
+
+### Historical IDL fetch
+
+`$ <blue>anchor</blue> idl fetch-historical` recovers historical on-chain IDLs.
+
+### Nested workspace guard
+
+`$ <blue>anchor</blue> init` refuses to create a new Anchor workspace inside an existing Cargo workspace, which previously produced broken nested layouts.
+
+## TypeScript
+
+### OtterSec verified builds
+
+`verifiedBuild{:ts}` now talks to the OtterSec registry (`verify.osec.io`) instead of the defunct `apr.dev` API.
+
+---
+
+See the full list of notable changes in the [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.1.1/CHANGELOG.md#111---2026-06-25).

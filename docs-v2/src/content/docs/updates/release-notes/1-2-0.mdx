@@ -1,0 +1,100 @@
+---
+title: 1.2.0
+description: Anchor release notes for 1.2.0.
+---
+
+`1.2.0` is a feature release. The recommended Solana toolchain moves to `4.1.2` (platform-tools `v1.57`), AVM can resolve those tool versions from an Anchor version, and `$ <blue>anchor</blue> build` gains `<dim>--arch</dim>` / `<dim>--tools-version</dim>`. `$ <blue>anchor</blue> init` now writes a `security.json{:file}` template and deploy can upload it on-chain.
+
+These notes cover the main changes. The full list lives in the [`CHANGELOG.md{:file}`](https://github.com/otter-sec/anchor/blob/v1.2.0/CHANGELOG.md#120---2026-09-04).
+
+---
+
+## How to upgrade
+
+### Using AVM (recommended)
+
+```console
+$ <blue>avm</blue> install 1.2.0
+$ <blue>avm</blue> use 1.2.0
+```
+
+### Without AVM
+
+```console
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor <dim>--tag</dim> v1.2.0 anchor-cli <dim>--locked</dim>
+```
+
+Then update Anchor crate(s) and TS package(s) to `1.2.0`.
+
+## Recommended Solana version
+
+The recommended Solana version is `4.1.2`. Install the matching toolchain with:
+
+```console
+$ <blue>sh</blue> <dim>-c</dim> "$(curl <dim>-sSfL</dim> https://release.anza.xyz/v4.1.2/install)"
+```
+
+`$ <blue>anchor</blue> build` defaults to platform-tools `v1.57` and SBPF architecture `v3`. Override with `<dim>--tools-version</dim>` and `<dim>--arch</dim>` when needed. See the [CLI build command](/docs/v1/reference/cli/).
+
+---
+
+## AVM
+
+### Resolve Solana tools from an Anchor version
+
+AVM can resolve Solana CLI and platform-tools versions from an explicit Anchor version, for example `$ <blue>avm</blue> platform-tools resolve <dim>--anchor-version</dim> 1.2.0`, so the toolchain that shipped with that release does not have to be looked up by hand.
+
+## CLI
+
+### `--arch` and `--tools-version`
+
+`$ <blue>anchor</blue> build` accepts `<dim>--arch</dim>` and `<dim>--tools-version</dim>` and forwards them to `$ <blue>cargo</blue> build-sbf`. Defaults match the recommended `1.2.0` toolchain (`v3` / `v1.57`).
+
+### `security.json` on init and deploy
+
+`$ <blue>anchor</blue> init` writes a `security.json{:file}` template (skip with `<dim>--no-security-metadata</dim>`). `$ <blue>anchor</blue> deploy <dim>--security-metadata</dim>` / `$ <blue>anchor</blue> program deploy <dim>--security-metadata</dim>` uploads it on-chain through program-metadata.
+
+### TypeScript error constants from the IDL
+
+`$ <blue>anchor</blue> build` generates a TypeScript error-constants file from the program IDL so clients can match custom error codes without hand-copied enums.
+
+### Warn on unused `Anchor.toml` fields
+
+Unknown or unused workspace config keys print a warning instead of failing silently.
+
+## Lang
+
+### `AccountLoader::new_unchecked`
+
+`AccountLoader::new_unchecked{:rs}` constructs a loader without owner or discriminator checks, for cases that already validated the account.
+
+### Reject all-zero account discriminators
+
+Custom account discriminators that are all zeros are rejected. Zeroed discriminators are indistinguishable from newly allocated accounts. See [zeroed discriminators](/docs/v1/security/footguns/#zeroed-discriminators).
+
+### `LazyAccount` checks after CPI
+
+Unloading a `LazyAccount{:rs}` after a CPI re-runs ownership and discriminator checks so a callee cannot swap the account out from under the caller.
+
+### PDA signers in generated CPI metas
+
+Generated client and CPI account metas honor `is_signer{:rs}`, so PDA signers work through the generated CPI types.
+
+### `declare_program!` derives and namespaces
+
+Generated types in `declare_program!(){:rs}` always derive `Clone{:rs}` and `Debug{:rs}`. IDL namespace boundaries are preserved so a foreign IDL cannot collide with prelude names. Numeric instruction suffixes are handled in generated account-module re-exports.
+
+## SPL
+
+- Pausable mint extension support
+- `create_native_mint{:rs}` and `initialize_non_transferable_mint{:rs}` helpers
+- `reallocate{:rs}` and `withdraw_excess_lamports{:rs}` helpers
+- `token_metadata_remove_key{:rs}` for the token metadata extension
+
+## TypeScript
+
+Account resolution errors for self-referencing PDAs are clearer. Recursive IDL layouts are guarded against stack overflows while still allowing supported recursive types.
+
+---
+
+See the full list of notable changes in the [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.2.0/CHANGELOG.md#120---2026-09-04).

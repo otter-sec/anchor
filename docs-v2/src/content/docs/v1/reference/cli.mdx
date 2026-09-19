@@ -9,7 +9,7 @@ For non-human or agent-driven usage, see [NO_DNA](/docs/v1/reference/no-dna/).
 
 ```console
 $ <blue>anchor</blue> <dim>--help</dim>
-<bold>Usage:</bold> <bold>anchor-1.1.2</bold> [OPTIONS] <COMMAND>
+<bold>Usage:</bold> <bold>anchor-1.2.0</bold> [OPTIONS] <COMMAND>
 
 <bold>Commands:</bold>
   <bold>init</bold>          Initializes a workspace
@@ -17,6 +17,7 @@ $ <blue>anchor</blue> <dim>--help</dim>
   <bold>expand</bold>        Expands macros (wrapper around cargo expand)
   <bold>verify</bold>        Verifies the on-chain bytecode matches the locally compiled artifact. Run this command inside a program subdirectory, i.e., in the dir containing the program's Cargo.toml
   <bold>test</bold>          Runs integration tests
+  <bold>fuzz</bold>          Coverage-guided fuzzing for Solana programs (powered by Crucible).
   <bold>new</bold>           Creates a new program
   <bold>idl</bold>           Commands for interacting with interface definitions
   <bold>clean</bold>         Remove all artifacts from the generated directories except program keypairs
@@ -78,12 +79,9 @@ $ <blue>anchor</blue> build
 
 Builds programs in the workspace targeting Solana's BPF runtime and emits IDLs into the `target/idl{:dir}` directory:
 
-Anchor passes `<dim>--tools-version</dim> v1.57` and `<dim>--arch</dim> v3` to `cargo build-sbf` by default.
-Override them with `$ <blue>anchor</blue> build <dim>--tools-version</dim> <version> <dim>--arch</dim> <arch>`.
+Anchor passes `<dim>--tools-version</dim> v1.57` and `<dim>--arch</dim> v3` to `cargo build-sbf` by default. Override them with `$ <blue>anchor</blue> build <dim>--tools-version</dim> <version> <dim>--arch</dim> <arch>`.
 
-Programs built with `<dim>--arch</dim> v3` require compatible local test tooling:
-platform-tools v1.53 or newer, a Solana/Agave 4.0 or newer
-`solana-test-validator`, Surfpool 1.4 or newer, and LiteSVM 0.13.1 or newer.
+Programs built with `<dim>--arch</dim> v3` require compatible local test tooling: platform-tools v1.53 or newer, a Solana/Agave 4.0 or newer `solana-test-validator`, Surfpool 1.4 or newer, and LiteSVM 0.13.1 or newer.
 
 ```console
 $ <blue>anchor</blue> build <dim>--verifiable</dim>
@@ -222,13 +220,53 @@ Erases the IDL account's authority so that upgrades can no longer occur. The con
 $ <blue>anchor</blue> idl upgrade <dim>-f</dim> <dim><target/idl/program.json></dim>
 ```
 
-Upgrades the on-chain IDL to the new `target/idl/program.json{:file}`. The configured wallet must be the current authority. The `program-id` argument is optional. When omitted, `idl.address` is used:
+Upgrades the on-chain IDL to the new `target/idl/program.json{:file}`. The configured wallet must be the current authority. The `program-id` argument is optional. When omitted, `idl.address` is used.
+
+### `<blue>anchor</blue> idl close`
 
 ```console
-$ <blue>anchor</blue> idl set-authority <dim>-n</dim> <dim><new-authority></dim> <dim>-p</dim> <dim><program-id></dim>
+$ <blue>anchor</blue> idl close <dim><program-id></dim>
 ```
 
-Sets a new authority on the IDL account. Both `new-authority` and `program-id` must be encoded in base 58.
+Closes the metadata account and recovers the rent. By default this closes the `idl` seed account. Pass `<dim>--seed</dim>` for a different seed:
+
+```console
+$ <blue>anchor</blue> idl close <dim><program-id></dim> <dim>--seed</dim> <dim><custom-seed></dim>
+```
+
+### `<blue>anchor</blue> idl create-buffer`
+
+```console
+$ <blue>anchor</blue> idl create-buffer <dim>-f</dim> <dim><filepath></dim>
+```
+
+Creates a buffer account for metadata. Use this for large IDLs that need to be written across multiple transactions.
+
+### `<blue>anchor</blue> idl set-buffer-authority`
+
+```console
+$ <blue>anchor</blue> idl set-buffer-authority <dim><buffer></dim> <dim>-n</dim> <dim><new-authority></dim>
+```
+
+Sets a new authority on a buffer account.
+
+### `<blue>anchor</blue> idl write-buffer`
+
+```console
+$ <blue>anchor</blue> idl write-buffer <dim><program-id></dim> <dim>-b</dim> <dim><buffer></dim>
+```
+
+Writes metadata to the program using a pre-created buffer account. `<dim>--seed</dim>` selects the metadata seed (defaults to `idl`):
+
+```console
+$ <blue>anchor</blue> idl write-buffer <dim><program-id></dim> <dim>-b</dim> <dim><buffer></dim> <dim>--seed</dim> <dim><seed></dim>
+```
+
+Pass `<dim>--close-buffer</dim>` to close the buffer account after writing:
+
+```console
+$ <blue>anchor</blue> idl write-buffer <dim><program-id></dim> <dim>-b</dim> <dim><buffer></dim> <dim>--close-buffer</dim>
+```
 
 ## `<blue>anchor</blue> init`
 

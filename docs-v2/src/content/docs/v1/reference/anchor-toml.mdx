@@ -45,6 +45,15 @@ resolution = true
 
 ## `[workspace]`
 
+### `idls`
+
+Copies the generated `<program_name>.json{:file}` IDL to the given directory on `$ <blue>anchor</blue> build`. Use this when another tool or a versioned frontend needs the JSON outside the workspace `target{:dir}` directory:
+
+```toml
+[workspace]
+idls = "app/src/idls/"
+```
+
 ### `types`
 
 Copies the generated `<idl>.ts{:file}` file to the given directory on `$ <blue>anchor</blue> build`. Useful for committing the IDL types into a frontend that does not have access to the `target{:dir}` directory:
@@ -296,7 +305,7 @@ Overrides toolchain versions for the workspace, similar to [`rust-toolchain.toml
 
 ```toml
 [toolchain]
-anchor_version = "1.1.2"    # `anchor-cli` version to use (requires `avm`)
+anchor_version = "1.2.0"    # `anchor-cli` version to use (requires `avm`)
 solana_version = "4.1.2"    # Solana version to use (applies to all Solana tools)
 package_manager = "yarn"    # JS package manager to use
 ```
