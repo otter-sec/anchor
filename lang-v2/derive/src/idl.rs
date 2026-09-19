@@ -632,10 +632,6 @@ pub fn bytemuck_repr_from_attrs(attrs: &[syn::Attribute]) -> syn::Result<Bytemuc
     Ok(repr)
 }
 
-pub fn build_account_entry_string(name: &str, disc: &[u8]) -> Option<String> {
-    build_account_entry(name, disc)
-}
-
 pub fn build_struct_type_def_emission(
     name: &str,
     docs: &[String],
@@ -680,22 +676,6 @@ pub fn build_enum_type_def_emission(
         .map(|variant| variant_push_stmt(variant, generics))
         .collect();
     build_joined_type_def_emission(header, suffix, &variant_pushes)
-}
-
-/// Compose the program-level `accounts[]` entry. Returns `None` when the
-/// discriminator is empty (plain `IdlType` types that don't appear in
-/// `accounts[]`).
-fn build_account_entry(name: &str, disc: &[u8]) -> Option<String> {
-    if disc.is_empty() {
-        return None;
-    }
-    Some(
-        json!({
-            "name": name,
-            "discriminator": disc_json_value(disc),
-        })
-        .to_string(),
-    )
 }
 
 fn build_joined_type_def_emission(
