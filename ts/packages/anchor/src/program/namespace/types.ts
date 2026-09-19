@@ -76,13 +76,17 @@ export type MakeInstructionsNamespace<
     Mk[M];
 };
 
-export type MakeMethodsNamespace<IDL extends Idl, I extends IdlInstruction> = {
-  [M in keyof InstructionMap<I>]: MethodsFn<
-    IDL,
-    InstructionMap<I>[M],
-    MethodsBuilder<IDL, InstructionMap<I>[M]>
-  >;
-};
+/**
+ * Utility type to extract the pubkeys type for a given instruction.
+ */
+export type MethodPubkeys<
+  IDL extends Idl,
+  N extends keyof AllInstructionsMap<IDL>
+> = Awaited<
+  ReturnType<
+    ReturnType<MethodsFn<IDL, AllInstructionsMap<IDL>[N], MethodsBuilder<IDL, AllInstructionsMap<IDL>[N]>>>["rpcAndKeys"]
+  >
+>["pubkeys"];
 
 export type InstructionContextFn<
   IDL extends Idl,
