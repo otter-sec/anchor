@@ -403,6 +403,44 @@ mod shim {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn idl_generation_rejects_wincode_enum_tag_override() {
+    compile_fail_case(
+        "idl_type_wincode_tag_encoding",
+        r#"
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, IdlType};
+
+#[derive(IdlType, AnchorDeserialize, AnchorSerialize)]
+#[wincode(tag_encoding = "u32")]
+pub enum Bad {
+    A,
+    B(u16),
+}
+"#,
+        &[
+            "`#[derive(IdlType)]` does not support `#[wincode(tag_encoding = ...)]`",
+            "1-byte enum discriminant",
+        ],
+    );
+
+    compile_pass_case(
+        "idl_type_default_enum",
+        r#"
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, IdlType};
+
+#[derive(IdlType, AnchorDeserialize, AnchorSerialize)]
+pub enum DefaultTag {
+    A,
+    B(u16),
+}
+"#,
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn idl_generation_rejects_lossy_packed_repr_modifiers() {
     compile_fail_case(
         "event_bytemuck_packed_two",

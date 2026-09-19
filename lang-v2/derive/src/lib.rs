@@ -2552,6 +2552,9 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_derive(IdlType)]
 pub fn derive_idl_type(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
+    if let Some(err) = unsupported_wincode_idl_attr_error("`#[derive(IdlType)]`", &input.attrs) {
+        return err.to_compile_error().into();
+    }
     let name = &input.ident;
     let name_str = name.to_string();
 
