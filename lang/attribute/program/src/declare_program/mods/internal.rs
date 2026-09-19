@@ -1,7 +1,7 @@
 use {
     super::common::{
-        convert_idl_type_def_to_ts, gen_discriminator, get_all_instruction_accounts,
-        get_canonical_program_id,
+        accounts_use_lifetime, convert_idl_type_def_to_ts, gen_discriminator,
+        get_all_instruction_accounts, get_canonical_program_id,
     },
     anchor_lang_idl::types::{
         Idl, IdlDefinedFields, IdlInstructionAccountItem, IdlTypeDef, IdlTypeDefTy,
@@ -13,6 +13,7 @@ use {
     },
     heck::CamelCase,
     quote::{format_ident, quote},
+    std::collections::HashSet,
 };
 
 pub fn gen_internal_mod(idl: &Idl) -> proc_macro2::TokenStream {
@@ -95,13 +96,29 @@ fn gen_internal_args_mod(idl: &Idl) -> proc_macro2::TokenStream {
 }
 
 fn gen_internal_accounts(idl: &Idl) -> proc_macro2::TokenStream {
-    let cpi_accounts = gen_internal_accounts_common(idl, __cpi_client_accounts::generate);
+    // Fieldless CPI accounts structs are emitted without `<'info>` so they stay
+    // constructible as `Foo {}` by downstream code. `mods::cpi` matches this when
+    // it generates the `CpiContext` signatures.
+    let fieldless = get_fieldless_accounts(idl);
+    let cpi_accounts = gen_internal_accounts_common(idl, |accs, program_id| {
+        __cpi_client_accounts::generate_with_opts(accs, program_id, &fieldless)
+    });
     let client_accounts = gen_internal_accounts_common(idl, __client_accounts::generate);
 
     quote! {
         #cpi_accounts
         #client_accounts
     }
+}
+
+/// Names of the generated accounts structs that carry no `<'info>`, in the same
+/// `CamelCase` form the structs are emitted under.
+fn get_fieldless_accounts(idl: &Idl) -> HashSet<String> {
+    get_all_instruction_accounts(idl)
+        .iter()
+        .filter(|accs| !accounts_use_lifetime(&accs.accounts))
+        .map(|accs| accs.name.to_camel_case())
+        .collect()
 }
 
 fn gen_internal_accounts_common(
@@ -113,10 +130,13 @@ fn gen_internal_accounts_common(
         .iter()
         .map(|accs| {
             let ident = format_ident!("{}", accs.name.to_camel_case());
-            let generics = if accs.accounts.is_empty() {
-                quote!()
-            } else {
+            // `<'info>` is only declared when some field actually binds it. A
+            // struct whose every field is a fieldless composite has nothing to
+            // bind it, and an unused lifetime parameter is a hard `E0392`.
+            let generics = if accounts_use_lifetime(&accs.accounts) {
                 quote!(<'info>)
+            } else {
+                quote!()
             };
             let accounts = accs.accounts.iter().map(|acc| match acc {
                 IdlInstructionAccountItem::Single(acc) => {
@@ -157,8 +177,16 @@ fn gen_internal_accounts_common(
                         .map(|a| format_ident!("{}", a.name.to_camel_case()))
                         .expect("Accounts must exist");
 
+                    // The composite's own shape decides its lifetime, not the
+                    // enclosing struct's: a fieldless composite has no `<'info>`.
+                    let ty_generics = if accounts_use_lifetime(&accs.accounts) {
+                        quote!(<'info>)
+                    } else {
+                        quote!()
+                    };
+
                     quote! {
-                        pub #name: #ty_name #generics
+                        pub #name: #ty_name #ty_generics
                     }
                 }
             });

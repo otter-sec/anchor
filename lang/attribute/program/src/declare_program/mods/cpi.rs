@@ -1,5 +1,5 @@
 use {
-    super::common::{convert_idl_type_to_syn_type, gen_accounts_common},
+    super::common::{accounts_use_lifetime, convert_idl_type_to_syn_type, gen_accounts_common},
     anchor_lang_idl::types::Idl,
     heck::CamelCase,
     quote::{format_ident, quote},
@@ -27,10 +27,13 @@ fn gen_cpi_instructions(idl: &Idl) -> proc_macro2::TokenStream {
         let method_name = format_ident!("{}", ix.name);
         let accounts_ident = format_ident!("{}", ix.name.to_camel_case());
 
-        let accounts_generic = if ix.accounts.is_empty() {
-           quote!()
-        } else {
+        // Must match the struct `internal::gen_internal_accounts` emits: a
+        // fieldless accounts struct gets no lifetime, so that it stays
+        // constructible as `Foo {}` (see #4658).
+        let accounts_generic = if accounts_use_lifetime(&ix.accounts) {
             quote!(<'info>)
+        } else {
+            quote!()
         };
 
         let args = ix.args.iter().map(|arg| {
