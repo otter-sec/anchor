@@ -63,6 +63,7 @@ bincode = "1"
 borsh = "1.5.7"
 bytemuck = { version = "1", features = ["derive"] }
 const-crypto = "0.3.0"
+serde = "1"
 
 solana-account-info.workspace = true
 solana-clock.workspace = true
@@ -83,7 +84,7 @@ solana-pubkey = { workspace = true, features = ["borsh", "bytemuck", "serde"] }
 solana-sdk-ids.workspace = true
 solana-stake-interface = { workspace = true, features = ["sysvar", "bincode"] }
 solana-system-interface.workspace = true
-solana-sysvar = { workspace = true, features = ["bincode"] }
+solana-sysvar = { workspace = true, features = ["serde"] }
 solana-sysvar-id.workspace = true
 
 thiserror = "1"

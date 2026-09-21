@@ -5579,7 +5579,7 @@ fn validator_config_flags(test_validator: &Option<TestValidator>) -> Result<Vec<
                             if account.owner == bpf_loader_upgradeable::id()
                                 // Only programs are supported with `--clone-upgradeable-program`
                                 && matches!(
-                                    account.deserialize_data::<UpgradeableLoaderState>()?,
+                                    bincode::deserialize::<UpgradeableLoaderState>(&account.data)?,
                                     UpgradeableLoaderState::Program { .. }
                                 )
                             {
