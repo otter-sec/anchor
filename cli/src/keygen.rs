@@ -64,6 +64,21 @@ fn print_step(step: &str) {
     println!("✓ {}", step);
 }
 
+fn new_keypair_summary(pubkey: &Pubkey, phrase: &str, has_passphrase: bool) -> String {
+    let divider = "━".repeat(phrase.len().max(60));
+    let passphrase_msg = if has_passphrase {
+        " and your BIP39 passphrase"
+    } else {
+        ""
+    };
+
+    format!(
+        "\n{divider}\n📋 Public Key: {pubkey}\n{divider}\n\n\
+         ⚠️  IMPORTANT: Save this seed phrase{passphrase_msg} to recover your keypair:\
+         \n\n{phrase}\n\n{divider}"
+    )
+}
+
 pub fn keygen(_cfg_override: &ConfigOverride, cmd: KeygenCommand) -> Result<()> {
     match cmd {
         KeygenCommand::New {
@@ -100,6 +115,12 @@ fn keygen_new(
         path
     });
 
+    let step = |s: &str| {
+        if !silent {
+            print_step(s);
+        }
+    };
+
     // Check for overwrite
     if Path::new(&outfile_path).exists() {
         if !force {
@@ -108,14 +129,18 @@ fn keygen_new(
                 outfile_path.display()
             );
         }
-        println!(
-            "⚠️  Warning: Overwriting existing keypair at {}",
-            outfile_path.display()
-        );
+        if !silent {
+            println!(
+                "⚠️  Warning: Overwriting existing keypair at {}",
+                outfile_path.display()
+            );
+        }
     }
 
-    println!("\n🔑 Generating a new keypair");
-    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    if !silent {
+        println!("\n🔑 Generating a new keypair");
+        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    }
 
     // Convert word count to MnemonicType
     let mnemonic_type = match word_count {
@@ -131,24 +156,26 @@ fn keygen_new(
     };
 
     // Generate mnemonic with specified word count
-    print_step(&format!("Generating {}-word mnemonic", word_count));
+    step(&format!("Generating {}-word mnemonic", word_count));
     let mnemonic = Mnemonic::new(mnemonic_type, Language::English);
 
     // Get passphrase
     let passphrase = if no_passphrase {
-        print_step("No passphrase required");
+        step("No passphrase required");
         String::new()
     } else {
-        println!("\n🔐 BIP39 Passphrase (optional)");
+        if !silent {
+            println!("\n🔐 BIP39 Passphrase (optional)");
+        }
         let pass = secure_input("Enter BIP39 passphrase (leave empty for none): ", false)?;
         if !pass.is_empty() {
-            print_step("Passphrase set");
+            step("Passphrase set");
         }
         pass
     };
 
     // Generate seed from mnemonic and passphrase
-    print_step("Deriving keypair from seed");
+    step("Deriving keypair from seed");
     let seed = Seed::new(&mnemonic, &passphrase);
 
     // Create keypair from seed (use first 32 bytes as secret key)
@@ -179,26 +206,12 @@ fn keygen_new(
 
     print_step(&format!("Keypair saved to {}", outfile_path.display()));
 
-    let phrase: &str = mnemonic.phrase();
-    let divider = "━".repeat(phrase.len().max(60));
-    let passphrase_msg = if passphrase.is_empty() {
-        String::new()
-    } else {
-        " and your BIP39 passphrase".to_string()
-    };
-
-    // Always show the seed phrase - it's critical for recovery
-    println!("\n{}", divider);
     if !silent {
-        println!("📋 Public Key: {}", keypair.pubkey());
-        println!("{}", divider);
+        println!(
+            "{}",
+            new_keypair_summary(&keypair.pubkey(), mnemonic.phrase(), !passphrase.is_empty())
+        );
     }
-    println!(
-        "\n⚠️  IMPORTANT: Save this seed phrase{} to recover your keypair:",
-        passphrase_msg
-    );
-    println!("\n{}\n", phrase);
-    println!("{}", divider);
 
     Ok(())
 }
@@ -378,6 +391,9 @@ mod tests {
         tempfile::{tempdir, TempDir},
     };
 
+    const TEST_PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
+                               abandon abandon abandon about";
+
     fn tmp_outfile_path(out_dir: &TempDir, name: &str) -> PathBuf {
         out_dir.path().join(name)
     }
@@ -412,6 +428,23 @@ mod tests {
         // Test: overwrite with --force flag
         keygen_new(Some(outfile_path.clone()), true, true, true, 12).unwrap();
         assert!(Path::new(&outfile_path).exists());
+    }
+
+    #[test]
+    fn test_new_keypair_summary() {
+        let pubkey = Pubkey::new_unique();
+        let summary = new_keypair_summary(&pubkey, TEST_PHRASE, false);
+
+        assert!(summary.contains(&pubkey.to_string()));
+        assert!(summary.contains(TEST_PHRASE));
+        assert!(!summary.contains("BIP39 passphrase"));
+    }
+
+    #[test]
+    fn test_new_keypair_summary_with_passphrase() {
+        let summary = new_keypair_summary(&Pubkey::new_unique(), TEST_PHRASE, true);
+
+        assert!(summary.contains("Save this seed phrase and your BIP39 passphrase to recover"));
     }
 
     #[test]
