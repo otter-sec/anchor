@@ -8436,7 +8436,6 @@ mod tests {
         assert!(ts.contains(r#""path": "sourceAccount.authority""#));
         assert!(ts.contains(r#""account": "sourceAccount""#));
         assert!(ts.contains(r#""sourceAccount""#));
-
         assert!(ts.contains(r#""name": "someArg""#));
         assert!(ts.contains(r#""name": "sourceAccount""#));
         assert!(ts.contains(r#""name": "unauthorized""#));
