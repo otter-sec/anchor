@@ -21,7 +21,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Avoid an unnecessary stack allocation when snapshotting CPI return data ([#4931](https://github.com/otter-sec/anchor/pull/4931)).
 - lang: Raise an error when modifying data in an account that has had its ownership changed. ([#5011](https://github.com/otter-sec/anchor/pull/5011)).
 - cli: Redact the query string and userinfo from cluster/RPC URLs printed by `anchor deploy` and `anchor keys sync` so credentials embedded in the URL (e.g. `?api-key=...`) aren't leaked into terminal scrollback or CI logs. ([#5061](https://github.com/otter-sec/anchor/pull/5061)).
-- cli: Make `anchor keygen new --silent` withhold the seed phrase instead of only the pubkey, matching `solana-keygen new --silent`, so the mnemonic isn't printed to stdout in scripts and CI jobs. ([#5074](https://github.com/otter-sec/anchor/pull/5074)).
+- cli: Make `anchor keygen new --silent` withhold the seed phrase instead of only the pubkey, matching `solana-keygen new --silent`, so the mnemonic isn't printed to stdout in scripts and CI jobs. ([#5080](https://github.com/otter-sec/anchor/pull/5080)).
 
 ### Breaking
 
