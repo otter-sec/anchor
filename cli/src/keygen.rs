@@ -64,18 +64,27 @@ fn print_step(step: &str) {
     println!("✓ {}", step);
 }
 
-fn new_keypair_summary(pubkey: &Pubkey, phrase: &str, has_passphrase: bool) -> String {
+fn new_keypair_summary(
+    pubkey: &Pubkey,
+    phrase: &str,
+    passphrase: Option<&str>,
+    silent: bool,
+) -> Option<String> {    
+    if silent {
+        return None;
+    }
+
     let divider = "━".repeat(phrase.len().max(60));
-    let passphrase_msg = if has_passphrase {
+    let passphrase_msg = if passphrase.is_some() {
         " and your BIP39 passphrase"
     } else {
         ""
     };
 
-    format!(
+    Some(format!(
         "\n{divider}\n📋 Public Key: {pubkey}\n{divider}\n\n⚠️  IMPORTANT: Save this seed \
          phrase{passphrase_msg} to recover your keypair:\n\n{phrase}\n\n{divider}"
-    )
+    ))
 }
 
 pub fn keygen(_cfg_override: &ConfigOverride, cmd: KeygenCommand) -> Result<()> {
