@@ -496,6 +496,7 @@ dependencies = [
  "anchor-lang",
  "borsh 1.8.1",
  "mpl-token-metadata",
+ "solana-nullable",
  "solana-stake-interface",
  "solana-sysvar 4.1.0",
  "spl-associated-token-account-interface",
@@ -504,7 +505,7 @@ dependencies = [
  "spl-token-2022-interface",
  "spl-token-group-interface",
  "spl-token-interface",
- "spl-token-metadata-interface 0.8.0",
+ "spl-token-metadata-interface",
 ]
 
 [[package]]
@@ -5187,7 +5188,7 @@ dependencies = [
  "spl-token-2022-interface",
  "spl-token-group-interface",
  "spl-token-interface",
- "spl-token-metadata-interface 1.0.1",
+ "spl-token-metadata-interface",
  "thiserror 2.0.20",
  "wincode",
  "zstd",
@@ -7218,7 +7219,6 @@ version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd3183a7934dd7e6490ae86732616cd70361f5ab9401b9a375ab62f7fa17b112"
 dependencies = [
- "borsh 1.8.1",
  "bytemuck",
  "bytemuck_derive",
 ]
@@ -7371,7 +7371,6 @@ version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4efaa79ec81a614ae4263c92481ba1444d01e5e1efcdaf92b7f48a5b1b3e282d"
 dependencies = [
- "borsh 1.8.1",
  "bytemuck",
  "bytemuck_derive",
  "num-derive 0.4.2",
@@ -7410,7 +7409,7 @@ dependencies = [
  "solana-zk-sdk-pod",
  "spl-token-confidential-transfer-proof-extraction",
  "spl-token-group-interface",
- "spl-token-metadata-interface 1.0.1",
+ "spl-token-metadata-interface",
  "spl-type-length-value",
  "thiserror 2.0.20",
 ]
@@ -7471,25 +7470,6 @@ dependencies = [
  "solana-program-pack",
  "solana-pubkey 3.0.0",
  "solana-sdk-ids",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "spl-token-metadata-interface"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c467c7c3bd056f8fe60119e7ec34ddd6f23052c2fa8f1f51999098063b72676"
-dependencies = [
- "borsh 1.8.1",
- "num-derive 0.4.2",
- "num-traits",
- "solana-borsh",
- "solana-instruction",
- "solana-program-error",
- "solana-pubkey 3.0.0",
- "spl-discriminator",
- "spl-pod",
- "spl-type-length-value",
  "thiserror 2.0.20",
 ]
 

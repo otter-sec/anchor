@@ -21,3 +21,7 @@ spl-tlv-account-resolution = "0.10.0"
 spl-transfer-hook-interface = "0.10.0"
 spl-type-length-value = "0.9"
 spl-pod = "0.7"
+# spl-token-2022's extension "optional pubkey" fields (metadata pointer,
+# transfer hook, permanent delegate, close authority, ...) encode as
+# `MaybeNull<Pubkey>`, not `spl-pod`'s `OptionalNonZeroPubkey`.
+solana-nullable = "1"

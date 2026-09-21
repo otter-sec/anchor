@@ -33,6 +33,7 @@ token_2022_extensions = [
     "spl-token-group-interface",
     "spl-token-metadata-interface",
     "spl-pod",
+    "dep:solana-nullable",
 ]
 
 [dependencies]
@@ -47,4 +48,5 @@ spl-pod = { version = "0.7", optional = true }
 spl-token-interface = { version = "3", optional = true }
 spl-token-2022-interface = { version = "3", optional = true }
 spl-token-group-interface = { version = "0.7", optional = true }
-spl-token-metadata-interface = { version = "0.8", optional = true }
+spl-token-metadata-interface = { version = "1", optional = true }
+solana-nullable = { version = "1", optional = true }
