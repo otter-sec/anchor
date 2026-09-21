@@ -41,10 +41,6 @@ solana-hash = "4.6.0"
 solana-instruction = "4.0.0"
 solana-instructions-sysvar = "4.0.0"
 solana-invoke = "0.5.0"
-# `solana-keypair`/`solana-signer` 4.x carry a different `Signer` trait, and every
-# released `solana-transaction` 4.x still signs through `solana-signer` 3.x. Using them
-# means `solana-transaction` 5 + `solana-message` 5, which no released `solana-rpc-client`
-# accepts (only the 4.4 prerelease), so these stay on 3.x.
 solana-keypair = "3.0.1"
 solana-loader-v3-interface = "6.1.1"
 solana-message = "4.6.0"
