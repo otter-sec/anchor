@@ -73,9 +73,8 @@ fn new_keypair_summary(pubkey: &Pubkey, phrase: &str, has_passphrase: bool) -> S
     };
 
     format!(
-        "\n{divider}\n📋 Public Key: {pubkey}\n{divider}\n\n\
-         ⚠️  IMPORTANT: Save this seed phrase{passphrase_msg} to recover your keypair:\
-         \n\n{phrase}\n\n{divider}"
+        "\n{divider}\n📋 Public Key: {pubkey}\n{divider}\n\n⚠️  IMPORTANT: Save this seed \
+         phrase{passphrase_msg} to recover your keypair:\n\n{phrase}\n\n{divider}"
     )
 }
 
