@@ -87,8 +87,8 @@ indicatif = "0.18.2"
 inferno = { version = "0.12", default-features = false }
 object = { version = "0.37.3", features = ["read_core", "elf"] }
 rustc-demangle = "0.1"
-solana-compute-budget = { version = "3.1.10", features = ["agave-unstable-api"] }
-solana-sbpf = "0.13.1"
+solana-compute-budget = { version = "4.2.2", features = ["agave-unstable-api"] }
+solana-sbpf = "0.21.1"
 
 # `anchor debugger` — foundry-style TUI stepper over profile traces.
 addr2line = { version = "0.24", default-features = false, features = [

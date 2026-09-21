@@ -44,7 +44,7 @@ solana-sysvar = { workspace = true, optional = true }
 spl-associated-token-account-interface = { version = "2", optional = true }
 spl-memo-interface = { version = "2", optional = true }
 spl-pod = { version = "0.7", optional = true }
-spl-token-interface = { version = "2", optional = true }
-spl-token-2022-interface = { version = "2", optional = true }
+spl-token-interface = { version = "3", optional = true }
+spl-token-2022-interface = { version = "3", optional = true }
 spl-token-group-interface = { version = "0.7", optional = true }
 spl-token-metadata-interface = { version = "0.8", optional = true }

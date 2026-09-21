@@ -42,16 +42,19 @@ fn syscall_cost(budget: &ComputeBudget, syscall_name: &str) -> u64 {
         | "sol_get_sysvar" => budget.sysvar_base_cost,
         "sol_curve_validate_point" => budget.curve25519_edwards_validate_point_cost,
         "sol_curve_group_op" => budget.curve25519_edwards_add_cost,
-        "sol_big_mod_exp" => budget.big_modular_exponentiation_base_cost,
         "sol_remaining_compute_units" => budget.get_remaining_compute_units_cost,
         "sol_alt_bn128_compression" => budget.alt_bn128_g1_compress,
-        "sol_alt_bn128_group_op" => budget.alt_bn128_addition_cost,
+        "sol_alt_bn128_group_op" => budget.alt_bn128_g1_addition_cost,
         "sol_poseidon" => budget.poseidon_cost_coefficient_c,
         // Includes sol_log_, sol_log_data, sol_log_compute_units_, abort,
         // sol_panic_, sol_set_return_data, sol_get_return_data,
         // sol_get_stack_height, sol_get_epoch_stake,
-        // sol_get_processed_sibling_instruction, and anything agave added
-        // that we haven't mapped yet.
+        // sol_get_processed_sibling_instruction, sol_big_mod_exp (its
+        // per-call base cost field was removed from `ComputeBudget`; its
+        // true cost is input-size-dependent anyway, so it falls into the
+        // same "can't infer from registers" bucket as the other variable-cost
+        // syscalls this function already approximates), and anything agave
+        // added that we haven't mapped yet.
         _ => budget.syscall_base_cost,
     }
 }
@@ -101,6 +104,16 @@ impl ContextObject for NoopContext {
     fn consume(&mut self, _amount: u64) {}
     fn get_remaining(&self) -> u64 {
         0
+    }
+    fn active_mapping_ptr(
+        &mut self,
+    ) -> std::ptr::NonNull<solana_sbpf::memory_region::MemoryMapping> {
+        // `NoopContext` only type-parameterizes `Executable::from_elf` for
+        // static disassembly/analysis; we never construct an `EbpfVm` (the
+        // only caller of this method), so it's unreachable in practice.
+        // Mirrors `solana_sbpf::static_analysis::DummyContextObject`,
+        // upstream's own test-only stub for the same situation.
+        unreachable!("NoopContext is only used for static analysis, never for VM execution")
     }
 }
 
@@ -389,7 +402,7 @@ pub fn build_tx_reports(
 
     let mut reports: std::collections::BTreeMap<u32, (BTreeMap<Vec<String>, u64>, u64)> =
         std::collections::BTreeMap::new();
-    let budget = ComputeBudget::new_with_defaults(false, false);
+    let budget = ComputeBudget::new_with_defaults(false);
 
     for inv in &invocations {
         let regs = fs::read(&inv.regs_path)
@@ -924,7 +937,7 @@ mod tests {
             &symbols,
             &BTreeMap::new(),
             "program",
-            &ComputeBudget::new_with_defaults(false, false),
+            &ComputeBudget::new_with_defaults(false),
             |step| observed.push((step.pc, step.func.to_owned(), step.call_stack.to_vec())),
         );
 
@@ -957,7 +970,7 @@ mod tests {
             &symbols,
             &syscall_names,
             "program",
-            &ComputeBudget::new_with_defaults(false, false),
+            &ComputeBudget::new_with_defaults(false),
             |step| {
                 observed.push((
                     step.pc,
@@ -990,7 +1003,7 @@ mod tests {
             &symbols,
             &syscall_names,
             "program",
-            &ComputeBudget::new_with_defaults(false, false),
+            &ComputeBudget::new_with_defaults(false),
             |step| observed.push((step.syscall.clone(), step.cu_cost)),
         );
 
