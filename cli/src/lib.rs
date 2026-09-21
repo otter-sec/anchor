@@ -4297,7 +4297,7 @@ fn deserialize_idl_type_to_json(
                 .try_into()
                 .unwrap();
 
-            // Don't call `with_capacity` with a count larger than the remaining bytes.
+            // Sanity check: Guard against massive overallocation from a malformed IDL.
             if size > data.len() {
                 return Err(anyhow!(
                     "vec length {size} exceeds remaining account data ({} bytes)",
