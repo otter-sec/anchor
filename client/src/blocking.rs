@@ -161,12 +161,13 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Box<dyn S
     ///
     /// # Arguments
     ///
-    /// * `version` - The transaction version to use ([`TxVersion::Legacy`] or [`TxVersion::V0`]).
+    /// * `version` - The transaction version to use ([`TxVersion::Legacy`], [`TxVersion::V0`], or
+    ///   [`TxVersion::V1`]).
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use anchor_client::{Client, Cluster, TxVersion};
+    /// use anchor_client::{Client, Cluster, TransactionConfig, TxVersion};
     /// use anchor_lang::prelude::Pubkey;
     /// use solana_signer::null_signer::NullSigner;
     /// use anchor_client::AddressLookupTableAccount;
@@ -182,6 +183,12 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Box<dyn S
     ///
     /// // V0 transaction
     /// let tx = request.signed_transaction_versioned(TxVersion::V0(&[lookup_table])).unwrap();
+    ///
+    /// // V1 transaction with explicit resource limits
+    /// let config = TransactionConfig::default()
+    ///     .with_compute_unit_limit(200_000)
+    ///     .with_loaded_accounts_data_size_limit(64 * 1024 * 1024);
+    /// let tx = request.signed_transaction_versioned(TxVersion::V1(config)).unwrap();
     /// ```
     pub fn signed_transaction_versioned(
         &self,
@@ -203,12 +210,13 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Box<dyn S
     ///
     /// # Arguments
     ///
-    /// * `version` - The transaction version to use ([`TxVersion::Legacy`] or [`TxVersion::V0`]).
+    /// * `version` - The transaction version to use ([`TxVersion::Legacy`], [`TxVersion::V0`], or
+    ///   [`TxVersion::V1`]).
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use anchor_client::{Client, Cluster, TxVersion};
+    /// use anchor_client::{Client, Cluster, TransactionConfig, TxVersion};
     /// use anchor_lang::prelude::Pubkey;
     /// use solana_signer::null_signer::NullSigner;
     /// use anchor_client::AddressLookupTableAccount;
@@ -225,6 +233,12 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Box<dyn S
     ///
     /// // V0 transaction with lookup tables
     /// let sig = request.send_versioned(TxVersion::V0(&[lookup_table])).unwrap();
+    ///
+    /// // V1 transaction with explicit resource limits
+    /// let config = TransactionConfig::default()
+    ///     .with_compute_unit_limit(200_000)
+    ///     .with_loaded_accounts_data_size_limit(64 * 1024 * 1024);
+    /// let sig = request.send_versioned(TxVersion::V1(config)).unwrap();
     /// ```
     pub fn send_versioned(&self, version: TxVersion<'_>) -> Result<Signature, ClientError> {
         self.handle.block_on(self.send_internal(version))
@@ -246,7 +260,8 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Box<dyn S
     ///
     /// # Arguments
     ///
-    /// * `version` - The transaction version to use ([`TxVersion::Legacy`] or [`TxVersion::V0`]).
+    /// * `version` - The transaction version to use ([`TxVersion::Legacy`], [`TxVersion::V0`], or
+    ///   [`TxVersion::V1`]).
     /// * `config` - RPC send transaction configuration.
     pub fn send_with_spinner_and_config_versioned(
         &self,
