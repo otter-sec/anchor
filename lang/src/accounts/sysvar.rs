@@ -41,9 +41,7 @@ pub struct Sysvar<'info, T: SolanaSysvar> {
     account: T,
 }
 
-impl<T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned + fmt::Debug> fmt::Debug
-    for Sysvar<'_, T>
-{
+impl<T: SolanaSysvar + fmt::Debug> fmt::Debug for Sysvar<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Sysvar")
             .field("info", &self.info)
@@ -57,7 +55,7 @@ impl<T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned + fmt::Debug> fmt:
 /// This performs the same steps as the deprecated `solana_sysvar::SysvarSerialize`:
 /// it checks the account address against the sysvar's ID and then decodes the
 /// account data with bincode, so the accepted wire format is unchanged.
-fn deserialize_sysvar<T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned>(
+fn deserialize_sysvar<T: SysvarId + serde::de::DeserializeOwned>(
     acc_info: &AccountInfo,
 ) -> Result<T> {
     if !T::check_id(acc_info.key) {
@@ -104,29 +102,25 @@ impl<'info, B, T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> Account
     }
 }
 
-impl<T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> ToAccountMetas for Sysvar<'_, T> {
+impl<T: SolanaSysvar> ToAccountMetas for Sysvar<'_, T> {
     fn to_account_metas(&self, _is_signer: Option<bool>) -> Vec<AccountMeta> {
         vec![AccountMeta::new_readonly(*self.info.key, false)]
     }
 }
 
-impl<'info, T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> ToAccountInfos<'info>
-    for Sysvar<'info, T>
-{
+impl<'info, T: SolanaSysvar> ToAccountInfos<'info> for Sysvar<'info, T> {
     fn to_account_infos(&self) -> Vec<AccountInfo<'info>> {
         vec![self.info.clone()]
     }
 }
 
-impl<'info, T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> AsRef<AccountInfo<'info>>
-    for Sysvar<'info, T>
-{
+impl<'info, T: SolanaSysvar> AsRef<AccountInfo<'info>> for Sysvar<'info, T> {
     fn as_ref(&self) -> &AccountInfo<'info> {
         self.info
     }
 }
 
-impl<T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> Deref for Sysvar<'_, T> {
+impl<T: SolanaSysvar> Deref for Sysvar<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -134,18 +128,15 @@ impl<T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> Deref for Sysvar<
     }
 }
 
-impl<T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> DerefMut for Sysvar<'_, T> {
+impl<T: SolanaSysvar> DerefMut for Sysvar<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.account
     }
 }
 
-impl<'info, T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> AccountsExit<'info>
-    for Sysvar<'info, T>
-{
-}
+impl<'info, T: SolanaSysvar> AccountsExit<'info> for Sysvar<'info, T> {}
 
-impl<T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> Key for Sysvar<'_, T> {
+impl<T: SolanaSysvar> Key for Sysvar<'_, T> {
     fn key(&self) -> Pubkey {
         *self.info.key
     }

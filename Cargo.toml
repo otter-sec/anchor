@@ -32,6 +32,7 @@ solana-cli-config = "~4.2.2"
 solana-client = "~4.2.2"
 solana-clock = "4.0.0"
 solana-commitment-config = "3.1.1"
+solana-compute-budget = { version = "4.2.2", features = ["agave-unstable-api"] }
 solana-compute-budget-interface = "3.0.0"
 solana-cpi = "3.0.0"
 solana-define-syscall = "4.0.1"
@@ -39,7 +40,7 @@ solana-faucet = "3.1.14"
 solana-feature-gate-interface = "4.0.0"
 solana-hash = "~4.5.0"
 # The Agave 4.2 RPC/client cohort (see solana-rpc-client below) requires
-# solana-instruction ^3.4, which is < 4.x.
+# solana-instruction >=3.4.0,<3.5.0
 solana-instruction = "~3.4.0"
 solana-instructions-sysvar = "4.0.0"
 solana-invoke = "0.5.0"
@@ -54,11 +55,12 @@ solana-program-error = "3.0.0"
 solana-program-memory = "3.1.0"
 solana-program-option = "3.0.1"
 solana-program-pack = "3.1.0"
-# The Agave 4.2 RPC/client cohort requires solana-pubkey ^4.2.0,<4.3.0.
+# The Agave 4.2 RPC/client cohort requires solana-pubkey >=4.2.0,<4.3.0.
 solana-pubkey = "~4.2.0"
 solana-pubsub-client = "~4.2.2"
 solana-rpc-client = "~4.2.2"
 solana-rpc-client-api = "~4.2.2"
+solana-sbpf = "0.21.1"
 solana-sdk-ids = "3.1.0"
 solana-signature = "3.3.0"
 solana-signer = "3.0.0"
