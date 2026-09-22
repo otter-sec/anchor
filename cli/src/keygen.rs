@@ -64,12 +64,18 @@ fn print_step(step: &str) {
     println!("✓ {}", step);
 }
 
+fn print_step_gated(step: &str, silent: bool) {
+    if !silent {
+        print_step(step);
+    }
+}
+
 fn new_keypair_summary(
     pubkey: &Pubkey,
     phrase: &str,
     passphrase: Option<&str>,
     silent: bool,
-) -> Option<String> {    
+) -> Option<String> {
     if silent {
         return None;
     }
@@ -123,12 +129,6 @@ fn keygen_new(
         path
     });
 
-    let step = |s: &str| {
-        if !silent {
-            print_step(s);
-        }
-    };
-
     // Check for overwrite
     if Path::new(&outfile_path).exists() {
         if !force {
@@ -164,12 +164,12 @@ fn keygen_new(
     };
 
     // Generate mnemonic with specified word count
-    step(&format!("Generating {}-word mnemonic", word_count));
+    print_step_gated(&format!("Generating {word_count}-word mnemonic"), silent);
     let mnemonic = Mnemonic::new(mnemonic_type, Language::English);
 
     // Get passphrase
     let passphrase = if no_passphrase {
-        step("No passphrase required");
+        print_step_gated("No passphrase required", silent);
         String::new()
     } else {
         if !silent {
@@ -177,13 +177,13 @@ fn keygen_new(
         }
         let pass = secure_input("Enter BIP39 passphrase (leave empty for none): ", false)?;
         if !pass.is_empty() {
-            step("Passphrase set");
+            print_step_gated("Passphrase set", silent);
         }
         pass
     };
 
     // Generate seed from mnemonic and passphrase
-    step("Deriving keypair from seed");
+    print_step_gated("Deriving keypair from seed", silent);
     let seed = Seed::new(&mnemonic, &passphrase);
 
     // Create keypair from seed (use first 32 bytes as secret key)
@@ -214,11 +214,13 @@ fn keygen_new(
 
     print_step(&format!("Keypair saved to {}", outfile_path.display()));
 
-    if !silent {
-        println!(
-            "{}",
-            new_keypair_summary(&keypair.pubkey(), mnemonic.phrase(), !passphrase.is_empty())
-        );
+    if let Some(summary) = new_keypair_summary(
+        &keypair.pubkey(),
+        mnemonic.phrase(),
+        (!passphrase.is_empty()).then_some(passphrase.as_str()),
+        silent,
+    ) {
+        println!("{summary}");
     }
 
     Ok(())
@@ -441,7 +443,7 @@ mod tests {
     #[test]
     fn test_new_keypair_summary() {
         let pubkey = Pubkey::new_unique();
-        let summary = new_keypair_summary(&pubkey, TEST_PHRASE, false);
+        let summary = new_keypair_summary(&pubkey, TEST_PHRASE, None, false).unwrap();
 
         assert!(summary.contains(&pubkey.to_string()));
         assert!(summary.contains(TEST_PHRASE));
@@ -450,9 +452,15 @@ mod tests {
 
     #[test]
     fn test_new_keypair_summary_with_passphrase() {
-        let summary = new_keypair_summary(&Pubkey::new_unique(), TEST_PHRASE, true);
+        let summary =
+            new_keypair_summary(&Pubkey::new_unique(), TEST_PHRASE, Some("pass"), false).unwrap();
 
         assert!(summary.contains("Save this seed phrase and your BIP39 passphrase to recover"));
+    }
+
+    #[test]
+    fn test_new_keypair_summary_silent() {
+        assert!(new_keypair_summary(&Pubkey::new_unique(), TEST_PHRASE, None, true).is_none());
     }
 
     #[test]

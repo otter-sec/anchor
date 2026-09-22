@@ -662,8 +662,7 @@ pub enum KeygenCommand {
         /// Do not prompt for a passphrase
         #[clap(long)]
         no_passphrase: bool,
-        /// Do not display the seed phrase or the generated pubkey. Useful when piping output to
-        /// other programs, or when running in CI
+        /// Do not display the seed phrase or the generated pubkey
         #[clap(long)]
         silent: bool,
         /// Number of words in the mnemonic phrase [possible values: 12, 15, 18, 21, 24]
