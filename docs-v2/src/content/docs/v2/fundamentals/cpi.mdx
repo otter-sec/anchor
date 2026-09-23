@@ -131,17 +131,79 @@ let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts)
 
 The outer slice can hold multiple signer PDAs. Each inner slice is the ordered seed list for one PDA, including its bump.
 
-## `BorshAccount<T>{:rs}` re-entry
+## After a CPI
 
-If a CPI mutates an account that the current handler holds as `BorshAccount<T>{:rs}`, release and reacquire the borrow around the call:
+Passing an account to a CPI with `cpi_handle_mut(){:rs}` hands the runtime
+buffer to the callee. 
+There are some differences from Anchor V1 to be aware of: under the new CPI design, stale account copy accesses are prevented by default,
+avoiding the quite common bug class deriving from not calling `reload()` after a CPI.
+In Anchor V2 instead, what you must do after the CPI returns depends on the account wrapper type.
+
+### `BorshAccount<T>{:rs}`
+
+`cpi_handle_mut(){:rs}` serializes pending edits and releases the borrow
+before the call. This happens on every mutable handle, whether or not the
+callee touches the account. After the CPI returns:
+
+- any field read or write panics with `account borrow released`
+- if the account is never reacquired, `exit(){:rs}` skips write-back
+
+Reacquire before touching the account again:
 
 ```rust showLineNumbers=false
-ctx.accounts.profile.release_borrow()?;
-some_program::cpi::update_profile(cpi_ctx)?;
+let cpi = CpiContext::new(
+    ctx.accounts.other_program.address(),
+    other::cpi::accounts::Update {
+        profile: ctx.accounts.profile.cpi_handle_mut(),
+    },
+);
+other::cpi::update(cpi)?;
 ctx.accounts.profile.reacquire_borrow_mut()?;
+ctx.accounts.profile.counter += 1;
 ```
 
-`Account<T>{:rs}` does not need this because its zero-copy fields read from the underlying buffer directly.
+`reacquire_borrow_mut(){:rs}` reruns the owner, discriminator, and size
+checks and deserializes the post-CPI bytes, so the handler always sees what
+the callee wrote. This replaces the v1 `reload(){:rs}` pattern.
+
+Read-only handles from `cpi_handle(){:rs}` do not release the borrow.
+
+### `Account<T>{:rs}` and `Slab<H, T>{:rs}`
+
+Zero-copy wrappers read the account buffer directly, so data written by
+the callee is visible immediately. There is nothing to reload.
+
+The owner, discriminator, and length checks ran once at load and are not
+repeated. They only go stale if the callee can change the account's owner/data/size:
+
+- the CPI closes the account or assigns it to another owner
+- the CPI reinitializes it as a different account type
+- the CPI resizes it, changing a slab's capacity
+
+A callee that cannot write to your program-owned account cannot do any of
+these, so token transfers and similar CPIs need no extra step. If the CPI
+goes back into your own program, or can close or resize the account because it owns it, call
+`revalidate_after_cpi(){:rs}` before reading it again:
+
+```rust showLineNumbers=false
+self_program::cpi::reset(cpi)?;
+ctx.accounts.ledger.revalidate_after_cpi()?;
+```
+
+Without it, reads after a shape change interpret the wrong bytes as `T{:rs}`
+or index past the live data length.
+
+### In essence
+
+Briefly, here's what needs to be called after a CPI, whenever borrowed accounts are accessed after the fact:
+
+
+| Wrapper | After `cpi_handle_mut(){:rs}` | Recovery |
+| --- | --- | --- |
+| `BorshAccount<T>{:rs}` | The borrow stays released and typed accesses panic until the lock is reacquired. | `reacquire_borrow_mut(){:rs}` |
+| `Account<T>{:rs}`, `Slab<H, T>{:rs}` | Reads stay live but load-time checks are not rerun. | `revalidate_after_cpi(){:rs}` |
+
+
 
 ## `CpiHandle<'a>{:rs}`
 
