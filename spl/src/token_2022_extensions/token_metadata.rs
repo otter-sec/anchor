@@ -53,6 +53,9 @@ pub fn token_metadata_update_authority<'info>(
     ctx: CpiContext<'_, '_, '_, 'info, TokenMetadataUpdateAuthority<'info>>,
     new_authority: OptionalNonZeroPubkey,
 ) -> Result<()> {
+    let new_authority: Option<Pubkey> = new_authority.into();
+    let new_authority = solana_nullable::MaybeNull::try_from(new_authority)
+        .map_err(|_| anchor_lang::solana_program::program_error::ProgramError::InvalidArgument)?;
     let ix = spl_token_metadata_interface::instruction::update_authority(
         ctx.accounts.program_id.key,
         ctx.accounts.metadata.key,

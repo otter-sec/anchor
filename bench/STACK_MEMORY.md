@@ -32,7 +32,7 @@ Solana version: 4.2.0
 | account_empty2                 | 64           | -                      |
 | account_empty4                 | 128          | -                      |
 | account_empty8                 | 192          | 🟢 **-64 (25.00%)**    |
-| account_sized_init1            | 320          | 🟢 **-128 (28.57%)**   |
+| account_sized_init1            | 256          | 🟢 **-192 (42.86%)**   |
 | account_sized_init2            | 320          | 🟢 **-320 (50.00%)**   |
 | account_sized_init4            | 448          | 🟢 **-576 (56.25%)**   |
 | account_sized_init8            | 640          | 🟢 **-1,152 (64.29%)** |
@@ -40,10 +40,10 @@ Solana version: 4.2.0
 | account_sized2                 | 64           | -                      |
 | account_sized4                 | 192          | 🔴 **+64 (50.00%)**    |
 | account_sized8                 | 320          | 🟢 **-64 (16.67%)**    |
-| account_unsized_init1          | 320          | 🟢 **-128 (28.57%)**   |
-| account_unsized_init2          | 384          | 🟢 **-256 (40.00%)**   |
-| account_unsized_init4          | 512          | 🟢 **-576 (52.94%)**   |
-| account_unsized_init8          | 768          | 🟢 **-1,152 (60.00%)** |
+| account_unsized_init1          | 256          | 🟢 **-192 (42.86%)**   |
+| account_unsized_init2          | 320          | 🟢 **-320 (50.00%)**   |
+| account_unsized_init4          | 448          | 🟢 **-640 (58.82%)**   |
+| account_unsized_init8          | 704          | 🟢 **-1,216 (63.33%)** |
 | account_unsized1               | 64           | -                      |
 | account_unsized2               | 128          | -                      |
 | account_unsized4               | 256          | -                      |
@@ -51,7 +51,7 @@ Solana version: 4.2.0
 | boxed_account_empty_init1      | 256          | 🟢 **-192 (42.86%)**   |
 | boxed_account_empty_init2      | 320          | 🟢 **-256 (44.44%)**   |
 | boxed_account_empty_init4      | 384          | 🟢 **-576 (60.00%)**   |
-| boxed_account_empty_init8      | 576          | 🟢 **-1,152 (66.67%)** |
+| boxed_account_empty_init8      | 512          | 🟢 **-1,216 (70.37%)** |
 | boxed_account_empty1           | 64           | -                      |
 | boxed_account_empty2           | 64           | -                      |
 | boxed_account_empty4           | 64           | -                      |
@@ -59,7 +59,7 @@ Solana version: 4.2.0
 | boxed_account_sized_init1      | 256          | 🟢 **-192 (42.86%)**   |
 | boxed_account_sized_init2      | 320          | 🟢 **-256 (44.44%)**   |
 | boxed_account_sized_init4      | 384          | 🟢 **-576 (60.00%)**   |
-| boxed_account_sized_init8      | 576          | 🟢 **-1,152 (66.67%)** |
+| boxed_account_sized_init8      | 512          | 🟢 **-1,216 (70.37%)** |
 | boxed_account_sized1           | 64           | -                      |
 | boxed_account_sized2           | 64           | -                      |
 | boxed_account_sized4           | 64           | -                      |
@@ -67,7 +67,7 @@ Solana version: 4.2.0
 | boxed_account_unsized_init1    | 256          | 🟢 **-192 (42.86%)**   |
 | boxed_account_unsized_init2    | 320          | 🟢 **-256 (44.44%)**   |
 | boxed_account_unsized_init4    | 384          | 🟢 **-576 (60.00%)**   |
-| boxed_account_unsized_init8    | 576          | 🟢 **-1,152 (66.67%)** |
+| boxed_account_unsized_init8    | 512          | 🟢 **-1,216 (70.37%)** |
 | boxed_account_unsized1         | 64           | -                      |
 | boxed_account_unsized2         | 64           | -                      |
 | boxed_account_unsized4         | 64           | -                      |

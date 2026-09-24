@@ -23,7 +23,8 @@ use {
             TokenMetadataRemoveKey, TokenMetadataUpdateField,
         },
     },
-    spl_pod::{optional_keys::OptionalNonZeroPubkey, primitives::PodBool},
+    solana_nullable::MaybeNull,
+    spl_pod::primitives::PodBool,
 };
 
 #[derive(AnchorDeserialize, AnchorSerialize)]
@@ -123,40 +124,56 @@ pub fn handler(ctx: Context<CreateMintAccount>, args: CreateMintAccountArgs) -> 
     let authority_key: Option<Pubkey> = Some(ctx.accounts.authority.key());
     assert_eq!(
         metadata_pointer.metadata_address,
-        OptionalNonZeroPubkey::try_from(mint_key)?
+        MaybeNull::try_from(mint_key).map_err(|_| {
+            anchor_lang::solana_program::program_error::ProgramError::InvalidArgument
+        })?
     );
     assert_eq!(
         metadata_pointer.authority,
-        OptionalNonZeroPubkey::try_from(authority_key)?
+        MaybeNull::try_from(authority_key).map_err(|_| {
+            anchor_lang::solana_program::program_error::ProgramError::InvalidArgument
+        })?
     );
     let permanent_delegate = get_mint_extension_data::<PermanentDelegate>(mint_data)?;
     assert_eq!(
         permanent_delegate.delegate,
-        OptionalNonZeroPubkey::try_from(authority_key)?
+        MaybeNull::try_from(authority_key).map_err(|_| {
+            anchor_lang::solana_program::program_error::ProgramError::InvalidArgument
+        })?
     );
     let close_authority = get_mint_extension_data::<MintCloseAuthority>(mint_data)?;
     assert_eq!(
         close_authority.close_authority,
-        OptionalNonZeroPubkey::try_from(authority_key)?
+        MaybeNull::try_from(authority_key).map_err(|_| {
+            anchor_lang::solana_program::program_error::ProgramError::InvalidArgument
+        })?
     );
     let transfer_hook = get_mint_extension_data::<TransferHook>(mint_data)?;
     let program_id: Option<Pubkey> = Some(ctx.program_id.key());
     assert_eq!(
         transfer_hook.authority,
-        OptionalNonZeroPubkey::try_from(authority_key)?
+        MaybeNull::try_from(authority_key).map_err(|_| {
+            anchor_lang::solana_program::program_error::ProgramError::InvalidArgument
+        })?
     );
     assert_eq!(
         transfer_hook.program_id,
-        OptionalNonZeroPubkey::try_from(program_id)?
+        MaybeNull::try_from(program_id).map_err(|_| {
+            anchor_lang::solana_program::program_error::ProgramError::InvalidArgument
+        })?
     );
     let group_member_pointer = get_mint_extension_data::<GroupMemberPointer>(mint_data)?;
     assert_eq!(
         group_member_pointer.authority,
-        OptionalNonZeroPubkey::try_from(authority_key)?
+        MaybeNull::try_from(authority_key).map_err(|_| {
+            anchor_lang::solana_program::program_error::ProgramError::InvalidArgument
+        })?
     );
     assert_eq!(
         group_member_pointer.member_address,
-        OptionalNonZeroPubkey::try_from(mint_key)?
+        MaybeNull::try_from(mint_key).map_err(|_| {
+            anchor_lang::solana_program::program_error::ProgramError::InvalidArgument
+        })?
     );
     // transfer minimum rent to mint account
     update_account_lamports_to_minimum_balance(
@@ -168,7 +185,9 @@ pub fn handler(ctx: Context<CreateMintAccount>, args: CreateMintAccountArgs) -> 
     let pausable_extension = get_mint_extension_data::<PausableConfig>(mint_data)?;
     assert_eq!(
         pausable_extension.authority,
-        OptionalNonZeroPubkey::try_from(authority_key)?
+        MaybeNull::try_from(authority_key).map_err(|_| {
+            anchor_lang::solana_program::program_error::ProgramError::InvalidArgument
+        })?
     );
 
     Ok(())

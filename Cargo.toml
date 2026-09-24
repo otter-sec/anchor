@@ -25,47 +25,52 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace.dependencies]
-solana-account = "3.2.0"
-solana-account-decoder = "3.0.14"
+solana-account = "~4.3.1"
+solana-account-decoder = "~4.2.2"
 solana-account-info = "3.1.0"
-solana-cli-config = "3.0.14"
-solana-client = "3.0.14"
-solana-clock = "3.0.1"
+solana-cli-config = "~4.2.2"
+solana-client = "~4.2.2"
+solana-clock = "4.0.0"
 solana-commitment-config = "3.1.1"
 solana-compute-budget-interface = "3.0.0"
 solana-cpi = "3.0.0"
-solana-define-syscall = "3.0.0"
-solana-faucet = "3.0.14"
-solana-feature-gate-interface = "3.0.0"
-solana-hash = "3.1.0"
-solana-instruction = "3.0.0"
-solana-instructions-sysvar = "3.0.0"
+solana-define-syscall = "4.0.1"
+solana-faucet = "3.1.14"
+solana-feature-gate-interface = "4.0.0"
+solana-hash = "~4.5.0"
+# The Agave 4.2 RPC/client cohort (see solana-rpc-client below) requires
+# solana-instruction ^3.4, which is < 4.x.
+solana-instruction = "~3.4.0"
+solana-instructions-sysvar = "4.0.0"
 solana-invoke = "0.5.0"
 solana-keypair = "3.0.1"
-solana-loader-v3-interface = "6.1.1"
-solana-message = "3.0.1"
+solana-loader-v3-interface = "7.0.0"
+solana-message = "~4.3.0"
 solana-msg = "3.1.0"
-solana-packet = "3.0.0"
-solana-program = "3.0.0" # must be kept in sync with `cli/solana-program-version`
+solana-packet = "~4.2.0"
+solana-program = "4.1.0" # must be kept in sync with `cli/solana-program-version`
 solana-program-entrypoint = "3.1.1"
 solana-program-error = "3.0.0"
 solana-program-memory = "3.1.0"
 solana-program-option = "3.0.1"
 solana-program-pack = "3.1.0"
-solana-pubkey = "3.0.0"
-solana-pubsub-client = "3.0.14"
-solana-rpc-client = "3.0.14"
-solana-rpc-client-api = "3.0.14"
+# The Agave 4.2 RPC/client cohort requires solana-pubkey ^4.2.0,<4.3.0.
+solana-pubkey = "~4.2.0"
+solana-pubsub-client = "~4.2.2"
+solana-rpc-client = "~4.2.2"
+solana-rpc-client-api = "~4.2.2"
 solana-sdk-ids = "3.1.0"
 solana-signature = "3.3.0"
 solana-signer = "3.0.0"
-solana-stake-interface = "2.0.2"
+# solana-account-decoder 4.2.2 requires solana-stake-interface exactly 4.3.0.
+solana-stake-interface = "~4.3.0"
 solana-system-interface = "3.2.0"
-solana-transaction-status-client-types = "3.0.0"
-# FIXME: solana-sysvar 3.1.x contains breaking changes to sysvar retrieval
-solana-sysvar = "3.1.1"
+solana-transaction-status-client-types = "~4.2.2"
+# solana-account-decoder 4.2.2 requires solana-sysvar in [4.0.0,4.2.0); litesvm
+# separately caps it at ~4.1.0, which is inside that range.
+solana-sysvar = "4.1.0"
 solana-sysvar-id = "3.1.0"
-solana-transaction = "3.0.1"
+solana-transaction = { version = "~4.1.5", features = ["wincode"] }
 
 # Non solana crates
 cargo_toml = "0.22.3"

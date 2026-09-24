@@ -60,9 +60,8 @@
 //! ## `mock`
 //!
 //! This feature allows passing in a custom RPC client when creating program instances, which is
-//! useful for mocking RPC responses, e.g. via [`RpcClient::new_mock`].
-//!
-//! [`RpcClient::new_mock`]: https://docs.rs/solana-rpc-client/3.0.0/solana_rpc_client/rpc_client/struct.RpcClient.html#method.new_mock
+//! useful for mocking RPC responses, e.g. via
+//! [`RpcClient::new_mock`](solana_rpc_client::nonblocking::rpc_client::RpcClient::new_mock).
 
 #[cfg(feature = "async")]
 pub use nonblocking::ThreadSafeSigner;
