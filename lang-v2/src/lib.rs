@@ -122,10 +122,10 @@ pub const MAX_PAYER_SEEDS: usize = 16;
 /// PDA payers append the canonical bump as a final signer seed.
 pub const MAX_PAYER_SEEDS_WITH_BUMP: usize = MAX_PAYER_SEEDS + 1;
 
-/// Concrete type of [`BORSH_CONFIG`]. Spelled out so downstream callers can
-/// name it in manual trait bounds (e.g.
-/// `T: anchor_lang::wincode::SchemaRead<'de, BorshConfig>`). Most programs
-/// should derive [`AnchorDeserialize`] and [`AnchorSerialize`] instead.
+/// Concrete type of [`BORSH_CONFIG`]. Spelled out so a raw wincode bound can
+/// name it (e.g. `T: wincode::SchemaRead<'de, BorshConfig>`). Most programs
+/// should derive [`AnchorDeserialize`] / [`AnchorSerialize`] and bound on
+/// those traits instead.
 pub type BorshConfig = wincode::config::Configuration<
     true,
     { wincode::config::DEFAULT_PREALLOCATION_SIZE_LIMIT },
@@ -134,6 +134,27 @@ pub type BorshConfig = wincode::config::Configuration<
     wincode::int_encoding::FixInt,
     u8,
 >;
+
+/// Types Anchor can decode from borsh-shaped bytes with [`BORSH_CONFIG`].
+///
+/// This is the trait behind `#[derive(AnchorDeserialize)]`. The derive macro
+/// and the trait share one name on purpose, like `borsh::BorshDeserialize`:
+/// write `#[derive(AnchorDeserialize)]` on the type and `T: AnchorDeserialize`
+/// in a bound.
+///
+/// `#[event]` derives it, so a client can decode an event with
+/// `fn decode<T: Event + AnchorDeserialize>(..)` and never mention wincode.
+pub trait AnchorDeserialize: for<'de> wincode::SchemaRead<'de, BorshConfig, Dst = Self> {}
+
+impl<T> AnchorDeserialize for T where T: for<'de> wincode::SchemaRead<'de, BorshConfig, Dst = T> {}
+
+/// Types Anchor can encode to borsh-shaped bytes with [`BORSH_CONFIG`].
+///
+/// Trait twin of `#[derive(AnchorSerialize)]`, with the same rules as
+/// [`AnchorDeserialize`]: derive it, bound on it, never implement it by hand.
+pub trait AnchorSerialize: wincode::SchemaWrite<BorshConfig, Src = Self> {}
+
+impl<T> AnchorSerialize for T where T: wincode::SchemaWrite<BorshConfig, Src = T> {}
 
 /// `#[derive(IdlType)]` — register a plain struct in the IDL's `types[]`
 /// array.

@@ -79,8 +79,8 @@ pub struct QualifiedUserTypeHolder<const N: usize> {
 // ---- #[event] -------------------------------------------------------------
 
 /// Default-mode event (Wincode with a borsh-compatible wire format).
-/// `#[event]` derives `AnchorSerialize` automatically; `emit!` serializes via
-/// `Event::data()` and calls `sol_log_data`, which
+/// `#[event]` derives `AnchorSerialize` and `AnchorDeserialize` automatically.
+/// `emit!` serializes via `Event::data()` and calls `sol_log_data`, which
 /// surfaces to clients as a `Program data: <base64>` log line.
 #[event]
 pub struct Bumped {

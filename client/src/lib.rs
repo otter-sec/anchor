@@ -293,10 +293,7 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
         })
     }
 
-    async fn on_internal<
-        T: anchor_lang::Event
-            + for<'de> anchor_lang::wincode::SchemaRead<'de, anchor_lang::BorshConfig, Dst = T>,
-    >(
+    async fn on_internal<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
         &self,
         mut f: impl FnMut(&EventContext, T) + Send + 'static,
     ) -> Result<
@@ -371,10 +368,19 @@ impl<T> Iterator for ProgramAccountsIterator<T> {
     }
 }
 
-pub fn handle_program_log<
-    T: anchor_lang::Event
-        + for<'de> anchor_lang::wincode::SchemaRead<'de, anchor_lang::BorshConfig, Dst = T>,
->(
+/// Inspect one log line of program `self_program_str`.
+///
+/// Returns `(event, new_program, did_pop)`:
+/// - `event` is `Some` when the line is a `Program data:` / `Program log:`
+///   payload whose bytes start with `T::DISCRIMINATOR`;
+/// - `new_program` is `Some` when the line is a CPI `invoke` into another
+///   program;
+/// - `did_pop` is `true` when the line is the program's `success` line.
+///
+/// Most callers want [`parse_logs`], which walks a whole transaction's logs
+/// and tracks the CPI stack for you. `T` only needs `Event + AnchorDeserialize`,
+/// which every default `#[event]` type already has.
+pub fn handle_program_log<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
     self_program_str: &str,
     l: &str,
 ) -> Result<(Option<T>, Option<String>, bool), ClientError> {
@@ -676,14 +682,66 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     }
 }
 
-fn parse_logs_response<
-    T: anchor_lang::Event
-        + for<'de> anchor_lang::wincode::SchemaRead<'de, anchor_lang::BorshConfig, Dst = T>,
->(
+fn parse_logs_response<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
     logs: RpcResponse<RpcLogsResponse>,
     program_id_str: &str,
 ) -> Result<Vec<T>, ClientError> {
-    let mut logs = &logs.value.logs[..];
+    parse_logs(&logs.value.logs, program_id_str)
+}
+
+/// Decode every `T` event that `program_id_str` emitted in a transaction's
+/// logs, in log order.
+///
+/// `logs` is the full log list of one transaction (for example
+/// `TransactionMetadata::logs` from LiteSVM, or `RpcLogsResponse::logs`).
+/// The walker tracks the program stack across CPIs, so a `Program data:` line
+/// is only decoded while `program_id_str` is the executing program. Lines that
+/// belong to other programs are ignored.
+///
+/// `program_id_str` must be the top-level program of the instruction. Events
+/// it emits while it is itself a CPI callee of another program are not
+/// decoded; the walker treats every CPI frame as opaque. This is the same
+/// rule `Program::on` has always applied.
+///
+/// Lines from `program_id_str` whose bytes start with `T::DISCRIMINATOR` but
+/// fail to decode return `ClientError::LogParseError`.
+///
+/// Use this for default `#[event]` types emitted with `emit!`. Events emitted
+/// with `emit_cpi!` are stored in inner instruction data, not program logs.
+/// `#[event(bytemuck)]` types require decoding their memory layout instead and are not supported by this function.
+///
+/// # Examples
+///
+/// ```
+/// use anchor_client::parse_logs;
+/// use anchor_lang::{event, Event};
+/// use base64::{engine::general_purpose::STANDARD, Engine};
+///
+/// // `#[event]` supplies both AnchorSerialize and AnchorDeserialize.
+/// #[event]
+/// pub struct MyEvent {
+///     pub amount: u64,
+/// }
+///
+/// let program_id = "Ca11er1111111111111111111111111111111111111";
+/// // Sample transaction logs for `emit!(MyEvent { amount: 42 })`.
+/// // In a client or test, pass the transaction's full log list instead.
+/// let payload = STANDARD.encode(MyEvent { amount: 42 }.data());
+/// let logs = vec![
+///     format!("Program {program_id} invoke [1]"),
+///     format!("Program data: {payload}"),
+///     format!("Program {program_id} success"),
+/// ];
+///
+/// let events = parse_logs::<MyEvent>(&logs, program_id).unwrap();
+/// assert_eq!(events.len(), 1);
+/// assert_eq!(events[0].amount, 42);
+/// ```
+pub fn parse_logs<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
+    logs: &[String],
+    program_id_str: &str,
+) -> Result<Vec<T>, ClientError> {
+    let mut logs = logs;
     let mut events: Vec<T> = Vec::new();
     if !logs.is_empty() {
         if let Ok(mut execution) = Execution::new(&mut logs) {
@@ -741,8 +799,8 @@ fn parse_logs_response<
 mod tests {
     // Mock event: minimal manual implementation avoiding `#[event]`. Anchor's
     // derives use Anchor's Wincode re-export, so this crate needs no direct
-    // Wincode dependency. The test only needs `Event + SchemaRead +
-    // Discriminator` for type inference inside `parse_logs_response::<MockEvent>`.
+    // Wincode dependency. The test only needs `Event + AnchorDeserialize`
+    // for type inference inside `parse_logs_response::<MockEvent>`.
     use {
         anchor_lang::{AnchorDeserialize, AnchorSerialize, Discriminator, Event},
         futures::{SinkExt, StreamExt},
@@ -903,6 +961,34 @@ mod tests {
         )
         .unwrap();
 
+        Ok(())
+    }
+
+    #[test]
+    fn parse_logs_decodes_only_own_program_data_lines() -> anyhow::Result<()> {
+        // `MockEvent` has an all-zero 8-byte discriminator and no payload, so
+        // its `Program data:` line is base64 of eight zero bytes. Program ids
+        // must be base58-shaped or the log walker does not recognise the
+        // `invoke` / `success` lines.
+        const OUTER: &str = "Ca11er1111111111111111111111111111111111111";
+        const CALLEE: &str = "Ca11ee1111111111111111111111111111111111111";
+        let logs: Vec<String> = [
+            format!("Program {OUTER} invoke [1]"),
+            "Program data: AAAAAAAAAAA=".to_string(),
+            format!("Program {CALLEE} invoke [2]"),
+            // Same bytes, but emitted by the CPI callee: must be ignored.
+            "Program data: AAAAAAAAAAA=".to_string(),
+            format!("Program {CALLEE} success"),
+            "Program data: AAAAAAAAAAA=".to_string(),
+            format!("Program {OUTER} success"),
+        ]
+        .to_vec();
+
+        let events = parse_logs::<MockEvent>(&logs, OUTER)?;
+        assert_eq!(events.len(), 2);
+
+        let none = parse_logs::<MockEvent>(&logs, "NotInTheseLogs")?;
+        assert!(none.is_empty());
         Ok(())
     }
 

@@ -99,10 +99,7 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
         self.rt.block_on(self.accounts_lazy_internal(filters))
     }
 
-    pub fn on<
-        T: anchor_lang::Event
-            + for<'de> anchor_lang::wincode::SchemaRead<'de, anchor_lang::BorshConfig, Dst = T>,
-    >(
+    pub fn on<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
         &self,
         f: impl FnMut(&EventContext, T) + Send + 'static,
     ) -> Result<EventUnsubscriber<'_>, ClientError> {

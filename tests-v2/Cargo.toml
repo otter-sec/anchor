@@ -70,6 +70,7 @@ sha2 = "0.10"
 anyhow = "1"
 
 [dev-dependencies]
+anchor-client = { path = "../client" }
 anchor-lang-idl = { workspace = true, features = ["convert"] }
 anchor-spl = { path = "../spl-v2" }
 anchor-lang-idl-spec = { path = "../idl/spec", version = "0.1.0" }

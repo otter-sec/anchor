@@ -1,8 +1,8 @@
 use {
     super::serialized_account::{AnchorAccountSerialize, SerializedAccount},
-    crate::{BorshConfig, BORSH_CONFIG},
+    crate::{AnchorDeserialize, AnchorSerialize, BorshConfig, BORSH_CONFIG},
     solana_program_error::ProgramError,
-    wincode::{SchemaRead, SchemaWrite},
+    wincode::SchemaRead,
 };
 
 /// Borsh-wire codec tag for [`SerializedAccount`]. Zero-sized; selected at the
@@ -13,7 +13,7 @@ pub struct BorshSerializer;
 
 impl<T> AnchorAccountSerialize<T> for BorshSerializer
 where
-    T: SchemaWrite<BorshConfig, Src = T> + for<'de> SchemaRead<'de, BorshConfig, Dst = T>,
+    T: AnchorSerialize + AnchorDeserialize,
 {
     #[inline(always)]
     fn serialize(value: &T, buf: &mut &mut [u8]) -> Result<(), ProgramError> {

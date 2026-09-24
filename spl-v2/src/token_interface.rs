@@ -293,7 +293,7 @@ impl SlabInit for Interface<crate::Mint> {
     fn create_and_initialize<'a>(
         payer: &AccountView,
         account: &AccountView,
-        _space: usize,
+        space: usize,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
         payer_signer_seeds: Option<&[&[u8]]>,
@@ -304,7 +304,10 @@ impl SlabInit for Interface<crate::Mint> {
         let program_id = token_program.address();
         crate::token_shared::validate_token_interface_program(program_id)?;
 
-        let space = core::mem::size_of::<crate::Mint>();
+        require!(
+            space >= core::mem::size_of::<crate::Mint>(),
+            ProgramError::AccountDataTooSmall
+        );
         anchor_lang::create_account_with_signers(
             payer,
             account,

@@ -95,6 +95,20 @@ pub mod token_interface_test {
     ) -> Result<()> {
         Ok(())
     }
+
+    #[discrim = 11]
+    pub fn init_interface_mint_with_space(
+        _ctx: &mut Context<InitInterfaceMintWithSpace>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    #[discrim = 12]
+    pub fn init_interface_mint_too_small(
+        _ctx: &mut Context<InitInterfaceMintTooSmall>,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -256,4 +270,40 @@ pub struct CheckInterfaceMintFreezeAuthority {
     pub expected: UncheckedAccount,
     #[account(mint::freeze_authority = expected)]
     pub mint: InterfaceAccount<Mint>,
+}
+
+#[derive(Accounts)]
+pub struct InitInterfaceMintWithSpace {
+    #[account(mut)]
+    pub payer: Signer,
+    pub authority: UncheckedAccount,
+    pub token_program: Interface<TokenInterface>,
+    #[account(
+        init,
+        payer = payer,
+        space = 200,
+        mint::decimals = 6,
+        mint::authority = authority,
+        mint::token_program = token_program,
+    )]
+    pub mint: InterfaceAccount<Mint>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct InitInterfaceMintTooSmall {
+    #[account(mut)]
+    pub payer: Signer,
+    pub authority: UncheckedAccount,
+    pub token_program: Interface<TokenInterface>,
+    #[account(
+        init,
+        payer = payer,
+        space = 81,
+        mint::decimals = 6,
+        mint::authority = authority,
+        mint::token_program = token_program,
+    )]
+    pub mint: InterfaceAccount<Mint>,
+    pub system_program: Program<System>,
 }

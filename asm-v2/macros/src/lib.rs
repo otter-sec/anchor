@@ -389,6 +389,7 @@ mod tests {
         assert_eq!(to_screaming_snake("Ipv4Addr"), "IPV4_ADDR");
     }
 
+    #[test]
     fn test_offsets_require_repr_c() {
         let program = syn::parse_str::<AsmProgram>(
             r#"

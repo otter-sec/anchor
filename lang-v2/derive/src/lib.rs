@@ -5957,12 +5957,15 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 /// Two modes:
 ///
 /// **Default (`#[event]`, wincode).** Derives `AnchorSerialize` and
-/// serializes via Wincode with `BORSH_CONFIG`, so
+/// `AnchorDeserialize` and serializes via Wincode with `BORSH_CONFIG`, so
 /// the on-chain wire format is byte-compatible with borsh while keeping
 /// wincode's faster encoding path. Supports arbitrary layouts, including
 /// `Vec`/`String`/`Option`/enums, and is materially cheaper than borsh on
 /// SBF (see `cu-bench` — roughly 3–10× fewer CUs depending on shape). This
-/// is the right default for almost every event.
+/// is the right default for almost every event. Because the type also
+/// derives `AnchorDeserialize`, clients decode it with
+/// `T: Event + AnchorDeserialize` (see `anchor_client::handle_program_log`);
+/// do not add that derive by hand.
 ///
 /// **`#[event(bytemuck)]`.** Emits `#[repr(C)]` + a raw `copy_nonoverlapping`
 /// of the struct bytes. Fastest of the two for fixed-size events, but the
@@ -6138,11 +6141,16 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     match mode {
         EventMode::Wincode => TokenStream::from(quote! {
-            // `#[derive(AnchorSerialize)]` lays down the Wincode per-field encoder.
+            // `#[derive(AnchorSerialize)]` lays down the Wincode per-field
+            // encoder; `#[derive(AnchorDeserialize)]` the decoder, so clients
+            // and tests can read the event back with
+            // `T: Event + AnchorDeserialize` and no extra derive. The decode
+            // impl is generic over the wincode config, so it is only compiled
+            // where something calls it — never inside the `.so`.
             // No `repr(C)` — wincode is layout-agnostic (it walks the derived
             // schema, not the in-memory byte layout) so the compiler is free
             // to pick whichever Rust layout is best.
-            #[derive(anchor_lang::AnchorSerialize)]
+            #[derive(anchor_lang::AnchorSerialize, anchor_lang::AnchorDeserialize)]
             #(#attrs)*
             #vis struct #name #fields
 

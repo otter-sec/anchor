@@ -432,7 +432,12 @@ mod legacy {
                 docs: value.docs.unwrap_or_default(),
                 serialization: Default::default(),
                 repr: Default::default(),
-                generics: Default::default(),
+                generics: value
+                    .generics
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|name| t::IdlTypeDefGeneric::Type { name })
+                    .collect(),
                 ty: value.ty.into(),
             }
         }
@@ -627,5 +632,59 @@ mod legacy {
             };
             Ok(seed)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{IdlDefinedFields, IdlType, IdlTypeDefGeneric, IdlTypeDefTy};
+
+    #[test]
+    fn legacy_type_definition_generics_are_preserved() {
+        let idl = convert_idl(
+            br#"{
+                "version": "0.0.1",
+                "name": "legacyGenerics",
+                "instructions": [],
+                "types": [
+                    {
+                        "name": "Wrapper",
+                        "generics": ["T", "U"],
+                        "type": {
+                            "kind": "struct",
+                            "fields": [
+                                { "name": "value", "type": { "generic": "T" } },
+                                { "name": "other", "type": { "generic": "U" } }
+                            ]
+                        }
+                    }
+                ],
+                "metadata": { "address": "11111111111111111111111111111111" }
+            }"#,
+        )
+        .expect("legacy IDL with type generics should convert");
+
+        let wrapper = idl
+            .types
+            .iter()
+            .find(|ty| ty.name == "Wrapper")
+            .expect("generic type should convert");
+        assert_eq!(
+            wrapper.generics,
+            vec![
+                IdlTypeDefGeneric::Type { name: "T".into() },
+                IdlTypeDefGeneric::Type { name: "U".into() },
+            ]
+        );
+
+        let IdlTypeDefTy::Struct { fields } = &wrapper.ty else {
+            panic!("generic type should remain a struct");
+        };
+        let Some(IdlDefinedFields::Named(fields)) = fields else {
+            panic!("generic struct should keep named fields");
+        };
+        assert_eq!(fields[0].ty, IdlType::Generic("T".into()));
+        assert_eq!(fields[1].ty, IdlType::Generic("U".into()));
     }
 }

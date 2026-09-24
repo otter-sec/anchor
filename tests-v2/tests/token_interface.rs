@@ -938,3 +938,101 @@ fn token_cpi_helpers_work_with_token_interface_accounts() {
         777,
     );
 }
+
+fn init_mint_with_space(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: &Keypair,
+    authority: &Pubkey,
+    token_program: Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(*authority, false),
+        AccountMeta::new_readonly(token_program, false),
+        AccountMeta::new(mint.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), vec![11], metas, payer, &[mint])
+}
+
+fn init_mint_too_small(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: &Keypair,
+    authority: &Pubkey,
+    token_program: Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(*authority, false),
+        AccountMeta::new_readonly(token_program, false),
+        AccountMeta::new(mint.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), vec![12], metas, payer, &[mint])
+}
+
+#[test]
+fn interface_init_omitted_space_creates_base_mint() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("t22-interface-default-space-authority");
+    let mint = Keypair::new();
+
+    init_mint(
+        &mut svm,
+        &payer,
+        &mint,
+        &authority.pubkey(),
+        token_2022_program_id(),
+    )
+    .expect("default mint init");
+
+    let account = svm.get_account(&mint.pubkey()).expect("mint exists");
+    assert_eq!(account.data.len(), SplMint::LEN);
+}
+
+#[test]
+fn interface_init_honors_explicit_mint_space() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("t22-interface-explicit-space-authority");
+    let mint = Keypair::new();
+
+    // Token-2022 InitializeMint2 requires the account length to match the
+    // declared extensions exactly (none => 82). Forwarding space = 200
+    // therefore fails at the CPI; clamping to 82 would succeed instead.
+    let error = init_mint_with_space(
+        &mut svm,
+        &payer,
+        &mint,
+        &authority.pubkey(),
+        token_2022_program_id(),
+    )
+    .expect_err("mint init should forward space = 200 to Token-2022");
+    let error = error.to_string();
+    assert!(
+        error.contains("InvalidAccountData"),
+        "expected Token-2022 InvalidAccountData for leftover mint space, got:\n{error}"
+    );
+    assert!(svm.get_account(&mint.pubkey()).is_none());
+}
+
+#[test]
+fn interface_init_rejects_mint_space_below_base() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("t22-interface-too-small-space-authority");
+    let mint = Keypair::new();
+
+    let result = init_mint_too_small(
+        &mut svm,
+        &payer,
+        &mint,
+        &authority.pubkey(),
+        token_2022_program_id(),
+    );
+    assert!(
+        result.is_err(),
+        "mint init should reject space below the 82-byte base mint"
+    );
+    assert!(svm.get_account(&mint.pubkey()).is_none());
+}

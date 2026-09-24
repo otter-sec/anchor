@@ -9517,6 +9517,7 @@ dependencies = [
  "account-address-constraints",
  "account-meta-signer-overrides",
  "accounts-test",
+ "anchor-client",
  "anchor-lang",
  "anchor-lang-idl",
  "anchor-lang-idl-spec",
