@@ -1,4 +1,9 @@
-import { isSolanaError, SolanaError, SolanaErrorCode } from "@solana/kit";
+import {
+  Commitment,
+  isSolanaError,
+  SolanaError,
+  SolanaErrorCode,
+} from "@solana/kit";
 import { Transaction, VersionedTransaction } from "@solana/web3.js";
 
 /**
@@ -48,4 +53,19 @@ export function findSolanaError<TCode extends SolanaErrorCode>(
     }
   }
   return undefined;
+}
+
+/**
+ * Fills a read config with the provider's defaults: today only `commitment`,
+ * so that an account written through the provider can be read straight back
+ * at the same commitment. Options are only set when they have a value: Kit
+ * strips an explicit `undefined` commitment without applying its own default.
+ */
+export function withProviderDefaults<C extends { commitment?: Commitment }>(
+  provider: { opts?: { commitment?: Commitment } },
+  config: C = {} as C
+): C {
+  const { commitment: _, ...rest } = config;
+  const commitment = config.commitment ?? provider.opts?.commitment;
+  return (commitment ? { ...rest, commitment } : rest) as C;
 }

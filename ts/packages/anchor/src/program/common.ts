@@ -1,4 +1,3 @@
-import EventEmitter from "eventemitter3";
 import { address as kitAddress, Address as KitAddress } from "@solana/kit";
 import { PublicKey } from "@solana/web3.js";
 import {
@@ -8,11 +7,6 @@ import {
   isCompositeAccounts,
 } from "../idl.js";
 import { Accounts } from "./context.js";
-
-export type Subscription = {
-  listener: number;
-  ee: EventEmitter;
-};
 
 export function parseIdlErrors(idl: Idl): Map<number, string> {
   const errors = new Map();

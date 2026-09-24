@@ -38,7 +38,6 @@ export default {
     "bs58",
     "buffer",
     "camelcase",
-    "eventemitter3",
     "@noble/hashes/sha256",
     "pako",
     "toml",

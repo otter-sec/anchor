@@ -1157,6 +1157,11 @@
   dependencies:
     "@sinonjs/commons" "^3.0.1"
 
+"@solana-program/system@^0.14.1":
+  version "0.14.1"
+  resolved "https://registry.yarnpkg.com/@solana-program/system/-/system-0.14.1.tgz#9c035233cc55b4ca6e57bd8a1d0dd66043af4135"
+  integrity sha512-K6ZiIrAKoJAfcwfUdsoFvfSAxeRJaRrV7BPFTJvUVRS4m3zszN+nLcdaNMMe2F1/zTriZqC+xh+Kgw6ziGUqpQ==
+
 "@solana/accounts@8.3.0":
   version "8.3.0"
   resolved "https://registry.yarnpkg.com/@solana/accounts/-/accounts-8.3.0.tgz#15b283c7bc7702934b1a5514e228267b0621b687"

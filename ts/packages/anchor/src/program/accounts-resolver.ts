@@ -1,4 +1,6 @@
 import BN from "bn.js";
+import { Buffer } from "buffer";
+import { fetchEncodedAccount } from "@solana/kit";
 import { PublicKey } from "@solana/web3.js";
 import {
   Idl,
@@ -19,7 +21,8 @@ import { AllInstructions } from "./namespace/types.js";
 import Provider from "../provider.js";
 import { AccountsCoder, BorshAccountsCoder } from "../coder/index.js";
 import { decodeTokenAccount } from "./token-account-layout";
-import { Address, Program, translateAddress } from "./index.js";
+import { withProviderDefaults } from "../utils/common.js";
+import { Address, Program, toAddress, translateAddress } from "./index.js";
 import {
   PartialAccounts,
   flattenPartialAccounts,
@@ -276,14 +279,17 @@ export class AccountsResolver<IDL extends Idl> {
         const account = accountOrAccounts;
 
         if ((account.signer || account.address) && !this.get([...path, name])) {
-          // Default signers to the provider
+          // Default signers to the provider's wallet
           if (account.signer) {
-            if (!this._provider.publicKey) {
+            if (!this._provider.wallet) {
               throw new Error(
-                "This function requires the `Provider` interface implementor to have a `publicKey` field."
+                "This function requires the `Provider` interface implementor to have a `wallet` field."
               );
             }
-            this.set([...path, name], this._provider.publicKey);
+            this.set(
+              [...path, name],
+              translateAddress(this._provider.wallet.address)
+            );
           }
 
           // Set based on `address` field
@@ -557,22 +563,25 @@ class AccountStore {
   }): Promise<T> {
     const address = publicKey.toBase58();
     if (!this._cache.has(address)) {
-      const accountInfo = await this._provider.connection.getAccountInfo(
-        publicKey
+      const accountInfo = await fetchEncodedAccount(
+        this._provider.rpc,
+        toAddress(publicKey),
+        withProviderDefaults(this._provider)
       );
-      if (accountInfo === null) {
+      if (!accountInfo.exists) {
         throw new Error(`Account not found: ${address}`);
       }
+      const data = Buffer.from(accountInfo.data);
 
       if (name === "tokenAccount") {
-        const account = decodeTokenAccount(accountInfo.data);
+        const account = decodeTokenAccount(data);
         this._cache.set(address, account);
       } else {
-        const coder = await this.getAccountsCoder(accountInfo.owner);
+        const coder = await this.getAccountsCoder(
+          translateAddress(accountInfo.programAddress)
+        );
         if (coder) {
-          const account = (coder as BorshAccountsCoder).decodeAny(
-            accountInfo.data
-          );
+          const account = (coder as BorshAccountsCoder).decodeAny(data);
           this._cache.set(address, account);
         }
       }

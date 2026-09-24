@@ -33,11 +33,11 @@ export default {
   ],
   external: [
     "@solana/kit",
+    "@solana-program/system",
     "@solana/web3.js",
     "bn.js",
     "buffer",
     "camelcase",
-    "eventemitter3",
     "@noble/hashes/sha256",
     "pako",
     "toml",

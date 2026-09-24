@@ -112,6 +112,13 @@ export default interface Provider {
   readonly connection: Connection;
   /** @deprecated Use `wallet.address` instead. */
   readonly publicKey?: PublicKey;
+  /**
+   * Default options for sending transactions. Reads default to its
+   * `commitment` too, so that an account written at a given commitment can
+   * be read straight back at the same one; when unset, reads use the Kit
+   * client's own default.
+   */
+  readonly opts?: ConfirmOptions;
 
   sendAndConfirm?(
     message: TransactionMessage,
@@ -138,6 +145,12 @@ export class AnchorProvider implements Provider {
   readonly rpc: Rpc<SolanaRpcApiMainnet>;
   readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   readonly publicKey: PublicKey;
+  /**
+   * Default confirmation options, completed from {@link defaultOptions} so
+   * that partial options (e.g. `{ skipPreflight: true }`) still carry a
+   * commitment for sends and reads alike.
+   */
+  readonly opts: ConfirmOptions;
 
   #url?: string;
   #websocketUrl?: string;
@@ -153,13 +166,15 @@ export class AnchorProvider implements Provider {
    * @param client The cluster endpoints to connect to, or a Kit client
    *               carrying `rpc` and `rpcSubscriptions` objects.
    * @param wallet The signer paying for and co-signing all transactions.
-   * @param opts   Transaction confirmation options to use by default.
+   * @param opts   Transaction confirmation options to use by default,
+   *               completed from {@link defaultOptions}.
    */
   constructor(
     client: ClusterEndpoints | SolanaClient,
     readonly wallet: WalletSigner,
-    readonly opts: ConfirmOptions = AnchorProvider.defaultOptions()
+    opts: ConfirmOptions = {}
   ) {
+    this.opts = { ...AnchorProvider.defaultOptions(), ...opts };
     if (typeof client === "object" && "rpc" in client) {
       this.rpc = client.rpc;
       this.rpcSubscriptions = client.rpcSubscriptions;
@@ -206,10 +221,14 @@ export class AnchorProvider implements Provider {
     return this.#connection;
   }
 
+  /**
+   * The default confirmation options: `confirmed` for both sending and
+   * preflight, matching Kit's own client default.
+   */
   static defaultOptions(): ConfirmOptions {
     return {
-      preflightCommitment: "processed",
-      commitment: "processed",
+      preflightCommitment: "confirmed",
+      commitment: "confirmed",
     };
   }
 
@@ -217,14 +236,12 @@ export class AnchorProvider implements Provider {
    * Returns a `Provider` with a wallet read from the local filesystem.
    *
    * @param url  The network cluster url.
-   * @param opts The default transaction confirmation options.
+   * @param opts The default transaction confirmation options, completed
+   *             from {@link defaultOptions}.
    *
    * (This api is for Node only.)
    */
-  static local(
-    url?: string,
-    opts: ConfirmOptions = AnchorProvider.defaultOptions()
-  ): AnchorProvider {
+  static local(url?: string, opts?: ConfirmOptions): AnchorProvider {
     if (isBrowser) {
       throw new Error(`Provider local is not available on browser.`);
     }
@@ -277,7 +294,7 @@ export class AnchorProvider implements Provider {
     opts?: ConfirmOptions
   ): Promise<Signature> {
     opts = { ...this.opts, ...opts };
-    const commitment = opts.commitment ?? "processed";
+    const commitment = opts.commitment ?? "confirmed";
     const prepared = this.#prepare(message, signers ?? []);
 
     if (hasLifetime(prepared.message)) {
@@ -351,7 +368,7 @@ export class AnchorProvider implements Provider {
     opts?: ConfirmOptions
   ): Promise<Signature[]> {
     opts = { ...this.opts, ...opts };
-    const commitment = opts.commitment ?? "processed";
+    const commitment = opts.commitment ?? "confirmed";
     let lifetime: BlockhashLifetime | undefined;
 
     const pending: (Transaction & TransactionWithLifetime)[] = [];
@@ -403,7 +420,7 @@ export class AnchorProvider implements Provider {
     commitment?: Commitment,
     includeAccounts?: boolean | Address[]
   ): Promise<SuccessfulTxSimulationResponse> {
-    const kitCommitment = commitment ?? this.opts.commitment ?? "processed";
+    const kitCommitment = commitment ?? this.opts.commitment ?? "confirmed";
     const sigVerify = !!signers && signers.length > 0;
 
     const prepared = this.#prepare(message, signers ?? []);

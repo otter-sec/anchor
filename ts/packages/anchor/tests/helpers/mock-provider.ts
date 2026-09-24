@@ -44,7 +44,13 @@ export type Responder = (request: RpcRequest) => unknown;
  */
 export function mockProvider(
   responders: Record<string, Responder>,
-  options: { wallet?: WalletSigner; opts?: ConfirmOptions } = {}
+  options: {
+    wallet?: WalletSigner;
+    /** Extra subscription methods, merged over the confirming defaults. */
+    subscriptions?: Record<string, unknown>;
+    /** Default confirmation options of the provider. */
+    opts?: ConfirmOptions;
+  } = {}
 ) {
   const keypair = Keypair.generate();
   const wallet = options.wallet ?? createWallet(keypair.secretKey);
@@ -65,7 +71,10 @@ export function mockProvider(
   const provider = new AnchorProvider(
     {
       rpc: createSolanaRpcFromTransport(transport),
-      rpcSubscriptions: confirmingSubscriptions(),
+      rpcSubscriptions: {
+        ...confirmingSubscriptions(),
+        ...options.subscriptions,
+      },
     } as SolanaClient,
     wallet,
     options.opts

@@ -370,11 +370,11 @@ describe("AnchorProvider", () => {
               InstructionError: [0, { Custom: 6000 }],
             }),
         },
-        { opts: { commitment: "confirmed", preflightCommitment: "confirmed" } }
+        { opts: { commitment: "processed", preflightCommitment: "processed" } }
       );
 
       // Only `skipPreflight` is given: the commitments come from the provider
-      // rather than the library default (`processed` at this point).
+      // rather than the library default (`confirmed`).
       const promise = provider.sendAndConfirm(
         transferMessage(wallet.address),
         undefined,
@@ -385,11 +385,11 @@ describe("AnchorProvider", () => {
       const blockhash = requests.find(
         (r) => r.method === "getLatestBlockhash"
       )!;
-      expect(blockhash.params[0]).toEqual({ commitment: "confirmed" });
+      expect(blockhash.params[0]).toEqual({ commitment: "processed" });
       const send = requests.find((r) => r.method === "sendTransaction")!;
       expect(send.params[1]).toMatchObject({
         skipPreflight: true,
-        preflightCommitment: "confirmed",
+        preflightCommitment: "processed",
       });
     });
 

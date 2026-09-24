@@ -1,4 +1,5 @@
 import { Buffer } from "buffer";
+import { fetchEncodedAccount } from "@solana/kit";
 import { Commitment, PublicKey } from "@solana/web3.js";
 import { BorshCoder, Coder } from "../coder/index.js";
 import {
@@ -10,8 +11,9 @@ import {
 } from "../idl.js";
 import Provider, { getProvider } from "../provider.js";
 import { CustomAccountResolver } from "./accounts-resolver.js";
-import { Address, translateAddress } from "./common.js";
+import { Address, toAddress, translateAddress } from "./common.js";
 import { EventManager } from "./event.js";
+import { withProviderDefaults } from "../utils/common.js";
 import NamespaceFactory, {
   AccountNamespace,
   IdlEvents,
@@ -388,11 +390,14 @@ export class Program<IDL extends Idl = Idl> {
   ): Promise<IDL | null> {
     provider = provider ?? getProvider();
     const programId = translateAddress(programAddress);
-    const idlAddr = idlAddress(programId);
-    const accountInfo = await provider.connection.getAccountInfo(idlAddr);
-    if (!accountInfo) return null;
+    const account = await fetchEncodedAccount(
+      provider.rpc,
+      toAddress(idlAddress(programId)),
+      withProviderDefaults(provider)
+    );
+    if (!account.exists) return null;
 
-    return decodeIdlAccount<IDL>(accountInfo.data);
+    return decodeIdlAccount<IDL>(Buffer.from(account.data));
   }
 
   /**

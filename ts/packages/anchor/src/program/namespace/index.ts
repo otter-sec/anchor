@@ -20,7 +20,12 @@ export {
   ProgramTransactionMessage,
 } from "./transaction.js";
 export { RpcNamespace, RpcFn } from "./rpc.js";
-export { AccountNamespace, AccountClient, ProgramAccount } from "./account.js";
+export {
+  AccountNamespace,
+  AccountClient,
+  AccountFilters,
+  AccountSubscriptionEvents,
+} from "./account.js";
 export { SimulateNamespace, SimulateFn } from "./simulate.js";
 export {
   IdlAccounts,
