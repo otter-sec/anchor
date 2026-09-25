@@ -469,20 +469,20 @@ macro_rules! err {
 /// ```
 #[macro_export]
 macro_rules! require {
-    ($invariant:expr, $error:tt $(,)?) => {
+    ($invariant:expr, $error:tt $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if !($invariant) {
             return Err($crate::ErrorCode::$error.into());
         }
-    };
-    ($invariant:expr, $error:expr $(,)?) => {
+    }};
+    ($invariant:expr, $error:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if !($invariant) {
             return Err(core::convert::Into::into($error));
         }
-    };
+    }};
 }
 
 /// Ensures two NON-PUBKEY values are equal.
@@ -501,14 +501,14 @@ macro_rules! require {
 /// ```
 #[macro_export]
 macro_rules! require_eq {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 != $value2 {
             $crate::msg!("require_eq violation");
             return Err(core::convert::Into::into($error_code));
         }
-    };
+    }};
     ($value1:expr, $value2:expr $(,)?) => {{
         $crate::require_eq!($value1, $value2, $crate::ErrorCode::RequireEqViolated);
     }};
@@ -560,14 +560,14 @@ macro_rules! require_neq {
 /// ```
 #[macro_export]
 macro_rules! require_keys_eq {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 != $value2 {
             $crate::msg!("require_keys_eq violation");
             return Err(core::convert::Into::into($error_code));
         }
-    };
+    }};
     ($value1:expr, $value2:expr $(,)?) => {{
         $crate::require_keys_eq!($value1, $value2, $crate::ErrorCode::RequireKeysEqViolated);
     }};
@@ -588,14 +588,14 @@ macro_rules! require_keys_eq {
 /// ```
 #[macro_export]
 macro_rules! require_keys_neq {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 == $value2 {
             $crate::msg!("require_keys_neq violation");
             return Err(core::convert::Into::into($error_code));
         }
-    };
+    }};
     ($value1:expr, $value2:expr $(,)?) => {{
         $crate::require_keys_neq!($value1, $value2, $crate::ErrorCode::RequireKeysNeqViolated);
     }};
