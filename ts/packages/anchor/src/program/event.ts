@@ -1,7 +1,10 @@
-import { Commitment, PublicKey } from "@solana/web3.js";
+import { Address, Commitment, Signature, Slot } from "@solana/kit";
+import { PublicKey } from "@solana/web3.js";
 import { Coder } from "../coder/index.js";
 import { IdlEvent, IdlField } from "../idl.js";
 import Provider from "../provider.js";
+import { withProviderDefaults } from "../utils/common.js";
+import { toAddress } from "./common.js";
 import { DecodeType } from "./namespace/types.js";
 
 const PROGRAM_LOG = "Program log: ";
@@ -24,13 +27,32 @@ export type EventData<T extends IdlField, Defined> = {
   [N in T["name"]]: DecodeType<(T & { name: N })["type"], Defined>;
 };
 
-type EventCallback = (event: any, slot: number, signature: string) => void;
+/**
+ * Options of {@link EventManager.addEventListener}.
+ */
+export type EventListenerOptions = {
+  /** Stops listening when aborted. */
+  abortSignal: AbortSignal;
+  /** The commitment to listen at, defaulting to the provider's. */
+  commitment?: Commitment;
+  /**
+   * Invoked when a notification cannot be processed (unparseable logs, a
+   * failing decode, or the callback throwing for one event), in which case
+   * the listener keeps going, and when the subscription itself fails, in
+   * which case `fatal` is true and no further events are delivered: listen
+   * again with a fresh abort signal to resubscribe. Must not throw: a
+   * throwing handler ends the listener, its error reported once as fatal.
+   * When omitted, failures are dropped and a failing subscription ends the
+   * listener silently.
+   */
+  onError?: (error: unknown, context: { fatal: boolean }) => void;
+};
 
 export class EventManager {
   /**
-   * Program ID for event subscriptions.
+   * Program address for event subscriptions.
    */
-  private _programId: PublicKey;
+  private _programAddress: Address;
 
   /**
    * Network and wallet provider.
@@ -38,129 +60,107 @@ export class EventManager {
   private _provider: Provider;
 
   /**
-   * Event parser to handle onLogs callbacks.
+   * Event parser to handle log notifications.
    */
   private _eventParser: EventParser;
 
-  /**
-   * Maps event listener id to [event-name, callback].
-   */
-  private _eventCallbacks: Map<number, [string, EventCallback]>;
-
-  /**
-   * Maps event name to all listeners for the event.
-   */
-  private _eventListeners: Map<string, Array<number>>;
-
-  /**
-   * The next listener id to allocate.
-   */
-  private _listenerIdCount: number;
-
-  /**
-   * The subscription id from the connection onLogs subscription.
-   */
-  private _onLogsSubscriptionId: number | undefined;
-
   constructor(programId: PublicKey, provider: Provider, coder: Coder) {
-    this._programId = programId;
+    this._programAddress = toAddress(programId);
     this._provider = provider;
     this._eventParser = new EventParser(programId, coder);
-    this._eventCallbacks = new Map();
-    this._eventListeners = new Map();
-    this._listenerIdCount = 0;
   }
 
+  /**
+   * Invokes the callback for every emission of the given event, listening to
+   * the program's logs at the given commitment (the provider's by default)
+   * until the abort signal fires.
+   *
+   * Each listener holds its own log subscription; Kit coalesces identical
+   * subscriptions into a single one on the wire. A notification that cannot
+   * be processed, or an event the callback throws on, is reported through
+   * `onError` and skipped; only a failure of the subscription itself ends
+   * the listener.
+   */
   public addEventListener(
     eventName: string,
-    callback: (event: any, slot: number, signature: string) => void,
-    commitment?: Commitment
-  ): number {
-    let listener = this._listenerIdCount;
-    this._listenerIdCount += 1;
-
-    // Store the listener into the event map.
-    if (!this._eventListeners.has(eventName)) {
-      this._eventListeners.set(eventName, []);
+    callback: (event: any, slot: Slot, signature: Signature) => void,
+    options: EventListenerOptions
+  ): void {
+    const { rpcSubscriptions } = this._provider;
+    if (!rpcSubscriptions) {
+      throw new Error(
+        "Listening to events requires the provider to have an " +
+          "`rpcSubscriptions` client."
+      );
     }
-    this._eventListeners.set(
-      eventName,
-      (this._eventListeners.get(eventName) ?? []).concat(listener)
-    );
+    const { onError } = options;
+    const { commitment } = withProviderDefaults(this._provider, {
+      commitment: options.commitment,
+    });
 
-    // Store the callback into the listener map.
-    this._eventCallbacks.set(listener, [eventName, callback]);
-
-    // Create the subscription singleton, if needed.
-    if (this._onLogsSubscriptionId !== undefined) {
-      return listener;
+    // The subscription is bounded by a signal of our own so that the
+    // listener can also be ended from the inside, when the error handler
+    // breaks its contract.
+    const controller = new AbortController();
+    options.abortSignal.addEventListener("abort", () => controller.abort(), {
+      once: true,
+    });
+    if (options.abortSignal.aborted) {
+      controller.abort();
     }
+    const abortSignal = controller.signal;
 
-    this._onLogsSubscriptionId = this._provider!.connection.onLogs(
-      this._programId,
-      (logs, ctx) => {
-        if (logs.err) {
-          return;
+    // Hands a failure to `onError`. A handler that throws ends the listener:
+    // its own error is reported once as fatal, so that a misbehaving handler
+    // never surfaces as an unhandled rejection. Nothing is reported once the
+    // listener has ended.
+    const report = (error: unknown, fatal: boolean) => {
+      if (abortSignal.aborted) {
+        return;
+      }
+      try {
+        onError?.(error, { fatal });
+      } catch (handlerError) {
+        controller.abort();
+        try {
+          onError?.(handlerError, { fatal: true });
+        } catch {
+          // The handler threw while being told that it threw: there is no
+          // one left to report to.
         }
+      }
+    };
 
-        for (const event of this._eventParser.parseLogs(logs.logs)) {
-          const allListeners = this._eventListeners.get(event.name);
-
-          if (allListeners) {
-            allListeners.forEach((listener) => {
-              const listenerCb = this._eventCallbacks.get(listener);
-
-              if (listenerCb) {
-                const [, callback] = listenerCb;
-                callback(event.data, ctx.slot, logs.signature);
-              }
-            });
+    (async () => {
+      const notifications = await rpcSubscriptions
+        .logsNotifications(
+          { mentions: [this._programAddress] },
+          commitment ? { commitment } : {}
+        )
+        .subscribe({ abortSignal });
+      for await (const { context, value } of notifications) {
+        if (value.err) {
+          continue;
+        }
+        try {
+          for (const event of this._eventParser.parseLogs(value.logs)) {
+            if (abortSignal.aborted) {
+              return;
+            }
+            if (event.name !== eventName) {
+              continue;
+            }
+            try {
+              callback(event.data, context.slot, value.signature);
+            } catch (error) {
+              report(error, false);
+            }
           }
+        } catch (error) {
+          report(error, false);
         }
-      },
-      commitment
-    );
-
-    return listener;
-  }
-
-  public async removeEventListener(listener: number): Promise<void> {
-    // Get the callback.
-    const callback = this._eventCallbacks.get(listener);
-    if (!callback) {
-      throw new Error(`Event listener ${listener} doesn't exist!`);
-    }
-    const [eventName] = callback;
-
-    // Get the listeners.
-    let listeners = this._eventListeners.get(eventName);
-    if (!listeners) {
-      throw new Error(`Event listeners don't exist for ${eventName}!`);
-    }
-
-    // Update both maps.
-    this._eventCallbacks.delete(listener);
-    listeners = listeners.filter((l) => l !== listener);
-    this._eventListeners.set(eventName, listeners);
-    if (listeners.length === 0) {
-      this._eventListeners.delete(eventName);
-    }
-
-    // Kill the websocket connection if all listeners have been removed.
-    if (this._eventCallbacks.size === 0) {
-      if (this._eventListeners.size !== 0) {
-        throw new Error(
-          `Expected event listeners size to be 0 but got ${this._eventListeners.size}`
-        );
       }
-
-      if (this._onLogsSubscriptionId !== undefined) {
-        await this._provider!.connection.removeOnLogsListener(
-          this._onLogsSubscriptionId
-        );
-        this._onLogsSubscriptionId = undefined;
-      }
-    }
+    })().catch((error) => report(error, true));
   }
 }
 
@@ -188,7 +188,7 @@ export class EventParser {
   // emitted by *this* program. If it was, then we parse the raw string and
   // emit the event if the string matches the event being subscribed to.
   public *parseLogs(
-    logs: string[],
+    logs: readonly string[],
     errorOnDecodeFailure = false
   ): Generator<Event> {
     const scanner = new LogScanner([...logs]);
