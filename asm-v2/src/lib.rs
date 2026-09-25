@@ -222,7 +222,13 @@ fn expand_includes(path: &Path, base_dir: &Path, stack: &mut Vec<PathBuf>) -> Re
     for line in content.lines() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix(".include") {
-            let file = rest.trim().trim_matches('"');
+            let file = parse_include_operand(rest).ok_or_else(|| {
+                anyhow!(
+                    "malformed .include directive in {}: expected a single quoted string, got `{}`",
+                    display_path(path, base_dir),
+                    rest.trim()
+                )
+            })?;
             let include_path = path.parent().unwrap_or(base_dir).join(file);
             if include_path.exists() {
                 out.push_str(&expand_includes(&include_path, base_dir, stack)?);
@@ -231,8 +237,10 @@ fn expand_includes(path: &Path, base_dir: &Path, stack: &mut Vec<PathBuf>) -> Re
                 if from_base.exists() {
                     out.push_str(&expand_includes(&from_base, base_dir, stack)?);
                 } else {
-                    out.push_str(line);
-                    out.push('\n');
+                    return Err(anyhow!(
+                        "unresolved .include directive in {}: `{file}` was not found",
+                        display_path(path, base_dir)
+                    ));
                 }
             }
         } else {
@@ -242,6 +250,24 @@ fn expand_includes(path: &Path, base_dir: &Path, stack: &mut Vec<PathBuf>) -> Re
     }
     stack.pop();
     Ok(out)
+}
+
+/// Parse the operand of an `.include` directive: exactly one double-quoted
+/// string, optionally followed by whitespace and a `//` or `#` comment.
+fn parse_include_operand(rest: &str) -> Option<&str> {
+    let rest = rest.trim_start();
+    let after_open = rest.strip_prefix('"')?;
+    let close = after_open.find('"')?;
+    let file = &after_open[..close];
+    if file.is_empty() {
+        return None;
+    }
+    let trailer = after_open[close + 1..].trim();
+    if trailer.is_empty() || trailer.starts_with('#') || trailer.starts_with("//") {
+        Some(file)
+    } else {
+        None
+    }
 }
 
 fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -385,6 +411,64 @@ mod tests {
         assert!(combined.contains("entry:"));
         assert!(combined.contains("a:"));
         assert!(combined.contains("b:"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_unresolved_include_is_rejected() {
+        let dir = temp_test_dir("unresolved");
+        let output = dir.join("combined.s");
+
+        std::fs::write(dir.join("entrypoint.s"), ".include \"missing.s\"\nentry:\n").unwrap();
+
+        let err = panic::catch_unwind(|| build_to(&dir, &output))
+            .err()
+            .expect("missing include files should panic");
+        let message = panic_message(err);
+        assert!(message.contains("unresolved .include directive in entrypoint.s"));
+        assert!(message.contains("`missing.s` was not found"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_include_with_trailing_comment_is_expanded() {
+        let dir = temp_test_dir("include-comment");
+        let output = dir.join("combined.s");
+
+        std::fs::write(
+            dir.join("entrypoint.s"),
+            ".include \"shared.s\" # helpers\n.include \"more.s\" // more helpers\nentry:\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("shared.s"), "shared:\n").unwrap();
+        std::fs::write(dir.join("more.s"), "more:\n").unwrap();
+
+        build_to(&dir, &output);
+
+        let combined = std::fs::read_to_string(&output).unwrap();
+        assert!(combined.contains("shared:"));
+        assert!(combined.contains("more:"));
+        assert!(combined.contains("entry:"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_malformed_include_operand_is_rejected() {
+        let dir = temp_test_dir("malformed");
+        let output = dir.join("combined.s");
+
+        std::fs::write(dir.join("entrypoint.s"), ".include missing.s\nentry:\n").unwrap();
+
+        let err = panic::catch_unwind(|| build_to(&dir, &output))
+            .err()
+            .expect("unquoted include operands should panic");
+        let message = panic_message(err);
+        assert!(message.contains("malformed .include directive in entrypoint.s"));
+        assert!(message.contains("expected a single quoted string"));
+        assert!(message.contains("got `missing.s`"));
 
         std::fs::remove_dir_all(dir).ok();
     }
