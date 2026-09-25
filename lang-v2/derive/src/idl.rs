@@ -257,8 +257,10 @@ fn normalize_builtin_path(ty: &str) -> &str {
         "solana_program::pubkey::",
         "solana_address::",
         "pinocchio::address::",
+        "anchor_lang::solana_program::pubkey::",
         "anchor_lang::pod::",
         "anchor_lang::prelude::",
+        "anchor_lang::",
     ]
     .iter()
     .find_map(|prefix| ty.strip_prefix(prefix))
@@ -1457,13 +1459,40 @@ mod tests {
         let vec_ty: Type = syn::parse_quote!(alloc::vec::Vec<alloc::string::String>);
         assert_eq!(rust_type_to_idl_value(&vec_ty), json!({ "vec": "string" }));
 
+        let bare_address_ty: Type = syn::parse_quote!(Address);
+        assert_eq!(rust_type_to_idl_value(&bare_address_ty), json!("pubkey"));
+
+        let root_address_ty: Type = syn::parse_quote!(::anchor_lang::Address);
+        assert_eq!(rust_type_to_idl_value(&root_address_ty), json!("pubkey"));
+
+        let crate_root_address_ty: Type = syn::parse_quote!(anchor_lang::Address);
+        assert_eq!(
+            rust_type_to_idl_value(&crate_root_address_ty),
+            json!("pubkey")
+        );
+
         let address_ty: Type = syn::parse_quote!(anchor_lang::prelude::Address);
         assert_eq!(rust_type_to_idl_value(&address_ty), json!("pubkey"));
+
+        let pinocchio_address_ty: Type = syn::parse_quote!(pinocchio::address::Address);
+        assert_eq!(
+            rust_type_to_idl_value(&pinocchio_address_ty),
+            json!("pubkey")
+        );
+
+        let compat_pubkey_ty: Type = syn::parse_quote!(anchor_lang::solana_program::pubkey::Pubkey);
+        assert_eq!(rust_type_to_idl_value(&compat_pubkey_ty), json!("pubkey"));
 
         let user_ty: Type = syn::parse_quote!(crate::models::Inner);
         assert_eq!(
             rust_type_to_idl_value(&user_ty),
             json!({ "defined": { "name": "Inner" } })
+        );
+
+        let user_address_ty: Type = syn::parse_quote!(crate::models::Address);
+        assert_eq!(
+            rust_type_to_idl_value(&user_address_ty),
+            json!({ "defined": { "name": "Address" } })
         );
 
         let primitive_named_user_ty: Type = syn::parse_quote!(models::u8);

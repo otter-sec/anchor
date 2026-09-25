@@ -69,6 +69,9 @@ pub mod limits {
 #[derive(IdlType)]
 pub struct QualifiedUserTypeHolder<const N: usize> {
     pub authority: anchor_lang::prelude::Address,
+    pub root_authority: anchor_lang::Address,
+    #[cfg(feature = "compat")]
+    pub compat_authority: anchor_lang::solana_program::pubkey::Pubkey,
     pub pinocchio_authority: pinocchio::address::Address,
     pub inner: qualified::Inner,
     pub literal_expr: [u8; 1 + 1],
@@ -305,6 +308,9 @@ mod idl_tests {
         let type_def = <QualifiedUserTypeHolder<4> as IdlAccountType>::__idl_type_def()
             .expect("QualifiedUserTypeHolder should emit an IDL type");
         assert!(type_def.contains("\"name\":\"authority\",\"type\":\"pubkey\""));
+        assert!(type_def.contains("\"name\":\"root_authority\",\"type\":\"pubkey\""));
+        #[cfg(feature = "compat")]
+        assert!(type_def.contains("\"name\":\"compat_authority\",\"type\":\"pubkey\""));
         assert!(type_def.contains("\"name\":\"pinocchio_authority\",\"type\":\"pubkey\""));
         assert!(type_def.contains("\"defined\":{\"name\":\"Inner\"}"));
         assert!(!type_def.contains("qualified::Inner"));
