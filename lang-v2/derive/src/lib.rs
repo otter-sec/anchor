@@ -14,8 +14,8 @@ use {
     proc_macro2::{Span, TokenStream as TokenStream2},
     quote::quote,
     syn::{
-        parse::Parser, parse_macro_input, spanned::Spanned, Data, DeriveInput, Expr, Fields, FnArg,
-        Ident, ItemMod, ItemStruct, Pat, Type,
+        parse::Parser, parse_macro_input, spanned::Spanned, Data, DeriveInput, Expr, ExprLit,
+        ExprUnary, Fields, FnArg, Ident, ItemMod, ItemStruct, Lit, Pat, Type, UnOp,
     },
 };
 
@@ -2928,7 +2928,6 @@ fn gen_declared_program(
         .and_then(serde_json::Value::as_array)
         .ok_or_else(|| syn::Error::new(name.span(), "IDL is missing instructions array"))?;
     validate_declare_program_discriminators(idl, name.span())?;
-
     let types = gen_declare_program_types(idl)?;
     let type_idents = gen_declare_program_type_idents(idl)?;
     let type_reexports = type_idents
@@ -3580,7 +3579,12 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                                 format!("struct type `{name}` fields must be an array"),
                             )
                         })?;
-                        gen_declare_program_type_fields(fields, ident.span(), true)?
+                        gen_declare_program_type_fields(
+                            fields,
+                            ident.span(),
+                            true,
+                            &generics.const_generic_names,
+                        )?
                     }
                     None => DeclareTypeFields::Unit,
                 };
@@ -3704,7 +3708,12 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                             format!("variant `{variant_name}` fields must be an array"),
                         )
                     })?;
-                    let fields = gen_declare_program_type_fields(fields, ident.span(), false)?;
+                    let fields = gen_declare_program_type_fields(
+                        fields,
+                        ident.span(),
+                        false,
+                        &generics.const_generic_names,
+                    )?;
                     idl_field_tys.extend(fields.tys().iter().cloned());
                     match fields {
                         DeclareTypeFields::Named { fields, .. } => {
@@ -3744,7 +3753,11 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                         format!("type alias `{name}` is missing alias"),
                     )
                 })?;
-                let alias = declare_idl_type_to_tokens(alias, ident.span())?;
+                let alias = declare_idl_type_to_tokens_with_generics(
+                    alias,
+                    ident.span(),
+                    &generics.const_generic_names,
+                )?;
                 let impl_generics = &generics.impl_generics;
                 out.push(quote! {
                     #(#docs)*
@@ -4086,16 +4099,6 @@ fn gen_declare_program_constant(
         return Ok(quote! { pub const #ident: &'static [u8] = &[#(#bytes),*]; });
     }
 
-    if ty_value.as_str() == Some("string") {
-        let expr: Expr = syn::parse_str(value).map_err(|err| {
-            syn::Error::new(
-                span,
-                format!("failed to parse string constant value: {err}"),
-            )
-        })?;
-        return Ok(quote! { pub const #ident: &'static str = #expr; });
-    }
-
     if ty_value.as_str() == Some("pubkey") {
         let value = syn::parse_str::<syn::LitStr>(value)
             .map(|value| value.value())
@@ -4129,9 +4132,72 @@ fn gen_declare_program_constant(
     }
 
     let ty = declare_idl_const_type_to_tokens(ty_value, span)?;
-    let expr: Expr = syn::parse_str(value)
-        .map_err(|err| syn::Error::new(span, format!("failed to parse constant value: {err}")))?;
-    Ok(quote! { pub const #ident: #ty = #expr; })
+    let literal = parse_declare_program_literal(ty_value, value, span)?;
+    Ok(quote! { pub const #ident: #ty = #literal; })
+}
+
+fn parse_declare_program_literal(
+    ty_value: &serde_json::Value,
+    value: &str,
+    span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    let parsed = syn::parse_str::<Expr>(value).map_err(|err| {
+        syn::Error::new(
+            span,
+            format!("expected an IDL literal constant value, got `{value}`: {err}"),
+        )
+    })?;
+    validate_declare_program_literal(ty_value, &parsed, span)?;
+    Ok(quote! { #parsed })
+}
+
+fn validate_declare_program_literal(
+    ty_value: &serde_json::Value,
+    expr: &Expr,
+    span: proc_macro2::Span,
+) -> syn::Result<()> {
+    if ty_value.as_str().is_some() {
+        return match expr {
+            Expr::Lit(ExprLit { .. }) => Ok(()),
+            Expr::Unary(ExprUnary {
+                op: UnOp::Neg(_),
+                expr,
+                ..
+            }) if matches!(expr.as_ref(), Expr::Lit(ExprLit { .. })) => Ok(()),
+            _ => Err(invalid_idl_literal(span, "scalar literal")),
+        };
+    }
+
+    if let Some(array) = ty_value.get("array").and_then(serde_json::Value::as_array) {
+        if array.len() != 2 {
+            return Err(syn::Error::new(span, "IDL array constant type must have two elements"));
+        }
+        let Expr::Array(array_expr) = expr else {
+            return Err(invalid_idl_literal(span, "array literal"));
+        };
+        let expected = array[1].as_u64().ok_or_else(|| {
+            syn::Error::new(span, "array constant length must be a concrete non-negative integer")
+        })? as usize;
+        if array_expr.elems.len() != expected {
+            return Err(syn::Error::new(
+                span,
+                format!("array constant has {} elements, expected {expected}", array_expr.elems.len()),
+            ));
+        }
+        for element in &array_expr.elems {
+            validate_declare_program_literal(&array[0], element, span)?;
+        }
+        return Ok(());
+    }
+
+    Err(invalid_idl_literal(span, "supported scalar or array"))
+}
+
+fn invalid_idl_literal(span: proc_macro2::Span, expected: &str) -> syn::Error {
+    syn::Error::new(
+        span,
+        format!("expected an IDL {expected}; executable Rust expressions are not allowed"),
+    )
 }
 
 fn declare_idl_const_type_to_tokens(
@@ -4193,6 +4259,7 @@ struct DeclareTypeGenerics {
     ty_generics: TokenStream2,
     idl_where_clause: TokenStream2,
     pod_where_clause: TokenStream2,
+    const_generic_names: std::collections::BTreeSet<String>,
 }
 
 fn gen_declare_program_type_generics(
@@ -4205,12 +4272,14 @@ fn gen_declare_program_type_generics(
             ty_generics: quote! {},
             idl_where_clause: quote! {},
             pod_where_clause: quote! {},
+            const_generic_names: std::collections::BTreeSet::new(),
         });
     };
     let mut impl_params = Vec::new();
     let mut ty_params = Vec::new();
     let mut idl_bounds = Vec::new();
     let mut pod_bounds = Vec::new();
+    let mut const_generic_names = std::collections::BTreeSet::new();
     for generic in generics {
         let name = json_str(generic, "name", span)?;
         let ident = Ident::new(name, span);
@@ -4224,6 +4293,7 @@ fn gen_declare_program_type_generics(
                 });
             }
             "const" => {
+                const_generic_names.insert(name.to_string());
                 let ty = json_str(generic, "type", span)?;
                 let ty: Type = syn::parse_str(ty).map_err(|err| {
                     syn::Error::new(
@@ -4259,6 +4329,7 @@ fn gen_declare_program_type_generics(
         ty_generics,
         idl_where_clause,
         pod_where_clause,
+        const_generic_names,
     })
 }
 
@@ -4437,6 +4508,7 @@ fn gen_declare_program_type_fields(
     fields: &[serde_json::Value],
     span: proc_macro2::Span,
     public: bool,
+    const_generic_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<DeclareTypeFields> {
     let visibility = public.then(|| quote! { pub });
     let field_shape = serde_json::from_value::<anchor_lang_idl::types::IdlDefinedFields>(
@@ -4456,7 +4528,11 @@ fn gen_declare_program_type_fields(
                         format!("failed to normalize IDL field `{field_name}` type: {err}"),
                     )
                 })?;
-                let ty = declare_idl_type_to_tokens(&ty_value, span)?;
+                let ty = declare_idl_type_to_tokens_with_generics(
+                    &ty_value,
+                    span,
+                    const_generic_names,
+                )?;
                 let field_ident = Ident::new(&to_snake_case(field_name), span);
                 field_tokens.push(quote! { #visibility #field_ident: #ty, });
                 field_tys.push(ty);
@@ -4476,7 +4552,11 @@ fn gen_declare_program_type_fields(
                         format!("failed to normalize tuple field type for declare_program!: {err}"),
                     )
                 })?;
-                let ty = declare_idl_type_to_tokens(&ty_value, span)?;
+                let ty = declare_idl_type_to_tokens_with_generics(
+                    &ty_value,
+                    span,
+                    const_generic_names,
+                )?;
                 field_tokens.push(quote! { #visibility #ty });
                 field_tys.push(ty);
             }
@@ -4491,6 +4571,14 @@ fn gen_declare_program_type_fields(
 fn declare_idl_type_to_tokens(
     value: &serde_json::Value,
     span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    declare_idl_type_to_tokens_with_generics(value, span, &std::collections::BTreeSet::new())
+}
+
+fn declare_idl_type_to_tokens_with_generics(
+    value: &serde_json::Value,
+    span: proc_macro2::Span,
+    const_generic_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<TokenStream2> {
     if let Some(s) = value.as_str() {
         return Ok(match s {
@@ -4535,7 +4623,9 @@ fn declare_idl_type_to_tokens(
             .map(|generics| {
                 generics
                     .iter()
-                    .map(|generic| declare_idl_generic_arg_to_tokens(generic, span))
+                    .map(|generic| {
+                        declare_idl_generic_arg_to_tokens(generic, span, const_generic_names)
+                    })
                     .collect::<syn::Result<Vec<_>>>()
             })
             .transpose()?
@@ -4550,11 +4640,11 @@ fn declare_idl_type_to_tokens(
         return Ok(quote! { #ident });
     }
     if let Some(inner) = value.get("vec") {
-        let inner = declare_idl_type_to_tokens(inner, span)?;
+        let inner = declare_idl_type_to_tokens_with_generics(inner, span, const_generic_names)?;
         return Ok(quote! { anchor_lang::__alloc::vec::Vec<#inner> });
     }
     if let Some(inner) = value.get("option") {
-        let inner = declare_idl_type_to_tokens(inner, span)?;
+        let inner = declare_idl_type_to_tokens_with_generics(inner, span, const_generic_names)?;
         return Ok(quote! { Option<#inner> });
     }
     if let Some(array) = value.get("array").and_then(serde_json::Value::as_array) {
@@ -4564,7 +4654,7 @@ fn declare_idl_type_to_tokens(
                 "IDL array type must have two elements",
             ));
         }
-        let inner = declare_idl_type_to_tokens(&array[0], span)?;
+        let inner = declare_idl_type_to_tokens_with_generics(&array[0], span, const_generic_names)?;
         let len = declare_idl_array_len_to_tokens(&array[1], span)?;
         return Ok(quote! { [#inner; #len] });
     }
@@ -4620,6 +4710,7 @@ fn declare_idl_array_len_to_tokens(
 fn declare_idl_generic_arg_to_tokens(
     value: &serde_json::Value,
     span: proc_macro2::Span,
+    const_generic_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<TokenStream2> {
     match json_str(value, "kind", span)? {
         "type" => {
@@ -4629,22 +4720,51 @@ fn declare_idl_generic_arg_to_tokens(
                     format!("generic type arg is missing type in `{value}`"),
                 )
             })?;
-            declare_idl_type_to_tokens(ty, span)
+            declare_idl_type_to_tokens_with_generics(ty, span, const_generic_names)
         }
         "const" => {
             let value = json_str(value, "value", span)?;
-            let expr: Expr = syn::parse_str(value).map_err(|err| {
-                syn::Error::new(
-                    span,
-                    format!("failed to parse const generic value `{value}`: {err}"),
-                )
-            })?;
-            Ok(quote! { #expr })
+            parse_declare_program_generic_arg(value, span, const_generic_names)
         }
         other => Err(syn::Error::new(
             span,
             format!("unsupported IDL generic arg kind `{other}`"),
         )),
+    }
+}
+
+fn parse_declare_program_generic_arg(
+    value: &str,
+    span: proc_macro2::Span,
+    const_generic_names: &std::collections::BTreeSet<String>,
+) -> syn::Result<TokenStream2> {
+    let parsed = syn::parse_str::<Expr>(value).map_err(|err| {
+        syn::Error::new(
+            span,
+            format!("expected an IDL const generic literal or declared parameter: {err}"),
+        )
+    })?;
+    if let Expr::Path(path) = &parsed {
+        if path.qself.is_none() && path.path.segments.len() == 1 {
+            let ident = &path.path.segments[0].ident;
+            if const_generic_names.contains(&ident.to_string()) {
+                return Ok(quote! { #ident });
+            }
+        }
+        return Err(invalid_idl_literal(span, "declared const generic parameter"));
+    }
+    match &parsed {
+        Expr::Lit(ExprLit {
+            lit: Lit::Int(_), ..
+        }) => Ok(quote! { #parsed }),
+        Expr::Unary(ExprUnary {
+            op: UnOp::Neg(_),
+            expr,
+            ..
+        }) if matches!(expr.as_ref(), Expr::Lit(ExprLit { lit: Lit::Int(_), .. })) => {
+            Ok(quote! { #parsed })
+        }
+        _ => Err(invalid_idl_literal(span, "const generic integer literal")),
     }
 }
 
@@ -7333,11 +7453,11 @@ mod tests {
     }
 
     #[test]
-    fn declare_program_array_lengths_accept_declared_generics_only() {
+    fn declare_program_array_lengths_accept_generics() {
         let span = proc_macro2::Span::call_site();
 
-        let generic_tokens =
-            declare_idl_array_len_to_tokens(&json!({ "generic": "N" }), span).unwrap();
+        let generic_tokens = declare_idl_array_len_to_tokens(&json!({ "generic": "N" }), span)
+            .unwrap();
         assert_eq!(generic_tokens.to_string(), "N");
 
         let err = declare_idl_array_len_to_tokens(&json!({ "generic": "limits::ITEMS" }), span)
@@ -7573,11 +7693,13 @@ mod tests {
     fn declare_idl_defined_pod_wrappers_use_runtime_types() {
         let span = proc_macro2::Span::call_site();
         let pod_u64 =
-            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodU64" } }), span).unwrap();
+            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodU64" } }), span)
+                .unwrap();
         assert_eq!(pod_u64.to_string(), "anchor_lang :: pod :: PodU64");
 
         let pod_bool =
-            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodBool" } }), span).unwrap();
+            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodBool" } }), span)
+                .unwrap();
         assert_eq!(pod_bool.to_string(), "anchor_lang :: pod :: PodBool");
     }
 
