@@ -4,7 +4,6 @@ import {
   SolanaError,
   SolanaErrorCode,
 } from "@solana/kit";
-import { Transaction, VersionedTransaction } from "@solana/web3.js";
 
 /**
  * Returns true if being run inside a web browser,
@@ -26,18 +25,6 @@ export function chunks<T>(array: T[], size: number): T[][] {
     (_, index) => array.slice(index * size, (index + 1) * size)
   );
 }
-
-/**
- * Check if a transaction object is a VersionedTransaction or not
- *
- * @param tx
- * @returns bool
- */
-export const isVersionedTransaction = (
-  tx: Transaction | VersionedTransaction
-): tx is VersionedTransaction => {
-  return "version" in tx;
-};
 
 /**
  * Finds a Kit `SolanaError` with the given code in the cause chain of the

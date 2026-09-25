@@ -236,9 +236,6 @@ describe("AccountClient", () => {
       const provider: Provider = {
         rpc: inner.rpc,
         rpcSubscriptions: inner.rpcSubscriptions,
-        get connection(): never {
-          throw new Error("unused");
-        },
       };
       const program = new Program<CounterIdl>(idl, provider);
 

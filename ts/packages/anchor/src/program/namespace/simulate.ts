@@ -55,7 +55,7 @@ export default class SimulateFactory {
       const events: Event[] = [];
       if (idl.events) {
         let parser = new EventParser(programId, coder);
-        for (const event of parser.parseLogs([...logs])) {
+        for (const event of parser.parseLogs(logs)) {
           events.push(event);
         }
       }

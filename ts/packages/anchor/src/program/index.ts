@@ -1,6 +1,6 @@
 import { Buffer } from "buffer";
-import { fetchEncodedAccount } from "@solana/kit";
-import { Commitment, PublicKey } from "@solana/web3.js";
+import { fetchEncodedAccount, Signature, Slot } from "@solana/kit";
+import { PublicKey } from "@solana/web3.js";
 import { BorshCoder, Coder } from "../coder/index.js";
 import {
   Idl,
@@ -12,7 +12,7 @@ import {
 import Provider, { getProvider } from "../provider.js";
 import { CustomAccountResolver } from "./accounts-resolver.js";
 import { Address, toAddress, translateAddress } from "./common.js";
-import { EventManager } from "./event.js";
+import { EventListenerOptions, EventManager } from "./event.js";
 import { withProviderDefaults } from "../utils/common.js";
 import NamespaceFactory, {
   AccountNamespace,
@@ -401,28 +401,36 @@ export class Program<IDL extends Idl = Idl> {
   }
 
   /**
-   * Invokes the given callback every time the given event is emitted.
+   * Invokes the given callback every time the given event is emitted, until
+   * `options.abortSignal` fires.
    *
-   * @param eventName The PascalCase name of the event, provided by the IDL.
+   * ```typescript
+   * const controller = new AbortController();
+   * program.addEventListener("myEvent", (event, slot, signature) => {
+   *   console.log(event, slot, signature);
+   * }, { abortSignal: controller.signal });
+   * // Later, to stop listening:
+   * controller.abort();
+   * ```
+   *
+   * @param eventName The name of the event, as provided by the IDL.
    * @param callback  The function to invoke whenever the event is emitted from
    *                  program logs.
+   * @param options   The abort signal ending the subscription, the commitment
+   *                  to listen at, and an error handler: notifications that
+   *                  cannot be processed are reported and skipped, while a
+   *                  failure of the subscription itself is reported as fatal
+   *                  and ends the listener.
    */
   public addEventListener<E extends keyof IdlEvents<IDL>>(
     eventName: E & string,
     callback: (
       event: IdlEvents<IDL>[E],
-      slot: number,
-      signature: string
+      slot: Slot,
+      signature: Signature
     ) => void,
-    commitment?: Commitment
-  ): number {
-    return this._events.addEventListener(eventName, callback, commitment);
-  }
-
-  /**
-   * Unsubscribes from the given eventName.
-   */
-  public async removeEventListener(listener: number): Promise<void> {
-    return await this._events.removeEventListener(listener);
+    options: EventListenerOptions
+  ): void {
+    this._events.addEventListener(eventName, callback, options);
   }
 }
