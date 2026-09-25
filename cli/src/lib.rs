@@ -3504,6 +3504,14 @@ fn deserialize_idl_type_to_json(
                 .try_into()
                 .unwrap();
 
+            // Sanity check: Guard against massive overallocation from a malformed IDL.
+            if size > data.len() {
+                return Err(anyhow!(
+                    "vec length {size} exceeds remaining account data ({} bytes)",
+                    data.len()
+                ));
+            }
+
             let mut vec_data: Vec<JsonValue> = Vec::with_capacity(size);
 
             for _ in 0..size {
@@ -6528,5 +6536,85 @@ mod tests {
         assert!(ts.contains(r#""generic": "itemType""#));
         assert!(ts.contains(r#""name": "seedPrefix""#));
         assert!(ts.contains(r#""value": "SEED_PREFIX""#));
+    }
+
+    fn dummy_idl() -> Idl {
+        Idl {
+            address: "11111111111111111111111111111111".to_string(),
+            metadata: anchor_lang_idl::types::IdlMetadata {
+                name: "test".to_string(),
+                version: "0.1.0".to_string(),
+                spec: "0.1.0".to_string(),
+                description: None,
+                repository: None,
+                dependencies: Vec::new(),
+                contact: None,
+                deployments: None,
+            },
+            docs: Vec::new(),
+            instructions: Vec::new(),
+            accounts: Vec::new(),
+            events: Vec::new(),
+            errors: Vec::new(),
+            types: Vec::new(),
+            constants: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn oversized_idl_vec_length_is_rejected() {
+        let idl = dummy_idl();
+        let mut data: &[u8] = &[0xff, 0xff, 0xff, 0xff];
+        let err = deserialize_idl_type_to_json(
+            &IdlType::Vec(Box::new(IdlType::U8)),
+            &mut data,
+            &idl,
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "vec length 4294967295 exceeds remaining account data (0 bytes)"
+        );
+    }
+
+    #[test]
+    fn idl_vec_u8_decodes_when_count_fits() {
+        let idl = dummy_idl();
+        let mut data: &[u8] = &[0x02, 0x00, 0x00, 0x00, 0xaa, 0xbb];
+        let value = deserialize_idl_type_to_json(
+            &IdlType::Vec(Box::new(IdlType::U8)),
+            &mut data,
+            &idl,
+        )
+        .unwrap();
+        assert_eq!(value, json!([0xaa, 0xbb]));
+        assert!(data.is_empty());
+    }
+
+    #[test]
+    fn idl_vec_u8_decodes_when_count_equals_remaining() {
+        let idl = dummy_idl();
+        let mut data: &[u8] = &[0x03, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03];
+        let value = deserialize_idl_type_to_json(
+            &IdlType::Vec(Box::new(IdlType::U8)),
+            &mut data,
+            &idl,
+        )
+        .unwrap();
+        assert_eq!(value, json!([1, 2, 3]));
+    }
+
+    #[test]
+    fn idl_vec_leaves_trailing_bytes() {
+        let idl = dummy_idl();
+        let mut data: &[u8] = &[0x01, 0x00, 0x00, 0x00, 0x07, 0x99];
+        let value = deserialize_idl_type_to_json(
+            &IdlType::Vec(Box::new(IdlType::U8)),
+            &mut data,
+            &idl,
+        )
+        .unwrap();
+        assert_eq!(value, json!([7]));
+        assert_eq!(data, &[0x99]);
     }
 }
