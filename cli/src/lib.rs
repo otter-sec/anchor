@@ -37,8 +37,8 @@ use {
         request::RpcRequest,
         response::{Response as RpcResponse, RpcLogsResponse},
     },
-    solana_signer::{EncodableKey, Signer},
     solana_sdk_ids::bpf_loader_upgradeable,
+    solana_signer::{EncodableKey, Signer},
     std::{
         collections::{BTreeMap, HashMap, HashSet},
         ffi::OsString,
@@ -3266,6 +3266,31 @@ fn write_idl(idl: &Idl, out: OutFile) -> Result<()> {
 
     Ok(())
 }
+
+/// Check the requested IDL account type and strip its discriminator.
+///
+/// `strip_prefix` rejects data shorter than the discriminator instead of
+/// panicking on `&data[disc_len..]`.
+fn validate_and_strip_account_data<'a>(
+    idl: &Idl,
+    account_type_name: &str,
+    address: &Pubkey,
+    data: &'a [u8],
+) -> Result<&'a [u8]> {
+    let acc = idl
+        .accounts
+        .iter()
+        .find(|acc| acc.name == account_type_name)
+        .ok_or_else(|| anyhow!("Account `{account_type_name}` not found in IDL"))?;
+    data.strip_prefix(acc.discriminator.as_slice())
+        .ok_or_else(|| {
+            anyhow!(
+                "Account {address} does not match discriminator of `{account_type_name}` \
+                 (data too short or wrong account type)"
+            )
+        })
+}
+
 fn account(
     cfg_override: &ConfigOverride,
     account_type: String,
@@ -3321,13 +3346,7 @@ fn account(
     };
 
     let data = create_client(cluster.url()).get_account_data(&address)?;
-    let disc_len = idl
-        .accounts
-        .iter()
-        .find(|acc| acc.name == account_type_name)
-        .map(|acc| acc.discriminator.len())
-        .ok_or_else(|| anyhow!("Account `{account_type_name}` not found in IDL"))?;
-    let mut data_view = &data[disc_len..];
+    let mut data_view = validate_and_strip_account_data(&idl, account_type_name, &address, &data)?;
 
     let deserialized_json =
         deserialize_idl_defined_type_to_json(&idl, account_type_name, &mut data_view)?;
@@ -6528,5 +6547,98 @@ mod tests {
         assert!(ts.contains(r#""generic": "itemType""#));
         assert!(ts.contains(r#""name": "seedPrefix""#));
         assert!(ts.contains(r#""value": "SEED_PREFIX""#));
+    }
+
+    const ACCOUNT_DISC: [u8; 8] = [8, 7, 6, 5, 4, 3, 2, 1];
+    const ACCOUNT_TYPE: &str = "Vault";
+    const PROGRAM_ID: &str = "Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp";
+
+    fn account_decode_idl() -> Idl {
+        Idl {
+            address: PROGRAM_ID.to_string(),
+            metadata: anchor_lang_idl::types::IdlMetadata {
+                name: "vault".to_string(),
+                version: "0.1.0".to_string(),
+                spec: "0.1.0".to_string(),
+                description: None,
+                repository: None,
+                dependencies: Vec::new(),
+                contact: None,
+                deployments: None,
+            },
+            docs: Vec::new(),
+            instructions: Vec::new(),
+            accounts: vec![anchor_lang_idl::types::IdlAccount {
+                name: ACCOUNT_TYPE.to_string(),
+                discriminator: ACCOUNT_DISC.to_vec(),
+            }],
+            events: Vec::new(),
+            errors: Vec::new(),
+            types: Vec::new(),
+            constants: Vec::new(),
+        }
+    }
+
+    fn decode_account(data: &[u8]) -> Result<&[u8]> {
+        let address = Pubkey::new_from_array([9; 32]);
+        validate_and_strip_account_data(&account_decode_idl(), ACCOUNT_TYPE, &address, data)
+    }
+
+    #[test]
+    fn account_decode_accepts_matching_discriminator() {
+        let mut data = ACCOUNT_DISC.to_vec();
+        data.extend_from_slice(&[42, 43, 44]);
+
+        let payload = decode_account(&data).unwrap();
+        assert_eq!(payload, &[42, 43, 44]);
+    }
+
+    #[test]
+    fn account_decode_accepts_foreign_owner_bytes() {
+        let mut data = ACCOUNT_DISC.to_vec();
+        data.extend_from_slice(&[42]);
+
+        let payload = decode_account(&data).unwrap();
+        assert_eq!(payload, &[42]);
+    }
+
+    #[test]
+    fn account_decode_rejects_wrong_discriminator() {
+        let mut data = vec![0u8; 8];
+        data.extend_from_slice(&[42]);
+
+        let err = decode_account(&data).unwrap_err().to_string();
+        assert!(
+            err.contains("does not match discriminator"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn account_decode_rejects_short_and_empty_data_without_panic() {
+        for data in [Vec::new(), vec![0u8; 4], ACCOUNT_DISC[..4].to_vec()] {
+            let err = decode_account(&data).unwrap_err().to_string();
+            assert!(
+                err.contains("does not match discriminator"),
+                "unexpected error for {data:?}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn account_decode_rejects_unknown_account_type() {
+        let address = Pubkey::new_from_array([9; 32]);
+        let err = validate_and_strip_account_data(
+            &account_decode_idl(),
+            "Missing",
+            &address,
+            &ACCOUNT_DISC,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("Account `Missing` not found in IDL"),
+            "unexpected error: {err}"
+        );
     }
 }
