@@ -403,6 +403,60 @@ mod shim {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn account_borsh_rejects_cfg_gated_wincode_skip() {
+    compile_fail_case(
+        "account_borsh_cfg_gated_wincode_skip",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account(borsh)]
+pub struct Bad {
+    #[cfg(feature = "extra")]
+    #[wincode(skip)]
+    pub skipped: u64,
+    pub kept: u8,
+}
+"#,
+        &[
+            "`#[account(borsh)]` does not support `#[wincode(skip)]` fields",
+            "generated IDL would not match the serialized wire layout",
+        ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn event_rejects_cfg_gated_wincode_skip() {
+    compile_fail_case(
+        "event_cfg_gated_wincode_skip",
+        r#"
+use anchor_lang::prelude::*;
+
+#[event]
+pub struct Bad {
+    #[cfg(feature = "extra")]
+    #[wincode(skip)]
+    pub skipped: u64,
+    pub kept: u8,
+}
+"#,
+        &[
+            "`#[event]` does not support `#[wincode(skip)]` fields",
+            "generated IDL would not match the serialized wire layout",
+        ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn idl_generation_rejects_wincode_enum_tag_override() {
     compile_fail_case(
         "idl_type_wincode_tag_encoding",

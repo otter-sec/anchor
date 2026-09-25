@@ -122,54 +122,112 @@ pub(crate) fn find_unsupported_wincode_attr(
     attrs: &[syn::Attribute],
 ) -> syn::Result<Option<(UnsupportedWincodeAttrKind, Span)>> {
     for attr in attrs {
-        if !attr.path().is_ident("wincode") {
+        if attr.path().is_ident("wincode") {
+            if let Some(found) = unsupported_wincode_from_attr(attr)? {
+                return Ok(Some(found));
+            }
             continue;
         }
-
-        let mut unsupported = None;
-        let parse = attr.parse_nested_meta(|meta| {
-            let span = meta.path.span();
-            if meta.path.is_ident("skip") {
-                if meta.input.peek(syn::Token![=]) {
-                    let value = meta.value()?;
-                    let _ = value.parse::<Expr>()?;
-                } else if meta.input.peek(syn::token::Paren) {
-                    meta.parse_nested_meta(|nested| {
-                        if nested.path.is_ident("default") {
-                            return Ok(());
-                        }
-                        if nested.path.is_ident("default_val") {
-                            let value = nested.value()?;
-                            let _ = value.parse::<Expr>()?;
-                        }
-                        Ok(())
-                    })?;
-                }
-                unsupported = Some((UnsupportedWincodeAttrKind::Skip, span));
-            } else if meta.path.is_ident("with") {
-                if meta.input.peek(syn::Token![=]) {
-                    let value = meta.value()?;
-                    let _ = value.parse::<Expr>()?;
-                }
-                unsupported = Some((UnsupportedWincodeAttrKind::With, span));
-            } else if meta.path.is_ident("tag_encoding") {
-                if meta.input.peek(syn::Token![=]) {
-                    let value = meta.value()?;
-                    let _ = value.parse::<Expr>()?;
-                }
-                unsupported = Some((UnsupportedWincodeAttrKind::TagEncoding, span));
+        if attr.path().is_ident("cfg_attr") {
+            if let Some(found) = unsupported_wincode_from_cfg_attr(attr)? {
+                return Ok(Some(found));
             }
-            Ok(())
-        });
-
-        parse?;
-
-        if unsupported.is_some() {
-            return Ok(unsupported);
         }
     }
 
     Ok(None)
+}
+
+fn unsupported_wincode_from_attr(
+    attr: &syn::Attribute,
+) -> syn::Result<Option<(UnsupportedWincodeAttrKind, Span)>> {
+    let mut unsupported = None;
+    attr.parse_nested_meta(|meta| record_unsupported_wincode_meta(meta, &mut unsupported))?;
+    Ok(unsupported)
+}
+
+fn unsupported_wincode_from_cfg_attr(
+    attr: &syn::Attribute,
+) -> syn::Result<Option<(UnsupportedWincodeAttrKind, Span)>> {
+    let Ok(args) = attr.parse_args_with(
+        syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+    ) else {
+        return Ok(None);
+    };
+    unsupported_wincode_from_cfg_attr_args(&args)
+}
+
+fn unsupported_wincode_from_cfg_attr_args(
+    args: &syn::punctuated::Punctuated<syn::Meta, syn::Token![,]>,
+) -> syn::Result<Option<(UnsupportedWincodeAttrKind, Span)>> {
+    for meta in args.iter().skip(1) {
+        match meta {
+            syn::Meta::List(list) if list.path.is_ident("wincode") => {
+                if let Some(found) = unsupported_wincode_from_meta_list(list)? {
+                    return Ok(Some(found));
+                }
+            }
+            syn::Meta::List(list) if list.path.is_ident("cfg_attr") => {
+                let Ok(nested) = syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated
+                    .parse2(list.tokens.clone())
+                else {
+                    continue;
+                };
+                if let Some(found) = unsupported_wincode_from_cfg_attr_args(&nested)? {
+                    return Ok(Some(found));
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(None)
+}
+
+fn unsupported_wincode_from_meta_list(
+    list: &syn::MetaList,
+) -> syn::Result<Option<(UnsupportedWincodeAttrKind, Span)>> {
+    let mut unsupported = None;
+    syn::meta::parser(|meta| record_unsupported_wincode_meta(meta, &mut unsupported))
+        .parse2(list.tokens.clone())?;
+    Ok(unsupported)
+}
+
+fn record_unsupported_wincode_meta(
+    meta: syn::meta::ParseNestedMeta<'_>,
+    unsupported: &mut Option<(UnsupportedWincodeAttrKind, Span)>,
+) -> syn::Result<()> {
+    let span = meta.path.span();
+    if meta.path.is_ident("skip") {
+        if meta.input.peek(syn::Token![=]) {
+            let value = meta.value()?;
+            let _ = value.parse::<Expr>()?;
+        } else if meta.input.peek(syn::token::Paren) {
+            meta.parse_nested_meta(|nested| {
+                if nested.path.is_ident("default") {
+                    return Ok(());
+                }
+                if nested.path.is_ident("default_val") {
+                    let value = nested.value()?;
+                    let _ = value.parse::<Expr>()?;
+                }
+                Ok(())
+            })?;
+        }
+        *unsupported = Some((UnsupportedWincodeAttrKind::Skip, span));
+    } else if meta.path.is_ident("with") {
+        if meta.input.peek(syn::Token![=]) {
+            let value = meta.value()?;
+            let _ = value.parse::<Expr>()?;
+        }
+        *unsupported = Some((UnsupportedWincodeAttrKind::With, span));
+    } else if meta.path.is_ident("tag_encoding") {
+        if meta.input.peek(syn::Token![=]) {
+            let value = meta.value()?;
+            let _ = value.parse::<Expr>()?;
+        }
+        *unsupported = Some((UnsupportedWincodeAttrKind::TagEncoding, span));
+    }
+    Ok(())
 }
 
 fn update_accounts_stmt_for_handler_pat(pat: &mut Pat) -> syn::Result<syn::Stmt> {
@@ -4892,13 +4950,9 @@ fn wincode_idl_override_tokens_for_fields(
     fields
         .iter()
         .filter_map(|field| {
-            let err_tokens =
-                unsupported_wincode_idl_attr_error(surface, &field.attrs)?.to_compile_error();
-            let cfg_attrs = cfg_attrs(&field.attrs);
-            Some(quote! {
-                #(#cfg_attrs)*
-                const _: () = { #err_tokens };
-            })
+            // Leave the error ungated so `#[wincode(skip)]` still fails when
+            // it sits next to a disabled `#[cfg]`.
+            Some(unsupported_wincode_idl_attr_error(surface, &field.attrs)?.to_compile_error())
         })
         .collect()
 }
@@ -4910,16 +4964,10 @@ fn wincode_idl_override_tokens_for_variants(
     variants
         .iter()
         .flat_map(|variant| {
-            let variant_cfg_attrs = cfg_attrs(&variant.attrs);
             variant.fields.iter().filter_map(move |field| {
-                let err_tokens =
-                    unsupported_wincode_idl_attr_error(surface, &field.attrs)?.to_compile_error();
-                let field_cfg_attrs = cfg_attrs(&field.attrs);
-                Some(quote! {
-                    #(#variant_cfg_attrs)*
-                    #(#field_cfg_attrs)*
-                    const _: () = { #err_tokens };
-                })
+                Some(
+                    unsupported_wincode_idl_attr_error(surface, &field.attrs)?.to_compile_error(),
+                )
             })
         })
         .collect()
@@ -6970,6 +7018,88 @@ mod tests {
             err.to_string().contains("expected `:`"),
             "unexpected error: {err}"
         );
+    }
+
+    fn first_field_attrs(item: syn::ItemStruct) -> Vec<syn::Attribute> {
+        item.fields
+            .iter()
+            .next()
+            .expect("struct should have a field")
+            .attrs
+            .clone()
+    }
+
+    fn unsupported_kind(attrs: &[syn::Attribute]) -> Option<UnsupportedWincodeAttrKind> {
+        find_unsupported_wincode_attr(attrs)
+            .expect("wincode attr scan should parse")
+            .map(|(kind, _)| kind)
+    }
+
+    #[test]
+    fn wincode_scanner_rejects_direct_skip() {
+        let item: syn::ItemStruct = syn::parse_quote! {
+            struct S {
+                #[wincode(skip)]
+                pub skipped: u64,
+            }
+        };
+        assert!(matches!(
+            unsupported_kind(&first_field_attrs(item)),
+            Some(UnsupportedWincodeAttrKind::Skip)
+        ));
+    }
+
+    #[test]
+    fn wincode_scanner_rejects_cfg_attr_skip() {
+        let item: syn::ItemStruct = syn::parse_quote! {
+            struct S {
+                #[cfg_attr(feature = "fast", wincode(skip))]
+                pub skipped: u64,
+            }
+        };
+        assert!(matches!(
+            unsupported_kind(&first_field_attrs(item)),
+            Some(UnsupportedWincodeAttrKind::Skip)
+        ));
+    }
+
+    #[test]
+    fn wincode_scanner_rejects_nested_cfg_attr_with() {
+        let item: syn::ItemStruct = syn::parse_quote! {
+            struct S {
+                #[cfg_attr(feature = "a", cfg_attr(feature = "b", wincode(with = "shim::ByteCodec")))]
+                pub packed: u64,
+            }
+        };
+        assert!(matches!(
+            unsupported_kind(&first_field_attrs(item)),
+            Some(UnsupportedWincodeAttrKind::With)
+        ));
+    }
+
+    #[test]
+    fn wincode_scanner_rejects_cfg_attr_tag_encoding_on_item() {
+        let item: syn::ItemEnum = syn::parse_quote! {
+            #[cfg_attr(feature = "wide", wincode(tag_encoding = "u32"))]
+            enum E {
+                A,
+            }
+        };
+        assert!(matches!(
+            unsupported_kind(&item.attrs),
+            Some(UnsupportedWincodeAttrKind::TagEncoding)
+        ));
+    }
+
+    #[test]
+    fn wincode_scanner_ignores_cfg_attr_without_wincode_override() {
+        let item: syn::ItemStruct = syn::parse_quote! {
+            struct S {
+                #[cfg_attr(feature = "fast", inline(always))]
+                pub kept: u64,
+            }
+        };
+        assert!(unsupported_kind(&first_field_attrs(item)).is_none());
     }
 
     #[test]
