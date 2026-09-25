@@ -15,9 +15,14 @@ use {
     },
     spl_token_2022_interface::{
         extension::{
+            group_member_pointer::GroupMemberPointer,
+            metadata_pointer::MetadataPointer,
+            mint_close_authority::MintCloseAuthority,
             non_transferable::{NonTransferable, NonTransferableAccount},
+            permanent_delegate::PermanentDelegate,
             set_account_type, BaseStateWithExtensions, BaseStateWithExtensionsMut, ExtensionType,
             StateWithExtensions, StateWithExtensionsMut,
+            transfer_hook::TransferHook,
         },
         state::{Account as Token2022Account, Mint as Token2022Mint},
     },
@@ -1035,4 +1040,260 @@ fn interface_init_rejects_mint_space_below_base() {
         "mint init should reject space below the 82-byte base mint"
     );
     assert!(svm.get_account(&mint.pubkey()).is_none());
+}
+
+fn init_mint_with_extensions(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: &Keypair,
+    authority: &Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(*authority, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+        AccountMeta::new(mint.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), vec![13], metas, payer, &[mint])
+}
+
+#[test]
+fn interface_init_creates_token_2022_mint_with_extensions() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("t22-interface-ext-mint-authority");
+    let mint = Keypair::new();
+
+    init_mint_with_extensions(&mut svm, &payer, &mint, &authority.pubkey())
+        .expect("init mint with extensions::*");
+
+    let account = svm.get_account(&mint.pubkey()).expect("mint exists");
+    assert_eq!(account.owner, token_2022_program_id());
+    let expected_len = ExtensionType::try_calculate_account_len::<Token2022Mint>(&[
+        ExtensionType::GroupMemberPointer,
+        ExtensionType::MetadataPointer,
+        ExtensionType::MintCloseAuthority,
+        ExtensionType::TransferHook,
+        ExtensionType::PermanentDelegate,
+    ])
+    .expect("calculate extended mint length");
+    assert_eq!(account.data.len(), expected_len);
+
+    let state =
+        StateWithExtensions::<Token2022Mint>::unpack(&account.data).expect("unpack extended mint");
+    assert_eq!(state.base.decimals, 0);
+    assert_eq!(
+        state.base.mint_authority,
+        COption::Some(authority.pubkey())
+    );
+
+    let types = state.get_extension_types().expect("extension types");
+    assert!(types.contains(&ExtensionType::MetadataPointer));
+    assert!(types.contains(&ExtensionType::GroupMemberPointer));
+    assert!(types.contains(&ExtensionType::MintCloseAuthority));
+    assert!(types.contains(&ExtensionType::TransferHook));
+    assert!(types.contains(&ExtensionType::PermanentDelegate));
+
+    let metadata = state
+        .get_extension::<MetadataPointer>()
+        .expect("metadata pointer");
+    assert_eq!(
+        Option::<Pubkey>::from(metadata.authority),
+        Some(authority.pubkey())
+    );
+    assert_eq!(
+        Option::<Pubkey>::from(metadata.metadata_address),
+        Some(authority.pubkey())
+    );
+
+    let member = state
+        .get_extension::<GroupMemberPointer>()
+        .expect("group member pointer");
+    assert_eq!(
+        Option::<Pubkey>::from(member.authority),
+        Some(authority.pubkey())
+    );
+    assert_eq!(
+        Option::<Pubkey>::from(member.member_address),
+        Some(authority.pubkey())
+    );
+
+    let close = state
+        .get_extension::<MintCloseAuthority>()
+        .expect("mint close authority");
+    assert_eq!(
+        Option::<Pubkey>::from(close.close_authority),
+        Some(authority.pubkey())
+    );
+
+    let hook = state.get_extension::<TransferHook>().expect("transfer hook");
+    assert_eq!(
+        Option::<Pubkey>::from(hook.authority),
+        Some(authority.pubkey())
+    );
+    assert_eq!(Option::<Pubkey>::from(hook.program_id), Some(program_id()));
+
+    let delegate = state
+        .get_extension::<PermanentDelegate>()
+        .expect("permanent delegate");
+    assert_eq!(
+        Option::<Pubkey>::from(delegate.delegate),
+        Some(authority.pubkey())
+    );
+}
+
+fn init_if_needed_mint_with_extensions(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: &Keypair,
+    authority: &Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(*authority, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+        AccountMeta::new(mint.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), vec![14], metas, payer, &[mint])
+}
+
+fn seed_token_2022_mint_without_extensions(svm: &mut LiteSVM, mint: Pubkey, authority: Pubkey) {
+    let mut data = vec![0; Token2022Mint::LEN];
+    Token2022Mint {
+        mint_authority: COption::Some(authority),
+        supply: 0,
+        decimals: 0,
+        is_initialized: true,
+        freeze_authority: COption::None,
+    }
+    .pack_into_slice(&mut data);
+
+    svm.set_account(
+        mint,
+        Account {
+            lamports: 10_000_000,
+            data,
+            owner: token_2022_program_id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .expect("seed token-2022 mint without extensions");
+}
+
+fn seed_token_2022_mint_with_extension_values(
+    svm: &mut LiteSVM,
+    mint: Pubkey,
+    authority: Pubkey,
+    metadata_authority: Pubkey,
+) {
+    let len = ExtensionType::try_calculate_account_len::<Token2022Mint>(&[
+        ExtensionType::GroupMemberPointer,
+        ExtensionType::MetadataPointer,
+        ExtensionType::MintCloseAuthority,
+        ExtensionType::TransferHook,
+        ExtensionType::PermanentDelegate,
+    ])
+    .expect("calculate extended mint length");
+    let mut data = vec![0; len];
+    {
+        let mut state = StateWithExtensionsMut::<Token2022Mint>::unpack_uninitialized(&mut data)
+            .expect("unpack uninitialized mint");
+        let metadata = state
+            .init_extension::<MetadataPointer>(true)
+            .expect("metadata pointer");
+        metadata.authority = Some(metadata_authority).try_into().unwrap();
+        metadata.metadata_address = Some(authority).try_into().unwrap();
+
+        let member = state
+            .init_extension::<GroupMemberPointer>(true)
+            .expect("group member pointer");
+        member.authority = Some(authority).try_into().unwrap();
+        member.member_address = Some(authority).try_into().unwrap();
+
+        let close = state
+            .init_extension::<MintCloseAuthority>(true)
+            .expect("mint close authority");
+        close.close_authority = Some(authority).try_into().unwrap();
+
+        let hook = state
+            .init_extension::<TransferHook>(true)
+            .expect("transfer hook");
+        hook.authority = Some(authority).try_into().unwrap();
+        hook.program_id = Some(program_id()).try_into().unwrap();
+
+        let delegate = state
+            .init_extension::<PermanentDelegate>(true)
+            .expect("permanent delegate");
+        delegate.delegate = Some(authority).try_into().unwrap();
+    }
+    Token2022Mint {
+        mint_authority: COption::Some(authority),
+        supply: 0,
+        decimals: 0,
+        is_initialized: true,
+        freeze_authority: COption::None,
+    }
+    .pack_into_slice(&mut data[..Token2022Mint::LEN]);
+    set_account_type::<Token2022Mint>(&mut data).expect("set token-2022 mint account type");
+
+    svm.set_account(
+        mint,
+        Account {
+            lamports: 10_000_000,
+            data,
+            owner: token_2022_program_id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .expect("seed token-2022 mint with extensions");
+}
+
+#[test]
+fn interface_init_if_needed_reuses_matching_token_2022_mint_extensions() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("t22-interface-ext-reuse-authority");
+    let mint = Keypair::new();
+
+    init_if_needed_mint_with_extensions(&mut svm, &payer, &mint, &authority.pubkey())
+        .expect("create mint with extensions::*");
+    svm.expire_blockhash();
+    init_if_needed_mint_with_extensions(&mut svm, &payer, &mint, &authority.pubkey())
+        .expect("reuse mint with matching extensions::*");
+}
+
+#[test]
+fn interface_init_if_needed_rejects_mint_missing_declared_extensions() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("t22-interface-ext-missing-authority");
+    let mint = Keypair::new();
+    seed_token_2022_mint_without_extensions(&mut svm, mint.pubkey(), authority.pubkey());
+
+    let result = init_if_needed_mint_with_extensions(&mut svm, &payer, &mint, &authority.pubkey());
+    assert!(
+        result.is_err(),
+        "init_if_needed should reject a mint missing declared extensions"
+    );
+}
+
+#[test]
+fn interface_init_if_needed_rejects_mint_with_mismatched_extension_value() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("t22-interface-ext-mismatch-authority");
+    let attacker = keypair_for("t22-interface-ext-mismatch-attacker");
+    let mint = Keypair::new();
+    seed_token_2022_mint_with_extension_values(
+        &mut svm,
+        mint.pubkey(),
+        authority.pubkey(),
+        attacker.pubkey(),
+    );
+
+    let result = init_if_needed_mint_with_extensions(&mut svm, &payer, &mint, &authority.pubkey());
+    assert!(
+        result.is_err(),
+        "init_if_needed should reject a mint whose extension values do not match"
+    );
 }

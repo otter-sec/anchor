@@ -278,12 +278,80 @@ fn token_account_init_space(
 // ---------------------------------------------------------------------------
 
 /// Init params for `InterfaceAccount<Mint>`.
+///
+/// `extensions::*` fields are Token-2022 only. They are initialized after
+/// `create_account` and **before** `InitializeMint2`.
 #[derive(Default)]
 pub struct InterfaceMintInitParams<'a> {
     pub decimals: Option<u8>,
     pub authority: Option<&'a AccountView>,
     pub freeze_authority: Option<&'a AccountView>,
     pub token_program: Option<&'a AccountView>,
+    pub metadata_pointer_authority: Option<Address>,
+    pub metadata_pointer_metadata_address: Option<Address>,
+    pub group_pointer_authority: Option<Address>,
+    pub group_pointer_group_address: Option<Address>,
+    pub group_member_pointer_authority: Option<Address>,
+    pub group_member_pointer_member_address: Option<Address>,
+    pub close_authority_authority: Option<Address>,
+    pub transfer_hook_authority: Option<Address>,
+    pub transfer_hook_program_id: Option<Address>,
+    pub permanent_delegate_delegate: Option<Address>,
+}
+
+impl InterfaceMintInitParams<'_> {
+    fn has_extensions(&self) -> bool {
+        self.metadata_pointer_authority.is_some()
+            || self.metadata_pointer_metadata_address.is_some()
+            || self.group_pointer_authority.is_some()
+            || self.group_pointer_group_address.is_some()
+            || self.group_member_pointer_authority.is_some()
+            || self.group_member_pointer_member_address.is_some()
+            || self.close_authority_authority.is_some()
+            || self.transfer_hook_authority.is_some()
+            || self.transfer_hook_program_id.is_some()
+            || self.permanent_delegate_delegate.is_some()
+    }
+
+    fn extension_types(&self) -> ([Token2022ExtensionType; 6], usize) {
+        let mut types = [Token2022ExtensionType::Uninitialized; 6];
+        let mut n = 0usize;
+        let mut push = |ext: Token2022ExtensionType| {
+            types[n] = ext;
+            n += 1;
+        };
+        if self.group_pointer_authority.is_some() || self.group_pointer_group_address.is_some() {
+            push(Token2022ExtensionType::GroupPointer);
+        }
+        if self.group_member_pointer_authority.is_some()
+            || self.group_member_pointer_member_address.is_some()
+        {
+            push(Token2022ExtensionType::GroupMemberPointer);
+        }
+        if self.metadata_pointer_authority.is_some()
+            || self.metadata_pointer_metadata_address.is_some()
+        {
+            push(Token2022ExtensionType::MetadataPointer);
+        }
+        if self.close_authority_authority.is_some() {
+            push(Token2022ExtensionType::MintCloseAuthority);
+        }
+        if self.transfer_hook_authority.is_some() || self.transfer_hook_program_id.is_some() {
+            push(Token2022ExtensionType::TransferHook);
+        }
+        if self.permanent_delegate_delegate.is_some() {
+            push(Token2022ExtensionType::PermanentDelegate);
+        }
+        (types, n)
+    }
+}
+
+fn mint_extension_space(params: &InterfaceMintInitParams<'_>) -> Result<usize, ProgramError> {
+    let (types, n) = params.extension_types();
+    if n == 0 {
+        return Ok(core::mem::size_of::<crate::Mint>());
+    }
+    Token2022ExtensionType::try_calculate_account_len::<PodMint>(&types[..n])
 }
 
 impl SlabInit for Interface<crate::Mint> {
@@ -308,6 +376,14 @@ impl SlabInit for Interface<crate::Mint> {
             space >= core::mem::size_of::<crate::Mint>(),
             ProgramError::AccountDataTooSmall
         );
+        if params.has_extensions() {
+            require!(
+                anchor_lang::address_eq(program_id, &Token2022Program::id()),
+                ProgramError::IncorrectProgramId
+            );
+        }
+
+        let space = core::cmp::max(space, mint_extension_space(params)?);
         anchor_lang::create_account_with_signers(
             payer,
             account,
@@ -316,6 +392,8 @@ impl SlabInit for Interface<crate::Mint> {
             signer_seeds,
             payer_signer_seeds,
         )?;
+
+        initialize_mint_extensions(account, program_id, params)?;
 
         pinocchio_token_2022::instructions::InitializeMint2 {
             mint: account,
@@ -326,6 +404,70 @@ impl SlabInit for Interface<crate::Mint> {
         }
         .invoke()
     }
+}
+
+fn initialize_mint_extensions(
+    mint: &AccountView,
+    token_program: &Address,
+    params: &InterfaceMintInitParams<'_>,
+) -> Result<(), ProgramError> {
+    if params.group_pointer_authority.is_some() || params.group_pointer_group_address.is_some() {
+        pinocchio_token_2022::instructions::group_pointer::Initialize {
+            mint,
+            authority: params.group_pointer_authority.as_ref(),
+            group_address: params.group_pointer_group_address.as_ref(),
+            token_program,
+        }
+        .invoke()?;
+    }
+    if params.group_member_pointer_authority.is_some()
+        || params.group_member_pointer_member_address.is_some()
+    {
+        pinocchio_token_2022::instructions::group_member_pointer::Initialize {
+            mint,
+            authority: params.group_member_pointer_authority.as_ref(),
+            member_address: params.group_member_pointer_member_address.as_ref(),
+            token_program,
+        }
+        .invoke()?;
+    }
+    if params.metadata_pointer_authority.is_some()
+        || params.metadata_pointer_metadata_address.is_some()
+    {
+        pinocchio_token_2022::instructions::metadata_pointer::Initialize {
+            mint,
+            authority: params.metadata_pointer_authority.as_ref(),
+            metadata_address: params.metadata_pointer_metadata_address.as_ref(),
+            token_program,
+        }
+        .invoke()?;
+    }
+    if let Some(close_authority) = params.close_authority_authority.as_ref() {
+        pinocchio_token_2022::instructions::mint_close_authority::InitializeMintCloseAuthority {
+            mint,
+            close_authority: Some(close_authority),
+            token_program,
+        }
+        .invoke()?;
+    }
+    if params.transfer_hook_authority.is_some() || params.transfer_hook_program_id.is_some() {
+        pinocchio_token_2022::instructions::transfer_hook::InitializeTransferHook {
+            mint,
+            authority: params.transfer_hook_authority.as_ref(),
+            program_id: params.transfer_hook_program_id.as_ref(),
+            token_program,
+        }
+        .invoke()?;
+    }
+    if let Some(delegate) = params.permanent_delegate_delegate.as_ref() {
+        pinocchio_token_2022::instructions::permanent_delegate::InitializePermanentDelegate {
+            mint,
+            delegate,
+            token_program,
+        }
+        .invoke()?;
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -431,3 +573,75 @@ impl AccountConstraint<InterfaceAccount<Mint>> for crate::mint::TokenProgramCons
         Ok(())
     }
 }
+
+macro_rules! impl_mint_extension_constraint {
+    ($constraint:ty, $ext:ty, $field:ident) => {
+        impl AccountConstraint<InterfaceAccount<Mint>> for $constraint {
+            type Value = Address;
+            #[inline(always)]
+            fn check(
+                account: &InterfaceAccount<Mint>,
+                expected: &Address,
+            ) -> Result<(), ProgramError> {
+                let ext = account.get_extension::<$ext>()?;
+                require_eq!(
+                    crate::extensions::optional_address(&ext.$field),
+                    Some(expected),
+                    ProgramError::InvalidAccountData
+                );
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_mint_extension_constraint!(
+    crate::extensions::MetadataPointerAuthorityConstraint,
+    crate::extensions::MetadataPointer,
+    authority
+);
+impl_mint_extension_constraint!(
+    crate::extensions::MetadataPointerMetadataAddressConstraint,
+    crate::extensions::MetadataPointer,
+    metadata_address
+);
+impl_mint_extension_constraint!(
+    crate::extensions::GroupPointerAuthorityConstraint,
+    crate::extensions::GroupPointer,
+    authority
+);
+impl_mint_extension_constraint!(
+    crate::extensions::GroupPointerGroupAddressConstraint,
+    crate::extensions::GroupPointer,
+    group_address
+);
+impl_mint_extension_constraint!(
+    crate::extensions::GroupMemberPointerAuthorityConstraint,
+    crate::extensions::GroupMemberPointer,
+    authority
+);
+impl_mint_extension_constraint!(
+    crate::extensions::GroupMemberPointerMemberAddressConstraint,
+    crate::extensions::GroupMemberPointer,
+    member_address
+);
+impl_mint_extension_constraint!(
+    crate::extensions::CloseAuthorityAuthorityConstraint,
+    crate::extensions::MintCloseAuthority,
+    close_authority
+);
+impl_mint_extension_constraint!(
+    crate::extensions::TransferHookAuthorityConstraint,
+    crate::extensions::TransferHook,
+    authority
+);
+impl_mint_extension_constraint!(
+    crate::extensions::TransferHookProgramIdConstraint,
+    crate::extensions::TransferHook,
+    program_id
+);
+impl_mint_extension_constraint!(
+    crate::extensions::PermanentDelegateDelegateConstraint,
+    crate::extensions::PermanentDelegate,
+    delegate
+);
