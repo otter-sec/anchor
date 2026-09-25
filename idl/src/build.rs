@@ -146,8 +146,9 @@ fn build(
 ) -> Result<Idl> {
     let mut cmd = Command::new("cargo");
     if let Ok(toolchain) = std::env::var("RUSTUP_TOOLCHAIN") {
+        let toolchain = format!("+{toolchain}");
         install_toolchain_if_needed(&toolchain)?;
-        cmd.arg("+{toolchain}");
+        cmd.arg(&toolchain);
     }
 
     let output = cmd
@@ -299,6 +300,7 @@ fn build(
 fn install_toolchain_if_needed(toolchain: &str) -> Result<()> {
     let is_installed = Command::new("cargo")
         .arg(toolchain)
+        .arg("--version")
         .output()?
         .status
         .success();
