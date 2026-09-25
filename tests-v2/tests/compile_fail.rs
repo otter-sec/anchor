@@ -1496,6 +1496,63 @@ pub fn use_return<'a>(program: &'a Address, data: CpiHandle<'a>) {
 }
 
 #[test]
+fn declare_program_generic_references_compile() {
+    declare_program_case(
+        "declare_program_generic_references",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [
+    {
+      "name": "use_generic",
+      "discriminator": [1],
+      "accounts": [],
+      "args": [
+        {
+          "name": "wrapper",
+          "type": {
+            "defined": {
+              "name": "Wrapper",
+              "generics": [{ "kind": "type", "type": "u64" }]
+            }
+          }
+        },
+        {
+          "name": "buffer",
+          "type": {
+            "defined": {
+              "name": "Buf",
+              "generics": [{ "kind": "const", "value": "64" }]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "Wrapper",
+      "generics": [{ "kind": "type", "name": "T" }],
+      "type": {
+        "kind": "struct",
+        "fields": [{ "name": "value", "type": { "generic": "T" } }]
+      }
+    },
+    {
+      "name": "Buf",
+      "generics": [{ "kind": "const", "name": "N", "type": "usize" }],
+      "type": {
+        "kind": "struct",
+        "fields": [{ "name": "bytes", "type": { "array": ["u8", { "generic": "N" }] } }]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect_pass();
+}
+
+#[test]
 fn declare_program_object_tuple_fields_compile() {
     CompileCase::new(
         "declare_program_object_tuple_fields",

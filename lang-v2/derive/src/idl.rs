@@ -127,7 +127,58 @@ impl<'a> TypeLowerer<'a> {
             "Box" => first_type_arg(segment)
                 .map(|inner| self.lower(inner))
                 .unwrap_or_else(|| json!({ "defined": { "name": "Box" } })),
-            _ => json!({ "defined": { "name": segment.ident.to_string() } }),
+            _ => self.lower_defined_path(segment),
+        }
+    }
+
+    fn lower_defined_path(&mut self, segment: &syn::PathSegment) -> Value {
+        let mut generics = Vec::new();
+        match &segment.arguments {
+            PathArguments::None => {}
+            PathArguments::AngleBracketed(arguments) => {
+                for argument in &arguments.args {
+                    match argument {
+                        // `MAX` in `Buf<MAX>` is parsed as a type by syn because
+                        // type and const identifiers are indistinguishable here.
+                        // Follow Rust naming conventions to recover the const form.
+                        syn::GenericArgument::Type(ty) if looks_like_const_ident(ty) => generics
+                            .push(json!({
+                                "kind": "const",
+                                "value": quote!(#ty).to_string().replace(' ', ""),
+                            })),
+                        syn::GenericArgument::Type(ty) => generics.push(json!({
+                            "kind": "type",
+                            "type": self.lower(ty),
+                        })),
+                        syn::GenericArgument::Const(expr) => generics.push(json!({
+                            "kind": "const",
+                            "value": quote!(#expr).to_string().replace(' ', ""),
+                        })),
+                        unsupported => panic!(
+                            "unsupported generic argument in IDL type `{}`: {}",
+                            segment.ident,
+                            quote!(#unsupported)
+                        ),
+                    }
+                }
+            }
+            PathArguments::Parenthesized(_) => {
+                panic!(
+                    "unsupported parenthesized generic arguments in IDL type `{}`",
+                    segment.ident
+                )
+            }
+        }
+
+        if generics.is_empty() {
+            json!({ "defined": { "name": segment.ident.to_string() } })
+        } else {
+            json!({
+                "defined": {
+                    "name": segment.ident.to_string(),
+                    "generics": generics,
+                }
+            })
         }
     }
 
@@ -287,6 +338,18 @@ fn first_type_arg(segment: &syn::PathSegment) -> Option<&Type> {
 fn is_u8_path(ty: &Type) -> bool {
     matches!(ty, Type::Path(path) if path.qself.is_none()
         && normalize_builtin_path(&path_name(path)) == "u8")
+}
+
+fn looks_like_const_ident(ty: &Type) -> bool {
+    let Type::Path(path) = ty else { return false };
+    if path.qself.is_some() {
+        return false;
+    }
+    let Some(segment) = path.path.segments.last() else {
+        return false;
+    };
+    let ident = segment.ident.to_string();
+    ident.len() > 1 && ident == ident.to_uppercase()
 }
 
 fn peel_expr(expr: &Expr) -> &Expr {
@@ -1497,6 +1560,80 @@ mod tests {
                     ]
                 }
             })
+        );
+    }
+
+    #[test]
+    fn defined_references_preserve_type_and_const_generics() {
+        let wrapper_u64: Type = syn::parse_quote!(Wrapper<u64>);
+        assert_eq!(
+            rust_type_to_idl_value(&wrapper_u64),
+            json!({
+                "defined": {
+                    "name": "Wrapper",
+                    "generics": [{ "kind": "type", "type": "u64" }],
+                }
+            })
+        );
+
+        let wrapper_address: Type = syn::parse_quote!(Wrapper<Address>);
+        assert_eq!(
+            rust_type_to_idl_value(&wrapper_address),
+            json!({
+                "defined": {
+                    "name": "Wrapper",
+                    "generics": [{ "kind": "type", "type": "pubkey" }],
+                }
+            })
+        );
+
+        let buf_64: Type = syn::parse_quote!(Buf<64>);
+        let buf_128: Type = syn::parse_quote!(Buf<128>);
+        assert_eq!(
+            rust_type_to_idl_value(&buf_64),
+            json!({
+                "defined": {
+                    "name": "Buf",
+                    "generics": [{ "kind": "const", "value": "64" }],
+                }
+            })
+        );
+        assert_eq!(
+            rust_type_to_idl_value(&buf_128),
+            json!({
+                "defined": {
+                    "name": "Buf",
+                    "generics": [{ "kind": "const", "value": "128" }],
+                }
+            })
+        );
+
+        let buf_max: Type = syn::parse_quote!(Buf<MAX>);
+        assert_eq!(
+            rust_type_to_idl_value(&buf_max),
+            json!({
+                "defined": {
+                    "name": "Buf",
+                    "generics": [{ "kind": "const", "value": "MAX" }],
+                }
+            })
+        );
+
+        let nested: Type = syn::parse_quote!(Wrapper<Vec<u64>>);
+        assert_eq!(
+            rust_type_to_idl_value(&nested),
+            json!({
+                "defined": {
+                    "name": "Wrapper",
+                    "generics": [{ "kind": "type", "type": { "vec": "u64" } }],
+                }
+            })
+        );
+
+        let plain: Type = syn::parse_quote!(Wrapper);
+        assert_eq!(
+            rust_type_to_idl_value(&plain),
+            json!({ "defined": { "name": "Wrapper" } })
         );
     }
 
