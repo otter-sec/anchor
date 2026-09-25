@@ -47,7 +47,7 @@ pub struct Profile {
 }
 ```
 
-It serializes on successful exit and provides `release_borrow(){:rs}` / `reacquire_borrow_mut(){:rs}` for CPI or realloc paths that need to mutate the same account through another route.
+It serializes on successful exit and provides `release_borrow(){:rs}` / `reacquire_borrow_mut(){:rs}` for CPI or realloc paths that need to mutate the same account through another route. See [After a CPI](/docs/v2/fundamentals/cpi/#after-a-cpi).
 
 ## `Slab<H, Item>{:rs}`
 
