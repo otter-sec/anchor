@@ -2264,9 +2264,24 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
         };
         idl::TypeKind::BytemuckRepr(repr)
     };
-    let idl_account_entry = match idl::build_account_entry_string(&name_str, disc_bytes) {
-        Some(s) => quote! { Some(#s) },
-        None => quote! { None },
+    let idl_account_entry = quote! { None };
+    let idl_account_entry_fn = quote! {
+        fn __idl_account_entry() -> Option<&'static str> {
+            let __disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
+            let mut __s = anchor_lang::__alloc::string::String::from(
+                concat!("{\"name\":\"", #name_str, "\",\"discriminator\":[")
+            );
+            for (index, byte) in __disc.iter().enumerate() {
+                if index != 0 {
+                    __s.push(',');
+                }
+                __s.push_str(&anchor_lang::__alloc::string::ToString::to_string(byte));
+            }
+            // Retain the defining type only while collecting entries. This
+            // prevents same-named types in different modules being deduped.
+            __s.push_str(concat!("],\"__anchor_type\":\"", module_path!(), "::", #name_str, "\"}"));
+            Some(anchor_lang::__alloc::boxed::Box::leak(__s.into_boxed_str()))
+        }
     };
     let idl_type_def = idl::build_struct_type_def_emission(
         &name_str,
@@ -2480,6 +2495,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[doc(hidden)]
         impl anchor_lang::IdlAccountType for #name {
             const __IDL_ACCOUNT_ENTRY: Option<&'static str> = #idl_account_entry;
+            #idl_account_entry_fn
             fn __idl_type_def() -> Option<&'static str> {
                 #idl_type_def
             }
@@ -5901,8 +5917,13 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                 #(#ix_arg_type_registers)*
                 accounts_entries.sort();
                 accounts_entries.dedup();
+                anchor_lang::idl_build::validate_account_discriminator_entries(&accounts_entries);
                 types_entries.sort();
                 types_entries.dedup();
+                let accounts_entries = accounts_entries
+                    .iter()
+                    .map(|entry| anchor_lang::idl_build::strip_account_entry_identity(entry))
+                    .collect::<Vec<_>>();
 
                 let crate_name = env!("CARGO_CRATE_NAME").replace('-', "_");
                 // Pull `description` / `repository` from the program crate's
