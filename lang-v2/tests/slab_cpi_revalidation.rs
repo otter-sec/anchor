@@ -87,7 +87,7 @@ fn revalidate_after_cpi_rejects_owner_change() {
     let buf = setup_counter_account();
 
     let view = unsafe { buf.view() };
-    let mut account = unsafe { CounterAccount::load_mut(view) }.unwrap();
+    let mut account = CounterAccount::load_mut(view).unwrap();
 
     buf.set_owner(FOREIGN_PROGRAM_ID);
 
@@ -102,7 +102,7 @@ fn revalidate_after_cpi_rejects_discriminator_change() {
     let buf = setup_counter_account();
 
     let view = unsafe { buf.view() };
-    let mut account = unsafe { CounterAccount::load_mut(view) }.unwrap();
+    let mut account = CounterAccount::load_mut(view).unwrap();
 
     set_data_bytes(&buf, 0, ForeignCounter::DISCRIMINATOR);
 
@@ -117,7 +117,7 @@ fn revalidate_after_cpi_rejects_tail_len_exceeding_live_capacity() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
 
     buf.set_data_len((ITEMS_OFFSET + ITEM_SIZE) as u64);
 
@@ -132,7 +132,7 @@ fn revalidate_after_cpi_accepts_schema_preserving_tail_mutation() {
     let buf = setup_ledger(/*capacity*/ 2, /*len*/ 1);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
 
     set_data_bytes(&buf, ITEMS_OFFSET, &[0x11; 8]);
 

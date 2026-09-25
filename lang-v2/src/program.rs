@@ -174,6 +174,9 @@ pub(crate) fn validate_fixed_instruction_accounts<'a, const N: usize>(
             ProgramError::InvalidArgument
         );
 
+        // TODO: decide whether a CPI handle whose account is borrowed by an
+        // aliased wrapper surfaces a dedicated Anchor error instead of
+        // `AccountBorrowFailed`.
         if handle.requires_borrow_check() {
             if account.is_writable {
                 handle.account_view().check_borrow_mut()?;
@@ -210,6 +213,9 @@ pub(crate) fn validate_instruction_accounts<'a>(
         };
         let handle = &account_handles[handle_index];
 
+        // TODO: decide whether a CPI handle whose account is borrowed by an
+        // aliased wrapper surfaces a dedicated Anchor error instead of
+        // `AccountBorrowFailed`.
         if account.is_writable {
             if handle.requires_borrow_check() {
                 handle.account_view().check_borrow_mut()?;

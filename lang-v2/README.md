@@ -110,6 +110,8 @@ None of these carry an `'info` lifetime — pinocchio's account model is static-
 | `Sysvar<T>` | `Sysvar<Clock>`, `Sysvar<Rent>`. Prefer `Clock::get()` / `Rent::get()` syscalls where possible. (v1 compat) |
 | `Sysvar<SysvarInstructions>` | Instruction introspection. No syscall exists for this sysvar, so the account must be passed in the transaction; the wrapper reads its data and derefs to pinocchio's `Instructions`. |
 
+**Aliased accounts.** A transaction can pass one account in more than one slot, and every slot shares that account's runtime borrow state. Wrappers with typed data (`Account<T>`, `BorshAccount<T>`, `Slab<H, T>`, `Sysvar<SysvarInstructions>`) hold a borrow while they are alive: a mutable load needs no other borrow, and a read-only load needs no mutable borrow. A conflicting alias fails with `AccountBorrowFailed`. `Signer`, `SystemAccount`, `UncheckedAccount`, and `Program<T>` expose no typed data and hold no borrow, so one wallet can be both payer and authority. Raw data borrows and CPI handles through those wrappers still fail while a typed wrapper holds a conflicting borrow.
+
 ## CPI Semantics
 
 Same `CpiContext` shape as v1. The big caller-side win is the generated **`Resolved`** struct: alongside the full accounts struct for each handler, the derive emits a variant with only the fields a caller actually has to provide. The standard system and token programs auto-fill when you build the instruction metas, and PDAs derive in topological order so dependent seeds still work.

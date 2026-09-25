@@ -244,11 +244,13 @@ where
     const MIN_DATA_LEN: usize = T::DISCRIMINATOR.len();
 
     fn load(view: AccountView) -> Result<Self, ProgramError> {
+        // TODO: decide whether alias borrow conflicts surface as a dedicated
+        // Anchor error instead of `AccountBorrowFailed`.
         let data_ref = view.try_borrow()?;
         let (data, serialized_len) = Self::validate_and_load(view, &data_ref)?;
         // SAFETY: AccountView's raw pointer is valid for the entire instruction
-        // lifetime (Solana runtime guarantee). We hold the Ref to prevent
-        // subsequent mutable borrows on the same account (duplicate detection).
+        // lifetime (Solana runtime guarantee). We hold the Ref so an aliased
+        // view of the same account cannot take a mutable borrow.
         let guard: Ref<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
         Ok(Self {
             view,
@@ -260,11 +262,7 @@ where
         })
     }
 
-    /// # Safety
-    ///
-    /// See [`AnchorAccount::load_mut`] — caller must ensure no other live
-    /// `&mut` to the same account data exists.
-    unsafe fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
+    fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
         // Guardrail: catches "forgot `#[account(mut)]`" early with a clear
         // error. Under `default-features = false` the Solana runtime still
         // rejects the tx when we try to write, just with a less specific
@@ -274,6 +272,8 @@ where
             return Err(super::slab::cold_not_writable());
         }
         let mut view_mut = view;
+        // TODO: decide whether alias borrow conflicts surface as a dedicated
+        // Anchor error instead of `AccountBorrowFailed`.
         let data_ref = view_mut.try_borrow_mut()?;
         let (data, serialized_len) = Self::validate_and_load(view, &data_ref)?;
         // SAFETY: Same as load(). RefMut provides exclusive access and prevents

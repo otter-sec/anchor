@@ -19,19 +19,11 @@ impl<T: AnchorAccount> AnchorAccount for Box<T> {
         T::load(view).map(Box::new)
     }
 
-    /// # Safety
-    ///
-    /// See [`AnchorAccount::load_mut`] — caller must ensure no other live
-    /// `&mut` to the same account data exists.
-    unsafe fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
+    fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
         T::load_mut(view).map(Box::new)
     }
 
-    /// # Safety
-    ///
-    /// See [`AnchorAccount::load_mut_after_init`] — caller must ensure no
-    /// other live `&mut` to the same account data exists.
-    unsafe fn load_mut_after_init(view: AccountView) -> Result<Self, ProgramError> {
+    fn load_mut_after_init(view: AccountView) -> Result<Self, ProgramError> {
         T::load_mut_after_init(view).map(Box::new)
     }
 

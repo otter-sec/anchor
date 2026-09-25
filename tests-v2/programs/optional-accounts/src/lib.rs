@@ -33,7 +33,7 @@ impl AnchorAccount for SpyAccount {
         Ok(Self { view })
     }
 
-    unsafe fn load_mut(view: AccountView) -> Result<Self> {
+    fn load_mut(view: AccountView) -> Result<Self> {
         anchor_lang::msg!("spy_load_mut");
         if !view.is_writable() {
             return Err(ErrorCode::ConstraintMut.into());

@@ -53,8 +53,7 @@ fn all_labeled_variants() -> Vec<(&'static str, ErrorCode)> {
             | ErrorCode::RequireKeysEqViolated
             | ErrorCode::RequireKeysNeqViolated
             | ErrorCode::RequireGtViolated
-            | ErrorCode::RequireGteViolated
-            | ErrorCode::ConstraintDuplicateMutableAccount => (),
+            | ErrorCode::RequireGteViolated => (),
         }
     }
     exhaustiveness_check(ErrorCode::AccountNotEnoughKeys);
@@ -96,10 +95,6 @@ fn all_labeled_variants() -> Vec<(&'static str, ErrorCode)> {
         ("RequireKeysNeqViolated", ErrorCode::RequireKeysNeqViolated),
         ("RequireGtViolated", ErrorCode::RequireGtViolated),
         ("RequireGteViolated", ErrorCode::RequireGteViolated),
-        (
-            "ConstraintDuplicateMutableAccount",
-            ErrorCode::ConstraintDuplicateMutableAccount,
-        ),
     ]
 }
 
@@ -123,7 +118,7 @@ fn no_two_variants_share_a_custom_code() {
     }
     // Snapshot — adding a new Custom variant forces a review of this number.
     assert_eq!(
-        custom_count, 18,
+        custom_count, 17,
         "Number of Custom error codes changed; update this snapshot after review"
     );
 }

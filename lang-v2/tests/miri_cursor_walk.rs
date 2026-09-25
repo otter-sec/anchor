@@ -247,7 +247,7 @@ fn walk_n_returns_slice_of_views() {
     ]);
 
     with_cursor(&mut input, |cursor, _| {
-        let (views, _dup_bitvec) = unsafe { cursor.walk_n(3) };
+        let views = unsafe { cursor.walk_n(3) };
         assert_eq!(views.len(), 3);
         assert_eq!(views[0].address().to_bytes(), [0xAA; 32]);
         assert_eq!(views[1].address().to_bytes(), [0xBB; 32]);

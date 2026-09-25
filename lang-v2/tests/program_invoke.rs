@@ -565,7 +565,7 @@ fn cpi_context_invoke_accepts_mutable_slab_handle() {
     let program = ID;
     let buffer = slab_account_view([1; 32], true, 9);
     let view = unsafe { buffer.view() };
-    let mut acct = unsafe { Account::<PodCounter>::load_mut(view) }.unwrap();
+    let mut acct = Account::<PodCounter>::load_mut(view).unwrap();
     let accounts = WritableCpi {
         account: acct.cpi_handle_mut(),
     };
@@ -580,7 +580,7 @@ fn cpi_context_invoke_accepts_readonly_slab_handle_from_mutable_wrapper() {
     let program = ID;
     let buffer = slab_account_view([1; 32], true, 9);
     let view = unsafe { buffer.view() };
-    let acct = unsafe { Account::<PodCounter>::load_mut(view) }.unwrap();
+    let acct = Account::<PodCounter>::load_mut(view).unwrap();
     let accounts = ReadonlyCpi {
         account: acct.cpi_handle(),
     };
@@ -595,9 +595,7 @@ fn cpi_context_invoke_accepts_mutable_boxed_slab_handle() {
     let program = ID;
     let buffer = slab_account_view([1; 32], true, 9);
     let view = unsafe { buffer.view() };
-    let mut acct = unsafe {
-        <Box<Account<PodCounter>> as AnchorAccount>::load_mut(view)
-    }
+    let mut acct = <Box<Account<PodCounter>> as AnchorAccount>::load_mut(view)
     .unwrap();
     let accounts = WritableCpi {
         account: acct.cpi_handle_mut(),
@@ -613,9 +611,7 @@ fn cpi_context_invoke_accepts_readonly_boxed_slab_handle_from_mutable_wrapper() 
     let program = ID;
     let buffer = slab_account_view([1; 32], true, 9);
     let view = unsafe { buffer.view() };
-    let acct = unsafe {
-        <Box<Account<PodCounter>> as AnchorAccount>::load_mut(view)
-    }
+    let acct = <Box<Account<PodCounter>> as AnchorAccount>::load_mut(view)
     .unwrap();
     let accounts = ReadonlyCpi {
         account: acct.cpi_handle(),
@@ -655,7 +651,7 @@ fn invoke_ix_accepts_mutable_slab_handle() {
     let program = ID;
     let buffer = slab_account_view([1; 32], true, 9);
     let view = unsafe { buffer.view() };
-    let mut acct = unsafe { Account::<PodCounter>::load_mut(view) }.unwrap();
+    let mut acct = Account::<PodCounter>::load_mut(view).unwrap();
     let address = *acct.address();
     let accounts = WritableCpi {
         account: acct.cpi_handle_mut(),
@@ -674,7 +670,7 @@ fn invoke_ix_accepts_readonly_slab_handle_from_mutable_wrapper() {
     let program = ID;
     let buffer = slab_account_view([1; 32], true, 9);
     let view = unsafe { buffer.view() };
-    let acct = unsafe { Account::<PodCounter>::load_mut(view) }.unwrap();
+    let acct = Account::<PodCounter>::load_mut(view).unwrap();
     let address = *acct.address();
     let accounts = ReadonlyCpi {
         account: acct.cpi_handle(),
@@ -693,7 +689,7 @@ fn cpi_context_invoke_accepts_mutable_borsh_handle() {
     let program = ID;
     let buffer = borsh_account_view([1; 32], true, 9);
     let view = unsafe { buffer.view() };
-    let mut acct = unsafe { BorshAccount::<BorshCounter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<BorshCounter>::load_mut(view).unwrap();
 
     {
         let accounts = WritableCpi {
@@ -714,9 +710,7 @@ fn cpi_context_invoke_accepts_mutable_boxed_borsh_handle() {
     let program = ID;
     let buffer = borsh_account_view([1; 32], true, 9);
     let view = unsafe { buffer.view() };
-    let mut acct = unsafe {
-        <Box<BorshAccount<BorshCounter>> as AnchorAccount>::load_mut(view)
-    }
+    let mut acct = <Box<BorshAccount<BorshCounter>> as AnchorAccount>::load_mut(view)
     .unwrap();
     acct.value = 11;
 
@@ -738,7 +732,7 @@ fn invoke_ix_accepts_mutable_borsh_handle() {
     let program = ID;
     let buffer = borsh_account_view([1; 32], true, 9);
     let view = unsafe { buffer.view() };
-    let mut acct = unsafe { BorshAccount::<BorshCounter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<BorshCounter>::load_mut(view).unwrap();
     let address = *acct.address();
 
     {

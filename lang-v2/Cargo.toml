@@ -104,10 +104,6 @@ name = "account_wrapper_checks"
 required-features = ["testing"]
 
 [[test]]
-name = "optional_mut_duplicate_check"
-required-features = ["testing"]
-
-[[test]]
 name = "init_if_needed_space_check"
 required-features = ["testing"]
 
@@ -141,10 +137,6 @@ required-features = ["testing"]
 
 [[test]]
 name = "miri_wrapper_accounts"
-required-features = ["testing"]
-
-[[test]]
-name = "remaining_accounts_mut_check"
 required-features = ["testing"]
 
 [[test]]

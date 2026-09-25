@@ -98,7 +98,7 @@ fn set_program_owned_account(svm: &mut LiteSVM, pubkey: Pubkey, data: Vec<u8>) {
 fn assert_no_spy_load_logs(logs: &str) {
     assert!(
         !logs.contains("spy_load_mut"),
-        "duplicate rejection should happen before load_mut, logs were:\n{logs}",
+        "None sentinels must not load, logs were:\n{logs}",
     );
 }
 
@@ -147,7 +147,7 @@ fn valid_optional_some_loads_and_wrong_non_sentinel_fails() {
 }
 
 #[test]
-fn mutable_optional_duplicate_check_is_gated_on_some() {
+fn mutable_optional_alias_conflicts_only_when_some() {
     let (mut svm, payer) = setup();
     let data = init_required(&mut svm, &payer);
 
@@ -162,7 +162,7 @@ fn mutable_optional_duplicate_check_is_gated_on_some() {
         &payer,
         &[],
     )
-    .expect("None sentinel should not trip optional duplicate-mut check");
+    .expect("a None optional account holds no borrow");
     assert_eq!(data_value(&svm, data), 8);
 
     let result = call_raw(
@@ -173,29 +173,29 @@ fn mutable_optional_duplicate_check_is_gated_on_some() {
     );
     let err = format!("{:?}", result.unwrap_err().err);
     assert!(
-        err.contains("Duplicate") || err.contains("Custom("),
-        "Some alias should trip optional duplicate-mut check, got: {err}"
+        err.contains("AccountBorrowFailed"),
+        "a Some alias of a mutable account should fail to borrow, got: {err}"
     );
 }
 
 #[test]
-fn duplicate_optional_some_rejects_before_any_spy_load_mut() {
+fn duplicate_optional_some_spy_accounts_both_load() {
     let (mut svm, payer) = setup();
     let data = init_required(&mut svm, &payer);
 
-    let failure = call_raw(
+    let meta = call_raw(
         &mut svm,
         &payer,
         10,
         vec![AccountMeta::new(data, false), AccountMeta::new(data, false)],
     )
-    .expect_err("duplicate Some should be rejected");
-    let err = format!("{:?}", failure.err);
-    assert!(
-        err.contains("Duplicate") || err.contains("Custom("),
-        "duplicate Some should trip optional duplicate-mut check, got: {err}"
+    .expect("wrappers without a data borrow may alias");
+    let logs = meta.pretty_logs();
+    assert_eq!(
+        logs.matches("spy_load_mut").count(),
+        2,
+        "both optional spy accounts should load, logs were:\n{logs}",
     );
-    assert_no_spy_load_logs(&failure.meta.pretty_logs());
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn double_optional_none_sentinels_stay_silent() {
 }
 
 #[test]
-fn double_optional_duplicate_some_still_fails() {
+fn double_optional_duplicate_some_fails_to_borrow() {
     let (mut svm, payer) = setup();
     let data = init_required(&mut svm, &payer);
 
@@ -246,8 +246,8 @@ fn double_optional_duplicate_some_still_fails() {
     );
     let err = format!("{:?}", result.unwrap_err().err);
     assert!(
-        err.contains("Duplicate") || err.contains("Custom("),
-        "duplicate Some alias should still fail, got: {err}"
+        err.contains("AccountBorrowFailed"),
+        "a duplicate Some alias should fail to borrow, got: {err}"
     );
 }
 

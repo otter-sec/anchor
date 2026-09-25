@@ -57,7 +57,7 @@ fn borsh_account_get_add_and_sub_lamports() {
     setup_counter_buf(&mut buf);
 
     let view = unsafe { buf.view() };
-    let mut account = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut account = BorshAccount::<Counter>::load_mut(view).unwrap();
     assert_eq!(account.get_lamports(), 100);
 
     account.add_lamports(900).unwrap();
@@ -150,7 +150,7 @@ fn mut_loaded_serialized_account_can_transfer_lamports() {
     setup_counter_buf(&mut buf);
 
     let view = unsafe { buf.view() };
-    let mut account = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut account = BorshAccount::<Counter>::load_mut(view).unwrap();
     account.sub_lamports(40).unwrap();
     account.add_lamports(10).unwrap();
     assert_eq!(account.get_lamports(), 70);
@@ -184,7 +184,7 @@ fn mut_loaded_boxed_account_can_transfer_lamports() {
 
     let view = unsafe { buf.view() };
     let mut account =
-        unsafe { <Box<BorshAccount<Counter>> as AnchorAccount>::load_mut(view) }.unwrap();
+        <Box<BorshAccount<Counter>> as AnchorAccount>::load_mut(view).unwrap();
     account.sub_lamports(40).unwrap();
     account.add_lamports(10).unwrap();
     assert_eq!(account.get_lamports(), 70);

@@ -94,9 +94,7 @@ where
             signer_seeds,
             payer_signer_seeds,
         )?;
-        // SAFETY: `create_and_initialize` just created this account; no other
-        // mutable reference to its data can exist yet.
-        unsafe { <Self as AnchorAccount>::load_mut_after_init(*account) }
+        <Self as AnchorAccount>::load_mut_after_init(*account)
     }
 }
 
@@ -367,6 +365,8 @@ where
         let borrow_state = unsafe { (*view.account_ptr()).borrow_state };
         // 0 is the mutable-borrow sentinel; 1 has no shared-borrow slot left
         // for Slab to register below.
+        // TODO: decide whether alias borrow conflicts surface as a dedicated
+        // Anchor error instead of `AccountBorrowFailed`.
         if borrow_state < 2 {
             return Err(ProgramError::AccountBorrowFailed);
         }
@@ -398,8 +398,15 @@ where
     #[inline(always)]
     fn build_mutable(view: AccountView) -> Result<Self, ProgramError> {
         Self::assert_header_alignment();
-        // SAFETY: AccountView's data pointer is valid for the instruction lifetime.
-        // Duplicate mutable accounts are rejected at deserialization.
+        // Any live borrow, including one held by a wrapper over an aliased
+        // view of this account, rules out the exclusive borrow taken below.
+        // TODO: decide whether alias borrow conflicts surface as a dedicated
+        // Anchor error instead of `AccountBorrowFailed`.
+        if unsafe { (*view.account_ptr()).borrow_state } != NOT_BORROWED {
+            return Err(ProgramError::AccountBorrowFailed);
+        }
+        // SAFETY: AccountView's data pointer is valid for the instruction
+        // lifetime, and the check above rules out any other live borrow.
         let data = unsafe { view.borrow_unchecked() };
         if data.len() < Self::MIN_DATA_LEN {
             return Err(ProgramError::AccountDataTooSmall);
@@ -519,7 +526,7 @@ where
     #[inline(always)]
     fn guard_bytes(&self) -> &[u8] {
         // SAFETY: AccountView data is valid for the instruction lifetime.
-        // Duplicate mutable accounts are rejected at deserialization.
+        // The borrow marker held by this slab rules out a mutable alias.
         unsafe { self.view.borrow_unchecked() }
     }
 
@@ -853,12 +860,8 @@ where
         Self::from_ref(view)
     }
 
-    /// # Safety
-    ///
-    /// See [`AnchorAccount::load_mut`] — caller must ensure no other live
-    /// `&mut` to the same account data exists.
     #[inline(always)]
-    unsafe fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
+    fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
         // Reuses the post-init primitive for construction, then layers full
         // validation on top.
         let slab = Self::load_mut_after_init(view)?;
@@ -874,13 +877,8 @@ where
 
     /// Fast-path `load_mut` after `create_and_initialize`. Skips
     /// `H::validate` and `validate_tail` (all tautologies post-init).
-    ///
-    /// # Safety
-    ///
-    /// See [`AnchorAccount::load_mut`] — no other live `&mut` to the
-    /// same account data.
     #[inline(always)]
-    unsafe fn load_mut_after_init(view: AccountView) -> Result<Self, ProgramError> {
+    fn load_mut_after_init(view: AccountView) -> Result<Self, ProgramError> {
         // Guardrail: catches "forgot `#[account(mut)]`" early with a clear
         // error. Under `default-features = false` the Solana runtime still
         // rejects the tx when we try to write, just with a less specific
@@ -1019,8 +1017,8 @@ where
     #[inline(always)]
     fn deref(&self) -> &H {
         // SAFETY: header_ptr is valid for the instruction lifetime (Solana
-        // runtime guarantee). Duplicate mutable accounts are rejected at
-        // deserialization, so no aliasing can occur.
+        // runtime guarantee). The borrow marker held by this slab rules out
+        // a mutable alias.
         unsafe { &*self.header_ptr }
     }
 }
@@ -1236,8 +1234,7 @@ mod tests {
         setup(&mut buf, true);
         let view = unsafe { buf.view() };
 
-        // SAFETY: this is the only live wrapper over `view`'s data.
-        let mut acct = unsafe { CounterAccount::load_mut(view).unwrap() };
+        let mut acct = CounterAccount::load_mut(view).unwrap();
         acct.value = 99;
 
         let mut view_copy = view;
@@ -1262,8 +1259,7 @@ mod tests {
         let view = unsafe { buf.view() };
 
         {
-            // SAFETY: this is the only live wrapper over `view`'s data.
-            let mut acct = unsafe { CounterAccount::load_mut(view).unwrap() };
+            let mut acct = CounterAccount::load_mut(view).unwrap();
             acct.value = 99;
         }
 
@@ -1280,8 +1276,7 @@ mod tests {
         setup(&mut buf, true);
         let view = unsafe { buf.view() };
 
-        // SAFETY: this is the only live wrapper over `view`'s data.
-        let mut acct = unsafe { CounterAccount::load_mut(view).unwrap() };
+        let mut acct = CounterAccount::load_mut(view).unwrap();
         acct.value = 99;
 
         let view_copy = view;
@@ -1291,6 +1286,76 @@ mod tests {
             "safe read-only Slab load must not alias a live mutable Slab"
         );
         assert_eq!(acct.value, 99);
+    }
+
+    #[test]
+    fn mut_load_rejects_live_read_only_slab_on_alias() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, true);
+        let view = unsafe { buf.view() };
+
+        let ro = CounterAccount::load(view).unwrap();
+        let alias = view;
+        assert_eq!(
+            CounterAccount::load_mut(alias).err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "mutable Slab load must not alias a live read-only Slab"
+        );
+        assert_eq!(ro.value, 42);
+
+        drop(ro);
+        assert!(CounterAccount::load_mut(alias).is_ok());
+    }
+
+    #[test]
+    fn mut_load_rejects_live_mut_slab_on_alias() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, true);
+        let view = unsafe { buf.view() };
+
+        let mut first = CounterAccount::load_mut(view).unwrap();
+        let alias = view;
+        assert_eq!(
+            CounterAccount::load_mut(alias).err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "mutable Slab load must not alias a live mutable Slab"
+        );
+        first.value = 7;
+        assert_eq!(first.value, 7);
+    }
+
+    #[test]
+    fn mut_load_rejects_live_raw_borrow_on_alias() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, true);
+        let view = unsafe { buf.view() };
+
+        let raw = view.try_borrow().unwrap();
+        assert_eq!(
+            CounterAccount::load_mut(view).err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "mutable Slab load must not alias a live raw data borrow"
+        );
+        drop(raw);
+        assert!(CounterAccount::load_mut(view).is_ok());
+    }
+
+    #[test]
+    fn failed_mut_load_leaves_existing_borrow_intact() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, true);
+        let view = unsafe { buf.view() };
+
+        let ro = CounterAccount::load(view).unwrap();
+        assert!(CounterAccount::load_mut(view).is_err());
+        let mut alias = view;
+        assert_eq!(
+            alias.try_borrow_mut().err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "a rejected mutable load must not clear the read-only borrow"
+        );
+        assert!(alias.try_borrow().is_ok());
+        drop(ro);
     }
 
     #[test]

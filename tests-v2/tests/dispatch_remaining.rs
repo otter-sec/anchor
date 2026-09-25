@@ -22,8 +22,6 @@ fn counter_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"counter"], &program_id()).0
 }
 
-const DUPLICATE_MUT_ERROR: u32 = 2040;
-
 fn setup() -> (LiteSVM, Keypair) {
     let test_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let deploy_dir = test_dir.join("target/deploy");
@@ -75,15 +73,15 @@ fn counter_value(svm: &LiteSVM, counter: Pubkey) -> u64 {
 }
 
 #[track_caller]
-fn assert_custom_error(result: &TransactionResult, expected: u32) {
+fn assert_borrow_failed(result: &TransactionResult) {
     let failure = match result {
-        Ok(_) => panic!("expected transaction to fail with Custom({expected}), got success"),
+        Ok(_) => panic!("expected transaction to fail with AccountBorrowFailed, got success"),
         Err(f) => f,
     };
     let rendered = format!("{:?}", failure.err);
     assert!(
-        rendered.contains(&format!("Custom({expected})")),
-        "expected Custom({expected}), got: {rendered}",
+        rendered.contains("AccountBorrowFailed"),
+        "expected AccountBorrowFailed, got: {rendered}",
     );
 }
 
@@ -106,21 +104,77 @@ fn too_few_declared_accounts_fails_before_handler() {
 }
 
 #[test]
-fn remaining_duplicate_of_declared_mut_is_rejected() {
+fn remaining_duplicate_of_declared_mut_is_returned() {
     let (mut svm, payer) = setup();
     let counter = initialize(&mut svm, &payer);
     let data = dispatch_remaining::instruction::MutateThenReadRemaining { value: 123 }.data();
 
-    let result = call_raw(
+    send_instruction(
         &mut svm,
-        &payer,
+        program_id(),
         data,
         vec![
             AccountMeta::new(counter, false),
             AccountMeta::new(counter, false),
         ],
+        &payer,
+        &[],
+    )
+    .expect("a remaining alias of a declared mut account is returned as a raw view");
+    assert_eq!(counter_value(&svm, counter), 123);
+}
+
+#[test]
+fn loading_remaining_alias_of_declared_mut_fails() {
+    for mutable in [false, true] {
+        let (mut svm, payer) = setup();
+        let counter = initialize(&mut svm, &payer);
+        let data = dispatch_remaining::instruction::LoadRemainingAfterMut { mutable }.data();
+
+        let result = call_raw(
+            &mut svm,
+            &payer,
+            data,
+            vec![
+                AccountMeta::new(counter, false),
+                AccountMeta::new(counter, false),
+            ],
+        );
+        assert_borrow_failed(&result);
+    }
+}
+
+#[test]
+fn loading_remaining_alias_of_declared_readonly() {
+    let (mut svm, payer) = setup();
+    let counter = initialize(&mut svm, &payer);
+
+    let data =
+        dispatch_remaining::instruction::LoadRemainingAfterReadonly { mutable: false }.data();
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data,
+        vec![
+            AccountMeta::new_readonly(counter, false),
+            AccountMeta::new_readonly(counter, false),
+        ],
+        &payer,
+        &[],
+    )
+    .expect("a read-only load may share a read-only declared account");
+
+    let data = dispatch_remaining::instruction::LoadRemainingAfterReadonly { mutable: true }.data();
+    let result = call_raw(
+        &mut svm,
+        &payer,
+        data,
+        vec![
+            AccountMeta::new_readonly(counter, false),
+            AccountMeta::new(counter, false),
+        ],
     );
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
+    assert_borrow_failed(&result);
 }
 
 #[test]
@@ -161,26 +215,29 @@ fn remaining_duplicate_of_trailing_account_is_allowed() {
         &payer,
         &[],
     )
-    .expect("remaining accounts may duplicate each other when no declared mut slot aliases");
+    .expect("remaining accounts may duplicate each other");
 }
 
 #[test]
-fn remaining_duplicate_of_optional_some_mut_is_rejected() {
+fn remaining_duplicate_of_optional_some_mut_is_returned() {
     let (mut svm, payer) = setup();
     let counter = initialize(&mut svm, &payer);
     let data =
         dispatch_remaining::instruction::OptionalMutThenReadRemaining { expected_count: 1 }.data();
 
-    let result = call_raw(
+    send_instruction(
         &mut svm,
-        &payer,
+        program_id(),
         data,
         vec![
             AccountMeta::new(counter, false),
             AccountMeta::new(counter, false),
         ],
-    );
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
+        &payer,
+        &[],
+    )
+    .expect("a remaining alias of an optional Some mut account is returned as a raw view");
+    assert_eq!(counter_value(&svm, counter), 2);
 }
 
 #[test]
@@ -200,7 +257,7 @@ fn remaining_duplicate_of_optional_none_sentinel_is_allowed() {
         &payer,
         &[],
     )
-    .expect("None sentinel should not count as an active optional mut account");
+    .expect("a None optional account holds no borrow");
 }
 
 #[test]

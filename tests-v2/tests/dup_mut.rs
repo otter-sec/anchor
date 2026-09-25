@@ -1,12 +1,10 @@
-//! Integration tests for the duplicate-mutable-account safety check.
+//! Integration tests for aliased account inputs.
 //!
-//! Covers the common ways a caller might try to alias a mutable account:
-//! two mut slots, three mut slots in every dup position, and a mut paired
-//! with a read-only slot. Each should surface `Custom(2040)`
-//! (`ErrorCode::ConstraintDuplicateMutableAccount`). The final test
-//! exercises the `#[account(unsafe(dup))]` escape hatch; the on-chain
-//! handler is written so even the aliased invocation never holds two
-//! live `&mut Data` to the same bytes, so no UB.
+//! Data-carrying wrappers reject a conflicting borrow of an aliased account
+//! with `AccountBorrowFailed`, in either field order and across `Nested`,
+//! `Box`, and `Option` fields. Wrappers without typed data accept aliases,
+//! and raw borrows or CPI handles through them still fail while a data
+//! wrapper holds a conflicting borrow.
 
 use {
     anchor_lang::{
@@ -22,17 +20,10 @@ use {
     tests_v2::{build_program, keypair_for, send_instruction},
 };
 
-/// Custom program error code for `ConstraintDuplicateMutableAccount`.
-const DUPLICATE_MUT_ERROR: u32 = 2040;
-
 fn program_id() -> Pubkey {
     "2TxMd2YAMi9Sk4xxiJBNkYQNuxK9FwvwwiujuEbKoanz"
         .parse()
         .unwrap()
-}
-
-fn data_pda(seed: u8) -> Pubkey {
-    Pubkey::find_program_address(&[b"d", &[seed]], &program_id()).0
 }
 
 fn setup() -> (LiteSVM, Keypair) {
@@ -56,7 +47,7 @@ fn setup() -> (LiteSVM, Keypair) {
 }
 
 fn init_data(svm: &mut LiteSVM, payer: &Keypair, seed: u8) -> Pubkey {
-    let pda = data_pda(seed);
+    let pda = Pubkey::find_program_address(&[b"d", &[seed]], &program_id()).0;
     let data = dup_mut::instruction::Initialize { seed }.data();
     let metas = vec![
         AccountMeta::new(payer.pubkey(), true),
@@ -68,8 +59,19 @@ fn init_data(svm: &mut LiteSVM, payer: &Keypair, seed: u8) -> Pubkey {
     pda
 }
 
-/// Build + send a transaction and return the raw litesvm result so
-/// failure cases can inspect the on-chain error code.
+fn init_borsh(svm: &mut LiteSVM, payer: &Keypair, seed: u8) -> Pubkey {
+    let pda = Pubkey::find_program_address(&[b"b", &[seed]], &program_id()).0;
+    let data = dup_mut::instruction::InitializeBorsh { seed }.data();
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(pda, false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), data, metas, payer, &[])
+        .expect("initialize_borsh should succeed");
+    pda
+}
+
 fn send_raw(
     svm: &mut LiteSVM,
     data: Vec<u8>,
@@ -85,15 +87,15 @@ fn send_raw(
 }
 
 #[track_caller]
-fn assert_custom_error(result: &litesvm::types::TransactionResult, expected: u32) {
+fn assert_borrow_failed(result: &litesvm::types::TransactionResult) {
     let failure = match result {
-        Ok(_) => panic!("expected transaction to fail with Custom({expected}), got success"),
+        Ok(_) => panic!("expected transaction to fail with AccountBorrowFailed, got success"),
         Err(f) => f,
     };
     let rendered = format!("{:?}", failure.err);
     assert!(
-        rendered.contains(&format!("Custom({expected})")),
-        "expected Custom({expected}), got: {rendered}",
+        rendered.contains("AccountBorrowFailed"),
+        "expected AccountBorrowFailed, got: {rendered}",
     );
 }
 
@@ -102,12 +104,16 @@ fn read_value(svm: &LiteSVM, pda: &Pubkey) -> u64 {
     u64::from_le_bytes(account.data[8..16].try_into().unwrap())
 }
 
+fn system_program() -> AccountMeta {
+    AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false)
+}
+
 // ---------------------------------------------------------------------------
-// Two-mut instruction
+// Account<T> fields
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_two_mut_distinct_ok() {
+fn two_mut_distinct_ok() {
     let (mut svm, payer) = setup();
     let a = init_data(&mut svm, &payer, 0);
     let b = init_data(&mut svm, &payer, 1);
@@ -122,22 +128,30 @@ fn test_two_mut_distinct_ok() {
 }
 
 #[test]
-fn test_two_mut_dup_rejected() {
+fn two_mut_alias_rejected() {
     let (mut svm, payer) = setup();
     let a = init_data(&mut svm, &payer, 0);
 
     let data = dup_mut::instruction::TouchTwoMut { value: 7 }.data();
     let metas = vec![AccountMeta::new(a, false), AccountMeta::new(a, false)];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
+    assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
 }
 
-// ---------------------------------------------------------------------------
-// Three-mut instruction — cover every dup position (0,1), (0,2), (1,2)
-// ---------------------------------------------------------------------------
+#[test]
+fn three_mut_alias_rejected_in_every_position() {
+    let (mut svm, payer) = setup();
+    let a = init_data(&mut svm, &payer, 0);
+    let b = init_data(&mut svm, &payer, 1);
+
+    for keys in [[a, a, b], [a, b, a], [b, a, a]] {
+        let data = dup_mut::instruction::TouchThreeMut { value: 10 }.data();
+        let metas = keys.iter().map(|k| AccountMeta::new(*k, false)).collect();
+        assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
+    }
+}
 
 #[test]
-fn test_three_mut_all_distinct_ok() {
+fn three_mut_distinct_ok() {
     let (mut svm, payer) = setup();
     let a = init_data(&mut svm, &payer, 0);
     let b = init_data(&mut svm, &payer, 1);
@@ -158,60 +172,33 @@ fn test_three_mut_all_distinct_ok() {
 }
 
 #[test]
-fn test_three_mut_dup_positions_0_and_1() {
+fn mut_then_readonly_alias_rejected() {
     let (mut svm, payer) = setup();
     let a = init_data(&mut svm, &payer, 0);
-    let c = init_data(&mut svm, &payer, 2);
 
-    let data = dup_mut::instruction::TouchThreeMut { value: 10 }.data();
+    let data = dup_mut::instruction::TouchMutAndReadonly { value: 42 }.data();
     let metas = vec![
         AccountMeta::new(a, false),
-        AccountMeta::new(a, false),
-        AccountMeta::new(c, false),
+        AccountMeta::new_readonly(a, false),
     ];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
+    assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
 }
 
 #[test]
-fn test_three_mut_dup_positions_0_and_2() {
+fn readonly_then_mut_alias_rejected() {
     let (mut svm, payer) = setup();
     let a = init_data(&mut svm, &payer, 0);
-    let b = init_data(&mut svm, &payer, 1);
 
-    let data = dup_mut::instruction::TouchThreeMut { value: 10 }.data();
+    let data = dup_mut::instruction::TouchReadonlyAndMut { value: 42 }.data();
     let metas = vec![
-        AccountMeta::new(a, false),
-        AccountMeta::new(b, false),
+        AccountMeta::new_readonly(a, false),
         AccountMeta::new(a, false),
     ];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
+    assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
 }
 
 #[test]
-fn test_three_mut_dup_positions_1_and_2() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let b = init_data(&mut svm, &payer, 1);
-
-    let data = dup_mut::instruction::TouchThreeMut { value: 10 }.data();
-    let metas = vec![
-        AccountMeta::new(a, false),
-        AccountMeta::new(b, false),
-        AccountMeta::new(b, false),
-    ];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
-}
-
-// ---------------------------------------------------------------------------
-// Mut + readonly instruction — same pubkey still triggers the mut-side check
-// (cursor marks both bits; the mut field's generated check fires).
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_mut_readonly_distinct_ok() {
+fn mut_and_readonly_distinct_ok() {
     let (mut svm, payer) = setup();
     let a = init_data(&mut svm, &payer, 0);
     let b = init_data(&mut svm, &payer, 1);
@@ -223,218 +210,131 @@ fn test_mut_readonly_distinct_ok() {
     ];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("distinct mut+readonly should succeed");
-
     assert_eq!(read_value(&svm, &a), 42);
+
+    let data = dup_mut::instruction::TouchReadonlyAndMut { value: 5 }.data();
+    let metas = vec![
+        AccountMeta::new_readonly(a, false),
+        AccountMeta::new(b, false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("distinct readonly+mut should succeed");
+    assert_eq!(read_value(&svm, &b), 47);
 }
 
 #[test]
-fn test_mut_readonly_dup_rejected() {
+fn two_readonly_alias_ok() {
     let (mut svm, payer) = setup();
     let a = init_data(&mut svm, &payer, 0);
 
-    let data = dup_mut::instruction::TouchMutAndReadonly { value: 42 }.data();
+    let data = dup_mut::instruction::ReadTwo { expected: 0 }.data();
+    let metas = vec![
+        AccountMeta::new_readonly(a, false),
+        AccountMeta::new_readonly(a, false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("two read-only loads may share an account");
+}
+
+// ---------------------------------------------------------------------------
+// BorshAccount, Box, and Option fields
+// ---------------------------------------------------------------------------
+
+#[test]
+fn borsh_mut_and_readonly() {
+    let (mut svm, payer) = setup();
+    let a = init_borsh(&mut svm, &payer, 0);
+    let b = init_borsh(&mut svm, &payer, 1);
+
+    let data = dup_mut::instruction::TouchBorshMutAndReadonly { value: 3 }.data();
     let metas = vec![
         AccountMeta::new(a, false),
         AccountMeta::new_readonly(a, false),
     ];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
-}
+    assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
 
-// ---------------------------------------------------------------------------
-// Asymmetric unsafe(dup): only the second field opts out. The first field's
-// generated check still fires on the aliased call, so the check is rejected.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_asym_unsafe_dup_still_rejected() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-
-    let data = dup_mut::instruction::TouchTwoMutAsymUnsafe { value: 5 }.data();
-    let metas = vec![AccountMeta::new(a, false), AccountMeta::new(a, false)];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
-}
-
-#[test]
-fn test_asym_unsafe_dup_distinct_ok() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let b = init_data(&mut svm, &payer, 1);
-
-    let data = dup_mut::instruction::TouchTwoMutAsymUnsafe { value: 5 }.data();
-    let metas = vec![AccountMeta::new(a, false), AccountMeta::new(b, false)];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("distinct pubkeys should succeed under asym unsafe(dup)");
-
-    assert_eq!(read_value(&svm, &a), 5);
-    assert_eq!(read_value(&svm, &b), 6);
-}
-
-// ---------------------------------------------------------------------------
-// Symmetric unsafe(dup) on both fields: the duplicate check is skipped on
-// every relevant position, so an aliased call is accepted. The handler is
-// written to never hold two `&mut Data` live at once, avoiding UB.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_unsafe_dup_aliased_ok() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-
-    let data = dup_mut::instruction::TouchTwoMutUnsafe { value: 99 }.data();
-    let metas = vec![AccountMeta::new(a, false), AccountMeta::new(a, false)];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("unsafe(dup) should allow same pubkey in both slots");
-
-    // The handler writes via data_a only; data_b is never deref'd.
-    assert_eq!(read_value(&svm, &a), 99);
-}
-
-#[test]
-fn test_unsafe_dup_distinct_ok() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let b = init_data(&mut svm, &payer, 1);
-
-    let data = dup_mut::instruction::TouchTwoMutUnsafe { value: 99 }.data();
-    let metas = vec![AccountMeta::new(a, false), AccountMeta::new(b, false)];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("unsafe(dup) with distinct pubkeys should succeed");
-
-    assert_eq!(read_value(&svm, &a), 99);
-    // data_b is never written by the handler.
-    assert_eq!(read_value(&svm, &b), 0);
-}
-
-// ===========================================================================
-// Nested<Inner> variants — mirror the above cases one-for-one through a
-// `Nested<Inner>` wrapper. This exercises the derive's `base_offset`
-// threading: `Inner::try_accounts` is called with `__base_offset + offset`
-// so bitvec indices stay in the global coordinate system.
-// ===========================================================================
-
-// -- Two mut via Nested -----------------------------------------------------
-
-#[test]
-fn test_nested_two_mut_distinct_ok() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let b = init_data(&mut svm, &payer, 1);
-
-    let data = dup_mut::instruction::TouchNestedTwoMut { value: 7 }.data();
-    let metas = vec![AccountMeta::new(a, false), AccountMeta::new(b, false)];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("nested distinct pubkeys should succeed");
-
-    assert_eq!(read_value(&svm, &a), 7);
-    assert_eq!(read_value(&svm, &b), 8);
-}
-
-#[test]
-fn test_nested_two_mut_dup_rejected() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-
-    let data = dup_mut::instruction::TouchNestedTwoMut { value: 7 }.data();
-    let metas = vec![AccountMeta::new(a, false), AccountMeta::new(a, false)];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
-}
-
-// -- Three mut via Nested — every dup position -----------------------------
-
-#[test]
-fn test_nested_three_mut_all_distinct_ok() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let b = init_data(&mut svm, &payer, 1);
-    let c = init_data(&mut svm, &payer, 2);
-
-    let data = dup_mut::instruction::TouchNestedThreeMut { value: 10 }.data();
-    let metas = vec![
-        AccountMeta::new(a, false),
-        AccountMeta::new(b, false),
-        AccountMeta::new(c, false),
-    ];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("nested all-distinct should succeed");
-
-    assert_eq!(read_value(&svm, &a), 10);
-    assert_eq!(read_value(&svm, &b), 11);
-    assert_eq!(read_value(&svm, &c), 12);
-}
-
-#[test]
-fn test_nested_three_mut_dup_positions_0_and_1() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let c = init_data(&mut svm, &payer, 2);
-
-    let data = dup_mut::instruction::TouchNestedThreeMut { value: 10 }.data();
-    let metas = vec![
-        AccountMeta::new(a, false),
-        AccountMeta::new(a, false),
-        AccountMeta::new(c, false),
-    ];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
-}
-
-#[test]
-fn test_nested_three_mut_dup_positions_0_and_2() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let b = init_data(&mut svm, &payer, 1);
-
-    let data = dup_mut::instruction::TouchNestedThreeMut { value: 10 }.data();
-    let metas = vec![
-        AccountMeta::new(a, false),
-        AccountMeta::new(b, false),
-        AccountMeta::new(a, false),
-    ];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
-}
-
-#[test]
-fn test_nested_three_mut_dup_positions_1_and_2() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let b = init_data(&mut svm, &payer, 1);
-
-    let data = dup_mut::instruction::TouchNestedThreeMut { value: 10 }.data();
-    let metas = vec![
-        AccountMeta::new(a, false),
-        AccountMeta::new(b, false),
-        AccountMeta::new(b, false),
-    ];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
-}
-
-// -- Mut + readonly via Nested ---------------------------------------------
-
-#[test]
-fn test_nested_mut_readonly_distinct_ok() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let b = init_data(&mut svm, &payer, 1);
-
-    let data = dup_mut::instruction::TouchNestedMutReadonly { value: 42 }.data();
+    let data = dup_mut::instruction::TouchBorshMutAndReadonly { value: 3 }.data();
     let metas = vec![
         AccountMeta::new(a, false),
         AccountMeta::new_readonly(b, false),
     ];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("nested distinct mut+readonly should succeed");
-
-    assert_eq!(read_value(&svm, &a), 42);
+        .expect("distinct Borsh accounts should succeed");
+    assert_eq!(read_value(&svm, &a), 3);
 }
 
 #[test]
-fn test_nested_mut_readonly_dup_rejected() {
+fn boxed_mut_and_readonly() {
+    let (mut svm, payer) = setup();
+    let a = init_data(&mut svm, &payer, 0);
+    let b = init_data(&mut svm, &payer, 1);
+
+    let data = dup_mut::instruction::TouchBoxedMutAndReadonly { value: 4 }.data();
+    let metas = vec![
+        AccountMeta::new(a, false),
+        AccountMeta::new_readonly(a, false),
+    ];
+    assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
+
+    let data = dup_mut::instruction::TouchBoxedMutAndReadonly { value: 4 }.data();
+    let metas = vec![
+        AccountMeta::new(a, false),
+        AccountMeta::new_readonly(b, false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("distinct boxed + plain accounts should succeed");
+    assert_eq!(read_value(&svm, &a), 4);
+}
+
+#[test]
+fn optional_some_alias_rejected() {
+    let (mut svm, payer) = setup();
+    let a = init_data(&mut svm, &payer, 0);
+
+    let data = dup_mut::instruction::TouchOptionalMutAndMut { value: 9 }.data();
+    let metas = vec![AccountMeta::new(a, false), AccountMeta::new(a, false)];
+    assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
+}
+
+#[test]
+fn optional_none_holds_no_borrow() {
+    let (mut svm, payer) = setup();
+    let a = init_data(&mut svm, &payer, 0);
+
+    let data = dup_mut::instruction::TouchOptionalMutAndMut { value: 9 }.data();
+    let metas = vec![
+        AccountMeta::new_readonly(program_id(), false),
+        AccountMeta::new(a, false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("a None optional account should not conflict");
+    assert_eq!(read_value(&svm, &a), 10);
+}
+
+// ---------------------------------------------------------------------------
+// Nested<T> fields
+// ---------------------------------------------------------------------------
+
+#[test]
+fn nested_two_mut() {
+    let (mut svm, payer) = setup();
+    let a = init_data(&mut svm, &payer, 0);
+    let b = init_data(&mut svm, &payer, 1);
+
+    let data = dup_mut::instruction::TouchNestedTwoMut { value: 7 }.data();
+    let metas = vec![AccountMeta::new(a, false), AccountMeta::new(a, false)];
+    assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
+
+    let data = dup_mut::instruction::TouchNestedTwoMut { value: 7 }.data();
+    let metas = vec![AccountMeta::new(a, false), AccountMeta::new(b, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("distinct nested pubkeys should succeed");
+    assert_eq!(read_value(&svm, &a), 7);
+    assert_eq!(read_value(&svm, &b), 8);
+}
+
+#[test]
+fn nested_mut_readonly_alias_rejected() {
     let (mut svm, payer) = setup();
     let a = init_data(&mut svm, &payer, 0);
 
@@ -443,79 +343,24 @@ fn test_nested_mut_readonly_dup_rejected() {
         AccountMeta::new(a, false),
         AccountMeta::new_readonly(a, false),
     ];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
-}
-
-// -- Asymmetric unsafe(dup) via Nested -------------------------------------
-
-#[test]
-fn test_nested_asym_unsafe_dup_still_rejected() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-
-    let data = dup_mut::instruction::TouchNestedAsymUnsafe { value: 5 }.data();
-    let metas = vec![AccountMeta::new(a, false), AccountMeta::new(a, false)];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
+    assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
 }
 
 #[test]
-fn test_nested_asym_unsafe_dup_distinct_ok() {
+fn outer_and_nested_alias_rejected() {
     let (mut svm, payer) = setup();
     let a = init_data(&mut svm, &payer, 0);
     let b = init_data(&mut svm, &payer, 1);
 
-    let data = dup_mut::instruction::TouchNestedAsymUnsafe { value: 5 }.data();
-    let metas = vec![AccountMeta::new(a, false), AccountMeta::new(b, false)];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("nested distinct under asym unsafe(dup)");
-
-    assert_eq!(read_value(&svm, &a), 5);
-    assert_eq!(read_value(&svm, &b), 6);
-}
-
-// -- Symmetric unsafe(dup) via Nested --------------------------------------
-
-#[test]
-fn test_nested_unsafe_dup_aliased_ok() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-
-    let data = dup_mut::instruction::TouchNestedUnsafe { value: 99 }.data();
-    let metas = vec![AccountMeta::new(a, false), AccountMeta::new(a, false)];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("nested unsafe(dup) should allow same pubkey");
-
-    assert_eq!(read_value(&svm, &a), 99);
+    for keys in [[a, a, b], [a, b, a]] {
+        let data = dup_mut::instruction::TouchOuterMutPlusNested { value: 20 }.data();
+        let metas = keys.iter().map(|k| AccountMeta::new(*k, false)).collect();
+        assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
+    }
 }
 
 #[test]
-fn test_nested_unsafe_dup_distinct_ok() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let b = init_data(&mut svm, &payer, 1);
-
-    let data = dup_mut::instruction::TouchNestedUnsafe { value: 99 }.data();
-    let metas = vec![AccountMeta::new(a, false), AccountMeta::new(b, false)];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("nested unsafe(dup) with distinct pubkeys");
-
-    assert_eq!(read_value(&svm, &a), 99);
-    // data_b never written by the handler.
-    assert_eq!(read_value(&svm, &b), 0);
-}
-
-// -- Cross-boundary: outer mut + Nested<InnerTwoMut> -----------------------
-//
-// Global offsets: outer=0, pair.data_a=1, pair.data_b=2.
-// Exercises that bit indices stay global across the boundary — the
-// duplicate-check constraint on the OUTER field and the constraint inside
-// the inner struct both look at the same bitvec but with different
-// `base_offset`s.
-
-#[test]
-fn test_outer_plus_nested_all_distinct_ok() {
+fn outer_and_nested_distinct_ok() {
     let (mut svm, payer) = setup();
     let a = init_data(&mut svm, &payer, 0);
     let b = init_data(&mut svm, &payer, 1);
@@ -528,60 +373,112 @@ fn test_outer_plus_nested_all_distinct_ok() {
         AccountMeta::new(c, false),
     ];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("outer+nested all-distinct should succeed");
-
+        .expect("distinct outer + nested pubkeys should succeed");
     assert_eq!(read_value(&svm, &a), 20);
     assert_eq!(read_value(&svm, &b), 21);
     assert_eq!(read_value(&svm, &c), 22);
 }
 
-#[test]
-fn test_outer_dups_inner_first() {
-    // outer (pos 0) aliases pair.data_a (pos 1).
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let c = init_data(&mut svm, &payer, 2);
+// ---------------------------------------------------------------------------
+// Wrappers without typed data
+// ---------------------------------------------------------------------------
 
-    let data = dup_mut::instruction::TouchOuterMutPlusNested { value: 20 }.data();
+#[test]
+fn signer_roles_accept_one_wallet() {
+    let (mut svm, payer) = setup();
+
+    let data = dup_mut::instruction::SignerRoles {}.data();
     let metas = vec![
-        AccountMeta::new(a, false),
-        AccountMeta::new(a, false),
-        AccountMeta::new(c, false),
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(payer.pubkey(), true),
     ];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("one wallet may be both payer and authority");
 }
 
 #[test]
-fn test_outer_dups_inner_second() {
-    // outer (pos 0) aliases pair.data_b (pos 2).
+fn system_transfer_accepts_payer_as_recipient() {
+    let (mut svm, payer) = setup();
+
+    let data = dup_mut::instruction::TransferToRecipient { lamports: 1_000 }.data();
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(payer.pubkey(), false),
+        system_program(),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("one wallet may be both payer and recipient of a system transfer");
+}
+
+#[test]
+fn system_transfer_to_distinct_recipient() {
+    let (mut svm, payer) = setup();
+    let recipient = Pubkey::new_unique();
+
+    let data = dup_mut::instruction::TransferToRecipient { lamports: 1_000_000 }.data();
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(recipient, false),
+        system_program(),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("transfer to a distinct recipient should succeed");
+    assert_eq!(svm.get_account(&recipient).unwrap().lamports, 1_000_000);
+}
+
+#[test]
+fn unchecked_alias_of_mut_data_loads_but_cannot_borrow() {
+    let (mut svm, payer) = setup();
+    let a = init_data(&mut svm, &payer, 0);
+
+    let data = dup_mut::instruction::TouchDataAndRaw {
+        value: 5,
+        borrow_raw: false,
+    }
+    .data();
+    let metas = vec![
+        AccountMeta::new(a, false),
+        AccountMeta::new_readonly(a, false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("an UncheckedAccount alias holds no borrow");
+    assert_eq!(read_value(&svm, &a), 5);
+
+    let data = dup_mut::instruction::TouchDataAndRaw {
+        value: 6,
+        borrow_raw: true,
+    }
+    .data();
+    let metas = vec![
+        AccountMeta::new(a, false),
+        AccountMeta::new_readonly(a, false),
+    ];
+    assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
+}
+
+#[test]
+fn cpi_through_unchecked_alias_of_mut_data_rejected() {
     let (mut svm, payer) = setup();
     let a = init_data(&mut svm, &payer, 0);
     let b = init_data(&mut svm, &payer, 1);
 
-    let data = dup_mut::instruction::TouchOuterMutPlusNested { value: 20 }.data();
+    let data = dup_mut::instruction::TransferToRawAlias { value: 8 }.data();
     let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
         AccountMeta::new(a, false),
-        AccountMeta::new(b, false),
         AccountMeta::new(a, false),
+        system_program(),
     ];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
-}
+    assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
 
-#[test]
-fn test_outer_plus_nested_inner_dup() {
-    // Dup stays inside the nested struct — inner try_accounts catches it.
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let b = init_data(&mut svm, &payer, 1);
-
-    let data = dup_mut::instruction::TouchOuterMutPlusNested { value: 20 }.data();
+    let data = dup_mut::instruction::TransferToRawAlias { value: 8 }.data();
     let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
         AccountMeta::new(a, false),
         AccountMeta::new(b, false),
-        AccountMeta::new(b, false),
+        system_program(),
     ];
-    let result = send_raw(&mut svm, data, metas, &payer);
-    assert_custom_error(&result, DUPLICATE_MUT_ERROR);
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("CPI through a distinct unchecked account should succeed");
+    assert_eq!(read_value(&svm, &a), 8);
 }

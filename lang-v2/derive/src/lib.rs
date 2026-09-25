@@ -1074,7 +1074,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     if named_fields.named.len() > 255 {
         // Syntactic top-level field cap. Flattened Nested account counts are
         // separately bounded by the HEADER_SIZE assert emitted on the
-        // TryAccounts impl (duplicate-tracking / u8 offset domain is 256 bits).
+        // TryAccounts impl (the cursor indexes accounts with a u8).
         return syn::Error::new(name.span(), "`Accounts` derive supports at most 255 fields")
             .to_compile_error();
     }
@@ -1272,102 +1272,6 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     } else {
         quote::quote! {
             #direct_count #(+ <#nested_inner_types as anchor_lang::TryAccounts>::HEADER_SIZE)*
-        }
-    };
-
-    // Compile-time `MUT_MASK` composition:
-    //   - bit at `offset` per direct mut field (non-Option, non-`unsafe(dup)`)
-    //   - `<Inner as TryAccounts>::MUT_MASK << child_offset` per `Nested<Inner>`
-    // Folded into a single `const` expression so LLVM sees a literal at
-    // `run_handler`'s inline site — zero runtime composition cost, and the
-    // `intersects(&T::MUT_MASK)` call const-folds away entirely when the
-    // resulting mask is all-zero.
-    let mut_mask_steps: Vec<proc_macro2::TokenStream> = fields
-        .iter()
-        .filter_map(|f| {
-            let offset = &f.offset_expr;
-            if f.contributes_mut_bit {
-                Some(quote! {
-                    __mask = anchor_lang::mut_mask_set_bit(__mask, #offset);
-                })
-            } else if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
-                Some(quote! {
-                    __mask = anchor_lang::mut_mask_or_shifted(
-                        __mask,
-                        <#inner_ty as anchor_lang::TryAccounts>::MUT_MASK,
-                        #offset,
-                    );
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-    let mut_mask_expr = if mut_mask_steps.is_empty() {
-        quote::quote! { [0u64; 4] }
-    } else {
-        quote::quote! {
-            {
-                let mut __mask = [0u64; 4];
-                #(#mut_mask_steps)*
-                __mask
-            }
-        }
-    };
-    let dynamic_mut_mask_terms: Vec<proc_macro2::TokenStream> = fields
-        .iter()
-        .filter_map(|f| {
-            if f.contributes_active_mut_bit {
-                Some(quote::quote! { true })
-            } else {
-                parse::extract_nested_inner_type(&f.ty).map(|inner_ty| {
-                    quote::quote! {
-                        <#inner_ty as anchor_lang::TryAccounts>::HAS_DYNAMIC_MUT_MASK
-                    }
-                })
-            }
-        })
-        .collect();
-    let has_dynamic_mut_mask_expr = if dynamic_mut_mask_terms.is_empty() {
-        quote::quote! { false }
-    } else {
-        quote::quote! {
-            false #(|| #dynamic_mut_mask_terms)*
-        }
-    };
-    let active_mut_mask_steps: Vec<proc_macro2::TokenStream> = fields
-        .iter()
-        .filter_map(|f| {
-            let field_name = &f.name;
-            let offset = &f.offset_expr;
-            if f.contributes_active_mut_bit {
-                Some(quote! {
-                    if self.#field_name.is_some() {
-                        __mask = anchor_lang::mut_mask_set_bit(__mask, #offset);
-                    }
-                })
-            } else if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
-                Some(quote! {
-                    if <#inner_ty as anchor_lang::TryAccounts>::HAS_DYNAMIC_MUT_MASK {
-                        __mask = anchor_lang::mut_mask_or_shifted(
-                            __mask,
-                            <#inner_ty as anchor_lang::TryAccounts>::active_mut_mask(&self.#field_name.0),
-                            #offset,
-                        );
-                    }
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-    let active_mut_mask_body = if active_mut_mask_steps.is_empty() {
-        quote::quote! { Self::MUT_MASK }
-    } else {
-        quote::quote! {
-            let mut __mask = Self::MUT_MASK;
-            #(#active_mut_mask_steps)*
-            __mask
         }
     };
 
@@ -2105,13 +2009,6 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
 
         impl anchor_lang::TryAccounts for #name {
             const HEADER_SIZE: usize = #header_size_expr;
-            const MUT_MASK: [u64; 4] = #mut_mask_expr;
-            const HAS_DYNAMIC_MUT_MASK: bool = #has_dynamic_mut_mask_expr;
-
-            #[inline(always)]
-            fn active_mut_mask(&self) -> [u64; 4] {
-                #active_mut_mask_body
-            }
 
             #ix_args_assoc
 
@@ -2119,16 +2016,12 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             fn try_accounts<'ix>(
                 __program_id: &anchor_lang::Address,
                 __views: &[anchor_lang::AccountView],
-                __duplicates: ::core::option::Option<&anchor_lang::AccountBitvec>,
-                __base_offset: usize,
                 __ix_data: &'ix [u8],
             ) -> anchor_lang::Result<(Self, #bumps_name, Self::IxArgs<'ix>)> {
                 let (mut __accounts, __bumps, __ix_args) =
                     <Self as anchor_lang::TryAccounts>::validate_accounts(
                         __program_id,
                         __views,
-                        __duplicates,
-                        __base_offset,
                         __ix_data,
                     )?;
                 <Self as anchor_lang::TryAccounts>::update_accounts(&mut __accounts)?;
@@ -2139,8 +2032,6 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             fn validate_accounts<'ix>(
                 __program_id: &anchor_lang::Address,
                 __views: &[anchor_lang::AccountView],
-                __duplicates: ::core::option::Option<&anchor_lang::AccountBitvec>,
-                __base_offset: usize,
                 __ix_data: &'ix [u8],
             ) -> anchor_lang::Result<(Self, #bumps_name, Self::IxArgs<'ix>)> {
                 #ix_deser
@@ -2167,12 +2058,12 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             }
         }
 
-        // Flattened declared-account count must fit the 256-bit duplicate
-        // bitvec and u8 field-offset domain. Top-level field count alone is
-        // not enough: Nested<Inner> expands to Inner::HEADER_SIZE slots.
+        // Flattened declared-account count must fit the cursor's u8 account
+        // index. Top-level field count alone is not enough: Nested<Inner>
+        // expands to Inner::HEADER_SIZE slots.
         const _: () = assert!(
             <#name as anchor_lang::TryAccounts>::HEADER_SIZE <= 255,
-            "`Accounts` flattened HEADER_SIZE must be <= 255 (duplicate-tracking domain)"
+            "`Accounts` flattened HEADER_SIZE must be <= 255 (u8 account-index domain)"
         );
 
         #[cfg(feature = "idl-build")]

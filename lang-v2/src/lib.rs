@@ -197,14 +197,14 @@ pub use {
         program, Accounts, AnchorDeserialize, AnchorSerialize, InitSpace, ToCpiAccounts, __erase,
     },
     bytemuck,
-    context::{Bumps, Context, MutMask},
+    context::{Bumps, Context},
     context_cpi::{unchecked_invoke_signed_fixed, CpiContext},
     cpi::{
         create_account, create_account_signed, create_program_address,
         find_and_verify_program_address, find_and_verify_program_address_skip_curve,
         find_program_address, verify_program_address,
     },
-    cursor::{mut_mask_or_shifted, mut_mask_set_bit, AccountBitvec, AccountCursor},
+    cursor::AccountCursor,
     dispatch::{run_handler, TryAccounts},
     event::{sol_log_data, Event},
     hash::sha256,
@@ -360,7 +360,6 @@ pub enum ErrorCode {
     RequireKeysNeqViolated,
     RequireGtViolated,
     RequireGteViolated,
-    ConstraintDuplicateMutableAccount,
 }
 
 impl From<ErrorCode> for solana_program_error::ProgramError {
@@ -402,9 +401,6 @@ impl From<ErrorCode> for solana_program_error::ProgramError {
             ErrorCode::RequireKeysNeqViolated => solana_program_error::ProgramError::Custom(2504),
             ErrorCode::RequireGtViolated => solana_program_error::ProgramError::Custom(2505),
             ErrorCode::RequireGteViolated => solana_program_error::ProgramError::Custom(2506),
-            ErrorCode::ConstraintDuplicateMutableAccount => {
-                solana_program_error::ProgramError::Custom(2040)
-            }
         }
     }
 }

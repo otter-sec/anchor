@@ -314,23 +314,28 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// compatibility without reopening writable aliasing.
     const RELAX_READONLY_CPI_BORROW_FROM_MUT: bool = false;
 
+    /// Load an account for read-only access.
+    ///
+    /// Wrappers that expose typed references into the account data must
+    /// hold a shared borrow on the account's runtime `borrow_state` for as
+    /// long as those references can exist, and fail if the account is
+    /// exclusively borrowed. Every view of an aliased account shares that
+    /// byte, so this is what rejects a conflicting alias.
     fn load(view: AccountView) -> core::result::Result<Self, ProgramError>;
 
     /// Load an account for mutable access.
     ///
-    /// # Safety
-    ///
-    /// No other live `&mut` to the same account data may exist while the
-    /// returned value is alive. In derive-generated code the bitvec
-    /// duplicate-account check enforces this; direct callers must uphold
-    /// it themselves.
+    /// Wrappers that expose typed references into the account data must
+    /// hold an exclusive borrow on the account's runtime `borrow_state`
+    /// for as long as those references can exist, and fail if any other
+    /// borrow is live.
     ///
     /// Default impl validates `is_writable` and delegates to `load()`.
     /// Data-carrying wrappers (`Account<T>`, `BorshAccount<T>`, `Slab<H, T>`)
-    /// override to use `borrow_unchecked_mut` for write provenance.
+    /// override to take the exclusive borrow and derive write provenance.
     /// `Signer` overrides with a fused `is_signer` + `is_writable` check.
     #[inline(always)]
-    unsafe fn load_mut(view: AccountView) -> core::result::Result<Self, ProgramError> {
+    fn load_mut(view: AccountView) -> core::result::Result<Self, ProgramError> {
         if !view.is_writable() {
             return Err(crate::ErrorCode::ConstraintMut.into());
         }
@@ -342,13 +347,9 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// and min-length checks are tautologies on this path, so data-carrying
     /// wrappers override to skip them. Default forwards to [`load_mut`].
     ///
-    /// # Safety
-    ///
-    /// Same as [`load_mut`]: no other live `&mut` to the same account data.
-    ///
     /// [`load_mut`]: Self::load_mut
     #[inline(always)]
-    unsafe fn load_mut_after_init(view: AccountView) -> core::result::Result<Self, ProgramError> {
+    fn load_mut_after_init(view: AccountView) -> core::result::Result<Self, ProgramError> {
         Self::load_mut(view)
     }
 
