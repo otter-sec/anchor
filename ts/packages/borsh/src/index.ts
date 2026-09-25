@@ -548,6 +548,62 @@ export function vecU8(property?: string): Layout<Buffer> {
   return new BytesLayout(property);
 }
 
+/**
+ * Encodes `src` with `layout`, allocating a buffer that is guaranteed to fit
+ * the serialized value.
+ *
+ * Fixed-size layouts allocate exactly `layout.span` bytes. Variable-size
+ * layouts (Vec, String, Option, ...) start with a 1000-byte buffer and grow
+ * on overflow, so values larger than the initial allocation are never dropped:
+ * Buffer.copy otherwise stops silently once the destination is full, and the
+ * underlying layouts surface the overrun as a RangeError.
+ */
+export function encodeLayout<T>(layout: Layout<T>, src: T): Buffer {
+  if (layout.span > 0) {
+    const buffer = Buffer.alloc(layout.span);
+    const len = layout.encode(src, buffer);
+    return buffer.slice(0, len);
+  }
+
+  // Max serialized size is bounded by what an account/tx can hold. This is
+  // far above any real value while still guarding against unbounded growth.
+  const MAX_ENCODE_SIZE = 10 * 1024 * 1024;
+
+  let buffer = Buffer.alloc(1000);
+  for (;;) {
+    try {
+      const len = layout.encode(src, buffer);
+      return buffer.slice(0, len);
+    } catch (err) {
+      const overflow = (e: unknown): boolean => {
+        if (!(e instanceof RangeError)) {
+          return false;
+        }
+        const message = (e as Error).message;
+        if (/overruns Buffer|remaining bytes/.test(message)) {
+          return true;
+        }
+        // buffer-layout's primitive writers call Node's Buffer.write* directly,
+        // which throws ERR_OUT_OF_RANGE about the write "offset" when the
+        // destination is too small. That also signals overflow — but only the
+        // offset variant: a "value" out-of-range error means the input itself
+        // is invalid and must still be rethrown, not retried.
+        const code = (e as { code?: unknown }).code;
+        return code === "ERR_OUT_OF_RANGE" && /offset/.test(message);
+      };
+      // Only a too-small destination overruns the buffer; other RangeErrors
+      // are genuine input errors and must not be retried.
+      if (!overflow(err)) {
+        throw err;
+      }
+      if (buffer.length >= MAX_ENCODE_SIZE) {
+        throw err;
+      }
+      buffer = Buffer.alloc(buffer.length * 2);
+    }
+  }
+}
+
 export function str(property?: string): Layout<string> {
   return new WrappedLayout(
     vecU8(),
