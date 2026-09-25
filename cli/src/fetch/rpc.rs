@@ -188,7 +188,7 @@ pub(super) fn fetch_transaction(
     let config = RpcTransactionConfig {
         encoding: Some(UiTransactionEncoding::Json),
         commitment: Some(CommitmentConfig::confirmed()),
-        max_supported_transaction_version: Some(0),
+        max_supported_transaction_version: Some(1),
     };
 
     let mut attempt: u32 = 0;

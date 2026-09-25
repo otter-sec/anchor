@@ -166,26 +166,36 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Arc<dyn T
     ///
     /// # Arguments
     ///
-    /// * `version` - The transaction version to use ([`TxVersion::Legacy`] or [`TxVersion::V0`]).
+    /// * `version` - The transaction version to use ([`TxVersion::Legacy`], [`TxVersion::V0`], or
+    ///   [`TxVersion::V1`]).
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use anchor_client::{Client, Cluster, TxVersion};
+    /// use anchor_client::{Client, Cluster, TransactionConfig, TxVersion};
     /// use anchor_lang::prelude::Pubkey;
     /// use solana_signer::null_signer::NullSigner;
     /// use solana_message::AddressLookupTableAccount;
     ///
+    /// # async fn example() {
     /// let payer = NullSigner::new(&Pubkey::default());
     /// let client = Client::new(Cluster::Localnet, std::rc::Rc::new(payer));
     ///
     /// let program = client.program(Pubkey::default()).unwrap();
     /// let lookup_table = AddressLookupTableAccount { key: Pubkey::default(), addresses: vec![] };
+    /// let request = program.request();
     /// // Legacy transaction
-    /// let tx = request.signed_transaction_versioned(TxVersion::Legacy).unwrap();
+    /// let tx = request.signed_transaction_versioned(TxVersion::Legacy).await.unwrap();
     ///
     /// // V0 transaction
-    /// let tx = request.signed_transaction_versioned(TxVersion::V0(&[lookup_table])).unwrap();
+    /// let tx = request.signed_transaction_versioned(TxVersion::V0(&[lookup_table])).await.unwrap();
+    ///
+    /// // V1 transaction with explicit resource limits
+    /// let config = TransactionConfig::default()
+    ///     .with_compute_unit_limit(200_000)
+    ///     .with_loaded_accounts_data_size_limit(64 * 1024 * 1024);
+    /// let tx = request.signed_transaction_versioned(TxVersion::V1(config)).await.unwrap();
+    /// # }
     /// ```
     pub async fn signed_transaction_versioned(
         &self,
@@ -206,16 +216,18 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Arc<dyn T
     ///
     /// # Arguments
     ///
-    /// * `version` - The transaction version to use ([`TxVersion::Legacy`] or [`TxVersion::V0`]).
+    /// * `version` - The transaction version to use ([`TxVersion::Legacy`], [`TxVersion::V0`], or
+    ///   [`TxVersion::V1`]).
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use anchor_client::{Client, Cluster, TxVersion};
+    /// use anchor_client::{Client, Cluster, TransactionConfig, TxVersion};
     /// use anchor_lang::prelude::Pubkey;
     /// use solana_signer::null_signer::NullSigner;
     /// use solana_message::AddressLookupTableAccount;
     ///
+    /// # async fn example() {
     /// let payer = NullSigner::new(&Pubkey::default());
     /// let client = Client::new(Cluster::Localnet, std::rc::Rc::new(payer));
     ///
@@ -224,10 +236,17 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Arc<dyn T
     ///
     /// let request = program.request();
     /// // Legacy transaction
-    /// let sig = request.send_versioned(TxVersion::Legacy).unwrap();
+    /// let sig = request.send_versioned(TxVersion::Legacy).await.unwrap();
     ///
     /// // V0 transaction with lookup tables
-    /// let sig = request.send_versioned(TxVersion::V0(&[lookup_table])).unwrap();
+    /// let sig = request.send_versioned(TxVersion::V0(&[lookup_table])).await.unwrap();
+    ///
+    /// // V1 transaction with explicit resource limits
+    /// let config = TransactionConfig::default()
+    ///     .with_compute_unit_limit(200_000)
+    ///     .with_loaded_accounts_data_size_limit(64 * 1024 * 1024);
+    /// let sig = request.send_versioned(TxVersion::V1(config)).await.unwrap();
+    /// # }
     /// ```
     pub async fn send_versioned(&self, version: TxVersion<'_>) -> Result<Signature, ClientError> {
         self.send_internal(version).await
@@ -249,7 +268,8 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Arc<dyn T
     ///
     /// # Arguments
     ///
-    /// * `version` - The transaction version to use ([`TxVersion::Legacy`] or [`TxVersion::V0`]).
+    /// * `version` - The transaction version to use ([`TxVersion::Legacy`], [`TxVersion::V0`], or
+    ///   [`TxVersion::V1`]).
     /// * `config` - RPC send transaction configuration.
     pub async fn send_with_spinner_and_config_versioned(
         &self,
