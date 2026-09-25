@@ -376,8 +376,8 @@ pub fn set_authority<'a>(
 /// Pass `&[]` for transaction signers, or PDA signer seeds for program-signed
 /// authorities on methods that support PDA signing.
 ///
-/// SPL multisig authorities use the corresponding free function and attach
-/// member signer handles with `CpiContext::with_remaining_accounts`.
+/// SPL multisig authorities use the corresponding free function and place
+/// member signer handles in the account struct's `#[signer]` slice.
 pub trait TokenCpiExt {
     fn mint_to<'a, M, T, A>(
         &'a self,
@@ -622,6 +622,7 @@ impl TokenCpiExt for Program<Token> {
                     mint: mint.try_to_cpi_handle_mut()?,
                     to: to.try_to_cpi_handle_mut()?,
                     authority: authority.to_cpi_handle(),
+                    signers: &[],
                 },
                 signer_seeds,
             ),
@@ -649,6 +650,7 @@ impl TokenCpiExt for Program<Token> {
                     from: from.try_to_cpi_handle_mut()?,
                     to: to.try_to_cpi_handle_mut()?,
                     authority: authority.to_cpi_handle(),
+                    signers: &[],
                 },
                 signer_seeds,
             ),
@@ -680,6 +682,7 @@ impl TokenCpiExt for Program<Token> {
                     mint: mint.to_cpi_handle(),
                     to: to.try_to_cpi_handle_mut()?,
                     authority: authority.to_cpi_handle(),
+                    signers: &[],
                 },
                 signer_seeds,
             ),
@@ -708,6 +711,7 @@ impl TokenCpiExt for Program<Token> {
                     from: from.try_to_cpi_handle_mut()?,
                     mint: mint.try_to_cpi_handle_mut()?,
                     authority: authority.to_cpi_handle(),
+                    signers: &[],
                 },
                 signer_seeds,
             ),
@@ -735,6 +739,7 @@ impl TokenCpiExt for Program<Token> {
                     to: source.try_to_cpi_handle_mut()?,
                     delegate: delegate.to_cpi_handle(),
                     authority: authority.to_cpi_handle(),
+                    signers: &[],
                 },
                 signer_seeds,
             ),
@@ -757,6 +762,7 @@ impl TokenCpiExt for Program<Token> {
             accounts::Revoke {
                 source: source.try_to_cpi_handle_mut()?,
                 authority: authority.to_cpi_handle(),
+                signers: &[],
             },
             signer_seeds,
         ))
@@ -780,6 +786,7 @@ impl TokenCpiExt for Program<Token> {
                 account: account.try_to_cpi_handle_mut()?,
                 destination: destination.try_to_cpi_handle_mut()?,
                 authority: authority.to_cpi_handle(),
+                signers: &[],
             },
             signer_seeds,
         ))
@@ -806,6 +813,7 @@ impl TokenCpiExt for Program<Token> {
                     mint: mint.try_to_cpi_handle_mut()?,
                     to: to.try_to_cpi_handle_mut()?,
                     authority: authority.to_cpi_handle(),
+                    signers: &[],
                 },
                 signer_seeds,
             ),
@@ -835,6 +843,7 @@ impl TokenCpiExt for Program<Token> {
                     from: from.try_to_cpi_handle_mut()?,
                     mint: mint.try_to_cpi_handle_mut()?,
                     authority: authority.to_cpi_handle(),
+                    signers: &[],
                 },
                 signer_seeds,
             ),
@@ -867,6 +876,7 @@ impl TokenCpiExt for Program<Token> {
                     mint: mint.to_cpi_handle(),
                     delegate: delegate.to_cpi_handle(),
                     authority: authority.to_cpi_handle(),
+                    signers: &[],
                 },
                 signer_seeds,
             ),
@@ -893,6 +903,7 @@ impl TokenCpiExt for Program<Token> {
                 account: account.try_to_cpi_handle_mut()?,
                 mint: mint.to_cpi_handle(),
                 authority: authority.to_cpi_handle(),
+                signers: &[],
             },
             signer_seeds,
         ))
@@ -916,6 +927,7 @@ impl TokenCpiExt for Program<Token> {
                 account: account.try_to_cpi_handle_mut()?,
                 mint: mint.to_cpi_handle(),
                 authority: authority.to_cpi_handle(),
+                signers: &[],
             },
             signer_seeds,
         ))
@@ -1045,6 +1057,7 @@ impl TokenCpiExt for Program<Token> {
                 accounts::SetAuthority {
                     account_or_mint: account_or_mint.try_to_cpi_handle_mut()?,
                     current_authority: current_authority.to_cpi_handle(),
+                    signers: &[],
                 },
                 signer_seeds,
             ),

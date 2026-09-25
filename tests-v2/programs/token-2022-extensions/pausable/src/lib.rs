@@ -23,6 +23,7 @@ pub mod token_2022_ext_pausable {
         let accs = token_2022_ext::PausableToggle {
             mint: ctx.accounts.mint.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
+            signers: &[],
         };
         token_2022_ext::pausable_pause(CpiContext::new(
             ctx.accounts.token_program.address(),
@@ -36,6 +37,7 @@ pub mod token_2022_ext_pausable {
         let accs = token_2022_ext::PausableToggle {
             mint: ctx.accounts.mint.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
+            signers: &[],
         };
         token_2022_ext::pausable_resume(CpiContext::new(
             ctx.accounts.token_program.address(),
