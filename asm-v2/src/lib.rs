@@ -57,6 +57,7 @@
 //! ```
 
 use anyhow::{anyhow, Context, Result};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
@@ -160,7 +161,21 @@ fn collect_asm_inner(dir: &Path) -> Result<String> {
 
     if let Some(root) = root_file {
         let mut stack = Vec::new();
-        expand_includes(&root, dir, &mut stack)
+        let mut visited = HashSet::new();
+        let out = expand_includes(&root, dir, &mut stack, &mut visited)?;
+        let dropped: Vec<String> = files
+            .iter()
+            .filter(|file| !visited.contains(&canonicalize_path(file)))
+            .map(|file| display_path(file, dir))
+            .collect();
+        if !dropped.is_empty() {
+            println!(
+                "assembly files not reachable from root file {}: {} (add an `.include` from the root, or remove them)",
+                display_path(&root, dir),
+                dropped.join(", ")
+            );
+        }
+        Ok(out)
     } else {
         let mut out = String::new();
         for file in &files {
@@ -197,7 +212,12 @@ fn find_root_file(dir: &Path, files: &[PathBuf]) -> Option<PathBuf> {
     None
 }
 
-fn expand_includes(path: &Path, base_dir: &Path, stack: &mut Vec<PathBuf>) -> Result<String> {
+fn expand_includes(
+    path: &Path,
+    base_dir: &Path,
+    stack: &mut Vec<PathBuf>,
+    visited: &mut HashSet<PathBuf>,
+) -> Result<String> {
     let canonical = canonicalize_path(path);
     if let Some(pos) = stack.iter().position(|seen_path| *seen_path == canonical) {
         let mut cycle_paths = stack[pos..].to_vec();
@@ -210,10 +230,11 @@ fn expand_includes(path: &Path, base_dir: &Path, stack: &mut Vec<PathBuf>) -> Re
         return Err(anyhow!("assembly include cycle detected: {cycle}"));
     }
 
-    stack.push(canonical);
+    stack.push(canonical.clone());
 
     let content =
         std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    visited.insert(canonical);
 
     let mut out = String::new();
     let rel = path.strip_prefix(base_dir).unwrap_or(path);
@@ -225,11 +246,16 @@ fn expand_includes(path: &Path, base_dir: &Path, stack: &mut Vec<PathBuf>) -> Re
             let file = rest.trim().trim_matches('"');
             let include_path = path.parent().unwrap_or(base_dir).join(file);
             if include_path.exists() {
-                out.push_str(&expand_includes(&include_path, base_dir, stack)?);
+                out.push_str(&expand_includes(
+                    &include_path,
+                    base_dir,
+                    stack,
+                    visited,
+                )?);
             } else {
                 let from_base = base_dir.join(file);
                 if from_base.exists() {
-                    out.push_str(&expand_includes(&from_base, base_dir, stack)?);
+                    out.push_str(&expand_includes(&from_base, base_dir, stack, visited)?);
                 } else {
                     out.push_str(line);
                     out.push('\n');
@@ -385,6 +411,23 @@ mod tests {
         assert!(combined.contains("entry:"));
         assert!(combined.contains("a:"));
         assert!(combined.contains("b:"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_root_file_mode_warns_on_unreachable_sibling() {
+        let dir = temp_test_dir("unreachable");
+        let output = dir.join("combined.s");
+
+        std::fs::write(dir.join("main.s"), "nop\n").unwrap();
+        std::fs::write(dir.join("extra.s"), ".equ VALUE, 1\n").unwrap();
+
+        build_to(&dir, &output);
+
+        let combined = std::fs::read_to_string(&output).unwrap();
+        assert!(combined.contains("nop"));
+        assert!(!combined.contains(".equ VALUE"));
 
         std::fs::remove_dir_all(dir).ok();
     }
