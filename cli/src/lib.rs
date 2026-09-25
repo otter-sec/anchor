@@ -1,45 +1,14 @@
 use {
     crate::config::{
-        get_default_ledger_path, BootstrapMode, BuildConfig, Config, ConfigOverride, HookType,
-        Manifest, PackageManager, ProgramDeployment, ProgramWorkspace, ScriptsConfig,
-        SurfnetInfoResponse, SurfpoolConfig, TestValidator, ValidatorType, WithPath, SHUTDOWN_WAIT,
-        STARTUP_WAIT, SURFPOOL_HOST,
-    },
-    abs_path::AbsolutePath,
-    anchor_cli_macros::AbsolutePath,
-    anchor_client::Cluster,
-    anchor_lang_idl::{
+        BootstrapMode, BuildConfig, Config, ConfigOverride, HookType, Manifest, PackageManager, ProgramDeployment, ProgramWorkspace, SHUTDOWN_WAIT, STARTUP_WAIT, SURFPOOL_HOST, ScriptsConfig, SurfnetInfoResponse, SurfpoolConfig, TestValidator, ValidatorType, WithPath, get_default_ledger_path,
+    }, abs_path::AbsolutePath, anchor_cli_macros::AbsolutePath, anchor_client::{Cluster, anchor_lang::wincode}, anchor_lang_idl::{
         convert::convert_idl,
         types::{Idl, IdlArrayLen, IdlDefinedFields, IdlType, IdlTypeDefTy},
-    },
-    anyhow::{anyhow, bail, Context, Result},
-    borsh::BorshDeserialize,
-    checks::{check_anchor_version, check_deps, check_idl_build_feature, check_overflow},
-    clap::{CommandFactory, Parser},
-    dirs::home_dir,
-    heck::{ToKebabCase, ToLowerCamelCase, ToPascalCase, ToSnakeCase},
-    regex::{Regex, RegexBuilder},
-    rust_template::{ProgramTemplate, TestTemplate},
-    semver::{Version, VersionReq},
-    serde::Deserialize,
-    serde_json::{json, Map, Value as JsonValue},
-    solana_cli_config::Config as SolanaCliConfig,
-    solana_commitment_config::CommitmentConfig,
-    solana_compute_budget_interface::ComputeBudgetInstruction,
-    solana_instruction::Instruction,
-    solana_keypair::Keypair,
-    solana_loader_v3_interface::state::UpgradeableLoaderState,
-    solana_pubkey::Pubkey,
-    solana_pubsub_client::pubsub_client::{PubsubClient, PubsubClientSubscription},
-    solana_rpc_client::rpc_client::RpcClient,
-    solana_rpc_client_api::{
+    }, anyhow::{Context, Result, anyhow, bail}, borsh::BorshDeserialize, checks::{check_anchor_version, check_deps, check_idl_build_feature, check_overflow}, clap::{CommandFactory, Parser}, dirs::home_dir, heck::{ToKebabCase, ToLowerCamelCase, ToPascalCase, ToSnakeCase}, regex::{Regex, RegexBuilder}, rust_template::{ProgramTemplate, TestTemplate}, semver::{Version, VersionReq}, serde::Deserialize, serde_json::{Map, Value as JsonValue, json}, solana_cli_config::Config as SolanaCliConfig, solana_commitment_config::CommitmentConfig, solana_compute_budget_interface::ComputeBudgetInstruction, solana_instruction::Instruction, solana_keypair::Keypair, solana_loader_v3_interface::state::UpgradeableLoaderState, solana_pubkey::Pubkey, solana_pubsub_client::pubsub_client::{PubsubClient, PubsubClientSubscription}, solana_rpc_client::rpc_client::RpcClient, solana_rpc_client_api::{
         config::{RpcTransactionLogsConfig, RpcTransactionLogsFilter},
         request::RpcRequest,
         response::{Response as RpcResponse, RpcLogsResponse},
-    },
-    solana_signer::{EncodableKey, Signer},
-    solana_sdk_ids::bpf_loader_upgradeable,
-    std::{
+    }, solana_sdk_ids::bpf_loader_upgradeable, solana_signer::{EncodableKey, Signer}, std::{
         collections::{BTreeMap, HashMap, HashSet},
         ffi::OsString,
         fs::{self, File},
@@ -1587,7 +1556,7 @@ fn init(
     let program_id = rust_template::get_or_create_program_id(&rust_name, target_dir()?);
     let mut localnet = BTreeMap::new();
     localnet.insert(
-        rust_name,
+        rust_name.to_owned(),
         ProgramDeployment {
             address: program_id,
             path: None,
@@ -4475,7 +4444,8 @@ fn validator_flags(
                                 if account.owner == bpf_loader_upgradeable::id()
                                     // Only programs are supported with `--clone-upgradeable-program`
                                     && matches!(
-                                        account.deserialize_data::<UpgradeableLoaderState>()?,
+                                        wincode::deserialize::<UpgradeableLoaderState>(account.data.as_slice())?,
+                                        //.deserialize_data::<UpgradeableLoaderState>()?,
                                         UpgradeableLoaderState::Program { .. }
                                     )
                                 {
