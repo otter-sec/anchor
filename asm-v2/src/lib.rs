@@ -57,6 +57,7 @@
 //! ```
 
 use anyhow::{anyhow, Context, Result};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
@@ -82,8 +83,9 @@ macro_rules! include_asm {
 ///
 /// If `src/lib.rs` contains `#[repr(C)]` or `#[account]` structs,
 /// `.equ` constants for field offsets are prepended automatically. Any Rust
-/// modules parsed while generating that preamble are also registered as
-/// `cargo:rerun-if-changed` inputs.
+/// modules parsed while generating that preamble, and any assembly files
+/// reached through `.include`, are registered as `cargo:rerun-if-changed`
+/// inputs.
 pub fn build(asm_dir: &str) {
     let manifest_dir =
         PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
@@ -93,7 +95,7 @@ pub fn build(asm_dir: &str) {
 
     let (preamble, operands, preamble_files) = preamble_for_build(&lib_rs);
 
-    let combined = collect_asm(&asm_path);
+    let (combined, asm_inputs) = collect_asm(&asm_path);
 
     let output = if preamble.is_empty() {
         combined
@@ -106,7 +108,7 @@ pub fn build(asm_dir: &str) {
         .expect("write combined.rs");
 
     println!("cargo:rerun-if-changed={asm_dir}");
-    for path in preamble_files {
+    for path in preamble_files.into_iter().chain(asm_inputs) {
         println!("cargo:rerun-if-changed={}", path.display());
     }
 }
@@ -114,9 +116,12 @@ pub fn build(asm_dir: &str) {
 /// Like `build()` but takes absolute paths. Skips the preamble — the
 /// caller handles any preprocessing.
 pub fn build_to(asm_dir: &Path, output_path: &Path) {
-    let combined = collect_asm(asm_dir);
+    let (combined, asm_inputs) = collect_asm(asm_dir);
     std::fs::write(output_path, combined).expect("write combined assembly");
     println!("cargo:rerun-if-changed={}", asm_dir.display());
+    for path in asm_inputs {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -147,11 +152,11 @@ fn render_combined_rs(operands: &[preamble::RustConstOperand]) -> String {
     output
 }
 
-fn collect_asm(dir: &Path) -> String {
+fn collect_asm(dir: &Path) -> (String, Vec<PathBuf>) {
     collect_asm_inner(dir).unwrap_or_else(|err| panic!("{err}"))
 }
 
-fn collect_asm_inner(dir: &Path) -> Result<String> {
+fn collect_asm_inner(dir: &Path) -> Result<(String, Vec<PathBuf>)> {
     let mut files: Vec<PathBuf> = Vec::new();
     walk_dir(dir, &mut files);
     files.sort();
@@ -160,9 +165,12 @@ fn collect_asm_inner(dir: &Path) -> Result<String> {
 
     if let Some(root) = root_file {
         let mut stack = Vec::new();
-        expand_includes(&root, dir, &mut stack)
+        let mut inputs = HashSet::new();
+        let combined = expand_includes(&root, dir, &mut stack, &mut inputs)?;
+        Ok((combined, inputs.into_iter().collect()))
     } else {
         let mut out = String::new();
+        let mut inputs = Vec::new();
         for file in &files {
             let content = std::fs::read_to_string(file)
                 .with_context(|| format!("read {}", file.display()))?;
@@ -172,8 +180,9 @@ fn collect_asm_inner(dir: &Path) -> Result<String> {
             ));
             out.push_str(&content);
             out.push('\n');
+            inputs.push(canonicalize_path(file));
         }
-        Ok(out)
+        Ok((out, inputs))
     }
 }
 
@@ -197,7 +206,12 @@ fn find_root_file(dir: &Path, files: &[PathBuf]) -> Option<PathBuf> {
     None
 }
 
-fn expand_includes(path: &Path, base_dir: &Path, stack: &mut Vec<PathBuf>) -> Result<String> {
+fn expand_includes(
+    path: &Path,
+    base_dir: &Path,
+    stack: &mut Vec<PathBuf>,
+    inputs: &mut HashSet<PathBuf>,
+) -> Result<String> {
     let canonical = canonicalize_path(path);
     if let Some(pos) = stack.iter().position(|seen_path| *seen_path == canonical) {
         let mut cycle_paths = stack[pos..].to_vec();
@@ -210,10 +224,11 @@ fn expand_includes(path: &Path, base_dir: &Path, stack: &mut Vec<PathBuf>) -> Re
         return Err(anyhow!("assembly include cycle detected: {cycle}"));
     }
 
-    stack.push(canonical);
+    stack.push(canonical.clone());
 
     let content =
         std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    inputs.insert(canonical);
 
     let mut out = String::new();
     let rel = path.strip_prefix(base_dir).unwrap_or(path);
@@ -225,11 +240,16 @@ fn expand_includes(path: &Path, base_dir: &Path, stack: &mut Vec<PathBuf>) -> Re
             let file = rest.trim().trim_matches('"');
             let include_path = path.parent().unwrap_or(base_dir).join(file);
             if include_path.exists() {
-                out.push_str(&expand_includes(&include_path, base_dir, stack)?);
+                out.push_str(&expand_includes(
+                    &include_path,
+                    base_dir,
+                    stack,
+                    inputs,
+                )?);
             } else {
                 let from_base = base_dir.join(file);
                 if from_base.exists() {
-                    out.push_str(&expand_includes(&from_base, base_dir, stack)?);
+                    out.push_str(&expand_includes(&from_base, base_dir, stack, inputs)?);
                 } else {
                     out.push_str(line);
                     out.push('\n');
@@ -385,6 +405,32 @@ mod tests {
         assert!(combined.contains("entry:"));
         assert!(combined.contains("a:"));
         assert!(combined.contains("b:"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    fn assert_tracks(inputs: &[PathBuf], path: &Path) {
+        let canon = std::fs::canonicalize(path).unwrap();
+        assert!(
+            inputs.iter().any(|entry| entry == &canon),
+            "missing {} in {inputs:?}",
+            canon.display()
+        );
+    }
+
+    #[test]
+    fn test_nested_include_is_rerun_if_changed_input() {
+        let dir = temp_test_dir("rerun-nested");
+        std::fs::create_dir_all(dir.join("nested")).unwrap();
+
+        std::fs::write(dir.join("entrypoint.s"), ".include \"a.s\"\nentry:\n").unwrap();
+        std::fs::write(dir.join("a.s"), ".include \"nested/b.s\"\na:\n").unwrap();
+        std::fs::write(dir.join("nested").join("b.s"), "b:\n").unwrap();
+
+        let (_combined, inputs) = collect_asm_inner(&dir).unwrap();
+        assert_tracks(&inputs, &dir.join("entrypoint.s"));
+        assert_tracks(&inputs, &dir.join("a.s"));
+        assert_tracks(&inputs, &dir.join("nested").join("b.s"));
 
         std::fs::remove_dir_all(dir).ok();
     }
