@@ -28,7 +28,18 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
     let name = item.ident.clone();
 
     let mut errors = Vec::new();
+    let mut const_guards = Vec::new();
     let mut idl_entry_pushes = Vec::new();
+    // First implicit variant is 0; an explicit discriminant resets the
+    // counter to literal + 1. `None` means the previous value was u32::MAX.
+    //
+    // A proc macro cannot evaluate `#[cfg]` (features reach rustc as `--cfg`
+    // flags, never the macro), so this counter assumes every gated variant is
+    // enabled — matching rustc only in the all-features build. It feeds the
+    // eager diagnostic below and nothing else: generated code reads
+    // `Variant as u32`, so the codes that ship are whatever rustc assigns
+    // after cfg stripping, per configuration.
+    let mut next_discrim: Option<u32> = Some(0);
     for variant in item.variants.iter_mut() {
         let message = match extract_msg(&variant.attrs) {
             Ok(message) => message,
@@ -39,17 +50,40 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
         };
         // Strip used `msg` attribute
         variant.attrs.retain(|a| !a.path().is_ident("msg"));
-        if let Some((_, discr)) = &variant.discriminant {
-            if parse_discrim(discr).is_none() {
-                errors.push(
-                    syn::Error::new_spanned(discr, "discriminant must be a u32 literal")
-                        .to_compile_error(),
-                );
+        let cfg_attrs = crate::cfg_attrs(&variant.attrs);
+        let (discrim, following) = match resolve_variant_discrim(variant, next_discrim) {
+            Ok(pair) => pair,
+            Err(err) => {
+                errors.push(err.to_compile_error());
                 continue;
             }
-        }
+        };
+        next_discrim = following;
+
         let variant_ident = variant.ident.clone();
-        let cfg_attrs = crate::cfg_attrs(&variant.attrs);
+        if discrim.checked_add(offset).is_none() && cfg_attrs.is_empty() {
+            errors.push(
+                syn::Error::new_spanned(
+                    &variant.ident,
+                    format!(
+                        "error code for variant `{variant_ident}` overflows u32: \
+                         discriminant {discrim} + offset {offset} > u32::MAX"
+                    ),
+                )
+                .to_compile_error(),
+            );
+        }
+
+        // Authoritative overflow check: cfg-wrapped and reading the
+        // post-stripping discriminant, so it is exact in every configuration
+        // where `next_discrim` above is only an assumption.
+        const_guards.push(quote! {
+            #(#cfg_attrs)*
+            const _: () = assert!(
+                (#name::#variant_ident as u32).checked_add(#offset).is_some(),
+                "error code overflowed",
+            );
+        });
         let variant_name = variant.ident.to_string();
         let msg_field = match message {
             Some(message) => quote! {
@@ -84,7 +118,8 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
         impl From<#name> for anchor_lang::Error {
             #[inline(always)]
             fn from(e: #name) -> Self {
-                // Guarenteed not to overflow in `build_idl_errors_json`
+                // The cfg-wrapped `const` guards prove `e as u32 + offset`
+                // fits in u32 for whichever variants this build compiles.
                 anchor_lang::Error::Custom(e as u32 + #offset)
             }
         }
@@ -134,6 +169,7 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
 
         #from_impl
         #idl_print
+        #(#const_guards)*
         #(#errors)*
     })
 }
@@ -173,6 +209,27 @@ fn parse_discrim(discrim: &Expr) -> Option<u32> {
         }) => i.base10_parse::<u32>().ok(),
         _ => None,
     }
+}
+
+fn resolve_variant_discrim(
+    variant: &syn::Variant,
+    next_discrim: Option<u32>,
+) -> syn::Result<(u32, Option<u32>)> {
+    let discrim = match &variant.discriminant {
+        Some((_, expr)) => parse_discrim(expr)
+            .ok_or_else(|| syn::Error::new_spanned(expr, "discriminant must be a u32 literal"))?,
+        None => next_discrim.ok_or_else(|| {
+            syn::Error::new_spanned(
+                &variant.ident,
+                format!(
+                    "implicit discriminant for variant `{}` overflows u32 \
+                     (previous discriminant was u32::MAX)",
+                    variant.ident
+                ),
+            )
+        })?,
+    };
+    Ok((discrim, discrim.checked_add(1)))
 }
 
 fn extract_msg(attrs: &[Attribute]) -> syn::Result<Option<String>> {
@@ -358,6 +415,91 @@ mod tests {
         assert!(
             err.to_string().contains("duplicate `#[msg]` attribute"),
             "unexpected error: {err}"
+        );
+    }
+
+    fn assigned_error_codes(item: &ItemEnum, offset: u32) -> syn::Result<Vec<(String, u32)>> {
+        let mut next = Some(0u32);
+        let mut out = Vec::new();
+        for variant in &item.variants {
+            let (discrim, following) = resolve_variant_discrim(variant, next)?;
+            let code = discrim.checked_add(offset).ok_or_else(|| {
+                let ident = variant.ident.to_string();
+                syn::Error::new_spanned(
+                    variant,
+                    format!(
+                        "error code for variant `{ident}` overflows u32: \
+                         discriminant {discrim} + offset {offset} > u32::MAX"
+                    ),
+                )
+            })?;
+            out.push((variant.ident.to_string(), code));
+            next = following;
+        }
+        Ok(out)
+    }
+
+    #[test]
+    fn default_offset_uses_implicit_then_explicit_then_successor() {
+        let item: ItemEnum = syn::parse_quote! {
+            enum MyError {
+                MyErrorCode,
+                #[msg("...")]
+                WithMsg = 42,
+                After,
+            }
+        };
+        assert_eq!(
+            assigned_error_codes(&item, DEFAULT_OFFSET).unwrap(),
+            vec![
+                ("MyErrorCode".into(), 6000),
+                ("WithMsg".into(), 6042),
+                ("After".into(), 6043),
+            ]
+        );
+    }
+
+    #[test]
+    fn offset_plus_explicit_discriminant_overflow_is_rejected() {
+        let item: ItemEnum = syn::parse_quote! {
+            enum E {
+                A = 3000,
+            }
+        };
+        let err = assigned_error_codes(&item, 4_294_966_297).unwrap_err();
+        assert!(
+            err.to_string().contains("overflows u32"),
+            "unexpected error: {err}"
+        );
+        assert!(err.to_string().contains("3000"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn implicit_successor_after_u32_max_is_rejected() {
+        let item: ItemEnum = syn::parse_quote! {
+            enum E {
+                A = 4294967295,
+                B,
+            }
+        };
+        let err = assigned_error_codes(&item, 0).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("implicit discriminant for variant `B` overflows u32"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn sum_exactly_u32_max_is_accepted() {
+        let item: ItemEnum = syn::parse_quote! {
+            enum E {
+                A,
+            }
+        };
+        assert_eq!(
+            assigned_error_codes(&item, u32::MAX).unwrap(),
+            vec![("A".into(), u32::MAX)]
         );
     }
 }
