@@ -47,6 +47,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang: Include pure `init` accounts in the duplicate-mutable-account check so a `#[account(zero)]` field can no longer alias an `init`-created account, closing a same-buffer double-serialization vector ([#4858](https://github.com/otter-sec/anchor/issues/4858)).
 - spl: Fix `anchor-spl` failing to build with only the `metadata` feature ([#4742](https://github.com/solana-foundation/anchor/pull/4742)).
 - lang: Honor `is_signer` in generated client and CPI account metas, enabling PDA signer usage ([#3322](https://github.com/otter-sec/anchor/pull/3322)).
 - lang: Report invalid instruction arguments instead of silently omitting their instructions during parsing ([#4008](https://github.com/otter-sec/anchor/pull/4008)).

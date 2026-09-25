@@ -78,15 +78,15 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                     keys.extend(self.#field_name.duplicate_mutable_account_keys());
                 })
             }
-            // Direct fields that are mut, not dup, and not pure init (init_if_needed is included).
-            // Pure-init accounts are always freshly created so they cannot collide
-            // with an existing mutable account. `init_if_needed` accounts, however,
-            // may already be initialized and therefore must participate in the
-            // duplicate-mutable-account check.
+            // Direct fields that are mut and not dup.
+            //
+            // Pure `init` fields are included (previously excluded) so that an
+            // `#[account(zero)]` field cannot alias an `init`-created account across
+            // composite (nested) struct boundaries. `init_if_needed` was already included.
+            // See #4858.
             AccountField::Field(f)
                 if f.constraints.is_mutable()
-                    && !f.constraints.is_dup()
-                    && !f.constraints.is_pure_init() =>
+                    && !f.constraints.is_dup() =>
             {
                 // Only types that serialize on exit (not Signer, Program, etc.).
                 match &f.ty {
