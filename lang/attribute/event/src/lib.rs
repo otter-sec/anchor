@@ -163,36 +163,41 @@ pub fn emit_cpi(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let authority = EventAuthority::get();
     let authority_name = authority.name_token_stream();
     let authority_seeds = authority.seeds;
+    let authority_info = syn::Ident::new("authority_info", proc_macro2::Span::mixed_site());
+    let disc = syn::Ident::new("disc", proc_macro2::Span::mixed_site());
+    let inner_data = syn::Ident::new("inner_data", proc_macro2::Span::mixed_site());
+    let ix_data = syn::Ident::new("ix_data", proc_macro2::Span::mixed_site());
+    let ix = syn::Ident::new("ix", proc_macro2::Span::mixed_site());
 
     proc_macro::TokenStream::from(quote! {
         {
-            let authority_info = ctx.accounts.#authority_name.to_account_info();
+            let #authority_info = ctx.accounts.#authority_name.to_account_info();
 
-            let disc = anchor_lang::event::EVENT_IX_TAG_LE;
-            let inner_data = anchor_lang::Event::data(&#event_struct);
-            let ix_data: Vec<u8> = disc
+            let #disc = anchor_lang::event::EVENT_IX_TAG_LE;
+            let #inner_data = anchor_lang::Event::data(&#event_struct);
+            let #ix_data: Vec<u8> = #disc
                 .into_iter()
                 .map(|b| *b)
-                .chain(inner_data.into_iter())
+                .chain(#inner_data.into_iter())
                 .collect();
 
-            let ix = anchor_lang::solana_program::instruction::Instruction::new_with_bytes(
+            let #ix = anchor_lang::solana_program::instruction::Instruction::new_with_bytes(
                 // In a doctest the ID will be in the current scope, not the crate root
                 #[cfg(not(doctest))]
                 { crate::ID },
                 #[cfg(doctest)]
                 { ID },
-                &ix_data,
+                &#ix_data,
                 vec![
                     anchor_lang::solana_program::instruction::AccountMeta::new_readonly(
-                        *authority_info.key,
+                        *#authority_info.key,
                         true,
                     ),
                 ],
             );
             anchor_lang::solana_program::program::invoke_signed(
-                &ix,
-                &[authority_info],
+                &#ix,
+                &[#authority_info],
                 &[&[#authority_seeds, &[crate::EVENT_AUTHORITY_AND_BUMP.1]]],
             )
             .map_err(anchor_lang::error::Error::from)?;

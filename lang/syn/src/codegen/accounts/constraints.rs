@@ -1,17 +1,18 @@
 use {
-    crate::*,
+    crate::{codegen::private_ident, *},
     quote::{format_ident, quote},
     std::collections::HashSet,
 };
 
 pub fn generate(f: &Field, accs: &AccountsStruct) -> proc_macro2::TokenStream {
     let constraints = linearize(&f.constraints);
+    let anchor_rent = private_ident("__anchor_rent");
 
     let rent = if constraints
         .iter()
         .any(|c| matches!(c, Constraint::RentExempt(ConstraintRentExempt::Enforce)))
     {
-        quote! { let __anchor_rent = Rent::get()?; }
+        quote! { let #anchor_rent = Rent::get()?; }
     } else {
         quote! {}
     };
@@ -196,17 +197,19 @@ fn generate_constraint_composite(f: &CompositeField, c: &Constraint) -> proc_mac
 fn generate_constraint_address(f: &Field, c: &ConstraintAddress) -> proc_macro2::TokenStream {
     let field = &f.ident;
     let addr = &c.address;
+    let actual = private_ident("actual");
+    let expected = private_ident("expected");
     let error = generate_custom_error(
         field,
         &c.error,
         quote! { ConstraintAddress },
-        &Some(&(quote! { actual }, quote! { expected })),
+        &Some(&(quote! { #actual }, quote! { #expected })),
     );
     quote! {
         {
-            let actual = #field.key();
-            let expected = #addr;
-            if actual != expected {
+            let #actual = #field.key();
+            let #expected = #addr;
+            if #actual != #expected {
                 return #error;
             }
         }
@@ -227,9 +230,12 @@ pub fn generate_constraint_zeroed(
     accs: &AccountsStruct,
 ) -> proc_macro2::TokenStream {
     let account_ty = f.account_ty();
-    let discriminator = quote! { #account_ty::DISCRIMINATOR };
+    let discriminator_expr = quote! { #account_ty::DISCRIMINATOR };
 
     let field = &f.ident;
+    let data = private_ident("__data");
+    let discriminator = private_ident("__disc");
+    let has_discriminator = private_ident("__has_disc");
     let name_str = field.to_string();
     let ty_decl = f.ty_decl(true);
     let from_account_info = f.from_account_info(None, false);
@@ -275,13 +281,13 @@ pub fn generate_constraint_zeroed(
 
     quote! {
         let #field: #ty_decl = {
-            let mut __data: &[u8] = &#field.try_borrow_data()?;
-            if __data.len() < #discriminator.len() {
+            let mut #data: &[u8] = &#field.try_borrow_data()?;
+            if #data.len() < #discriminator_expr.len() {
                 return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::AccountDidNotDeserialize).with_account_name(#name_str));
             }
-            let __disc = &__data[..#discriminator.len()];
-            let __has_disc = __disc.iter().any(|b| *b != 0);
-            if __has_disc {
+            let #discriminator = &#data[..#discriminator_expr.len()];
+            let #has_discriminator = #discriminator.iter().any(|b| *b != 0);
+            if #has_discriminator {
                 return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintZero).with_account_name(#name_str));
             }
             #(#unique_account_checks)*
@@ -332,18 +338,20 @@ pub fn generate_constraint_has_one(
         Ty::AccountLoader(_) => quote! {#ident.load()?},
         _ => quote! {#ident},
     };
-    let my_key = match &f.ty {
+    let my_key_expr = match &f.ty {
         Ty::LazyAccount(_) => {
             let load_ident = format_ident!("load_{}", target.to_token_stream().to_string());
             quote! { *#field.#load_ident()? }
         }
         _ => quote! { #field.#target },
     };
+    let my_key = private_ident("my_key");
+    let target_key = private_ident("target_key");
     let error = generate_custom_error(
         ident,
         &c.error,
         quote! { ConstraintHasOne },
-        &Some(&(quote! { my_key }, quote! { target_key })),
+        &Some(&(quote! { #my_key }, quote! { #target_key })),
     );
     let target_optional_check =
         OptionalCheckScope::new_with_field(accs, &field).generate_check(target);
@@ -351,9 +359,9 @@ pub fn generate_constraint_has_one(
     quote! {
         {
             #target_optional_check
-            let my_key = #my_key;
-            let target_key = #target.key();
-            if my_key != target_key {
+            let #my_key = #my_key_expr;
+            let #target_key = #target.key();
+            if #my_key != #target_key {
                 return #error;
             }
         }
@@ -394,18 +402,20 @@ pub fn generate_constraint_owner(f: &Field, c: &ConstraintOwner) -> proc_macro2:
         Default::default()
     };
     let owner_address = &c.owner_address;
+    let my_owner = private_ident("my_owner");
+    let expected_owner = private_ident("owner_address");
     let error = generate_custom_error(
         ident,
         &c.error,
         quote! { ConstraintOwner },
-        &Some(&(quote! { *my_owner }, quote! { owner_address })),
+        &Some(&(quote! { *#my_owner }, quote! { #expected_owner })),
     );
 
     quote! {
         {
-            let my_owner = AsRef::<AccountInfo>::as_ref(& #maybe_deref #ident).owner;
-            let owner_address = #owner_address;
-            if my_owner != &owner_address {
+            let #my_owner = AsRef::<AccountInfo>::as_ref(& #maybe_deref #ident).owner;
+            let #expected_owner = #owner_address;
+            if #my_owner != &#expected_owner {
                 return #error;
             }
         }
@@ -421,10 +431,11 @@ pub fn generate_constraint_rent_exempt(
     let info = quote! {
         #ident.to_account_info()
     };
+    let anchor_rent = private_ident("__anchor_rent");
     match c {
         ConstraintRentExempt::Skip => quote! {},
         ConstraintRentExempt::Enforce => quote! {
-            if !__anchor_rent.is_exempt(#info.lamports(), #info.try_data_len()?) {
+            if !#anchor_rent.is_exempt(#info.lamports(), #info.try_data_len()?) {
                 return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintRentExempt).with_account_name(#name_str));
             }
         },
@@ -441,6 +452,12 @@ fn generate_constraint_realloc(
     let new_space = &c.space;
     let payer = &c.payer;
     let payer_ref = generate_realloc_payer_ref(payer, accs);
+    let reallocs = private_ident("__reallocs");
+    let anchor_rent = private_ident("__anchor_rent");
+    let field_info = private_ident("__field_info");
+    let new_rent_minimum = private_ident("__new_rent_minimum");
+    let delta_space = private_ident("__delta_space");
+    let lamport_amt = private_ident("__lamport_amt");
 
     let mut optional_check_scope = OptionalCheckScope::new_with_field(accs, field);
     let payer_optional_check = optional_check_scope.generate_check(payer);
@@ -451,19 +468,19 @@ fn generate_constraint_realloc(
         // Blocks duplicate account reallocs in a single instruction to prevent accidental account overwrites
         // and to ensure the calculation of the change in bytes is based on account size at program entry
         // which inheritantly guarantee idempotency.
-        if __reallocs.contains(&#field.key()) {
+        if #reallocs.contains(&#field.key()) {
             return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::AccountDuplicateReallocs).with_account_name(#account_name));
         }
 
-        let __anchor_rent = anchor_lang::prelude::Rent::get()?;
-        let __field_info = #field.to_account_info();
-        let __new_rent_minimum = __anchor_rent.minimum_balance(#new_space);
+        let #anchor_rent = anchor_lang::prelude::Rent::get()?;
+        let #field_info = #field.to_account_info();
+        let #new_rent_minimum = #anchor_rent.minimum_balance(#new_space);
 
-        let __delta_space = (::std::convert::TryInto::<isize>::try_into(#new_space).unwrap())
-            .checked_sub(::std::convert::TryInto::try_into(__field_info.data_len()).unwrap())
+        let #delta_space = (::std::convert::TryInto::<isize>::try_into(#new_space).unwrap())
+            .checked_sub(::std::convert::TryInto::try_into(#field_info.data_len()).unwrap())
             .unwrap();
 
-        if __delta_space != 0 {
+        if #delta_space != 0 {
             #payer_optional_check
             if #payer.key() == #field.key() {
                 return Err(
@@ -474,32 +491,32 @@ fn generate_constraint_realloc(
                     .with_pubkeys((#payer.key(), #field.key())),
                 );
             }
-            if __delta_space > 0 {
+            if #delta_space > 0 {
                 #system_program_optional_check
-                if ::std::convert::TryInto::<usize>::try_into(__delta_space).unwrap() > anchor_lang::solana_program::entrypoint::MAX_PERMITTED_DATA_INCREASE {
+                if ::std::convert::TryInto::<usize>::try_into(#delta_space).unwrap() > anchor_lang::solana_program::entrypoint::MAX_PERMITTED_DATA_INCREASE {
                     return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::AccountReallocExceedsLimit).with_account_name(#account_name));
                 }
 
-                if __new_rent_minimum > __field_info.lamports() {
+                if #new_rent_minimum > #field_info.lamports() {
                     anchor_lang::system_program::transfer(
                         anchor_lang::context::CpiContext::new(
                             system_program.key(),
                             anchor_lang::system_program::Transfer {
                                 from: #payer.to_account_info(),
-                                to: __field_info.clone(),
+                                to: #field_info.clone(),
                             },
                         ),
-                        __new_rent_minimum.checked_sub(__field_info.lamports()).unwrap(),
+                        #new_rent_minimum.checked_sub(#field_info.lamports()).unwrap(),
                     )?;
                 }
             } else {
-                let __lamport_amt = __field_info.lamports().checked_sub(__new_rent_minimum).unwrap();
-                anchor_lang::Lamports::add_lamports(#payer_ref, __lamport_amt)?;
-                anchor_lang::Lamports::sub_lamports(&__field_info, __lamport_amt)?;
+                let #lamport_amt = #field_info.lamports().checked_sub(#new_rent_minimum).unwrap();
+                anchor_lang::Lamports::add_lamports(#payer_ref, #lamport_amt)?;
+                anchor_lang::Lamports::sub_lamports(&#field_info, #lamport_amt)?;
             }
 
-            __field_info.resize(#new_space)?;
-            __reallocs.insert(#field.key());
+            #field_info.resize(#new_space)?;
+            #reallocs.insert(#field.key());
         }
     }
 }
@@ -519,6 +536,26 @@ fn generate_constraint_init_group(
     };
     let space = &c.space;
     let payer = &c.payer;
+    let program_id = private_ident("__program_id");
+    let bumps = private_ident("__bumps");
+    let anchor_rent = private_ident("__anchor_rent");
+    let pda_address = private_ident("__pda_address");
+    let bump = private_ident("__bump");
+    let seeds_slice = private_ident("__seeds_slice");
+    let bump_bytes = private_ident("__bump_bytes");
+    let signer_seeds_vec = private_ident("__signer_seeds_vec");
+    let signer_seeds = private_ident("__signer_seeds");
+    let owner_program = private_ident("owner_program");
+    let cpi_program_id = private_ident("cpi_program_id");
+    let cpi_accounts = private_ident("accounts");
+    let cpi_ctx = private_ident("cpi_ctx");
+    let parsed_account = private_ident("pa");
+    let extensions_value = private_ident("extensions");
+    let extension = private_ident("e");
+    let space_value = private_ident("space");
+    let actual_field = private_ident("actual_field");
+    let actual_owner = private_ident("actual_owner");
+    let required_lamports = private_ident("required_lamports");
 
     // Convert from account info to account context wrapper type.
     let from_account_info = f.from_account_info(Some(&c.kind), true);
@@ -541,81 +578,81 @@ fn generate_constraint_init_group(
 
                 let validate_pda = if let Some(b) = &c.bump {
                     quote! {
-                        if #field.key() != __pda_address {
+                        if #field.key() != #pda_address {
                             return Err(anchor_lang::error::Error::from(
                                 anchor_lang::error::ErrorCode::ConstraintSeeds
                             ).with_account_name(#name_str)
-                             .with_pubkeys((#field.key(), __pda_address)));
+                             .with_pubkeys((#field.key(), #pda_address)));
                         }
-                        if __bump != #b {
+                        if #bump != #b {
                             return Err(anchor_lang::error::Error::from(
                                 anchor_lang::error::ErrorCode::ConstraintSeeds
                             ).with_account_name(#name_str)
-                             .with_values((__bump, #b)));
+                             .with_values((#bump, #b)));
                         }
                     }
                 } else {
                     quote! {
-                        if #field.key() != __pda_address {
+                        if #field.key() != #pda_address {
                             return Err(anchor_lang::error::Error::from(
                                 anchor_lang::error::ErrorCode::ConstraintSeeds
                             ).with_account_name(#name_str)
-                             .with_pubkeys((#field.key(), __pda_address)));
+                             .with_pubkeys((#field.key(), #pda_address)));
                         }
                     }
                 };
 
                 let bump_tok = if f.is_optional {
-                    quote!(Some(__bump))
+                    quote!(Some(#bump))
                 } else {
-                    quote!(__bump)
+                    quote!(#bump)
                 };
 
                 (
                     quote! {
-                        let (__pda_address, __bump) = Pubkey::find_program_address(
+                        let (#pda_address, #bump) = Pubkey::find_program_address(
                             &[ #maybe_seeds_plus_comma ],
-                            __program_id,
+                            #program_id,
                         );
-                        __bumps.#field = #bump_tok;
+                        #bumps.#field = #bump_tok;
                         #validate_pda
                     },
                     quote! {
                         &[
                             #maybe_seeds_plus_comma
-                            &[__bump][..]
+                            &[#bump][..]
                         ][..]
                     },
                 )
             }
             SeedsExpr::Expr(expr) => {
                 let bump_tok = if f.is_optional {
-                    quote!(Some(__bump))
+                    quote!(Some(#bump))
                 } else {
-                    quote!(__bump)
+                    quote!(#bump)
                 };
 
                 (
                     quote! {
-                        let __seeds_slice: &[&[u8]] = #expr;
-                        let (__pda_address, __bump) =
-                            Pubkey::find_program_address(__seeds_slice, __program_id);
-                        __bumps.#field = #bump_tok;
+                        let #seeds_slice: &[&[u8]] = #expr;
+                        let (#pda_address, #bump) =
+                            Pubkey::find_program_address(#seeds_slice, #program_id);
+                        #bumps.#field = #bump_tok;
 
                         // Build signer seeds at runtime = seeds + bump
-                        let __bump_bytes: [u8; 1] = [__bump];
-                        let mut __signer_seeds_vec: ::std::vec::Vec<&[u8]> = __seeds_slice.to_vec();
-                        __signer_seeds_vec.push(&__bump_bytes[..]);
-                        let __signer_seeds = __signer_seeds_vec;
+                        let #bump_bytes: [u8; 1] = [#bump];
+                        let mut #signer_seeds_vec: ::std::vec::Vec<&[u8]> = #seeds_slice.to_vec();
+                        #signer_seeds_vec.push(&#bump_bytes[..]);
+                        let #signer_seeds = #signer_seeds_vec;
 
-                        if #field.key() != __pda_address {
+                        if #field.key() != #pda_address {
                             return Err(anchor_lang::error::Error::from(
                                 anchor_lang::error::ErrorCode::ConstraintSeeds
                             ).with_account_name(#name_str)
-                             .with_pubkeys((#field.key(), __pda_address)));
+                             .with_pubkeys((#field.key(), #pda_address)));
                         }
                     },
-                    quote! { &__signer_seeds[..] },
+                    quote! { &#signer_seeds[..] },
                 )
             }
         },
@@ -674,37 +711,37 @@ fn generate_constraint_init_group(
                     // Checks that all the required accounts for this operation are present.
                     #optional_checks
 
-                    let owner_program = #account_ref.owner;
-                    if !#if_needed || owner_program == &anchor_lang::solana_program::system_program::ID {
+                    let #owner_program = #account_ref.owner;
+                    if !#if_needed || #owner_program == &anchor_lang::solana_program::system_program::ID {
                         #payer_optional_check
 
                         // Create the account with the system program.
                         #create_account_or_fund_allocate_assign
 
                         // Initialize the token account.
-                        let cpi_program_id = #token_program.key();
-                        let accounts = ::anchor_spl::token_interface::InitializeAccount3 {
+                        let #cpi_program_id = #token_program.key();
+                        let #cpi_accounts = ::anchor_spl::token_interface::InitializeAccount3 {
                             account: #field.to_account_info(),
                             mint: #mint.to_account_info(),
                             authority: #owner.to_account_info(),
                         };
-                        let cpi_ctx = anchor_lang::context::CpiContext::new(cpi_program_id, accounts);
-                        ::anchor_spl::token_interface::initialize_account3(cpi_ctx)?;
+                        let #cpi_ctx = anchor_lang::context::CpiContext::new(#cpi_program_id, #cpi_accounts);
+                        ::anchor_spl::token_interface::initialize_account3(#cpi_ctx)?;
                     }
 
-                    let pa: #ty_decl = #from_account_info_unchecked;
+                    let #parsed_account: #ty_decl = #from_account_info_unchecked;
                     if #if_needed {
-                        if pa.mint != #mint.key() {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintTokenMint).with_account_name(#name_str).with_pubkeys((pa.mint, #mint.key())));
+                        if #parsed_account.mint != #mint.key() {
+                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintTokenMint).with_account_name(#name_str).with_pubkeys((#parsed_account.mint, #mint.key())));
                         }
-                        if pa.owner != #owner.key() {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintTokenOwner).with_account_name(#name_str).with_pubkeys((pa.owner, #owner.key())));
+                        if #parsed_account.owner != #owner.key() {
+                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintTokenOwner).with_account_name(#name_str).with_pubkeys((#parsed_account.owner, #owner.key())));
                         }
-                        if owner_program != &#token_program.key() {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintTokenTokenProgram).with_account_name(#name_str).with_pubkeys((*owner_program, #token_program.key())));
+                        if #owner_program != &#token_program.key() {
+                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintTokenTokenProgram).with_account_name(#name_str).with_pubkeys((*#owner_program, #token_program.key())));
                         }
                     }
-                    Ok(pa)
+                    Ok(#parsed_account)
                 }})()?;
             }
         }
@@ -745,8 +782,8 @@ fn generate_constraint_init_group(
                     // Checks that all the required accounts for this operation are present.
                     #optional_checks
 
-                    let owner_program = #account_ref.owner;
-                    if !#if_needed || owner_program == &anchor_lang::solana_program::system_program::ID {
+                    let #owner_program = #account_ref.owner;
+                    if !#if_needed || #owner_program == &anchor_lang::solana_program::system_program::ID {
                         #payer_optional_check
 
                         ::anchor_spl::associated_token::create(
@@ -763,23 +800,23 @@ fn generate_constraint_init_group(
                             )
                         )?;
                     }
-                    let pa: #ty_decl = #from_account_info_unchecked;
+                    let #parsed_account: #ty_decl = #from_account_info_unchecked;
                     if #if_needed {
-                        if pa.mint != #mint.key() {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintTokenMint).with_account_name(#name_str).with_pubkeys((pa.mint, #mint.key())));
+                        if #parsed_account.mint != #mint.key() {
+                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintTokenMint).with_account_name(#name_str).with_pubkeys((#parsed_account.mint, #mint.key())));
                         }
-                        if pa.owner != #owner.key() {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintTokenOwner).with_account_name(#name_str).with_pubkeys((pa.owner, #owner.key())));
+                        if #parsed_account.owner != #owner.key() {
+                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintTokenOwner).with_account_name(#name_str).with_pubkeys((#parsed_account.owner, #owner.key())));
                         }
-                        if owner_program != &#token_program.key() {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintAssociatedTokenTokenProgram).with_account_name(#name_str).with_pubkeys((*owner_program, #token_program.key())));
+                        if #owner_program != &#token_program.key() {
+                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintAssociatedTokenTokenProgram).with_account_name(#name_str).with_pubkeys((*#owner_program, #token_program.key())));
                         }
 
-                        if pa.key() != ::anchor_spl::associated_token::get_associated_token_address_with_program_id(&#owner.key(), &#mint.key(), &#token_program.key()) {
+                        if #parsed_account.key() != ::anchor_spl::associated_token::get_associated_token_address_with_program_id(&#owner.key(), &#mint.key(), &#token_program.key()) {
                             return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::AccountNotAssociatedTokenAccount).with_account_name(#name_str));
                         }
                     }
-                    Ok(pa)
+                    Ok(#parsed_account)
                 }})()?;
             }
         }
@@ -1017,109 +1054,109 @@ fn generate_constraint_init_group(
                     // Checks that all the required accounts for this operation are present.
                     #optional_checks
 
-                    let owner_program = AsRef::<AccountInfo>::as_ref(&#field).owner;
-                    if !#if_needed || owner_program == &anchor_lang::solana_program::system_program::ID {
+                    let #owner_program = AsRef::<AccountInfo>::as_ref(&#field).owner;
+                    if !#if_needed || #owner_program == &anchor_lang::solana_program::system_program::ID {
                         // Define payer variable.
                         #payer_optional_check
 
                         // Create the account with the system program.
                         #create_account_or_fund_allocate_assign
 
-                        let cpi_program_id = #token_program.key();
+                        let #cpi_program_id = #token_program.key();
 
                         // Initialize extensions.
-                        if let Some(extensions) = #extensions {
+                        if let Some(#extensions_value) = #extensions {
 
-                            for e in extensions {
-                                match e {
+                            for #extension in #extensions_value {
+                                match #extension {
                                     ::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::GroupPointer => {
-                                        ::anchor_spl::token_interface::group_pointer_initialize(anchor_lang::context::CpiContext::new(cpi_program_id, ::anchor_spl::token_interface::GroupPointerInitialize {
+                                        ::anchor_spl::token_interface::group_pointer_initialize(anchor_lang::context::CpiContext::new(#cpi_program_id, ::anchor_spl::token_interface::GroupPointerInitialize {
                                             token_program_id: #token_program.to_account_info(),
                                             mint: #field.to_account_info(),
                                         }), #group_pointer_authority, #group_pointer_group_address)?;
                                     },
                                     ::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::GroupMemberPointer => {
-                                        ::anchor_spl::token_interface::group_member_pointer_initialize(anchor_lang::context::CpiContext::new(cpi_program_id, ::anchor_spl::token_interface::GroupMemberPointerInitialize {
+                                        ::anchor_spl::token_interface::group_member_pointer_initialize(anchor_lang::context::CpiContext::new(#cpi_program_id, ::anchor_spl::token_interface::GroupMemberPointerInitialize {
                                             token_program_id: #token_program.to_account_info(),
                                             mint: #field.to_account_info(),
                                         }), #group_member_pointer_authority, #group_member_pointer_member_address)?;
                                     },
                                     ::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::MetadataPointer => {
-                                        ::anchor_spl::token_interface::metadata_pointer_initialize(anchor_lang::context::CpiContext::new(cpi_program_id, ::anchor_spl::token_interface::MetadataPointerInitialize {
+                                        ::anchor_spl::token_interface::metadata_pointer_initialize(anchor_lang::context::CpiContext::new(#cpi_program_id, ::anchor_spl::token_interface::MetadataPointerInitialize {
                                             token_program_id: #token_program.to_account_info(),
                                             mint: #field.to_account_info(),
                                         }), #metadata_pointer_authority, #metadata_pointer_metadata_address)?;
                                     },
                                     ::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::MintCloseAuthority => {
-                                        ::anchor_spl::token_interface::mint_close_authority_initialize(anchor_lang::context::CpiContext::new(cpi_program_id, ::anchor_spl::token_interface::MintCloseAuthorityInitialize {
+                                        ::anchor_spl::token_interface::mint_close_authority_initialize(anchor_lang::context::CpiContext::new(#cpi_program_id, ::anchor_spl::token_interface::MintCloseAuthorityInitialize {
                                             token_program_id: #token_program.to_account_info(),
                                             mint: #field.to_account_info(),
                                         }), #close_authority)?;
                                     },
                                     ::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::TransferHook => {
-                                        ::anchor_spl::token_interface::transfer_hook_initialize(anchor_lang::context::CpiContext::new(cpi_program_id, ::anchor_spl::token_interface::TransferHookInitialize {
+                                        ::anchor_spl::token_interface::transfer_hook_initialize(anchor_lang::context::CpiContext::new(#cpi_program_id, ::anchor_spl::token_interface::TransferHookInitialize {
                                             token_program_id: #token_program.to_account_info(),
                                             mint: #field.to_account_info(),
                                         }), #transfer_hook_authority, #transfer_hook_program_id)?;
                                     },
                                     ::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::NonTransferable => {
-                                        ::anchor_spl::token_interface::non_transferable_mint_initialize(anchor_lang::context::CpiContext::new(cpi_program_id, ::anchor_spl::token_interface::NonTransferableMintInitialize {
+                                        ::anchor_spl::token_interface::non_transferable_mint_initialize(anchor_lang::context::CpiContext::new(#cpi_program_id, ::anchor_spl::token_interface::NonTransferableMintInitialize {
                                             token_program_id: #token_program.to_account_info(),
                                             mint: #field.to_account_info(),
                                         }))?;
                                     },
                                     ::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::PermanentDelegate => {
-                                        ::anchor_spl::token_interface::permanent_delegate_initialize(anchor_lang::context::CpiContext::new(cpi_program_id, ::anchor_spl::token_interface::PermanentDelegateInitialize {
+                                        ::anchor_spl::token_interface::permanent_delegate_initialize(anchor_lang::context::CpiContext::new(#cpi_program_id, ::anchor_spl::token_interface::PermanentDelegateInitialize {
                                             token_program_id: #token_program.to_account_info(),
                                             mint: #field.to_account_info(),
                                         }), #permanent_delegate.unwrap())?;
                                     },
                                     ::anchor_spl::token_interface::spl_token_2022::extension::ExtensionType::Pausable => {
-                                        ::anchor_spl::token_interface::pausable_initialize(anchor_lang::context::CpiContext::new(cpi_program_id, ::anchor_spl::token_interface::PausableInitialize {
+                                        ::anchor_spl::token_interface::pausable_initialize(anchor_lang::context::CpiContext::new(#cpi_program_id, ::anchor_spl::token_interface::PausableInitialize {
                                             token_program_id: #token_program.to_account_info(),
                                             mint: #field.to_account_info(),
                                         }), #pausable_authority.unwrap())?;
                                     },
                                     // All extensions specified by the user should be implemented.
                                     // If this line runs, it means there is a bug in the codegen.
-                                    _ => unimplemented!("{e:?}"),
+                                    _ => unimplemented!("{:?}", #extension),
                                 }
                             };
                         }
 
                         // Initialize the mint account.
-                        let accounts = ::anchor_spl::token_interface::InitializeMint2 {
+                        let #cpi_accounts = ::anchor_spl::token_interface::InitializeMint2 {
                             mint: #field.to_account_info(),
                         };
-                        let cpi_ctx = anchor_lang::context::CpiContext::new(cpi_program_id, accounts);
-                        ::anchor_spl::token_interface::initialize_mint2(cpi_ctx, #decimals, &#owner.key(), #freeze_authority)?;
+                        let #cpi_ctx = anchor_lang::context::CpiContext::new(#cpi_program_id, #cpi_accounts);
+                        ::anchor_spl::token_interface::initialize_mint2(#cpi_ctx, #decimals, &#owner.key(), #freeze_authority)?;
                     }
 
-                    let pa: #ty_decl = #from_account_info_unchecked;
+                    let #parsed_account: #ty_decl = #from_account_info_unchecked;
                     if #if_needed {
-                        if pa.mint_authority != anchor_lang::solana_program::program_option::COption::Some(#owner.key()) {
+                        if #parsed_account.mint_authority != anchor_lang::solana_program::program_option::COption::Some(#owner.key()) {
                             return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintMintMintAuthority).with_account_name(#name_str));
                         }
-                        if pa.freeze_authority
+                        if #parsed_account.freeze_authority
                             .as_ref()
                             .map(|fa| #freeze_authority.as_ref().map(|expected_fa| fa != *expected_fa).unwrap_or(true))
                             .unwrap_or(#freeze_authority.is_some()) {
                             return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintMintFreezeAuthority).with_account_name(#name_str));
                         }
-                        if pa.decimals != #decimals {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintMintDecimals).with_account_name(#name_str).with_values((pa.decimals, #decimals)));
+                        if #parsed_account.decimals != #decimals {
+                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintMintDecimals).with_account_name(#name_str).with_values((#parsed_account.decimals, #decimals)));
                         }
-                        if owner_program != &#token_program.key() {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintMintTokenProgram).with_account_name(#name_str).with_pubkeys((*owner_program, #token_program.key())));
+                        if #owner_program != &#token_program.key() {
+                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintMintTokenProgram).with_account_name(#name_str).with_pubkeys((*#owner_program, #token_program.key())));
                         }
                     }
-                    Ok(pa)
+                    Ok(#parsed_account)
                 }})()?;
             }
         }
         InitKind::Program { owner } | InitKind::Interface { owner } => {
             // Define the space variable.
-            let space = quote! {let space = #space;};
+            let define_space = quote! {let #space_value = #space;};
 
             let system_program_optional_check = check_scope.generate_check(system_program);
 
@@ -1128,7 +1165,7 @@ fn generate_constraint_init_group(
             let (owner, owner_optional_check) = match owner {
                 None => (
                     quote! {
-                        __program_id
+                        #program_id
                     },
                     quote! {},
                 ),
@@ -1156,7 +1193,7 @@ fn generate_constraint_init_group(
             let create_account_or_fund_allocate_assign =
                 generate_create_account_or_fund_allocate_assign(
                     field,
-                    quote! {space},
+                    quote! {#space_value},
                     owner.clone(),
                     quote! {#payer},
                     seeds_with_bump,
@@ -1171,15 +1208,15 @@ fn generate_constraint_init_group(
                     // Checks that all the required accounts for this operation are present.
                     #optional_checks
 
-                    let actual_field = #account_ref;
-                    let actual_owner = actual_field.owner;
+                    let #actual_field = #account_ref;
+                    let #actual_owner = #actual_field.owner;
 
                     // Define the account space variable.
-                    #space
+                    #define_space
 
                     // Create the account. Always do this in the event
                     // if needed is not specified or the system program is the owner.
-                    let pa: #ty_decl = if !#if_needed || actual_owner == &anchor_lang::solana_program::system_program::ID {
+                    let #parsed_account: #ty_decl = if !#if_needed || #actual_owner == &anchor_lang::solana_program::system_program::ID {
                         #payer_optional_check
 
                         // CPI to the system program to create.
@@ -1195,24 +1232,24 @@ fn generate_constraint_init_group(
                     // Assert the account was created correctly.
                     if #if_needed {
                         #owner_optional_check
-                        if space != actual_field.data_len() {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintSpace).with_account_name(#name_str).with_values((space, actual_field.data_len())));
+                        if #space_value != #actual_field.data_len() {
+                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintSpace).with_account_name(#name_str).with_values((#space_value, #actual_field.data_len())));
                         }
 
-                        if actual_owner != #owner {
-                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintOwner).with_account_name(#name_str).with_pubkeys((*actual_owner, *#owner)));
+                        if #actual_owner != #owner {
+                            return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintOwner).with_account_name(#name_str).with_pubkeys((*#actual_owner, *#owner)));
                         }
 
                         {
-                            let required_lamports = __anchor_rent.minimum_balance(space);
-                            if anchor_lang::Lamports::get_lamports(actual_field) < required_lamports {
+                            let #required_lamports = #anchor_rent.minimum_balance(#space_value);
+                            if anchor_lang::Lamports::get_lamports(#actual_field) < #required_lamports {
                                 return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintRentExempt).with_account_name(#name_str));
                             }
                         }
                     }
 
                     // Done.
-                    Ok(pa)
+                    Ok(#parsed_account)
                 }})()?;
             }
         }
@@ -1228,6 +1265,13 @@ fn generate_constraint_seeds(f: &Field, c: &ConstraintSeedsGroup) -> proc_macro2
     } else {
         let name = &f.ident;
         let name_str = name.to_string();
+        let program_id = private_ident("__program_id");
+        let bumps = private_ident("__bumps");
+        let pda_address = private_ident("__pda_address");
+        let bump = private_ident("__bump");
+        let seeds_slice = private_ident("__seeds_slice");
+        let bump_bytes = private_ident("__bump_bytes");
+        let seeds_vec = private_ident("__seeds_vec");
 
         let deriving_program_id = c
             .program_seed
@@ -1235,12 +1279,12 @@ fn generate_constraint_seeds(f: &Field, c: &ConstraintSeedsGroup) -> proc_macro2
             // If they specified a seeds::program to use when deriving the PDA, use it.
             .map(|program_id| quote! { #program_id.key() })
             // Otherwise fall back to the current program's program_id.
-            .unwrap_or(quote! { __program_id });
+            .unwrap_or(quote! { #program_id });
         // Convenience: how we store the bump so the caller can access it later.
         let bump_store = if f.is_optional {
-            quote!(Some(__bump))
+            quote!(Some(#bump))
         } else {
-            quote!(__bump)
+            quote!(#bump)
         };
 
         // Build the PDA.
@@ -1249,11 +1293,11 @@ fn generate_constraint_seeds(f: &Field, c: &ConstraintSeedsGroup) -> proc_macro2
             (SeedsExpr::List(list), None) => {
                 let maybe_seeds_plus_comma = (!list.is_empty()).then(|| quote! { #list, });
                 quote! {
-                    let (__pda_address, __bump) = Pubkey::find_program_address(
+                    let (#pda_address, #bump) = Pubkey::find_program_address(
                         &[ #maybe_seeds_plus_comma ],
                         &#deriving_program_id,
                     );
-                    __bumps.#name = #bump_store;
+                    #bumps.#name = #bump_store;
                 }
             }
 
@@ -1261,7 +1305,7 @@ fn generate_constraint_seeds(f: &Field, c: &ConstraintSeedsGroup) -> proc_macro2
             (SeedsExpr::List(list), Some(b)) => {
                 let maybe_seeds_plus_comma = (!list.is_empty()).then(|| quote! { #list, });
                 quote! {
-                    let __pda_address = Pubkey::create_program_address(
+                    let #pda_address = Pubkey::create_program_address(
                         &[ #maybe_seeds_plus_comma &[#b][..] ],
                         &#deriving_program_id,
                     ).map_err(|_| anchor_lang::error::Error::from(
@@ -1272,18 +1316,18 @@ fn generate_constraint_seeds(f: &Field, c: &ConstraintSeedsGroup) -> proc_macro2
 
             // expr, no bump -> find_program_address + store __bump.
             (SeedsExpr::Expr(expr), None) => quote! {
-                let __seeds_slice: &[&[u8]] = #expr;
-                let (__pda_address, __bump) =
-                    Pubkey::find_program_address(__seeds_slice, &#deriving_program_id);
-                __bumps.#name = #bump_store;
+                let #seeds_slice: &[&[u8]] = #expr;
+                let (#pda_address, #bump) =
+                    Pubkey::find_program_address(#seeds_slice, &#deriving_program_id);
+                #bumps.#name = #bump_store;
             },
 
             // expr, explicit bump -> concat slice + bump, then create_program_address.
             (SeedsExpr::Expr(expr), Some(b)) => quote! {
-                let __bump_bytes = [#b];
-                let __seeds_vec: ::std::vec::Vec<&[u8]> = [#expr, &[&__bump_bytes[..]]].concat();
-                let __pda_address = Pubkey::create_program_address(
-                    &__seeds_vec[..],
+                let #bump_bytes = [#b];
+                let #seeds_vec: ::std::vec::Vec<&[u8]> = [#expr, &[&#bump_bytes[..]]].concat();
+                let #pda_address = Pubkey::create_program_address(
+                    &#seeds_vec[..],
                     &#deriving_program_id,
                 ).map_err(|_| anchor_lang::error::Error::from(
                     anchor_lang::error::ErrorCode::ConstraintSeeds
@@ -1296,8 +1340,8 @@ fn generate_constraint_seeds(f: &Field, c: &ConstraintSeedsGroup) -> proc_macro2
             #define_pda
 
             // Check it.
-            if #name.key() != __pda_address {
-                return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintSeeds).with_account_name(#name_str).with_pubkeys((#name.key(), __pda_address)));
+            if #name.key() != #pda_address {
+                return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintSeeds).with_account_name(#name_str).with_pubkeys((#name.key(), #pda_address)));
             }
         }
     }
@@ -1313,6 +1357,10 @@ fn generate_constraint_associated_token(
     let account_ref = generate_account_ref(f);
     let wallet_address = &c.wallet;
     let spl_token_mint_address = &c.mint;
+    let my_owner = private_ident("my_owner");
+    let wallet_key = private_ident("wallet_address");
+    let associated_token_address = private_ident("__associated_token_address");
+    let my_key = private_ident("my_key");
 
     let mut optional_check_scope = OptionalCheckScope::new_with_field(accs, name);
     let wallet_address_optional_check = optional_check_scope.generate_check(wallet_address);
@@ -1335,10 +1383,10 @@ fn generate_constraint_associated_token(
     };
     let get_associated_token_address = match &c.token_program {
         Some(token_program) => quote! {
-            ::anchor_spl::associated_token::get_associated_token_address_with_program_id(&wallet_address, &#spl_token_mint_address.key(), &#token_program.key())
+            ::anchor_spl::associated_token::get_associated_token_address_with_program_id(&#wallet_key, &#spl_token_mint_address.key(), &#token_program.key())
         },
         None => quote! {
-            ::anchor_spl::associated_token::get_associated_token_address(&wallet_address, &#spl_token_mint_address.key())
+            ::anchor_spl::associated_token::get_associated_token_address(&#wallet_key, &#spl_token_mint_address.key())
         },
     };
 
@@ -1347,15 +1395,15 @@ fn generate_constraint_associated_token(
             #optional_checks
             #token_program_check
 
-            let my_owner = #name.owner;
-            let wallet_address = #wallet_address.key();
-            if my_owner != wallet_address {
-                return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintTokenOwner).with_account_name(#name_str).with_pubkeys((my_owner, wallet_address)));
+            let #my_owner = #name.owner;
+            let #wallet_key = #wallet_address.key();
+            if #my_owner != #wallet_key {
+                return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintTokenOwner).with_account_name(#name_str).with_pubkeys((#my_owner, #wallet_key)));
             }
-            let __associated_token_address = #get_associated_token_address;
-            let my_key = #name.key();
-            if my_key != __associated_token_address {
-                return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintAssociated).with_account_name(#name_str).with_pubkeys((my_key, __associated_token_address)));
+            let #associated_token_address = #get_associated_token_address;
+            let #my_key = #name.key();
+            if #my_key != #associated_token_address {
+                return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintAssociated).with_account_name(#name_str).with_pubkeys((#my_key, #associated_token_address)));
             }
         }
     }
@@ -1444,6 +1492,13 @@ fn generate_constraint_mint(
 ) -> proc_macro2::TokenStream {
     let name = &f.ident;
     let account_ref = generate_account_ref(f);
+    let group_pointer_value = private_ident("group_pointer");
+    let group_member_pointer_value = private_ident("group_member_pointer");
+    let metadata_pointer_value = private_ident("metadata_pointer");
+    let close_authority_value = private_ident("close_authority");
+    let permanent_delegate_value = private_ident("permanent_delegate");
+    let transfer_hook_value = private_ident("transfer_hook");
+    let pausable_value = private_ident("pausable");
 
     let decimal_check = match &c.decimals {
         Some(decimals) => quote! {
@@ -1495,12 +1550,12 @@ fn generate_constraint_mint(
             let group_pointer_authority_optional_check =
                 optional_check_scope.generate_check(group_pointer_authority);
             quote! {
-                let group_pointer = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::group_pointer::GroupPointer>(#account_ref);
-                if group_pointer.is_err() {
+                let #group_pointer_value = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::group_pointer::GroupPointer>(#account_ref);
+                if #group_pointer_value.is_err() {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupPointerExtension.into());
                 }
                 #group_pointer_authority_optional_check
-                if group_pointer.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#group_pointer_authority.key()))? {
+                if #group_pointer_value.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#group_pointer_authority.key()))? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupPointerExtensionAuthority.into());
                 }
             }
@@ -1513,12 +1568,12 @@ fn generate_constraint_mint(
             let group_pointer_group_address_optional_check =
                 optional_check_scope.generate_check(group_pointer_group_address);
             quote! {
-                let group_pointer = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::group_pointer::GroupPointer>(#account_ref);
-                if group_pointer.is_err() {
+                let #group_pointer_value = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::group_pointer::GroupPointer>(#account_ref);
+                if #group_pointer_value.is_err() {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupPointerExtension.into());
                 }
                 #group_pointer_group_address_optional_check
-                if group_pointer.unwrap().group_address != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#group_pointer_group_address.key()))? {
+                if #group_pointer_value.unwrap().group_address != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#group_pointer_group_address.key()))? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupPointerExtensionGroupAddress.into());
                 }
             }
@@ -1531,12 +1586,12 @@ fn generate_constraint_mint(
             let group_member_pointer_authority_optional_check =
                 optional_check_scope.generate_check(group_member_pointer_authority);
             quote! {
-                let group_member_pointer = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::group_member_pointer::GroupMemberPointer>(#account_ref);
-                if group_member_pointer.is_err() {
+                let #group_member_pointer_value = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::group_member_pointer::GroupMemberPointer>(#account_ref);
+                if #group_member_pointer_value.is_err() {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupMemberPointerExtension.into());
                 }
                 #group_member_pointer_authority_optional_check
-                if group_member_pointer.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#group_member_pointer_authority.key()))? {
+                if #group_member_pointer_value.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#group_member_pointer_authority.key()))? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupMemberPointerExtensionAuthority.into());
                 }
             }
@@ -1549,12 +1604,12 @@ fn generate_constraint_mint(
             let group_member_pointer_member_address_optional_check =
                 optional_check_scope.generate_check(group_member_pointer_member_address);
             quote! {
-                let group_member_pointer = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::group_member_pointer::GroupMemberPointer>(#account_ref);
-                if group_member_pointer.is_err() {
+                let #group_member_pointer_value = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::group_member_pointer::GroupMemberPointer>(#account_ref);
+                if #group_member_pointer_value.is_err() {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupMemberPointerExtension.into());
                 }
                 #group_member_pointer_member_address_optional_check
-                if group_member_pointer.unwrap().member_address != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#group_member_pointer_member_address.key()))? {
+                if #group_member_pointer_value.unwrap().member_address != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#group_member_pointer_member_address.key()))? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupMemberPointerExtensionMemberAddress.into());
                 }
             }
@@ -1567,12 +1622,12 @@ fn generate_constraint_mint(
             let metadata_pointer_authority_optional_check =
                 optional_check_scope.generate_check(metadata_pointer_authority);
             quote! {
-                let metadata_pointer = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::metadata_pointer::MetadataPointer>(#account_ref);
-                if metadata_pointer.is_err() {
+                let #metadata_pointer_value = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::metadata_pointer::MetadataPointer>(#account_ref);
+                if #metadata_pointer_value.is_err() {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintMetadataPointerExtension.into());
                 }
                 #metadata_pointer_authority_optional_check
-                if metadata_pointer.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#metadata_pointer_authority.key()))? {
+                if #metadata_pointer_value.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#metadata_pointer_authority.key()))? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintMetadataPointerExtensionAuthority.into());
                 }
             }
@@ -1585,12 +1640,12 @@ fn generate_constraint_mint(
             let metadata_pointer_metadata_address_optional_check =
                 optional_check_scope.generate_check(metadata_pointer_metadata_address);
             quote! {
-                let metadata_pointer = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::metadata_pointer::MetadataPointer>(#account_ref);
-                if metadata_pointer.is_err() {
+                let #metadata_pointer_value = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::metadata_pointer::MetadataPointer>(#account_ref);
+                if #metadata_pointer_value.is_err() {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintMetadataPointerExtension.into());
                 }
                 #metadata_pointer_metadata_address_optional_check
-                if metadata_pointer.unwrap().metadata_address != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#metadata_pointer_metadata_address.key()))? {
+                if #metadata_pointer_value.unwrap().metadata_address != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#metadata_pointer_metadata_address.key()))? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintMetadataPointerExtensionMetadataAddress.into());
                 }
             }
@@ -1603,12 +1658,12 @@ fn generate_constraint_mint(
             let close_authority_optional_check =
                 optional_check_scope.generate_check(close_authority);
             quote! {
-                let close_authority = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::mint_close_authority::MintCloseAuthority>(#account_ref);
-                if close_authority.is_err() {
+                let #close_authority_value = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::mint_close_authority::MintCloseAuthority>(#account_ref);
+                if #close_authority_value.is_err() {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintCloseAuthorityExtension.into());
                 }
                 #close_authority_optional_check
-                if close_authority.unwrap().close_authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#close_authority.key()))? {
+                if #close_authority_value.unwrap().close_authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#close_authority.key()))? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintCloseAuthorityExtensionAuthority.into());
                 }
             }
@@ -1621,12 +1676,12 @@ fn generate_constraint_mint(
             let permanent_delegate_optional_check =
                 optional_check_scope.generate_check(permanent_delegate);
             quote! {
-                let permanent_delegate = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::permanent_delegate::PermanentDelegate>(#account_ref);
-                if permanent_delegate.is_err() {
+                let #permanent_delegate_value = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::permanent_delegate::PermanentDelegate>(#account_ref);
+                if #permanent_delegate_value.is_err() {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintPermanentDelegateExtension.into());
                 }
                 #permanent_delegate_optional_check
-                if permanent_delegate.unwrap().delegate != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#permanent_delegate.key()))? {
+                if #permanent_delegate_value.unwrap().delegate != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#permanent_delegate.key()))? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintPermanentDelegateExtensionDelegate.into());
                 }
             }
@@ -1639,12 +1694,12 @@ fn generate_constraint_mint(
             let transfer_hook_authority_optional_check =
                 optional_check_scope.generate_check(transfer_hook_authority);
             quote! {
-                let transfer_hook = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::transfer_hook::TransferHook>(#account_ref);
-                if transfer_hook.is_err() {
+                let #transfer_hook_value = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::transfer_hook::TransferHook>(#account_ref);
+                if #transfer_hook_value.is_err() {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintTransferHookExtension.into());
                 }
                 #transfer_hook_authority_optional_check
-                if transfer_hook.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#transfer_hook_authority.key()))? {
+                if #transfer_hook_value.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#transfer_hook_authority.key()))? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintTransferHookExtensionAuthority.into());
                 }
             }
@@ -1657,12 +1712,12 @@ fn generate_constraint_mint(
             let transfer_hook_program_id_optional_check =
                 optional_check_scope.generate_check(transfer_hook_program_id);
             quote! {
-                let transfer_hook = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::transfer_hook::TransferHook>(#account_ref);
-                if transfer_hook.is_err() {
+                let #transfer_hook_value = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::transfer_hook::TransferHook>(#account_ref);
+                if #transfer_hook_value.is_err() {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintTransferHookExtension.into());
                 }
                 #transfer_hook_program_id_optional_check
-                if transfer_hook.unwrap().program_id != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#transfer_hook_program_id.key()))? {
+                if #transfer_hook_value.unwrap().program_id != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#transfer_hook_program_id.key()))? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintTransferHookExtensionProgramId.into());
                 }
             }
@@ -1675,12 +1730,12 @@ fn generate_constraint_mint(
             let pausable_authority_optional_check =
                 optional_check_scope.generate_check(pausable_authority);
             quote! {
-                let pausable = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::pausable::PausableConfig>(#account_ref);
-                if pausable.is_err() {
+                let #pausable_value = ::anchor_spl::token_interface::get_mint_extension_data::<::anchor_spl::token_interface::spl_token_2022::extension::pausable::PausableConfig>(#account_ref);
+                if #pausable_value.is_err() {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintPausableExtension.into());
                 }
                 #pausable_authority_optional_check
-                if pausable.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#pausable_authority.key()))? {
+                if #pausable_value.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#pausable_authority.key()))? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintPausableAuthority.into());
                 }
             }
@@ -1782,34 +1837,42 @@ fn generate_create_account_or_fund_allocate_assign(
     payer: proc_macro2::TokenStream,
     seeds_with_nonce: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
+    let current_lamports = private_ident("__current_lamports");
+    let anchor_rent = private_ident("__anchor_rent");
+    let space_value = private_ident("space");
+    let lamports = private_ident("lamports");
+    let cpi_accounts = private_ident("cpi_accounts");
+    let cpi_context = private_ident("cpi_context");
+    let required_lamports = private_ident("required_lamports");
+
     // Field, payer, and system program are already validated to not be an Option at this point
     quote! {
         // If the account being initialized already has lamports, then
         // fund the required lamports for rent exemption, allocate and assign
-        let __current_lamports = #field.lamports();
-        if __current_lamports == 0 {
+        let #current_lamports = #field.lamports();
+        if #current_lamports == 0 {
             // Create the account with right amount of lamports and space, and the correct owner.
-            let space = #space;
-            let lamports = __anchor_rent.minimum_balance(space);
-            let cpi_accounts = anchor_lang::system_program::CreateAccount {
+            let #space_value = #space;
+            let #lamports = #anchor_rent.minimum_balance(#space_value);
+            let #cpi_accounts = anchor_lang::system_program::CreateAccount {
                 from: #payer.to_account_info(),
                 to: #field.to_account_info()
             };
-            let cpi_context = anchor_lang::context::CpiContext::new(system_program.key(), cpi_accounts);
-            anchor_lang::system_program::create_account(cpi_context.with_signer(&[#seeds_with_nonce]), lamports, space as u64, #owner)?;
+            let #cpi_context = anchor_lang::context::CpiContext::new(system_program.key(), #cpi_accounts);
+            anchor_lang::system_program::create_account(#cpi_context.with_signer(&[#seeds_with_nonce]), #lamports, #space_value as u64, #owner)?;
         } else {
             require_keys_neq!(#payer.key(), #field.key(), anchor_lang::error::ErrorCode::TryingToInitPayerAsProgramAccount);
             // Fund the account for rent exemption.
-            let required_lamports = __anchor_rent
+            let #required_lamports = #anchor_rent
                 .minimum_balance(#space)
                 .max(1)
-                .saturating_sub(__current_lamports);
-            let cpi_accounts = anchor_lang::system_program::CreateAccountAllowPrefund {
+                .saturating_sub(#current_lamports);
+            let #cpi_accounts = anchor_lang::system_program::CreateAccountAllowPrefund {
                 from: #payer.to_account_info(),
                 to: #field.to_account_info(),
             };
-            let cpi_context = anchor_lang::context::CpiContext::new(system_program.key(), cpi_accounts);
-            anchor_lang::system_program::create_account_allow_prefund(cpi_context.with_signer(&[#seeds_with_nonce]), required_lamports, #space as u64, #owner)?;
+            let #cpi_context = anchor_lang::context::CpiContext::new(system_program.key(), #cpi_accounts);
+            anchor_lang::system_program::create_account_allow_prefund(#cpi_context.with_signer(&[#seeds_with_nonce]), #required_lamports, #space as u64, #owner)?;
         }
     }
 }

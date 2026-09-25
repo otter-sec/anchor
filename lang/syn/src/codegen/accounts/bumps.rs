@@ -6,24 +6,23 @@ use {
     },
 };
 
-pub fn generate_bumps_name(anchor_ident: &str) -> proc_macro2::TokenStream {
-    if let Some((prefix, name)) = anchor_ident.rsplit_once("::") {
-        #[allow(
-            clippy::unwrap_used,
-            clippy::expect_used,
-            reason = "prefix is derived from a valid Rust path string"
-        )]
-        let prefix: proc_macro2::TokenStream = prefix
-            .parse()
-            .expect("module prefix must be a valid Rust path");
-        let bumps_name = format!("{name}Bumps");
-        let bumps_ident = Ident::new(&bumps_name, Span::call_site());
-        quote! { #prefix :: #bumps_ident }
-    } else {
-        let bumps_name = format!("{anchor_ident}Bumps");
-        let bumps_ident = Ident::new(&bumps_name, Span::call_site());
-        quote! { #bumps_ident }
+pub fn generate_bumps_name(path: &syn::Path) -> proc_macro2::TokenStream {
+    let mut bumps_path = path.clone();
+    for segment in &mut bumps_path.segments {
+        segment.arguments = syn::PathArguments::None;
     }
+
+    // Composite account fields are guaranteed to be non-empty type paths by the parser.
+    let Some(last_segment) = bumps_path.segments.last_mut() else {
+        unreachable!("composite account type path must not be empty")
+    };
+    let location = last_segment.ident.span();
+    last_segment.ident = Ident::new(
+        &format!("{}Bumps", last_segment.ident),
+        Span::call_site().located_at(location),
+    );
+
+    quote! { #bumps_path }
 }
 
 pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
@@ -73,7 +72,10 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                     None
                 }
                 AccountField::CompositeField(s) => {
-                    let comp_bumps_struct = generate_bumps_name(&s.symbol);
+                    let syn::Type::Path(ty_path) = &s.raw_field.ty else {
+                        unreachable!("composite account type must be a path")
+                    };
+                    let comp_bumps_struct = generate_bumps_name(&ty_path.path);
                     let bumps = quote!(pub #ident: #comp_bumps_struct);
                     let bumps_default = quote!(#ident: #comp_bumps_struct::default());
 

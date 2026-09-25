@@ -17,6 +17,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang: Improve macro hygiene to address potential issues with key validation ([#5105](https://github.com/otter-sec/anchor/pull/5105)).
 - client: Ignore logs from failed transactions in event subscriptions so reverted executions do not emit events ([#4884](https://github.com/otter-sec/anchor/pull/4884)).
 - lang: Accept arbitrary expressions in `declare_id!`. ([#5010](https://github.com/otter-sec/anchor/pull/5010)).
 - lang: Avoid an unnecessary stack allocation when snapshotting CPI return data ([#4931](https://github.com/otter-sec/anchor/pull/4931)).
