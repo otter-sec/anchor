@@ -390,6 +390,14 @@ export const LangErrorCode = {
     errors.ANCHOR_ERROR__CONSTRAINT_MINT_TRANSFER_HOOK_EXTENSION_AUTHORITY,
   ConstraintMintTransferHookExtensionProgramId:
     errors.ANCHOR_ERROR__CONSTRAINT_MINT_TRANSFER_HOOK_EXTENSION_PROGRAM_ID,
+  ConstraintDuplicateMutableAccount:
+    errors.ANCHOR_ERROR__CONSTRAINT_DUPLICATE_MUTABLE_ACCOUNT,
+  AccountAlreadyMigrated: errors.ANCHOR_ERROR__ACCOUNT_ALREADY_MIGRATED,
+  AccountNotMigrated: errors.ANCHOR_ERROR__ACCOUNT_NOT_MIGRATED,
+  ConstraintMintPausableExtension:
+    errors.ANCHOR_ERROR__CONSTRAINT_MINT_PAUSABLE_EXTENSION,
+  ConstraintMintPausableAuthority:
+    errors.ANCHOR_ERROR__CONSTRAINT_MINT_PAUSABLE_AUTHORITY,
 
   // Require.
   RequireViolated: errors.ANCHOR_ERROR__REQUIRE_VIOLATED,
@@ -441,7 +449,7 @@ export const LangErrorMessage = new Map<number, string>([
   [LangErrorCode.InstructionMissing, "Instruction discriminator not provided"],
   [
     LangErrorCode.InstructionFallbackNotFound,
-    "Fallback functions are not supported",
+    "The instruction discriminator did not match any instruction, and no fallback function is defined",
   ],
   [
     LangErrorCode.InstructionDidNotDeserialize,
@@ -549,7 +557,7 @@ export const LangErrorMessage = new Map<number, string>([
   ],
   [
     LangErrorCode.ConstraintMintGroupMemberPointerExtensionMemberAddress,
-    "A group member pointer extension group address constraint was violated",
+    "A group member pointer extension member address constraint was violated",
   ],
   [
     LangErrorCode.ConstraintMintMetadataPointerExtension,
@@ -565,7 +573,7 @@ export const LangErrorMessage = new Map<number, string>([
   ],
   [
     LangErrorCode.ConstraintMintCloseAuthorityExtension,
-    "A close authority constraint was violated",
+    "A close authority extension constraint was violated",
   ],
   [
     LangErrorCode.ConstraintMintCloseAuthorityExtensionAuthority,
@@ -591,6 +599,20 @@ export const LangErrorMessage = new Map<number, string>([
     LangErrorCode.ConstraintMintTransferHookExtensionProgramId,
     "A transfer hook extension transfer hook program id constraint was violated",
   ],
+  [
+    LangErrorCode.ConstraintDuplicateMutableAccount,
+    "A duplicate mutable account constraint was violated",
+  ],
+  [LangErrorCode.AccountAlreadyMigrated, "Account is already migrated"],
+  [LangErrorCode.AccountNotMigrated, "Account must be migrated before exiting"],
+  [
+    LangErrorCode.ConstraintMintPausableExtension,
+    "A pausable extension constraint was violated",
+  ],
+  [
+    LangErrorCode.ConstraintMintPausableAuthority,
+    "A pausable extension authority constraint was violated",
+  ],
 
   // Require.
   [LangErrorCode.RequireViolated, "A require expression was violated"],
@@ -614,14 +636,20 @@ export const LangErrorMessage = new Map<number, string>([
   ],
   [
     LangErrorCode.AccountDiscriminatorNotFound,
-    "No discriminator was found on the account",
+    "The account data is too small to contain a discriminator",
   ],
   [
     LangErrorCode.AccountDiscriminatorMismatch,
     "Account discriminator did not match what was expected",
   ],
-  [LangErrorCode.AccountDidNotDeserialize, "Failed to deserialize the account"],
-  [LangErrorCode.AccountDidNotSerialize, "Failed to serialize the account"],
+  [
+    LangErrorCode.AccountDidNotDeserialize,
+    "Failed to deserialize the account because the account data may be too small for the expected type",
+  ],
+  [
+    LangErrorCode.AccountDidNotSerialize,
+    "Failed to serialize the account because the account may be too small to hold the data",
+  ],
   [
     LangErrorCode.AccountNotEnoughKeys,
     "Not enough account keys given to the instruction",

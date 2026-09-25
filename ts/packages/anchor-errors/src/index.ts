@@ -1,8 +1,8 @@
 // Instruction errors.
 
-/** 8 byte instruction identifier not provided. */
+/** Instruction discriminator not provided. */
 export const ANCHOR_ERROR__INSTRUCTION_MISSING = 100;
-/** Fallback functions are not supported. */
+/** The instruction discriminator did not match any instruction, and no fallback function is defined. */
 export const ANCHOR_ERROR__INSTRUCTION_FALLBACK_NOT_FOUND = 101;
 /** The program could not deserialize the given instruction. */
 export const ANCHOR_ERROR__INSTRUCTION_DID_NOT_DESERIALIZE = 102;
@@ -83,7 +83,7 @@ export const ANCHOR_ERROR__CONSTRAINT_MINT_GROUP_POINTER_EXTENSION_GROUP_ADDRESS
 export const ANCHOR_ERROR__CONSTRAINT_MINT_GROUP_MEMBER_POINTER_EXTENSION = 2027;
 /** A group member pointer extension authority constraint was violated. */
 export const ANCHOR_ERROR__CONSTRAINT_MINT_GROUP_MEMBER_POINTER_EXTENSION_AUTHORITY = 2028;
-/** A group member pointer extension group address constraint was violated. */
+/** A group member pointer extension member address constraint was violated. */
 export const ANCHOR_ERROR__CONSTRAINT_MINT_GROUP_MEMBER_POINTER_EXTENSION_MEMBER_ADDRESS = 2029;
 /** A metadata pointer extension constraint was violated. */
 export const ANCHOR_ERROR__CONSTRAINT_MINT_METADATA_POINTER_EXTENSION = 2030;
@@ -91,7 +91,7 @@ export const ANCHOR_ERROR__CONSTRAINT_MINT_METADATA_POINTER_EXTENSION = 2030;
 export const ANCHOR_ERROR__CONSTRAINT_MINT_METADATA_POINTER_EXTENSION_AUTHORITY = 2031;
 /** A metadata pointer extension metadata address constraint was violated. */
 export const ANCHOR_ERROR__CONSTRAINT_MINT_METADATA_POINTER_EXTENSION_METADATA_ADDRESS = 2032;
-/** A close authority constraint was violated. */
+/** A close authority extension constraint was violated. */
 export const ANCHOR_ERROR__CONSTRAINT_MINT_CLOSE_AUTHORITY_EXTENSION = 2033;
 /** A close authority extension authority constraint was violated. */
 export const ANCHOR_ERROR__CONSTRAINT_MINT_CLOSE_AUTHORITY_EXTENSION_AUTHORITY = 2034;
@@ -105,6 +105,16 @@ export const ANCHOR_ERROR__CONSTRAINT_MINT_TRANSFER_HOOK_EXTENSION = 2037;
 export const ANCHOR_ERROR__CONSTRAINT_MINT_TRANSFER_HOOK_EXTENSION_AUTHORITY = 2038;
 /** A transfer hook extension transfer hook program id constraint was violated. */
 export const ANCHOR_ERROR__CONSTRAINT_MINT_TRANSFER_HOOK_EXTENSION_PROGRAM_ID = 2039;
+/** A duplicate mutable account constraint was violated. */
+export const ANCHOR_ERROR__CONSTRAINT_DUPLICATE_MUTABLE_ACCOUNT = 2040;
+/** Account is already migrated. */
+export const ANCHOR_ERROR__ACCOUNT_ALREADY_MIGRATED = 2041;
+/** Account must be migrated before exiting. */
+export const ANCHOR_ERROR__ACCOUNT_NOT_MIGRATED = 2042;
+/** A pausable extension constraint was violated. */
+export const ANCHOR_ERROR__CONSTRAINT_MINT_PAUSABLE_EXTENSION = 2043;
+/** A pausable extension authority constraint was violated. */
+export const ANCHOR_ERROR__CONSTRAINT_MINT_PAUSABLE_AUTHORITY = 2044;
 
 // Require errors.
 
@@ -127,13 +137,13 @@ export const ANCHOR_ERROR__REQUIRE_GTE_VIOLATED = 2506;
 
 /** The account discriminator was already set on this account. */
 export const ANCHOR_ERROR__ACCOUNT_DISCRIMINATOR_ALREADY_SET = 3000;
-/** No 8 byte discriminator was found on the account. */
+/** The account data is too small to contain a discriminator. */
 export const ANCHOR_ERROR__ACCOUNT_DISCRIMINATOR_NOT_FOUND = 3001;
-/** 8 byte discriminator did not match what was expected. */
+/** Account discriminator did not match what was expected. */
 export const ANCHOR_ERROR__ACCOUNT_DISCRIMINATOR_MISMATCH = 3002;
-/** Failed to deserialize the account. */
+/** Failed to deserialize the account because the account data may be too small for the expected type. */
 export const ANCHOR_ERROR__ACCOUNT_DID_NOT_DESERIALIZE = 3003;
-/** Failed to serialize the account. */
+/** Failed to serialize the account because the account may be too small to hold the data. */
 export const ANCHOR_ERROR__ACCOUNT_DID_NOT_SERIALIZE = 3004;
 /** Not enough account keys given to the instruction. */
 export const ANCHOR_ERROR__ACCOUNT_NOT_ENOUGH_KEYS = 3005;
@@ -226,6 +236,11 @@ export type AnchorErrorCode =
   | typeof ANCHOR_ERROR__CONSTRAINT_MINT_TRANSFER_HOOK_EXTENSION
   | typeof ANCHOR_ERROR__CONSTRAINT_MINT_TRANSFER_HOOK_EXTENSION_AUTHORITY
   | typeof ANCHOR_ERROR__CONSTRAINT_MINT_TRANSFER_HOOK_EXTENSION_PROGRAM_ID
+  | typeof ANCHOR_ERROR__CONSTRAINT_DUPLICATE_MUTABLE_ACCOUNT
+  | typeof ANCHOR_ERROR__ACCOUNT_ALREADY_MIGRATED
+  | typeof ANCHOR_ERROR__ACCOUNT_NOT_MIGRATED
+  | typeof ANCHOR_ERROR__CONSTRAINT_MINT_PAUSABLE_EXTENSION
+  | typeof ANCHOR_ERROR__CONSTRAINT_MINT_PAUSABLE_AUTHORITY
   | typeof ANCHOR_ERROR__REQUIRE_VIOLATED
   | typeof ANCHOR_ERROR__REQUIRE_EQ_VIOLATED
   | typeof ANCHOR_ERROR__REQUIRE_KEYS_EQ_VIOLATED

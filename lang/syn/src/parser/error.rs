@@ -87,15 +87,12 @@ fn parse_error_attribute(variant: &syn::Variant) -> Result<Option<String>, syn::
                 }
             };
 
-            let msg = match g_stream.into_iter().next() {
-                None => {
-                    return Err(syn::Error::new(
-                        attr.span(),
-                        "`#[msg]` requires a message string",
-                    ))
-                }
-                Some(msg) => msg.to_string().replace('\"', ""),
-            };
+            // Parse as a string literal (rather than stringifying the raw
+            // tokens) so escapes and rustfmt's `\`-newline line continuations
+            // resolve to the intended single-line message.
+            let msg = syn::parse2::<syn::LitStr>(g_stream)
+                .map_err(|_| syn::Error::new(attr.span(), "`#[msg]` requires a message string"))?
+                .value();
 
             Ok(Some(msg))
         }
