@@ -1458,6 +1458,56 @@ fn declare_program_rejects_bytemuck_enum_type() {
 }
 
 #[test]
+fn declare_program_accepts_bytemuck_nested_type() {
+    declare_program_case(
+        "declare_program_bytemuck_nested_type",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "nested", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [],
+  "types": [
+    {
+      "name": "Inner",
+      "serialization": "bytemuck",
+      "repr": { "kind": "c" },
+      "type": {
+        "kind": "struct",
+        "fields": [{ "name": "value", "type": "u64" }]
+      }
+    },
+    {
+      "name": "Outer",
+      "serialization": "bytemuck",
+      "repr": { "kind": "c" },
+      "type": {
+        "kind": "struct",
+        "fields": [{ "name": "inner", "type": { "defined": { "name": "Inner" } } }]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect_pass();
+}
+
+#[test]
+fn idl_bytemuck_requires_repr_c() {
+    CompileCase::new(
+        "idl_bytemuck_requires_repr_c",
+        r#"
+use anchor_lang::prelude::*;
+
+#[derive(IdlType)]
+#[idl(bytemuck)]
+pub struct MissingRepr {
+    pub value: u64,
+}
+"#,
+    )
+    .expect_fail(&["`#[idl(bytemuck)]` requires `#[repr(C)]`"]);
+}
+
+#[test]
 fn declare_program_return_wrapper_compiles_for_returning_cpi() {
     CompileCase::new(
         "declare_program_return_wrapper",

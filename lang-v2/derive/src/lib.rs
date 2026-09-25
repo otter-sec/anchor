@@ -15,7 +15,7 @@ use {
     quote::quote,
     syn::{
         parse::Parser, parse_macro_input, spanned::Spanned, Data, DeriveInput, Expr, Fields, FnArg,
-        Ident, ItemMod, ItemStruct, Pat, Type,
+        Ident, ItemMod, ItemStruct, Meta, Pat, Token, Type,
     },
 };
 
@@ -2532,9 +2532,10 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// // Plain struct dep.
 /// #[repr(C)]
 /// #[derive(Clone, Copy, Pod, Zeroable, IdlType)]
+/// #[idl(bytemuck)]
 /// pub struct Inner { pub a: u64, pub b: u64 }
 ///
-/// #[event]
+/// #[event(bytemuck)]
 /// pub struct NestedEvent {
 ///     pub outer_id: u64,
 ///     pub inner: Inner, // <- pulls `Inner` into the IDL's types[]
@@ -2564,7 +2565,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///     }
 /// }
 /// ```
-#[proc_macro_derive(IdlType)]
+#[proc_macro_derive(IdlType, attributes(idl))]
 pub fn derive_idl_type(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     if let Some(err) = unsupported_wincode_idl_attr_error("`#[derive(IdlType)]`", &input.attrs) {
@@ -2572,6 +2573,38 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
     }
     let name = &input.ident;
     let name_str = name.to_string();
+
+    let is_bytemuck = match parse_idl_bytemuck_attr(&input.attrs) {
+        Ok(value) => value,
+        Err(err) => return err.to_compile_error().into(),
+    };
+
+    if is_bytemuck && !matches!(&input.data, Data::Struct(_)) {
+        return syn::Error::new(
+            name.span(),
+            "`#[idl(bytemuck)]` is only supported on structs",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let type_kind = if is_bytemuck {
+        let repr = match idl::bytemuck_repr_from_attrs(&input.attrs) {
+            Ok(repr) => repr,
+            Err(err) => return err.to_compile_error().into(),
+        };
+        if !has_repr_c(&input.attrs) {
+            return syn::Error::new(
+                name.span(),
+                "`#[idl(bytemuck)]` requires `#[repr(C)]`",
+            )
+            .to_compile_error()
+            .into();
+        }
+        idl::TypeKind::BytemuckRepr(repr)
+    } else {
+        idl::TypeKind::Borsh
+    };
 
     let docs = idl::extract_doc_lines(&input.attrs);
     // `IdlType` items have no discriminator — they're just plain type
@@ -2582,9 +2615,8 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
     // `IdlTypeDef` doesn't carry `discriminator`, so the program-level
     // assembly already elides it when reconstructing types entries.
     // Default to `Borsh` serialization (no `serialization` / `repr` fields).
-    // `IdlType` is layout-agnostic — users opt into Pod separately via
-    // their own `bytemuck::Pod` derive if they need zero-copy. Forcing a
-    // `"bytemuck"` tag here would lie in the IDL for non-Pod types.
+    // Zero-copy nested types opt in explicitly with `#[idl(bytemuck)]`; the
+    // generated assertion below ensures the marker is backed by Pod types.
     let empty_disc: [u8; 0] = [];
     let (idl_type_def, field_dep_walkers, idl_validation_tokens) = match &input.data {
         Data::Struct(data) => {
@@ -2596,7 +2628,7 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
                     &name_str,
                     &docs,
                     &data.fields,
-                    idl::TypeKind::Borsh,
+                    type_kind,
                     &input.generics,
                 ),
                 cfg_field_dep_walkers(&data.fields),
@@ -2614,7 +2646,7 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
                     &name_str,
                     &docs,
                     &data.variants,
-                    idl::TypeKind::Borsh,
+                    type_kind,
                     &input.generics,
                 ),
                 cfg_variant_dep_walkers(&data.variants),
@@ -2642,11 +2674,27 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
     // with the derive.
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
+    let idl_where_clause = if is_bytemuck {
+        let type_path = quote! { #name #ty_generics };
+        match where_clause {
+            Some(where_clause) => quote! {
+                #where_clause,
+                #type_path: anchor_lang::bytemuck::Pod + anchor_lang::bytemuck::Zeroable
+            },
+            None => quote! {
+                where
+                    #type_path: anchor_lang::bytemuck::Pod + anchor_lang::bytemuck::Zeroable
+            },
+        }
+    } else {
+        quote! { #where_clause }
+    };
+
     TokenStream::from(quote! {
         #(#idl_validation_tokens)*
         #[cfg(feature = "idl-build")]
         #[doc(hidden)]
-        impl #impl_generics anchor_lang::IdlAccountType for #name #ty_generics #where_clause {
+        impl #impl_generics anchor_lang::IdlAccountType for #name #ty_generics #idl_where_clause {
             fn __idl_type_def() -> Option<&'static str> {
                 #idl_type_def
             }
@@ -2661,6 +2709,59 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
             }
         }
     })
+}
+
+fn parse_idl_bytemuck_attr(attrs: &[syn::Attribute]) -> syn::Result<bool> {
+    let mut bytemuck = false;
+    for attr in attrs.iter().filter(|attr| attr.path().is_ident("idl")) {
+        let metas = match &attr.meta {
+            Meta::List(list) => list.parse_args_with(
+                syn::punctuated::Punctuated::<Meta, Token![,]>::parse_terminated,
+            )?,
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "expected `#[idl(bytemuck)]`",
+                ));
+            }
+        };
+        if metas.is_empty() {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "expected `#[idl(bytemuck)]`",
+            ));
+        }
+        for meta in metas {
+            if !matches!(meta, Meta::Path(ref path) if path.is_ident("bytemuck")) {
+                return Err(syn::Error::new_spanned(
+                    meta,
+                    "unsupported `#[idl]` argument; expected `bytemuck`",
+                ));
+            }
+            if bytemuck {
+                return Err(syn::Error::new_spanned(
+                    meta,
+                    "duplicate `bytemuck` in `#[idl]`",
+                ));
+            }
+            bytemuck = true;
+        }
+    }
+    Ok(bytemuck)
+}
+
+fn has_repr_c(attrs: &[syn::Attribute]) -> bool {
+    attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("repr"))
+        .filter_map(|attr| {
+            attr.parse_args_with(
+                syn::punctuated::Punctuated::<Meta, Token![,]>::parse_terminated,
+            )
+            .ok()
+        })
+        .flatten()
+        .any(|meta| matches!(meta, Meta::Path(path) if path.is_ident("C")))
 }
 
 /// Syntactic diagnosis for common non-Pod field types on `#[account]` structs.
