@@ -93,6 +93,38 @@ fn compile_pass_case(name: &str, source: &str) {
     );
 }
 
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn btree_map_instruction_arguments_remain_supported() {
+    compile_pass_case(
+        "btree_map_instruction_arguments",
+        r#"
+extern crate alloc;
+
+use alloc::collections::BTreeMap;
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(Accounts)]
+pub struct Noop {}
+
+#[program]
+pub mod btree_map_instruction_arg {
+    use super::*;
+
+    pub fn set(_ctx: &mut Context<Noop>, value: BTreeMap<u8, u16>) -> Result<()> {
+        let _ = value;
+        Ok(())
+    }
+}
+"#,
+    );
+}
+
 fn cargo_test_pass_case(name: &str, source: &str, features: &[&str]) {
     let mut args = Vec::new();
     if !features.is_empty() {
@@ -712,6 +744,39 @@ pub struct Noop {}
     );
 
     compile_fail_case(
+        "float_instruction_attr_arg",
+        r#"
+use anchor_lang::prelude::*;
+
+#[derive(Accounts)]
+#[instruction(price: f64)]
+pub struct SetPrice {
+    pub data: UncheckedAccount,
+}
+"#,
+        &[
+            "`f32` and `f64` instruction arguments are not supported",
+            "use an integer or fixed-point representation",
+        ],
+    );
+
+    compile_fail_case(
+        "float_instruction_attr_alias",
+        r#"
+use anchor_lang::prelude::*;
+
+type Price = f64;
+
+#[derive(Accounts)]
+#[instruction(price: Price)]
+pub struct SetPrice {
+    pub data: UncheckedAccount,
+}
+"#,
+        &["BorshDeserializeCompatible"],
+    );
+
+    compile_fail_case(
         "float_borsh_account",
         r#"
 use anchor_lang::prelude::*;
@@ -759,6 +824,120 @@ pub struct Price {
             "`f32` and `f64` are not supported on `#[derive(IdlType)]`",
             "use an integer or fixed-point representation",
         ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn declared_program_rejects_external_float_instruction_types() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let idl_path = manifest_dir.join("target/idls/external_float.json");
+    fs::create_dir_all(idl_path.parent().unwrap()).unwrap();
+    fs::write(
+        &idl_path,
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": {
+    "name": "external_float",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
+  "instructions": [
+    {
+      "name": "useExternal",
+      "discriminator": [1, 2, 3, 4],
+      "accounts": [],
+      "args": [
+        {
+          "name": "value",
+          "type": { "defined": { "name": "ExternalFloat" } }
+        }
+      ]
+    }
+  ],
+  "types": []
+}"#,
+    )
+    .unwrap();
+
+    let output = cargo_case(
+        "declared_program_external_float",
+        r#"
+use anchor_lang::prelude::*;
+
+mod external_types {
+    pub type ExternalFloat = f64;
+}
+
+use external_types::ExternalFloat;
+
+declare_program!(external_float);
+"#,
+        "check",
+        &[],
+    );
+    fs::remove_file(idl_path).unwrap();
+
+    assert!(
+        !output.status.success(),
+        "declared program with an external float type unexpectedly compiled successfully"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("BorshSerializeCompatible")
+            || stderr.contains("BorshDeserializeCompatible"),
+        "declared program diagnostics did not identify the Borsh compatibility proof:\n\n{stderr}"
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn nested_float_aliases_are_rejected_on_borsh_accounts() {
+    compile_pass_case(
+        "nested_safe_borsh_account",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct SafeInner {
+    pub value: u64,
+}
+
+#[account(borsh)]
+pub struct SafeAccount {
+    pub value: SafeInner,
+}
+"#,
+    );
+
+    compile_fail_case(
+        "nested_float_alias_borsh_account",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+type FloatAlias = f64;
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct HiddenFloat {
+    pub value: FloatAlias,
+}
+
+#[account(borsh)]
+pub struct Price {
+    pub value: HiddenFloat,
+}
+"#,
+        &["BorshSerializeCompatible", "BorshDeserializeCompatible"],
     );
 }
 

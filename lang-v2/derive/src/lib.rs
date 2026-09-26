@@ -45,7 +45,11 @@ pub fn derive_accounts(input: TokenStream) -> TokenStream {
 /// Wincode attributes remain supported when required.
 #[proc_macro_derive(AnchorSerialize, attributes(wincode))]
 pub fn anchor_serialize(input: TokenStream) -> TokenStream {
-    derive_wincode_schema(input, quote!(anchor_lang::wincode::SchemaWrite))
+    derive_wincode_schema(
+        input,
+        quote!(anchor_lang::wincode::SchemaWrite),
+        quote!(anchor_lang::__private::BorshSerializeCompatible),
+    )
 }
 
 /// Derive Anchor's Wincode-backed deserialization implementation.
@@ -55,18 +59,67 @@ pub fn anchor_serialize(input: TokenStream) -> TokenStream {
 /// dependency is needed.
 #[proc_macro_derive(AnchorDeserialize, attributes(wincode))]
 pub fn anchor_deserialize(input: TokenStream) -> TokenStream {
-    derive_wincode_schema(input, quote!(anchor_lang::wincode::SchemaRead))
+    derive_wincode_schema(
+        input,
+        quote!(anchor_lang::wincode::SchemaRead),
+        quote!(anchor_lang::__private::BorshDeserializeCompatible),
+    )
 }
 
-fn derive_wincode_schema(input: TokenStream, schema_derive: TokenStream2) -> TokenStream {
-    let input = TokenStream2::from(input);
+fn derive_wincode_schema(
+    input: TokenStream,
+    schema_derive: TokenStream2,
+    compatibility_trait: TokenStream2,
+) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let compatibility_impl = borsh_compatibility_impl(&input, &compatibility_trait);
     quote! {
         #[derive(#schema_derive)]
         #[wincode(crate = "anchor_lang::wincode")]
         #[anchor_lang::__erase]
         #input
+
+        #compatibility_impl
     }
     .into()
+}
+
+fn borsh_compatibility_impl(
+    input: &DeriveInput,
+    compatibility_trait: &TokenStream2,
+) -> TokenStream2 {
+    let name = &input.ident;
+    let field_types: Vec<_> = match &input.data {
+        Data::Struct(data) => data.fields.iter().map(|field| &field.ty).collect(),
+        Data::Enum(data) => data
+            .variants
+            .iter()
+            .flat_map(|variant| variant.fields.iter().map(|field| &field.ty))
+            .collect(),
+        Data::Union(_) => Vec::new(),
+    };
+    let generics = &input.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let serialize_field_list = field_types
+        .iter()
+        .rev()
+        .fold(quote!(anchor_lang::__private::BorshSerializeFieldsEnd), |tail, ty| {
+            quote!(anchor_lang::__private::BorshSerializeFields<#ty, #tail>)
+        });
+    let fields_type = if compatibility_trait.to_string().contains("Serialize") {
+        serialize_field_list
+    } else {
+        field_types.iter().rev().fold(
+            quote!(anchor_lang::__private::BorshDeserializeFieldsEnd),
+            |tail, ty| quote!(anchor_lang::__private::BorshDeserializeFields<#ty, #tail>),
+        )
+    };
+
+    quote! {
+        impl #impl_generics #compatibility_trait for #name #ty_generics #where_clause {
+            type Fields = #fields_type;
+        }
+    }
 }
 
 /// Removes the duplicate item emitted by the schema-derive wrappers.
@@ -1086,6 +1139,24 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         Ok(args) => args,
         Err(err) => return err.to_compile_error(),
     };
+    if let Some((_, ty)) = ix_args.iter().find(|(_, ty)| type_contains_float(ty)) {
+        return syn::Error::new(
+            ty.span(),
+            "`f32` and `f64` instruction arguments are not supported because the \
+             Borsh-compatible decoder would accept NaN; use an integer or fixed-point \
+             representation",
+        )
+        .to_compile_error();
+    }
+    let ix_arg_compatibility_asserts: Vec<_> = ix_args
+        .iter()
+        .map(|(_, ty)| {
+            borsh_compatibility_assert_for_type(
+                ty,
+                &quote!(anchor_lang::__private::BorshDeserializeCompatible),
+            )
+        })
+        .collect();
     let ix_arg_names: Vec<String> = ix_args.iter().map(|(n, _)| n.to_string()).collect();
 
     // Compute the views-slice offset for each field. Direct fields occupy 1
@@ -2097,6 +2168,8 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
 
         #cpi_accounts_mod
 
+        #(#ix_arg_compatibility_asserts)*
+
         #bumps_def
 
         impl anchor_lang::Bumps for #name {
@@ -2237,6 +2310,19 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
             return err.to_compile_error().into();
         }
     }
+    let borsh_compatibility_asserts = if is_borsh {
+        let mut asserts = borsh_compatibility_asserts(
+            fields,
+            quote!(anchor_lang::__private::BorshSerializeCompatible),
+        );
+        asserts.extend(borsh_compatibility_asserts(
+            fields,
+            quote!(anchor_lang::__private::BorshDeserializeCompatible),
+        ));
+        asserts
+    } else {
+        Vec::new()
+    };
     use sha2::Digest;
     let hash = sha2::Sha256::digest(format!("account:{name_str}").as_bytes());
     let disc_bytes = &hash[..8];
@@ -2467,6 +2553,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
         #vis struct #name #fields
 
         #(#idl_validation_tokens)*
+        #(#borsh_compatibility_asserts)*
         #pod_impls
 
         impl anchor_lang::Owner for #name {
@@ -2943,6 +3030,7 @@ fn gen_declared_program(
     let mut account_group_variants =
         std::collections::BTreeMap::<String, Vec<DeclareAccountGroupVariant>>::new();
     let mut handlers = Vec::new();
+    let mut interface_borsh_compatibility_asserts = Vec::new();
     for ix in instructions {
         let ix_name = json_str(ix, "name", name.span())?;
         let ix_ident = Ident::new(&to_snake_case(ix_name), name.span());
@@ -2995,14 +3083,51 @@ fn gen_declared_program(
                 )
             })?;
             let ty = declare_idl_type_to_tokens(ty_value, name.span())?;
+            let ty_syn: Type = syn::parse2(ty.clone()).map_err(|err| {
+                syn::Error::new(
+                    name.span(),
+                    format!("failed to parse instruction argument type `{ty}`: {err}"),
+                )
+            })?;
+            interface_borsh_compatibility_asserts.push(
+                borsh_compatibility_assert_for_type(
+                    &ty_syn,
+                    &quote!(anchor_lang::__private::BorshSerializeCompatible),
+                ),
+            );
+            interface_borsh_compatibility_asserts.push(
+                borsh_compatibility_assert_for_type(
+                    &ty_syn,
+                    &quote!(anchor_lang::__private::BorshDeserializeCompatible),
+                ),
+            );
             arg_decls.push(quote! { #arg_ident: #ty });
             arg_uses.push(quote! { let _ = #arg_ident; });
         }
-        let return_ty = ix
-            .get("returns")
-            .map(|ty| declare_idl_type_to_tokens(ty, name.span()))
-            .transpose()?
-            .unwrap_or_else(|| quote! { () });
+        let return_ty = if let Some(returns) = ix.get("returns") {
+            let return_ty = declare_idl_type_to_tokens(returns, name.span())?;
+            let return_ty_syn: Type = syn::parse2(return_ty.clone()).map_err(|err| {
+                syn::Error::new(
+                    name.span(),
+                    format!("failed to parse instruction return type `{return_ty}`: {err}"),
+                )
+            })?;
+            interface_borsh_compatibility_asserts.push(
+                borsh_compatibility_assert_for_type(
+                    &return_ty_syn,
+                    &quote!(anchor_lang::__private::BorshSerializeCompatible),
+                ),
+            );
+            interface_borsh_compatibility_asserts.push(
+                borsh_compatibility_assert_for_type(
+                    &return_ty_syn,
+                    &quote!(anchor_lang::__private::BorshDeserializeCompatible),
+                ),
+            );
+            return_ty
+        } else {
+            quote! { () }
+        };
 
         handlers.push(quote! {
             #[discrim = [#(#discrim_tokens),*]]
@@ -3050,6 +3175,7 @@ fn gen_declared_program(
             }
 
             #(#types)*
+            #(#interface_borsh_compatibility_asserts)*
             pub mod types {
                 #(#type_reexports)*
             }
@@ -5022,6 +5148,46 @@ fn reject_float_fields(surface: &str, fields: &Fields) -> syn::Result<()> {
     Ok(())
 }
 
+fn borsh_compatibility_asserts(
+    fields: &Fields,
+    compatibility_trait: TokenStream2,
+) -> Vec<TokenStream2> {
+    fields
+        .iter()
+        .map(|field| {
+            let ty = &field.ty;
+            let cfg_attrs = cfg_attrs(&field.attrs);
+            let compatibility_assert =
+                borsh_compatibility_assert_for_type(ty, &compatibility_trait);
+            quote! {
+                #(#cfg_attrs)*
+                #compatibility_assert
+            }
+        })
+        .collect()
+}
+
+fn borsh_compatibility_assert_for_type(
+    ty: &Type,
+    compatibility_trait: &TokenStream2,
+) -> TokenStream2 {
+    let compatibility_proof = if compatibility_trait.to_string().contains("Serialize") {
+        quote!(anchor_lang::__private::BorshSerializeCompatibilityProof)
+    } else {
+        quote!(anchor_lang::__private::BorshDeserializeCompatibilityProof)
+    };
+    quote! {
+        const _: fn() = || {
+            fn assert_compatible<T>()
+            where
+                T: #compatibility_trait,
+                <T as #compatibility_trait>::Fields: #compatibility_proof,
+            {}
+            assert_compatible::<#ty>();
+        };
+    }
+}
+
 fn process_handler(
     handler: &syn::ItemFn,
     mod_name: &Ident,
@@ -5123,6 +5289,21 @@ fn process_handler(
             None
         })
         .collect();
+    let extra_arg_compatibility_asserts: Vec<_> = extra_args
+        .iter()
+        .map(|(_, ty)| {
+            borsh_compatibility_assert_for_type(
+                ty,
+                &quote!(anchor_lang::__private::BorshDeserializeCompatible),
+            )
+        })
+        .collect();
+    let return_compatibility_assert = return_type.as_ref().map(|ty| {
+        borsh_compatibility_assert_for_type(
+            ty,
+            &quote!(anchor_lang::__private::BorshSerializeCompatible),
+        )
+    });
     if let Some((_, ty)) = extra_args.iter().find(|(_, ty)| type_contains_float(ty)) {
         return HandlerCodegen::error(
             handler,
@@ -5203,6 +5384,9 @@ fn process_handler(
                 #[cfg(not(feature = "no-log-ix-name"))]
                 anchor_lang::msg!(#fn_name_log);
 
+                #(#extra_arg_compatibility_asserts)*
+                #return_compatibility_assert
+
                 #[inline(always)]
                 fn __anchor_assert_no_ix_args(_: ()) {}
 
@@ -5239,6 +5423,9 @@ fn process_handler(
             ) -> u64 {
                 #[cfg(not(feature = "no-log-ix-name"))]
                 anchor_lang::msg!(#fn_name_log);
+
+                #(#extra_arg_compatibility_asserts)*
+                #return_compatibility_assert
 
                 trait __AnchorIxArgCoerce<'ix> {
                     fn __coerce(self, __ix_data: &'ix [u8]) -> anchor_lang::Result<#tuple_ty>;
@@ -6055,6 +6242,14 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
     } else {
         Vec::new()
     };
+    let borsh_compatibility_asserts = if matches!(mode, EventMode::Wincode) {
+        borsh_compatibility_asserts(
+            fields,
+            quote!(anchor_lang::__private::BorshSerializeCompatible),
+        )
+    } else {
+        Vec::new()
+    };
     let event_type_def = idl::build_struct_type_def_emission(
         &name_str,
         &struct_docs,
@@ -6155,6 +6350,7 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
             #vis struct #name #fields
 
             #(#idl_validation_tokens)*
+            #(#borsh_compatibility_asserts)*
             #discriminator_impl
 
             impl anchor_lang::Event for #name {

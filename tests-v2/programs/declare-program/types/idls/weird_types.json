@@ -283,7 +283,7 @@
           {
             "name": "Tuple",
             "fields": [
-              "f32",
+              "u32",
               {
                 "generic": "T"
               }
