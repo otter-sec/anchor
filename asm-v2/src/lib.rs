@@ -81,7 +81,7 @@ macro_rules! include_asm {
 /// wrapper at `$OUT_DIR/combined.rs`.
 ///
 /// If `src/lib.rs` contains `#[repr(C)]` or `#[account]` structs,
-/// `.equ` constants for field offsets are prepended automatically. Any Rust
+/// `.equiv` constants for field offsets are prepended automatically. Any Rust
 /// modules parsed while generating that preamble are also registered as
 /// `cargo:rerun-if-changed` inputs.
 pub fn build(asm_dir: &str) {
@@ -333,7 +333,7 @@ mod tests {
 
         let (preamble, operands, tracked_files) = preamble_for_build(&lib_rs);
         assert!(preamble
-            .contains(".equ BuildTracked__value, {__anchor_asm_state_child_BuildTracked_value}"));
+            .contains(".equiv BuildTracked__value, {__anchor_asm_state_child_BuildTracked_value}"));
         assert_eq!(operands.len(), 3);
         let combined_rs = render_combined_rs(&operands);
         assert!(combined_rs.contains("offset_of!(crate::state::child::BuildTracked, value)"));
