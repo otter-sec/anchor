@@ -3602,12 +3602,17 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                         )
                     })
                     .unwrap_or_default();
-                let pod_impls = serialization
-                    .is_bytemuck()
-                    .then(|| {
-                        gen_declare_program_pod_impls(&ident, &generics, &fields, serialization)
-                    })
-                    .unwrap_or_default();
+                let pod_impls = if serialization.is_bytemuck() {
+                    gen_declare_program_pod_impls(
+                        &ident,
+                        &generics,
+                        &fields,
+                        serialization,
+                        idl_repr_guarantees_no_padding(ty_def),
+                    )?
+                } else {
+                    quote! {}
+                };
                 let impl_generics = &generics.impl_generics;
                 out.push(match fields {
                     DeclareTypeFields::Named { fields, .. } if serialization.is_bytemuck() => quote! {
@@ -3845,6 +3850,19 @@ fn gen_declare_program_repr(
     .map(|modifier| quote! { , #modifier });
 
     Ok(Some(quote! { #[repr(#kind #modifier)] }))
+}
+
+fn idl_repr_guarantees_no_padding(ty_def: &serde_json::Value) -> bool {
+    let Some(repr) = ty_def.get("repr") else {
+        return false;
+    };
+    match repr.get("kind").and_then(serde_json::Value::as_str) {
+        Some("transparent") => true,
+        _ => repr
+            .get("packed")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+    }
 }
 
 fn declare_type_serialization(
@@ -4387,17 +4405,28 @@ fn gen_declare_program_pod_impls(
     generics: &DeclareTypeGenerics,
     fields: &DeclareTypeFields,
     serialization: DeclareTypeSerialization,
-) -> TokenStream2 {
+    layout_has_no_padding: bool,
+) -> syn::Result<TokenStream2> {
     let impl_generics = &generics.impl_generics;
     let ty_generics = &generics.ty_generics;
     // `bytemuckunsafe` is an explicit opt-out of safe Pod derivability:
     // imported layouts may include padding or non-Pod fields. Emit the
     // unsafe impls without field-Pod / no-padding assertions.
     if serialization.is_bytemuck_unsafe() {
-        return quote! {
-            unsafe impl #impl_generics anchor_lang::bytemuck::Pod for #ident #ty_generics {}
-            unsafe impl #impl_generics anchor_lang::bytemuck::Zeroable for #ident #ty_generics {}
-        };
+        let where_clause = &generics.pod_where_clause;
+        return Ok(quote! {
+            unsafe impl #impl_generics anchor_lang::bytemuck::Pod for #ident #ty_generics #where_clause {}
+            unsafe impl #impl_generics anchor_lang::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
+        });
+    }
+
+    // Same rule as bytemuck: generic types need packed or transparent.
+    // `T: Pod` does not prove there is no padding between fields.
+    if !impl_generics.is_empty() && !layout_has_no_padding {
+        return Err(syn::Error::new(
+            ident.span(),
+            "declare_program! generic bytemuck types must be `repr(packed)` or `repr(transparent)`",
+        ));
     }
 
     let field_types = fields.tys();
@@ -4417,20 +4446,39 @@ fn gen_declare_program_pod_impls(
                 + anchor_lang::bytemuck::Zeroable),*
         }
     };
-    quote! {
-        impl #impl_generics #ident #ty_generics #where_clause {
-            const __ANCHOR_DECLARE_PROGRAM_POD_ASSERT: fn() = || {
+    // Item-level `const _: ()` is always evaluated. An unused associated const
+    // on an `impl` is not, so the previous padding `assert!` never ran.
+    //
+    // Same host-wide padding rule as `#[account]` / `#[event(bytemuck)]`
+    // (#4794): `repr(C)` padding follows the *host* backend, so a `u64`
+    // then `u128` layout that is packed on SBF fails here on x86. Unlike
+    // those macros, `declare_program!` cannot rewrite IDL fields to
+    // `PodU128`; padded layouts need `bytemuckunsafe` or a hand-written type.
+    let touch_no_padding = if impl_generics.is_empty() {
+        quote! {
+            const _: () = #ident::__ANCHOR_DECLARE_PROGRAM_NO_PADDING;
+        }
+    } else {
+        quote! {}
+    };
+    Ok(quote! {
+        const _: fn() = || {
+            fn __assert_declare_program_pod_fields #impl_generics () #where_clause {
                 fn assert_pod<T: anchor_lang::bytemuck::Pod>() {}
                 #( assert_pod::<#field_types>(); )*
-            };
-            const __ANCHOR_DECLARE_PROGRAM_NO_PADDING: () = assert!(
-                core::mem::size_of::<Self>() == 0 #(+ core::mem::size_of::<#field_types>())*,
+            }
+        };
+        impl #impl_generics #ident #ty_generics #where_clause {
+            const __ANCHOR_DECLARE_PROGRAM_NO_PADDING: () = ::core::assert!(
+                ::core::mem::size_of::<Self>()
+                    == 0 #(+ ::core::mem::size_of::<#field_types>())*,
                 "declared bytemuck type has padding bytes"
             );
         }
+        #touch_no_padding
         unsafe impl #impl_generics anchor_lang::bytemuck::Pod for #ident #ty_generics #where_clause {}
         unsafe impl #impl_generics anchor_lang::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
-    }
+    })
 }
 
 fn gen_declare_program_type_fields(

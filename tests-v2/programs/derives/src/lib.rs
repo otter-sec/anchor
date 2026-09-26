@@ -374,7 +374,7 @@ mod idl_tests {
             })
             .expect("PodVec generic layout should be registered");
         assert!(pod_vec_type.contains("\"generics\":[{\"kind\":\"type\",\"name\":\"T\"},{\"kind\":\"const\",\"name\":\"MAX\",\"type\":\"usize\"}]"));
-        assert!(pod_vec_type.contains("\"serialization\":\"bytemuck\""));
+        assert!(pod_vec_type.contains("\"serialization\":\"bytemuckunsafe\""));
         assert!(pod_vec_type.contains("\"repr\":{\"kind\":\"c\"}"));
         assert!(pod_vec_type.contains("\"fields\":[{\"name\":\"len\",\"type\":{\"defined\":{\"name\":\"PodU16\"}}},{\"name\":\"data\",\"type\":{\"array\":[{\"generic\":\"T\"},{\"generic\":\"MAX\"}]}}]"));
     }

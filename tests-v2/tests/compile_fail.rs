@@ -1458,6 +1458,143 @@ fn declare_program_rejects_bytemuck_enum_type() {
 }
 
 #[test]
+fn declare_program_rejects_bytemuck_padding() {
+    declare_program_compile_fail_case(
+        "declare_program_bytemuck_padding",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [],
+  "types": [
+    {
+      "name": "Padded",
+      "serialization": "bytemuck",
+      "repr": { "kind": "c" },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "flag", "type": "u8" },
+          { "name": "wide", "type": "u64" }
+        ]
+      }
+    }
+  ]
+}"#,
+        &["declared bytemuck type has padding bytes"],
+    );
+}
+
+#[test]
+fn declare_program_accepts_packed_bytemuck_layout() {
+    declare_program_case(
+        "declare_program_bytemuck_packed",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "ok", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [],
+  "types": [
+    {
+      "name": "Packed",
+      "serialization": "bytemuck",
+      "repr": { "kind": "c", "packed": true },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "flag", "type": "u8" },
+          { "name": "wide", "type": "u64" }
+        ]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect_pass();
+}
+
+#[test]
+fn declare_program_rejects_generic_bytemuck_repr_c() {
+    declare_program_compile_fail_case(
+        "declare_program_generic_bytemuck_repr_c",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [],
+  "types": [
+    {
+      "name": "Padded",
+      "serialization": "bytemuck",
+      "repr": { "kind": "c" },
+      "generics": [{ "kind": "type", "name": "T" }],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "flag", "type": "u8" },
+          { "name": "wide", "type": { "generic": "T" } }
+        ]
+      }
+    }
+  ]
+}"#,
+        &["generic bytemuck types must be `repr(packed)` or `repr(transparent)`"],
+    );
+}
+
+#[test]
+fn declare_program_accepts_generic_packed_bytemuck() {
+    declare_program_case(
+        "declare_program_generic_bytemuck_packed",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "ok", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [],
+  "types": [
+    {
+      "name": "Packed",
+      "serialization": "bytemuck",
+      "repr": { "kind": "c", "packed": true },
+      "generics": [{ "kind": "type", "name": "T" }],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "flag", "type": "u8" },
+          { "name": "wide", "type": { "generic": "T" } }
+        ]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect_pass();
+}
+
+#[test]
+fn declare_program_accepts_generic_transparent_bytemuck() {
+    declare_program_case(
+        "declare_program_generic_bytemuck_transparent",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "ok", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [],
+  "types": [
+    {
+      "name": "Wrapper",
+      "serialization": "bytemuck",
+      "repr": { "kind": "transparent" },
+      "generics": [{ "kind": "type", "name": "T" }],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "inner", "type": { "generic": "T" } }
+        ]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect_pass();
+}
+
+#[test]
 fn declare_program_return_wrapper_compiles_for_returning_cpi() {
     CompileCase::new(
         "declare_program_return_wrapper",

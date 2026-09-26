@@ -221,6 +221,8 @@ impl<T: IdlAccountType, const N: usize> IdlAccountType for [T; N] {
 // It contributes a generic type definition so downstream `declare_program!`
 // consumers can reconstruct the length prefix plus fixed-capacity backing
 // array, then recurses into the element type.
+// Pod is hand-written (`PodVecElement`), so the IDL uses `bytemuckunsafe`
+// and keeps this generic `repr(C)` layout.
 #[doc(hidden)]
 impl<T, const MAX: usize> IdlAccountType for crate::pod::PodVec<T, MAX>
 where
@@ -229,7 +231,7 @@ where
     const __IDL_TYPE_DEF: Option<&'static str> = Some(
         "{\"name\":\"PodVec\",\"generics\":[{\"kind\":\"type\",\"name\":\"T\"},\
          {\"kind\":\"const\",\"name\":\"MAX\",\"type\":\"usize\"}],\
-         \"serialization\":\"bytemuck\",\"repr\":{\"kind\":\"c\"},\
+         \"serialization\":\"bytemuckunsafe\",\"repr\":{\"kind\":\"c\"},\
          \"type\":{\"kind\":\"struct\",\"fields\":[{\"name\":\"len\",\"type\":{\"defined\":{\"name\":\"PodU16\"}}},\
          {\"name\":\"data\",\"type\":{\"array\":[{\"generic\":\"T\"},{\"generic\":\"MAX\"}]}}]}}",
     );

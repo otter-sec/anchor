@@ -438,7 +438,7 @@
           "type": "usize"
         }
       ],
-      "serialization": "bytemuck",
+      "serialization": "bytemuckunsafe",
       "repr": {
         "kind": "c"
       },
