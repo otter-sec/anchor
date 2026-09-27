@@ -1,9 +1,7 @@
 extern crate proc_macro;
 
 use {
-    anchor_syn::{
-        codegen::program::common::gen_discriminator, parser::is_bytemuck_derive, Overrides,
-    },
+    anchor_syn::{codegen::program::common::gen_discriminator, Overrides},
     quote::{quote, quote_spanned, ToTokens},
     syn::{
         parenthesized,
@@ -547,9 +545,9 @@ pub fn zero_copy(
             continue;
         }
         if let Err(err) = attr.parse_nested_meta(|meta| {
-            if is_bytemuck_derive(&meta.path, "Pod") {
+            if ends_with_bytemuck_derive(&meta.path, "Pod") {
                 has_pod_attr = true;
-            } else if is_bytemuck_derive(&meta.path, "Zeroable") {
+            } else if ends_with_bytemuck_derive(&meta.path, "Zeroable") {
                 has_zeroable_attr = true;
             }
             Ok(())
@@ -583,15 +581,16 @@ pub fn zero_copy(
 
     #[cfg(feature = "idl-build")]
     {
-        let derive_unsafe = if is_unsafe {
-            // Not a real proc-macro but exists in order to pass the serialization info
+        // Not real proc-macros but exist in order to pass the serialization info,
+        // whichever path the user's own bytemuck derives were written with
+        let derive_serialization = if is_unsafe {
             quote! { #[derive(bytemuck::Unsafe)] }
         } else {
-            quote! {}
+            quote! { #[derive(bytemuck::Pod)] }
         };
 
         let zc_struct = syn::parse_quote! {
-            #derive_unsafe
+            #derive_serialization
             #ret
         };
         let idl_build_impl = anchor_syn::idl::impl_idl_build_struct(&zc_struct);
@@ -603,6 +602,16 @@ pub fn zero_copy(
 
     #[allow(unreachable_code)]
     proc_macro::TokenStream::from(ret)
+}
+
+// Any path ending in `bytemuck::<leaf>`, so re-exports like `crate::bytemuck::Pod` count.
+fn ends_with_bytemuck_derive(path: &syn::Path, leaf: &str) -> bool {
+    let mut segments = path.segments.iter().rev();
+
+    matches!(
+        (segments.next(), segments.next()),
+        (Some(last), Some(parent)) if last.ident == leaf && parent.ident == "bytemuck"
+    )
 }
 
 /// Convenience macro to define a static public key.
