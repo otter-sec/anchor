@@ -163,10 +163,7 @@ popd
 
 # Avoid updating the benchmarks for pre-release builds
 if [[ "$is_prerelease" -eq 0 ]]; then
-    # Bump benchmark files
-    pushd tests/bench
-    anchor run bump-version -- --anchor-version $version
-    popd
+    ./bench/bench bump-version "$version"
 fi
 
 echo $version > VERSION

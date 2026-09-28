@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "avm",
+    "bench",
     "cli",
     "cli/cli-macros",
     "client",

@@ -1,0 +1,42 @@
+[package]
+name = "anchor-bench"
+version.workspace = true
+publish = false
+edition = "2021"
+
+[[bin]]
+name = "anchor-bench"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.32"
+clap = { version = "4.5.17", features = ["derive"] }
+indexmap = { version = "2", features = ["serde"] }
+litesvm = "=0.15.0"
+regex = "1.8.3"
+ryu-js = "1"
+semver = "1.0.4"
+serde = { version = "1.0.130", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+# Keep this set aligned with cli/templates/litesvm/Cargo.lock. Newer patch
+# releases use a wincode version that LiteSVM 0.15 does not implement.
+solana-account = "4.3.0"
+solana-address = "=2.6.1"
+solana-clock = "=3.1.1"
+solana-epoch-schedule = "=3.2.0"
+solana-fee-calculator = "=3.2.2"
+solana-hash = "=4.5.0"
+solana-instruction = "3.4.0"
+solana-keypair = "3.1.2"
+solana-last-restart-slot = "=3.1.0"
+solana-message = "=4.3.0"
+solana-pubkey = "4.2.0"
+solana-rent = "=4.3.0"
+solana-short-vec = "=3.2.2"
+solana-signature = "=3.4.1"
+solana-slot-history = "=3.1.0"
+solana-signer = "3.0.1"
+solana-transaction = "4.1.5"
+tempfile = "3"
+unicode-width = "0.2"
