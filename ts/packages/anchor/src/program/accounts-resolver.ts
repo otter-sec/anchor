@@ -1,7 +1,26 @@
-import BN from "bn.js";
+import {
+  Address,
+  fetchEncodedAccount,
+  getAddressDecoder,
+  getAddressEncoder,
+  getI16Encoder,
+  getI32Encoder,
+  getI64Encoder,
+  getI128Encoder,
+  getI256Encoder,
+  getI8Encoder,
+  getProgramDerivedAddress,
+  getU16Encoder,
+  getU32Encoder,
+  getU64Encoder,
+  getU128Encoder,
+  getU256Encoder,
+  getU8Encoder,
+  getUtf8Encoder,
+  ReadonlyUint8Array,
+} from "@solana/kit";
+import { getTokenDecoder } from "@solana-program/token";
 import { Buffer } from "buffer";
-import { fetchEncodedAccount } from "@solana/kit";
-import { PublicKey } from "@solana/web3.js";
 import {
   Idl,
   IdlSeed,
@@ -20,34 +39,33 @@ import {
 import { AllInstructions } from "./namespace/types.js";
 import Provider from "../provider.js";
 import { AccountsCoder, BorshAccountsCoder } from "../coder/index.js";
-import { decodeTokenAccount } from "./token-account-layout";
 import { withProviderDefaults } from "../utils/common.js";
-import { Address, Program, toAddress, translateAddress } from "./index.js";
+import { Address as AnchorAddress, Program, toAddress } from "./index.js";
 import {
   PartialAccounts,
   flattenPartialAccounts,
   isPartialAccounts,
 } from "./namespace/methods";
 
-function toBn(value: bigint | number | string | BN): BN {
-  return new BN(typeof value === "bigint" ? value.toString() : value);
-}
-
+/**
+ * Resolved instruction accounts: addresses keyed by account name, nested
+ * for composite accounts.
+ */
 export type AccountsGeneric = {
-  [name: string]: PublicKey | AccountsGeneric;
+  [name: string]: Address | AccountsGeneric;
 };
 
 export function isAccountsGeneric(
-  accounts: PublicKey | AccountsGeneric
+  accounts: Address | AccountsGeneric
 ): accounts is AccountsGeneric {
-  return !(accounts instanceof PublicKey);
+  return typeof accounts !== "string";
 }
 
 export type CustomAccountResolver<IDL extends Idl> = (params: {
   args: Array<any>;
   accounts: AccountsGeneric;
   provider: Provider;
-  programId: PublicKey;
+  programAddress: Address;
   idlIx: AllInstructions<IDL>;
 }) => Promise<{ accounts: AccountsGeneric; resolved: number }>;
 
@@ -59,7 +77,7 @@ export class AccountsResolver<IDL extends Idl> {
     private _args: any[],
     private _accounts: AccountsGeneric,
     private _provider: Provider,
-    private _programId: PublicKey,
+    private _programId: Address,
     private _idlIx: AllInstructions<IDL>,
     accountsCoder: AccountsCoder,
     private _idlTypes: IdlTypeDef[],
@@ -76,7 +94,7 @@ export class AccountsResolver<IDL extends Idl> {
   //       in parallel because there can be dependencies between
   //       addresses. That is, one PDA can be used as a seed in another.
   public async resolve() {
-    this.resolveEventCpi(this._idlIx.accounts);
+    await this.resolveEventCpi(this._idlIx.accounts);
     this.resolveConst(this._idlIx.accounts);
 
     // Auto populate pdas and relations until we stop finding new accounts
@@ -136,19 +154,19 @@ export class AccountsResolver<IDL extends Idl> {
     );
   }
 
-  private get(path: string[]): PublicKey | undefined {
-    // Only return if pubkey
+  private get(path: string[]): Address | undefined {
+    // Only return if address
     const ret = path.reduce(
       (acc, subPath) => acc && acc[subPath],
       this._accounts
     );
 
-    if (ret && ret.toBase58) {
-      return ret as PublicKey;
+    if (typeof ret === "string") {
+      return ret;
     }
   }
 
-  private set(path: string[], value: PublicKey): void {
+  private set(path: string[], value: Address): void {
     let cur = this._accounts;
     path.forEach((p, i) => {
       const isLast = i === path.length - 1;
@@ -191,8 +209,8 @@ export class AccountsResolver<IDL extends Idl> {
       } else {
         // if not compound accounts, do null/optional check and proceed
         if (partialAccount !== null) {
-          nestedAccountsGeneric[accountName] = translateAddress(
-            partialAccount as Address
+          nestedAccountsGeneric[accountName] = toAddress(
+            partialAccount as AnchorAddress
           );
         } else if (accountItem["optional"]) {
           nestedAccountsGeneric[accountName] = this._programId;
@@ -208,10 +226,17 @@ export class AccountsResolver<IDL extends Idl> {
         args: this._args,
         accounts: this._accounts,
         provider: this._provider,
-        programId: this._programId,
+        programAddress: this._programId,
         idlIx: this._idlIx,
       });
-      this._accounts = accounts;
+      // The methods builder shares this object, so a resolver returning a
+      // fresh one is written back in place; legacy public keys it may
+      // return are normalised to addresses like every other input.
+      const normalised = normaliseAccounts(accounts);
+      for (const name of Object.keys(this._accounts)) {
+        delete this._accounts[name];
+      }
+      Object.assign(this._accounts, normalised);
       return resolved;
     }
 
@@ -224,14 +249,14 @@ export class AccountsResolver<IDL extends Idl> {
    * Accounts will only be resolved if they are declared next to each other to
    * reduce the chance of name collision.
    */
-  private resolveEventCpi(
+  private async resolveEventCpi(
     accounts: IdlInstructionAccountItem[],
     path: string[] = []
-  ): void {
+  ): Promise<void> {
     for (const i in accounts) {
       const accountOrAccounts = accounts[i];
       if (isCompositeAccounts(accountOrAccounts)) {
-        this.resolveEventCpi(accountOrAccounts.accounts, [
+        await this.resolveEventCpi(accountOrAccounts.accounts, [
           ...path,
           accountOrAccounts.name,
         ]);
@@ -250,13 +275,11 @@ export class AccountsResolver<IDL extends Idl> {
         const nextPath = [...path, nextName];
 
         if (!this.get(currentPath)) {
-          this.set(
-            currentPath,
-            PublicKey.findProgramAddressSync(
-              [Buffer.from("__event_authority")],
-              this._programId
-            )[0]
-          );
+          const [eventAuthority] = await getProgramDerivedAddress({
+            programAddress: this._programId,
+            seeds: ["__event_authority"],
+          });
+          this.set(currentPath, eventAuthority);
         }
         if (!this.get(nextPath)) {
           this.set(nextPath, this._programId);
@@ -286,15 +309,12 @@ export class AccountsResolver<IDL extends Idl> {
                 "This function requires the `Provider` interface implementor to have a `wallet` field."
               );
             }
-            this.set(
-              [...path, name],
-              translateAddress(this._provider.wallet.address)
-            );
+            this.set([...path, name], this._provider.wallet.address);
           }
 
           // Set based on `address` field
           if (account.address) {
-            this.set([...path, name], translateAddress(account.address));
+            this.set([...path, name], toAddress(account.address));
           }
         }
       }
@@ -325,19 +345,19 @@ export class AccountsResolver<IDL extends Idl> {
           try {
             if (account.pda) {
               const seeds = await Promise.all(
-                account.pda.seeds.map((seed) => this.toBuffer(seed, path))
+                account.pda.seeds.map((seed) => this.toSeed(seed, path))
               );
               if (seeds.some((seed) => !seed)) {
                 continue;
               }
 
-              const programId = await this.parseProgramId(account, path);
-              const [pubkey] = PublicKey.findProgramAddressSync(
-                seeds as Buffer[],
-                programId
-              );
+              const programAddress = await this.parseProgramId(account, path);
+              const [address] = await getProgramDerivedAddress({
+                programAddress,
+                seeds: seeds as ReadonlyUint8Array[],
+              });
 
-              this.set([...path, name], pubkey);
+              this.set([...path, name], address);
             }
           } catch {}
 
@@ -346,9 +366,9 @@ export class AccountsResolver<IDL extends Idl> {
               const accountKey = this.get([...path, account.relations[0]]);
               if (accountKey) {
                 const account = await this._accountStore.fetchAccount({
-                  publicKey: accountKey,
+                  address: accountKey,
                 });
-                this.set([...path, name], translateAddress(account[name]));
+                this.set([...path, name], toAddress(account[name]));
               }
             }
           } catch {}
@@ -362,40 +382,42 @@ export class AccountsResolver<IDL extends Idl> {
   private async parseProgramId(
     account: IdlInstructionAccount,
     path: string[] = []
-  ): Promise<PublicKey> {
+  ): Promise<Address> {
     if (!account.pda?.program) {
       return this._programId;
     }
 
-    const buf = await this.toBuffer(account.pda.program, path);
-    if (!buf) {
+    const bytes = await this.toSeed(account.pda.program, path);
+    if (!bytes) {
       throw new Error(`Program seed not resolved: ${account.name}`);
     }
 
-    return new PublicKey(buf);
+    return getAddressDecoder().decode(bytes);
   }
 
-  private async toBuffer(
+  private async toSeed(
     seed: IdlSeed,
     path: string[] = []
-  ): Promise<Buffer | undefined> {
+  ): Promise<ReadonlyUint8Array | undefined> {
     switch (seed.kind) {
       case "const":
-        return this.toBufferConst(seed);
+        return this.toSeedConst(seed);
       case "arg":
-        return await this.toBufferArg(seed);
+        return await this.toSeedArg(seed);
       case "account":
-        return await this.toBufferAccount(seed, path);
+        return await this.toSeedAccount(seed, path);
       default:
         throw new Error(`Unexpected seed: ${seed}`);
     }
   }
 
-  private toBufferConst(seed: IdlSeedConst): Buffer {
-    return this.toBufferValue("bytes", seed.value);
+  private toSeedConst(seed: IdlSeedConst): ReadonlyUint8Array {
+    return this.toSeedValue("bytes", seed.value);
   }
 
-  private async toBufferArg(seed: IdlSeedArg): Promise<Buffer | undefined> {
+  private async toSeedArg(
+    seed: IdlSeedArg
+  ): Promise<ReadonlyUint8Array | undefined> {
     const [name, ...path] = seed.path.split(".");
 
     const index = this._idlIx.args.findIndex((arg) => arg.name === name);
@@ -412,20 +434,20 @@ export class AccountsResolver<IDL extends Idl> {
     }
 
     const type = this.getType(this._idlIx.args[index].type, path);
-    return this.toBufferValue(type, value);
+    return this.toSeedValue(type, value);
   }
 
-  private async toBufferAccount(
+  private async toSeedAccount(
     seed: IdlSeedAccount,
     path: string[] = []
-  ): Promise<Buffer | undefined> {
+  ): Promise<ReadonlyUint8Array | undefined> {
     const [name, ...paths] = seed.path.split(".");
-    const fieldPubkey = this.get([...path, name]);
-    if (!fieldPubkey) return;
+    const fieldAddress = this.get([...path, name]);
+    if (!fieldAddress) return;
 
-    // The seed is a pubkey of the account.
+    // The seed is the address of the account.
     if (!paths.length) {
-      return this.toBufferValue("pubkey", fieldPubkey);
+      return this.toSeedValue("pubkey", fieldAddress);
     }
 
     if (!seed.account) {
@@ -438,7 +460,7 @@ export class AccountsResolver<IDL extends Idl> {
     //
     // Fetch and deserialize it.
     const account = await this._accountStore.fetchAccount({
-      publicKey: fieldPubkey,
+      address: fieldAddress,
       name: seed.account,
     });
 
@@ -453,42 +475,48 @@ export class AccountsResolver<IDL extends Idl> {
     if (accountValue === undefined) return;
 
     const type = this.getType({ defined: { name: seed.account } }, paths);
-    return this.toBufferValue(type, accountValue);
+    return this.toSeedValue(type, accountValue);
   }
 
   /**
-   * Converts the given idl valaue into a Buffer. The values here must be
+   * Encodes the given IDL value as PDA seed bytes. The values here must be
    * primitives, e.g. no structs.
    */
-  private toBufferValue(type: any, value: any): Buffer {
+  private toSeedValue(type: any, value: any): ReadonlyUint8Array {
     switch (type) {
       case "u8":
+        return getU8Encoder().encode(value);
       case "i8":
-        return Buffer.from([Number(value)]);
+        return getI8Encoder().encode(value);
       case "u16":
+        return getU16Encoder().encode(value);
       case "i16":
-        return toBn(value).toArrayLike(Buffer, "le", 2);
+        return getI16Encoder().encode(value);
       case "u32":
+        return getU32Encoder().encode(value);
       case "i32":
-        return toBn(value).toArrayLike(Buffer, "le", 4);
+        return getI32Encoder().encode(value);
       case "u64":
+        return getU64Encoder().encode(value);
       case "i64":
-        return toBn(value).toArrayLike(Buffer, "le", 8);
+        return getI64Encoder().encode(value);
       case "u128":
+        return getU128Encoder().encode(value);
       case "i128":
-        return toBn(value).toArrayLike(Buffer, "le", 16);
+        return getI128Encoder().encode(value);
       case "u256":
+        return getU256Encoder().encode(value);
       case "i256":
-        return toBn(value).toArrayLike(Buffer, "le", 32);
+        return getI256Encoder().encode(value);
       case "string":
-        return Buffer.from(value);
+        return getUtf8Encoder().encode(value);
       case "pubkey":
-        return translateAddress(value).toBuffer();
+        return getAddressEncoder().encode(toAddress(value));
       case "bytes":
-        return Buffer.from(value);
+        return toBytes(value);
       default:
         if (type?.array) {
-          return Buffer.from(value);
+          return toBytes(value);
         }
 
         throw new Error(`Unexpected seed type: ${type}`);
@@ -540,48 +568,74 @@ export class AccountsResolver<IDL extends Idl> {
   }
 }
 
+/**
+ * Encodes raw seed bytes given as a byte array or, as `Buffer.from` used to
+ * accept, a UTF-8 string.
+ */
+function toBytes(value: string | ArrayLike<number>): ReadonlyUint8Array {
+  return typeof value === "string"
+    ? getUtf8Encoder().encode(value)
+    : Uint8Array.from(value);
+}
+
+/**
+ * Converts every address in the given accounts, including legacy public
+ * keys, to a Kit address, preserving nesting. Accounts left `null` or
+ * `undefined`, e.g. by a custom resolver that has not figured them out yet,
+ * are dropped so they read as unresolved.
+ */
+function normaliseAccounts(accounts: AccountsGeneric): AccountsGeneric {
+  return Object.fromEntries(
+    Object.entries(accounts)
+      .filter(([, value]) => value != null)
+      .map(([name, value]) => [
+        name,
+        typeof value === "object" && !("toBase58" in value)
+          ? normaliseAccounts(value)
+          : toAddress(value as AnchorAddress),
+      ])
+  );
+}
+
 // TODO: this should be configurable to avoid unnecessary requests.
 class AccountStore {
-  private _cache = new Map<string, any>();
-  private _coders: Record<string, AccountsCoder> = {};
+  private _cache = new Map<Address, any>();
+  private _coders: Record<Address, AccountsCoder> = {};
 
   constructor(
     private _provider: Provider,
     accountsCoder: AccountsCoder,
-    programId: PublicKey
+    programId: Address
   ) {
-    this._coders[programId.toBase58()] = accountsCoder;
+    this._coders[programId] = accountsCoder;
   }
 
   public async fetchAccount<T = any>({
-    publicKey,
+    address,
     name,
   }: {
-    publicKey: PublicKey;
+    address: Address;
     name?: string;
-    programId?: PublicKey;
   }): Promise<T> {
-    const address = publicKey.toBase58();
     if (!this._cache.has(address)) {
       const accountInfo = await fetchEncodedAccount(
         this._provider.rpc,
-        toAddress(publicKey),
+        address,
         withProviderDefaults(this._provider)
       );
       if (!accountInfo.exists) {
         throw new Error(`Account not found: ${address}`);
       }
-      const data = Buffer.from(accountInfo.data);
 
       if (name === "tokenAccount") {
-        const account = decodeTokenAccount(data);
+        const account = getTokenDecoder().decode(accountInfo.data);
         this._cache.set(address, account);
       } else {
-        const coder = await this.getAccountsCoder(
-          translateAddress(accountInfo.programAddress)
-        );
+        const coder = await this.getAccountsCoder(accountInfo.programAddress);
         if (coder) {
-          const account = (coder as BorshAccountsCoder).decodeAny(data);
+          const account = (coder as BorshAccountsCoder).decodeAny(
+            Buffer.from(accountInfo.data)
+          );
           this._cache.set(address, account);
         }
       }
@@ -591,17 +645,16 @@ class AccountStore {
   }
 
   private async getAccountsCoder(
-    programId: PublicKey
+    programId: Address
   ): Promise<AccountsCoder | undefined> {
-    const programIdStr = programId.toBase58();
-    if (!this._coders[programIdStr]) {
+    if (!this._coders[programId]) {
       const idl = await Program.fetchIdl(programId, this._provider);
       if (idl) {
         const program = new Program(idl, this._provider);
-        this._coders[programIdStr] = program.coder.accounts;
+        this._coders[programId] = program.coder.accounts;
       }
     }
 
-    return this._coders[programIdStr];
+    return this._coders[programId];
   }
 }

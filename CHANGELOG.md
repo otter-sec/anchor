@@ -16,10 +16,12 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- ts: Encode signed integer PDA seeds as two's complement ([#5114](https://github.com/otter-sec/anchor/pull/5114)).
 - lang-v2: Restore `AnchorSerialize` and `AnchorDeserialize` as traits for generic bounds alongside the derive macros ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
 
 ### Breaking
 
+- ts: Resolve accounts on `@solana/kit`, returning addresses from `pubkeys()` ([#5114](https://github.com/otter-sec/anchor/pull/5114)).
 - ts: Listen to events through Kit subscriptions ([#5103](https://github.com/otter-sec/anchor/pull/5103)).
 - ts: Remove `Provider.connection` and `Provider.publicKey` in favour of `rpc`, `rpcSubscriptions` and `wallet.address` ([#5103](https://github.com/otter-sec/anchor/pull/5103)).
 - ts: Rewrite the account namespace on `@solana/kit` ([#5088](https://github.com/otter-sec/anchor/pull/5088)).

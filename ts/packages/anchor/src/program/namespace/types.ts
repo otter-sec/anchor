@@ -112,7 +112,7 @@ type InstructionAccountsAddresses<
 type InstructionAccountsAddress<A extends IdlInstructionAccountItem> =
   A extends IdlInstructionAccounts
     ? InstructionAccountsAddresses<A["accounts"][number]>
-    : PublicKey;
+    : Address;
 
 export type MethodsFn<
   IDL extends Idl,

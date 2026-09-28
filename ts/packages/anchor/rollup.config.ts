@@ -34,6 +34,7 @@ export default {
   external: [
     "@solana/kit",
     "@solana-program/system",
+    "@solana-program/token",
     "@solana/web3.js",
     "bn.js",
     "buffer",

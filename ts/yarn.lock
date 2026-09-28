@@ -1157,10 +1157,17 @@
   dependencies:
     "@sinonjs/commons" "^3.0.1"
 
-"@solana-program/system@^0.14.1":
+"@solana-program/system@^0.14.0", "@solana-program/system@^0.14.1":
   version "0.14.1"
   resolved "https://registry.yarnpkg.com/@solana-program/system/-/system-0.14.1.tgz#9c035233cc55b4ca6e57bd8a1d0dd66043af4135"
   integrity sha512-K6ZiIrAKoJAfcwfUdsoFvfSAxeRJaRrV7BPFTJvUVRS4m3zszN+nLcdaNMMe2F1/zTriZqC+xh+Kgw6ziGUqpQ==
+
+"@solana-program/token@^0.16.1":
+  version "0.16.1"
+  resolved "https://registry.yarnpkg.com/@solana-program/token/-/token-0.16.1.tgz#25be257eea197b1ce7db8b0e2764840096399c3b"
+  integrity sha512-X9dsvbh+VDq4SuCfvxn95P1DCvtBYHJOBiVmgBJMfW8l/lp8uSwEhy9IurpcdltnGi5kNIkCm4sk4YOXKAMiCw==
+  dependencies:
+    "@solana-program/system" "^0.14.0"
 
 "@solana/accounts@8.3.0":
   version "8.3.0"

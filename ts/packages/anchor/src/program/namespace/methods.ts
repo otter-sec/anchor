@@ -19,7 +19,7 @@ import {
   AccountsResolver,
   CustomAccountResolver,
 } from "../accounts-resolver.js";
-import { Address, translateAddress } from "../common.js";
+import { Address, toAddress } from "../common.js";
 import { Accounts } from "../context.js";
 import { InstructionFn } from "./instruction.js";
 import { RpcFn } from "./rpc.js";
@@ -125,7 +125,7 @@ export function isPartialAccounts(
   return (
     typeof partialAccount === "object" &&
     partialAccount !== null &&
-    !("_bn" in partialAccount) // Ensures not a pubkey
+    !("toBase58" in partialAccount) // Ensures not a legacy public key
   );
 }
 
@@ -145,7 +145,7 @@ export function flattenPartialAccounts<A extends IdlInstructionAccountItem>(
     }
     toReturn[accountName] = isPartialAccounts(account)
       ? flattenPartialAccounts(account, true)
-      : translateAddress(account);
+      : toAddress(account);
   }
   return toReturn;
 }
@@ -181,7 +181,7 @@ export class MethodsBuilder<
       _args,
       this._accounts,
       provider,
-      programId,
+      toAddress(programId),
       idlIx,
       accountsCoder,
       idlTypes,
@@ -293,13 +293,13 @@ export class MethodsBuilder<
   }
 
   /**
-   * Get the public keys of the instruction accounts.
+   * Get the addresses of the instruction accounts.
    *
-   * The return type is an object with account names as keys and their public
-   * keys as their values.
+   * The return type is an object with account names as keys and their
+   * addresses as their values.
    *
-   * Note that an account key is `undefined` if the account hasn't yet been
-   * specified or resolved.
+   * Note that an account address is `undefined` if the account hasn't yet
+   * been specified or resolved.
    */
   public async pubkeys(): Promise<
     Partial<InstructionAccountAddresses<IDL, I>>
@@ -420,7 +420,7 @@ export class MethodsBuilder<
    * Send and confirm the configured transaction.
    *
    * See {@link rpcAndKeys} to both send the transaction and get the resolved
-   * account public keys.
+   * account addresses.
    *
    * @param options confirmation options
    * @returns the transaction signature
@@ -445,7 +445,7 @@ export class MethodsBuilder<
    * Conveniently call both {@link rpc} and {@link pubkeys} methods.
    *
    * @param options confirmation options
-   * @returns the transaction signature and account public keys
+   * @returns the transaction signature and account addresses
    */
   public async rpcAndKeys(options?: ConfirmOptions): Promise<{
     signature: Signature;
