@@ -446,7 +446,6 @@ impl solana_sbpf::vm::ContextObject for NoopCtx {
     fn get_remaining(&self) -> u64 {
         0
     }
-    #[cfg(feature = "v4")]
     fn active_mapping_ptr(
         &mut self,
     ) -> std::ptr::NonNull<solana_sbpf::memory_region::MemoryMapping> {
@@ -462,18 +461,6 @@ impl solana_sbpf::vm::ContextObject for NoopCtx {
 /// No-op `BuiltinFunction<NoopCtx>` used to register syscall names in the
 /// loader's function registry. Never called — we replay traces, never
 /// execute — so the body is unreachable in practice.
-#[cfg(feature = "v3")]
-fn syscall_stub(
-    _vm: *mut solana_sbpf::vm::EbpfVm<NoopCtx>,
-    _r1: u64,
-    _r2: u64,
-    _r3: u64,
-    _r4: u64,
-    _r5: u64,
-) {
-}
-
-#[cfg(feature = "v4")]
 fn syscall_stub(
     _vm: solana_sbpf::vm::EncryptedHostAddressToEbpfVm<NoopCtx>,
     _r1: u64,
@@ -488,7 +475,6 @@ fn syscall_stub(
 /// a function now requires both the interpreter and JIT entry points; like
 /// `syscall_stub`, this is never actually invoked since we never JIT-compile
 /// or execute — the registry is consulted only for the (hash → name) lookup.
-#[cfg(feature = "v4")]
 fn syscall_stub_codegen(_jit: &mut solana_sbpf::program::JitCompiler<NoopCtx>) {}
 
 fn load_program_ctx<'a>(
@@ -544,9 +530,6 @@ fn build_program_ctx(
         // syscalls collide in `KNOWN_SYSCALLS`, which is a list bug, not
         // a per-program issue. Continuing yields a partial registry
         // (better than no names at all).
-        #[cfg(feature = "v3")]
-        let _ = loader_inner.register_function(name, syscall_stub);
-        #[cfg(feature = "v4")]
         let _ = loader_inner.register_function(name, (syscall_stub, syscall_stub_codegen));
     }
     let loader = Arc::new(loader_inner);

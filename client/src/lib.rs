@@ -707,8 +707,8 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     /// use anchor_client::{Client, Cluster, TxVersion};
     /// use anchor_lang::prelude::Pubkey;
     /// use solana_signer::null_signer::NullSigner;
-    /// use solana_message::AddressLookupTableAccount;
-    /// use solana_message::Hash;
+    /// use anchor_client::AddressLookupTableAccount;
+    /// use anchor_client::Hash;
     ///
     /// let payer = NullSigner::new(&Pubkey::default());
     /// let client = Client::new(Cluster::Localnet, std::rc::Rc::new(payer));

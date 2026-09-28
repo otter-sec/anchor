@@ -175,7 +175,7 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Arc<dyn T
     /// use anchor_client::{Client, Cluster, TxVersion};
     /// use anchor_lang::prelude::Pubkey;
     /// use solana_signer::null_signer::NullSigner;
-    /// use solana_message::AddressLookupTableAccount;
+    /// use anchor_client::AddressLookupTableAccount;
     ///
     /// let payer = NullSigner::new(&Pubkey::default());
     /// let client = Client::new(Cluster::Localnet, std::rc::Rc::new(payer));
@@ -215,7 +215,7 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Arc<dyn T
     /// use anchor_client::{Client, Cluster, TxVersion};
     /// use anchor_lang::prelude::Pubkey;
     /// use solana_signer::null_signer::NullSigner;
-    /// use solana_message::AddressLookupTableAccount;
+    /// use anchor_client::AddressLookupTableAccount;
     ///
     /// let payer = NullSigner::new(&Pubkey::default());
     /// let client = Client::new(Cluster::Localnet, std::rc::Rc::new(payer));

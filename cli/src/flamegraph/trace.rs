@@ -113,7 +113,6 @@ impl ContextObject for NoopContext {
     fn get_remaining(&self) -> u64 {
         0
     }
-    #[cfg(feature = "v4")]
     fn active_mapping_ptr(
         &mut self,
     ) -> std::ptr::NonNull<solana_sbpf::memory_region::MemoryMapping> {

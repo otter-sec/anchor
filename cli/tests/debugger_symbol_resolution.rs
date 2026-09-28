@@ -22,6 +22,7 @@ use {
         fs,
         path::{Path, PathBuf},
         process::Command,
+        sync::OnceLock,
     },
     tempfile::tempdir,
 };
@@ -63,7 +64,17 @@ fn cargo_build_sbf_available() -> bool {
 /// Attempt to build the fixture. Returns `None` when `cargo-build-sbf`
 /// is unavailable (local dev without the Solana toolchain); the test
 /// should treat that as a skip, not a failure.
+///
+/// Built once and shared: `cargo build-sbf --tools-version` swaps a *global*
+/// rustup toolchain (`<rustc>-sbpf-solana-<tools>`), uninstalling whichever
+/// one is currently linked. Letting each test spawn its own build races on
+/// that, and the loser dies with `could not remove 'install' directory`.
 fn build_fixture() -> Option<PathBuf> {
+    static FIXTURE: OnceLock<Option<PathBuf>> = OnceLock::new();
+    FIXTURE.get_or_init(build_fixture_uncached).clone()
+}
+
+fn build_fixture_uncached() -> Option<PathBuf> {
     if !cargo_build_sbf_available() {
         return None;
     }

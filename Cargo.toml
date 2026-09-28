@@ -37,9 +37,7 @@ solana-commitment-config = "3.1.1"
 solana-compute-budget-interface = "3.0.0"
 solana-cpi = "3.0.0"
 solana-faucet = "3.1.14"
-# v4's Agave 4.2 RPC/client cohort requires >=3.4.0,<3.5.0. That range also
-# satisfies v3 (which only needs ^3.0.0), so one entry serves both cohorts.
-solana-instruction = "~3.4.0"
+solana-instruction = "3.5"
 solana-invoke = "0.5.0"
 solana-keypair = "3.0.1"
 solana-msg = "3.1.0"
@@ -72,38 +70,34 @@ solana-pubkey-v3 = { package = "solana-pubkey", version = "3.0.0" }
 solana-pubsub-client-v3 = { package = "solana-pubsub-client", version = "3.0.14" }
 solana-rpc-client-v3 = { package = "solana-rpc-client", version = "3.0.14" }
 solana-rpc-client-api-v3 = { package = "solana-rpc-client-api", version = "3.0.14" }
-solana-sbpf-v3 = { package = "solana-sbpf", version = "0.13.1" }
+solana-sbpf-v3 = { package = "solana-sbpf", version = "0.23.0" }
 solana-stake-interface-v3 = { package = "solana-stake-interface", version = "2.0.2" }
 solana-sysvar-v3 = { package = "solana-sysvar", version = "3.1.1" }
 solana-transaction-v3 = { package = "solana-transaction", version = "3.0.1" }
 solana-transaction-status-client-types-v3 = { package = "solana-transaction-status-client-types", version = "3.0.0" }
 
-# --- v4 cohort (Agave 4.2) ---
-solana-account-decoder-v4 = { package = "solana-account-decoder", version = "~4.2.2" }
-solana-cli-config-v4 = { package = "solana-cli-config", version = "~4.2.2" }
-solana-client-v4 = { package = "solana-client", version = "~4.2.2" }
+# --- v4 cohort (Agave 4.3) ---
+solana-account-decoder-v4 = { package = "solana-account-decoder", version = "4.3.0" }
+solana-cli-config-v4 = { package = "solana-cli-config", version = "4.3.0" }
+solana-client-v4 = { package = "solana-client", version = "4.3.0" }
 solana-clock-v4 = { package = "solana-clock", version = "4.0.0" }
-solana-compute-budget-v4 = { package = "solana-compute-budget", version = "4.2.2", features = ["agave-unstable-api"] }
+solana-compute-budget-v4 = { package = "solana-compute-budget", version = "4.3.0", features = ["agave-unstable-api"] }
 solana-define-syscall-v4 = { package = "solana-define-syscall", version = "4.0.1" }
 solana-feature-gate-interface-v4 = { package = "solana-feature-gate-interface", version = "4.0.0" }
-solana-hash-v4 = { package = "solana-hash", version = "~4.5.0" }
+solana-hash-v4 = { package = "solana-hash", version = "4.7.0" }
 solana-instructions-sysvar-v4 = { package = "solana-instructions-sysvar", version = "4.0.0" }
 solana-loader-v3-interface-v4 = { package = "solana-loader-v3-interface", version = "7.0.0" }
-solana-message-v4 = { package = "solana-message", version = "~4.3.0" }
-solana-packet-v4 = { package = "solana-packet", version = "~4.2.0" }
-# The Agave 4.2 RPC/client cohort requires solana-pubkey >=4.2.0,<4.3.0.
-solana-pubkey-v4 = { package = "solana-pubkey", version = "~4.2.0" }
-solana-pubsub-client-v4 = { package = "solana-pubsub-client", version = "~4.2.2" }
-solana-rpc-client-v4 = { package = "solana-rpc-client", version = "~4.2.2" }
-solana-rpc-client-api-v4 = { package = "solana-rpc-client-api", version = "~4.2.2" }
-solana-sbpf-v4 = { package = "solana-sbpf", version = "0.21.1" }
-# solana-account-decoder 4.2.2 requires solana-stake-interface exactly 4.3.0.
-solana-stake-interface-v4 = { package = "solana-stake-interface", version = "~4.3.0" }
-# solana-account-decoder 4.2.2 requires solana-sysvar in [4.0.0,4.2.0); litesvm
-# separately caps it at ~4.1.0, which is inside that range.
-solana-sysvar-v4 = { package = "solana-sysvar", version = "4.1.0" }
-solana-transaction-v4 = { package = "solana-transaction", version = "~4.1.5", features = ["wincode"] }
-solana-transaction-status-client-types-v4 = { package = "solana-transaction-status-client-types", version = "~4.2.2" }
+solana-message-v4 = { package = "solana-message", version = "4.6.0" }
+solana-packet-v4 = { package = "solana-packet", version = "4.4.0" }
+solana-pubkey-v4 = { package = "solana-pubkey", version = "4.4.0" }
+solana-pubsub-client-v4 = { package = "solana-pubsub-client", version = "4.3.0" }
+solana-rpc-client-v4 = { package = "solana-rpc-client", version = "4.3.0" }
+solana-rpc-client-api-v4 = { package = "solana-rpc-client-api", version = "4.3.0" }
+solana-sbpf-v4 = { package = "solana-sbpf", version = "0.23.0" }
+solana-stake-interface-v4 = { package = "solana-stake-interface", version = "4.4.0" }
+solana-sysvar-v4 = { package = "solana-sysvar", version = "4.3.0" }
+solana-transaction-v4 = { package = "solana-transaction", version = "4.3.0", features = ["wincode"] }
+solana-transaction-status-client-types-v4 = { package = "solana-transaction-status-client-types", version = "4.3.0" }
 
 # Non solana crates
 cargo_toml = "0.22.3"
