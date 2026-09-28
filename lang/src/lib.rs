@@ -39,6 +39,8 @@ pub mod accounts;
 mod bpf_upgradeable_state;
 mod bpf_writer;
 mod common;
+#[doc(hidden)]
+pub mod compat;
 pub mod context;
 pub use anchor_lang_error as error;
 #[doc(hidden)]
@@ -62,7 +64,7 @@ pub use {
     anchor_attribute_event::{emit, event},
     anchor_attribute_program::{declare_program, instruction, program},
     anchor_derive_accounts::Accounts,
-    anchor_derive_serde::{__erase, AnchorDeserialize, AnchorSerialize},
+    anchor_derive_serde::{AnchorDeserialize, AnchorSerialize, __erase},
     anchor_derive_space::InitSpace,
     borsh::ser::BorshSerialize as AnchorSerialize,
     const_crypto::ed25519::derive_program_address,
@@ -70,13 +72,15 @@ pub use {
 
 pub mod solana_program {
     pub use {
-        solana_account_info as account_info, solana_clock as clock,
-        solana_feature_gate_interface as feature,
+        crate::compat::{
+            solana_clock as clock, solana_feature_gate_interface as feature,
+            solana_pubkey as pubkey,
+        },
+        solana_account_info as account_info,
         solana_msg::msg,
         solana_program_entrypoint::{self as entrypoint, entrypoint},
         solana_program_error as program_error, solana_program_memory as program_memory,
         solana_program_option as program_option, solana_program_pack as program_pack,
-        solana_pubkey as pubkey,
         solana_sdk_ids::system_program,
         solana_system_interface::instruction as system_instruction,
     };
@@ -93,12 +97,12 @@ pub mod solana_program {
 
             #[cfg(not(target_os = "solana"))]
             {
-                solana_sysvar::program_stubs::sol_get_stack_height() as usize
+                crate::compat::solana_sysvar::program_stubs::sol_get_stack_height() as usize
             }
         }
     }
     pub mod rent {
-        pub use solana_sysvar::rent::*;
+        pub use crate::compat::solana_sysvar::rent::*;
     }
     pub mod program {
         pub use {
@@ -109,7 +113,7 @@ pub mod solana_program {
 
     pub mod bpf_loader_upgradeable {
         #[allow(deprecated)]
-        pub use solana_loader_v3_interface::{
+        pub use crate::compat::solana_loader_v3_interface::{
             get_program_data_address,
             instruction::{
                 close, close_any, create_buffer, deploy_with_max_program_len, extend_program,
@@ -129,7 +133,7 @@ pub mod solana_program {
         pub fn sol_log_data(data: &[&[u8]]) {
             #[cfg(target_os = "solana")]
             unsafe {
-                solana_define_syscall::definitions::sol_log_data(
+                crate::compat::solana_define_syscall::definitions::sol_log_data(
                     data as *const _ as *const u8,
                     data.len() as u64,
                 )
@@ -142,9 +146,9 @@ pub mod solana_program {
     pub mod sysvar {
         pub use solana_sysvar_id::{declare_deprecated_sysvar_id, declare_sysvar_id, SysvarId};
         pub mod instructions {
-            pub use solana_instruction::{BorrowedAccountMeta, BorrowedInstruction};
             #[cfg(not(target_os = "solana"))]
-            pub use solana_instructions_sysvar::construct_instructions_data;
+            pub use crate::compat::solana_instructions_sysvar::construct_instructions_data;
+            pub use solana_instruction::{BorrowedAccountMeta, BorrowedInstruction};
         }
     }
 }
@@ -581,23 +585,27 @@ pub mod prelude {
             InitSpace, Key, Lamports, Owner, Owners, ProgramData, Result, Space, ToAccountInfo,
             ToAccountInfos, ToAccountMetas,
         },
-        crate::solana_program::{
-            account_info::{next_account_info, AccountInfo},
-            instruction::AccountMeta,
-            program_error::ProgramError,
-            pubkey::Pubkey,
-            *,
+        crate::{
+            compat::{
+                solana_clock::Clock,
+                solana_instructions_sysvar::Instructions,
+                solana_stake_interface::stake_history::StakeHistory,
+                solana_sysvar::{
+                    epoch_schedule::EpochSchedule, rent::Rent, rewards::Rewards,
+                    slot_hashes::SlotHashes, slot_history::SlotHistory, Sysvar as SolanaSysvar,
+                },
+            },
+            solana_program::{
+                account_info::{next_account_info, AccountInfo},
+                instruction::AccountMeta,
+                program_error::ProgramError,
+                pubkey::Pubkey,
+                *,
+            },
         },
         anchor_attribute_error::*,
         borsh,
         error::*,
-        solana_clock::Clock,
-        solana_instructions_sysvar::Instructions,
-        solana_stake_interface::stake_history::StakeHistory,
-        solana_sysvar::{
-            epoch_schedule::EpochSchedule, rent::Rent, rewards::Rewards, slot_hashes::SlotHashes,
-            slot_history::SlotHistory, Sysvar as SolanaSysvar,
-        },
         thiserror,
     };
 }

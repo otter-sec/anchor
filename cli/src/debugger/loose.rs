@@ -21,7 +21,7 @@
 //! errors instead of opaque "no traces" messages later.
 
 use {
-    crate::sbpf_target_triples,
+    crate::{compat::solana_pubkey, sbpf_target_triples},
     anyhow::{anyhow, Context, Result},
     serde::Deserialize,
     solana_keypair::read_keypair_file,

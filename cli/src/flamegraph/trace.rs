@@ -1,5 +1,8 @@
 use {
-    crate::sbpf_target_triples,
+    crate::{
+        compat::{solana_compute_budget, solana_sbpf},
+        sbpf_target_triples,
+    },
     anyhow::{anyhow, Context, Result},
     object::{Object, ObjectSection, ObjectSymbol, SymbolKind},
     rustc_demangle::demangle,
@@ -44,6 +47,11 @@ fn syscall_cost(budget: &ComputeBudget, syscall_name: &str) -> u64 {
         "sol_curve_group_op" => budget.curve25519_edwards_add_cost,
         "sol_remaining_compute_units" => budget.get_remaining_compute_units_cost,
         "sol_alt_bn128_compression" => budget.alt_bn128_g1_compress,
+        #[cfg(feature = "v3")]
+        "sol_big_mod_exp" => budget.big_modular_exponentiation_base_cost,
+        #[cfg(feature = "v3")]
+        "sol_alt_bn128_group_op" => budget.alt_bn128_addition_cost,
+        #[cfg(feature = "v4")]
         "sol_alt_bn128_group_op" => budget.alt_bn128_g1_addition_cost,
         "sol_poseidon" => budget.poseidon_cost_coefficient_c,
         // Includes sol_log_, sol_log_data, sol_log_compute_units_, abort,
@@ -105,6 +113,7 @@ impl ContextObject for NoopContext {
     fn get_remaining(&self) -> u64 {
         0
     }
+    #[cfg(feature = "v4")]
     fn active_mapping_ptr(
         &mut self,
     ) -> std::ptr::NonNull<solana_sbpf::memory_region::MemoryMapping> {
@@ -402,7 +411,7 @@ pub fn build_tx_reports(
 
     let mut reports: std::collections::BTreeMap<u32, (BTreeMap<Vec<String>, u64>, u64)> =
         std::collections::BTreeMap::new();
-    let budget = ComputeBudget::new_with_defaults(false);
+    let budget = crate::compat::default_compute_budget();
 
     for inv in &invocations {
         let regs = fs::read(&inv.regs_path)
@@ -937,7 +946,7 @@ mod tests {
             &symbols,
             &BTreeMap::new(),
             "program",
-            &ComputeBudget::new_with_defaults(false),
+            &crate::compat::default_compute_budget(),
             |step| observed.push((step.pc, step.func.to_owned(), step.call_stack.to_vec())),
         );
 
@@ -970,7 +979,7 @@ mod tests {
             &symbols,
             &syscall_names,
             "program",
-            &ComputeBudget::new_with_defaults(false),
+            &crate::compat::default_compute_budget(),
             |step| {
                 observed.push((
                     step.pc,
@@ -1003,7 +1012,7 @@ mod tests {
             &symbols,
             &syscall_names,
             "program",
-            &ComputeBudget::new_with_defaults(false),
+            &crate::compat::default_compute_budget(),
             |step| observed.push((step.syscall.clone(), step.cu_cost)),
         );
 

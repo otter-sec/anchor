@@ -1,6 +1,10 @@
 use {
     super::FetchTuning,
     crate::{
+        compat::{
+            solana_pubkey, solana_rpc_client, solana_rpc_client_api,
+            solana_transaction_status_client_types,
+        },
         config::{get_solana_cfg_url, Config, ConfigOverride},
         fetch::pmp::pmp_metadata_address,
         get_cluster_and_wallet,

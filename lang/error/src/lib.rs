@@ -1,12 +1,29 @@
 use {
+    crate::compat::solana_pubkey::Pubkey,
     anchor_attribute_error::error_code,
     solana_program_error::ProgramError,
-    solana_pubkey::Pubkey,
     std::{
         fmt::{Debug, Display},
         num::TryFromIntError,
     },
 };
+
+/// Aliases the active Solana cohort back to its unsuffixed crate name.
+mod compat {
+    #[cfg(all(feature = "v3", feature = "v4"))]
+    compile_error!(
+        "anchor-lang-error: features `v3` and `v4` are mutually exclusive. A dependency most \
+         likely re-enabled default features; pass `default-features = false` there, or pick a \
+         single cohort."
+    );
+    #[cfg(not(any(feature = "v3", feature = "v4")))]
+    compile_error!("anchor-lang-error: enable exactly one of the `v3` or `v4` features.");
+
+    #[cfg(feature = "v3")]
+    pub(crate) use solana_pubkey_v3 as solana_pubkey;
+    #[cfg(feature = "v4")]
+    pub(crate) use solana_pubkey_v4 as solana_pubkey;
+}
 
 /// The starting point for user defined error codes.
 pub const ERROR_CODE_OFFSET: u32 = 6000;

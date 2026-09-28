@@ -2,6 +2,7 @@
 use solana_rpc_client::rpc_client::RpcClient;
 use {
     crate::{
+        compat::{solana_rpc_client, solana_rpc_client_api, solana_transaction},
         ClientError, Config, EventContext, EventUnsubscriber, Program, ProgramAccountsIterator,
         RequestBuilder, TxVersion,
     },

@@ -2,18 +2,33 @@
 
 use {
     crate::{
+        compat::solana_sysvar::Sysvar as SolanaSysvar,
         error::ErrorCode,
         solana_program::{account_info::AccountInfo, instruction::AccountMeta, pubkey::Pubkey},
         Accounts, AccountsExit, Key, Result, ToAccountInfos, ToAccountMetas,
     },
-    solana_sysvar::Sysvar as SolanaSysvar,
-    solana_sysvar_id::SysvarId,
     std::{
         collections::BTreeSet,
         fmt,
         ops::{Deref, DerefMut},
     },
 };
+
+/// The per-cohort capability needed to decode a sysvar from its account data.
+///
+/// Blanket-implemented, so callers never name it — it exists only so the impls
+/// below can state one bound that means different things under `v3` and `v4`.
+/// `v3` decodes via `solana_sysvar::SysvarSerialize`; `v4` removed that trait,
+/// so the equivalent is assembled from `SysvarId` plus a serde/bincode decode.
+#[cfg(feature = "v3")]
+pub trait DecodeSysvar: solana_sysvar_v3::SysvarSerialize {}
+#[cfg(feature = "v3")]
+impl<T: solana_sysvar_v3::SysvarSerialize> DecodeSysvar for T {}
+
+#[cfg(feature = "v4")]
+pub trait DecodeSysvar: solana_sysvar_id::SysvarId + serde::de::DeserializeOwned {}
+#[cfg(feature = "v4")]
+impl<T: solana_sysvar_id::SysvarId + serde::de::DeserializeOwned> DecodeSysvar for T {}
 
 /// Type validating that the account is a sysvar and deserializing it.
 ///
@@ -51,13 +66,14 @@ impl<T: SolanaSysvar + fmt::Debug> fmt::Debug for Sysvar<'_, T> {
 }
 
 /// Deserializes a sysvar from its account data.
-///
-/// This performs the same steps as the deprecated `solana_sysvar::SysvarSerialize`:
-/// it checks the account address against the sysvar's ID and then decodes the
-/// account data with bincode, so the accepted wire format is unchanged.
-fn deserialize_sysvar<T: SysvarId + serde::de::DeserializeOwned>(
-    acc_info: &AccountInfo,
-) -> Result<T> {
+#[cfg(feature = "v3")]
+fn deserialize_sysvar<T: DecodeSysvar>(acc_info: &AccountInfo) -> Result<T> {
+    T::from_account_info(acc_info).map_err(|_| ErrorCode::AccountSysvarMismatch.into())
+}
+
+/// Deserializes a sysvar from its account data.
+#[cfg(feature = "v4")]
+fn deserialize_sysvar<T: DecodeSysvar>(acc_info: &AccountInfo) -> Result<T> {
     if !T::check_id(acc_info.key) {
         return Err(ErrorCode::AccountSysvarMismatch.into());
     }
@@ -65,7 +81,7 @@ fn deserialize_sysvar<T: SysvarId + serde::de::DeserializeOwned>(
         .map_err(|_| ErrorCode::AccountSysvarMismatch.into())
 }
 
-impl<'info, T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> Sysvar<'info, T> {
+impl<'info, T: SolanaSysvar + DecodeSysvar> Sysvar<'info, T> {
     pub fn from_account_info(acc_info: &'info AccountInfo<'info>) -> Result<Sysvar<'info, T>> {
         Ok(Sysvar {
             info: acc_info,
@@ -74,7 +90,7 @@ impl<'info, T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> Sysvar<'in
     }
 }
 
-impl<T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> Clone for Sysvar<'_, T> {
+impl<T: SolanaSysvar + DecodeSysvar> Clone for Sysvar<'_, T> {
     fn clone(&self) -> Self {
         Self {
             info: self.info,
@@ -83,9 +99,7 @@ impl<T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> Clone for Sysvar<
     }
 }
 
-impl<'info, B, T: SolanaSysvar + SysvarId + serde::de::DeserializeOwned> Accounts<'info, B>
-    for Sysvar<'info, T>
-{
+impl<'info, B, T: SolanaSysvar + DecodeSysvar> Accounts<'info, B> for Sysvar<'info, T> {
     fn try_accounts(
         _program_id: &Pubkey,
         accounts: &mut &'info [AccountInfo<'info>],

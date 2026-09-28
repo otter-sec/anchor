@@ -1,5 +1,6 @@
 // Avoiding AccountInfo deprecated msg in anchor context
 #![allow(deprecated)]
+pub use {crate::compat::spl_token_interface as spl_token, spl_token::ID};
 use {
     anchor_lang::{
         context::CpiContext,
@@ -8,7 +9,6 @@ use {
     },
     std::ops::Deref,
 };
-pub use {spl_token::ID, spl_token_interface as spl_token};
 
 pub fn transfer<'info>(
     ctx: CpiContext<'_, '_, '_, 'info, Transfer<'info>>,

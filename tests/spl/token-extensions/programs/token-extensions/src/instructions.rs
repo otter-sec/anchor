@@ -14,7 +14,7 @@ use {
                 permanent_delegate::PermanentDelegate, transfer_hook::TransferHook,
             },
         },
-        token_2022_extensions,
+        token_2022_extensions::{self, solana_nullable::MaybeNull},
         token_interface::{
             get_mint_extension_data, pausable_pause, pausable_resume,
             spl_token_metadata_interface::state::{Field, TokenMetadata},
@@ -23,7 +23,6 @@ use {
             TokenMetadataRemoveKey, TokenMetadataUpdateField,
         },
     },
-    solana_nullable::MaybeNull,
     spl_pod::primitives::PodBool,
 };
 

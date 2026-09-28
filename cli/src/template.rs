@@ -1,7 +1,7 @@
 use {
     crate::{
-        config::ProgramWorkspace, create_files, override_or_create_files, AbsolutePath, Files,
-        PackageManager, VERSION,
+        compat::solana_pubkey, config::ProgramWorkspace, create_files, override_or_create_files,
+        AbsolutePath, Files, PackageManager, VERSION,
     },
     anyhow::Result,
     clap::{Parser, ValueEnum},

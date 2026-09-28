@@ -1,5 +1,6 @@
 use {
     super::{rpc, ChunkData, FetchTuning},
+    crate::compat::{solana_rpc_client, solana_transaction_status_client_types},
     anyhow::{anyhow, Result},
     solana_rpc_client::rpc_client::RpcClient,
     solana_signature::Signature,

@@ -65,23 +65,11 @@
 
 #[cfg(feature = "async")]
 pub use nonblocking::ThreadSafeSigner;
-pub use {
-    anchor_lang,
-    cluster::Cluster,
-    solana_commitment_config::CommitmentConfig,
-    solana_hash::Hash,
-    solana_instruction::Instruction,
-    solana_message::AddressLookupTableAccount,
-    solana_pubsub_client::nonblocking::pubsub_client::PubsubClientError,
-    solana_rpc_client_api::{
-        client_error::{Error as SolanaClientError, ErrorKind as SolanaClientErrorKind},
-        config::RpcSendTransactionConfig,
-        filter::RpcFilterType,
-    },
-    solana_signer::{Signer, SignerError},
-    solana_transaction::{versioned::VersionedTransaction, Transaction},
-};
 use {
+    crate::compat::{
+        solana_account_decoder, solana_hash, solana_message, solana_pubsub_client,
+        solana_rpc_client, solana_rpc_client_api, solana_transaction,
+    },
     anchor_lang::{
         solana_program::{program_error::ProgramError, pubkey::Pubkey},
         AccountDeserialize, Discriminator, InstructionData, ToAccountMetas,
@@ -120,8 +108,26 @@ use {
         task::JoinHandle,
     },
 };
+pub use {
+    anchor_lang,
+    cluster::Cluster,
+    solana_commitment_config::CommitmentConfig,
+    solana_hash::Hash,
+    solana_instruction::Instruction,
+    solana_message::AddressLookupTableAccount,
+    solana_pubsub_client::nonblocking::pubsub_client::PubsubClientError,
+    solana_rpc_client_api::{
+        client_error::{Error as SolanaClientError, ErrorKind as SolanaClientErrorKind},
+        config::RpcSendTransactionConfig,
+        filter::RpcFilterType,
+    },
+    solana_signer::{Signer, SignerError},
+    solana_transaction::{versioned::VersionedTransaction, Transaction},
+};
 
 mod cluster;
+#[doc(hidden)]
+pub mod compat;
 
 /// Specifies which transaction version to use when building transactions.
 #[derive(Debug, Clone, Default)]

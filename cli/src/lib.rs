@@ -1,9 +1,15 @@
 use {
-    crate::config::{
-        get_default_ledger_path, BootstrapMode, BuildConfig, Config, ConfigOverride, HookType,
-        Manifest, PackageManager, ProgramDeployment, ProgramWorkspace, ScriptsConfig,
-        SurfnetInfoResponse, SurfpoolConfig, TestValidator, Validator, ValidatorType, WithPath,
-        SHUTDOWN_WAIT, STARTUP_WAIT, SURFPOOL_HOST,
+    crate::{
+        compat::{
+            solana_cli_config, solana_pubkey, solana_pubsub_client, solana_rpc_client,
+            solana_rpc_client_api,
+        },
+        config::{
+            get_default_ledger_path, BootstrapMode, BuildConfig, Config, ConfigOverride, HookType,
+            Manifest, PackageManager, ProgramDeployment, ProgramWorkspace, ScriptsConfig,
+            SurfnetInfoResponse, SurfpoolConfig, TestValidator, Validator, ValidatorType, WithPath,
+            SHUTDOWN_WAIT, STARTUP_WAIT, SURFPOOL_HOST,
+        },
     },
     abs_path::AbsolutePath,
     anchor_cli_macros::AbsolutePath,
@@ -58,6 +64,7 @@ mod abs_path;
 mod account;
 mod checks;
 pub mod codama;
+pub mod compat;
 pub mod config;
 #[cfg(not(windows))]
 pub mod coverage;

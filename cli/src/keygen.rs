@@ -1,5 +1,9 @@
 use {
-    crate::{config::ConfigOverride, get_keypair, KeygenCommand},
+    crate::{
+        compat::{solana_pubkey, solana_transaction},
+        config::ConfigOverride,
+        get_keypair, KeygenCommand,
+    },
     anyhow::{anyhow, bail, Result},
     bip39::{Language, Mnemonic, MnemonicType, Seed},
     console::{Key, Term},

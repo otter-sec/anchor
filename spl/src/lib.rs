@@ -2,6 +2,9 @@
 
 //! Anchor CPI wrappers for popular programs in the Solana ecosystem.
 
+#[doc(hidden)]
+pub mod compat;
+
 #[cfg(feature = "associated_token")]
 pub mod associated_token;
 

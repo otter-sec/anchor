@@ -76,6 +76,32 @@ jobs:
       - run: cd tests && yarn lint
       - uses: ./.github/actions/git-diff/
 
+  # `test-core` above covers the default `v3` Solana cohort. This job covers the
+  # opposite selection. It is separate rather than a matrix on `test-core`
+  # because that job also runs the TS suites, which are cohort-independent and
+  # should not be run twice.
+  test-core-v4:
+    name: Core Tests (Solana v4 cohort)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup/
+      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+        if: ${{ env.CACHE != 'false' }}
+        name: Cache Cargo registry + index
+        id: cache-cargo-build
+        with:
+          path: ${{ env.CARGO_CACHE_PATH }}
+          key: cargo-v4-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      # `--no-default-features` also drops anchor-spl's capability features, so
+      # they have to be re-listed alongside the cohort.
+      - run: cargo clippy --workspace --exclude avm --all-targets --no-default-features --features v4,associated_token,mint,token,token_2022,token_2022_extensions -- -D warnings
+      # FIXME: Enable `idl-build`
+      - run: cargo test --workspace --exclude avm --no-default-features --features v4,allow-missing-optionals,anchor-debug,derive,event-cpi,init-if-needed,lazy-account,associated_token,mint,token,token_2022,token_2022_extensions
+
   setup-anchor-cli:
     name: Setup Anchor cli
     runs-on: ubuntu-latest

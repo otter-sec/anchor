@@ -8,11 +8,18 @@ license = "Apache-2.0"
 description = "Error definitions for anchor-lang"
 
 [package.metadata.docs.rs]
-workspace = true
+# Not `workspace = true`: `all-features` would enable both `v3` and `v4`.
+# The defaults (`borsh` + `v3`) are what we want documented.
+all-features = false
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["borsh"]
+# `v3`/`v4` mirror anchor-lang's Solana cohort selection; exactly one must be
+# active. anchor-lang passes its own choice through to this crate.
+default = ["borsh", "v3"]
 borsh = ["dep:borsh", "solana-program-error/borsh"]
+v3 = ["dep:solana-pubkey-v3"]
+v4 = ["dep:solana-pubkey-v4"]
 
 [dependencies]
 anchor-attribute-error = { workspace = true }
@@ -21,4 +28,7 @@ borsh = { version = "1.5.7", optional = true }
 
 solana-msg.workspace = true
 solana-program-error = { workspace = true }
-solana-pubkey.workspace = true
+
+# Cohort-specific; see `[features]` above.
+solana-pubkey-v3 = { workspace = true, optional = true }
+solana-pubkey-v4 = { workspace = true, optional = true }

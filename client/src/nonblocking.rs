@@ -1,5 +1,6 @@
 use {
     crate::{
+        compat::{solana_rpc_client, solana_rpc_client_api, solana_transaction},
         AsSigner, ClientError, Config, EventContext, EventUnsubscriber, Program,
         ProgramAccountsIterator, RequestBuilder, TxVersion,
     },

@@ -2,6 +2,7 @@ pub use crate::token_2022::*;
 #[cfg(feature = "token_2022_extensions")]
 pub use crate::token_2022_extensions::*;
 use {
+    crate::compat::{spl_token_2022_interface, spl_token_interface},
     anchor_lang::{
         __private::bytemuck::Pod,
         solana_program::{program_pack::Pack, pubkey::Pubkey},

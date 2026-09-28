@@ -6,7 +6,6 @@
 use {
     anchor_lang::prelude::{borsh::io::Write, *},
     borsh::{BorshDeserialize, BorshSerialize},
-    solana_pubkey::Pubkey,
 };
 
 // Needed to declare accounts.

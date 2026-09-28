@@ -8,6 +8,7 @@ use {
     crate::{
         abs_path::AbsolutePath,
         cluster_url,
+        compat::{solana_pubkey, solana_rpc_client, solana_transaction},
         config::{Config, ConfigOverride, WithPath},
         create_client, no_dna_enabled, prepend_compute_unit_ix, with_workspace,
     },

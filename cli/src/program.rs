@@ -1,5 +1,10 @@
 use {
     crate::{
+        compat::{
+            solana_cli_config, solana_client, solana_loader_v3_interface, solana_message,
+            solana_packet, solana_pubkey, solana_rpc_client, solana_rpc_client_api,
+            solana_transaction,
+        },
         config::{Config, Program, WithPath},
         metadata::SecurityCommand,
         redact_url, target_dir, ConfigOverride, ProgramCommand, DEFAULT_MAX_SIGN_ATTEMPTS,
