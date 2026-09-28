@@ -22,6 +22,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Avoid an unnecessary stack allocation when snapshotting CPI return data ([#4931](https://github.com/otter-sec/anchor/pull/4931)).
 - lang: Raise an error when modifying data in an account that has had its ownership changed. ([#5011](https://github.com/otter-sec/anchor/pull/5011)).
 - cli: Redact the query string and userinfo from cluster/RPC URLs printed by `anchor deploy` and `anchor keys sync` so credentials embedded in the URL (e.g. `?api-key=...`) aren't leaked into terminal scrollback or CI logs. ([#5061](https://github.com/otter-sec/anchor/pull/5061)).
+- cli: Also redact the cluster URL printed by `anchor config get`, `anchor config set` and `anchor logs`, and drop the URL path when redacting, since some providers (QuickNode, Triton) put the credential there. ([#5030](https://github.com/otter-sec/anchor/issues/5030)).
 - lang: Validate Token-2022 mint extension constraints when reusing existing mints with `init_if_needed` ([#4845](https://github.com/otter-sec/anchor/pull/4845)).
 - cli: Make `anchor keygen new --silent` withhold the seed phrase instead of only the pubkey, matching `solana-keygen new --silent`. ([#5080](https://github.com/otter-sec/anchor/pull/5080)).
 

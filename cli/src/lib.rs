@@ -6239,19 +6239,21 @@ pub(crate) fn cluster_url(
     }
 }
 
-/// Strips the query string, fragment and any userinfo from `url` so that
-/// secrets embedded in RPC URLs (e.g. `?api-key=...`) aren't printed to
-/// stdout, terminal scrollback or CI logs. Falls back to the original
-/// string if it isn't a parseable URL.
+/// Reduces `url` to its scheme, host and port so that secrets embedded in RPC
+/// URLs aren't printed to stdout, terminal scrollback or CI logs. Providers put
+/// keys in the query string (`?api-key=...`), the userinfo, or the path
+/// (`https://<name>.quiknode.pro/<token>/`), so everything after the authority
+/// is dropped. Falls back to the original string if it isn't a parseable URL
+/// with a host.
 pub(crate) fn redact_url(url: &str) -> String {
     match Url::parse(url) {
-        Ok(mut parsed) => {
-            parsed.set_query(None);
-            parsed.set_fragment(None);
-            let _ = parsed.set_username("");
-            let _ = parsed.set_password(None);
-            parsed.to_string()
-        }
+        Ok(parsed) => match parsed.host_str() {
+            Some(host) => match parsed.port() {
+                Some(port) => format!("{}://{host}:{port}", parsed.scheme()),
+                None => format!("{}://{host}", parsed.scheme()),
+            },
+            None => url.to_string(),
+        },
         Err(_) => url.to_string(),
     }
 }
@@ -6607,7 +6609,7 @@ fn config_get(cfg_override: &ConfigOverride) -> Result<()> {
     with_workspace(cfg_override, |cfg| -> Result<()> {
         println!("Anchor Configuration:");
         println!();
-        println!("Cluster: {}", cfg.provider.cluster.url());
+        println!("Cluster: {}", redact_url(cfg.provider.cluster.url()));
         println!("Wallet:  {}", cfg.provider.wallet);
         Ok(())
     })?
@@ -6647,7 +6649,7 @@ fn config_set(
                 "cluster".to_string(),
                 toml::Value::String(expanded_url.clone()),
             );
-            println!("Updated cluster to: {}", expanded_url);
+            println!("Updated cluster to: {}", redact_url(&expanded_url));
             updated = true;
         }
     }
@@ -7435,7 +7437,7 @@ fn logs_subscribe(
     let (cluster_url, _wallet_path) = get_cluster_and_wallet(cfg_override)?;
     let ws_url = logs_websocket_url(cfg_override, &cluster_url);
 
-    println!("Connecting to {}", ws_url);
+    println!("Connecting to {}", redact_url(&ws_url));
 
     let filter = match (include_votes, address) {
         (true, Some(address)) => {
@@ -7498,7 +7500,7 @@ mod tests {
     fn test_redact_url_strips_query_string() {
         assert_eq!(
             redact_url("https://devnet.helius-rpc.com/?api-key=super-secret"),
-            "https://devnet.helius-rpc.com/"
+            "https://devnet.helius-rpc.com"
         );
     }
 
@@ -7506,20 +7508,30 @@ mod tests {
     fn test_redact_url_strips_userinfo() {
         assert_eq!(
             redact_url("https://user:pass@my-rpc.example.com/rpc"),
-            "https://my-rpc.example.com/rpc"
+            "https://my-rpc.example.com"
         );
     }
 
     #[test]
-    fn test_redact_url_leaves_plain_url_untouched() {
+    fn test_redact_url_strips_path_token() {
+        assert_eq!(
+            redact_url("https://example.solana-mainnet.quiknode.pro/super-secret/"),
+            "https://example.solana-mainnet.quiknode.pro"
+        );
+        assert_eq!(
+            redact_url("wss://example.mainnet.rpcpool.com/super-secret"),
+            "wss://example.mainnet.rpcpool.com"
+        );
+    }
+
+    #[test]
+    fn test_redact_url_keeps_scheme_host_and_port() {
         assert_eq!(
             redact_url("https://api.devnet.solana.com"),
-            "https://api.devnet.solana.com/"
+            "https://api.devnet.solana.com"
         );
-        assert_eq!(
-            redact_url("http://127.0.0.1:8899"),
-            "http://127.0.0.1:8899/"
-        );
+        assert_eq!(redact_url("http://127.0.0.1:8899"), "http://127.0.0.1:8899");
+        assert_eq!(redact_url("ws://localhost:8900/"), "ws://localhost:8900");
     }
 
     #[test]
