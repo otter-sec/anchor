@@ -13,6 +13,11 @@ compile_error!(
 #[cfg(not(any(feature = "v3", feature = "v4")))]
 compile_error!("anchor-cli: enable exactly one of the `v3` or `v4` features.");
 
+// `anchor test --profile` / `anchor debugger` only, and non-Windows only.
+#[cfg(all(feature = "v3", not(windows)))]
+pub use solana_compute_budget_v3 as solana_compute_budget;
+#[cfg(all(feature = "v4", not(windows)))]
+pub use solana_compute_budget_v4 as solana_compute_budget;
 #[cfg(feature = "v3")]
 pub use {
     solana_cli_config_v3 as solana_cli_config, solana_client_v3 as solana_client,
@@ -33,21 +38,21 @@ pub use {
     solana_transaction_status_client_types_v4 as solana_transaction_status_client_types,
     solana_transaction_v4 as solana_transaction,
 };
-// `anchor test --profile` / `anchor debugger` only, and non-Windows only.
-#[cfg(all(feature = "v3", not(windows)))]
-pub use {solana_compute_budget_v3 as solana_compute_budget, solana_sbpf_v3 as solana_sbpf};
-#[cfg(all(feature = "v4", not(windows)))]
-pub use {solana_compute_budget_v4 as solana_compute_budget, solana_sbpf_v4 as solana_sbpf};
 
 /// A default [`ComputeBudget`] for trace cost attribution.
 ///
 /// `new_with_defaults` lost its second parameter between the cohorts, so the
 /// arity is pinned here rather than at each of the five call sites.
 ///
+/// Gated on `not(windows)` like the alias above: the profiling and debugger
+/// commands this serves are non-Windows only, and naming the type in the
+/// signature would otherwise fail to resolve on Windows.
+///
 /// [`ComputeBudget`]: solana_compute_budget::compute_budget::ComputeBudget
+#[cfg(not(windows))]
 pub fn default_compute_budget() -> solana_compute_budget::compute_budget::ComputeBudget {
-    #[cfg(all(feature = "v3", not(windows)))]
+    #[cfg(feature = "v3")]
     return solana_compute_budget::compute_budget::ComputeBudget::new_with_defaults(false, false);
-    #[cfg(all(feature = "v4", not(windows)))]
+    #[cfg(feature = "v4")]
     solana_compute_budget::compute_budget::ComputeBudget::new_with_defaults(false)
 }

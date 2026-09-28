@@ -1,8 +1,5 @@
 use {
-    crate::{
-        compat::{solana_compute_budget, solana_sbpf},
-        sbpf_target_triples,
-    },
+    crate::{compat::solana_compute_budget, sbpf_target_triples},
     anyhow::{anyhow, Context, Result},
     object::{Object, ObjectSection, ObjectSymbol, SymbolKind},
     rustc_demangle::demangle,

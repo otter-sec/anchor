@@ -37,7 +37,13 @@ solana-commitment-config = "3.1.1"
 solana-compute-budget-interface = "3.0.0"
 solana-cpi = "3.0.0"
 solana-faucet = "3.1.14"
-solana-instruction = "3.5"
+# Deliberately permissive, and it cannot be cohort-split: both cohorts want a
+# 3.x and Cargo unifies versions within a major. v4's Agave 4.3 RPC cohort
+# requires ^3.5.0 and pulls 3.5.x on its own. Pinning ^3.5 here would force it
+# on v3 consumers too, where it drags in the solana-instruction 4.0 shim and
+# its wincode 0.6 -- which does not unify with the wincode 0.5 that litesvm
+# 0.15's graph (solana-nonce, solana-system-interface, ...) is built against.
+solana-instruction = "3"
 solana-invoke = "0.5.0"
 solana-keypair = "3.0.1"
 solana-msg = "3.1.0"
@@ -47,6 +53,7 @@ solana-program-error = "3.0.0"
 solana-program-memory = "3.1.0"
 solana-program-option = "3.0.1"
 solana-program-pack = "3.1.0"
+solana-sbpf = "0.23.0"
 solana-sdk-ids = "3.1.0"
 solana-signature = "3.3.0"
 solana-signer = "3.0.0"
@@ -70,7 +77,6 @@ solana-pubkey-v3 = { package = "solana-pubkey", version = "3.0.0" }
 solana-pubsub-client-v3 = { package = "solana-pubsub-client", version = "3.0.14" }
 solana-rpc-client-v3 = { package = "solana-rpc-client", version = "3.0.14" }
 solana-rpc-client-api-v3 = { package = "solana-rpc-client-api", version = "3.0.14" }
-solana-sbpf-v3 = { package = "solana-sbpf", version = "0.23.0" }
 solana-stake-interface-v3 = { package = "solana-stake-interface", version = "2.0.2" }
 solana-sysvar-v3 = { package = "solana-sysvar", version = "3.1.1" }
 solana-transaction-v3 = { package = "solana-transaction", version = "3.0.1" }
@@ -93,7 +99,6 @@ solana-pubkey-v4 = { package = "solana-pubkey", version = "4.4.0" }
 solana-pubsub-client-v4 = { package = "solana-pubsub-client", version = "4.3.0" }
 solana-rpc-client-v4 = { package = "solana-rpc-client", version = "4.3.0" }
 solana-rpc-client-api-v4 = { package = "solana-rpc-client-api", version = "4.3.0" }
-solana-sbpf-v4 = { package = "solana-sbpf", version = "0.23.0" }
 solana-stake-interface-v4 = { package = "solana-stake-interface", version = "4.4.0" }
 solana-sysvar-v4 = { package = "solana-sysvar", version = "4.3.0" }
 solana-transaction-v4 = { package = "solana-transaction", version = "4.3.0", features = ["wincode"] }

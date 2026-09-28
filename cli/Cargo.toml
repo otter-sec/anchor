@@ -30,7 +30,6 @@ v3 = [
     "dep:solana-clock-v3",
     # non-Windows only (`anchor test --profile` / `anchor debugger`)
     "dep:solana-compute-budget-v3",
-    "dep:solana-sbpf-v3",
     "dep:solana-loader-v3-interface-v3",
     "dep:solana-message-v3",
     "dep:solana-packet-v3",
@@ -49,7 +48,6 @@ v4 = [
     "dep:solana-clock-v4",
     # non-Windows only (`anchor test --profile` / `anchor debugger`)
     "dep:solana-compute-budget-v4",
-    "dep:solana-sbpf-v4",
     "dep:solana-loader-v3-interface-v4",
     "dep:solana-message-v4",
     "dep:solana-packet-v4",
@@ -153,8 +151,7 @@ object = { version = "0.37.3", features = ["read_core", "elf"] }
 rustc-demangle = "0.1"
 solana-compute-budget-v3 = { workspace = true, optional = true }
 solana-compute-budget-v4 = { workspace = true, optional = true }
-solana-sbpf-v3 = { workspace = true, optional = true }
-solana-sbpf-v4 = { workspace = true, optional = true }
+solana-sbpf.workspace = true
 
 # `anchor debugger` — foundry-style TUI stepper over profile traces.
 addr2line = { version = "0.24", default-features = false, features = [

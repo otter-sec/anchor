@@ -14,12 +14,9 @@ use {
         model::{DebugNode, DebugSession, DebugStep, DebugTx, ProgramDisasm, StaticInsn},
         source::{discover_platform_tools_stdlib_roots, SourceResolver, CI_PLATFORM_TOOLS_PREFIX},
     },
-    crate::{
-        compat::solana_sbpf,
-        flamegraph::trace::{
-            discover_invocations, find_unstripped_binary, load_function_map, stream_trace,
-            InvocationFiles, INSN_ENTRY_SIZE, KNOWN_SYSCALLS, REGS_ENTRY_SIZE,
-        },
+    crate::flamegraph::trace::{
+        discover_invocations, find_unstripped_binary, load_function_map, stream_trace,
+        InvocationFiles, INSN_ENTRY_SIZE, KNOWN_SYSCALLS, REGS_ENTRY_SIZE,
     },
     anyhow::{anyhow, bail, Context, Result},
     solana_sbpf::{ebpf, static_analysis::Analysis},
