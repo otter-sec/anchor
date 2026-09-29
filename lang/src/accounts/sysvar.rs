@@ -17,17 +17,17 @@ use {
 /// The per-cohort capability needed to decode a sysvar from its account data.
 ///
 /// Blanket-implemented, so callers never name it — it exists only so the impls
-/// below can state one bound that means different things under `v3` and `v4`.
-/// `v3` decodes via `solana_sysvar::SysvarSerialize`; `v4` removed that trait,
+/// below can state one bound that means different things under `solana-v3` and `solana-v4`.
+/// `solana-v3` decodes via `solana_sysvar::SysvarSerialize`; `solana-v4` removed that trait,
 /// so the equivalent is assembled from `SysvarId` plus a serde/bincode decode.
-#[cfg(feature = "v3")]
+#[cfg(feature = "solana-v3")]
 pub trait DecodeSysvar: solana_sysvar_v3::SysvarSerialize {}
-#[cfg(feature = "v3")]
+#[cfg(feature = "solana-v3")]
 impl<T: solana_sysvar_v3::SysvarSerialize> DecodeSysvar for T {}
 
-#[cfg(feature = "v4")]
+#[cfg(feature = "solana-v4")]
 pub trait DecodeSysvar: solana_sysvar_id::SysvarId + serde::de::DeserializeOwned {}
-#[cfg(feature = "v4")]
+#[cfg(feature = "solana-v4")]
 impl<T: solana_sysvar_id::SysvarId + serde::de::DeserializeOwned> DecodeSysvar for T {}
 
 /// Type validating that the account is a sysvar and deserializing it.
@@ -66,13 +66,13 @@ impl<T: SolanaSysvar + fmt::Debug> fmt::Debug for Sysvar<'_, T> {
 }
 
 /// Deserializes a sysvar from its account data.
-#[cfg(feature = "v3")]
+#[cfg(feature = "solana-v3")]
 fn deserialize_sysvar<T: DecodeSysvar>(acc_info: &AccountInfo) -> Result<T> {
     T::from_account_info(acc_info).map_err(|_| ErrorCode::AccountSysvarMismatch.into())
 }
 
 /// Deserializes a sysvar from its account data.
-#[cfg(feature = "v4")]
+#[cfg(feature = "solana-v4")]
 fn deserialize_sysvar<T: DecodeSysvar>(acc_info: &AccountInfo) -> Result<T> {
     if !T::check_id(acc_info.key) {
         return Err(ErrorCode::AccountSysvarMismatch.into());

@@ -11,8 +11,8 @@ homepage = "https://anchor-lang.com"
 
 [package.metadata.docs.rs]
 # Not `workspace = true`: that sets `all-features`, which would turn on both
-# `v3` and `v4` at once and trip the guard in `src/compat.rs`. The cohort comes
-# from the default feature (`v3`); everything else is listed explicitly.
+# `solana-v3` and `solana-v4` at once and trip the guard in `src/compat.rs`. The cohort comes
+# from the default feature (`solana-v3`); everything else is listed explicitly.
 features = [
     "allow-missing-optionals",
     "anchor-debug",
@@ -25,12 +25,12 @@ features = [
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-# Solana cohort selection. `v3` and `v4` are mutually exclusive and exactly one
-# must be active; `src/compat.rs` enforces that with a `compile_error!`. `v3` is
+# Solana cohort selection. `solana-v3` and `solana-v4` are mutually exclusive and exactly one
+# must be active; `src/compat.rs` enforces that with a `compile_error!`. `solana-v3` is
 # the default so that existing dependents are unaffected by the v4 work.
-default = ["v3"]
-v3 = [
-    "anchor-lang-error/v3",
+default = ["solana-v3"]
+solana-v3 = [
+    "anchor-lang-error/solana-v3",
     "dep:solana-clock-v3",
     "dep:solana-define-syscall-v3",
     "dep:solana-feature-gate-interface-v3",
@@ -40,8 +40,8 @@ v3 = [
     "dep:solana-stake-interface-v3",
     "dep:solana-sysvar-v3",
 ]
-v4 = [
-    "anchor-lang-error/v4",
+solana-v4 = [
+    "anchor-lang-error/solana-v4",
     "dep:solana-clock-v4",
     "dep:solana-define-syscall-v4",
     "dep:solana-feature-gate-interface-v4",
@@ -104,7 +104,7 @@ bytemuck = { version = "1", features = ["derive"] }
 const-crypto = "0.3.0"
 serde = "1"
 
-# Cohort-independent: these resolve to the same major under both `v3` and `v4`.
+# Cohort-independent: these resolve to the same major under both `solana-v3` and `solana-v4`.
 solana-account-info.workspace = true
 solana-cpi.workspace = true
 solana-instruction.workspace = true

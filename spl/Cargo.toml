@@ -8,8 +8,8 @@ license = "Apache-2.0"
 description = "CPI clients for SPL programs"
 
 [package.metadata.docs.rs]
-# Not `workspace = true`: `all-features` would enable both `v3` and `v4` and
-# trip the guard in `src/compat.rs`. The cohort comes from the default (`v3`).
+# Not `workspace = true`: `all-features` would enable both `solana-v3` and `solana-v4` and
+# trip the guard in `src/compat.rs`. The cohort comes from the default (`solana-v3`).
 features = [
     "anchor-debug",
     "devnet",
@@ -28,21 +28,21 @@ default = [
     "token",
     "token_2022",
     "token_2022_extensions",
-    "v3",
+    "solana-v3",
 ]
 
 # Solana cohort selection; mirrors anchor-lang's. Exactly one must be active --
 # `src/compat.rs` enforces it. See the comment block in the root Cargo.toml.
-v3 = [
-    "anchor-lang/v3",
+solana-v3 = [
+    "anchor-lang/solana-v3",
     "dep:solana-stake-interface-v3",
     "dep:solana-sysvar-v3",
     "dep:spl-token-2022-interface-v3",
     "dep:spl-token-interface-v3",
     "dep:spl-token-metadata-interface-v3",
 ]
-v4 = [
-    "anchor-lang/v4",
+solana-v4 = [
+    "anchor-lang/solana-v4",
     "dep:solana-nullable",
     "dep:solana-stake-interface-v4",
     "dep:solana-sysvar-v4",
@@ -76,7 +76,7 @@ token_2022_extensions = [
 # Back-compat no-ops. These names used to exist as implicit features created by
 # the optional dependencies of the same name, and the capability features above
 # enabled them. Those dependencies are now cohort-suffixed (so their implicit
-# features are gone) and are activated by `v3`/`v4` instead, but the names are
+# features are gone) and are activated by `solana-v3`/`solana-v4` instead, but the names are
 # kept -- and kept reachable from the same capability features -- so the public
 # feature graph is unchanged for dependents.
 spl-token-interface = []

@@ -10,18 +10,20 @@ use {
 
 /// Aliases the active Solana cohort back to its unsuffixed crate name.
 mod compat {
-    #[cfg(all(feature = "v3", feature = "v4"))]
+    #[cfg(all(feature = "solana-v3", feature = "solana-v4"))]
     compile_error!(
-        "anchor-lang-error: features `v3` and `v4` are mutually exclusive. A dependency most \
-         likely re-enabled default features; pass `default-features = false` there, or pick a \
-         single cohort."
+        "anchor-lang-error: features `solana-v3` and `solana-v4` are mutually exclusive. A \
+         dependency most likely re-enabled default features; pass `default-features = false` \
+         there, or pick a single cohort."
     );
-    #[cfg(not(any(feature = "v3", feature = "v4")))]
-    compile_error!("anchor-lang-error: enable exactly one of the `v3` or `v4` features.");
+    #[cfg(not(any(feature = "solana-v3", feature = "solana-v4")))]
+    compile_error!(
+        "anchor-lang-error: enable exactly one of the `solana-v3` or `solana-v4` features."
+    );
 
-    #[cfg(feature = "v3")]
+    #[cfg(feature = "solana-v3")]
     pub(crate) use solana_pubkey_v3 as solana_pubkey;
-    #[cfg(feature = "v4")]
+    #[cfg(feature = "solana-v4")]
     pub(crate) use solana_pubkey_v4 as solana_pubkey;
 }
 

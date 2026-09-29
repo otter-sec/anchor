@@ -8,7 +8,7 @@ description = "Anchor CLI"
 license = "Apache-2.0"
 
 [package.metadata.docs.rs]
-# Not `workspace = true`: `all-features` would enable both `v3` and `v4`.
+# Not `workspace = true`: `all-features` would enable both `solana-v3` and `solana-v4`.
 all-features = false
 rustdoc-args = ["--cfg", "docsrs"]
 
@@ -21,10 +21,10 @@ path = "src/bin/main.rs"
 # anchor-lang/anchor-client and Cargo unifies features across the workspace, so
 # it has to follow the same Solana cohort as everything else. See the comment
 # block in the root Cargo.toml.
-default = ["v3"]
-v3 = [
-    "anchor-client/v3",
-    "anchor-lang/v3",
+default = ["solana-v3"]
+solana-v3 = [
+    "anchor-client/solana-v3",
+    "anchor-lang/solana-v3",
     "dep:solana-cli-config-v3",
     "dep:solana-client-v3",
     "dep:solana-clock-v3",
@@ -40,9 +40,9 @@ v3 = [
     "dep:solana-transaction-v3",
     "dep:solana-transaction-status-client-types-v3",
 ]
-v4 = [
-    "anchor-client/v4",
-    "anchor-lang/v4",
+solana-v4 = [
+    "anchor-client/solana-v4",
+    "anchor-lang/solana-v4",
     "dep:solana-cli-config-v4",
     "dep:solana-client-v4",
     "dep:solana-clock-v4",
@@ -65,8 +65,8 @@ idl-localnet-testing = []
 
 [dependencies]
 anchor-cli-macros = { workspace = true }
-# The cohort comes from this crate's own `v3`/`v4` feature; the workspace
-# declaration sets `default-features = false` so anchor-lang's default `v3`
+# The cohort comes from this crate's own `solana-v3`/`solana-v4` feature; the workspace
+# declaration sets `default-features = false` so anchor-lang's default `solana-v3`
 # is not forced on here.
 anchor-client = { workspace = true }
 anchor-lang = { workspace = true }

@@ -44,11 +44,11 @@ fn syscall_cost(budget: &ComputeBudget, syscall_name: &str) -> u64 {
         "sol_curve_group_op" => budget.curve25519_edwards_add_cost,
         "sol_remaining_compute_units" => budget.get_remaining_compute_units_cost,
         "sol_alt_bn128_compression" => budget.alt_bn128_g1_compress,
-        #[cfg(feature = "v3")]
+        #[cfg(feature = "solana-v3")]
         "sol_big_mod_exp" => budget.big_modular_exponentiation_base_cost,
-        #[cfg(feature = "v3")]
+        #[cfg(feature = "solana-v3")]
         "sol_alt_bn128_group_op" => budget.alt_bn128_addition_cost,
-        #[cfg(feature = "v4")]
+        #[cfg(feature = "solana-v4")]
         "sol_alt_bn128_group_op" => budget.alt_bn128_g1_addition_cost,
         "sol_poseidon" => budget.poseidon_cost_coefficient_c,
         // Includes sol_log_, sol_log_data, sol_log_compute_units_, abort,

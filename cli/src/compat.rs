@@ -4,21 +4,22 @@
 //! has no downstream API to protect, but Cargo unifies features across the
 //! workspace, so it has to build as the same cohort as the library crates.
 
-#[cfg(all(feature = "v3", feature = "v4"))]
+#[cfg(all(feature = "solana-v3", feature = "solana-v4"))]
 compile_error!(
-    "anchor-cli: features `v3` and `v4` are mutually exclusive, but both are enabled. Build the \
-     workspace as a single cohort, e.g. `--no-default-features --features v4`."
+    "anchor-cli: features `solana-v3` and `solana-v4` are mutually exclusive, but both are \
+     enabled. Build the workspace as a single cohort, e.g. `--no-default-features --features \
+     solana-v4`."
 );
 
-#[cfg(not(any(feature = "v3", feature = "v4")))]
-compile_error!("anchor-cli: enable exactly one of the `v3` or `v4` features.");
+#[cfg(not(any(feature = "solana-v3", feature = "solana-v4")))]
+compile_error!("anchor-cli: enable exactly one of the `solana-v3` or `solana-v4` features.");
 
 // `anchor test --profile` / `anchor debugger` only, and non-Windows only.
-#[cfg(all(feature = "v3", not(windows)))]
+#[cfg(all(feature = "solana-v3", not(windows)))]
 pub use solana_compute_budget_v3 as solana_compute_budget;
-#[cfg(all(feature = "v4", not(windows)))]
+#[cfg(all(feature = "solana-v4", not(windows)))]
 pub use solana_compute_budget_v4 as solana_compute_budget;
-#[cfg(feature = "v3")]
+#[cfg(feature = "solana-v3")]
 pub use {
     solana_cli_config_v3 as solana_cli_config, solana_client_v3 as solana_client,
     solana_clock_v3 as solana_clock, solana_loader_v3_interface_v3 as solana_loader_v3_interface,
@@ -28,7 +29,7 @@ pub use {
     solana_transaction_status_client_types_v3 as solana_transaction_status_client_types,
     solana_transaction_v3 as solana_transaction,
 };
-#[cfg(feature = "v4")]
+#[cfg(feature = "solana-v4")]
 pub use {
     solana_cli_config_v4 as solana_cli_config, solana_client_v4 as solana_client,
     solana_clock_v4 as solana_clock, solana_loader_v3_interface_v4 as solana_loader_v3_interface,
@@ -51,8 +52,8 @@ pub use {
 /// [`ComputeBudget`]: solana_compute_budget::compute_budget::ComputeBudget
 #[cfg(not(windows))]
 pub fn default_compute_budget() -> solana_compute_budget::compute_budget::ComputeBudget {
-    #[cfg(feature = "v3")]
+    #[cfg(feature = "solana-v3")]
     return solana_compute_budget::compute_budget::ComputeBudget::new_with_defaults(false, false);
-    #[cfg(feature = "v4")]
+    #[cfg(feature = "solana-v4")]
     solana_compute_budget::compute_budget::ComputeBudget::new_with_defaults(false)
 }

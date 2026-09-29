@@ -8,16 +8,16 @@ license = "Apache-2.0"
 description = "An RPC client to interact with Anchor programs"
 
 [package.metadata.docs.rs]
-# Not `workspace = true`: `all-features` would enable both `v3` and `v4`.
+# Not `workspace = true`: `all-features` would enable both `solana-v3` and `solana-v4`.
 features = ["async", "debug", "mock"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-# `v3`/`v4` mirror anchor-lang's Solana cohort selection; exactly one must be
+# `solana-v3`/`solana-v4` mirror anchor-lang's Solana cohort selection; exactly one must be
 # active. See the comment block in the root Cargo.toml.
-default = ["v3"]
-v3 = [
-    "anchor-lang/v3",
+default = ["solana-v3"]
+solana-v3 = [
+    "anchor-lang/solana-v3",
     "dep:solana-account-decoder-v3",
     "dep:solana-hash-v3",
     "dep:solana-message-v3",
@@ -26,8 +26,8 @@ v3 = [
     "dep:solana-rpc-client-api-v3",
     "dep:solana-transaction-v3",
 ]
-v4 = [
-    "anchor-lang/v4",
+solana-v4 = [
+    "anchor-lang/solana-v4",
     "dep:solana-account-decoder-v4",
     "dep:solana-hash-v4",
     "dep:solana-message-v4",
@@ -42,8 +42,8 @@ debug = []
 mock = []
 
 [dependencies]
-# The cohort comes from this crate's own `v3`/`v4` feature; the workspace
-# declaration sets `default-features = false` so anchor-lang's default `v3`
+# The cohort comes from this crate's own `solana-v3`/`solana-v4` feature; the workspace
+# declaration sets `default-features = false` so anchor-lang's default `solana-v3`
 # is not forced on here.
 anchor-lang = { workspace = true }
 anyhow = "1"

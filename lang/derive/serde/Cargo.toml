@@ -24,9 +24,9 @@ indexing_slicing = "deny"
 # Mirrors anchor-lang's Solana cohort selection, for the doc-test dev-dependency
 # above. anchor-lang depends on this crate with `default-features = false`, so
 # this default does not feed back into anchor-lang's own cohort.
-default = ["v3"]
-v3 = ["anchor-lang/v3"]
-v4 = ["anchor-lang/v4"]
+default = ["solana-v3"]
+solana-v3 = ["anchor-lang/solana-v3"]
+solana-v4 = ["anchor-lang/solana-v4"]
 idl-build = ["anchor-syn/idl-build"]
 lazy-account = ["anchor-lang/lazy-account"]
 
@@ -41,8 +41,8 @@ syn = { workspace = true, features = ["full"] }
 # Serialization macros require `anchor-lang` to be available to locate `borsh`
 # This is required for doc testing.
 #
-# `default-features = false` matters: anchor-lang's default enables the `v3`
+# `default-features = false` matters: anchor-lang's default enables the `solana-v3`
 # Solana cohort, and Cargo unifies features across the graph, so inheriting it
-# here would force `v3` on even in a `--features v4` build. The cohort comes
-# from this crate's own `v3`/`v4` features instead.
+# here would force `solana-v3` on even in a `--features solana-v4` build. The cohort comes
+# from this crate's own `solana-v3`/`solana-v4` features instead.
 anchor-lang = { path = "../../", default-features = false }

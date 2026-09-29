@@ -76,7 +76,7 @@ jobs:
       - run: cd tests && yarn lint
       - uses: ./.github/actions/git-diff/
 
-  # `test-core` above covers the default `v3` Solana cohort. This job covers the
+  # `test-core` above covers the default `solana-v3` Solana cohort. This job covers the
   # opposite selection. It is separate rather than a matrix on `test-core`
   # because that job also runs the TS suites, which are cohort-independent and
   # should not be run twice.
@@ -98,9 +98,9 @@ jobs:
           key: cargo-v4-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
       # `--no-default-features` also drops anchor-spl's capability features, so
       # they have to be re-listed alongside the cohort.
-      - run: cargo clippy --workspace --exclude avm --all-targets --no-default-features --features v4,associated_token,mint,token,token_2022,token_2022_extensions -- -D warnings
+      - run: cargo clippy --workspace --exclude avm --all-targets --no-default-features --features solana-v4,associated_token,mint,token,token_2022,token_2022_extensions -- -D warnings
       # FIXME: Enable `idl-build`
-      - run: cargo test --workspace --exclude avm --no-default-features --features v4,allow-missing-optionals,anchor-debug,derive,event-cpi,init-if-needed,lazy-account,associated_token,mint,token,token_2022,token_2022_extensions
+      - run: cargo test --workspace --exclude avm --no-default-features --features solana-v4,allow-missing-optionals,anchor-debug,derive,event-cpi,init-if-needed,lazy-account,associated_token,mint,token,token_2022,token_2022_extensions
 
   setup-anchor-cli:
     name: Setup Anchor cli
