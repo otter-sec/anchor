@@ -62,6 +62,20 @@ export function toAddress(address: Address): KitAddress {
 }
 
 /**
+ * Whether the value is an object exposing its address through a `toBase58()`
+ * method, e.g. a web3.js public key. Checks for the method rather than the
+ * property name, so an accounts object with an account named `toBase58` is
+ * not mistaken for one.
+ */
+export function hasToBase58(value: unknown): value is { toBase58(): string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { toBase58?: unknown }).toBase58 === "function"
+  );
+}
+
+/**
  * An address to identify an account on chain. Can be a [[PublicKey]],
  * or Base 58 encoded string.
  */

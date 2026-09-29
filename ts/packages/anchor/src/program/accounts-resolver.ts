@@ -40,7 +40,12 @@ import { AllInstructions } from "./namespace/types.js";
 import Provider from "../provider.js";
 import { AccountsCoder, BorshAccountsCoder } from "../coder/index.js";
 import { withProviderDefaults } from "../utils/common.js";
-import { Address as AnchorAddress, Program, toAddress } from "./index.js";
+import {
+  Address as AnchorAddress,
+  hasToBase58,
+  Program,
+  toAddress,
+} from "./index.js";
 import {
   PartialAccounts,
   flattenPartialAccounts,
@@ -584,7 +589,7 @@ function normaliseAccounts(accounts: AccountsGeneric): AccountsGeneric {
       .filter(([, value]) => value != null)
       .map(([name, value]) => [
         name,
-        typeof value === "object" && !("toBase58" in value)
+        typeof value === "object" && !hasToBase58(value)
           ? normaliseAccounts(value)
           : toAddress(value as AnchorAddress),
       ])

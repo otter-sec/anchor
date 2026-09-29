@@ -19,7 +19,7 @@ import {
   AccountsResolver,
   CustomAccountResolver,
 } from "../accounts-resolver.js";
-import { Address, toAddress } from "../common.js";
+import { Address, hasToBase58, toAddress } from "../common.js";
 import { Accounts } from "../context.js";
 import { InstructionFn } from "./instruction.js";
 import { RpcFn } from "./rpc.js";
@@ -125,7 +125,7 @@ export function isPartialAccounts(
   return (
     typeof partialAccount === "object" &&
     partialAccount !== null &&
-    !("toBase58" in partialAccount) // Ensures not a legacy public key
+    !hasToBase58(partialAccount) // Ensures not a legacy public key
   );
 }
 

@@ -315,6 +315,57 @@ describe("AccountsResolver", () => {
     expect(calls).toBeGreaterThanOrEqual(2);
   });
 
+  it("does not mistake a nested account named toBase58 for a public key", async () => {
+    // Legacy public keys are detected by their `toBase58()` method; a
+    // composite whose child account happens to carry that name must still
+    // read as a nested accounts object, whether it comes from the builder
+    // or from a custom resolver.
+    const nestedIdl = {
+      ...idl,
+      instructions: [
+        {
+          name: "nest",
+          discriminator: [2, 2, 2, 2, 2, 2, 2, 2],
+          accounts: [
+            {
+              name: "group",
+              accounts: [{ name: "toBase58" }, { name: "other" }],
+            },
+          ],
+          args: [],
+        },
+      ],
+    } as const satisfies Idl;
+    const toBase58 = randomAddress();
+    const other = randomAddress();
+
+    const { provider } = mockProvider({});
+    const fromBuilder = await new Program<typeof nestedIdl>(
+      nestedIdl,
+      provider
+    ).methods
+      .nest()
+      .accountsPartial({ group: { toBase58, other } })
+      .pubkeys();
+    expect(fromBuilder.group).toEqual({ toBase58, other });
+
+    const resolver: CustomAccountResolver<typeof nestedIdl> = async ({
+      accounts,
+    }) => ({
+      accounts: { ...accounts, group: { toBase58, other } },
+      resolved: "group" in accounts ? 0 : 1,
+    });
+    const fromResolver = await new Program<typeof nestedIdl>(
+      nestedIdl,
+      provider,
+      undefined,
+      () => resolver
+    ).methods
+      .nest()
+      .pubkeys();
+    expect(fromResolver.group).toEqual({ toBase58, other });
+  });
+
   it("encodes string byte seeds as UTF-8", async () => {
     const bytesIdl = {
       ...idl,
