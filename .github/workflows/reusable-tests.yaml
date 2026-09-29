@@ -76,10 +76,8 @@ jobs:
       - run: cd tests && yarn lint
       - uses: ./.github/actions/git-diff/
 
-  # `test-core` above covers the default `solana-v3` Solana cohort. This job covers the
-  # opposite selection. It is separate rather than a matrix on `test-core`
-  # because that job also runs the TS suites, which are cohort-independent and
-  # should not be run twice.
+  # The `solana-v4` half of `test-core`. Kept separate so that job's TS suites,
+  # which are cohort-independent, don't run twice.
   test-core-v4:
     name: Core Tests (Solana v4 cohort)
     runs-on: ubuntu-latest
@@ -339,6 +337,9 @@ jobs:
     strategy:
       matrix:
         template: [mocha, jest, rust, mollusk, litesvm]
+        include:
+          # Scaffolds the `litesvm` template but builds it against `solana-v4`.
+          - template: litesvm-solana-v4
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -364,16 +365,32 @@ jobs:
 
       - name: Init project
         working-directory: /tmp
-        run: anchor init --test-template ${{ matrix.template }} hello-anchor-${{ matrix.template }}
+        run: anchor init --test-template ${{ matrix.template == 'litesvm-solana-v4' && 'litesvm' || matrix.template }} hello-anchor-${{ matrix.template }}
 
       - name: Remove anchor-client dependency first to avoid conflicts
         if: ${{ matrix.template == 'rust' }}
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
         run: cargo remove anchor-client --manifest-path tests/Cargo.toml
 
+      # litesvm 0.15 and the committed Cargo.lock pin a wincode 0.5 graph that
+      # doesn't build on v4, which also needs a 1.97.1 toolchain.
+      - name: Retarget the litesvm template at solana-v4
+        if: ${{ matrix.template == 'litesvm-solana-v4' }}
+        working-directory: /tmp/hello-anchor-${{ matrix.template }}
+        run: |
+          sed -i 's/^litesvm = "0.15.0"$/litesvm = "0.17.0"/' programs/hello-anchor-${{ matrix.template }}/Cargo.toml
+          rm -f Cargo.lock
+          sed -i 's/^channel = ".*"$/channel = "1.97.1"/' rust-toolchain.toml
+
       - name: Point anchor-lang to workspace
+        if: ${{ matrix.template != 'litesvm-solana-v4' }}
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
         run: cargo add anchor-lang --manifest-path programs/hello-anchor-${{ matrix.template }}/Cargo.toml --path "$GITHUB_WORKSPACE/lang"
+
+      - name: Point anchor-lang to workspace (solana-v4)
+        if: ${{ matrix.template == 'litesvm-solana-v4' }}
+        working-directory: /tmp/hello-anchor-${{ matrix.template }}
+        run: cargo add anchor-lang --manifest-path programs/hello-anchor-${{ matrix.template }}/Cargo.toml --path "$GITHUB_WORKSPACE/lang" --no-default-features --features solana-v4
 
       - name: Point anchor-client to workspace
         if: ${{ matrix.template == 'rust' }}
@@ -388,7 +405,7 @@ jobs:
         run: yarn link @anchor-lang/core && yarn && anchor test && yarn lint:fix
 
       - name: Run generated Rust project tests
-        if: ${{ matrix.template == 'rust' || matrix.template == 'mollusk' || matrix.template == 'litesvm' }}
+        if: ${{ matrix.template == 'rust' || matrix.template == 'mollusk' || matrix.template == 'litesvm' || matrix.template == 'litesvm-solana-v4' }}
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
         run: anchor test
 

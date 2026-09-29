@@ -83,25 +83,25 @@ solana-transaction-v3 = { package = "solana-transaction", version = "3.0.1" }
 solana-transaction-status-client-types-v3 = { package = "solana-transaction-status-client-types", version = "3.0.0" }
 
 # --- v4 cohort (Agave 4.3) ---
-solana-account-decoder-v4 = { package = "solana-account-decoder", version = "4.3.0" }
+solana-account-decoder-v4 = { package = "solana-account-decoder", version = "4.3" }
 solana-cli-config-v4 = { package = "solana-cli-config", version = "4.3.0" }
 solana-client-v4 = { package = "solana-client", version = "4.3.0" }
 solana-clock-v4 = { package = "solana-clock", version = "4.0.0" }
 solana-compute-budget-v4 = { package = "solana-compute-budget", version = "4.3.0", features = ["agave-unstable-api"] }
 solana-define-syscall-v4 = { package = "solana-define-syscall", version = "4.0.1" }
 solana-feature-gate-interface-v4 = { package = "solana-feature-gate-interface", version = "4.0.0" }
-solana-hash-v4 = { package = "solana-hash", version = "4.7.0" }
+solana-hash-v4 = { package = "solana-hash", version = "4.6" }
 solana-instructions-sysvar-v4 = { package = "solana-instructions-sysvar", version = "4.0.0" }
 solana-loader-v3-interface-v4 = { package = "solana-loader-v3-interface", version = "7.0.0" }
-solana-message-v4 = { package = "solana-message", version = "4.6.0" }
+solana-message-v4 = { package = "solana-message", version = "4.5" }
 solana-packet-v4 = { package = "solana-packet", version = "4.4.0" }
-solana-pubkey-v4 = { package = "solana-pubkey", version = "4.4.0" }
+solana-pubkey-v4 = { package = "solana-pubkey", version = "4.3" }
 solana-pubsub-client-v4 = { package = "solana-pubsub-client", version = "4.3.0" }
 solana-rpc-client-v4 = { package = "solana-rpc-client", version = "4.3.0" }
 solana-rpc-client-api-v4 = { package = "solana-rpc-client-api", version = "4.3.0" }
-solana-stake-interface-v4 = { package = "solana-stake-interface", version = "4.4.0" }
-solana-sysvar-v4 = { package = "solana-sysvar", version = "4.3.0" }
-solana-transaction-v4 = { package = "solana-transaction", version = "4.3.0", features = ["wincode"] }
+solana-stake-interface-v4 = { package = "solana-stake-interface", version = "4.4" }
+solana-sysvar-v4 = { package = "solana-sysvar", version = "4.2" }
+solana-transaction-v4 = { package = "solana-transaction", version = "4.2", features = ["wincode"] }
 solana-transaction-status-client-types-v4 = { package = "solana-transaction-status-client-types", version = "4.3.0" }
 
 # Non solana crates
