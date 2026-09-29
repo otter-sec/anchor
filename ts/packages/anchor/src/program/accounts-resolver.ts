@@ -55,12 +55,6 @@ export type AccountsGeneric = {
   [name: string]: Address | AccountsGeneric;
 };
 
-export function isAccountsGeneric(
-  accounts: Address | AccountsGeneric
-): accounts is AccountsGeneric {
-  return typeof accounts !== "string";
-}
-
 export type CustomAccountResolver<IDL extends Idl> = (params: {
   args: Array<any>;
   accounts: AccountsGeneric;
