@@ -283,7 +283,7 @@ dependencies = [
  "anchor-lang-idl",
  "anchor-syn",
  "anyhow",
- "heck 0.3.3",
+ "heck",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -312,7 +312,7 @@ dependencies = [
  "dirs",
  "ed25519-dalek",
  "flate2",
- "heck 0.4.1",
+ "heck",
  "indicatif",
  "inferno",
  "object 0.37.3",
@@ -519,7 +519,7 @@ version = "0.1.4"
 dependencies = [
  "anchor-lang-idl-spec",
  "anyhow",
- "heck 0.3.3",
+ "heck",
  "regex",
  "serde",
  "serde_json",
@@ -564,7 +564,7 @@ version = "1.2.0"
 dependencies = [
  "bs58",
  "cargo_toml",
- "heck 0.3.3",
+ "heck",
  "proc-macro2",
  "quote",
  "serde",
@@ -1497,7 +1497,7 @@ version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9c751b79415d4e559e3d1fcf128e09e720eb673a06d26cf6f392d37d75b66e0"
 dependencies = [
- "heck 0.5.0",
+ "heck",
  "proc-macro2",
  "quote",
  "syn 3.0.6",
@@ -2807,21 +2807,6 @@ dependencies = [
  "equivalent",
  "foldhash 0.2.0",
 ]
-
-[[package]]
-name = "heck"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d621efb26863f0e9924c6ac577e8275e5e6b77455db64ffa6c65c904e9e132c"
-dependencies = [
- "unicode-segmentation",
-]
-
-[[package]]
-name = "heck"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
 
 [[package]]
 name = "heck"
@@ -8959,7 +8944,7 @@ version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
 dependencies = [
- "heck 0.5.0",
+ "heck",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
