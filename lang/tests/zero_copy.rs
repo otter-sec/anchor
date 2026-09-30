@@ -7,6 +7,27 @@ pub struct UnalignedZeroCopy {
     pub value: u128,
 }
 
+// Explicit bytemuck derives must suppress the injected ones (E0119 otherwise).
+#[account(zero_copy)]
+#[derive(bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ExplicitBytemuckDerives {
+    pub value: u64,
+}
+
+// Deriving only Zeroable must still get Pod injected. Compile-only check.
+#[account(zero_copy)]
+#[derive(bytemuck::Zeroable)]
+pub struct OnlyZeroableDerived {
+    pub value: u64,
+}
+
+#[test]
+fn zero_copy_accepts_explicit_bytemuck_derives() {
+    let account = ExplicitBytemuckDerives { value: 7 };
+    let bytes = anchor_lang::__private::bytemuck::bytes_of(&account);
+    assert_eq!(bytes, 7u64.to_le_bytes());
+}
+
 #[test]
 fn zero_copy_try_deserialize_handles_unaligned_bytes() {
     let account = UnalignedZeroCopy { value: 42 };
