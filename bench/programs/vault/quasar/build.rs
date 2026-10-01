@@ -16,7 +16,9 @@ fn main() {
         .args([
             "build-sbf",
             "--tools-version",
-            "v1.52",
+            "v1.57",
+            "--arch",
+            "v3",
             "--manifest-path",
             program_manifest.to_str().unwrap(),
             "--sbf-out-dir",

@@ -2640,12 +2640,15 @@ fn _build_rust_cwd(
 }
 
 /// Subcommand + toolchain pin passed to cargo for every SBF build the CLI
-/// invokes. `--tools-version v1.52` is the SBF platform-tools release the
-/// rest of anchor's stack is tested against; using anything else risks
-/// link errors against the bundled stdlib (e.g. `feature edition2024 is
-/// required` when the user's host toolchain is too old to build modern
-/// transitive deps).
-pub const BUILD_SUBCOMMAND: &[&str] = &["build-sbf", "--tools-version", "v1.52"];
+/// invokes. Platform-tools v1.57 ships the `sbpfv3-solana-solana` target, and
+/// `--arch v3` selects it. v1.52 does not contain that target.
+pub const BUILD_SUBCOMMAND: &[&str] = &[
+    "build-sbf",
+    "--tools-version",
+    "v1.57",
+    "--arch",
+    "v3",
+];
 
 /// Shell out to `cargo build-sbf` with our pinned toolchain
 /// ([`BUILD_SUBCOMMAND`]) plus any user-supplied `extra_args`.

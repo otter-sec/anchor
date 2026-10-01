@@ -104,8 +104,8 @@ jobs:
       - uses: actions/cache@v4
         name: Cache SBF platform tools
         with:
-          path: ~/.cache/solana/v1.52/platform-tools
-          key: solana-platform-tools-${{ runner.os }}-v1.52
+          path: ~/.cache/solana/v1.57/platform-tools
+          key: solana-platform-tools-${{ runner.os }}-v1.57
       - uses: nick-fields/retry@v2
         name: Install SBF platform tools
         with:
@@ -114,7 +114,7 @@ jobs:
           max_attempts: 5
           retry_on: error
           shell: bash
-          command: cargo build-sbf --tools-version v1.52 --install-only
+          command: cargo build-sbf --tools-version v1.57 --install-only
 
       - uses: actions/cache@v4
         with:

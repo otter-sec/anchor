@@ -83,7 +83,9 @@ pub fn build_program(manifest_dir: &str, sbf_out_dir: &str) {
         cmd.args([
             "build-sbf",
             "--tools-version",
-            "v1.52",
+            "v1.57",
+            "--arch",
+            "v3",
             "--manifest-path",
             &format!("{}/Cargo.toml", manifest_dir),
             "--sbf-out-dir",
