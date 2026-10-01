@@ -108,6 +108,102 @@ Solana version: 4.2.0
 
 ---
 
+## [1.2.1]
+
+Solana version: 4.2.0
+
+| Instruction                 | Compute Units | -   |
+| --------------------------- | ------------- | --- |
+| accountInfo1                | 588           | -   |
+| accountInfo2                | 959           | -   |
+| accountInfo4                | 1,678         | -   |
+| accountInfo8                | 3,150         | -   |
+| accountEmptyInit1           | 4,212         | -   |
+| accountEmpty1               | 603           | -   |
+| accountEmptyInit2           | 7,529         | -   |
+| accountEmpty2               | 934           | -   |
+| accountEmptyInit4           | 14,164        | -   |
+| accountEmpty4               | 1,615         | -   |
+| accountEmptyInit8           | 27,496        | -   |
+| accountEmpty8               | 2,991         | -   |
+| accountSizedInit1           | 4,271         | -   |
+| accountSized1               | 609           | -   |
+| accountSizedInit2           | 7,647         | -   |
+| accountSized2               | 967           | -   |
+| accountSizedInit4           | 14,414        | -   |
+| accountSized4               | 1,685         | -   |
+| accountSizedInit8           | 27,964        | -   |
+| accountSized8               | 3,125         | -   |
+| accountUnsizedInit1         | 4,359         | -   |
+| accountUnsized1             | 622           | -   |
+| accountUnsizedInit2         | 7,830         | -   |
+| accountUnsized2             | 994           | -   |
+| accountUnsizedInit4         | 14,734        | -   |
+| accountUnsized4             | 1,746         | -   |
+| accountUnsizedInit8         | 28,603        | -   |
+| accountUnsized8             | 3,253         | -   |
+| boxedAccountEmptyInit1      | 4,244         | -   |
+| boxedAccountEmpty1          | 610           | -   |
+| boxedAccountEmptyInit2      | 7,591         | -   |
+| boxedAccountEmpty2          | 976           | -   |
+| boxedAccountEmptyInit4      | 14,289        | -   |
+| boxedAccountEmpty4          | 1,698         | -   |
+| boxedAccountEmptyInit8      | 27,742        | -   |
+| boxedAccountEmpty8          | 3,201         | -   |
+| boxedAccountSizedInit1      | 4,298         | -   |
+| boxedAccountSized1          | 631           | -   |
+| boxedAccountSizedInit2      | 7,701         | -   |
+| boxedAccountSized2          | 1,012         | -   |
+| boxedAccountSizedInit4      | 14,505        | -   |
+| boxedAccountSized4          | 1,767         | -   |
+| boxedAccountSizedInit8      | 28,174        | -   |
+| boxedAccountSized8          | 3,337         | -   |
+| boxedAccountUnsizedInit1    | 4,373         | -   |
+| boxedAccountUnsized1        | 641           | -   |
+| boxedAccountUnsizedInit2    | 7,849         | -   |
+| boxedAccountUnsized2        | 1,034         | -   |
+| boxedAccountUnsizedInit4    | 14,807        | -   |
+| boxedAccountUnsized4        | 1,815         | -   |
+| boxedAccountUnsizedInit8    | 28,766        | -   |
+| boxedAccountUnsized8        | 3,439         | -   |
+| boxedInterfaceAccountMint1  | 808           | -   |
+| boxedInterfaceAccountMint2  | 1,179         | -   |
+| boxedInterfaceAccountMint4  | 1,911         | -   |
+| boxedInterfaceAccountMint8  | 3,431         | -   |
+| boxedInterfaceAccountToken1 | 926           | -   |
+| boxedInterfaceAccountToken2 | 1,413         | -   |
+| boxedInterfaceAccountToken4 | 2,383         | -   |
+| boxedInterfaceAccountToken8 | 4,375         | -   |
+| interfaceAccountMint1       | 799           | -   |
+| interfaceAccountMint2       | 1,163         | -   |
+| interfaceAccountMint4       | 1,887         | -   |
+| interfaceAccountMint8       | 3,339         | -   |
+| interfaceAccountToken1      | 935           | -   |
+| interfaceAccountToken2      | 1,422         | -   |
+| interfaceAccountToken4      | 2,406         | -   |
+| interface1                  | 574           | -   |
+| interface2                  | 701           | -   |
+| interface4                  | 946           | -   |
+| interface8                  | 1,436         | -   |
+| program1                    | 568           | -   |
+| program2                    | 683           | -   |
+| program4                    | 914           | -   |
+| program8                    | 1,370         | -   |
+| signer1                     | 558           | -   |
+| signer2                     | 866           | -   |
+| signer4                     | 1,463         | -   |
+| signer8                     | 2,663         | -   |
+| systemAccount1              | 566           | -   |
+| systemAccount2              | 882           | -   |
+| systemAccount4              | 1,493         | -   |
+| systemAccount8              | 2,723         | -   |
+| uncheckedAccount1           | 547           | -   |
+| uncheckedAccount2           | 832           | -   |
+| uncheckedAccount4           | 1,396         | -   |
+| uncheckedAccount8           | 2,523         | -   |
+
+---
+
 ## [1.2.0]
 
 Solana version: 3.1.10
