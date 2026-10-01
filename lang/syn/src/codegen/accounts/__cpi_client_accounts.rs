@@ -1,8 +1,8 @@
 use {
     crate::{AccountField, AccountsStruct, Ty},
-    heck::SnakeCase,
+    heck::ToSnakeCase,
     quote::quote,
-    std::str::FromStr,
+    std::{collections::HashSet, str::FromStr},
 };
 
 // Generates the private `__cpi_client_accounts` mod implementation, containing
@@ -11,6 +11,31 @@ use {
 pub fn generate(
     accs: &AccountsStruct,
     program_id: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    generate_with_opts(accs, program_id, &HashSet::new())
+}
+
+/// Same as [`generate`], but omits `<'info>` on accounts structs that have no
+/// fields. `fieldless` must name *every* such struct in the program, because the
+/// lifetime has to be dropped both on the struct itself and on every composite
+/// field that refers to it.
+///
+/// The two consumers of this codegen know different things:
+///
+/// - `#[program]` (`codegen::program::cpi`) builds the accounts path from an
+///   identifier alone and always writes `#name<'info>`, so the struct must
+///   always carry the lifetime. An empty struct then has an unused lifetime
+///   (`E0392`, not silenceable by `allow`), so a hidden `PhantomData` field
+///   binds it.
+/// - `declare_program!` sees the whole IDL, so it can collect the fieldless
+///   struct names up front and emit the structs, their composite references and
+///   the `cpi::<ix>` signatures without the lifetime. That keeps fieldless
+///   structs constructible as `Foo {}`, which is public API for downstream users
+///   and must not break.
+pub fn generate_with_opts(
+    accs: &AccountsStruct,
+    program_id: proc_macro2::TokenStream,
+    fieldless: &HashSet<String>,
 ) -> proc_macro2::TokenStream {
     let name = &accs.ident;
     #[allow(
@@ -44,17 +69,40 @@ pub fn generate(
                 } else {
                     quote!()
                 };
-                #[allow(clippy::unwrap_used, reason = "computed from valid Rust identifiers via snake_case")]
-                let symbol: proc_macro2::TokenStream = format!(
-                    "__cpi_client_accounts_{0}::{1}",
-                    s.symbol.to_snake_case(),
-                    s.symbol,
-                )
-                .parse()
-                .unwrap();
+                #[allow(
+                    clippy::unwrap_used,
+                    clippy::expect_used,
+                    reason = "symbol path is always non-empty and is a valid Rust path"
+                )]
+                let symbol: proc_macro2::TokenStream = {
+                    let symbol_path = s.symbol.split("::").collect::<Vec<_>>();
+                    let name = symbol_path
+                        .last()
+                        .expect("symbol path must have at least one segment");
+                    let prefix = symbol_path
+                        .get(..symbol_path.len().saturating_sub(1))
+                        .unwrap_or(&[]);
+                    let helper_mod = format!("__cpi_client_accounts_{}", name.to_snake_case());
+                    if prefix.is_empty() {
+                        format!("{helper_mod}::{name}")
+                    } else {
+                        format!("{}::{helper_mod}::{name}", prefix.join("::"),)
+                    }
+                    .parse()
+                    .expect("generated module path must be valid Rust tokens")
+                };
+                // A fieldless composite is generated without `<'info>`, so the
+                // field that holds it must not ask for one either. `symbol` can
+                // be a qualified path, and `fieldless` holds bare struct names.
+                let symbol_name = s.symbol.rsplit("::").next().unwrap_or(&s.symbol);
+                let lifetime = if fieldless.contains(symbol_name) {
+                    quote!()
+                } else {
+                    quote!(<'info>)
+                };
                 quote! {
                     #docs
-                    pub #name: #symbol<'info>
+                    pub #name: #symbol #lifetime
                 }
             }
             AccountField::Field(f) => {
@@ -148,15 +196,34 @@ pub fn generate(
     let re_exports: Vec<proc_macro2::TokenStream> = {
         // First, dedup the exports.
         let mut re_exports = std::collections::HashSet::new();
+        // We need to keep track of the names we've already re-exported to avoid
+        // name collisions in the generated module.
+        let mut re_exported_names = std::collections::HashSet::new();
+
         for f in accs.fields.iter().filter_map(|f: &AccountField| match f {
             AccountField::CompositeField(s) => Some(s),
             AccountField::Field(_) => None,
         }) {
-            re_exports.insert(format!(
-                "__cpi_client_accounts_{0}::{1}",
-                f.symbol.to_snake_case(),
-                f.symbol,
-            ));
+            let symbol_path = f.symbol.split("::").collect::<Vec<_>>();
+            let name = symbol_path.last().copied().unwrap_or_default(); // Never empty for valid Rust paths
+
+            // If we've already re-exported something with this name, skip it to
+            // avoid a "name defined multiple times" error.
+            if re_exported_names.contains(name) {
+                continue;
+            }
+
+            let prefix = symbol_path
+                .get(..symbol_path.len().saturating_sub(1))
+                .unwrap_or(&[]);
+            let helper_mod = format!("__cpi_client_accounts_{}", name.to_snake_case());
+
+            if prefix.is_empty() {
+                re_exports.insert(format!("{helper_mod}::{name}"));
+            } else {
+                re_exports.insert(format!("{}::{helper_mod}::{name}", prefix.join("::")));
+            }
+            re_exported_names.insert(name.to_string());
         }
 
         re_exports
@@ -173,7 +240,27 @@ pub fn generate(
             })
             .collect()
     };
-    let generics = if account_struct_fields.is_empty() {
+    // See `generate_with_opts` for why an empty struct's lifetime is handled two
+    // different ways. When it is kept, a hidden `PhantomData<&'info ()>` field
+    // binds it so it is not an unused lifetime (`E0392`). That field derives
+    // `Default`, so the struct stays constructible as `Foo { ..Default::default() }`.
+    // `fieldless` is authoritative: a struct is listed there when nothing in it
+    // binds `'info`, which includes a struct whose only fields are themselves
+    // lifetime-free composites.
+    let omit_lifetime = fieldless.contains(&name.to_string());
+    let (phantom_field, extra_derives) = if account_struct_fields.is_empty() && !omit_lifetime {
+        (
+            quote! {
+                #[doc(hidden)]
+                pub __anchor_phantom: ::core::marker::PhantomData<&'info ()>
+            },
+            // leading comma: spliced into `#[derive(Debug, Clone #extra_derives)]`
+            quote! { , Default },
+        )
+    } else {
+        (quote! {}, quote! {})
+    };
+    let generics = if omit_lifetime {
         quote! {}
     } else {
         quote! {<'info>}
@@ -191,15 +278,17 @@ pub fn generate(
         ///
         /// To access the struct in this module, one should use the sibling
         /// [`cpi::accounts`] module (also generated), which re-exports this.
-        pub(crate) mod #account_mod_name {
+        #[doc(hidden)]
+        pub mod #account_mod_name {
             use super::*;
 
             #(#re_exports)*
 
             #struct_doc
-            #[derive(Debug, Clone)]
+            #[derive(Debug, Clone #extra_derives)]
             pub struct #name #generics {
-                #(#account_struct_fields),*
+                #(#account_struct_fields,)*
+                #phantom_field
             }
 
             #[automatically_derived]

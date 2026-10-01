@@ -1,9 +1,15 @@
 use {
-    crate::config::{
-        get_default_ledger_path, BootstrapMode, BuildConfig, Config, ConfigOverride, HookType,
-        Manifest, PackageManager, ProgramDeployment, ProgramWorkspace, ScriptsConfig,
-        SurfnetInfoResponse, SurfpoolConfig, TestValidator, Validator, ValidatorType, WithPath,
-        SHUTDOWN_WAIT, STARTUP_WAIT, SURFPOOL_HOST,
+    crate::{
+        compat::{
+            solana_cli_config, solana_pubkey, solana_pubsub_client, solana_rpc_client,
+            solana_rpc_client_api,
+        },
+        config::{
+            get_default_ledger_path, BootstrapMode, BuildConfig, Config, ConfigOverride, HookType,
+            Manifest, PackageManager, ProgramDeployment, ProgramWorkspace, ScriptsConfig,
+            SurfnetInfoResponse, SurfpoolConfig, TestValidator, Validator, ValidatorType, WithPath,
+            SHUTDOWN_WAIT, STARTUP_WAIT, SURFPOOL_HOST,
+        },
     },
     abs_path::AbsolutePath,
     anchor_cli_macros::AbsolutePath,
@@ -50,13 +56,15 @@ use {
         string::ToString,
         sync::{LazyLock, OnceLock},
     },
-    template::{AnchorVersion, ProgramTemplate, TestTemplate},
+    template::{get_security_metadata_content, AnchorVersion, ProgramTemplate, TestTemplate},
+    url::Url,
 };
 
 mod abs_path;
 mod account;
 mod checks;
 pub mod codama;
+pub mod compat;
 pub mod config;
 #[cfg(not(windows))]
 pub mod coverage;
@@ -82,6 +90,52 @@ const DEFAULT_FAUCET_PORT: u16 = 9900;
 const DEFAULT_TOOLS_VERSION: &str = "v1.57";
 const DEFAULT_BUILD_ARCH: &str = "v3";
 const BUILD_ARCH_ENV: &str = "ANCHOR_BUILD_SBF_ARCH";
+
+/// Rust target triple used by `cargo build-sbf` for an SBPF architecture.
+pub fn rust_target_triple(arch: &str) -> Option<&'static str> {
+    match arch {
+        "v0" => Some("sbf-solana-solana"),
+        "v1" => Some("sbpfv1-solana-solana"),
+        "v2" => Some("sbpfv2-solana-solana"),
+        "v3" => Some("sbpfv3-solana-solana"),
+        _ => None,
+    }
+}
+
+/// Cargo target triples to search for unstripped program artifacts.
+///
+/// Prefer the configured architecture, then retain support for artifacts from
+/// older platform-tools releases and previous explicit architecture choices.
+pub(crate) fn sbpf_target_triples() -> Vec<&'static str> {
+    let mut triples = Vec::with_capacity(5);
+    if let Some(triple) = rust_target_triple(&default_build_arch()) {
+        triples.push(triple);
+    }
+    for triple in [
+        "sbpfv3-solana-solana",
+        "sbpfv2-solana-solana",
+        "sbpfv1-solana-solana",
+        "sbpf-solana-solana",
+        "sbf-solana-solana",
+    ] {
+        if !triples.contains(&triple) {
+            triples.push(triple);
+        }
+    }
+    triples
+}
+
+/// Environment variable for NO_DNA mode & relevant help messages.
+pub(crate) const NO_DNA_ENV: &str = "NO_DNA";
+const NO_DNA_TOP_LEVEL_HELP: &str =
+    "Set NO_DNA=1 when running Anchor in CI, scripts, or AI agents. This disables supported \
+     interactive prompts, but destructive commands still require their explicit bypass flags.";
+const NO_DNA_TEST_HELP: &str =
+    "Set NO_DNA=1 to run tests without waiting for supported interactive input.";
+const NO_DNA_LOCALNET_HELP: &str = "With NO_DNA=1, Anchor starts the local validator and \
+                                    continues immediately without waiting for interactive input.";
+const NO_DNA_PROGRAM_CLOSE_HELP: &str = "NO_DNA disables the interactive confirmation. Pass \
+                                         --bypass-warning explicitly to close non-interactively.";
 
 /// WebSocket port offset for solana-test-validator (RPC port + 1)
 pub const WEBSOCKET_PORT_OFFSET: u16 = 1;
@@ -129,6 +183,15 @@ fn command_output(command: &str, args: &[&str]) -> Option<String> {
         .filter(|line| !line.is_empty())
 }
 
+pub(crate) fn no_dna_enabled() -> bool {
+    std::env::var(NO_DNA_ENV).is_ok_and(|value| !value.trim().is_empty())
+}
+
+/// Exit code to propagate for a test run that completed but failed.
+fn test_failure_exit_code(status: &std::process::ExitStatus) -> Option<i32> {
+    (!status.success()).then(|| status.code().unwrap_or(1))
+}
+
 fn os_version() -> String {
     #[cfg(target_os = "macos")]
     if let Some(version) = macos_version() {
@@ -171,7 +234,7 @@ fn linux_os_release() -> Option<String> {
 }
 
 #[derive(Debug, Parser, AbsolutePath)]
-#[clap(version = VERSION)]
+#[clap(version = VERSION, after_help = NO_DNA_TOP_LEVEL_HELP)]
 pub struct Opts {
     #[clap(flatten)]
     pub cfg_override: ConfigOverride,
@@ -214,6 +277,9 @@ pub enum Command {
         /// Install Solana agent skills
         #[clap(long)]
         install_agent_skills: bool,
+        /// Skip generating the default `security.json` metadata template
+        #[clap(long)]
+        no_security_metadata: bool,
     },
     /// Builds the workspace.
     #[clap(name = "build", alias = "b")]
@@ -305,7 +371,7 @@ pub enum Command {
         #[clap(raw = true)]
         args: Vec<String>,
     },
-    #[clap(name = "test", alias = "t")]
+    #[clap(name = "test", alias = "t", after_help = NO_DNA_TEST_HELP)]
     /// Runs integration tests.
     Test {
         /// Build and test only this program
@@ -433,6 +499,9 @@ pub enum Command {
         /// Don't upload IDL during deployment (IDL is uploaded by default)
         #[clap(long)]
         no_idl: bool,
+        /// Upload `security.json` on-chain after deployment
+        #[clap(long)]
+        security_metadata: bool,
         /// Arguments to pass to the underlying `solana program deploy` command.
         #[clap(required = false, last = true)]
         solana_args: Vec<String>,
@@ -492,6 +561,7 @@ pub enum Command {
         subcmd: KeysCommand,
     },
     /// Localnet commands.
+    #[clap(after_help = NO_DNA_LOCALNET_HELP)]
     Localnet {
         /// Flag to skip building the program in the workspace,
         /// use this to save time when running test and the program code is not altered.
@@ -599,7 +669,7 @@ pub enum KeygenCommand {
         /// Do not prompt for a passphrase
         #[clap(long)]
         no_passphrase: bool,
-        /// Do not display the generated pubkey
+        /// Do not display the seed phrase or the generated pubkey
         #[clap(long)]
         silent: bool,
         /// Number of words in the mnemonic phrase [possible values: 12, 15, 18, 21, 24]
@@ -678,6 +748,9 @@ pub enum ProgramCommand {
         /// Don't upload IDL during deployment (IDL is uploaded by default)
         #[clap(long)]
         no_idl: bool,
+        /// Upload `security.json` on-chain after deployment
+        #[clap(long)]
+        security_metadata: bool,
         /// Make the program immutable after deployment (cannot be upgraded)
         #[clap(long = "final")]
         make_final: bool,
@@ -780,6 +853,7 @@ pub enum ProgramCommand {
         output_file: String,
     },
     /// Close a program or buffer account and withdraw all lamports
+    #[clap(after_help = NO_DNA_PROGRAM_CLOSE_HELP)]
     Close {
         /// Account address to close (buffer or program).
         /// If not provided, discovers program from workspace using program_name
@@ -1406,6 +1480,7 @@ fn process_command(opts: Opts) -> Result<()> {
             test_template,
             force,
             install_agent_skills,
+            no_security_metadata,
         } => init(
             &opts.cfg_override,
             name,
@@ -1418,6 +1493,7 @@ fn process_command(opts: Opts) -> Result<()> {
             test_template,
             force,
             install_agent_skills,
+            no_security_metadata,
         ),
         Command::Fuzz(cli) => crucible_fuzz_cli::run(cli),
         Command::New {
@@ -1483,6 +1559,7 @@ fn process_command(opts: Opts) -> Result<()> {
             program_keypair,
             verifiable,
             no_idl,
+            security_metadata,
             solana_args,
         } => {
             eprintln!(
@@ -1494,6 +1571,7 @@ fn process_command(opts: Opts) -> Result<()> {
                 program_keypair,
                 verifiable,
                 no_idl,
+                security_metadata,
                 solana_args,
             )
         }
@@ -1675,6 +1753,7 @@ fn init(
     test_template: TestTemplate,
     force: bool,
     install_agent_skills: bool,
+    no_security_metadata: bool,
 ) -> Result<()> {
     if !force {
         if Config::discover(cfg_override)?.is_some() {
@@ -1835,6 +1914,12 @@ fn init(
 
     if install_agent_skills {
         install_solana_skill();
+    }
+
+    if !no_security_metadata {
+        let content = get_security_metadata_content(&project_name);
+        let content = serde_json::to_vec_pretty(&content)?;
+        fs::write("security.json", content)?;
     }
 
     println!("{project_name} initialized");
@@ -3013,7 +3098,7 @@ pub struct BuildSbfOptions {
 }
 
 impl BuildSbfOptions {
-    fn new(tools_version: String, arch: String) -> Self {
+    pub fn new(tools_version: String, arch: String) -> Self {
         Self {
             tools_version,
             arch,
@@ -3031,7 +3116,7 @@ impl Default for BuildSbfOptions {
     }
 }
 
-fn default_build_arch() -> String {
+pub fn default_build_arch() -> String {
     std::env::var(BUILD_ARCH_ENV).unwrap_or_else(|_| DEFAULT_BUILD_ARCH.to_owned())
 }
 
@@ -3048,12 +3133,21 @@ fn validator_type_from_env() -> Result<Option<ValidatorType>> {
     }
 }
 
-fn build_sbf_base_args(build_sbf_options: &BuildSbfOptions) -> Vec<String> {
+// Exposed for tests.
+pub fn build_sbf_base_args(build_sbf_options: &BuildSbfOptions) -> Vec<String> {
     let mut args = vec![BUILD_SUBCOMMAND.to_owned()];
     args.push("--tools-version".to_owned());
-    args.push(build_sbf_options.tools_version.clone());
+    // build-sbf requires a 'v' prefix to versions and arches
+    fn prefixed(version: &str) -> String {
+        if version.starts_with('v') {
+            version.to_owned()
+        } else {
+            format!("v{version}")
+        }
+    }
+    args.push(prefixed(&build_sbf_options.tools_version));
     args.push("--arch".to_owned());
-    args.push(build_sbf_options.arch.clone());
+    args.push(prefixed(&build_sbf_options.arch));
     args
 }
 
@@ -4262,7 +4356,7 @@ fn test(
             config_skip_local_validator,
         );
         if validator_plan.predeploy {
-            deploy(cfg_override, None, None, false, true, vec![])?;
+            deploy(cfg_override, None, None, false, true, false, vec![])?;
         }
 
         cfg.run_hooks(HookType::PreTest)?;
@@ -4844,7 +4938,22 @@ fn run_test_suite(
 
     // Keep validator running if needed.
     if test_result.is_ok() && detach {
-        println!("Local validator still running. Press Ctrl + C quit.");
+        if no_dna_enabled() {
+            println!("Local validator still running.");
+            if let Some(log_streams) = log_streams {
+                for handle in log_streams {
+                    handle.shutdown();
+                }
+            }
+            if let Ok(exit) = &test_result {
+                if let Some(code) = test_failure_exit_code(&exit.status) {
+                    std::process::exit(code);
+                }
+            }
+            return Ok(());
+        } else {
+            println!("Local validator still running. Press Ctrl + C quit.");
+        }
         std::io::stdin().lock().lines().next().unwrap().unwrap();
     }
 
@@ -4865,8 +4974,8 @@ fn run_test_suite(
     // Must exist *after* shutting down the validator and log streams.
     match test_result {
         Ok(exit) => {
-            if !exit.status.success() {
-                std::process::exit(exit.status.code().unwrap());
+            if let Some(code) = test_failure_exit_code(&exit.status) {
+                std::process::exit(code);
             }
         }
         Err(err) => {
@@ -5477,7 +5586,7 @@ fn validator_config_flags(test_validator: &Option<TestValidator>) -> Result<Vec<
                             if account.owner == bpf_loader_upgradeable::id()
                                 // Only programs are supported with `--clone-upgradeable-program`
                                 && matches!(
-                                    account.deserialize_data::<UpgradeableLoaderState>()?,
+                                    bincode::deserialize::<UpgradeableLoaderState>(&account.data)?,
                                     UpgradeableLoaderState::Program { .. }
                                 )
                             {
@@ -6137,6 +6246,25 @@ pub(crate) fn cluster_url(
     }
 }
 
+/// Reduces `url` to its scheme, host and port so that secrets embedded in RPC
+/// URLs aren't printed to stdout, terminal scrollback or CI logs. Providers put
+/// keys in the query string (`?api-key=...`), the userinfo, or the path
+/// (`https://<name>.quiknode.pro/<token>/`), so everything after the authority
+/// is dropped. Falls back to the original string if it isn't a parseable URL
+/// with a host.
+pub(crate) fn redact_url(url: &str) -> String {
+    match Url::parse(url) {
+        Ok(parsed) => match parsed.host_str() {
+            Some(host) => match parsed.port() {
+                Some(port) => format!("{}://{host}:{port}", parsed.scheme()),
+                None => format!("{}://{host}", parsed.scheme()),
+            },
+            None => url.to_string(),
+        },
+        Err(_) => url.to_string(),
+    }
+}
+
 fn clean(cfg_override: &ConfigOverride) -> Result<()> {
     // Get workspace root - either from Anchor.toml or use current directory
     let workspace_root = if let Ok(Some(cfg)) = Config::discover(cfg_override) {
@@ -6194,6 +6322,7 @@ fn deploy(
     program_keypair: Option<PathBuf>,
     verifiable: bool,
     no_idl: bool,
+    security_metadata: bool,
     solana_args: Vec<String>,
 ) -> Result<()> {
     // Execute the code within the workspace
@@ -6203,7 +6332,7 @@ fn deploy(
 
         cfg.run_hooks(HookType::PreDeploy)?;
         // Deploy the programs.
-        println!("Deploying cluster: {url}");
+        println!("Deploying cluster: {}", redact_url(&url));
         println!("Upgrade authority: {keypair}");
 
         for program in cfg.get_programs(program_name)? {
@@ -6229,6 +6358,7 @@ fn deploy(
                 None,  // max_len
                 false, // use_rpc
                 no_idl,
+                security_metadata,
                 false, // make_final
                 solana_args.clone(),
             )?;
@@ -6486,7 +6616,7 @@ fn config_get(cfg_override: &ConfigOverride) -> Result<()> {
     with_workspace(cfg_override, |cfg| -> Result<()> {
         println!("Anchor Configuration:");
         println!();
-        println!("Cluster: {}", cfg.provider.cluster.url());
+        println!("Cluster: {}", redact_url(cfg.provider.cluster.url()));
         println!("Wallet:  {}", cfg.provider.wallet);
         Ok(())
     })?
@@ -6526,7 +6656,7 @@ fn config_set(
                 "cluster".to_string(),
                 toml::Value::String(expanded_url.clone()),
             );
-            println!("Updated cluster to: {}", expanded_url);
+            println!("Updated cluster to: {}", redact_url(&expanded_url));
             updated = true;
         }
     }
@@ -6686,7 +6816,10 @@ fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Res
             .unwrap();
 
         let cfg_cluster = cfg.provider.cluster.to_owned();
-        println!("Syncing program ids for the configured cluster ({cfg_cluster})\n");
+        println!(
+            "Syncing program ids for the configured cluster ({})\n",
+            redact_url(&cfg_cluster.to_string())
+        );
 
         let mut changed_src = false;
         for program in cfg.get_programs(program_name)? {
@@ -6897,6 +7030,17 @@ fn localnet(
             }
         };
 
+        if no_dna_enabled() {
+            println!("Local validator still running.");
+            if let Some(log_streams) = log_streams {
+                for handle in log_streams {
+                    handle.shutdown();
+                }
+            }
+            return Ok(());
+        } else {
+            println!("Local validator still running. Press Ctrl + C quit.");
+        }
         std::io::stdin().lock().lines().next().unwrap().unwrap();
 
         // Check all errors and shut down.
@@ -7300,7 +7444,7 @@ fn logs_subscribe(
     let (cluster_url, _wallet_path) = get_cluster_and_wallet(cfg_override)?;
     let ws_url = logs_websocket_url(cfg_override, &cluster_url);
 
-    println!("Connecting to {}", ws_url);
+    println!("Connecting to {}", redact_url(&ws_url));
 
     let filter = match (include_votes, address) {
         (true, Some(address)) => {
@@ -7358,6 +7502,49 @@ mod tests {
         std::collections::{HashMap, HashSet},
         tempfile::tempdir,
     };
+
+    #[test]
+    fn test_redact_url_strips_query_string() {
+        assert_eq!(
+            redact_url("https://devnet.helius-rpc.com/?api-key=super-secret"),
+            "https://devnet.helius-rpc.com"
+        );
+    }
+
+    #[test]
+    fn test_redact_url_strips_userinfo() {
+        assert_eq!(
+            redact_url("https://user:pass@my-rpc.example.com/rpc"),
+            "https://my-rpc.example.com"
+        );
+    }
+
+    #[test]
+    fn test_redact_url_strips_path_token() {
+        assert_eq!(
+            redact_url("https://example.solana-mainnet.quiknode.pro/super-secret/"),
+            "https://example.solana-mainnet.quiknode.pro"
+        );
+        assert_eq!(
+            redact_url("wss://example.mainnet.rpcpool.com/super-secret"),
+            "wss://example.mainnet.rpcpool.com"
+        );
+    }
+
+    #[test]
+    fn test_redact_url_keeps_scheme_host_and_port() {
+        assert_eq!(
+            redact_url("https://api.devnet.solana.com"),
+            "https://api.devnet.solana.com"
+        );
+        assert_eq!(redact_url("http://127.0.0.1:8899"), "http://127.0.0.1:8899");
+        assert_eq!(redact_url("ws://localhost:8900/"), "ws://localhost:8900");
+    }
+
+    #[test]
+    fn test_redact_url_falls_back_on_unparseable_input() {
+        assert_eq!(redact_url("not-a-url"), "not-a-url");
+    }
 
     #[test]
     fn test_init_accepts_anchor_version() {
@@ -7562,6 +7749,7 @@ mod tests {
             TestTemplate::default(),
             true,
             true,
+            true,
         )
         .unwrap();
     }
@@ -7585,6 +7773,7 @@ mod tests {
             TestTemplate::default(),
             true,
             true,
+            true,
         )
         .unwrap();
     }
@@ -7606,6 +7795,7 @@ mod tests {
             ProgramTemplate::default(),
             AnchorVersion::default(),
             TestTemplate::default(),
+            true,
             true,
             true,
         )

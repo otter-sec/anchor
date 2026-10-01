@@ -4,16 +4,30 @@ use {
         codegen::accounts::{generics, ParsedGenerics},
         *,
     },
-    std::fmt::Display,
 };
 
-pub fn generate_bumps_name<T: Display>(anchor_ident: &T) -> Ident {
-    Ident::new(&format!("{anchor_ident}Bumps"), Span::call_site())
+pub fn generate_bumps_name(path: &syn::Path) -> proc_macro2::TokenStream {
+    let mut bumps_path = path.clone();
+    for segment in &mut bumps_path.segments {
+        segment.arguments = syn::PathArguments::None;
+    }
+
+    // Composite account fields are guaranteed to be non-empty type paths by the parser.
+    let Some(last_segment) = bumps_path.segments.last_mut() else {
+        unreachable!("composite account type path must not be empty")
+    };
+    let location = last_segment.ident.span();
+    last_segment.ident = Ident::new(
+        &format!("{}Bumps", last_segment.ident),
+        Span::call_site().located_at(location),
+    );
+
+    quote! { #bumps_path }
 }
 
 pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
     let name = &accs.ident;
-    let bumps_name = generate_bumps_name(name);
+    let bumps_name = Ident::new(&format!("{name}Bumps"), Span::call_site());
     let ParsedGenerics {
         combined_generics,
         trait_generics: _,
@@ -58,7 +72,10 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                     None
                 }
                 AccountField::CompositeField(s) => {
-                    let comp_bumps_struct = generate_bumps_name(&s.symbol);
+                    let syn::Type::Path(ty_path) = &s.raw_field.ty else {
+                        unreachable!("composite account type must be a path")
+                    };
+                    let comp_bumps_struct = generate_bumps_name(&ty_path.path);
                     let bumps = quote!(pub #ident: #comp_bumps_struct);
                     let bumps_default = quote!(#ident: #comp_bumps_struct::default());
 

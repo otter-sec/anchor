@@ -1,5 +1,5 @@
 use anchor_lang::{
-    prelude::Result,
+    prelude::{Result, SolanaSysvar},
     solana_program::{
         account_info::AccountInfo,
         instruction::{get_stack_height, TRANSACTION_LEVEL_STACK_HEIGHT},
@@ -14,7 +14,6 @@ use anchor_spl::token_interface::spl_token_2022::{
     extension::{BaseStateWithExtensions, Extension, StateWithExtensions},
     state::Mint,
 };
-use solana_sysvar::Sysvar;
 use spl_tlv_account_resolution::{account::ExtraAccountMeta, state::ExtraAccountMetaList};
 use spl_type_length_value::variable_len_pack::VariableLenPack;
 

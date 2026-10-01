@@ -1,5 +1,6 @@
 pub use mpl_token_metadata::{self, ID};
 use {
+    crate::compat::{solana_sysvar, spl_token_interface},
     anchor_lang::{
         context::CpiContext,
         error::ErrorCode,

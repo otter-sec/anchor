@@ -277,6 +277,9 @@ Overrides the token program used by `token{:rs}`, `mint{:rs}`, or `associated_to
 
 ## Token extensions constraints
 
+These extensions are checked both when the mint is initialized and when an
+existing mint is reused with `init_if_needed`.
+
 ### `#[account(extensions::close_authority::*)]{:rs}`
 
 Creates or validates the close authority extension on the mint account:

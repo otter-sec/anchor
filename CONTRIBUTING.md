@@ -27,7 +27,7 @@ Pull requests should usually target `master`.
 If your change is breaking, open the pull request against `anchor-next`
 instead of `master`.
 
-## Issue Guidelines
+## PR Guidelines
 
 Please follow these guidelines:
 
@@ -49,6 +49,8 @@ After coding:
 - Adjust the cli templates if necessary
 - If you've added a new folder to the `tests` directory, add it to the [CI](./.github/workflows/tests.yaml).
 - Before opening a PR, build, test, and run formatting and lints locally; see the sections below for commands.
+- You may use an LLM to help draft your PR description. However, we'd encourage you to write out the majority of the description by hand. Ensure descriptions are concise and informative to human reviewers.
+- Please do not use LLMs to autonomously respond to PR feedback (this includes blindly copy-pasting responses). Feel free to use LLMs to write code and help you respond, but treat reviewers with respect.
 
 ## Style Guidelines
 

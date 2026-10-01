@@ -4,7 +4,7 @@ use {
         IdlInstructionAccounts, IdlRepr, IdlSerialization, IdlType, IdlTypeDef, IdlTypeDefGeneric,
         IdlTypeDefTy,
     },
-    heck::{CamelCase, SnakeCase},
+    heck::{ToSnakeCase, ToUpperCamelCase},
     proc_macro2::Literal,
     quote::{format_ident, quote},
 };
@@ -28,6 +28,23 @@ pub fn gen_discriminator(disc: &[u8]) -> proc_macro2::TokenStream {
     quote! { [#(#disc), *] }
 }
 
+/// Whether the accounts struct generated for `accounts` carries an `<'info>`
+/// lifetime.
+///
+/// It does only when some field binds the lifetime: a plain account always does,
+/// a composite does when it is not itself lifetime-free. A struct with no fields
+/// (or only fieldless composites) gets no lifetime, so that it stays
+/// constructible as `Foo {}` and does not trip `E0392`.
+///
+/// Every site that names one of these structs must agree with this, or the
+/// generated code fails with `E0107`.
+pub fn accounts_use_lifetime(accounts: &[IdlInstructionAccountItem]) -> bool {
+    accounts.iter().any(|acc| match acc {
+        IdlInstructionAccountItem::Single(_) => true,
+        IdlInstructionAccountItem::Composite(accs) => accounts_use_lifetime(&accs.accounts),
+    })
+}
+
 pub fn gen_accounts_common(idl: &Idl, prefix: &str) -> proc_macro2::TokenStream {
     let re_exports = idl
         .instructions
@@ -46,7 +63,7 @@ fn gen_accounts_mod_name(prefix: &str, name: &str) -> String {
     format!(
         "__{}_accounts_{}",
         prefix,
-        name.to_camel_case().to_snake_case()
+        name.to_upper_camel_case().to_snake_case()
     )
 }
 

@@ -17,6 +17,8 @@ struct Fixture {
     anchor_stub: PathBuf,
     path_bin: PathBuf,
     log_path: PathBuf,
+    cargo_log_path: PathBuf,
+    rustup_log_path: PathBuf,
     solana_log_path: PathBuf,
 }
 
@@ -32,6 +34,57 @@ impl Fixture {
         let anchor_stub = path_bin.join("anchor");
         fs::copy(env!("CARGO_BIN_EXE_avm"), &anchor_stub).expect("copy avm as anchor");
         make_executable(&anchor_stub);
+        let solana_bin = temp
+            .path()
+            .join("home/.local/share/solana/install/active_release/bin");
+        fs::create_dir_all(&solana_bin).expect("solana bin");
+        write_executable(
+            &solana_bin.join("cargo-build-sbf"),
+            r#"#!/bin/sh
+echo "$*" >> "$AVM_TEST_CARGO_LOG"
+if [ "$1" = "--help" ]; then
+  echo "    --install-only"
+  exit 0
+fi
+install_only=
+version=
+previous=
+for argument in "$@"; do
+  if [ "$previous" = "--tools-version" ]; then
+    version="$argument"
+  fi
+  if [ "$argument" = "--install-only" ]; then
+    install_only=1
+  fi
+  previous="$argument"
+done
+if [ -n "$install_only" ] && [ -n "$version" ]; then
+  mkdir -p "$HOME/.cache/solana/$version/platform-tools/rust"
+  : > "$HOME/.cache/solana/$version/platform-tools/rust/marker"
+fi
+"#,
+        );
+        write_executable(
+            &path_bin.join("rustup"),
+            r#"#!/bin/sh
+echo "$*" >> "$AVM_TEST_RUSTUP_LOG"
+if [ "$1" = "toolchain" ] && [ "$2" = "list" ]; then
+  echo "nightly-2025-04-15-x86_64-unknown-linux-gnu"
+  echo "nightly-2026-06-10-x86_64-unknown-linux-gnu"
+  exit 0
+fi
+if [ "$1" = "toolchain" ] && [ "$2" = "link" ]; then
+  exit 0
+fi
+if [ "$1" = "toolchain" ] && [ "$2" = "uninstall" ]; then
+  exit 0
+fi
+if [ "$1" = "toolchain" ] && [ "$2" = "install" ]; then
+  exit 0
+fi
+exit 1
+"#,
+        );
 
         Self {
             _temp: temp,
@@ -39,6 +92,8 @@ impl Fixture {
             anchor_stub,
             path_bin,
             log_path: avm_bin.join("anchor.log"),
+            cargo_log_path: avm_bin.join("cargo.log"),
+            rustup_log_path: avm_bin.join("rustup.log"),
             solana_log_path: avm_bin.join("solana.log"),
         }
     }
@@ -65,10 +120,75 @@ impl Fixture {
 echo "version={version}" > "$AVM_TEST_ANCHOR_LOG"
 echo "args=$*" >> "$AVM_TEST_ANCHOR_LOG"
 echo "avm_active=${{AVM_ACTIVE:-}}" >> "$AVM_TEST_ANCHOR_LOG"
+echo "rustup_toolchain=${{RUSTUP_TOOLCHAIN:-}}" >> "$AVM_TEST_ANCHOR_LOG"
 echo "resolver=${{CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS:-}}" >> "$AVM_TEST_ANCHOR_LOG"
+echo "next_lockfile_bump=${{CARGO_UNSTABLE_NEXT_LOCKFILE_BUMP:-}}" >> "$AVM_TEST_ANCHOR_LOG"
 "#
             ),
         );
+    }
+
+    fn install_anchor_with_cargo_calls(&self, version: &str) {
+        write_executable(
+            &self.avm_home_bin().join(format!("anchor-{version}")),
+            r#"#!/bin/sh
+cargo build-sbf
+cargo +nightly test idl
+cargo +nightly-2026-07-01 test already-pinned
+"#,
+        );
+        write_executable(
+            &self.path_bin.join("cargo"),
+            r#"#!/bin/sh
+echo "$*" >> "$AVM_TEST_CARGO_LOG"
+install_only=
+version=
+previous=
+for argument in "$@"; do
+  if [ "$previous" = "--tools-version" ]; then
+    version="$argument"
+  fi
+  if [ "$argument" = "--install-only" ]; then
+    install_only=1
+  fi
+  previous="$argument"
+done
+if [ -n "$install_only" ] && [ -n "$version" ]; then
+  mkdir -p "$HOME/.cache/solana/$version/platform-tools/rust"
+  : > "$HOME/.cache/solana/$version/platform-tools/rust/marker"
+fi
+"#,
+        );
+    }
+
+    fn install_legacy_build_sbf(&self) {
+        let build_sbf = self
+            ._temp
+            .path()
+            .join("home/.local/share/solana/install/active_release/bin/cargo-build-sbf");
+        write_executable(
+            &build_sbf,
+            r#"#!/bin/sh
+echo "$*" >> "$AVM_TEST_CARGO_LOG"
+if [ "$1" = "--help" ]; then
+  echo "legacy cargo-build-sbf"
+  exit 0
+fi
+exit 1
+"#,
+        );
+    }
+
+    fn cache_platform_tools(&self, version: &str) -> PathBuf {
+        let path = self
+            ._temp
+            .path()
+            .join("home/.cache/solana")
+            .join(version)
+            .join("platform-tools");
+        fs::create_dir_all(path.join("rust")).expect("platform-tools rust dir");
+        fs::write(path.join("rust/marker"), "cached").expect("platform-tools marker");
+        path
     }
 
     fn install_nightly_anchor_via_script(&self) {
@@ -139,6 +259,7 @@ echo "args=$*" >> "$AVM_TEST_ANCHOR_LOG"
         let cargo_home = self._temp.path().join("cargo-home");
         let home = self._temp.path().join("home");
         fs::create_dir_all(&home).expect("home");
+        fs::write(home.join(".zshrc"), "# existing profile\n").expect(".zshrc");
 
         write_executable(
             &self.avm_home_bin().join("avm"),
@@ -152,6 +273,7 @@ echo "fake stable avm"
             .env("AVM_HOME", &self.avm_home)
             .env("CARGO_HOME", &cargo_home)
             .env("HOME", &home)
+            .env("SHELL", "/bin/zsh")
             .env("AVM_INSTALL_TARGET", nightly_target())
             .env(
                 "AVM_NIGHTLY_MANIFEST_URL",
@@ -171,15 +293,19 @@ echo "fake stable avm"
             "{stdout}"
         );
         assert!(
-            stdout.contains("Add this to your shell profile if avm is not already on PATH:"),
-            "{stdout}"
-        );
-        assert!(
             stdout.contains(&format!(
-                "export PATH=\"{}:$PATH\"",
-                self.avm_home_bin().display()
+                "Added {} to PATH in {}",
+                self.avm_home_bin().display(),
+                home.join(".zshrc").display()
             )),
             "{stdout}"
+        );
+        assert_eq!(
+            fs::read_to_string(home.join(".zshrc")).expect(".zshrc"),
+            format!(
+                "# existing profile\n\n# Added by AVM installer\nexport PATH='{}':\"$PATH\"\n",
+                self.avm_home_bin().display()
+            )
         );
         assert!(
             self.avm_home_bin().join("avm-nightly").is_file(),
@@ -203,6 +329,104 @@ echo "fake stable avm"
         assert!(
             !cargo_home.join("bin").exists(),
             "missing CARGO_HOME/bin should be a no-op, not an early exit"
+        );
+
+        let no_profile_home = self._temp.path().join("home-without-profile");
+        fs::create_dir_all(&no_profile_home).expect("home without profile");
+        let fallback_output = Command::new("sh")
+            .arg(&installer)
+            .env("AVM_HOME", &self.avm_home)
+            .env("CARGO_HOME", &cargo_home)
+            .env("HOME", &no_profile_home)
+            .env("SHELL", "/bin/zsh")
+            .env("AVM_INSTALL_TARGET", nightly_target())
+            .env(
+                "AVM_NIGHTLY_MANIFEST_URL",
+                format!("file://{}", manifest.display()),
+            )
+            .env(
+                "AVM_NIGHTLY_BASE_URL",
+                format!("file://{}/", nightly_dir.display()),
+            )
+            .output()
+            .expect("run checkout installer without a supported shell");
+        assert_success(&fallback_output);
+
+        let fallback_stdout = String::from_utf8_lossy(&fallback_output.stdout);
+        assert!(
+            fallback_stdout
+                .contains("Add this to your shell profile if avm is not already on PATH:"),
+            "{fallback_stdout}"
+        );
+        assert!(
+            fallback_stdout.contains(&format!(
+                "export PATH=\"{}:$PATH\"",
+                self.avm_home_bin().display()
+            )),
+            "{fallback_stdout}"
+        );
+        assert!(
+            !no_profile_home.join(".zshrc").exists(),
+            "installer must not create a shell profile"
+        );
+
+        let bash_home = self._temp.path().join("bash-home");
+        fs::create_dir_all(&bash_home).expect("bash home");
+        fs::write(bash_home.join(".bash_login"), "# existing bash login\n").expect(".bash_login");
+        write_executable(
+            &self.path_bin.join("uname"),
+            r#"#!/bin/sh
+if [ "$1" = "-s" ]; then
+  echo Darwin
+else
+  /usr/bin/uname "$@"
+fi
+"#,
+        );
+        let path = format!(
+            "{}:{}",
+            self.path_bin.display(),
+            env::var("PATH").unwrap_or_default()
+        );
+        let bash_output = Command::new("sh")
+            .arg(&installer)
+            .env("AVM_HOME", &self.avm_home)
+            .env("CARGO_HOME", &cargo_home)
+            .env("HOME", &bash_home)
+            .env("PATH", path)
+            .env("SHELL", "/bin/bash")
+            .env("AVM_INSTALL_TARGET", nightly_target())
+            .env(
+                "AVM_NIGHTLY_MANIFEST_URL",
+                format!("file://{}", manifest.display()),
+            )
+            .env(
+                "AVM_NIGHTLY_BASE_URL",
+                format!("file://{}/", nightly_dir.display()),
+            )
+            .output()
+            .expect("run checkout installer with macOS bash");
+        assert_success(&bash_output);
+
+        let bash_stdout = String::from_utf8_lossy(&bash_output.stdout);
+        assert!(
+            bash_stdout.contains(&format!(
+                "Added {} to PATH in {}",
+                self.avm_home_bin().display(),
+                bash_home.join(".bash_login").display()
+            )),
+            "{bash_stdout}"
+        );
+        assert_eq!(
+            fs::read_to_string(bash_home.join(".bash_login")).expect(".bash_login"),
+            format!(
+                "# existing bash login\n\n# Added by AVM installer\nexport PATH='{}':\"$PATH\"\n",
+                self.avm_home_bin().display()
+            )
+        );
+        assert!(
+            !bash_home.join(".bash_profile").exists(),
+            "installer must not create .bash_profile when bash uses .bash_login"
         );
     }
 
@@ -236,8 +460,13 @@ exit 0
             .args(args)
             .current_dir(current_dir)
             .env("AVM_HOME", &self.avm_home)
+            .env("HOME", self._temp.path().join("home"))
             .env("PATH", path)
+            .env_remove("RUSTUP_TOOLCHAIN")
+            .env_remove("CARGO_UNSTABLE_NEXT_LOCKFILE_BUMP")
             .env("AVM_TEST_ANCHOR_LOG", &self.log_path)
+            .env("AVM_TEST_CARGO_LOG", &self.cargo_log_path)
+            .env("AVM_TEST_RUSTUP_LOG", &self.rustup_log_path)
             .env("AVM_TEST_SOLANA_LOG", &self.solana_log_path)
             .output()
             .expect("run anchor stub")
@@ -289,6 +518,8 @@ fn anchor_stub_prefers_anchor_toml_and_sets_launcher_env() {
          \"2021\"\n[dependencies]\nanchor-lang = \"0.31.1\"\n",
     )
     .unwrap();
+    fs::create_dir_all(project.join("src")).unwrap();
+    fs::write(project.join("src/lib.rs"), "").unwrap();
 
     assert_success(&fixture.run_anchor(&project, ["build", "--", "--features", "mainnet"]));
 
@@ -296,16 +527,31 @@ fn anchor_stub_prefers_anchor_toml_and_sets_launcher_env() {
     assert!(log.contains("version=1.0.2"), "{log}");
     assert!(log.contains("args=build -- --features mainnet"), "{log}");
     assert!(log.contains("avm_active=1"), "{log}");
+    assert!(log.contains("rustup_toolchain=\n"), "{log}");
     assert!(log.contains("resolver=fallback"), "{log}");
     assert_eq!(
         fs::read_to_string(&fixture.solana_log_path).unwrap(),
         "--version\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&fixture.cargo_log_path).unwrap(),
+        "--help\nbuild-sbf --install-only --tools-version v1.57\n"
+    );
+    let rustup_log = fs::read_to_string(&fixture.rustup_log_path).unwrap();
+    assert!(rustup_log.contains("toolchain list -v\n"), "{rustup_log}");
+    assert!(
+        rustup_log.contains("toolchain link 1.95.0-sbpf-solana-v1.57"),
+        "{rustup_log}"
     );
 }
 
 #[test]
 fn anchor_stub_falls_back_to_anchorversion_cargo_and_global_sources() {
     let fixture = Fixture::new();
+    fixture.install_legacy_build_sbf();
+    fixture.cache_platform_tools("v1.51.1");
+    fixture.cache_platform_tools("v1.46.1");
+    fixture.cache_platform_tools("v1.42.1");
     fixture.install_anchor("0.32.1");
     fixture.install_anchor("0.31.1");
     fixture.install_anchor("0.30.1");
@@ -325,6 +571,8 @@ fn anchor_stub_falls_back_to_anchorversion_cargo_and_global_sources() {
          \"2021\"\n[dependencies]\nanchor-lang = \"0.31.1\"\n",
     )
     .unwrap();
+    fs::create_dir_all(cargo_project.join("src")).unwrap();
+    fs::write(cargo_project.join("src/lib.rs"), "").unwrap();
     assert_success(&fixture.run_anchor(&cargo_project, ["idl", "build"]));
     assert!(fixture.anchor_log().contains("version=0.31.1"));
 
@@ -332,6 +580,167 @@ fn anchor_stub_falls_back_to_anchorversion_cargo_and_global_sources() {
     fixture.install_fake_solana("1.18.17");
     assert_success(&fixture.run_anchor(&global_project, ["--version"]));
     assert!(fixture.anchor_log().contains("version=0.30.1"));
+    assert!(
+        !fixture.cargo_log_path.exists(),
+        "a cached legacy toolchain must not invoke unsupported --install-only"
+    );
+    let rustup_log = fs::read_to_string(&fixture.rustup_log_path).unwrap();
+    assert_eq!(rustup_log.matches("toolchain link solana ").count(), 3);
+}
+
+#[test]
+fn anchor_stub_pins_only_unversioned_nightly_cargo_invocations() {
+    let fixture = Fixture::new();
+    let project = fixture.project("cargo-proxy");
+    fixture.install_anchor_with_cargo_calls("1.0.2");
+    fixture.install_fake_solana("4.1.2");
+    fs::write(
+        project.join("Anchor.toml"),
+        "[toolchain]\nanchor_version = \"1.0.2\"\nsolana_version = \"4.1.2\"\n",
+    )
+    .unwrap();
+
+    assert_success(&fixture.run_anchor(&project, ["build"]));
+
+    assert_eq!(
+        fs::read_to_string(&fixture.cargo_log_path).unwrap(),
+        "--help\nbuild-sbf --install-only --tools-version v1.57\nbuild-sbf\n+nightly-2026-06-10 \
+         test idl\n+nightly-2026-07-01 test already-pinned\n"
+    );
+    let rustup_log = fs::read_to_string(&fixture.rustup_log_path).unwrap();
+    assert!(
+        rustup_log.contains("toolchain link 1.95.0-sbpf-solana-v1.57"),
+        "{rustup_log}"
+    );
+}
+
+#[test]
+fn anchor_stub_uses_legacy_idl_nightly_for_locked_proc_macro2() {
+    let fixture = Fixture::new();
+    fixture.install_legacy_build_sbf();
+    fixture.cache_platform_tools("v1.42.1");
+    let project = fixture.project("legacy-cargo-proxy");
+    fixture.install_anchor_with_cargo_calls("0.30.1");
+    fixture.install_fake_solana("1.18.17");
+    fs::write(
+        project.join("Anchor.toml"),
+        "[toolchain]\nanchor_version = \"0.30.1\"\nsolana_version = \"1.18.17\"\n",
+    )
+    .unwrap();
+    fs::write(
+        project.join("Cargo.lock"),
+        "version = 4\n\n[[package]]\nname = \"proc-macro2\"\nversion = \"1.0.86\"\n",
+    )
+    .unwrap();
+
+    assert_success(&fixture.run_anchor(&project, ["build"]));
+
+    assert_eq!(
+        fs::read_to_string(&fixture.cargo_log_path).unwrap(),
+        "build-sbf\n+nightly-2025-04-15 test idl\n+nightly-2026-07-01 test already-pinned\n"
+    );
+    let rustup_log = fs::read_to_string(&fixture.rustup_log_path).unwrap();
+    assert!(
+        rustup_log.contains("toolchain link solana "),
+        "{rustup_log}"
+    );
+}
+
+#[test]
+fn anchor_stub_enables_v4_lockfile_for_compatible_legacy_cargo() {
+    let fixture = Fixture::new();
+    fixture.install_legacy_build_sbf();
+    fixture.cache_platform_tools("v1.42.1");
+    fixture.install_anchor("0.30.1");
+    fixture.install_fake_solana("1.18.17");
+    let project = fixture.project("legacy-v4-lockfile");
+    fs::write(
+        project.join("Anchor.toml"),
+        "[toolchain]\nanchor_version = \"0.30.1\"\nsolana_version = \"1.18.17\"\n",
+    )
+    .unwrap();
+    fs::write(project.join("Cargo.lock"), "version = 4\n").unwrap();
+
+    assert_success(&fixture.run_anchor(&project, ["build"]));
+
+    let log = fixture.anchor_log();
+    assert!(log.contains("next_lockfile_bump=true"), "{log}");
+}
+
+#[test]
+fn anchor_stub_does_not_enable_v4_opt_in_for_native_cargo() {
+    let fixture = Fixture::new();
+    fixture.install_legacy_build_sbf();
+    fixture.cache_platform_tools("v1.46.1");
+    fixture.install_anchor("0.31.1");
+    fixture.install_fake_solana("2.1.0");
+    let project = fixture.project("native-v4-lockfile");
+    fs::write(
+        project.join("Anchor.toml"),
+        "[toolchain]\nanchor_version = \"0.31.1\"\nsolana_version = \"2.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(project.join("Cargo.lock"), "version = 4\n").unwrap();
+
+    assert_success(&fixture.run_anchor(&project, ["build"]));
+
+    let log = fixture.anchor_log();
+    assert!(log.contains("next_lockfile_bump=\n"), "{log}");
+}
+
+#[test]
+fn anchor_stub_uses_versioned_link_for_early_agave_three() {
+    let fixture = Fixture::new();
+    fixture.install_legacy_build_sbf();
+    fixture.cache_platform_tools("v1.51.1");
+    fixture.install_anchor("1.0.2");
+    fixture.install_fake_solana("3.0.0");
+    let project = fixture.project("early-agave-three");
+    fs::write(
+        project.join("Anchor.toml"),
+        "[toolchain]\nanchor_version = \"1.0.2\"\nsolana_version = \"3.0.0\"\n",
+    )
+    .unwrap();
+
+    assert_success(&fixture.run_anchor(&project, ["--version"]));
+
+    let rustup_log = fs::read_to_string(&fixture.rustup_log_path).unwrap();
+    assert!(
+        rustup_log.contains("toolchain link 1.84.1-sbpf-solana-v1.51.1"),
+        "{rustup_log}"
+    );
+    assert!(
+        !fixture.cargo_log_path.exists(),
+        "a cached early 3.x toolchain must not invoke unsupported --install-only"
+    );
+}
+
+#[test]
+fn anchor_stub_supports_oldest_anchor_solana_mapping() {
+    let fixture = Fixture::new();
+    fixture.install_legacy_build_sbf();
+    fixture.cache_platform_tools("v1.42.1");
+    fixture.install_anchor("0.29.0");
+    fixture.install_fake_solana("1.17.25");
+    let project = fixture.project("anchor-029");
+    fs::write(
+        project.join("Anchor.toml"),
+        "[toolchain]\nanchor_version = \"0.29.0\"\nsolana_version = \"1.17.25\"\n",
+    )
+    .unwrap();
+
+    assert_success(&fixture.run_anchor(&project, ["--version"]));
+
+    let rustup_log = fs::read_to_string(&fixture.rustup_log_path).unwrap();
+    assert!(
+        rustup_log.contains("toolchain link solana "),
+        "{rustup_log}"
+    );
+    assert!(rustup_log.contains("/v1.42.1/platform-tools/rust"));
+    assert!(
+        !fixture.cargo_log_path.exists(),
+        "Solana 1.17 must not invoke unsupported --install-only"
+    );
 }
 
 #[test]
@@ -339,6 +748,7 @@ fn nightly_stub_takes_precedence_after_installer_bootstrap() {
     let fixture = Fixture::new();
     let project = fixture.project("nightly");
     fixture.install_anchor("1.0.2");
+    fixture.install_fake_solana("3.1.10");
     fixture.install_nightly_anchor_via_script();
     fs::write(
         project.join("Anchor.toml"),
@@ -351,7 +761,10 @@ fn nightly_stub_takes_precedence_after_installer_bootstrap() {
     let log = fixture.anchor_log();
     assert!(log.contains("version=nightly"), "{log}");
     assert!(log.contains("args=build"), "{log}");
-    assert!(!fixture.solana_log_path.exists());
+    assert_eq!(
+        fs::read_to_string(&fixture.solana_log_path).unwrap(),
+        "--version\n"
+    );
 }
 
 #[test]
@@ -377,7 +790,7 @@ fn avm_subcommands_resolve_solana_and_platform_tools_from_project() {
     assert_success(&platform_tools);
     let platform_tools_stdout = command_stdout(platform_tools);
     assert!(
-        platform_tools_stdout.contains("platform-tools v1.48"),
+        platform_tools_stdout.contains("platform-tools v1.51.1"),
         "{platform_tools_stdout}"
     );
     assert!(
@@ -403,7 +816,7 @@ fn avm_platform_tools_resolve_accepts_explicit_solana_or_anchor_versions() {
         ],
     );
     assert_success(&solana);
-    assert_eq!(command_stdout(solana), "v1.52\n");
+    assert_eq!(command_stdout(solana), "v1.57\n");
 
     let anchor = fixture.run_avm(
         &project,
@@ -412,7 +825,7 @@ fn avm_platform_tools_resolve_accepts_explicit_solana_or_anchor_versions() {
     assert_success(&anchor);
     let anchor_stdout = command_stdout(anchor);
     assert!(
-        anchor_stdout.contains("platform-tools v1.52"),
+        anchor_stdout.contains("platform-tools v1.57"),
         "{anchor_stdout}"
     );
     assert!(
@@ -438,6 +851,30 @@ fn avm_platform_tools_resolve_accepts_explicit_solana_or_anchor_versions() {
         "{}",
         String::from_utf8_lossy(&conflicting.stderr)
     );
+}
+
+#[test]
+fn avm_platform_tools_resolution_keeps_legacy_anchor_rust_minors() {
+    let fixture = Fixture::new();
+    let project = fixture.project("legacy-anchor-versions");
+
+    for (anchor, platform_tools, rustc) in [
+        ("0.30.1", "v1.42.1", "1.75.0"),
+        ("0.31.1", "v1.46.1", "1.79.0"),
+        ("0.32.1", "v1.51.1", "1.84.1"),
+    ] {
+        let resolution = fixture.run_avm(
+            &project,
+            ["platform-tools", "resolve", "--anchor-version", anchor],
+        );
+        assert_success(&resolution);
+        let stdout = command_stdout(resolution);
+        assert!(
+            stdout.contains(&format!("platform-tools {platform_tools}")),
+            "{stdout}"
+        );
+        assert!(stdout.contains(&format!("rustc {rustc}")), "{stdout}");
+    }
 }
 
 fn create_tar_gz(archive: &Path, source_dir: &Path, entry: &str) {

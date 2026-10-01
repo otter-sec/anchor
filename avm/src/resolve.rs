@@ -302,6 +302,8 @@ pub enum SolanaResolutionSource {
     AnchorToml(PathBuf),
     /// `solana-program` dependency in the given `Cargo.toml`.
     CargoToml(PathBuf),
+    /// Resolved `solana-program` package in the project's `Cargo.lock`.
+    CargoLock(PathBuf),
 }
 
 impl SolanaResolutionSource {
@@ -309,6 +311,7 @@ impl SolanaResolutionSource {
         match self {
             Self::AnchorToml(p) => format!("[toolchain] solana_version in {}", p.display()),
             Self::CargoToml(p) => format!("solana-program dep in {}", p.display()),
+            Self::CargoLock(p) => format!("resolved solana-program in {}", p.display()),
         }
     }
 }
@@ -328,7 +331,10 @@ pub fn resolve_solana_version(start: &Path) -> Result<Option<SolanaResolution>> 
     if let Some(res) = resolve_solana_from_anchor_toml(start)? {
         return Ok(Some(res));
     }
-    resolve_solana_from_cargo_toml(start)
+    if let Some(res) = resolve_solana_from_cargo_toml(start)? {
+        return Ok(Some(res));
+    }
+    resolve_solana_from_cargo_lock(start)
 }
 
 fn resolve_solana_from_anchor_toml(start: &Path) -> Result<Option<SolanaResolution>> {
@@ -378,6 +384,43 @@ fn resolve_solana_from_cargo_toml(start: &Path) -> Result<Option<SolanaResolutio
         }
     }
     Ok(None)
+}
+
+#[derive(Deserialize)]
+struct CargoLock {
+    #[serde(default)]
+    package: Vec<CargoLockPackage>,
+}
+
+#[derive(Deserialize)]
+struct CargoLockPackage {
+    name: String,
+    version: String,
+}
+
+/// Fall back to the resolved `solana-program` package when the manifest only
+/// names an indirect Solana dependency. This is common in older workspaces
+/// that depend on an SPL crate directly: the checked-in lockfile is then the
+/// only project-owned record of the Solana generation it actually builds.
+fn resolve_solana_from_cargo_lock(start: &Path) -> Result<Option<SolanaResolution>> {
+    let Some(path) = find_ancestor_file(start, "Cargo.lock") else {
+        return Ok(None);
+    };
+    let text = fs::read_to_string(&path).with_context(|| format!("Reading {}", path.display()))?;
+    let lock: CargoLock =
+        toml::from_str(&text).with_context(|| format!("Parsing {}", path.display()))?;
+    let version = lock
+        .package
+        .iter()
+        .filter(|package| package.name == "solana-program")
+        .filter_map(|package| Version::parse(&package.version).ok())
+        .max();
+
+    Ok(version.map(|version| SolanaResolution {
+        version,
+        source: SolanaResolutionSource::CargoLock(path),
+        version_req: None,
+    }))
 }
 
 /// Extract a concrete Solana version from a `solana-program` dependency entry.
@@ -493,7 +536,7 @@ fn checked_inc(value: u64, req_str: &str) -> Result<u64> {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn find_ancestor_file(start: &Path, name: &str) -> Option<PathBuf> {
+pub(crate) fn find_ancestor_file(start: &Path, name: &str) -> Option<PathBuf> {
     let mut cur: Option<&Path> = Some(start);
     while let Some(dir) = cur {
         let candidate = dir.join(name);
@@ -765,6 +808,45 @@ mod tests {
         let res = resolve_solana_version(dir.path()).unwrap().unwrap();
         assert_eq!(res.version, v("3.0.0"));
         assert_eq!(res.version_req.as_deref(), Some("^3.0"));
+    }
+
+    #[test]
+    fn solana_cargo_lock_falls_back_to_resolved_program_version() {
+        let dir = TempDir::new().unwrap();
+        write(
+            &dir.path().join("Anchor.toml"),
+            "[toolchain]\nanchor_version = \"0.29.0\"\n",
+        );
+        write(
+            &dir.path().join("Cargo.lock"),
+            "version = 4\n\n[[package]]\nname = \"solana-program\"\nversion = \
+             \"1.18.4\"\n\n[[package]]\nname = \"solana-program\"\nversion = \"1.17.25\"\n",
+        );
+
+        let res = resolve_solana_version(dir.path()).unwrap().unwrap();
+        assert_eq!(res.version, v("1.18.4"));
+        assert_eq!(res.version_req, None);
+        assert!(matches!(res.source, SolanaResolutionSource::CargoLock(_)));
+    }
+
+    #[test]
+    fn solana_cargo_toml_beats_lockfile_fallback() {
+        let dir = TempDir::new().unwrap();
+        write(&dir.path().join("Anchor.toml"), "");
+        write(
+            &dir.path().join("programs/foo/Cargo.toml"),
+            "[package]\nname = \"foo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[lib]\npath = \
+             \"src/lib.rs\"\n[dependencies]\nsolana-program = \"2.1.0\"\n",
+        );
+        write(&dir.path().join("programs/foo/src/lib.rs"), "");
+        write(
+            &dir.path().join("Cargo.lock"),
+            "version = 4\n\n[[package]]\nname = \"solana-program\"\nversion = \"3.0.0\"\n",
+        );
+
+        let res = resolve_solana_version(dir.path()).unwrap().unwrap();
+        assert_eq!(res.version, v("2.1.0"));
+        assert!(matches!(res.source, SolanaResolutionSource::CargoToml(_)));
     }
 
     #[test]

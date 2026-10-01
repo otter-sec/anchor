@@ -1,4 +1,5 @@
 use {
+    crate::{compat::solana_compute_budget, sbpf_target_triples},
     anyhow::{anyhow, Context, Result},
     object::{Object, ObjectSection, ObjectSymbol, SymbolKind},
     rustc_demangle::demangle,
@@ -41,16 +42,24 @@ fn syscall_cost(budget: &ComputeBudget, syscall_name: &str) -> u64 {
         | "sol_get_sysvar" => budget.sysvar_base_cost,
         "sol_curve_validate_point" => budget.curve25519_edwards_validate_point_cost,
         "sol_curve_group_op" => budget.curve25519_edwards_add_cost,
-        "sol_big_mod_exp" => budget.big_modular_exponentiation_base_cost,
         "sol_remaining_compute_units" => budget.get_remaining_compute_units_cost,
         "sol_alt_bn128_compression" => budget.alt_bn128_g1_compress,
+        #[cfg(feature = "solana-v3")]
+        "sol_big_mod_exp" => budget.big_modular_exponentiation_base_cost,
+        #[cfg(feature = "solana-v3")]
         "sol_alt_bn128_group_op" => budget.alt_bn128_addition_cost,
+        #[cfg(feature = "solana-v4")]
+        "sol_alt_bn128_group_op" => budget.alt_bn128_g1_addition_cost,
         "sol_poseidon" => budget.poseidon_cost_coefficient_c,
         // Includes sol_log_, sol_log_data, sol_log_compute_units_, abort,
         // sol_panic_, sol_set_return_data, sol_get_return_data,
         // sol_get_stack_height, sol_get_epoch_stake,
-        // sol_get_processed_sibling_instruction, and anything agave added
-        // that we haven't mapped yet.
+        // sol_get_processed_sibling_instruction, sol_big_mod_exp (its
+        // per-call base cost field was removed from `ComputeBudget`; its
+        // true cost is input-size-dependent anyway, so it falls into the
+        // same "can't infer from registers" bucket as the other variable-cost
+        // syscalls this function already approximates), and anything agave
+        // added that we haven't mapped yet.
         _ => budget.syscall_base_cost,
     }
 }
@@ -100,6 +109,16 @@ impl ContextObject for NoopContext {
     fn consume(&mut self, _amount: u64) {}
     fn get_remaining(&self) -> u64 {
         0
+    }
+    fn active_mapping_ptr(
+        &mut self,
+    ) -> std::ptr::NonNull<solana_sbpf::memory_region::MemoryMapping> {
+        // `NoopContext` only type-parameterizes `Executable::from_elf` for
+        // static disassembly/analysis; we never construct an `EbpfVm` (the
+        // only caller of this method), so it's unreachable in practice.
+        // Mirrors `solana_sbpf::static_analysis::DummyContextObject`,
+        // upstream's own test-only stub for the same situation.
+        unreachable!("NoopContext is only used for static analysis, never for VM execution")
     }
 }
 
@@ -388,7 +407,7 @@ pub fn build_tx_reports(
 
     let mut reports: std::collections::BTreeMap<u32, (BTreeMap<Vec<String>, u64>, u64)> =
         std::collections::BTreeMap::new();
-    let budget = ComputeBudget::new_with_defaults(false, false);
+    let budget = crate::compat::default_compute_budget();
 
     for inv in &invocations {
         let regs = fs::read(&inv.regs_path)
@@ -471,8 +490,8 @@ fn short_pid(pid: &str) -> String {
 /// table (dynamic symbols) as a fallback.
 ///
 /// If the deployed binary is stripped (common for `cargo-build-sbf`), we also
-/// try loading symbols from the unstripped build artifact in the
-/// `target/sbpf-solana-solana/release/` directory.
+/// try loading symbols from the unstripped build artifact in the matching
+/// SBPF target directory.
 pub fn load_function_map(
     elf_path: &Path,
     manifest_dir: Option<&Path>,
@@ -509,7 +528,7 @@ pub fn load_function_map(
 
     // Tertiary source: the unstripped pre-deploy binary in the build directory.
     // cargo-build-sbf strips the binary before copying to target/deploy/, but
-    // the unstripped version remains in target/sbpf-solana-solana/release/.
+    // the unstripped version remains in the matching SBPF target directory.
     if let Some(unstripped_path) = find_unstripped_binary(elf_path, manifest_dir) {
         if let Ok(unstripped_bytes) = fs::read(&unstripped_path) {
             if let Ok(extra) = load_elf_symbols(&unstripped_bytes) {
@@ -615,18 +634,18 @@ fn syscall_hash_map() -> BTreeMap<u32, String> {
 /// tree of whichever workspace actually compiled the program. In the bench
 /// setup that can be any of:
 ///
-///   - `<bench>/target/sbpf-solana-solana/release/<name>.so` — for programs
+///   - `<bench>/target/<sbpf-target>/release/<name>.so` — for programs
 ///     that are bench-workspace members (anchor v1 / v2).
-///   - `<bench>/programs/<family>/<variant>/target/sbpf-solana-solana/release/<name>.so`
+///   - `<bench>/programs/<family>/<variant>/target/<sbpf-target>/release/<name>.so`
 ///     — for programs with their own `[workspace]` (pinocchio / steel / quasar).
-///   - `<repo>/target/sbpf-solana-solana/release/<name>.so` — historical
+///   - `<repo>/target/<sbpf-target>/release/<name>.so` — historical
 ///     location when building from the repo root.
 ///
 /// Rather than enumerate every path combinatorially, we walk upward from the
 /// deployed .so until we hit a directory that contains a `bench/` or
 /// `programs/` sibling (the repo root-ish), then do a bounded recursive
 /// search under it for a file matching `name` inside any
-/// `sbpf-solana-solana/release` directory. Returns the first non-stripped
+/// SBPF target release directory. Returns the first non-stripped
 /// match, or `None` if nothing is found.
 pub fn find_unstripped_binary(
     deployed_path: &Path,
@@ -645,29 +664,15 @@ pub fn find_unstripped_binary(
     // because the workspace root is deterministic from the manifest path.
     if let Some(manifest) = manifest_dir {
         if let Some(root) = find_workspace_root(manifest) {
-            let direct = root
-                .join("target")
-                .join("sbpf-solana-solana")
-                .join("release")
-                .join(&file_name);
-            if direct.exists() {
-                return Some(direct);
-            }
-            let deps = root
-                .join("target")
-                .join("sbpf-solana-solana")
-                .join("release")
-                .join("deps")
-                .join(&file_name);
-            if deps.exists() {
-                return Some(deps);
+            if let Some(path) = find_unstripped_in_target(&root, &file_name) {
+                return Some(path);
             }
         }
     }
 
     // Fallback: walk up the deployed path to a plausible repo root and
-    // recursively search for the file under any `sbpf-solana-solana/release`
-    // directory. This handles historical layouts and cases where no
+    // recursively search for the file under any SBPF target release directory.
+    // This handles historical layouts and cases where no
     // manifest_dir was supplied.
     let mut root = deployed_path.parent()?;
     loop {
@@ -707,7 +712,7 @@ fn find_workspace_root(manifest_dir: &Path) -> Option<std::path::PathBuf> {
 }
 
 /// Recursively searches `dir` for `file_name` inside any
-/// `sbpf-solana-solana/release` subdirectory. Depth-limited to avoid
+/// SBPF target release subdirectory. Depth-limited to avoid
 /// pathological descent into dependencies. Returns the first match that is
 /// not stripped (larger than the matching deployed .so would be — we can't
 /// cheaply check strip state, but filtering by "inside release" usually
@@ -720,24 +725,10 @@ fn search_for_unstripped(dir: &Path, file_name: &str, depth: usize) -> Option<st
         return None;
     }
 
-    // Quick check: does this directory already contain the file we want at
-    // the expected `sbpf-solana-solana/release/<file>` path?
-    let direct = dir
-        .join("target")
-        .join("sbpf-solana-solana")
-        .join("release")
-        .join(file_name);
-    if direct.exists() {
-        return Some(direct);
-    }
-    let deps = dir
-        .join("target")
-        .join("sbpf-solana-solana")
-        .join("release")
-        .join("deps")
-        .join(file_name);
-    if deps.exists() {
-        return Some(deps);
+    // Quick check: does this directory already contain the file we want in
+    // an SBPF target release directory?
+    if let Some(path) = find_unstripped_in_target(dir, file_name) {
+        return Some(path);
     }
 
     // Recurse into subdirectories — but skip well-known noisy subtrees.
@@ -763,6 +754,19 @@ fn search_for_unstripped(dir: &Path, file_name: &str, depth: usize) -> Option<st
         }
     }
 
+    None
+}
+
+fn find_unstripped_in_target(dir: &Path, file_name: &str) -> Option<std::path::PathBuf> {
+    for target_triple in sbpf_target_triples() {
+        let release_dir = dir.join("target").join(target_triple).join("release");
+        for artifact_dir in [&release_dir, &release_dir.join("deps")] {
+            let path = artifact_dir.join(file_name);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+    }
     None
 }
 
@@ -938,7 +942,7 @@ mod tests {
             &symbols,
             &BTreeMap::new(),
             "program",
-            &ComputeBudget::new_with_defaults(false, false),
+            &crate::compat::default_compute_budget(),
             |step| observed.push((step.pc, step.func.to_owned(), step.call_stack.to_vec())),
         );
 
@@ -971,7 +975,7 @@ mod tests {
             &symbols,
             &syscall_names,
             "program",
-            &ComputeBudget::new_with_defaults(false, false),
+            &crate::compat::default_compute_budget(),
             |step| {
                 observed.push((
                     step.pc,
@@ -1004,7 +1008,7 @@ mod tests {
             &symbols,
             &syscall_names,
             "program",
-            &ComputeBudget::new_with_defaults(false, false),
+            &crate::compat::default_compute_budget(),
             |step| observed.push((step.syscall.clone(), step.cu_cost)),
         );
 

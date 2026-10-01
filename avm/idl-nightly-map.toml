@@ -1,0 +1,28 @@
+# Rust nightly compatibility for proc-macro2's semver-exempt API.
+#
+# Anchor's IDL build enables `procmacro2_semver_exempt`, whose API tracks Rust
+# nightly rather than proc-macro2's normal semver contract. AVM reads the
+# project's locked proc-macro2 version and chooses the entry with the largest
+# `proc_macro2` floor that is <= that version.
+#
+# `fallback` is used when the project has no Cargo.lock or does not lock
+# proc-macro2. Keep it compatible with the newest proc-macro2 release.
+
+fallback = "nightly-2026-06-10"
+
+# proc-macro2 0.4 exposes the same semver-exempt proc_macro APIs as the
+# pre-1.0 releases below. Keep this entry so mixed legacy/current lockfiles
+# resolve the common compatible nightly instead of failing before the build.
+[[entries]]
+proc_macro2 = "0.4.0"
+nightly = "nightly-2025-04-15"
+
+[[entries]]
+proc_macro2 = "1.0.0"
+nightly = "nightly-2025-04-15"
+
+# proc-macro2 1.0.95 updated its semver-exempt API for the proc_macro changes
+# in nightly-2025-04-16.
+[[entries]]
+proc_macro2 = "1.0.95"
+nightly = "nightly-2026-06-10"

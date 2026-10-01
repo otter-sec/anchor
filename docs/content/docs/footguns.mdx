@@ -16,3 +16,17 @@ All-zero discriminators are only supported in events and instructions. In the ca
 ```
 they are explicitly not supported, as all-zero discriminators are indistinguishable from
 newly allocated accounts and can expose your code to security and usability issues.
+
+## Borrowed Data in Account Types
+
+Account types used with `Context` should own their values rather than hold references borrowed
+from other accounts or handler-local data. Do not replace an `AccountInfo`'s lamports or data
+backing reference with a reference to a field in `ctx.accounts`. Mutate the account contents
+instead of their backing references.
+
+<Callout type="warn" title="Avoid borrowed account data">
+  For example, avoid account types such as
+  `struct Borrowed<'info> { value: Cell<Option<&'info u64>> }`. Anchor 1.0 uses simplified
+  `Context` lifetimes, which can make a reference retained through `Cell`, `RefCell`, or similar
+  interior mutability outlive the value it points to.
+</Callout>

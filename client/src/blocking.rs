@@ -2,6 +2,7 @@
 use solana_rpc_client::rpc_client::RpcClient;
 use {
     crate::{
+        compat::{solana_rpc_client, solana_rpc_client_api, solana_transaction},
         ClientError, Config, EventContext, EventUnsubscriber, Program, ProgramAccountsIterator,
         RequestBuilder, TxVersion,
     },
@@ -168,7 +169,7 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Box<dyn S
     /// use anchor_client::{Client, Cluster, TxVersion};
     /// use anchor_lang::prelude::Pubkey;
     /// use solana_signer::null_signer::NullSigner;
-    /// use solana_message::AddressLookupTableAccount;
+    /// use anchor_client::AddressLookupTableAccount;
     ///
     /// let payer = NullSigner::new(&Pubkey::default());
     /// let client = Client::new(Cluster::Localnet, std::rc::Rc::new(payer));
@@ -210,7 +211,7 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Box<dyn S
     /// use anchor_client::{Client, Cluster, TxVersion};
     /// use anchor_lang::prelude::Pubkey;
     /// use solana_signer::null_signer::NullSigner;
-    /// use solana_message::AddressLookupTableAccount;
+    /// use anchor_client::AddressLookupTableAccount;
     ///
     /// let payer = NullSigner::new(&Pubkey::default());
     /// let client = Client::new(Cluster::Localnet, std::rc::Rc::new(payer));

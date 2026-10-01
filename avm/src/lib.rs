@@ -1,4 +1,5 @@
 mod attestation;
+pub mod idl_nightly;
 pub mod platform_tools;
 pub mod resolve;
 pub mod solana;
@@ -40,6 +41,10 @@ pub use {
 
 /// Checked at most once per hour.
 const UPDATE_CHECK_INTERVAL_SECS: i64 = 60 * 60;
+/// Check the locally cached `cargo build-sbf` toolchain at most once per day.
+const CARGO_BUILD_SBF_CHECK_INTERVAL_SECS: i64 = 24 * 60 * 60;
+const PLATFORM_TOOLS_LATEST_RELEASE_URL: &str =
+    "https://api.github.com/repos/anza-xyz/platform-tools/releases/latest";
 const NIGHTLY_MANIFEST_URL: &str =
     "https://anchor-releases.s3-eu-west-1.amazonaws.com/nightly/latest/manifest.json";
 const NIGHTLY_S3_BASE_URL: &str = "https://anchor-releases.s3-eu-west-1.amazonaws.com/";
@@ -109,7 +114,6 @@ pub fn version_binary_path(version: &Version) -> PathBuf {
 }
 
 /// Path to the cargo binary directory, defaults to `~/.cargo/bin` if `CARGO_HOME`
-#[cfg(not(test))] // this prevents tests from running this function so we don't change the developer environment during tests
 fn cargo_bin_dir() -> Option<PathBuf> {
     if let Ok(cargo_home) = std::env::var("CARGO_HOME") {
         return Some(PathBuf::from(cargo_home).join("bin"));
@@ -132,9 +136,8 @@ pub fn ensure_paths() {
     // Copy the `avm` binary to `~/.avm/bin` so we can create symlinks to it.
     let avm_in_bin = bin_dir.join("avm");
     if let Ok(current_avm) = std::env::current_exe() {
-        // Only copy if the paths are different
-        if current_avm != avm_in_bin && !nightly_enabled() {
-            if let Err(e) = fs::copy(current_avm, &avm_in_bin) {
+        if !nightly_enabled() {
+            if let Err(e) = copy_current_avm_to_bin(&current_avm, &avm_in_bin) {
                 eprintln!("Failed to copy avm binary: {e}");
             }
         }
@@ -238,6 +241,22 @@ pub fn ensure_paths() {
     if !current_version_file_path().exists() {
         fs::File::create(current_version_file_path()).expect("Could not create .version file");
     }
+}
+
+fn copy_current_avm_to_bin(current_avm: &Path, avm_in_bin: &Path) -> std::io::Result<()> {
+    // `current_exe` can preserve a Cargo-bin symlink rather than resolving it.
+    // Copying that symlink back to its target truncates the AVM binary.
+    if current_avm == avm_in_bin
+        || matches!(
+            (fs::canonicalize(current_avm), fs::canonicalize(avm_in_bin)),
+            (Ok(current_avm), Ok(avm_in_bin)) if current_avm == avm_in_bin
+        )
+    {
+        return Ok(());
+    }
+
+    fs::copy(current_avm, avm_in_bin)?;
+    Ok(())
 }
 
 /// Read the current version from the version file
@@ -1283,6 +1302,37 @@ fn point_anchor_stub_to(target: &Path) -> Result<()> {
     Ok(())
 }
 
+fn point_cargo_avm_to(cargo_bin: &Path, target: &Path) -> Result<()> {
+    let cargo_avm = cargo_bin.join(if cfg!(target_os = "windows") {
+        "avm.exe"
+    } else {
+        "avm"
+    });
+    if cargo_avm == target {
+        return Ok(());
+    }
+
+    fs::create_dir_all(cargo_bin).with_context(|| format!("Creating {}", cargo_bin.display()))?;
+    if fs::symlink_metadata(&cargo_avm).is_ok() {
+        fs::remove_file(&cargo_avm).with_context(|| format!("Removing {}", cargo_avm.display()))?;
+    }
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, &cargo_avm)
+            .with_context(|| format!("Linking {} to {}", cargo_avm.display(), target.display()))?;
+    }
+
+    #[cfg(windows)]
+    {
+        fs::copy(target, &cargo_avm)
+            .with_context(|| format!("Copying {} to {}", target.display(), cargo_avm.display()))?;
+        set_executable(&cargo_avm)?;
+    }
+
+    Ok(())
+}
+
 fn install_binary_atomic(source: &Path, destination: &Path) -> Result<()> {
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).with_context(|| format!("Creating {}", parent.display()))?;
@@ -1415,6 +1465,119 @@ pub fn check_avm_version_and_warn() {
     }
 }
 
+// ── cargo build-sbf platform-tools reminder ─────────────────────────────────
+
+fn cargo_build_sbf_check_file_path() -> PathBuf {
+    AVM_HOME.join(".cargo-build-sbf-check")
+}
+
+/// The cache stores one of two states:
+///   Success: `{unix_ts}\n{platform_tools_version}`
+///   Error:   `{unix_ts}\n0`
+enum CargoBuildSbfCheckCacheState {
+    Success(i64, String),
+    Error(i64),
+    Missing,
+}
+
+fn read_cargo_build_sbf_check_cache() -> CargoBuildSbfCheckCacheState {
+    let Ok(content) = fs::read_to_string(cargo_build_sbf_check_file_path()) else {
+        return CargoBuildSbfCheckCacheState::Missing;
+    };
+    let mut lines = content.lines();
+    let Some(timestamp) = lines.next().and_then(|line| line.parse().ok()) else {
+        return CargoBuildSbfCheckCacheState::Missing;
+    };
+    match lines.next() {
+        Some("0") | None => CargoBuildSbfCheckCacheState::Error(timestamp),
+        Some(version) if !version.is_empty() => {
+            CargoBuildSbfCheckCacheState::Success(timestamp, version.to_string())
+        }
+        _ => CargoBuildSbfCheckCacheState::Missing,
+    }
+}
+
+fn write_cargo_build_sbf_check_cache(version: &str) {
+    let content = format!("{}\n{version}", Utc::now().timestamp());
+    let _ = fs::create_dir_all(&*AVM_HOME);
+    let _ = fs::write(cargo_build_sbf_check_file_path(), content);
+}
+
+fn write_cargo_build_sbf_check_error_cache() {
+    let content = format!("{}\n0", Utc::now().timestamp());
+    let _ = fs::create_dir_all(&*AVM_HOME);
+    let _ = fs::write(cargo_build_sbf_check_file_path(), content);
+}
+
+#[derive(Deserialize)]
+struct LatestPlatformToolsRelease {
+    tag_name: String,
+}
+
+fn parse_platform_tools_release_tag(tag: &str) -> Result<String> {
+    let Some(version) = tag.strip_prefix('v') else {
+        bail!("Latest platform-tools release has an invalid tag `{tag}`");
+    };
+    if version.split('.').count() < 2
+        || version
+            .split('.')
+            .any(|component| component.is_empty() || !component.chars().all(|c| c.is_ascii_digit()))
+    {
+        bail!("Latest platform-tools release has an invalid tag `{tag}`");
+    }
+    Ok(tag.to_string())
+}
+
+fn get_latest_platform_tools_version_with_client(
+    client: &reqwest::blocking::Client,
+) -> Result<String> {
+    let response = client
+        .get(PLATFORM_TOOLS_LATEST_RELEASE_URL)
+        .header(USER_AGENT, "avm https://github.com/otter-sec/anchor")
+        .send()
+        .with_context(|| format!("Sending GET {PLATFORM_TOOLS_LATEST_RELEASE_URL}"))?;
+    if !response.status().is_success() {
+        bail!(
+            "Fetching the latest platform-tools release failed with status {}",
+            response.status()
+        );
+    }
+    let release = response
+        .json::<LatestPlatformToolsRelease>()
+        .context("Parsing the latest platform-tools release")?;
+    parse_platform_tools_release_tag(&release.tag_name)
+}
+
+fn warn_if_cargo_build_sbf_platform_tools_are_missing(version: &str) {
+    if let Ok(false) = platform_tools::cargo_build_sbf_platform_tools_installed(version) {
+        eprintln!(
+            "The latest cargo build-sbf platform-tools ({version}) is not installed. Run `cargo \
+             build-sbf --tools-version {version} --install-only` to install it."
+        );
+    }
+}
+
+/// Fetch the latest platform-tools release and warn when it is absent from
+/// `cargo build-sbf`'s cache. The check, including failures, is cached for 24
+/// hours in `$AVM_HOME/.cargo-build-sbf-check`; no toolchain is installed
+/// automatically.
+pub fn check_latest_cargo_build_sbf_and_warn() {
+    let now = Utc::now().timestamp();
+    match read_cargo_build_sbf_check_cache() {
+        CargoBuildSbfCheckCacheState::Success(timestamp, _version)
+            if now - timestamp < CARGO_BUILD_SBF_CHECK_INTERVAL_SECS => {}
+        CargoBuildSbfCheckCacheState::Error(timestamp)
+            if now - timestamp < CARGO_BUILD_SBF_CHECK_INTERVAL_SECS => {}
+        _ => match get_latest_platform_tools_version_with_client(&HTTP_CLIENT) {
+            Ok(version) => {
+                write_cargo_build_sbf_check_cache(&version);
+                warn_if_cargo_build_sbf_platform_tools_are_missing(&version);
+            }
+            Err(_) => write_cargo_build_sbf_check_error_cache(),
+        },
+    }
+}
+
 /// Update AVM itself by re-running `cargo install`.
 ///
 /// - Default: installs the latest stable release via `--tag`.
@@ -1429,6 +1592,8 @@ pub fn self_update(include_pre_release: bool, bleeding_edge: bool) -> Result<()>
         "--git".to_string(),
         "https://github.com/otter-sec/anchor".to_string(),
         "--locked".to_string(),
+        "--root".to_string(),
+        AVM_HOME.display().to_string(),
     ];
 
     if bleeding_edge {
@@ -1457,6 +1622,10 @@ pub fn self_update(include_pre_release: bool, bleeding_edge: bool) -> Result<()>
         bail!("Failed to update avm");
     }
 
+    if let Some(cargo_bin) = cargo_bin_dir() {
+        point_cargo_avm_to(&cargo_bin, &avm_binary_path())?;
+    }
+
     println!("avm successfully updated");
     Ok(())
 }
@@ -1479,12 +1648,54 @@ mod tests {
         assert!(current_version_file.exists());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn copy_current_avm_to_bin_skips_symlink_to_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let avm_in_bin = dir.path().join("avm");
+        let cargo_avm = dir.path().join("cargo-avm");
+        let contents = b"non-empty avm binary";
+
+        fs::write(&avm_in_bin, contents).unwrap();
+        std::os::unix::fs::symlink(&avm_in_bin, &cargo_avm).unwrap();
+
+        copy_current_avm_to_bin(&cargo_avm, &avm_in_bin).unwrap();
+
+        assert_eq!(fs::read(&avm_in_bin).unwrap(), contents);
+    }
+
     #[test]
     fn test_version_binary_path() {
         assert_eq!(
             version_binary_path(&Version::parse("0.18.2").unwrap()),
             get_bin_dir_path().join("anchor-0.18.2")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn point_cargo_avm_to_replaces_binary_with_link() {
+        // Do not change a user's Cargo directory outside CI.
+        if std::env::var_os("CI").is_none() {
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let cargo_bin = dir.path().join("cargo-bin");
+        let avm = dir.path().join("avm-bin/avm");
+        fs::create_dir_all(avm.parent().unwrap()).unwrap();
+        fs::write(&avm, b"updated avm").unwrap();
+        fs::create_dir_all(&cargo_bin).unwrap();
+        fs::write(cargo_bin.join("avm"), b"stale avm").unwrap();
+
+        point_cargo_avm_to(&cargo_bin, &avm).unwrap();
+
+        let cargo_avm = cargo_bin.join("avm");
+        assert!(fs::symlink_metadata(&cargo_avm)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read(cargo_avm).unwrap(), b"updated avm");
     }
 
     #[test]
@@ -1621,6 +1832,21 @@ mod tests {
             sha256_hex(b"anchor"),
             "79bfb0e2ba76b9d447606ddbcc494834f05a4c11deb052e74b49ea307a3c5bcd"
         );
+    }
+
+    #[test]
+    fn platform_tools_release_tag_is_strictly_validated() {
+        assert_eq!(parse_platform_tools_release_tag("v1.57").unwrap(), "v1.57");
+        assert_eq!(
+            parse_platform_tools_release_tag("v1.57.1").unwrap(),
+            "v1.57.1"
+        );
+        for invalid in ["1.57", "v1", "v1.", "v1.x", "v1.57/../../tmp"] {
+            assert!(
+                parse_platform_tools_release_tag(invalid).is_err(),
+                "accepted invalid tag {invalid}"
+            );
+        }
     }
 
     #[test]

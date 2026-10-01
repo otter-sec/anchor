@@ -5,7 +5,12 @@ on:
     branches:
       - master
     paths-ignore:
+      # Docs/changelog cannot affect these tests.
       - "docs/**"
+      - "docs-v2/**"
+      - "**/*.md"
+      - "**/*.mdx"
+      - ".cspell-anchor-dictionary.txt"
 
 permissions:
   contents: read

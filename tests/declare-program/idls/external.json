@@ -99,6 +99,30 @@
       ]
     },
     {
+      "name": "test_compilation_empty_composite",
+      "discriminator": [
+        91,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "accounts": [
+        {
+          "name": "empty_inner",
+          "accounts": []
+        },
+        {
+          "name": "signer",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "test_compilation_generic_types",
       "discriminator": [
         2,
@@ -169,6 +193,26 @@
         201
       ],
       "accounts": [],
+      "args": []
+    },
+    {
+      "name": "test_compilation_only_empty_composite",
+      "discriminator": [
+        92,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "accounts": [
+        {
+          "name": "empty_only",
+          "accounts": []
+        }
+      ],
       "args": []
     },
     {

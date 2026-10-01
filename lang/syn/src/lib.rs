@@ -444,10 +444,11 @@ impl Field {
         let field = &self.ident;
         let field_str = field.to_string();
         let container_ty = self.container_ty();
+        let program_id = crate::codegen::private_ident("__program_id");
         let owner_addr = match &kind {
-            None => quote! { __program_id },
+            None => quote! { #program_id },
             Some(InitKind::Program { .. }) => quote! {
-                __program_id
+                #program_id
             },
             _ => quote! {
                 &anchor_spl::token::ID

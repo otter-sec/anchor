@@ -9,6 +9,7 @@ arrayref
 autoload
 autofills
 backpackapp
+backportable
 behaviour
 bottlenecking
 blockhash
@@ -36,6 +37,7 @@ duplicative
 footguns
 flamegraph
 flamegraphs
+footgun
 fumadocs
 Fumadocs
 getrandom

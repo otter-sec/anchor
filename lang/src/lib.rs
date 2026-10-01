@@ -39,6 +39,8 @@ pub mod accounts;
 mod bpf_upgradeable_state;
 mod bpf_writer;
 mod common;
+#[doc(hidden)]
+pub mod compat;
 pub mod context;
 pub use anchor_lang_error as error;
 #[doc(hidden)]
@@ -70,13 +72,15 @@ pub use {
 
 pub mod solana_program {
     pub use {
-        solana_account_info as account_info, solana_clock as clock,
-        solana_feature_gate_interface as feature,
+        crate::compat::{
+            solana_clock as clock, solana_feature_gate_interface as feature,
+            solana_pubkey as pubkey,
+        },
+        solana_account_info as account_info,
         solana_msg::msg,
         solana_program_entrypoint::{self as entrypoint, entrypoint},
         solana_program_error as program_error, solana_program_memory as program_memory,
         solana_program_option as program_option, solana_program_pack as program_pack,
-        solana_pubkey as pubkey,
         solana_sdk_ids::system_program,
         solana_system_interface::instruction as system_instruction,
     };
@@ -93,12 +97,12 @@ pub mod solana_program {
 
             #[cfg(not(target_os = "solana"))]
             {
-                solana_sysvar::program_stubs::sol_get_stack_height() as usize
+                crate::compat::solana_sysvar::program_stubs::sol_get_stack_height() as usize
             }
         }
     }
     pub mod rent {
-        pub use solana_sysvar::rent::*;
+        pub use crate::compat::solana_sysvar::rent::*;
     }
     pub mod program {
         pub use {
@@ -109,7 +113,7 @@ pub mod solana_program {
 
     pub mod bpf_loader_upgradeable {
         #[allow(deprecated)]
-        pub use solana_loader_v3_interface::{
+        pub use crate::compat::solana_loader_v3_interface::{
             get_program_data_address,
             instruction::{
                 close, close_any, create_buffer, deploy_with_max_program_len, extend_program,
@@ -129,7 +133,7 @@ pub mod solana_program {
         pub fn sol_log_data(data: &[&[u8]]) {
             #[cfg(target_os = "solana")]
             unsafe {
-                solana_define_syscall::definitions::sol_log_data(
+                crate::compat::solana_define_syscall::definitions::sol_log_data(
                     data as *const _ as *const u8,
                     data.len() as u64,
                 )
@@ -142,9 +146,9 @@ pub mod solana_program {
     pub mod sysvar {
         pub use solana_sysvar_id::{declare_deprecated_sysvar_id, declare_sysvar_id, SysvarId};
         pub mod instructions {
-            pub use solana_instruction::{BorrowedAccountMeta, BorrowedInstruction};
             #[cfg(not(target_os = "solana"))]
-            pub use solana_instructions_sysvar::construct_instructions_data;
+            pub use crate::compat::solana_instructions_sysvar::construct_instructions_data;
+            pub use solana_instruction::{BorrowedAccountMeta, BorrowedInstruction};
         }
     }
 }
@@ -581,23 +585,27 @@ pub mod prelude {
             InitSpace, Key, Lamports, Owner, Owners, ProgramData, Result, Space, ToAccountInfo,
             ToAccountInfos, ToAccountMetas,
         },
-        crate::solana_program::{
-            account_info::{next_account_info, AccountInfo},
-            instruction::AccountMeta,
-            program_error::ProgramError,
-            pubkey::Pubkey,
-            *,
+        crate::{
+            compat::{
+                solana_clock::Clock,
+                solana_instructions_sysvar::Instructions,
+                solana_stake_interface::stake_history::StakeHistory,
+                solana_sysvar::{
+                    epoch_schedule::EpochSchedule, rent::Rent, rewards::Rewards,
+                    slot_hashes::SlotHashes, slot_history::SlotHistory, Sysvar as SolanaSysvar,
+                },
+            },
+            solana_program::{
+                account_info::{next_account_info, AccountInfo},
+                instruction::AccountMeta,
+                program_error::ProgramError,
+                pubkey::Pubkey,
+                *,
+            },
         },
         anchor_attribute_error::*,
         borsh,
         error::*,
-        solana_clock::Clock,
-        solana_instructions_sysvar::Instructions,
-        solana_stake_interface::stake_history::StakeHistory,
-        solana_sysvar::{
-            epoch_schedule::EpochSchedule, rent::Rent, rewards::Rewards, slot_hashes::SlotHashes,
-            slot_history::SlotHistory, Sysvar as SolanaSysvar,
-        },
         thiserror,
     };
 }
@@ -607,7 +615,10 @@ pub mod prelude {
 pub mod __private {
     use crate::solana_program::pubkey::Pubkey;
     pub use {
-        crate::{bpf_writer::BpfWriter, common::is_closed},
+        crate::{
+            bpf_writer::BpfWriter,
+            common::{exit_unowned, is_closed},
+        },
         anchor_attribute_account::ZeroCopyAccessor,
         base64, bytemuck,
     };
@@ -655,52 +666,37 @@ pub mod __private {
     impl<T> IsSameType<T> for T {}
 
     #[doc(hidden)]
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone)]
     pub struct CpiReturnData {
-        program_id: Option<Pubkey>,
-        data_len: usize,
-        data: [u8; crate::solana_program::program::MAX_RETURN_DATA],
+        program_id: Pubkey,
+        data: Vec<u8>,
     }
 
     impl CpiReturnData {
         #[doc(hidden)]
-        pub fn new(return_data: Option<(Pubkey, Vec<u8>)>) -> Self {
-            let mut snapshot = Self {
-                program_id: None,
-                data_len: 0,
-                data: [0u8; crate::solana_program::program::MAX_RETURN_DATA],
-            };
-
-            if let Some((program_id, data)) = return_data {
-                let data_len = data.len();
-                snapshot.data[..data_len].copy_from_slice(&data);
-                snapshot.program_id = Some(program_id);
-                snapshot.data_len = data_len;
-            }
-
-            snapshot
+        pub fn new(program_id: Pubkey, data: Vec<u8>) -> Self {
+            CpiReturnData { program_id, data }
         }
 
         #[doc(hidden)]
-        pub fn snapshot() -> Self {
-            Self::new(crate::solana_program::program::get_return_data())
+        pub fn snapshot() -> Option<Self> {
+            let (program_id, data) = crate::solana_program::program::get_return_data()?;
+            Some(Self::new(program_id, data))
         }
 
         #[doc(hidden)]
         pub fn get<T: crate::AnchorDeserialize>(&self, expected_program_id: Pubkey) -> T {
-            let program_id = self.program_id.unwrap();
-            if program_id != expected_program_id {
+            if self.program_id != expected_program_id {
                 crate::solana_program::log::sol_log("CPI return data program_id mismatch");
                 panic!();
             }
 
-            T::try_from_slice(&self.data[..self.data_len]).unwrap()
+            T::try_from_slice(&self.data).unwrap()
         }
 
         #[doc(hidden)]
-        pub fn return_data(&self) -> Option<(Pubkey, &[u8])> {
-            self.program_id
-                .map(|program_id| (program_id, &self.data[..self.data_len]))
+        pub fn return_data(&self) -> (Pubkey, &[u8]) {
+            (self.program_id, &self.data)
         }
     }
 }

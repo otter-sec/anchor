@@ -10,6 +10,10 @@ on:
       - "**/Cargo.toml"
       - "**/*.rs"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -45,5 +49,9 @@ jobs:
       - name: Check semver compatibility
         uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2
         with:
-          exclude: avm, anchor-cli
+          exclude: avm, anchor-cli, anchor-syn
           baseline-rev: ${{ github.event.pull_request.base.sha }}
+          # By default cargo-semver-checks enables every feature it can, which
+          # would turn on both `solana-v3` and `solana-v4` at once, and those are
+          # mutually exclusive.
+          feature-group: default-features

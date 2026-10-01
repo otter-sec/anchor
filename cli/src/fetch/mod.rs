@@ -1,5 +1,8 @@
 use {
-    crate::config::ConfigOverride,
+    crate::{
+        compat::{solana_pubkey, solana_rpc_client, solana_rpc_client_api},
+        config::ConfigOverride,
+    },
     anyhow::{anyhow, Result},
     indicatif::ProgressBar,
     solana_pubkey::Pubkey,

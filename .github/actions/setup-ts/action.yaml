@@ -13,13 +13,6 @@ runs:
         path: |
           ./ts/node_modules/
         key: solana-${{ runner.os }}-v0000-${{ env.NODE_VERSION }}-${{ hashFiles('./ts/**/yarn.lock') }}
-    - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-      name: Cache Typescript Dist
-      id: cache-typescript-dist
-      with:
-        path: |
-          ./ts/dist/
-        key: solana-${{ runner.os }}-v0000-${{ env.NODE_VERSION }}-${{ hashFiles('./ts/**/*.ts') }}
     - run: cd ts/packages/borsh && yarn --frozen-lockfile && yarn build && yarn link && cd ../../../
       shell: bash
     - run: cd ts/packages/anchor-errors && yarn --frozen-lockfile && yarn build && yarn link && cd ../../../

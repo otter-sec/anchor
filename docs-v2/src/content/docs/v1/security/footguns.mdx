@@ -16,3 +16,17 @@ Anchor supports overriding discriminators with custom values for accounts, event
 <Callout variant="danger" title="Why all-zero account discriminators are rejected">
   An all-zero account discriminator is indistinguishable from a freshly allocated, uninitialized account. A program-owned account whose data is still zero (for example, an `AccountInfo{:rs}` that has been allocated but not yet written, or one prepared for `#[zero]{:rs}` initialization) would pass the discriminator check, exposing the program to takeover via IDL instructions and other security and usability issues.
 </Callout>
+
+## Borrowed data in account types
+
+Account types used with `Context` should own their values rather than hold references borrowed
+from other accounts or handler-local data. Do not replace an `AccountInfo`'s lamports or data
+backing reference with a reference to a field in `ctx.accounts`. Mutate the account contents
+instead of their backing references.
+
+<Callout variant="danger" title="Avoid borrowed account data">
+  For example, avoid account types such as
+  `struct Borrowed<'info> { value: Cell<Option<&'info u64>> }{:rs}`. Anchor 1.0 uses simplified
+  `Context{:rs}` lifetimes, which can make a reference retained through `Cell{:rs}`, `RefCell{:rs}`,
+  or similar interior mutability outlive the value it points to.
+</Callout>

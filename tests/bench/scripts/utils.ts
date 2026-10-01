@@ -6,7 +6,9 @@ import { spawnSync } from "child_process";
 export type Version = "unreleased" | (`${number}.${number}.${number}` & {});
 
 /** Platform-tools version used to build benchmark programs. */
-export type PlatformToolsVersion = `v${number}.${number}`;
+export type PlatformToolsVersion =
+  | `v${number}.${number}`
+  | `v${number}.${number}.${number}`;
 
 /** Persistent benchmark data(mapping of `Version -> Data`) */
 type Bench = {

@@ -1,7 +1,7 @@
 use {
-    super::common::{convert_idl_type_to_syn_type, gen_accounts_common},
+    super::common::{accounts_use_lifetime, convert_idl_type_to_syn_type, gen_accounts_common},
     anchor_lang_idl::types::Idl,
-    heck::CamelCase,
+    heck::ToUpperCamelCase,
     quote::{format_ident, quote},
 };
 
@@ -25,12 +25,15 @@ pub fn gen_cpi_mod(idl: &Idl) -> proc_macro2::TokenStream {
 fn gen_cpi_instructions(idl: &Idl) -> proc_macro2::TokenStream {
     let ixs = idl.instructions.iter().map(|ix| {
         let method_name = format_ident!("{}", ix.name);
-        let accounts_ident = format_ident!("{}", ix.name.to_camel_case());
+        let accounts_ident = format_ident!("{}", ix.name.to_upper_camel_case());
 
-        let accounts_generic = if ix.accounts.is_empty() {
-           quote!()
-        } else {
+        // Must match the struct `internal::gen_internal_accounts` emits: a
+        // fieldless accounts struct gets no lifetime, so that it stays
+        // constructible as `Foo {}` (see #4658).
+        let accounts_generic = if accounts_use_lifetime(&ix.accounts) {
             quote!(<'info>)
+        } else {
+            quote!()
         };
 
         let args = ix.args.iter().map(|arg| {
@@ -110,16 +113,16 @@ fn gen_cpi_instructions(idl: &Idl) -> proc_macro2::TokenStream {
 
 fn gen_cpi_return_type() -> proc_macro2::TokenStream {
     quote! {
-        #[derive(Debug, Clone, Copy)]
+        #[derive(Debug, Clone)]
         pub struct Return<T> {
             phantom: ::std::marker::PhantomData<T>,
             program_id: anchor_lang::solana_program::pubkey::Pubkey,
-            return_data: anchor_lang::__private::CpiReturnData,
+            return_data: Option<anchor_lang::__private::CpiReturnData>,
         }
 
         impl<T: AnchorDeserialize> Return<T> {
             pub fn get(&self) -> T {
-                self.return_data.get(self.program_id)
+                self.return_data.as_ref().unwrap().get(self.program_id)
             }
 
             /// Read return data without validating the program_id.

@@ -1,7 +1,7 @@
 //! Defines the [`AbsolutePath`] trait and implementations for the various commands
 //! and sub-commands.
 
-use std::path::PathBuf;
+use {crate::compat::solana_pubkey, std::path::PathBuf};
 
 /// Used to get the absolute form of all paths within this type
 pub(crate) trait AbsolutePath: Sized {

@@ -4,7 +4,13 @@ use {
         rpc::{fetch_signatures_for_address, fetch_transaction},
         MAX_IDL_BUFFER_BYTES,
     },
-    crate::fetch::FetchTuning,
+    crate::{
+        compat::{
+            solana_pubkey, solana_rpc_client, solana_rpc_client_api,
+            solana_transaction_status_client_types,
+        },
+        fetch::FetchTuning,
+    },
     anyhow::{anyhow, bail, Context, Result},
     base64::Engine,
     flate2::read::{GzDecoder, ZlibDecoder},

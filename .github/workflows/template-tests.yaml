@@ -5,11 +5,24 @@ on:
     branches:
       - master
     paths-ignore:
+      # Docs/changelog cannot affect these tests.
       - "docs/**"
+      - "docs-v2/**"
+      - "**/*.md"
+      - "**/*.mdx"
+      - ".cspell-anchor-dictionary.txt"
   pull_request:
     paths-ignore:
       - "docs/**"
+      - "docs-v2/**"
+      - "**/*.md"
+      - "**/*.mdx"
+      - ".cspell-anchor-dictionary.txt"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -18,12 +31,12 @@ env:
   SOLANA_VERSION: "4.1.2"
   NODE_VERSION: "20"
   SURFPOOL_CLI_VERSION: "1.5.0"
-  ANCHOR_TEST_VALIDATOR: "legacy"
 
 jobs:
   # Build CLI once to share across test jobs
   build-cli:
     name: Build CLI
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release-bump/')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -62,6 +75,7 @@ jobs:
   # apply, so the matrix is just template x test-template (2 x 3 = 6 cells).
   template-rust-tests:
     name: ${{ matrix.template }} + ${{ matrix.test_template }}
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release-bump/')
     needs: build-cli
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -134,20 +148,14 @@ jobs:
           EOF
 
       - name: anchor test
-        if: matrix.test_template != 'litesvm'
         working-directory: /tmp/my_program
-        run: anchor test
-      - name: anchor test
-        if: matrix.test_template == 'litesvm'
-        working-directory: /tmp/my_program
-        env:
-          ANCHOR_BUILD_SBF_ARCH: "v2"
         run: anchor test
 
   # JS-based test templates: cross-product over template x language x
   # package manager (2 x 2 x 2 x 4 = 32 cells).
   template-js-tests:
     name: ${{ matrix.template }} + ${{ matrix.test_template }} + ${{ matrix.language }} + ${{ matrix.package_manager }}
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release-bump/')
     needs: build-cli
     runs-on: ubuntu-latest
     timeout-minutes: 30

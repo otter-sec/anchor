@@ -40,6 +40,19 @@ use {
 /// - `T::owners().contains(InterfaceAccount.info.owner)`
 /// - `!(InterfaceAccount.info.owner == SystemProgram && InterfaceAccount.info.lamports() == 0)`
 ///
+/// # Persistence
+///
+/// `InterfaceAccount` shares the exit path of [`Account`]. When the
+/// instruction returns, a `mut` account that was owned by the current program
+/// is serialized back into the account data if it is still owned by the
+/// program and has not been closed. If ownership moved during the
+/// instruction, for example because the account was reassigned via CPI, the
+/// account is not written: exit succeeds when the account data already
+/// matches the in-memory value and fails with `AccountOwnedByWrongProgram`
+/// otherwise. Call [`exit`](crate::AccountsExit::exit) before such a CPI to
+/// persist pending changes. Accounts owned by another program in
+/// `T::owners()` are never written on exit.
+///
 /// # Example
 /// ```ignore
 /// use anchor_lang::prelude::*;

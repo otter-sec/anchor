@@ -1,4 +1,4 @@
-use {crate::Program, heck::SnakeCase, quote::quote};
+use {crate::Program, heck::ToSnakeCase, quote::quote};
 
 pub fn generate(program: &Program) -> proc_macro2::TokenStream {
     let mut accounts = std::collections::HashMap::new();

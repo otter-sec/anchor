@@ -46,6 +46,14 @@ pub mod realloc {
             .resize_with(len as usize, Default::default);
         Ok(())
     }
+
+    pub fn realloc_self_payer(ctx: Context<ReallocSelfPayer>, len: u16) -> Result<()> {
+        ctx.accounts
+            .sample
+            .data
+            .resize_with(len as usize, Default::default);
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -153,6 +161,22 @@ pub struct Realloc2<'info> {
         dup, // Allow duplicate accounts
     )]
     pub sample2: Account<'info, Sample>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(len: u16)]
+pub struct ReallocSelfPayer<'info> {
+    #[account(
+        mut,
+        seeds = [b"sample"],
+        bump = sample.bump,
+        realloc = Sample::space(len as usize),
+        realloc::payer = sample,
+        realloc::zero = false,
+    )]
+    pub sample: Account<'info, Sample>,
 
     pub system_program: Program<'info, System>,
 }

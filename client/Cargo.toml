@@ -8,31 +8,70 @@ license = "Apache-2.0"
 description = "An RPC client to interact with Anchor programs"
 
 [package.metadata.docs.rs]
-workspace = true
+# Not `workspace = true`: `all-features` would enable both `solana-v3` and `solana-v4`.
+features = ["async", "debug", "mock"]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
+# `solana-v3`/`solana-v4` mirror anchor-lang's Solana cohort selection; exactly one must be
+# active. See the comment block in the root Cargo.toml.
+default = ["solana-v3"]
+solana-v3 = [
+    "anchor-lang/solana-v3",
+    "dep:solana-account-decoder-v3",
+    "dep:solana-hash-v3",
+    "dep:solana-message-v3",
+    "dep:solana-pubsub-client-v3",
+    "dep:solana-rpc-client-v3",
+    "dep:solana-rpc-client-api-v3",
+    "dep:solana-transaction-v3",
+]
+solana-v4 = [
+    "anchor-lang/solana-v4",
+    "dep:solana-account-decoder-v4",
+    "dep:solana-hash-v4",
+    "dep:solana-message-v4",
+    "dep:solana-pubsub-client-v4",
+    "dep:solana-rpc-client-v4",
+    "dep:solana-rpc-client-api-v4",
+    "dep:solana-transaction-v4",
+]
+
 async = []
 debug = []
 mock = []
 
 [dependencies]
+# The cohort comes from this crate's own `solana-v3`/`solana-v4` feature; the workspace
+# declaration sets `default-features = false` so anchor-lang's default `solana-v3`
+# is not forced on here.
 anchor-lang = { workspace = true }
 anyhow = "1"
 futures = "0.3"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
-solana-account.workspace = true
-solana-account-decoder.workspace = true
+
+# Cohort-independent.
 solana-commitment-config.workspace = true
-solana-hash = { workspace = true, features = ["bytemuck", "serde", "std"] }
 solana-instruction.workspace = true
-solana-message.workspace = true
-solana-pubsub-client.workspace = true
-solana-rpc-client.workspace = true
-solana-rpc-client-api.workspace = true
 solana-signature.workspace = true
 solana-signer.workspace = true
-solana-transaction.workspace = true
+
+# Cohort-specific; aliased back to plain names in `src/compat.rs`.
+solana-account-decoder-v3 = { workspace = true, optional = true }
+solana-account-decoder-v4 = { workspace = true, optional = true }
+solana-hash-v3 = { workspace = true, optional = true, features = ["bytemuck", "serde", "std"] }
+solana-hash-v4 = { workspace = true, optional = true, features = ["bytemuck", "serde", "std"] }
+solana-message-v3 = { workspace = true, optional = true }
+solana-message-v4 = { workspace = true, optional = true }
+solana-pubsub-client-v3 = { workspace = true, optional = true }
+solana-pubsub-client-v4 = { workspace = true, optional = true }
+solana-rpc-client-v3 = { workspace = true, optional = true }
+solana-rpc-client-v4 = { workspace = true, optional = true }
+solana-rpc-client-api-v3 = { workspace = true, optional = true }
+solana-rpc-client-api-v4 = { workspace = true, optional = true }
+solana-transaction-v3 = { workspace = true, optional = true }
+solana-transaction-v4 = { workspace = true, optional = true }
 thiserror = "1"
 tokio = { version = "1", features = ["rt", "sync"] }
 url = "2"

@@ -1,6 +1,10 @@
 use {
-    crate::{codegen::program::common::*, Program},
-    quote::{quote, ToTokens},
+    crate::{
+        codegen::{private_ident, program::common::*},
+        Program,
+    },
+    quote::{quote, quote_spanned, ToTokens},
+    syn::spanned::Spanned,
 };
 
 // Generate non-inlined wrappers for each instruction handler, since Solana's
@@ -45,12 +49,25 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
             let accounts_struct_name = &ix.anchor_ident;
             let ret_type = &ix.returns.ty.to_token_stream();
             let cfgs = &ix.cfgs;
+            let program_id = private_ident("__program_id");
+            let account_infos = private_ident("__accounts");
+            let ix_data = private_ident("__ix_data");
+            let deserialized_ix = private_ident("ix");
+            let bumps = private_ident("__bumps");
+            let reallocs = private_ident("__reallocs");
+            let remaining_accounts = private_ident("__remaining_accounts");
+            let deserialized_accounts = private_ident("__accounts");
+            let shorten_remaining_accounts =
+                private_ident("__shorten_invariant_lifetime_remaining_accounts");
+            let shortened_value = private_ident("value");
+            let result = private_ident("result");
+            let return_data = private_ident("return_data");
             let maybe_set_return_data = match ret_type.to_string().as_str() {
                 "()" => quote! {},
                 _ => quote! {
-                    let mut return_data = Vec::with_capacity(256);
-                    result.serialize(&mut return_data).unwrap();
-                    anchor_lang::solana_program::program::set_return_data(&return_data);
+                    let mut #return_data = Vec::with_capacity(256);
+                    #result.serialize(&mut #return_data).unwrap();
+                    anchor_lang::solana_program::program::set_return_data(&#return_data);
                 },
             };
 
@@ -65,20 +82,21 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
             );
 
             // Generate type validation calls for each argument. These are
-            // purely compile-time checks using function-pointer coercion: when
-            // `#[instruction(...)]` declares the parameter type, the validator
-            // carries an `IsSameType<_>` bound that fires at compile time if
-            // the handler's argument type doesn't match.
+            // purely compile-time checks using function-pointer coercion. When
+            // `#[instruction(...)]` declares a parameter type, the validator's
+            // exact signature fires at compile time if the handler's argument
+            // type doesn't match.
             let type_validations: Vec<proc_macro2::TokenStream> = ix.args
                 .iter()
                 .enumerate()
                 .map(|(idx, arg)| {
                     let arg_ty = &arg.raw_arg.ty;
+                    let arg_ty_span = arg_ty.span();
                     let method_name = syn::Ident::new(
                         &format!("__anchor_validate_ix_arg_type_{}", idx),
-                        proc_macro2::Span::call_site(),
+                        proc_macro2::Span::call_site().located_at(arg_ty_span),
                     );
-                    quote! {
+                    quote_spanned! {arg_ty_span=>
                         const _: fn() = || {
                             let _: fn(&#arg_ty) = #accounts_struct_name::#method_name;
                         };
@@ -105,45 +123,45 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                 #(#cfgs)*
                 #[inline(never)]
                 pub fn #ix_method_name<'info>(
-                    __program_id: &'info Pubkey,
-                    __accounts: &'info [AccountInfo<'info>],
-                    __ix_data: &'info [u8],
+                    #program_id: &'info Pubkey,
+                    #account_infos: &'info [AccountInfo<'info>],
+                    #ix_data: &'info [u8],
                 ) -> anchor_lang::Result<()> {
                     #[cfg(not(feature = "no-log-ix-name"))]
                     anchor_lang::prelude::msg!(#ix_name_log);
 
                     #param_validation
                     // Deserialize data.
-                    let ix = instruction::#ix_name::deserialize(&mut &__ix_data[..])
+                    let #deserialized_ix = instruction::#ix_name::deserialize(&mut &#ix_data[..])
                         .map_err(|_| anchor_lang::error::ErrorCode::InstructionDidNotDeserialize)?;
-                    let instruction::#variant_arm = ix;
+                    let instruction::#variant_arm = #deserialized_ix;
 
                     // Bump collector.
-                    let mut __bumps = <#accounts_struct_name as anchor_lang::Bumps>::Bumps::default();
+                    let mut #bumps = <#accounts_struct_name as anchor_lang::Bumps>::Bumps::default();
 
-                    let mut __reallocs = ::std::collections::BTreeSet::new();
+                    let mut #reallocs = ::std::collections::BTreeSet::new();
 
                     // Deserialize accounts.
-                    let mut __remaining_accounts = __accounts;
-                    let mut __accounts = #accounts_struct_name::try_accounts(
-                        __program_id,
-                        &mut __remaining_accounts,
-                        __ix_data,
-                        &mut __bumps,
-                        &mut __reallocs,
+                    let mut #remaining_accounts = #account_infos;
+                    let mut #deserialized_accounts = #accounts_struct_name::try_accounts(
+                        #program_id,
+                        &mut #remaining_accounts,
+                        #ix_data,
+                        &mut #bumps,
+                        &mut #reallocs,
                     )?;
 
                     #[inline(always)]
-                    unsafe fn __shorten_invariant_lifetime_remaining_accounts<'a, 'info: 'a>(
-                        value: &'a [AccountInfo<'info>],
+                    unsafe fn #shorten_remaining_accounts<'a, 'info: 'a>(
+                        #shortened_value: &'a [AccountInfo<'info>],
                     ) -> &'a [AccountInfo<'a>] {
-                        unsafe { ::core::mem::transmute(value) }
+                        unsafe { ::core::mem::transmute(#shortened_value) }
                     }
 
                     // Invoke user defined handler.
-                    let result = #program_name::#ix_method_name(
+                    let #result = #program_name::#ix_method_name(
                         anchor_lang::context::Context::new(
-                            __program_id,
+                            #program_id,
                             // SAFETY: `__shorten_invariant_lifetime` functions are used to *shrink*
                             // the lifetime of the inner `AccountInfo`s from `'info` to the local
                             // function's lifetime. No lifetime is extended by this operation. The
@@ -163,9 +181,9 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                             // This lifetime narrowing is required to conform to the `Context`
                             // struct's single-lifetime parameterization, which uses a single
                             // lifetime to keep the API simple and ergonomic.
-                            unsafe { #accounts_struct_name::__shorten_invariant_lifetime(&mut __accounts) },
-                            unsafe { __shorten_invariant_lifetime_remaining_accounts(__remaining_accounts) },
-                            __bumps,
+                            unsafe { #accounts_struct_name::__shorten_invariant_lifetime(&mut #deserialized_accounts) },
+                            unsafe { #shorten_remaining_accounts(#remaining_accounts) },
+                            #bumps,
                         ),
                         #(#ix_arg_names),*
                     )?;
@@ -174,7 +192,7 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                     #maybe_set_return_data
 
                     // Exit routine.
-                    __accounts.exit(__program_id)
+                    #deserialized_accounts.exit(#program_id)
                 }
             }
         })

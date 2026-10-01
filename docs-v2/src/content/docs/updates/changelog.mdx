@@ -56,9 +56,56 @@ Version 0 of Semantic Versioning is handled differently from version 1 and above
 
 </AccordionItem>
 
-<AccordionItem title="1.1.2 (2026-06-26)">
+<AccordionItem title="1.2.0 (2026-09-04)">
 
-See the full [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.1.2/CHANGELOG.md#112---2026-06-26).
+#### Features
+
+- avm: Allow resolving Solana/platform-tools versions from an explicit Anchor version ([#4799](https://github.com/otter-sec/anchor/pull/4799)).
+- cli: Add `<dim>--arch</dim>` and `<dim>--tools-version</dim>` flags to select the SBPF architecture and platform-tools version used by `$ <blue>anchor</blue> build` ([#4684](https://github.com/otter-sec/anchor/pull/4684)).
+- cli: Generate a TypeScript error constants file from the IDL during `$ <blue>anchor</blue> build` ([#3827](https://github.com/otter-sec/anchor/pull/3827)).
+- lang: Always derive `Clone{:rs}` and `Debug{:rs}` for generated types in `declare_program!(){:rs}` ([#4723](https://github.com/otter-sec/anchor/pull/4723)).
+- spl: Add pausable mint extension support ([#4092](https://github.com/otter-sec/anchor/pull/4092)).
+- spl: Add `create_native_mint{:rs}` and `initialize_non_transferable_mint{:rs}` helpers ([#3512](https://github.com/otter-sec/anchor/pull/3512)).
+- spl: Add `reallocate{:rs}` and `withdraw_excess_lamports{:rs}` helpers ([#3516](https://github.com/otter-sec/anchor/pull/3516)).
+- spl: Added `token_metadata_remove_key{:rs}` to support removing keys from token metadata extension ([#3717](https://github.com/otter-sec/anchor/pull/3717)).
+- lang: Add `AccountLoader::new_unchecked{:rs}` for constructing an `AccountLoader{:rs}` without performing owner or discriminator checks ([#4162](https://github.com/otter-sec/anchor/pull/4162)).
+- lang: Provide better error messages for `token{:rs}` constraints ([#4698](https://github.com/otter-sec/anchor/pull/4698)).
+- ts: Improve account resolution error of self-referencing PDAs ([#4711](https://github.com/otter-sec/anchor/pull/4711)).
+- cli: Warn unused `Anchor.toml{:file}` fields ([#4749](https://github.com/otter-sec/anchor/pull/4749)).
+- cli: Generate a `security.json{:file}` template on `$ <blue>anchor</blue> init` (skip with `<dim>--no-security-metadata</dim>`) and upload it on-chain through program-metadata with `$ <blue>anchor</blue> deploy <dim>--security-metadata</dim>` / `$ <blue>anchor</blue> program deploy <dim>--security-metadata</dim>` ([#4177](https://github.com/otter-sec/anchor/pull/4177)).
+
+#### Fixes
+
+- spl: Fix `anchor-spl` failing to build with only the `metadata{:rs}` feature ([#4742](https://github.com/otter-sec/anchor/pull/4742)).
+- lang: Honor `is_signer{:rs}` in generated client and CPI account metas, enabling PDA signer usage ([#3322](https://github.com/otter-sec/anchor/pull/3322)).
+- lang: Report invalid instruction arguments instead of silently omitting their instructions during parsing ([#4008](https://github.com/otter-sec/anchor/pull/4008)).
+- syn: Correct `bytemuck` serialization detection to avoid false positives from unrelated derives ([#4215](https://github.com/otter-sec/anchor/pull/4215)).
+- lang: Return an error instead of panicking when zero-copy account data is undersized ([#4555](https://github.com/otter-sec/anchor/pull/4555)).
+- lang: Handle numeric instruction suffixes in `declare_program!(){:rs}` generated account-module re-exports ([#4568](https://github.com/otter-sec/anchor/pull/4568)).
+- lang: Reject all-zero account discriminators ([#4645](https://github.com/otter-sec/anchor/pull/4645)).
+- lang: Preserve IDL namespace boundaries in `declare_program!(){:rs}` to prevent foreign-IDL name collisions with Anchor prelude items ([#4776](https://github.com/otter-sec/anchor/pull/4776)).
+- lang: Re-run ownership and discriminator checks when unloading `LazyAccount{:rs}` after a CPI ([#4784](https://github.com/otter-sec/anchor/pull/4784)).
+- client: Fix ignored commitment level ([#4666](https://github.com/otter-sec/anchor/pull/4666)).
+- lang: Remove cloning `AccountInfo{:rs}` to read lamports in `init_if_needed{:rs}` codegen ([#4675](https://github.com/otter-sec/anchor/pull/4675)).
+- lang: Guard `AccountLoader<T>::exit{:rs}` against zero-copy buffer truncation and bail with `AccountDidNotDeserialize{:rs}` instead of rewriting the discriminator over an undersized buffer ([#4633](https://github.com/otter-sec/anchor/pull/4633)).
+- lang: Shorten invariant lifetimes during `Context{:rs}` creation ([#4363](https://github.com/otter-sec/anchor/pull/4363)).
+- lang: Qualify bare `error!{:rs}` calls in require macros so they don't depend on global prelude imports ([#4639](https://github.com/otter-sec/anchor/pull/4639)).
+- ts: Guard recursive IDL layouts against stack overflows while preserving supported recursive types ([#4604](https://github.com/otter-sec/anchor/pull/4604)).
+- lang: Fix missing error messages of the generated errors in `declare_program!(){:rs}` ([#4652](https://github.com/otter-sec/anchor/pull/4652)).
+- spl: Fix wrong owner pubkey in CPI Guard enable/disable ([#4322](https://github.com/otter-sec/anchor/pull/4322)).
+- spl: Add missing auth account to `group_pointer_update{:rs}` ([#4324](https://github.com/otter-sec/anchor/pull/4324)).
+- spl: Deprecate broken `cpi_guard_enable/disable{:rs}` functions ([#4465](https://github.com/otter-sec/anchor/pull/4465)).
+- lang: Reduce cloning in `realloc{:rs}` constraint when shrinking ([#4642](https://github.com/otter-sec/anchor/pull/4642)).
+- syn: Remove `anyhow` ([#4640](https://github.com/otter-sec/anchor/pull/4640)).
+- lang: Sync type derives and simplify internal args creation in `declare_program!(){:rs}` ([#4667](https://github.com/otter-sec/anchor/pull/4667)).
+- lang: Fix path hygiene in `#[derive(Accounts)]{:rs}` for composite fields using segmented paths.
+- lang: Improve `std{:rs}` hygiene inside macros ([#4700](https://github.com/otter-sec/anchor/pull/4700)).
+- cli: Honor the SIMD-0431 minimum extend program size when extending program data ([#4785](https://github.com/otter-sec/anchor/pull/4785)).
+- client: Do not panic in `parse_logs_response{:rs}` when logs continue after a top-level instruction returns, e.g. the runtime's trailing `"Log truncated"` marker ([#4967](https://github.com/otter-sec/anchor/pull/4967)).
+
+</AccordionItem>
+
+<AccordionItem title="1.1.2 (2026-06-26)">
 
 #### Fixes
 
@@ -68,13 +115,63 @@ See the full [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.1.2/CHANGEL
 
 <AccordionItem title="1.1.1 (2026-06-25)">
 
-See the full [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.1.1/CHANGELOG.md#111---2026-06-25) and [release notes](/docs/updates/release-notes/1-1-1/).
+#### Features
+
+- ts: Re-implement `verifiedBuild{:ts}` using the OtterSec registry (`verify.osec.io`), replacing the defunct `apr.dev` API ([#4522](https://github.com/otter-sec/anchor/pull/4522)).
+- ts: Add `decodeIdlAccountRaw{:ts}` ([#4375](https://github.com/otter-sec/anchor/pull/4375)).
+- cli: Add `<dim>--stdout</dim>` flag to the `expand{:rs}` command ([#4400](https://github.com/otter-sec/anchor/pull/4400)).
+- client: Add versioned tx support ([#4207](https://github.com/otter-sec/anchor/pull/4207)).
+- cli: Add `edition{:rs}` and `rust-version{:rs}` to template ([#4048](https://github.com/otter-sec/anchor/pull/4048))
+- lang: Add `program_id{:rs}` verification to CPI return values ([#4411](https://github.com/otter-sec/anchor/pull/4411)).
+- cli: Resolve the target directory via `cargo metadata` so custom target locations (e.g. `CARGO_TARGET_DIR`, workspace-level overrides) work across build, test, deploy and IDL paths ([#3817](https://github.com/otter-sec/anchor/pull/3817)).
+- cli: Allow configuring IDL JSON location in workspace config ([#4483](https://github.com/otter-sec/anchor/pull/4483)).
+- lang: Derive `Clone{:rs}`, `Debug{:rs}`, `Copy{:rs}`, and `Default{:rs}` on generated client / CPI account structs and instruction args where the field types allow it ([#4085](https://github.com/otter-sec/anchor/pull/4085)).
+- cli: Support multiple named scripts in `Anchor.toml{:file}` and run them via `$ <blue>anchor</blue> test <dim>--script</dim> <name>` / `$ <blue>anchor</blue> run <name>` ([#3999](https://github.com/otter-sec/anchor/pull/3999)).
+- cli/idl: Add `fetch-historical` support to recover historical IDLs with the Anchor CLI ([#3992](https://github.com/otter-sec/anchor/pull/3992)).
+- cli: `$ <blue>anchor</blue> init` refuses to create a new Anchor workspace inside an existing Cargo workspace to avoid broken nested layouts ([#4576](https://github.com/otter-sec/anchor/pull/4576)).
+- cli: Add `r` as an alias to the `run` command ([#4643](https://github.com/otter-sec/anchor/pull/4643)).
+
+#### Fixes
+
+- cli: Warn instead of aborting `$ <blue>anchor</blue> build` when a program keypair and `declare_id!(){:rs}` do not match ([#4705](https://github.com/otter-sec/anchor/pull/4705)).
+- lang: Snapshot CPI return data before `Return::get(){:rs}` validates the source program ([#4624](https://github.com/otter-sec/anchor/pull/4624)).
+- lang/syn: Remove remaining fallible IDL generation paths from clippy-denied code ([#4631](https://github.com/otter-sec/anchor/pull/4631)).
+- lang: Validate `max_len{:rs}` arguments more strictly during space derivation ([#4707](https://github.com/otter-sec/anchor/pull/4707)).
+- ts: Remove `cross-fetch` dependency ([#4671](https://github.com/otter-sec/anchor/pull/4671)).
+- lang: Set `anchor-lang` Minimum Supported Rust Version to `1.89` ([#4638](https://github.com/otter-sec/anchor/pull/4638)).
+- lang: Migrate `anchor-syn` from syn 1.x to syn 2.0, allowing use of modern Rust syntax ([#4523](https://github.com/otter-sec/anchor/issues/4523)).
+- idl: Bump version to 0.1.3 ([#4453](https://github.com/otter-sec/anchor/pull/4453)).
+- lang: Avoid fatal errors in IDL building when modern Rust syntax is in use ([#4520](https://github.com/otter-sec/anchor/pull/4520)).
+- lang: Return `InvalidProgramId{:rs}` when `Migration::exit{:rs}` cannot persist migrated state because `To::owner(){:rs}` does not match `program_id{:rs}` ([#4706](https://github.com/otter-sec/anchor/pull/4706)).
+- client: Avoid panic in `parse_logs_response{:rs}` when a program-emitted log line ends with `invoke [1]` ([#4461](https://github.com/otter-sec/anchor/issues/4461)).
+- cli: Correctly honor `<dim>--skip-seed-phrase-validation</dim>` in `keygen recover` ([#4417](https://github.com/otter-sec/anchor/pull/4417)).
+- ts: Fix `sha256.hash(){:ts}` returning corrupted output by using hex encoding ([#4404](https://github.com/otter-sec/anchor/pull/4404)).
+- lang: Support module constants in `max_len{:rs}` attribute ([#3879](https://github.com/otter-sec/anchor/pull/3879)).
+- cli: Bump `cargo_toml` to allow parsing `resolver = "3"` ([#4515](https://github.com/otter-sec/anchor/pull/4515)).
+- ts: Validate instruction args in `BorshInstructionCoder.encode{:ts}` to reject typo'd or missing fields instead of silently ignoring them ([#4560](https://github.com/otter-sec/anchor/pull/4560)).
+- ts: Align TS `camelCase{:ts}` conversion with Rust `heck` for digit-letter identifiers so generated client names match Rust identifiers ([#4571](https://github.com/otter-sec/anchor/pull/4571)).
+- cli: Warn if `event-cpi{:rs}` instruction is unreachable with custom discriminators ([#4614](https://github.com/otter-sec/anchor/pull/4614)).
+- ts: Update `engines.node{:ts}` to `>= 20.18` ([#4647](https://github.com/otter-sec/anchor/pull/4647)).
 
 </AccordionItem>
 
 <AccordionItem title="1.0.3 (2026-06-26)">
 
-See the full [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.0.3/CHANGELOG.md#103---2026-06-26).
+#### Fixes
+
+- deps: Tighten dependencies between `anchor-*` crates to reduce breakage ([#4726](https://github.com/otter-sec/anchor/pull/4726)).
+
+</AccordionItem>
+
+<AccordionItem title="1.0.2 (2026-05-02)">
+
+#### Fixes
+
+- client: Replace `solana-program` with `solana-hash` ([#4468](https://github.com/solana-foundation/anchor/pull/4468)).
+- lang: Make idl build time way faster by caching `CrateContext{:rs}` ([#4325](https://github.com/solana-foundation/anchor/pull/4325)).
+- cli: Bind `localnet` to `127.0.0.1` by default to fix a panic in `solana-test-validator` version `3.1.10` ([#4397](https://github.com/solana-foundation/anchor/pull/4397)).
+- cli: Fallback to a priority fee of 0 on localnet ([#4259](https://github.com/solana-foundation/anchor/pull/4259/)).
+- lang/syn: Fix compile error with `init{:rs}` and a runtime seeds expression ([#4495](https://github.com/solana-foundation/anchor/pull/4495)).
 
 </AccordionItem>
 

@@ -615,15 +615,12 @@ pub fn pubkey(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// based programs.
 #[proc_macro]
 pub fn declare_id(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    #[cfg(feature = "idl-build")]
-    let address = input.clone().to_string();
-
     let id = parse_macro_input!(input as id::Id);
     let ret = quote! { #id };
 
     #[cfg(feature = "idl-build")]
     {
-        let idl_print = anchor_syn::idl::gen_idl_print_fn_address(address);
+        let idl_print = anchor_syn::idl::gen_idl_print_fn_address();
         return proc_macro::TokenStream::from(quote! {
             #ret
             #idl_print

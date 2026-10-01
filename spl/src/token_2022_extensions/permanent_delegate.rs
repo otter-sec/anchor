@@ -1,6 +1,7 @@
 // Avoiding AccountInfo deprecated msg in anchor context
 #![allow(deprecated)]
 use {
+    crate::compat::spl_token_2022_interface,
     anchor_lang::{
         context::CpiContext,
         solana_program::{account_info::AccountInfo, pubkey::Pubkey},
