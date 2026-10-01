@@ -420,17 +420,27 @@ pub fn platform_tools_version_path(version: &str) -> PathBuf {
     get_platform_tools_dir_path().join(version)
 }
 
+/// Validate a `platform-tools` version and return it with a canonical `v` prefix.
+///
+/// Accepts `v<major>.<minor>` and `v<major>.<minor>.<patch>`, with every component
+/// ASCII digits only. The patch component is required because several mapped
+/// releases are SBPF v3 backports that keep an earlier Rust minor, so `v1.42.1`
+/// and `v1.46.1` are as legitimate as `v1.57`.
+///
+/// Anything else — path separators, `..` segments, absolute paths, pre-release
+/// suffixes, empty components — is rejected so the value can never escape the
+/// directory it gets joined onto.
 fn normalize_platform_tools_version(version: &str) -> Result<String> {
+    const EXPECTED: &str = "expected `v<major>.<minor>[.<patch>]` or `<major>.<minor>[.<patch>]`";
+
     let stripped = version.strip_prefix('v').unwrap_or(version);
-    let Some((major, minor)) = stripped.split_once('.') else {
-        bail!("Invalid platform-tools version `{version}`; expected `v<major>.<minor>` or `<major>.<minor>`");
-    };
-    if major.is_empty()
-        || minor.is_empty()
-        || !major.bytes().all(|b| b.is_ascii_digit())
-        || !minor.bytes().all(|b| b.is_ascii_digit())
-    {
-        bail!("Invalid platform-tools version `{version}`; expected `v<major>.<minor>` or `<major>.<minor>`");
+    let components: Vec<&str> = stripped.split('.').collect();
+    let valid = matches!(components.len(), 2 | 3)
+        && components.iter().all(|component| {
+            !component.is_empty() && component.bytes().all(|b| b.is_ascii_digit())
+        });
+    if !valid {
+        bail!("Invalid platform-tools version `{version}`; {EXPECTED}");
     }
     Ok(format!("v{stripped}"))
 }
@@ -952,8 +962,21 @@ mod tests {
 
     #[test]
     fn platform_tools_versions_are_validated_and_normalized() {
-        assert_eq!(normalize_platform_tools_version("v1.54").unwrap(), "v1.54");
-        assert_eq!(normalize_platform_tools_version("1.54").unwrap(), "v1.54");
+        // Two-component and three-component forms, with and without the `v`.
+        for (input, expected) in [
+            ("v1.54", "v1.54"),
+            ("1.54", "v1.54"),
+            ("v1.54.0", "v1.54.0"),
+            ("1.54.0", "v1.54.0"),
+            ("v1.42.1", "v1.42.1"),
+            ("1.42.1", "v1.42.1"),
+        ] {
+            assert_eq!(
+                normalize_platform_tools_version(input).unwrap(),
+                expected,
+                "{input} should normalize to {expected}"
+            );
+        }
 
         for version in [
             "v1.54/../../../victim",
@@ -962,13 +985,38 @@ mod tests {
             ".",
             "..",
             "v1",
-            "v1.54.0",
+            "v1.",
+            "v1.54.",
+            "v1.54.0.0",
+            "v1..54",
+            "v1.54.0-rc.1",
+            "v1.x",
+            "",
+            "v",
         ] {
             assert!(
                 normalize_platform_tools_version(version).is_err(),
                 "{version} should be rejected"
             );
         }
+    }
+
+    #[test]
+    fn every_mapped_platform_tools_version_passes_validation() {
+        // Every version the resolver can hand to install/uninstall must be
+        // accepted, including the SBPF v3 backports that carry a patch component.
+        for entry in &MAP.entries {
+            assert_eq!(
+                normalize_platform_tools_version(&entry.platform_tools).unwrap(),
+                entry.platform_tools,
+                "{} should be installable",
+                entry.platform_tools
+            );
+        }
+        assert_eq!(
+            normalize_platform_tools_version(&MAP.fallback).unwrap(),
+            MAP.fallback
+        );
     }
 
     // ── looks_installed ─────────────────────────────────────────────────────
