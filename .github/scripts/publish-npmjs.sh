@@ -14,13 +14,7 @@ publish() {
   # use the local version of each package, and if it's unbuilt then any subsequent
   # build will error out due to missing files.
   yarn --frozen-lockfile
-  local dirname
-  dirname="$(basename "$dir")"
-  if [[ "$dirname" == spl-* ]]; then
-    yarn build:npm
-  else
-    yarn build
-  fi
+  yarn build
 
   if npm view "${name}@${version}" version >/dev/null 2>&1; then
     echo "The package $dir is already up to date, skipping"
@@ -57,16 +51,3 @@ base="ts/packages"
 
 publish "$base/anchor-errors"
 publish "$base/anchor"
-#publish "$base/spl-associated-token-account"
-#publish "$base/spl-binary-option"
-#publish "$base/spl-binary-oracle-pair"
-#publish "$base/spl-feature-proposal"
-#publish "$base/spl-governance"
-#publish "$base/spl-memo"
-#publish "$base/spl-name-service"
-#publish "$base/spl-record"
-#publish "$base/spl-stake-pool"
-#publish "$base/spl-stateless-asks"
-publish "$base/spl-token"
-#publish "$base/spl-token-lending"
-#publish "$base/spl-token-swap"

@@ -22,6 +22,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Breaking
 
+- ts: Remove the `@anchor-lang/spl-*` packages in favour of `@solana-program/*` ([#5116](https://github.com/otter-sec/anchor/pull/5116)).
 - ts: Remove `Native.system()` in favour of `@solana-program/system` ([#5115](https://github.com/otter-sec/anchor/pull/5115)).
 - ts: Move the token, public key and registry utilities to `@solana/kit` ([#5115](https://github.com/otter-sec/anchor/pull/5115)).
 - ts: Resolve accounts on `@solana/kit`, returning addresses from `pubkeys()` ([#5114](https://github.com/otter-sec/anchor/pull/5114)).
