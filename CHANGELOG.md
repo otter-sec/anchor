@@ -22,6 +22,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Breaking
 
+- ts: Remove `Native.system()` in favour of `@solana-program/system` ([#5115](https://github.com/otter-sec/anchor/pull/5115)).
+- ts: Move the token, public key and registry utilities to `@solana/kit` ([#5115](https://github.com/otter-sec/anchor/pull/5115)).
 - ts: Resolve accounts on `@solana/kit`, returning addresses from `pubkeys()` ([#5114](https://github.com/otter-sec/anchor/pull/5114)).
 - ts: Listen to events through Kit subscriptions ([#5103](https://github.com/otter-sec/anchor/pull/5103)).
 - ts: Remove `Provider.connection` and `Provider.publicKey` in favour of `rpc`, `rpcSubscriptions` and `wallet.address` ([#5103](https://github.com/otter-sec/anchor/pull/5103)).

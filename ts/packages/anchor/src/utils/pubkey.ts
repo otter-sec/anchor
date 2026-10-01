@@ -1,16 +1,18 @@
-import { PublicKey } from "@solana/web3.js";
-import { sha256 } from "@noble/hashes/sha256";
+import { Address, createAddressWithSeed } from "@solana/kit";
+import { Address as AnchorAddress, toAddress } from "../program/common.js";
 
-// Sync version of web3.PublicKey.createWithSeed.
-export function createWithSeedSync(
-  fromPublicKey: PublicKey,
+/**
+ * Derives the address `sha256(base || seed || programId)`, as the system
+ * program's `createAccountWithSeed` does.
+ */
+export async function createWithSeed(
+  base: AnchorAddress,
   seed: string,
-  programId: PublicKey
-): PublicKey {
-  const buffer = Buffer.concat([
-    fromPublicKey.toBuffer(),
-    Buffer.from(seed),
-    programId.toBuffer(),
-  ]);
-  return new PublicKey(sha256(buffer));
+  programId: AnchorAddress
+): Promise<Address> {
+  return await createAddressWithSeed({
+    baseAddress: toAddress(base),
+    programAddress: toAddress(programId),
+    seed,
+  });
 }

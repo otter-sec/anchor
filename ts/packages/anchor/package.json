@@ -40,7 +40,6 @@
     "@solana/kit": "^8.3.0",
     "@solana/web3.js": "^1.69.0",
     "bn.js": "^5.1.2",
-    "buffer-layout": "^1.2.2",
     "camelcase": "^6.3.0",
     "pako": "^2.0.3",
     "toml": "^3.0.0"

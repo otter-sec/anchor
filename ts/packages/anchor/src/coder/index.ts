@@ -2,7 +2,6 @@ import { IdlEvent } from "../idl.js";
 import { Event } from "../program/event.js";
 
 export * from "./borsh/index.js";
-export * from "./system/index.js";
 
 /**
  * Coder provides a facade for encoding and decoding all IDL related objects.
