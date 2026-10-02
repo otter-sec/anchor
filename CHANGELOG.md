@@ -14,7 +14,6 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 - client: Add support for v1 transactions ([#5076](https://github.com/otter-sec/anchor/pull/5076)).
 - lang: Add support for Solana v4 crates using the `solana-v4` feature ([#5081](https://github.com/otter-sec/anchor/pull/5081)).
-- client: Add V1 transaction support via `TransactionVersion::V1`, available under the `solana-v4` feature ([#5076](https://github.com/otter-sec/anchor/pull/5076)).
 - cli: Add `NO_DNA` mode to disable supported interactive prompts for CI, scripts, and agent runs ([#4773](https://github.com/otter-sec/anchor/pull/4773)).
 - lang: Use `CreateAccountAllowPrefund` to initialize accounts that already hold lamports, replacing the `Transfer` + `Allocate` + `Assign` CPIs ([#5057](https://github.com/otter-sec/anchor/pull/5057)).
 - lang: Allow `None` in `mint::authority` and `mint::freeze_authority` constraints ([#5007](https://github.com/otter-sec/anchor/pull/5007)).
@@ -32,7 +31,6 @@ The minor version will be incremented upon a breaking change and the patch versi
 - deps: Bump `heck` to 0.5 to avoid incompatible dependencies ([#4960](https://github.com/otter-sec/anchor/pull/4960)).
 
 ### Breaking
-
 
 ## [1.2.0] - 2026-09-04
 

@@ -193,7 +193,7 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Arc<dyn T
         feature = "solana-v4",
         doc = r#"
 // V1 transaction with explicit resource limits
-let config = anchor_client::TransactionConfig::default()
+let config = anchor_client::V1TransactionConfig::default()
     .with_compute_unit_limit(200_000)
     .with_loaded_accounts_data_size_limit(64 * 1024 * 1024);
 let tx = request.signed_transaction_versioned(TransactionVersion::V1(config)).await.unwrap();"#
@@ -246,7 +246,7 @@ let tx = request.signed_transaction_versioned(TransactionVersion::V1(config)).aw
         feature = "solana-v4",
         doc = r#"
 // V1 transaction with explicit resource limits
-let config = anchor_client::TransactionConfig::default()
+let config = anchor_client::V1TransactionConfig::default()
     .with_compute_unit_limit(200_000)
     .with_loaded_accounts_data_size_limit(64 * 1024 * 1024);
 let sig = request.send_versioned(TransactionVersion::V1(config)).await.unwrap();"#

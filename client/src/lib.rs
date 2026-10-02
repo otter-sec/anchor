@@ -67,9 +67,8 @@
 pub use nonblocking::ThreadSafeSigner;
 #[cfg(feature = "solana-v4")]
 use solana_message::v1;
-/// Resource limits carried inline by a V1 transaction, used with [`TransactionVersion::V1`].
 #[cfg(feature = "solana-v4")]
-pub use solana_message::v1::TransactionConfig;
+pub use solana_message::v1::TransactionConfig as V1TransactionConfig;
 use {
     crate::compat::{
         solana_account_decoder, solana_hash, solana_message, solana_pubsub_client,
@@ -135,27 +134,16 @@ mod cluster;
 pub mod compat;
 
 /// Specifies which transaction version to use when building transactions.
-///
-/// This enum is `#[non_exhaustive]`: matching on it from another crate needs a wildcard arm,
-/// which lets new transaction versions be added without breaking callers.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub enum TransactionVersion<'a> {
-    /// Legacy transaction format.
     #[default]
     Legacy,
-    /// Versioned transaction format (v0) with optional address lookup tables.
     V0(&'a [AddressLookupTableAccount]),
-    /// Versioned transaction format (v1) with inline resource configuration.
-    ///
-    /// Only available under the `solana-v4` feature: V1 messages do not exist in the
-    /// `solana-v3` cohort's `solana-message`.
     #[cfg(feature = "solana-v4")]
-    V1(TransactionConfig),
+    V1(V1TransactionConfig),
 }
 
-/// Specifies which transaction version to use when building transactions.
-// `#[derive(Default)]` names `Legacy` from inside the deprecated item itself.
 #[allow(deprecated)]
 #[derive(Debug, Clone, Default)]
 #[deprecated(
@@ -772,7 +760,7 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
         feature = "solana-v4",
         doc = r#"
 // V1 transaction with explicit resource limits
-let config = anchor_client::TransactionConfig::default()
+let config = anchor_client::V1TransactionConfig::default()
     .with_compute_unit_limit(200_000)
     .with_loaded_accounts_data_size_limit(64 * 1024 * 1024);
 let tx = request.transaction_versioned(TransactionVersion::V1(config), blockhash).unwrap();"#
