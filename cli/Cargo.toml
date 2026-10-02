@@ -54,7 +54,7 @@ solana-commitment-config.workspace = true
 solana-compute-budget-interface.workspace = true
 solana-instruction.workspace = true
 solana-keypair.workspace = true
-solana-loader-v3-interface = { workspace = true, features = ["bincode"] }
+solana-loader-v3-interface = { workspace = true, features = ["wincode"] }
 solana-message.workspace = true
 solana-packet.workspace = true
 solana-pubkey = { workspace = true, features = ["borsh"] }
@@ -98,3 +98,5 @@ two-face = "0.5"
 # OSC 11 / COLORFGBG terminal background detection — picks a light vs dark
 # syntect theme automatically, the same way `bat` and `delta` do.
 terminal-colorsaurus = "1.0"
+
+tokio = {version = "1.53.1", features = ["full"]}

@@ -3,19 +3,19 @@ use {
         config::{Config, Program, WithPath},
         target_dir, ConfigOverride, ProgramCommand,
     },
+    anchor_client::anchor_lang::wincode,
     anchor_lang_idl::types::Idl,
     anyhow::{anyhow, bail, Result},
     cargo_metadata::{Metadata, MetadataCommand, Package, TargetKind},
     solana_client::send_and_confirm_transactions_in_parallel::{
-        send_and_confirm_transactions_in_parallel_blocking_v2, SendAndConfirmConfigV2,
+        send_and_confirm_transactions_in_parallel_v3, SendAndConfirmConfigV3,
     },
     solana_commitment_config::CommitmentConfig,
     solana_keypair::Keypair,
     solana_loader_v3_interface::{
         instruction as loader_v3_instruction, state::UpgradeableLoaderState,
     },
-    solana_message::{Hash, Message},
-    solana_packet::PACKET_DATA_SIZE,
+    solana_message::{v1::TransactionConfig, Hash, Message, VersionedMessage},
     solana_pubkey::Pubkey,
     solana_rpc_client::rpc_client::RpcClient,
     solana_rpc_client_api::config::RpcSendTransactionConfig,
@@ -27,8 +27,8 @@ use {
         collections::{BTreeMap, HashSet},
         fs::{self, File},
         io::Write,
+        num::NonZero,
         path::{Path, PathBuf},
-        sync::Arc,
         thread,
         time::Duration,
     },
@@ -767,7 +767,7 @@ fn verify_buffer_account(
     }
 
     // Verify it's actually a Buffer account
-    match bincode::deserialize::<UpgradeableLoaderState>(&buffer_account.data) {
+    match wincode::deserialize::<UpgradeableLoaderState>(&buffer_account.data) {
         Ok(UpgradeableLoaderState::Buffer { authority_address }) => {
             // Check if buffer is immutable
             if authority_address.is_none() {
@@ -818,7 +818,7 @@ fn verify_program_can_be_upgraded(
 
     // Check if this is a valid program and get the ProgramData address
     let programdata_address =
-        match bincode::deserialize::<UpgradeableLoaderState>(&program_account.data) {
+        match wincode::deserialize::<UpgradeableLoaderState>(&program_account.data) {
             Ok(UpgradeableLoaderState::Program {
                 programdata_address,
             }) => programdata_address,
@@ -839,7 +839,7 @@ fn verify_program_can_be_upgraded(
     })?;
 
     // Verify it's a valid ProgramData account
-    match bincode::deserialize::<UpgradeableLoaderState>(&programdata_account.data) {
+    match wincode::deserialize::<UpgradeableLoaderState>(&programdata_account.data) {
         Ok(UpgradeableLoaderState::ProgramData {
             upgrade_authority_address,
             ..
@@ -1087,7 +1087,7 @@ fn program_set_upgrade_authority(
     }
 
     // Ensure this is a Program account, not ProgramData or Buffer
-    match bincode::deserialize::<UpgradeableLoaderState>(&program_account.data) {
+    match wincode::deserialize::<UpgradeableLoaderState>(&program_account.data) {
         Ok(UpgradeableLoaderState::Program { .. }) => {
             // Valid program account
         }
@@ -1244,7 +1244,7 @@ fn program_show(
 
     // Try to parse as upgradeable loader state
     if account_data.owner == bpf_loader_upgradeable_id::id() {
-        match bincode::deserialize::<UpgradeableLoaderState>(&account_data.data) {
+        match wincode::deserialize::<UpgradeableLoaderState>(&account_data.data) {
             Ok(state) => match state {
                 UpgradeableLoaderState::Uninitialized => {
                     println!("Type: Uninitialized");
@@ -1268,7 +1268,7 @@ fn program_show(
                         if let Ok(UpgradeableLoaderState::ProgramData {
                             slot,
                             upgrade_authority_address,
-                        }) = bincode::deserialize::<UpgradeableLoaderState>(
+                        }) = wincode::deserialize::<UpgradeableLoaderState>(
                             &programdata_account.data,
                         ) {
                             println!("Slot: {}", slot);
@@ -1460,7 +1460,7 @@ fn program_dump(cfg_override: &ConfigOverride, account: Pubkey, output_file: Str
 
     // Check if this is a program account
     let program_data = if account_data.owner == bpf_loader_upgradeable_id::id() {
-        match bincode::deserialize::<UpgradeableLoaderState>(&account_data.data) {
+        match wincode::deserialize::<UpgradeableLoaderState>(&account_data.data) {
             Ok(UpgradeableLoaderState::Program {
                 programdata_address,
             }) => {
@@ -1556,7 +1556,7 @@ fn program_close(
 
     // Determine which account to actually close
     let (account_to_close, account_type, program_account) =
-        match bincode::deserialize::<UpgradeableLoaderState>(&account_data.data) {
+        match wincode::deserialize::<UpgradeableLoaderState>(&account_data.data) {
             Ok(UpgradeableLoaderState::Program {
                 programdata_address,
             }) => (programdata_address, "ProgramData", Some(account)),
@@ -1692,7 +1692,7 @@ fn program_extend(
 
     // Get the ProgramData address
     let programdata_address =
-        match bincode::deserialize::<UpgradeableLoaderState>(&program_account.data) {
+        match wincode::deserialize::<UpgradeableLoaderState>(&program_account.data) {
             Ok(UpgradeableLoaderState::Program {
                 programdata_address,
             }) => programdata_address,
@@ -1711,7 +1711,7 @@ fn program_extend(
 
     // Get the upgrade authority address
     let upgrade_authority_address =
-        match bincode::deserialize::<UpgradeableLoaderState>(&programdata_account.data) {
+        match wincode::deserialize::<UpgradeableLoaderState>(&programdata_account.data) {
             Ok(UpgradeableLoaderState::ProgramData {
                 upgrade_authority_address,
                 ..
@@ -1734,9 +1734,8 @@ fn program_extend(
     }
 
     // Use the checked version which requires upgrade authority signature
-    let extend_ix = loader_v3_instruction::extend_program_checked(
+    let extend_ix = loader_v3_instruction::extend_program(
         &program_id,
-        &upgrade_authority_address,
         Some(&payer.pubkey()),
         additional_bytes as u32,
     );
@@ -1759,24 +1758,11 @@ fn program_extend(
 
 // ========== Agave's core parallel deployment functions ==========
 
-pub fn calculate_max_chunk_size(baseline_msg: Message) -> usize {
-    let tx_size = bincode::serialized_size(&Transaction {
-        signatures: vec![
-            Signature::default();
-            baseline_msg.header.num_required_signatures as usize
-        ],
-        message: baseline_msg,
-    })
-    .unwrap() as usize;
-    // add 1 byte buffer to account for shortvec encoding
-    PACKET_DATA_SIZE.saturating_sub(tx_size).saturating_sub(1)
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn send_deploy_messages(
     rpc_client: &RpcClient,
     initial_message: Option<Message>,
-    write_messages: Vec<Message>,
+    write_messages: Vec<VersionedMessage>,
     final_message: Option<Message>,
     fee_payer_signer: &dyn Signer,
     initial_signer: Option<&dyn Signer>,
@@ -1822,10 +1808,9 @@ pub fn send_deploy_messages(
         if let Some(write_signer) = write_signer {
             send_messages_in_batches(
                 rpc_client,
-                &write_messages,
+                write_messages,
                 &[fee_payer_signer, write_signer],
                 max_sign_attempts,
-                commitment,
                 send_transaction_config,
             )?;
         }
@@ -1929,19 +1914,54 @@ fn prepare_write_messages(
     buffer_authority: &Pubkey,
     fee_payer: &Pubkey,
     blockhash: &Hash,
-) -> Vec<Message> {
-    let create_msg = |offset: u32, bytes: Vec<u8>| {
-        let instruction =
-            loader_v3_instruction::write(buffer_pubkey, buffer_authority, offset, bytes);
-        Message::new_with_blockhash(&[instruction], Some(fee_payer), blockhash)
-    };
-
+) -> Vec<VersionedMessage> {
     let mut write_messages = Vec::new();
-    let chunk_size = calculate_max_chunk_size(create_msg(0, Vec::new()));
 
-    for (chunk, i) in program_data.chunks(chunk_size).zip(0usize..) {
-        let offset = i.saturating_mul(chunk_size);
-        write_messages.push(create_msg(offset as u32, chunk.to_vec()));
+    // Current BPFLoader accepts 1232 bytes of instruction data
+    // construct an instruction with empty bytes to figure how much hwe have left
+    let bpf_loader_write_size = wincode::serialize(
+        &loader_v3_instruction::UpgradeableLoaderInstruction::Write {
+            offset: 0,
+            bytes: Vec::new(),
+        },
+    )
+    .unwrap()
+    .len();
+    let instruction_chunk_size = solana_packet::PACKET_DATA_SIZE - bpf_loader_write_size;
+    // with tx v1 we have 4096bytes available in a transaction
+    // its enough for 3x instructions with some remaining bytes
+    let instructions_per_transaction = 3;
+    let chunks: Vec<(&[u8], usize)> = program_data
+        .chunks(instruction_chunk_size)
+        .zip(0usize..)
+        .collect();
+
+    for ix_chunk in chunks.chunks(instructions_per_transaction) {
+        let mut instructions = Vec::new();
+        for (chunk, i) in ix_chunk {
+            let offset = i * instruction_chunk_size;
+            let ix = loader_v3_instruction::write(
+                buffer_pubkey,
+                buffer_authority,
+                offset as u32,
+                chunk.to_vec(),
+            );
+            instructions.push(ix);
+        }
+
+        let msg = solana_message::v1::Message::try_compile_with_config(
+            fee_payer,
+            &instructions,
+            *blockhash,
+            TransactionConfig {
+                loaded_accounts_data_size_limit: Some(program_data.len() as u32 + 512),
+                compute_unit_limit: Some(10000),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        write_messages.push(VersionedMessage::V1(msg));
     }
 
     write_messages
@@ -1950,33 +1970,40 @@ fn prepare_write_messages(
 /// Send messages in parallel
 fn send_messages_in_batches(
     rpc_client: &RpcClient,
-    messages: &[Message],
+    messages: Vec<VersionedMessage>,
     signers: &[&dyn Signer],
     max_sign_attempts: usize,
-    commitment: CommitmentConfig,
     send_config: RpcSendTransactionConfig,
 ) -> Result<()> {
     // Use parallel send and confirm function
     // Create a new RpcClient with the same URL and wrap in Arc for parallel processing
-    let url = rpc_client.url();
-    let new_rpc_client = RpcClient::new_with_commitment(url, commitment);
-    let rpc_client_arc = Arc::new(new_rpc_client);
 
-    let transaction_errors = send_and_confirm_transactions_in_parallel_blocking_v2(
-        rpc_client_arc,
-        None,
+    let mut seen_signers: HashSet<Pubkey> = HashSet::new();
+
+    let deduped_signers = signers
+        .iter()
+        .filter(|v| seen_signers.insert(v.pubkey()))
+        .copied()
+        .collect::<Vec<&dyn Signer>>();
+
+    let fut = send_and_confirm_transactions_in_parallel_v3(
+        rpc_client.get_inner_client().clone(),
+        solana_client::send_and_confirm_transactions_in_parallel::SendTransport::Rpc(send_config),
         messages,
-        signers,
-        SendAndConfirmConfigV2 {
-            resign_txs_count: Some(max_sign_attempts),
+        &deduped_signers,
+        SendAndConfirmConfigV3 {
+            max_sign_attempts: NonZero::new(max_sign_attempts)
+                .expect("should be non zero sign attempts"),
             with_spinner: true,
-            rpc_send_transaction_config: send_config,
+            ..SendAndConfirmConfigV3::default()
         },
-    )
-    .map_err(|err| anyhow!("Data writes to account failed: {}", err))?
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
+    );
+
+    let transaction_errors = tokio::task::block_in_place(|| rpc_client.runtime().block_on(fut))
+        .map_err(|err| anyhow!("Data writes to account failed: {}", err))?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
 
     if !transaction_errors.is_empty() {
         for transaction_error in &transaction_errors {

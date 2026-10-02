@@ -73,7 +73,7 @@ solana-feature-gate-interface.workspace = true
 solana-instruction.workspace = true
 solana-instructions-sysvar.workspace = true
 solana-invoke.workspace = true
-solana-loader-v3-interface = { workspace = true, features = ["bincode"] }
+solana-loader-v3-interface = { features = ["bincode"], version = "6.0.1"}
 solana-msg.workspace = true
 solana-program-entrypoint.workspace = true
 solana-program-error = { workspace = true, features = ["borsh"] }
