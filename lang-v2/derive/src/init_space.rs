@@ -175,7 +175,7 @@ fn len_from_type(
         Type::Array(TypeArray { elem, len, .. }) => {
             let array_len = len.to_token_stream();
             let type_len = len_from_type(*elem, attrs, generic_type_params);
-            quote!((#array_len * #type_len))
+            quote!(((#array_len) * #type_len))
         }
         Type::Path(ty_path) => {
             if is_generic_type_param(&ty_path, generic_type_params) {
