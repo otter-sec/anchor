@@ -376,10 +376,7 @@ pub mod spl_test {
 
     /// Burn through TokenCpiExt using a PDA token-account owner.
     #[discrim = 97]
-    pub fn do_burn_pda_authority(
-        ctx: &mut Context<DoBurnPdaAuthority>,
-        amount: u64,
-    ) -> Result<()> {
+    pub fn do_burn_pda_authority(ctx: &mut Context<DoBurnPdaAuthority>, amount: u64) -> Result<()> {
         let bump = [ctx.bumps.authority];
         let authority_seeds = [TOKEN_CPI_EXT_AUTHORITY_SEED, &bump];
         let signer_seeds = &[&authority_seeds[..]];
@@ -414,7 +411,9 @@ pub mod spl_test {
 
     /// Thaw through TokenCpiExt using a PDA freeze authority.
     #[discrim = 99]
-    pub fn do_thaw_account_pda_authority(ctx: &mut Context<DoThawAccountPdaAuthority>) -> Result<()> {
+    pub fn do_thaw_account_pda_authority(
+        ctx: &mut Context<DoThawAccountPdaAuthority>,
+    ) -> Result<()> {
         let bump = [ctx.bumps.authority];
         let authority_seeds = [TOKEN_CPI_EXT_AUTHORITY_SEED, &bump];
         let signer_seeds = &[&authority_seeds[..]];
@@ -1118,6 +1117,7 @@ pub mod spl_test {
         let accs = token_2022_ext_cpi::GroupPointerUpdate {
             mint: ctx.accounts.mint.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
+            signers: &[],
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
         token_2022_ext_cpi::group_pointer_update(cpi_ctx, Some(&group_address))?;
@@ -1133,6 +1133,7 @@ pub mod spl_test {
         let accs = token_2022_ext_cpi::GroupMemberPointerUpdate {
             mint: ctx.accounts.mint.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
+            signers: &[],
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
         token_2022_ext_cpi::group_member_pointer_update(cpi_ctx, Some(&member_address))?;
@@ -1149,6 +1150,7 @@ pub mod spl_test {
             payer: ctx.accounts.payer.cpi_handle_mut(),
             system_program: ctx.accounts.system_program.cpi_handle(),
             authority: ctx.accounts.authority.cpi_handle(),
+            signers: &[],
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
         token_2022_cpi::reallocate(cpi_ctx, &[token_2022_cpi::ExtensionType::ImmutableOwner])?;
@@ -1343,6 +1345,7 @@ pub mod spl_test {
         let accs = token_2022_ext_cpi::MemoTransfer {
             account: ctx.accounts.account.cpi_handle_mut(),
             owner: ctx.accounts.owner.cpi_handle(),
+            signers: &[],
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
         token_2022_ext_cpi::memo_transfer_initialize(cpi_ctx)?;
@@ -1459,6 +1462,7 @@ pub mod spl_test {
             source: ctx.accounts.source.cpi_handle_mut(),
             destination: ctx.accounts.destination.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
+            signers: &[],
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
         token_2022_cpi::withdraw_excess_lamports(cpi_ctx)?;
@@ -1576,6 +1580,7 @@ pub mod spl_test {
             mint: ctx.accounts.mint.cpi_handle_mut(),
             from: ctx.accounts.account.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
+            signers: &[],
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
         token::burn(cpi_ctx, amount)?;

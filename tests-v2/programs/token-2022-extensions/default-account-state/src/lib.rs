@@ -26,6 +26,7 @@ pub mod token_2022_ext_default_account_state {
         let accs = token_2022_ext::DefaultAccountStateUpdate {
             mint: ctx.accounts.mint.cpi_handle_mut(),
             freeze_authority: ctx.accounts.freeze_authority.cpi_handle(),
+            signers: &[],
         };
         token_2022_ext::default_account_state_update(
             CpiContext::new(ctx.accounts.token_program.address(), accs),

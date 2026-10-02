@@ -269,9 +269,11 @@ pub(crate) fn enter_cpi<'a>(handles: &[CpiHandle<'a>]) -> alloc::vec::Vec<CpiBor
 
 /// Converts a CPI accounts struct into instruction metadata and handles.
 ///
-/// Implemented by generated CPI accounts structs. Each field maps to an
+/// Implemented by generated CPI accounts structs. Handle fields map to an
 /// [`InstructionAccount`] (address + writable/signer flags) and an erased
-/// [`CpiHandle`] for the actual invocation.
+/// [`CpiHandle`] for the actual invocation. A `&[CpiHandle]` field marked with
+/// `#[signer]` expands to one account meta and handle per slice element, which
+/// keeps explicit signer accounts separate from generic remaining accounts.
 pub trait ToCpiAccounts<'a> {
     /// Produce instruction account metadata for the CPI instruction.
     fn to_instruction_accounts(&self) -> alloc::vec::Vec<InstructionAccount<'a>>;
