@@ -15,7 +15,8 @@ use {
     quote::quote,
     syn::{
         parse::{Parse, ParseStream, Parser}, parse_macro_input, spanned::Spanned, Data,
-        DeriveInput, Expr, Fields, FnArg, Ident, ItemMod, ItemStruct, LitStr, Pat, Token, Type,
+        DeriveInput, Expr, ExprLit, ExprUnary, Fields, FnArg, Ident, ItemMod, ItemStruct, Lit,
+        LitStr, Pat, Token, Type, UnOp,
     },
 };
 
@@ -23,13 +24,6 @@ use {
 // #[derive(Accounts)]
 // ---------------------------------------------------------------------------
 
-/// Generate account validation, client builders, and CPI account structs.
-///
-/// Optional account `None` sentinels and default PDA derivation use
-/// `crate::ID` unless the struct is stamped with
-/// `#[accounts_program_id(X)]`. Interface crates whose
-/// `#[program(interface, program_id = X)]` is not this crate's ID must set
-/// that attribute so sentinels and PDAs match the callee.
 #[proc_macro_derive(Accounts, attributes(account, instruction, accounts_program_id))]
 pub fn derive_accounts(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -873,29 +867,20 @@ fn has_cfg_attrs(attrs: &[syn::Attribute]) -> bool {
 fn handler_wrapper_inline_attr(attrs: &[syn::Attribute]) -> syn::Attribute {
     attrs
         .iter()
-        .find_map(|attr| {
-            if attr.path().is_ident("inline") {
-                return Some(attr.clone());
-            }
-
-            if !attr.path().is_ident("cfg_attr") {
-                return None;
-            }
-
-            let args = attr
-                .parse_args_with(
-                    syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
-                )
-                .ok()?;
-            let condition = args.first()?.clone();
-            let inline = args
-                .iter()
-                .skip(1)
-                .find(|arg| arg.path().is_ident("inline"))
-                .cloned()?;
-
-            Some(syn::parse_quote!(#[cfg_attr(#condition, #inline)]))
+        .find(|attr| {
+            attr.path().is_ident("inline")
+                || (attr.path().is_ident("cfg_attr")
+                    && attr
+                        .parse_args_with(
+                            syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+                        )
+                        .is_ok_and(|args| {
+                            args.iter()
+                                .skip(1)
+                                .any(|arg| arg.path().is_ident("inline"))
+                        }))
         })
+        .cloned()
         .unwrap_or_else(|| syn::parse_quote!(#[inline(never)]))
 }
 
@@ -1063,15 +1048,9 @@ fn parse_instruction_attrs(attrs: &[syn::Attribute]) -> syn::Result<Vec<(Ident, 
     Ok(result)
 }
 
-/// Parse `#[accounts_program_id(expr)]` on an Accounts struct.
-///
-/// This is the program id used for optional-account `None` sentinels and
-/// default PDA derivation (`seeds::program` unset). `declare_program!`
-/// stamps generated structs with the IDL program's `ID`. Hand-written
-/// interface crates should set it to the same `X` as
-/// `#[program(interface, program_id = X)]`. Unannotated structs default to
-/// `crate::ID`. `X` must be a compile-time `Address` (`const` item,
-/// `crate::ID`, or `address!("...")`).
+/// Parse the internal `#[accounts_program_id(expr)]` override used by
+/// `declare_program!` for generated account structs. Ordinary user-written
+/// `#[derive(Accounts)]` structs continue to default to the current crate's ID.
 fn parse_accounts_program_id_attr(attrs: &[syn::Attribute]) -> syn::Result<Expr> {
     let mut program_id = None;
     for attr in attrs {
@@ -2117,8 +2096,6 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             pub mod #cpi_mod_name {
                 extern crate alloc;
                 use super::*;
-                #[doc(hidden)]
-                pub const __ANCHOR_ACCOUNTS_PROGRAM_ID: anchor_lang::Address = #accounts_program_id;
                 #[derive(anchor_lang::ToCpiAccounts)]
                 #[accounts_program_id(#accounts_program_id)]
                 pub struct #name<'a> {
@@ -2799,12 +2776,6 @@ fn pod_vec_capacity_check(ty: &Type) -> Option<TokenStream2> {
 // #[program]
 // ---------------------------------------------------------------------------
 
-/// Marks a program module.
-///
-/// `#[program(interface, program_id = X)]` emits client and CPI bindings for
-/// an external program. Stamp referenced `#[derive(Accounts)]` structs with
-/// `#[accounts_program_id(X)]` so optional-account sentinels and default
-/// PDAs use `X` rather than this crate's `ID`.
 #[proc_macro_attribute]
 pub fn program(attr: TokenStream, item: TokenStream) -> TokenStream {
     let config = match parse_program_config(attr) {
@@ -3001,7 +2972,6 @@ fn gen_declared_program(
         .and_then(serde_json::Value::as_array)
         .ok_or_else(|| syn::Error::new(name.span(), "IDL is missing instructions array"))?;
     validate_declare_program_discriminators(idl, name.span())?;
-
     let types = gen_declare_program_types(idl)?;
     let type_idents = gen_declare_program_type_idents(idl)?;
     let type_reexports = type_idents
@@ -3654,7 +3624,12 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                                 format!("struct type `{name}` fields must be an array"),
                             )
                         })?;
-                        gen_declare_program_type_fields(fields, ident.span(), true)?
+                        gen_declare_program_type_fields(
+                            fields,
+                            ident.span(),
+                            true,
+                            &generics.const_generic_names,
+                        )?
                     }
                     None => DeclareTypeFields::Unit,
                 };
@@ -3676,17 +3651,12 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                         )
                     })
                     .unwrap_or_default();
-                let pod_impls = if serialization.is_bytemuck() {
-                    gen_declare_program_pod_impls(
-                        &ident,
-                        &generics,
-                        &fields,
-                        serialization,
-                        idl_repr_guarantees_no_padding(ty_def),
-                    )?
-                } else {
-                    quote! {}
-                };
+                let pod_impls = serialization
+                    .is_bytemuck()
+                    .then(|| {
+                        gen_declare_program_pod_impls(&ident, &generics, &fields, serialization)
+                    })
+                    .unwrap_or_default();
                 let impl_generics = &generics.impl_generics;
                 out.push(match fields {
                     DeclareTypeFields::Named { fields, .. } if serialization.is_bytemuck() => quote! {
@@ -3783,7 +3753,12 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                             format!("variant `{variant_name}` fields must be an array"),
                         )
                     })?;
-                    let fields = gen_declare_program_type_fields(fields, ident.span(), false)?;
+                    let fields = gen_declare_program_type_fields(
+                        fields,
+                        ident.span(),
+                        false,
+                        &generics.const_generic_names,
+                    )?;
                     idl_field_tys.extend(fields.tys().iter().cloned());
                     match fields {
                         DeclareTypeFields::Named { fields, .. } => {
@@ -3823,7 +3798,11 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                         format!("type alias `{name}` is missing alias"),
                     )
                 })?;
-                let alias = declare_idl_type_to_tokens(alias, ident.span())?;
+                let alias = declare_idl_type_to_tokens_with_generics(
+                    alias,
+                    ident.span(),
+                    &generics.const_generic_names,
+                )?;
                 let impl_generics = &generics.impl_generics;
                 out.push(quote! {
                     #(#docs)*
@@ -3924,19 +3903,6 @@ fn gen_declare_program_repr(
     .map(|modifier| quote! { , #modifier });
 
     Ok(Some(quote! { #[repr(#kind #modifier)] }))
-}
-
-fn idl_repr_guarantees_no_padding(ty_def: &serde_json::Value) -> bool {
-    let Some(repr) = ty_def.get("repr") else {
-        return false;
-    };
-    match repr.get("kind").and_then(serde_json::Value::as_str) {
-        Some("transparent") => true,
-        _ => repr
-            .get("packed")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false),
-    }
 }
 
 fn declare_type_serialization(
@@ -4178,16 +4144,6 @@ fn gen_declare_program_constant(
         return Ok(quote! { pub const #ident: &'static [u8] = &[#(#bytes),*]; });
     }
 
-    if ty_value.as_str() == Some("string") {
-        let expr: Expr = syn::parse_str(value).map_err(|err| {
-            syn::Error::new(
-                span,
-                format!("failed to parse string constant value: {err}"),
-            )
-        })?;
-        return Ok(quote! { pub const #ident: &'static str = #expr; });
-    }
-
     if ty_value.as_str() == Some("pubkey") {
         let value = syn::parse_str::<syn::LitStr>(value)
             .map(|value| value.value())
@@ -4221,9 +4177,72 @@ fn gen_declare_program_constant(
     }
 
     let ty = declare_idl_const_type_to_tokens(ty_value, span)?;
-    let expr: Expr = syn::parse_str(value)
-        .map_err(|err| syn::Error::new(span, format!("failed to parse constant value: {err}")))?;
-    Ok(quote! { pub const #ident: #ty = #expr; })
+    let literal = parse_declare_program_literal(ty_value, value, span)?;
+    Ok(quote! { pub const #ident: #ty = #literal; })
+}
+
+fn parse_declare_program_literal(
+    ty_value: &serde_json::Value,
+    value: &str,
+    span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    let parsed = syn::parse_str::<Expr>(value).map_err(|err| {
+        syn::Error::new(
+            span,
+            format!("expected an IDL literal constant value, got `{value}`: {err}"),
+        )
+    })?;
+    validate_declare_program_literal(ty_value, &parsed, span)?;
+    Ok(quote! { #parsed })
+}
+
+fn validate_declare_program_literal(
+    ty_value: &serde_json::Value,
+    expr: &Expr,
+    span: proc_macro2::Span,
+) -> syn::Result<()> {
+    if ty_value.as_str().is_some() {
+        return match expr {
+            Expr::Lit(ExprLit { .. }) => Ok(()),
+            Expr::Unary(ExprUnary {
+                op: UnOp::Neg(_),
+                expr,
+                ..
+            }) if matches!(expr.as_ref(), Expr::Lit(ExprLit { .. })) => Ok(()),
+            _ => Err(invalid_idl_literal(span, "scalar literal")),
+        };
+    }
+
+    if let Some(array) = ty_value.get("array").and_then(serde_json::Value::as_array) {
+        if array.len() != 2 {
+            return Err(syn::Error::new(span, "IDL array constant type must have two elements"));
+        }
+        let Expr::Array(array_expr) = expr else {
+            return Err(invalid_idl_literal(span, "array literal"));
+        };
+        let expected = array[1].as_u64().ok_or_else(|| {
+            syn::Error::new(span, "array constant length must be a concrete non-negative integer")
+        })? as usize;
+        if array_expr.elems.len() != expected {
+            return Err(syn::Error::new(
+                span,
+                format!("array constant has {} elements, expected {expected}", array_expr.elems.len()),
+            ));
+        }
+        for element in &array_expr.elems {
+            validate_declare_program_literal(&array[0], element, span)?;
+        }
+        return Ok(());
+    }
+
+    Err(invalid_idl_literal(span, "supported scalar or array"))
+}
+
+fn invalid_idl_literal(span: proc_macro2::Span, expected: &str) -> syn::Error {
+    syn::Error::new(
+        span,
+        format!("expected an IDL {expected}; executable Rust expressions are not allowed"),
+    )
 }
 
 fn declare_idl_const_type_to_tokens(
@@ -4285,6 +4304,7 @@ struct DeclareTypeGenerics {
     ty_generics: TokenStream2,
     idl_where_clause: TokenStream2,
     pod_where_clause: TokenStream2,
+    const_generic_names: std::collections::BTreeSet<String>,
 }
 
 fn gen_declare_program_type_generics(
@@ -4297,12 +4317,14 @@ fn gen_declare_program_type_generics(
             ty_generics: quote! {},
             idl_where_clause: quote! {},
             pod_where_clause: quote! {},
+            const_generic_names: std::collections::BTreeSet::new(),
         });
     };
     let mut impl_params = Vec::new();
     let mut ty_params = Vec::new();
     let mut idl_bounds = Vec::new();
     let mut pod_bounds = Vec::new();
+    let mut const_generic_names = std::collections::BTreeSet::new();
     for generic in generics {
         let name = json_str(generic, "name", span)?;
         let ident = Ident::new(name, span);
@@ -4316,6 +4338,7 @@ fn gen_declare_program_type_generics(
                 });
             }
             "const" => {
+                const_generic_names.insert(name.to_string());
                 let ty = json_str(generic, "type", span)?;
                 let ty: Type = syn::parse_str(ty).map_err(|err| {
                     syn::Error::new(
@@ -4351,6 +4374,7 @@ fn gen_declare_program_type_generics(
         ty_generics,
         idl_where_clause,
         pod_where_clause,
+        const_generic_names,
     })
 }
 
@@ -4479,8 +4503,7 @@ fn gen_declare_program_pod_impls(
     generics: &DeclareTypeGenerics,
     fields: &DeclareTypeFields,
     serialization: DeclareTypeSerialization,
-    layout_has_no_padding: bool,
-) -> syn::Result<TokenStream2> {
+) -> TokenStream2 {
     let impl_generics = &generics.impl_generics;
     let ty_generics = &generics.ty_generics;
     // `bytemuckunsafe` is an explicit opt-out of safe Pod derivability:
@@ -4488,19 +4511,10 @@ fn gen_declare_program_pod_impls(
     // unsafe impls without field-Pod / no-padding assertions.
     if serialization.is_bytemuck_unsafe() {
         let where_clause = &generics.pod_where_clause;
-        return Ok(quote! {
+        return quote! {
             unsafe impl #impl_generics anchor_lang::bytemuck::Pod for #ident #ty_generics #where_clause {}
             unsafe impl #impl_generics anchor_lang::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
-        });
-    }
-
-    // Same rule as bytemuck: generic types need packed or transparent.
-    // `T: Pod` does not prove there is no padding between fields.
-    if !impl_generics.is_empty() && !layout_has_no_padding {
-        return Err(syn::Error::new(
-            ident.span(),
-            "declare_program! generic bytemuck types must be `repr(packed)` or `repr(transparent)`",
-        ));
+        };
     }
 
     let field_types = fields.tys();
@@ -4520,45 +4534,27 @@ fn gen_declare_program_pod_impls(
                 + anchor_lang::bytemuck::Zeroable),*
         }
     };
-    // Item-level `const _: ()` is always evaluated. An unused associated const
-    // on an `impl` is not, so the previous padding `assert!` never ran.
-    //
-    // Same host-wide padding rule as `#[account]` / `#[event(bytemuck)]`
-    // (#4794): `repr(C)` padding follows the *host* backend, so a `u64`
-    // then `u128` layout that is packed on SBF fails here on x86. Unlike
-    // those macros, `declare_program!` cannot rewrite IDL fields to
-    // `PodU128`; padded layouts need `bytemuckunsafe` or a hand-written type.
-    let touch_no_padding = if impl_generics.is_empty() {
-        quote! {
-            const _: () = #ident::__ANCHOR_DECLARE_PROGRAM_NO_PADDING;
-        }
-    } else {
-        quote! {}
-    };
-    Ok(quote! {
-        const _: fn() = || {
-            fn __assert_declare_program_pod_fields #impl_generics () #where_clause {
+    quote! {
+        impl #impl_generics #ident #ty_generics #where_clause {
+            const __ANCHOR_DECLARE_PROGRAM_POD_ASSERT: fn() = || {
                 fn assert_pod<T: anchor_lang::bytemuck::Pod>() {}
                 #( assert_pod::<#field_types>(); )*
-            }
-        };
-        impl #impl_generics #ident #ty_generics #where_clause {
-            const __ANCHOR_DECLARE_PROGRAM_NO_PADDING: () = ::core::assert!(
-                ::core::mem::size_of::<Self>()
-                    == 0 #(+ ::core::mem::size_of::<#field_types>())*,
+            };
+            const __ANCHOR_DECLARE_PROGRAM_NO_PADDING: () = assert!(
+                core::mem::size_of::<Self>() == 0 #(+ core::mem::size_of::<#field_types>())*,
                 "declared bytemuck type has padding bytes"
             );
         }
-        #touch_no_padding
         unsafe impl #impl_generics anchor_lang::bytemuck::Pod for #ident #ty_generics #where_clause {}
         unsafe impl #impl_generics anchor_lang::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
-    })
+    }
 }
 
 fn gen_declare_program_type_fields(
     fields: &[serde_json::Value],
     span: proc_macro2::Span,
     public: bool,
+    const_generic_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<DeclareTypeFields> {
     let visibility = public.then(|| quote! { pub });
     let field_shape = serde_json::from_value::<anchor_lang_idl::types::IdlDefinedFields>(
@@ -4578,7 +4574,11 @@ fn gen_declare_program_type_fields(
                         format!("failed to normalize IDL field `{field_name}` type: {err}"),
                     )
                 })?;
-                let ty = declare_idl_type_to_tokens(&ty_value, span)?;
+                let ty = declare_idl_type_to_tokens_with_generics(
+                    &ty_value,
+                    span,
+                    const_generic_names,
+                )?;
                 let field_ident = Ident::new(&to_snake_case(field_name), span);
                 field_tokens.push(quote! { #visibility #field_ident: #ty, });
                 field_tys.push(ty);
@@ -4598,7 +4598,11 @@ fn gen_declare_program_type_fields(
                         format!("failed to normalize tuple field type for declare_program!: {err}"),
                     )
                 })?;
-                let ty = declare_idl_type_to_tokens(&ty_value, span)?;
+                let ty = declare_idl_type_to_tokens_with_generics(
+                    &ty_value,
+                    span,
+                    const_generic_names,
+                )?;
                 field_tokens.push(quote! { #visibility #ty });
                 field_tys.push(ty);
             }
@@ -4613,6 +4617,14 @@ fn gen_declare_program_type_fields(
 fn declare_idl_type_to_tokens(
     value: &serde_json::Value,
     span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    declare_idl_type_to_tokens_with_generics(value, span, &std::collections::BTreeSet::new())
+}
+
+fn declare_idl_type_to_tokens_with_generics(
+    value: &serde_json::Value,
+    span: proc_macro2::Span,
+    const_generic_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<TokenStream2> {
     if let Some(s) = value.as_str() {
         return Ok(match s {
@@ -4657,7 +4669,9 @@ fn declare_idl_type_to_tokens(
             .map(|generics| {
                 generics
                     .iter()
-                    .map(|generic| declare_idl_generic_arg_to_tokens(generic, span))
+                    .map(|generic| {
+                        declare_idl_generic_arg_to_tokens(generic, span, const_generic_names)
+                    })
                     .collect::<syn::Result<Vec<_>>>()
             })
             .transpose()?
@@ -4672,11 +4686,11 @@ fn declare_idl_type_to_tokens(
         return Ok(quote! { #ident });
     }
     if let Some(inner) = value.get("vec") {
-        let inner = declare_idl_type_to_tokens(inner, span)?;
+        let inner = declare_idl_type_to_tokens_with_generics(inner, span, const_generic_names)?;
         return Ok(quote! { anchor_lang::__alloc::vec::Vec<#inner> });
     }
     if let Some(inner) = value.get("option") {
-        let inner = declare_idl_type_to_tokens(inner, span)?;
+        let inner = declare_idl_type_to_tokens_with_generics(inner, span, const_generic_names)?;
         return Ok(quote! { Option<#inner> });
     }
     if let Some(array) = value.get("array").and_then(serde_json::Value::as_array) {
@@ -4686,7 +4700,7 @@ fn declare_idl_type_to_tokens(
                 "IDL array type must have two elements",
             ));
         }
-        let inner = declare_idl_type_to_tokens(&array[0], span)?;
+        let inner = declare_idl_type_to_tokens_with_generics(&array[0], span, const_generic_names)?;
         let len = declare_idl_array_len_to_tokens(&array[1], span)?;
         return Ok(quote! { [#inner; #len] });
     }
@@ -4744,6 +4758,7 @@ fn declare_idl_array_len_to_tokens(
 fn declare_idl_generic_arg_to_tokens(
     value: &serde_json::Value,
     span: proc_macro2::Span,
+    const_generic_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<TokenStream2> {
     match json_str(value, "kind", span)? {
         "type" => {
@@ -4753,22 +4768,51 @@ fn declare_idl_generic_arg_to_tokens(
                     format!("generic type arg is missing type in `{value}`"),
                 )
             })?;
-            declare_idl_type_to_tokens(ty, span)
+            declare_idl_type_to_tokens_with_generics(ty, span, const_generic_names)
         }
         "const" => {
             let value = json_str(value, "value", span)?;
-            let expr: Expr = syn::parse_str(value).map_err(|err| {
-                syn::Error::new(
-                    span,
-                    format!("failed to parse const generic value `{value}`: {err}"),
-                )
-            })?;
-            Ok(quote! { #expr })
+            parse_declare_program_generic_arg(value, span, const_generic_names)
         }
         other => Err(syn::Error::new(
             span,
             format!("unsupported IDL generic arg kind `{other}`"),
         )),
+    }
+}
+
+fn parse_declare_program_generic_arg(
+    value: &str,
+    span: proc_macro2::Span,
+    const_generic_names: &std::collections::BTreeSet<String>,
+) -> syn::Result<TokenStream2> {
+    let parsed = syn::parse_str::<Expr>(value).map_err(|err| {
+        syn::Error::new(
+            span,
+            format!("expected an IDL const generic literal or declared parameter: {err}"),
+        )
+    })?;
+    if let Expr::Path(path) = &parsed {
+        if path.qself.is_none() && path.path.segments.len() == 1 {
+            let ident = &path.path.segments[0].ident;
+            if const_generic_names.contains(&ident.to_string()) {
+                return Ok(quote! { #ident });
+            }
+        }
+        return Err(invalid_idl_literal(span, "declared const generic parameter"));
+    }
+    match &parsed {
+        Expr::Lit(ExprLit {
+            lit: Lit::Int(_), ..
+        }) => Ok(quote! { #parsed }),
+        Expr::Unary(ExprUnary {
+            op: UnOp::Neg(_),
+            expr,
+            ..
+        }) if matches!(expr.as_ref(), Expr::Lit(ExprLit { lit: Lit::Int(_), .. })) => {
+            Ok(quote! { #parsed })
+        }
+        _ => Err(invalid_idl_literal(span, "const generic integer literal")),
     }
 }
 
@@ -5086,9 +5130,8 @@ fn process_handler(
     handler: &syn::ItemFn,
     mod_name: &Ident,
     discrim_bytes: Option<&[u8]>,
-    config: &ProgramConfig,
+    program_id: &Expr,
 ) -> HandlerCodegen {
-    let program_id = &config.program_id;
     let fn_name = &handler.sig.ident;
     let fn_name_str = fn_name.to_string();
     let handler_cfg_attrs = cfg_attrs(&handler.attrs);
@@ -5373,27 +5416,6 @@ fn process_handler(
     let cpi_accounts_reexport = quote! {
         pub use #cpi_mod::#accounts_ident;
     };
-    // Emitted in `cpi` (which `use super::*`s), not `cpi::accounts`, so a
-    // user `program_id = declared::ID` path resolves the same way the
-    // instruction builder's `#program_id` does.
-    let cpi_mod_from_cpi = accounts_type.helper_module_path("__cpi_accounts_", 1, fn_name.span());
-    let accounts_program_id_check = if config.mode == ProgramMode::Interface {
-        quote! {
-            const _: () = {
-                let __interface_id = (#program_id).to_bytes();
-                let __accounts_id = #cpi_mod_from_cpi::__ANCHOR_ACCOUNTS_PROGRAM_ID.to_bytes();
-                let mut __i = 0;
-                while __i < 32 {
-                    if __interface_id[__i] != __accounts_id[__i] {
-                        panic!("interface program_id does not match accounts_program_id");
-                    }
-                    __i += 1;
-                }
-            };
-        }
-    } else {
-        quote! {}
-    };
 
     // CPI wrapper function — mirrors the handler's argument list (sans
     // `ctx: &mut Context<_>`), packs them into the client-side
@@ -5420,7 +5442,6 @@ fn process_handler(
             (quote! { -> anchor_lang::Result<()> }, quote! { Ok(()) })
         };
         quote! {
-            #accounts_program_id_check
             #(#handler_cfg_attrs)*
             pub fn #fn_name #lt_decl(
                 __ctx: anchor_lang::CpiContext<'a, accounts::#accounts_ident<'a>>,
@@ -5540,7 +5561,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
     let codegen: Vec<HandlerCodegen> = handlers
         .iter()
         .enumerate()
-        .map(|(i, h)| process_handler(h, mod_name, discrim_attrs[i].as_deref(), config))
+        .map(|(i, h)| process_handler(h, mod_name, discrim_attrs[i].as_deref(), &config.program_id))
         .collect();
     let handler_errors: Vec<_> = codegen.iter().filter_map(|c| c.error.as_ref()).collect();
     if !handler_errors.is_empty() {
@@ -5939,13 +5960,8 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                 #(#ix_arg_type_registers)*
                 accounts_entries.sort();
                 accounts_entries.dedup();
-                anchor_lang::idl_build::validate_account_discriminator_entries(&accounts_entries);
                 types_entries.sort();
                 types_entries.dedup();
-                let accounts_entries = accounts_entries
-                    .iter()
-                    .map(|entry| anchor_lang::idl_build::strip_account_entry_identity(entry))
-                    .collect::<Vec<_>>();
 
                 let crate_name = env!("CARGO_CRATE_NAME").replace('-', "_");
                 // Pull `description` / `repository` from the program crate's
@@ -6000,15 +6016,12 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 /// Two modes:
 ///
 /// **Default (`#[event]`, wincode).** Derives `AnchorSerialize` and
-/// `AnchorDeserialize` and serializes via Wincode with `BORSH_CONFIG`, so
+/// serializes via Wincode with `BORSH_CONFIG`, so
 /// the on-chain wire format is byte-compatible with borsh while keeping
 /// wincode's faster encoding path. Supports arbitrary layouts, including
 /// `Vec`/`String`/`Option`/enums, and is materially cheaper than borsh on
 /// SBF (see `cu-bench` — roughly 3–10× fewer CUs depending on shape). This
-/// is the right default for almost every event. Because the type also
-/// derives `AnchorDeserialize`, clients decode it with
-/// `T: Event + AnchorDeserialize` (see `anchor_client::handle_program_log`);
-/// do not add that derive by hand.
+/// is the right default for almost every event.
 ///
 /// **`#[event(bytemuck)]`.** Emits `#[repr(C)]` + a raw `copy_nonoverlapping`
 /// of the struct bytes. Fastest of the two for fixed-size events, but the
@@ -6182,12 +6195,7 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     match mode {
         EventMode::Wincode => TokenStream::from(quote! {
-            // `#[derive(AnchorSerialize)]` lays down the Wincode per-field
-            // encoder; `#[derive(AnchorDeserialize)]` the decoder, so clients
-            // and tests can read the event back with
-            // `T: Event + AnchorDeserialize` and no extra derive. The decode
-            // impl is generic over the wincode config, so it is only compiled
-            // where something calls it — never inside the `.so`.
+            // `#[derive(AnchorSerialize)]` lays down the Wincode per-field encoder.
             // No `repr(C)` — wincode is layout-agnostic (it walks the derived
             // schema, not the in-memory byte layout) so the compiler is free
             // to pick whichever Rust layout is best.
@@ -7076,95 +7084,10 @@ mod tests {
         );
     }
 
-    fn first_field_attrs(item: syn::ItemStruct) -> Vec<syn::Attribute> {
-        item.fields
-            .iter()
-            .next()
-            .expect("struct should have a field")
-            .attrs
-            .clone()
-    }
-
-    fn unsupported_kind(attrs: &[syn::Attribute]) -> Option<UnsupportedWincodeAttrKind> {
-        find_unsupported_wincode_attr(attrs)
-            .expect("wincode attr scan should parse")
-            .map(|(kind, _)| kind)
-    }
-
-    #[test]
-    fn wincode_scanner_rejects_direct_skip() {
-        let item: syn::ItemStruct = syn::parse_quote! {
-            struct S {
-                #[wincode(skip)]
-                pub skipped: u64,
-            }
-        };
-        assert!(matches!(
-            unsupported_kind(&first_field_attrs(item)),
-            Some(UnsupportedWincodeAttrKind::Skip)
-        ));
-    }
-
-    #[test]
-    fn wincode_scanner_rejects_cfg_attr_skip() {
-        let item: syn::ItemStruct = syn::parse_quote! {
-            struct S {
-                #[cfg_attr(feature = "fast", wincode(skip))]
-                pub skipped: u64,
-            }
-        };
-        assert!(matches!(
-            unsupported_kind(&first_field_attrs(item)),
-            Some(UnsupportedWincodeAttrKind::Skip)
-        ));
-    }
-
-    #[test]
-    fn wincode_scanner_rejects_nested_cfg_attr_with() {
-        let item: syn::ItemStruct = syn::parse_quote! {
-            struct S {
-                #[cfg_attr(feature = "a", cfg_attr(feature = "b", wincode(with = "shim::ByteCodec")))]
-                pub packed: u64,
-            }
-        };
-        assert!(matches!(
-            unsupported_kind(&first_field_attrs(item)),
-            Some(UnsupportedWincodeAttrKind::With)
-        ));
-    }
-
-    #[test]
-    fn wincode_scanner_rejects_cfg_attr_tag_encoding_on_item() {
-        let item: syn::ItemEnum = syn::parse_quote! {
-            #[cfg_attr(feature = "wide", wincode(tag_encoding = "u32"))]
-            enum E {
-                A,
-            }
-        };
-        assert!(matches!(
-            unsupported_kind(&item.attrs),
-            Some(UnsupportedWincodeAttrKind::TagEncoding)
-        ));
-    }
-
-    #[test]
-    fn wincode_scanner_ignores_cfg_attr_without_wincode_override() {
-        let item: syn::ItemStruct = syn::parse_quote! {
-            struct S {
-                #[cfg_attr(feature = "fast", inline(always))]
-                pub kept: u64,
-            }
-        };
-        assert!(unsupported_kind(&first_field_attrs(item)).is_none());
-    }
-
     #[test]
     fn process_handler_applies_inline_policy_to_generated_wrapper() {
         let mod_name: syn::Ident = syn::parse_quote!(my_program);
-        let config = ProgramConfig {
-            mode: ProgramMode::Executable,
-            program_id: syn::parse_quote!(crate::ID),
-        };
+        let program_id: syn::Expr = syn::parse_quote!(crate::ID);
         for (handler, expected) in [
             (
                 syn::parse_quote! {
@@ -7187,7 +7110,7 @@ mod tests {
             ),
             (
                 syn::parse_quote! {
-                    #[cfg_attr(feature = "fast", inline(always), no_mangle)]
+                    #[cfg_attr(feature = "fast", inline(always))]
                     pub fn conditional_handler(ctx: &mut Context<MyAccounts>) -> Result<()> {
                         let _ = ctx;
                         Ok(())
@@ -7196,14 +7119,10 @@ mod tests {
                 "# [cfg_attr (feature = \"fast\" , inline (always))] pub fn conditional_handler",
             ),
         ] {
-            let wrapper = process_handler(&handler, &mod_name, None, &config)
+            let wrapper = process_handler(&handler, &mod_name, None, &program_id)
                 .wrapper
                 .to_string();
             assert!(wrapper.contains(expected), "unexpected wrapper: {wrapper}");
-            assert!(
-                !wrapper.contains("no_mangle"),
-                "wrapper copied an unrelated attribute: {wrapper}"
-            );
         }
     }
 
@@ -7218,12 +7137,9 @@ mod tests {
             }
         };
         let mod_name: syn::Ident = syn::parse_quote!(my_program);
-        let config = ProgramConfig {
-            mode: ProgramMode::Executable,
-            program_id: syn::parse_quote!(crate::ID),
-        };
+        let program_id: syn::Expr = syn::parse_quote!(crate::ID);
 
-        let generated = process_handler(&handler, &mod_name, None, &config);
+        let generated = process_handler(&handler, &mod_name, None, &program_id);
         let wrapper = generated.wrapper.to_string();
 
         assert!(
@@ -7346,91 +7262,6 @@ mod tests {
     }
 
     #[test]
-    fn accounts_derive_exposes_accounts_program_id_const() {
-        let default_input: syn::DeriveInput = syn::parse_quote! {
-            pub struct Empty {}
-        };
-        let default_generated = impl_accounts(&default_input).to_string();
-        assert!(
-            default_generated.contains("pub const __ANCHOR_ACCOUNTS_PROGRAM_ID"),
-            "Accounts derive should expose the program id used for optional sentinels and default PDAs: {default_generated}"
-        );
-        assert!(
-            default_generated.contains("crate :: ID"),
-            "unannotated Accounts should default the exposed program id to crate::ID: {default_generated}"
-        );
-
-        let override_input: syn::DeriveInput = syn::parse_quote! {
-            #[accounts_program_id(declared::ID)]
-            pub struct Empty {}
-        };
-        let override_generated = impl_accounts(&override_input).to_string();
-        assert!(
-            override_generated.contains("pub const __ANCHOR_ACCOUNTS_PROGRAM_ID"),
-            "Accounts derive should expose an overridden accounts program id: {override_generated}"
-        );
-        assert!(
-            override_generated.contains("declared :: ID"),
-            "#[accounts_program_id] should flow into the exposed const: {override_generated}"
-        );
-    }
-
-    #[test]
-    fn program_interface_mode_asserts_accounts_program_id() {
-        let module: syn::ItemMod = syn::parse_quote! {
-            pub mod external_program {
-                use super::*;
-
-                #[discrim = [1, 2, 3, 4]]
-                pub fn do_it(ctx: &mut Context<MyAccounts>, amount: u64) -> Result<()> {
-                    let _ = (ctx, amount);
-                    unreachable!()
-                }
-            }
-        };
-        let config = ProgramConfig {
-            mode: ProgramMode::Interface,
-            program_id: syn::parse_quote!(super::ID),
-        };
-
-        let generated = impl_program(&module, &config).to_string();
-
-        assert!(
-            generated.contains("__ANCHOR_ACCOUNTS_PROGRAM_ID"),
-            "interface mode should compare against the Accounts-side program id const: {generated}"
-        );
-        assert!(
-            generated.contains("interface program_id does not match accounts_program_id"),
-            "interface mode should emit a compile-time mismatch diagnostic: {generated}"
-        );
-    }
-
-    #[test]
-    fn executable_program_mode_skips_accounts_program_id_assertion() {
-        let module: syn::ItemMod = syn::parse_quote! {
-            pub mod demo_program {
-                use super::*;
-
-                pub fn rotate(ctx: &mut Context<RotateAuthority>) -> Result<()> {
-                    let _ = ctx;
-                    Ok(())
-                }
-            }
-        };
-        let config = ProgramConfig {
-            mode: ProgramMode::Executable,
-            program_id: syn::parse_quote!(crate::ID),
-        };
-
-        let generated = impl_program(&module, &config).to_string();
-
-        assert!(
-            !generated.contains("interface program_id does not match accounts_program_id"),
-            "executable programs share crate::ID by construction and should not emit the interface assertion: {generated}"
-        );
-    }
-
-    #[test]
     fn program_interface_mode_rejects_prefix_overlapping_discriminators() {
         let module: syn::ItemMod = syn::parse_quote! {
             pub mod external_program {
@@ -7523,11 +7354,11 @@ mod tests {
     }
 
     #[test]
-    fn declare_program_array_lengths_accept_declared_generics_only() {
+    fn declare_program_array_lengths_accept_generics() {
         let span = proc_macro2::Span::call_site();
 
-        let generic_tokens =
-            declare_idl_array_len_to_tokens(&json!({ "generic": "N" }), span).unwrap();
+        let generic_tokens = declare_idl_array_len_to_tokens(&json!({ "generic": "N" }), span)
+            .unwrap();
         assert_eq!(generic_tokens.to_string(), "N");
 
         let err = declare_idl_array_len_to_tokens(&json!({ "generic": "limits::ITEMS" }), span)
@@ -7763,11 +7594,13 @@ mod tests {
     fn declare_idl_defined_pod_wrappers_use_runtime_types() {
         let span = proc_macro2::Span::call_site();
         let pod_u64 =
-            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodU64" } }), span).unwrap();
+            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodU64" } }), span)
+                .unwrap();
         assert_eq!(pod_u64.to_string(), "anchor_lang :: pod :: PodU64");
 
         let pod_bool =
-            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodBool" } }), span).unwrap();
+            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodBool" } }), span)
+                .unwrap();
         assert_eq!(pod_bool.to_string(), "anchor_lang :: pod :: PodBool");
     }
 
