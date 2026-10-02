@@ -132,7 +132,7 @@ fn le_codec_load_mut_exit_writes_back() {
 
     {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { StatsAccount::load_mut(view) }.unwrap();
+        let mut acct = StatsAccount::load_mut(view).unwrap();
         acct.count = 42;
         acct.flags = 0xDEAD_BEEF;
         acct.exit().unwrap();
@@ -154,7 +154,7 @@ fn le_codec_release_borrow_commits() {
     setup_stats_buf(&mut buf, 1, 0);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { StatsAccount::load_mut(view) }.unwrap();
+    let mut acct = StatsAccount::load_mut(view).unwrap();
     acct.count = 999;
     acct.release_borrow().unwrap();
 
@@ -174,7 +174,7 @@ fn le_codec_reacquire_refreshes_from_buffer() {
     setup_stats_buf(&mut buf, 1, 0);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { StatsAccount::load_mut(view) }.unwrap();
+    let mut acct = StatsAccount::load_mut(view).unwrap();
 
     acct.count = 100;
     acct.release_borrow().unwrap();
@@ -259,7 +259,7 @@ fn le_codec_reacquire_rejects_disc_swap() {
     setup_stats_buf(&mut buf, 1, 0);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { StatsAccount::load_mut(view) }.unwrap();
+    let mut acct = StatsAccount::load_mut(view).unwrap();
     acct.release_borrow().unwrap();
 
     set_data_bytes(&mut buf, 0, &[0xFF; 8]);
@@ -275,7 +275,7 @@ fn le_codec_reacquire_rejects_owner_change() {
     setup_stats_buf(&mut buf, 1, 0);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { StatsAccount::load_mut(view) }.unwrap();
+    let mut acct = StatsAccount::load_mut(view).unwrap();
     acct.release_borrow().unwrap();
 
     buf.set_owner([0xFE; 32]);
@@ -291,7 +291,7 @@ fn le_codec_exit_on_transient_zero_lamport_account_serializes() {
     setup_stats_buf(&mut buf, 1, 0xAABB_CCDD);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { StatsAccount::load_mut(view) }.unwrap();
+    let mut acct = StatsAccount::load_mut(view).unwrap();
     acct.count = 555;
     buf.set_lamports(0);
     acct.exit().unwrap();
@@ -389,7 +389,7 @@ fn wincode_codec_load_mut_exit_round_trip() {
 
     {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { LedgerAccount::load_mut(view) }.unwrap();
+        let mut acct = LedgerAccount::load_mut(view).unwrap();
         acct.balance = 9_999;
         acct.nonce = 7;
         acct.exit().unwrap();
@@ -421,7 +421,7 @@ fn wincode_codec_release_reacquire_picks_up_cpi_write() {
     setup_ledger_buf(&mut buf, 0, 0);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { LedgerAccount::load_mut(view) }.unwrap();
+    let mut acct = LedgerAccount::load_mut(view).unwrap();
     acct.release_borrow().unwrap();
 
     // Simulated CPI writes a new ledger payload using the same codec.
@@ -561,7 +561,7 @@ fn four_byte_discriminator_load_and_exit_round_trip() {
 
     {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { CompactAccount::load_mut(view) }.unwrap();
+        let mut acct = CompactAccount::load_mut(view).unwrap();
         assert_eq!(acct.value, 7);
         acct.value = 99;
         acct.exit().unwrap();
@@ -584,7 +584,7 @@ fn sixteen_byte_discriminator_load_and_exit_round_trip() {
 
     {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { WideAccount::load_mut(view) }.unwrap();
+        let mut acct = WideAccount::load_mut(view).unwrap();
         assert_eq!(acct.value, 11);
         acct.value = 55;
         acct.exit().unwrap();

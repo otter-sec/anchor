@@ -858,9 +858,9 @@ pub struct InitializeWithLaterSeed {
 
 #[derive(Accounts)]
 pub struct InitializeTargetBeforePayer {
-    #[account(init, payer = payer, unsafe(dup))]
+    #[account(init, payer = payer)]
     pub counter: Account<Counter>,
-    #[account(mut, unsafe(dup))]
+    #[account(mut)]
     pub payer: Signer,
     pub system_program: Program<System>,
 }

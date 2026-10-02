@@ -2270,7 +2270,7 @@ impl SlabSchema for BadHeader {
     }
 }
 
-pub unsafe fn load_bad(view: AccountView) {
+pub fn load_bad(view: AccountView) {
     let _ = <Slab<BadHeader> as AnchorAccount>::load_mut(view);
 }
 "#,
@@ -2311,7 +2311,7 @@ impl SlabSchema for BadHeader {
     }
 }
 
-pub unsafe fn load_bad(view: AccountView) {
+pub fn load_bad(view: AccountView) {
     let _ = <Slab<BadHeader> as AnchorAccount>::load_mut(view);
 }
 "#,
@@ -2359,7 +2359,7 @@ pub struct OveralignedTail([u8; 16]);
 unsafe impl anchor_lang::bytemuck::Zeroable for OveralignedTail {}
 unsafe impl anchor_lang::bytemuck::Pod for OveralignedTail {}
 
-pub unsafe fn load_bad(view: AccountView) {
+pub fn load_bad(view: AccountView) {
     let _ = <Slab<GoodHeader, OveralignedTail> as AnchorAccount>::load_mut(view);
 }
 "#,

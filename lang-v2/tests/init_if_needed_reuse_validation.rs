@@ -92,7 +92,7 @@ impl AnchorAccount for FakeMintAccount {
         })
     }
 
-    unsafe fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
+    fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
         if !view.is_writable() {
             return Err(ErrorCode::ConstraintMut.into());
         }
@@ -157,7 +157,7 @@ impl AnchorAccount for FakeTokenAccount {
         })
     }
 
-    unsafe fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
+    fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
         if !view.is_writable() {
             return Err(ErrorCode::ConstraintMut.into());
         }
@@ -430,7 +430,7 @@ fn try_reuse(target: &AccountBuffer<128>, payer: &AccountBuffer<128>) -> Result<
         unsafe { payer.view() },
         unsafe { system_program.view() },
     ];
-    SeedlessReuseUnchecked::try_accounts(&Address::new_from_array(PROGRAM_ID), &views, None, 0, &[])
+    SeedlessReuseUnchecked::try_accounts(&Address::new_from_array(PROGRAM_ID), &views, &[])
         .map(|_| ())
 }
 
@@ -448,7 +448,7 @@ fn try_reuse_fake_mint(
         unsafe { token_program.view() },
         unsafe { system_program.view() },
     ];
-    ReuseFakeMint::try_accounts(&Address::new_from_array(PROGRAM_ID), &views, None, 0, &[])
+    ReuseFakeMint::try_accounts(&Address::new_from_array(PROGRAM_ID), &views, &[])
         .map(|_| ())
 }
 
@@ -471,8 +471,6 @@ fn try_reuse_fake_mint_with_freeze_authority(
     ReuseFakeMintWithFreezeAuthority::try_accounts(
         &Address::new_from_array(PROGRAM_ID),
         &views,
-        None,
-        0,
         &[],
     )
     .map(|_| ())
@@ -494,7 +492,7 @@ fn try_reuse_fake_token(
         unsafe { token_program.view() },
         unsafe { system_program.view() },
     ];
-    ReuseFakeToken::try_accounts(&Address::new_from_array(PROGRAM_ID), &views, None, 0, &[])
+    ReuseFakeToken::try_accounts(&Address::new_from_array(PROGRAM_ID), &views, &[])
         .map(|_| ())
 }
 

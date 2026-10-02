@@ -237,8 +237,6 @@ fn try_accounts_checks_authority_before_running_updates() {
     let err = expect_err(RotateAuthority::try_accounts(
         &Address::new_from_array(PROGRAM_ID),
         &views,
-        None,
-        0,
         &[],
     ));
 
@@ -258,8 +256,6 @@ fn update_accounts_runs_after_validation_and_persists_on_exit() {
     let (mut accounts, _, _) = <RotateAuthority as TryAccounts>::validate_accounts(
         &Address::new_from_array(PROGRAM_ID),
         &views,
-        None,
-        0,
         &[],
     )
     .expect("authority check should pass before updates");
@@ -283,7 +279,7 @@ fn try_accounts_still_runs_updates_for_direct_callers() {
     }];
 
     let (accounts, _, _) =
-        RotateAuthority::try_accounts(&Address::new_from_array(PROGRAM_ID), &views, None, 0, &[])
+        RotateAuthority::try_accounts(&Address::new_from_array(PROGRAM_ID), &views, &[])
             .expect("direct callers should still receive updated accounts");
 
     assert_eq!(accounts.vault.current_authority.to_bytes(), NEW_AUTHORITY);
@@ -324,8 +320,6 @@ fn nested_validate_accounts_keeps_inner_updates_after_outer_validation() {
     let err = expect_err(<OuterNestedGate as TryAccounts>::validate_accounts(
         &Address::new_from_array(PROGRAM_ID),
         &views,
-        None,
-        0,
         &[],
     ));
 
@@ -345,8 +339,6 @@ fn nested_try_accounts_runs_inner_updates_once() {
     let (mut accounts, _, _) = OuterNestedIncrement::try_accounts(
         &Address::new_from_array(PROGRAM_ID),
         &views,
-        None,
-        0,
         &[],
     )
     .expect("nested try_accounts should succeed");
