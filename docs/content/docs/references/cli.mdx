@@ -25,6 +25,7 @@ Commands:
   debugger      Run tests under an instruction-level debugger
   coverage      Generate source-level coverage from SBF register traces
   idl           Commands for interacting with interface definitions
+  security      Commands for interacting with on-chain security.json metadata
   clean         Remove all artifacts from the generated directories except program keypairs
   migrate       Runs the deploy migration script
   airdrop       Request an airdrop of SOL
@@ -148,6 +149,12 @@ anchor deploy
 ```
 
 Deploys all programs in the workspace to the configured cluster.
+
+On mainnet, a deploy without `--security-metadata` prints a warning and
+continues. A deploy counts as mainnet when the configured cluster is
+mainnet, or when the RPC host contains `mainnet`. `anchor program deploy
+--security-metadata` uploads `security.json` and stops if that file still
+contains default values.
 
 <Callout title="Tip">
   This is different from the `solana program deploy` command, because every time
@@ -315,6 +322,16 @@ the requested languages. The supported language values are `js`, `js-umi`,
 
 Codama client generation can also run automatically after `anchor build` when
 `[clients] auto = true` is set in `Anchor.toml`.
+
+## Security Fetch
+
+```shell
+anchor security fetch -o <security.json> <program-id>
+```
+
+Fetches the on-chain `security.json` published with `--security-metadata`
+from the configured cluster. Output goes to stdout when `-o` is omitted.
+Pass `--non-canonical` to read a third-party metadata account.
 
 ## Init
 

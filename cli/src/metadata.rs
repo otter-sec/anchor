@@ -115,6 +115,11 @@ pub enum SecurityCommand {
         payer: Option<String>,
         priority_fees: Option<String>,
     },
+    Fetch {
+        program_id: String,
+        out: Option<String>,
+        non_canonical: bool,
+    },
 }
 
 impl SecurityCommand {
@@ -136,11 +141,13 @@ impl SecurityCommand {
                 priority_fees,
                 args,
             },
+            Self::Fetch { .. } => MetadataCommand::Unfunded { args },
         }
     }
 
-    /// The domain-specific tail only (`write security <id> <file>`). Funding flags
-    /// (`--keypair` / `--payer` / `--priority-fees`) are added by `MetadataCommand::Funded`.
+    /// The domain-specific tail only (`write security <id> <file>` or
+    /// `fetch security <id>`). Funding flags (`--keypair` / `--payer` /
+    /// `--priority-fees`) are added by `MetadataCommand::Funded`.
     fn args(&self) -> Vec<String> {
         let parts: Vec<&str> = match self {
             Self::Write {
@@ -148,6 +155,20 @@ impl SecurityCommand {
                 security_path,
                 ..
             } => vec!["write", "security", program_id, security_path],
+            Self::Fetch {
+                program_id,
+                out,
+                non_canonical,
+            } => {
+                let mut parts = vec!["fetch", "security", program_id.as_str()];
+                if let Some(out) = out {
+                    parts.extend(["-o", out.as_str()]);
+                }
+                if *non_canonical {
+                    parts.push("--non-canonical");
+                }
+                parts
+            }
         };
         parts.into_iter().map(String::from).collect()
     }

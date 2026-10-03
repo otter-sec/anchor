@@ -481,6 +481,11 @@ pub enum Command {
         #[clap(subcommand)]
         subcmd: IdlCommand,
     },
+    /// Commands for interacting with on-chain `security.json` metadata.
+    Security {
+        #[clap(subcommand)]
+        subcmd: SecurityCommand,
+    },
     /// Remove all artifacts from the generated directories except program keypairs.
     Clean,
     /// Deploys each program in the workspace.
@@ -881,6 +886,20 @@ pub enum ProgramCommand {
         program_name: Option<String>,
         /// Additional bytes to allocate
         additional_bytes: usize,
+    },
+}
+
+#[derive(Debug, Parser, AbsolutePath)]
+pub enum SecurityCommand {
+    /// Fetches a program's `security.json` from a cluster.
+    Fetch {
+        program_id: Pubkey,
+        /// Output file for the metadata (stdout if not specified).
+        #[clap(short, long)]
+        out: Option<String>,
+        /// Fetch non-canonical metadata account (third-party metadata)
+        #[clap(long)]
+        non_canonical: bool,
     },
 }
 
@@ -1599,6 +1618,7 @@ fn process_command(opts: Opts) -> Result<()> {
             )
         }
         Command::Idl { subcmd } => idl(&opts.cfg_override, subcmd),
+        Command::Security { subcmd } => security(&opts.cfg_override, subcmd),
         Command::LegacyIdl { subcmd } => {
             legacy_idl::handle_legacy_idl_command(&opts.cfg_override, subcmd)
         }
@@ -3587,6 +3607,35 @@ fn generate_idl(
         });
 
     Ok(idl)
+}
+
+fn security(cfg_override: &ConfigOverride, subcmd: SecurityCommand) -> Result<()> {
+    match subcmd {
+        SecurityCommand::Fetch {
+            program_id,
+            out,
+            non_canonical,
+        } => security_fetch(cfg_override, program_id, out, non_canonical),
+    }
+}
+
+fn security_fetch(
+    cfg_override: &ConfigOverride,
+    address: Pubkey,
+    out: Option<String>,
+    non_canonical: bool,
+) -> Result<()> {
+    let (cluster_url, _) = get_cluster_and_wallet(cfg_override)?;
+    let command = metadata::SecurityCommand::Fetch {
+        program_id: address.to_string(),
+        out,
+        non_canonical,
+    };
+
+    if !command.status(&cluster_url)?.success() {
+        return Err(anyhow!("Failed to fetch security metadata"));
+    }
+    Ok(())
 }
 
 fn idl_fetch(
