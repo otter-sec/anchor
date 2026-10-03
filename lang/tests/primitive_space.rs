@@ -19,6 +19,57 @@ fn test_primitive_space_implementations() {
     assert_eq!(Pubkey::INIT_SPACE, 32);
 }
 
+// `NonZero*` integers are borsh-serialized exactly like the inner integer
+#[test]
+fn test_non_zero_space_implementations() {
+    use std::num::*;
+
+    assert_eq!(NonZeroU8::INIT_SPACE, 1);
+    assert_eq!(NonZeroU16::INIT_SPACE, 2);
+    assert_eq!(NonZeroU32::INIT_SPACE, 4);
+    assert_eq!(NonZeroU64::INIT_SPACE, 8);
+    assert_eq!(NonZeroU128::INIT_SPACE, 16);
+    assert_eq!(NonZeroI8::INIT_SPACE, 1);
+    assert_eq!(NonZeroI16::INIT_SPACE, 2);
+    assert_eq!(NonZeroI32::INIT_SPACE, 4);
+    assert_eq!(NonZeroI64::INIT_SPACE, 8);
+    assert_eq!(NonZeroI128::INIT_SPACE, 16);
+}
+
+#[test]
+fn test_non_zero_with_initspace() {
+    use std::num::{NonZero, NonZeroU32, NonZeroU64};
+
+    #[derive(InitSpace)]
+    #[allow(dead_code)]
+    struct Limits {
+        max_supply: NonZeroU64,          // 8
+        fee_bps: core::num::NonZeroU16,  // 2
+        cap: NonZero<i128>,              // 16
+        maybe_limit: Option<NonZeroU32>, // 1 + 4
+        #[max_len(3)]
+        tiers: Vec<NonZeroU64>, // 4 + 3 * 8
+    }
+
+    // Should be 8 + 2 + 16 + 5 + 28 = 59
+    assert_eq!(Limits::INIT_SPACE, 59);
+
+    let limits = Limits {
+        max_supply: NonZeroU64::new(1).unwrap(),
+        fee_bps: core::num::NonZeroU16::new(30).unwrap(),
+        cap: NonZero::new(-1).unwrap(),
+        maybe_limit: NonZeroU32::new(9),
+        tiers: vec![NonZeroU64::MAX; 3],
+    };
+    let mut data = Vec::new();
+    limits.max_supply.serialize(&mut data).unwrap();
+    limits.fee_bps.serialize(&mut data).unwrap();
+    limits.cap.serialize(&mut data).unwrap();
+    limits.maybe_limit.serialize(&mut data).unwrap();
+    limits.tiers.serialize(&mut data).unwrap();
+    assert_eq!(data.len(), Limits::INIT_SPACE);
+}
+
 // Test that type aliases work with InitSpace
 #[test]
 fn test_type_alias_with_initspace() {

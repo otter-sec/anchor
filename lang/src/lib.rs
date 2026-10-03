@@ -483,6 +483,30 @@ impl Space for Pubkey {
     const INIT_SPACE: usize = 32;
 }
 
+// `NonZero*` integers are borsh-serialized exactly like the inner integer
+macro_rules! impl_space_for_non_zero {
+    ($($non_zero:ident => $inner:ty),* $(,)?) => {
+        $(
+            impl Space for core::num::$non_zero {
+                const INIT_SPACE: usize = <$inner as Space>::INIT_SPACE;
+            }
+        )*
+    };
+}
+
+impl_space_for_non_zero!(
+    NonZeroU8 => u8,
+    NonZeroU16 => u16,
+    NonZeroU32 => u32,
+    NonZeroU64 => u64,
+    NonZeroU128 => u128,
+    NonZeroI8 => i8,
+    NonZeroI16 => i16,
+    NonZeroI32 => i32,
+    NonZeroI64 => i64,
+    NonZeroI128 => i128,
+);
+
 /// Bump seed for program derived addresses.
 pub trait Bump {
     fn seed(&self) -> u8;

@@ -29,6 +29,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Validate Token-2022 mint extension constraints when reusing existing mints with `init_if_needed` ([#4845](https://github.com/otter-sec/anchor/pull/4845)).
 - cli: Make `anchor keygen new --silent` withhold the seed phrase instead of only the pubkey, matching `solana-keygen new --silent`. ([#5080](https://github.com/otter-sec/anchor/pull/5080)).
 - deps: Bump `heck` to 0.5 to avoid incompatible dependencies ([#4960](https://github.com/otter-sec/anchor/pull/4960)).
+- lang: Implement `Space` for `NonZero*` integers so `#[derive(InitSpace)]` supports them ([#5132](https://github.com/otter-sec/anchor/pull/5132)).
 
 ### Breaking
 
