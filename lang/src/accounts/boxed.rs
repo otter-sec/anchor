@@ -29,7 +29,29 @@ impl<'info, B, T: Accounts<'info, B>> Accounts<'info, B> for Box<T> {
         bumps: &mut B,
         reallocs: &mut BTreeSet<Pubkey>,
     ) -> Result<Self> {
-        T::try_accounts(program_id, accounts, ix_data, bumps, reallocs).map(Box::new)
+        let layout = std::alloc::Layout::new::<T>();
+        let raw_ptr = unsafe { std::alloc::alloc(layout) as *mut T };
+        if raw_ptr.is_null() {
+            return Err(crate::error::ErrorCode::AccountDidNotDeserialize.into());
+        }
+        struct AllocGuard<T>(*mut T);
+        impl<T> Drop for AllocGuard<T> {
+            fn drop(&mut self) {
+                if !self.0.is_null() {
+                    unsafe {
+                        std::alloc::dealloc(self.0 as *mut u8, std::alloc::Layout::new::<T>());
+                    }
+                }
+            }
+        }
+        let mut guard = AllocGuard(raw_ptr);
+        unsafe {
+            let val = T::try_accounts(program_id, accounts, ix_data, bumps, reallocs)?;
+            std::ptr::write(guard.0, val);
+        }
+        let ptr = guard.0;
+        guard.0 = std::ptr::null_mut();
+        Ok(unsafe { Box::from_raw(ptr) })
     }
 }
 
