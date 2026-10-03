@@ -48,7 +48,9 @@ pub trait TryAccounts: Bumps + Sized {
     /// `base_offset` is the index of the first view in the global bitvec.
     /// Top-level callers pass 0; `Nested<T>` passes its field's offset so
     /// the inner struct's duplicate-mutable-account checks hit the correct
-    /// global bits.
+    /// global bits. Implementations reject duplicates in the static mutable
+    /// mask before constructing any account wrappers; optional mutable
+    /// fields retain their own check after resolving to `Some`.
     fn try_accounts<'ix>(
         program_id: &Address,
         views: &[AccountView],
