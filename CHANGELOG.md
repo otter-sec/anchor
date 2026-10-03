@@ -20,6 +20,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- idl: Fix legacy const seed conversion: string seeds no longer keep JSON quotes, and integer and byte array seeds are supported ([#5127](https://github.com/otter-sec/anchor/pull/5127)).
 - lang: Improve macro hygiene to address potential issues with key validation ([#5105](https://github.com/otter-sec/anchor/pull/5105)).
 - client: Ignore logs from failed transactions in event subscriptions so reverted executions do not emit events ([#4884](https://github.com/otter-sec/anchor/pull/4884)).
 - lang: Accept arbitrary expressions in `declare_id!`. ([#5010](https://github.com/otter-sec/anchor/pull/5010)).
