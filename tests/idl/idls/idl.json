@@ -522,6 +522,28 @@
       }
     },
     {
+      "name": "same_name_alias",
+      "discriminator": [
+        222,
+        212,
+        227,
+        93,
+        197,
+        191,
+        171,
+        128
+      ],
+      "accounts": [
+        {
+          "name": "narrow"
+        },
+        {
+          "name": "wide"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "strct",
       "discriminator": [
         13,
@@ -862,6 +884,19 @@
       ]
     },
     {
+      "name": "NarrowAliasAccount",
+      "discriminator": [
+        158,
+        98,
+        107,
+        71,
+        153,
+        12,
+        214,
+        110
+      ]
+    },
+    {
       "name": "PrimitiveAccount",
       "discriminator": [
         78,
@@ -911,6 +946,19 @@
         178,
         17,
         7
+      ]
+    },
+    {
+      "name": "WideAliasAccount",
+      "discriminator": [
+        163,
+        128,
+        37,
+        207,
+        120,
+        137,
+        237,
+        103
       ]
     },
     {
@@ -1379,6 +1427,18 @@
       }
     },
     {
+      "name": "NarrowAliasAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "value",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "PrimitiveAccount",
       "type": {
         "kind": "struct",
@@ -1580,6 +1640,23 @@
           {
             "name": "bytes",
             "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WideAliasAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "value",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
           }
         ]
       }

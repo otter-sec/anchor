@@ -673,6 +673,7 @@ pub fn gen_idl_type(
                     quote::ToTokens,
                     std::{
                         collections::{HashMap, HashSet},
+                        path::PathBuf,
                         sync::OnceLock,
                     },
                 };
@@ -680,8 +681,91 @@ pub fn gen_idl_type(
                 struct CachedCrateData {
                     /// Names of all structs and enums defined in the crate
                     defined_names: HashSet<String>,
-                    /// Type aliases stored as (name, source_text) for re-parsing
-                    type_aliases: HashMap<String, String>,
+                    /// Every type alias definition in the crate, grouped by alias name. The same
+                    /// name can be defined differently in different modules.
+                    type_aliases: HashMap<String, Vec<AliasDef>>,
+                }
+
+                struct AliasDef {
+                    /// Path of the defining module, e.g. `::state`, empty for the crate root
+                    module_path: String,
+                    /// Source file of the defining module
+                    file: PathBuf,
+                    /// Alias source text, for re-parsing
+                    src: String,
+                }
+
+                /// Picks the alias definition `path` refers to. Name lookup alone can't tell
+                /// apart same-name aliases from different modules, so when their definitions
+                /// differ, use the module named in `path` (e.g. `state::Id`) or, failing that,
+                /// the one defined in the file being expanded. Error out rather than guess.
+                fn select_alias<'a>(
+                    defs: &'a [AliasDef],
+                    path: &syn::TypePath,
+                    name: &str,
+                    caller_file: &std::path::Path,
+                ) -> Result<&'a str> {
+                    fn single_src<'a>(defs: &[&'a AliasDef]) -> Option<&'a str> {
+                        let first = defs.first()?;
+                        defs.iter()
+                            .all(|def| def.src == first.src)
+                            .then_some(first.src.as_str())
+                    }
+
+                    let all = defs.iter().collect::<Vec<_>>();
+                    if let Some(src) = single_src(&all) {
+                        return Ok(src);
+                    }
+
+                    let qualifier = path
+                        .path
+                        .segments
+                        .iter()
+                        .take(path.path.segments.len() - 1)
+                        .map(|seg| seg.ident.to_string())
+                        .collect::<Vec<_>>();
+                    let candidates = if !qualifier.is_empty()
+                        && !qualifier.iter().any(|seg| seg == "self" || seg == "super")
+                    {
+                        let crate_rooted = qualifier[0] == "crate";
+                        let modules = &qualifier[usize::from(crate_rooted)..];
+                        let suffix = modules
+                            .iter()
+                            .fold(String::new(), |acc, seg| format!("{acc}::{seg}"));
+                        all.into_iter()
+                            .filter(|def| {
+                                if crate_rooted {
+                                    def.module_path == suffix
+                                } else {
+                                    def.module_path.ends_with(&suffix)
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                    } else {
+                        let caller_file = caller_file.canonicalize().ok();
+                        all.into_iter()
+                            .filter(|def| {
+                                caller_file.is_some() && def.file.canonicalize().ok() == caller_file
+                            })
+                            .collect::<Vec<_>>()
+                    };
+                    if let Some(src) = single_src(&candidates) {
+                        return Ok(src);
+                    }
+
+                    let modules = defs
+                        .iter()
+                        .map(|def| format!("`crate{}`", def.module_path))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    Err(syn::Error::new_spanned(
+                        path,
+                        format!(
+                            "Type alias `{name}` has different definitions in {modules}, so the \
+                             IDL can't tell which one this refers to. Use a path that names the \
+                             module (e.g. `module::{name}`) or rename one of the aliases."
+                        ),
+                    ))
                 }
 
                 static CRATE_DATA_CACHE: OnceLock<std::result::Result<CachedCrateData, String>> =
@@ -710,11 +794,16 @@ pub fn gen_idl_type(
                                     .map(|s| s.ident.to_string())
                                     .chain(ctx.enums().map(|e| e.ident.to_string()))
                                     .collect();
-                                let mut type_aliases: HashMap<String, String> = HashMap::new();
-                                for ty in ctx.type_aliases() {
-                                    type_aliases
-                                        .entry(ty.ident.to_string())
-                                        .or_insert_with(|| ty.to_token_stream().to_string());
+                                let mut type_aliases: HashMap<String, Vec<AliasDef>> =
+                                    HashMap::new();
+                                for (module_path, file, ty) in ctx.type_aliases_with_module() {
+                                    type_aliases.entry(ty.ident.to_string()).or_default().push(
+                                        AliasDef {
+                                            module_path: module_path.to_owned(),
+                                            file: file.to_owned(),
+                                            src: ty.to_token_stream().to_string(),
+                                        },
+                                    );
                                 }
                                 CachedCrateData {
                                     defined_names,
@@ -733,7 +822,11 @@ pub fn gen_idl_type(
                         }
                     };
 
-                    let alias_src = cache.type_aliases.get(&name).cloned();
+                    let alias_src = cache
+                        .type_aliases
+                        .get(&name)
+                        .map(|defs| select_alias(defs, path, &name, &source_path))
+                        .transpose()?;
                     let is_external = !cache.defined_names.contains(&name);
 
                     let alias: Option<syn::ItemType> =

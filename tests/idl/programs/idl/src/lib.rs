@@ -1,6 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{token, token_interface};
 
+mod alias_narrow;
+mod alias_wide;
+
 declare_id!("id11111111111111111111111111111111111111111");
 
 #[constant]
@@ -89,6 +92,10 @@ pub mod idl {
 
     pub fn enm(ctx: Context<Enum>, full_enum: FullEnum) -> Result<()> {
         ctx.accounts.account.full_enum = full_enum;
+        Ok(())
+    }
+
+    pub fn same_name_alias(_ctx: Context<SameNameAlias>) -> Result<()> {
         Ok(())
     }
 
@@ -300,6 +307,12 @@ pub enum FullEnum {
     Named { point_x: u64, point_y: u64 },
     Unnamed(u8, u8, u16, u16),
     UnnamedStruct(NamedStruct),
+}
+
+#[derive(Accounts)]
+pub struct SameNameAlias<'info> {
+    pub narrow: Account<'info, alias_narrow::NarrowAliasAccount>,
+    pub wide: Account<'info, alias_wide::WideAliasAccount>,
 }
 
 #[derive(Accounts)]

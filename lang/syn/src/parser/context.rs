@@ -44,6 +44,15 @@ impl CrateContext {
         self.modules.values().flat_map(|ctx| ctx.type_aliases())
     }
 
+    /// Type aliases along with the path (e.g. `::state::fees`, empty for the crate root) and
+    /// the source file of the module that defines them.
+    pub fn type_aliases_with_module(&self) -> impl Iterator<Item = (&str, &Path, &syn::ItemType)> {
+        self.modules.values().flat_map(|ctx| {
+            ctx.type_aliases()
+                .map(move |ty| (ctx.path.as_str(), ctx.file.as_path(), ty))
+        })
+    }
+
     pub fn modules(&self) -> impl Iterator<Item = ModuleContext<'_>> {
         self.modules.values().map(|detail| ModuleContext { detail })
     }
@@ -378,5 +387,46 @@ impl ParsedModule {
                 _ => None,
             })
             .flatten()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn type_aliases_with_module_reports_defining_module() {
+        let dir =
+            std::env::temp_dir().join(format!("anchor-syn-type-aliases-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("lib.rs"),
+            "pub type Id = u16;\npub mod order;\npub mod pool { pub type Id = [u8; 32]; }\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("order.rs"), "pub type Id = u64;\n").unwrap();
+
+        let ctx = CrateContext::parse(dir.join("lib.rs")).unwrap();
+        let mut aliases = ctx
+            .type_aliases_with_module()
+            .map(|(module, file, ty)| {
+                (
+                    module.to_owned(),
+                    file.file_name().unwrap().to_string_lossy().into_owned(),
+                    ty.ident.to_string(),
+                )
+            })
+            .collect::<Vec<_>>();
+        aliases.sort();
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(
+            aliases,
+            [
+                ("".to_owned(), "lib.rs".to_owned(), "Id".to_owned()),
+                ("::order".to_owned(), "order.rs".to_owned(), "Id".to_owned()),
+                ("::pool".to_owned(), "lib.rs".to_owned(), "Id".to_owned()),
+            ]
+        );
     }
 }
