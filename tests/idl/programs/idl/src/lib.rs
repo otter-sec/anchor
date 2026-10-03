@@ -75,6 +75,16 @@ pub mod idl {
         Ok(())
     }
 
+    pub fn non_zero_types(
+        ctx: Context<NonZeroTypes>,
+        non_zero_u8: core::num::NonZeroU8,
+        non_zero_i64: std::num::NonZero<i64>,
+    ) -> Result<()> {
+        ctx.accounts.account.non_zero_u8 = non_zero_u8;
+        ctx.accounts.account.non_zero_i64 = non_zero_i64;
+        Ok(())
+    }
+
     pub fn strct(
         ctx: Context<Struct>,
         unit: UnitStruct,
@@ -254,6 +264,19 @@ pub struct UnsizedTypes<'info> {
 pub struct UnsizedAccount {
     pub string: String,
     pub bytes: Vec<u8>,
+}
+
+#[derive(Accounts)]
+pub struct NonZeroTypes<'info> {
+    #[account(zero)]
+    pub account: Account<'info, NonZeroAccount>,
+}
+
+#[account]
+pub struct NonZeroAccount {
+    pub non_zero_u8: core::num::NonZeroU8,
+    pub non_zero_i64: std::num::NonZero<i64>,
+    pub option_non_zero_u32: Option<core::num::NonZeroU32>,
 }
 
 #[derive(Accounts)]

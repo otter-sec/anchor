@@ -531,6 +531,30 @@ pub fn gen_idl_type(
             })
     }
 
+    /// Returns the inner integer for `NonZeroU8`, `std::num::NonZeroU64`, etc.
+    fn nonzero_alias_inner(path: &syn::TypePath) -> Option<&'static str> {
+        const ALIASES: [(&str, &str); 10] = [
+            ("NonZeroU8", "u8"),
+            ("NonZeroI8", "i8"),
+            ("NonZeroU16", "u16"),
+            ("NonZeroI16", "i16"),
+            ("NonZeroU32", "u32"),
+            ("NonZeroI32", "i32"),
+            ("NonZeroU64", "u64"),
+            ("NonZeroI64", "i64"),
+            ("NonZeroU128", "u128"),
+            ("NonZeroI128", "i128"),
+        ];
+        ALIASES.iter().find_map(|(alias, inner)| {
+            path_is_builtin(
+                path,
+                alias,
+                &[&["std", "num", alias], &["core", "num", alias]],
+            )
+            .then_some(*inner)
+        })
+    }
+
     match ty {
         syn::Type::Path(path) if the_only_segment_is(path, "bool") => {
             Ok((quote! { #idl::IdlType::Bool }, vec![]))
@@ -622,6 +646,24 @@ pub fn gen_idl_type(
             let segment = get_last_segment(path)?;
             let arg = get_first_type_arg(segment)?;
             gen_idl_type(arg, generic_params)
+        }
+        // Borsh serializes `NonZero*` exactly like the inner integer, so the IDL
+        // describes them as that integer. The non-zero invariant is not recorded.
+        syn::Type::Path(path)
+            if path_is_builtin(
+                path,
+                "NonZero",
+                &[&["std", "num", "NonZero"], &["core", "num", "NonZero"]],
+            ) =>
+        {
+            let segment = get_last_segment(path)?;
+            let arg = get_first_type_arg(segment)?;
+            gen_idl_type(arg, generic_params)
+        }
+        syn::Type::Path(path) if nonzero_alias_inner(path).is_some() => {
+            #[allow(clippy::unwrap_used, reason = "checked by the match guard")]
+            let inner = nonzero_alias_inner(path).unwrap();
+            gen_idl_type(&syn::parse_str(inner)?, generic_params)
         }
         syn::Type::Array(arr) => {
             let len = &arr.len;

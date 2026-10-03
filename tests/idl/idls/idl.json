@@ -425,6 +425,35 @@
       ]
     },
     {
+      "name": "non_zero_types",
+      "discriminator": [
+        220,
+        196,
+        25,
+        162,
+        126,
+        7,
+        249,
+        239
+      ],
+      "accounts": [
+        {
+          "name": "account",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "non_zero_u8",
+          "type": "u8"
+        },
+        {
+          "name": "non_zero_i64",
+          "type": "i64"
+        }
+      ]
+    },
+    {
       "name": "primitive_types",
       "discriminator": [
         14,
@@ -859,6 +888,19 @@
         105,
         142,
         20
+      ]
+    },
+    {
+      "name": "NonZeroAccount",
+      "discriminator": [
+        201,
+        148,
+        1,
+        214,
+        127,
+        195,
+        167,
+        209
       ]
     },
     {
@@ -1374,6 +1416,28 @@
           {
             "name": "some_field",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NonZeroAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "non_zero_u8",
+            "type": "u8"
+          },
+          {
+            "name": "non_zero_i64",
+            "type": "i64"
+          },
+          {
+            "name": "option_non_zero_u32",
+            "type": {
+              "option": "u32"
+            }
           }
         ]
       }
