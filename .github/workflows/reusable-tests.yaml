@@ -62,6 +62,8 @@ jobs:
       - run: ./.github/scripts/check-solana-program-version.sh
       # FIXME: Enable `idl-build`
       - run: cargo test --workspace --exclude avm --features allow-missing-optionals,anchor-debug,derive,event-cpi,init-if-needed,lazy-account
+      # run async tests for anchor-client
+      - run: cargo test -p anchor-client --features async
       # using singlethreaded testing for avm so that tests that change files do not conflict with each other
       - run: cargo test --package avm -- --test-threads=1
       # Init local borsh package
@@ -99,6 +101,8 @@ jobs:
       - run: cargo clippy --workspace --exclude avm --all-targets --no-default-features --features solana-v4,associated_token,mint,token,token_2022,token_2022_extensions -- -D warnings
       # FIXME: Enable `idl-build`
       - run: cargo test --workspace --exclude avm --no-default-features --features solana-v4,allow-missing-optionals,anchor-debug,derive,event-cpi,init-if-needed,lazy-account,associated_token,mint,token,token_2022,token_2022_extensions
+      # run async tests for anchor-client
+      - run: cargo test -p anchor-client --no-default-features --features solana-v4,async
 
   setup-anchor-cli:
     name: Setup Anchor cli
