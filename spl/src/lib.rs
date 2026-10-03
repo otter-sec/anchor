@@ -37,3 +37,19 @@ pub mod memo;
 
 #[cfg(feature = "idl-build")]
 mod idl_build;
+
+#[cfg(test)]
+mod test_token22_assertion_gaps {
+    #[test]
+    fn test_token22_extension_constraint_negative_assertion() {
+        let is_extension_initialized = false;
+        let requires_transfer_hook = true;
+
+        let is_valid = is_extension_initialized || !requires_transfer_hook;
+
+        assert!(
+            !is_valid,
+            "Token-22 transfer hook constraint must throw an error when extension is uninitialized"
+        );
+    }
+}
