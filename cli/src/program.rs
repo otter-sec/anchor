@@ -834,6 +834,26 @@ fn upload_security_metadata(
     Ok(())
 }
 
+/// Resolve the deploy target from the loaded program keypair, treating an
+/// explicit `--program-id` as an assertion that it matches the keypair pubkey.
+fn resolve_program_id(
+    loaded_program_keypair: &Keypair,
+    program_id: Option<Pubkey>,
+) -> Result<Pubkey> {
+    let loaded_program_id = loaded_program_keypair.pubkey();
+    match program_id {
+        Some(expected_program_id) if expected_program_id != loaded_program_id => {
+            bail!(
+                "--program-id {} does not match --program-keypair pubkey {}",
+                expected_program_id,
+                loaded_program_id
+            );
+        }
+        Some(expected_program_id) => Ok(expected_program_id),
+        None => Ok(loaded_program_id),
+    }
+}
+
 /// Deploy a single program (either from explicit filepath or workspace) - private implementation
 #[allow(clippy::too_many_arguments)]
 pub fn program_deploy(
@@ -851,14 +871,11 @@ pub fn program_deploy(
     make_final: bool,
     solana_args: Vec<String>,
 ) -> Result<()> {
-    let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
-    let payer = get_payer_keypair(cfg_override, &config)?;
-    // Resolve requested metadata before performing any on-chain mutations.
-    let security_path = requested_security_metadata_path(security_metadata, config.as_ref())?;
-    let (_cluster_url, wallet_path) = crate::get_cluster_and_wallet(cfg_override)?;
-    let upgrade_authority_path = upgrade_authority
-        .clone()
-        .unwrap_or_else(|| wallet_path.clone());
+    if program_id.is_some() && program_keypair.is_none() {
+        return Err(anyhow!(
+            "When --program-id is specified, --program-keypair must also be provided"
+        ));
+    }
 
     // Determine the program filepath
     let program_filepath = if let Some(filepath) = program_filepath {
@@ -887,10 +904,6 @@ pub fn program_deploy(
                 e
             )
         })?
-    } else if let Some(_program_id) = program_id {
-        return Err(anyhow!(
-            "When --program-id is specified, --program-keypair must also be provided"
-        ));
     } else {
         // Auto-detect from target/deploy/{program_name}-keypair.json
         let program_name = Path::new(&program_filepath)
@@ -911,7 +924,12 @@ pub fn program_deploy(
         })?
     };
 
-    let program_id = loaded_program_keypair.pubkey();
+    let program_id = resolve_program_id(&loaded_program_keypair, program_id)?;
+
+    let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
+    let payer = get_payer_keypair(cfg_override, &config)?;
+    // Resolve requested metadata before performing any on-chain mutations.
+    let security_path = requested_security_metadata_path(security_metadata, config.as_ref())?;
 
     // Inject per-program --buffer keypair so retries
     // within and across runs share the same on-chain buffer.
@@ -944,17 +962,19 @@ pub fn program_deploy(
         )
     })?;
 
-    // Determine upgrade authority
-    let upgrade_authority = if let Some(auth_path) = upgrade_authority {
+    // Determine upgrade authority. The path is the same choice, kept for the
+    // security-metadata upload which takes a keypair file rather than a signer.
+    let (_cluster_url, wallet_path) = crate::get_cluster_and_wallet(cfg_override)?;
+    let (upgrade_authority, upgrade_authority_path) = if let Some(auth_path) = upgrade_authority {
         let authority_keypair = Keypair::read_from_file(&auth_path)
             .map_err(|e| anyhow!("Failed to read upgrade authority keypair: {}", e))?;
         println!(
             "Using custom upgrade authority: {}",
             authority_keypair.pubkey()
         );
-        authority_keypair
+        (authority_keypair, auth_path)
     } else {
-        payer.insecure_clone()
+        (payer.insecure_clone(), wallet_path.clone())
     };
 
     // Check if program already exists → decides deploy vs upgrade path
@@ -2917,9 +2937,105 @@ fn send_messages_in_batches(
 mod tests {
     use {
         super::*,
-        std::{collections::BTreeSet, fs, path::Path},
+        std::{
+            collections::BTreeSet,
+            fs,
+            path::{Path, PathBuf},
+        },
         tempfile::tempdir,
     };
+
+    #[test]
+    fn resolve_program_id_accepts_matching_keypair() {
+        let program_keypair = Keypair::new();
+        let expected_program_id = program_keypair.pubkey();
+
+        let program_id = resolve_program_id(&program_keypair, Some(expected_program_id)).unwrap();
+
+        assert_eq!(program_id, expected_program_id);
+    }
+
+    #[test]
+    fn resolve_program_id_rejects_mismatching_keypair() {
+        let program_keypair = Keypair::new();
+        let expected_program_id = Pubkey::new_unique();
+
+        let err = resolve_program_id(&program_keypair, Some(expected_program_id))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains(&format!(
+            "--program-id {} does not match --program-keypair pubkey {}",
+            expected_program_id,
+            program_keypair.pubkey()
+        )));
+    }
+
+    #[test]
+    fn program_deploy_rejects_mismatching_program_id_before_deploy() {
+        let dir = tempdir().unwrap();
+        let keypair_path = dir.path().join("program-keypair.json");
+        let program_keypair = Keypair::new();
+        program_keypair.write_to_file(&keypair_path).unwrap();
+        let mismatching_program_id = Pubkey::new_unique();
+
+        let err = program_deploy(
+            &ConfigOverride {
+                cluster: None,
+                wallet: None,
+                commitment: None,
+            },
+            Some(dir.path().join("program.so")),
+            None,
+            Some(keypair_path),
+            None,
+            Some(mismatching_program_id),
+            None,
+            None,
+            false,
+            true,
+            false,
+            false,
+            vec![],
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains(&format!(
+            "--program-id {} does not match --program-keypair pubkey {}",
+            mismatching_program_id,
+            program_keypair.pubkey()
+        )));
+    }
+
+    #[test]
+    fn program_deploy_rejects_program_id_without_program_keypair() {
+        let err = program_deploy(
+            &ConfigOverride {
+                cluster: None,
+                wallet: None,
+                commitment: None,
+            },
+            Some(PathBuf::from("program.so")),
+            None,
+            None,
+            None,
+            Some(Pubkey::new_unique()),
+            None,
+            None,
+            false,
+            true,
+            false,
+            false,
+            vec![],
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(
+            err.contains("When --program-id is specified, --program-keypair must also be provided")
+        );
+    }
 
     fn write_file(path: &Path, contents: &str) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
