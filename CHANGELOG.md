@@ -16,11 +16,10 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Breaking
 
-## [1.2.1] - 2026-10-01
+## [1.2.2] - 2026-10-05
 
 ### Features
 
-- lang: Add support for Solana v4 crates using the `solana-v4` feature ([#5081](https://github.com/otter-sec/anchor/pull/5081)).
 - cli: Add `NO_DNA` mode to disable supported interactive prompts for CI, scripts, and agent runs ([#4773](https://github.com/otter-sec/anchor/pull/4773)).
 - lang: Use `CreateAccountAllowPrefund` to initialize accounts that already hold lamports, replacing the `Transfer` + `Allocate` + `Assign` CPIs ([#5057](https://github.com/otter-sec/anchor/pull/5057)).
 
@@ -35,6 +34,16 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Validate Token-2022 mint extension constraints when reusing existing mints with `init_if_needed` ([#4845](https://github.com/otter-sec/anchor/pull/4845)).
 - cli: Make `anchor keygen new --silent` withhold the seed phrase instead of only the pubkey, matching `solana-keygen new --silent`. ([#5080](https://github.com/otter-sec/anchor/pull/5080)).
 - deps: Bump `heck` to 0.5 to avoid incompatible dependencies ([#4960](https://github.com/otter-sec/anchor/pull/4960)).
+
+### Breaking
+
+## [1.2.1] - 2026-10-05
+
+### Features
+
+- lang: Add support for Solana v4 crates using the `solana-v4` feature ([#5081](https://github.com/otter-sec/anchor/pull/5081)).
+
+### Fixes
 
 ### Breaking
 

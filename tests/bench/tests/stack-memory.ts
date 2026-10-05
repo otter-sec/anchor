@@ -145,12 +145,13 @@ describe("Stack memory", () => {
     const legacySbfOutput = ["v1.42.1", "v1.46.1"].includes(
       platformToolsVersion
     );
-    const programTarget =
-      version === "unreleased" || version >= "1.2.0"
-        ? "sbpfv3"
-        : legacySbfOutput || platformToolsMinor < 44
-        ? "sbf"
-        : "sbpf";
+    const programTarget = bench.get(version).sbpfArch
+      ? `sbpf${bench.get(version).sbpfArch}`
+      : version === "unreleased" || version >= "1.2.0"
+      ? "sbpfv3"
+      : legacySbfOutput || platformToolsMinor < 44
+      ? "sbf"
+      : "sbpf";
     const programPath = path.join(
       "target",
       `${programTarget}-solana-solana`,

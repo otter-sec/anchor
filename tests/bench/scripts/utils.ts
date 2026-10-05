@@ -23,6 +23,8 @@ type Bench = {
     solanaVersion: Version;
     /** Platform-tools version used to build the benchmark program */
     platformToolsVersion: PlatformToolsVersion;
+    /** Explicit SBPF architecture for releases with non-default benchmark builds. */
+    sbpfArch?: "v2" | "v3";
     /** Benchmark results for a version */
     result: BenchResult;
   };
