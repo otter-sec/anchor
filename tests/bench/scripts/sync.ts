@@ -186,6 +186,8 @@ const IDL_PATH = path.join("target", "idl", "bench.json");
       const versionBuildEnv = {
         ...buildEnv,
         ANCHOR_BUILD_SBF_ARCH: bench.get(version).sbpfArch ?? "v3",
+        ANCHOR_TEST_VALIDATOR:
+          bench.get(version).sbpfArch === "v3" ? "surfpool" : "legacy",
       };
 
       // Resolve path dependencies in the cached lockfile before using the
@@ -257,7 +259,11 @@ const IDL_PATH = path.join("target", "idl", "bench.json");
         return;
       }
 
-      const result = spawn("anchor", ["test", "--skip-lint", "--skip-build"], {
+      const testArgs = ["test", "--skip-lint", "--skip-build"];
+      if (version === "unreleased" || version >= "1.0.0") {
+        testArgs.push("--validator", versionBuildEnv.ANCHOR_TEST_VALIDATOR);
+      }
+      const result = spawn("anchor", testArgs, {
         env: {
           ...versionBuildEnv,
           [BENCHMARK_VERSION_ENV]: version,
