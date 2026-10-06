@@ -50,8 +50,8 @@ use {
         accounts::Slab,
         prelude::BorshAccount,
         testing::AccountBuffer,
-        wincode::{SchemaRead, SchemaWrite},
-        AccountClose, AccountRealloc, AnchorAccount, Discriminator, Owner,
+        AccountClose, AccountRealloc, AnchorAccount, AnchorDeserialize, AnchorSerialize,
+        Discriminator, Owner,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::{account::RuntimeAccount, address::Address},
@@ -59,7 +59,7 @@ use {
 
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
 
-#[derive(SchemaRead, SchemaWrite, Default, Clone)]
+#[derive(AnchorDeserialize, AnchorSerialize, Default, Clone)]
 struct Vault {
     authority: [u8; 32],
     balance: u64,

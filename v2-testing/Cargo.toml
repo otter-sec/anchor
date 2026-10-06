@@ -15,29 +15,25 @@ default = []
 profile = [
     "dep:solana-program-runtime",
     "dep:solana-transaction-context",
-    "dep:solana-sbpf",
     "litesvm/register-tracing",
-    # Activates sbpf's gdb-stub via Cargo feature unification. When
+    # Activates sbpf's gdb-stub through LiteSVM. When
     # `VM_DEBUG_PORT` is set in env, every `EbpfVm::new` blocks on that
     # port waiting for a client — this is what `anchor debugger --gdb`
     # drives. No-op unless the env var is set.
-    "solana-sbpf/debugger",
+    "litesvm/sbpf-debugger",
 ]
 
 [dependencies]
-litesvm = "0.11.0"
+litesvm = "=0.13.1"
 # Re-exported so scaffold tests import `Keypair` / `Signer` / `Message` / ...
 # via `anchor_v2_testing` and don't need direct deps on each.
 solana-keypair = "3.0.1"
 solana-message = "3.0.1"
 solana-signer = "3.0.0"
 solana-transaction = "3.0.2"
-solana-program-runtime = { version = "3.1.12", optional = true }
-solana-transaction-context = { version = "3.0", optional = true }
-# Direct dep so `profile` can forward `debugger` feature into it. Cargo
-# feature unification ensures the feature propagates through litesvm's
-# and agave's transitive uses of sbpf too.
-solana-sbpf = { version = "0.13", optional = true }
+# LiteSVM 0.13.1's callbacks use the Agave 4.0 API.
+solana-program-runtime = { version = "=4.0.0", optional = true }
+solana-transaction-context = { version = "=4.0.0", optional = true }
 
 # Nested workspace so dep resolution is independent of the outer anchor
 # workspace — litesvm's transitive `agave-*` pins conflict with

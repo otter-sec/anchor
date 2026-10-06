@@ -1,9 +1,10 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "module": "es2022",
-    "target": "es2019",
+    "target": "es2022",
+    "lib": ["esnext", "dom"],
     "outDir": "dist/esm/",
     "rootDir": "./src",
   }

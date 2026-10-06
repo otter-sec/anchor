@@ -23,7 +23,6 @@ foreign-borsh-account = { path = "../foreign-borsh-account" }
 pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
 pinocchio-system = "0.6"
 solana-program-error = "3.0"
-wincode = { version = "0.5", features = ["derive"] }
 
 [lints.rust.unexpected_cfgs]
 level = "allow"

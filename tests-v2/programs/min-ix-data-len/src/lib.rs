@@ -7,6 +7,7 @@ pub mod min_ix_data_len {
     use super::*;
 
     #[discrim = 0]
+    #[cfg_attr(feature = "no-entrypoint", inline(always), no_mangle)]
     pub fn short_args(_ctx: &mut Context<Noop>, a: u8, b: u64) -> Result<()> {
         if a != 7 || b != 0x0102_0304_0506_0708 {
             return Err(ProgramError::InvalidInstructionData.into());

@@ -99,6 +99,7 @@ fn test_set_label() {
     let mut label = [0u8; 32];
     label[..label_bytes.len()].copy_from_slice(label_bytes);
 
+    let (config, _) = config_address(&creator.pubkey());
     let ix = Instruction::new_with_bytes(
         multisig_v2::id(),
         &instruction::SetLabel {
@@ -106,7 +107,7 @@ fn test_set_label() {
             label,
         }
         .data(),
-        multisig_v2::accounts::SetLabelResolved { creator: creator.pubkey() }
+        multisig_v2::accounts::SetLabelResolved { creator: creator.pubkey(), config }
             .to_account_metas(None),
     );
     let res = send(&mut svm, ix, &[&creator]).expect("set_label");
@@ -138,6 +139,7 @@ fn test_execute_transfer() {
 
     // Execute transfer
     let mut metas = multisig_v2::accounts::ExecuteTransferResolved {
+        config,
         creator: creator.pubkey(),
         recipient: recipient.pubkey(),
     }

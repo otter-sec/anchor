@@ -191,7 +191,10 @@ pub(crate) fn validate_instruction_accounts<'a>(
         }
 
         if enforce_signers && account.is_signer {
-            require!(handle.is_signer(), ProgramError::MissingRequiredSignature);
+            require!(
+                handle.account_view().is_signer(),
+                ProgramError::MissingRequiredSignature
+            );
         }
     }
 

@@ -16,6 +16,35 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Breaking
 
+## [2.0.0-rc.2] - 2026-10-06
+
+### Features
+
+### Fixes
+
+- ts: Resolve every event CPI account pair of an instruction, not just the first ([#5117](https://github.com/otter-sec/anchor/pull/5117)).
+- ts: Encode signed integer PDA seeds as two's complement ([#5114](https://github.com/otter-sec/anchor/pull/5114)).
+- lang-v2: Restore compatibility for `BTreeMap`, `BTreeSet`, tuples, and `IdlType` values, and document intentional Wincode differences from v1 Borsh, including NaN acceptance and `HashMap`/`HashSet` iteration ordering. Native Map/Set IDL and TypeScript SDK support remains future work.
+
+### Breaking
+
+- ts: Drop `@solana/web3.js`, `bn.js` and `Buffer` from the public API ([#5117](https://github.com/otter-sec/anchor/pull/5117)).
+- ts: Rename `programId` to `address` and `pubkeys()` to `addresses()` ([#5117](https://github.com/otter-sec/anchor/pull/5117)).
+- ts: Remove `utils.bytes`, `utils.publicKey`, `utils.token` and `utils.sha256` in favour of `@solana/kit` and `@solana-program/token` ([#5117](https://github.com/otter-sec/anchor/pull/5117)).
+- ts: Fetch IDLs through `@solana-program/program-metadata` ([#5117](https://github.com/otter-sec/anchor/pull/5117)).
+- ts: Remove the `@anchor-lang/spl-*` packages in favour of `@solana-program/*` ([#5116](https://github.com/otter-sec/anchor/pull/5116)).
+- ts: Remove `Native.system()` in favour of `@solana-program/system` ([#5115](https://github.com/otter-sec/anchor/pull/5115)).
+- ts: Move the token, public key and registry utilities to `@solana/kit` ([#5115](https://github.com/otter-sec/anchor/pull/5115)).
+- ts: Resolve accounts on `@solana/kit`, returning addresses from `pubkeys()` ([#5114](https://github.com/otter-sec/anchor/pull/5114)).
+- ts: Listen to events through Kit subscriptions ([#5103](https://github.com/otter-sec/anchor/pull/5103)).
+- ts: Remove `Provider.connection` and `Provider.publicKey` in favour of `rpc`, `rpcSubscriptions` and `wallet.address` ([#5103](https://github.com/otter-sec/anchor/pull/5103)).
+- ts: Rewrite the account namespace on `@solana/kit` ([#5088](https://github.com/otter-sec/anchor/pull/5088)).
+- ts: Default the provider commitment to `confirmed` ([#5088](https://github.com/otter-sec/anchor/pull/5088)).
+- ts: Rewrite the program namespaces on `@solana/kit` ([#5060](https://github.com/otter-sec/anchor/pull/5060)).
+- ts: Rewrite the provider on `@solana/kit` ([#5008](https://github.com/otter-sec/anchor/pull/5008)).
+- ts: Require Node.js >=22.12 ([#5005](https://github.com/otter-sec/anchor/pull/5005)).
+- ts: Replace the borsh coder with `@solana/kit` codecs and remove the `@anchor-lang/borsh` package ([#4985](https://github.com/otter-sec/anchor/pull/4985)).
+
 ## [2.0.0-rc.1] - 2026-08-12
 
 ### Features

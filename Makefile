@@ -21,12 +21,16 @@ TESTS_V2_COVERAGE_TESTS := \
 	account_address_constraints \
 	account_meta_signer_overrides \
 	accounts \
+	borsh_borrow_alignment \
 	borsh_realloc \
+	cfg_semantics \
 	client_builders \
+	constraint_values \
 	constraints \
 	cpi \
 	custom_constraints \
 	declare_program \
+	declare_program_idl_deps \
 	derives \
 	dispatch_remaining \
 	dup_mut \
@@ -34,19 +38,26 @@ TESTS_V2_COVERAGE_TESTS := \
 	equivalence_spl \
 	event_cpi \
 	idl_convert \
+	idl_defined_args \
 	idl_metadata \
 	init_space_usability \
+	instruction_prefix \
 	ix_macro \
+	min_ix_data_len \
 	optional_accounts \
 	pda_payer \
 	program_interface \
 	seeds \
+	slab_idl_surface \
 	spl \
 	spl_ata \
+	space_annotation \
 	sysvar_idl \
 	token_2022_extensions \
 	token_interface
 TESTS_V2_COVERAGE_ARGS := $(foreach test,$(TESTS_V2_COVERAGE_TESTS),--test $(test))
+TESTS_V2_NON_COVERAGE_TESTS := compile_fail
+TESTS_V2_NON_COVERAGE_ARGS := $(foreach test,$(TESTS_V2_NON_COVERAGE_TESTS),--test $(test))
 
 .PHONY: coverage-v2
 coverage-v2:
@@ -97,6 +108,8 @@ build-anchor-debug:
 .PHONY: coverage-v2-host
 coverage-v2-host:
 	$(MAKE) coverage-v2-host-clean
+	$(MAKE) coverage-v2-host-derive
+	$(MAKE) coverage-v2-host-cli
 	$(MAKE) coverage-v2-host-lang
 	$(MAKE) coverage-v2-host-spl
 	$(MAKE) coverage-v2-host-tests
@@ -111,6 +124,19 @@ coverage-v2-host-clean:
 		exit 1; \
 	}
 	cargo llvm-cov clean --workspace
+
+.PHONY: coverage-v2-host-lang
+coverage-v2-host-derive:
+	# Proc macros have their own unit-test target and must be selected directly:
+	# depending on them from anchor-lang does not compile that target with cfg(test).
+	CARGO_PROFILE_RELEASE_DEBUG=2 \
+	cargo llvm-cov --no-report -p anchor-derive-accounts
+
+.PHONY: coverage-v2-host-lang
+coverage-v2-host-cli:
+	# Keep the command-line surface in the same host report as the framework.
+	CARGO_PROFILE_RELEASE_DEBUG=2 \
+	cargo llvm-cov --no-report -p anchor-cli
 
 .PHONY: coverage-v2-host-lang
 coverage-v2-host-lang:
@@ -136,6 +162,13 @@ coverage-v2-host-tests:
 	# execute framework runtime paths for source coverage.
 	CARGO_PROFILE_RELEASE_DEBUG=2 \
 	cargo llvm-cov --no-report -p tests-v2 $(TESTS_V2_COVERAGE_ARGS)
+
+# Compile-fail fixtures exercise diagnostics by spawning isolated Cargo projects.
+# Run them in CI, but keep them out of the instrumentation report so temporary
+# fixture code cannot dilute framework line coverage.
+.PHONY: test-v2-non-coverage
+test-v2-non-coverage:
+	cargo test -p tests-v2 $(TESTS_V2_NON_COVERAGE_ARGS)
 
 .PHONY: coverage-v2-host-idl-build
 coverage-v2-host-idl-build:

@@ -8,6 +8,7 @@ pub mod nested_v2 {
 
     /// Create the config and counter accounts.
     #[discrim = 0]
+    #[inline(always)]
     pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {
         ctx.accounts.config.admin = *ctx.accounts.admin.address();
         ctx.accounts.config.bump = ctx.bumps.config;
@@ -19,6 +20,7 @@ pub mod nested_v2 {
     /// Increment the counter. Only the admin (validated via the nested
     /// `AdminConfig` struct) can call this.
     #[discrim = 1]
+    #[inline(always)]
     pub fn increment(ctx: &mut Context<Increment>) -> Result<()> {
         ctx.accounts.counter.value += 1;
         Ok(())
@@ -27,6 +29,7 @@ pub mod nested_v2 {
     /// Reset the counter to zero. Same admin gate, different action —
     /// the `Nested<AdminConfig>` reuses the identical validation.
     #[discrim = 2]
+    #[inline(always)]
     pub fn reset(ctx: &mut Context<Reset>) -> Result<()> {
         ctx.accounts.counter.value = 0;
         Ok(())

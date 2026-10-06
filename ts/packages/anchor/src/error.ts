@@ -1,5 +1,7 @@
-import { PublicKey } from "@solana/web3.js";
+import { SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM } from "@solana/kit";
+import { address, Address } from "@solana/kit";
 import * as errors from "@anchor-lang/errors";
+import { findSolanaError } from "./utils/common.js";
 import * as features from "./utils/features.js";
 
 export class IdlError extends Error {
@@ -21,17 +23,17 @@ interface FileLine {
 
 type Origin = string | FileLine;
 type ComparedAccountNames = [string, string];
-type ComparedPublicKeys = [PublicKey, PublicKey];
-type ComparedValues = ComparedAccountNames | ComparedPublicKeys;
+type ComparedAddresses = [Address, Address];
+type ComparedValues = ComparedAccountNames | ComparedAddresses;
 
 export class ProgramErrorStack {
-  constructor(readonly stack: PublicKey[]) {}
+  constructor(readonly stack: Address[]) {}
 
   public static parse(logs: string[]) {
     const programKeyRegex = /^Program (\w*) invoke/;
     const successRegex = /^Program \w* success/;
 
-    const programStack: PublicKey[] = [];
+    const programStack: Address[] = [];
     for (let i = 0; i < logs.length; i++) {
       if (successRegex.exec(logs[i])) {
         programStack.pop();
@@ -42,7 +44,7 @@ export class ProgramErrorStack {
       if (!programKey) {
         continue;
       }
-      programStack.push(new PublicKey(programKey));
+      programStack.push(address(programKey));
     }
     return new ProgramErrorStack(programStack);
   }
@@ -92,13 +94,14 @@ export class AnchorError extends Error {
       // Right:
       // <Pubkey>
       if (logs[anchorErrorLogIndex + 1] === "Program log: Left:") {
-        const pubkeyRegex = /^Program log: (.*)$/;
-        const leftPubkey = pubkeyRegex.exec(logs[anchorErrorLogIndex + 2])![1];
-        const rightPubkey = pubkeyRegex.exec(logs[anchorErrorLogIndex + 4])![1];
-        comparedValues = [
-          new PublicKey(leftPubkey),
-          new PublicKey(rightPubkey),
-        ];
+        const addressRegex = /^Program log: (.*)$/;
+        const leftAddress = addressRegex.exec(
+          logs[anchorErrorLogIndex + 2]
+        )![1];
+        const rightAddress = addressRegex.exec(
+          logs[anchorErrorLogIndex + 4]
+        )![1];
+        comparedValues = [address(leftAddress), address(rightAddress)];
         errorLogs.push(
           ...logs.slice(anchorErrorLogIndex + 1, anchorErrorLogIndex + 5)
         );
@@ -178,13 +181,13 @@ export class AnchorError extends Error {
     }
   }
 
-  get program(): PublicKey {
+  get program(): Address {
     return this._programErrorStack.stack[
       this._programErrorStack.stack.length - 1
     ];
   }
 
-  get programErrorStack(): PublicKey[] {
+  get programErrorStack(): Address[] {
     return this._programErrorStack.stack;
   }
 
@@ -212,29 +215,8 @@ export class ProgramError extends Error {
     err: any,
     idlErrors: Map<number, string>
   ): ProgramError | null {
-    const errString: string = err.toString();
-    // TODO: don't rely on the error string. web3.js should preserve the error
-    //       code information instead of giving us an untyped string.
-    let unparsedErrorCode: string;
-    if (errString.includes("custom program error:")) {
-      let components = errString.split("custom program error: ");
-      if (components.length !== 2) {
-        return null;
-      } else {
-        unparsedErrorCode = components[1];
-      }
-    } else {
-      const matches = errString.match(/"Custom":([0-9]+)}/g);
-      if (!matches || matches.length > 1) {
-        return null;
-      }
-      unparsedErrorCode = matches[0].match(/([0-9]+)/g)![0];
-    }
-
-    let errorCode: number;
-    try {
-      errorCode = parseInt(unparsedErrorCode);
-    } catch (parseErr) {
+    let errorCode: number | null = ProgramError.parseErrorCode(err);
+    if (errorCode === null) {
       return null;
     }
 
@@ -254,13 +236,54 @@ export class ProgramError extends Error {
     return null;
   }
 
-  get program(): PublicKey | undefined {
+  /**
+   * Extracts the custom program error code from the given error, or returns
+   * `null` when the error does not carry one.
+   */
+  private static parseErrorCode(err: any): number | null {
+    // Kit nests the instruction error as a `SolanaError` in the cause chain
+    // (e.g. below a preflight failure), carrying the code in its context.
+    const customError = findSolanaError(
+      err,
+      SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM
+    );
+    if (customError) {
+      return Number(customError.context.code);
+    }
+
+    // Fall back to parsing the error string, e.g. for errors surfaced by the
+    // legacy web3.js paths or raw RPC simulation results.
+    const errString: string = err.toString();
+    let unparsedErrorCode: string;
+    if (errString.includes("custom program error:")) {
+      let components = errString.split("custom program error: ");
+      if (components.length !== 2) {
+        return null;
+      } else {
+        unparsedErrorCode = components[1];
+      }
+    } else {
+      const matches = errString.match(/"Custom":([0-9]+)}/g);
+      if (!matches || matches.length > 1) {
+        return null;
+      }
+      unparsedErrorCode = matches[0].match(/([0-9]+)/g)![0];
+    }
+
+    try {
+      return parseInt(unparsedErrorCode);
+    } catch (parseErr) {
+      return null;
+    }
+  }
+
+  get program(): Address | undefined {
     return this._programErrorStack?.stack[
       this._programErrorStack.stack.length - 1
     ];
   }
 
-  get programErrorStack(): PublicKey[] | undefined {
+  get programErrorStack(): Address[] | undefined {
     return this._programErrorStack?.stack;
   }
 

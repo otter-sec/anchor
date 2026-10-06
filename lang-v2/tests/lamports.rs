@@ -6,8 +6,7 @@ use {
     anchor_lang::{
         prelude::{BorshAccount, Lamports},
         testing::AccountBuffer,
-        wincode::{SchemaRead, SchemaWrite},
-        AnchorAccount, Discriminator, Owner,
+        AnchorAccount, AnchorDeserialize, AnchorSerialize, Discriminator, Owner,
     },
     pinocchio::address::Address,
     solana_program_error::ProgramError,
@@ -15,7 +14,7 @@ use {
 
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
 
-#[derive(SchemaRead, SchemaWrite, Default, Clone)]
+#[derive(AnchorDeserialize, AnchorSerialize, Default, Clone)]
 struct Counter {
     value: u64,
 }

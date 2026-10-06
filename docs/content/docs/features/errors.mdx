@@ -16,7 +16,7 @@ pub fn custom_instruction(ctx: Context<CustomInstruction>) -> Result<()> {
 ```
 
 The
-[`Result<T>`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/lib.rs#L157)
+[`Result<T>`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/lib.rs#L157)
 type in Anchor programs is a type alias that wraps the standard Rust
 `Result<T, E>`. In this case, `T` represents the successful return type, while
 `E` is Anchor's custom `Error` type.
@@ -28,7 +28,7 @@ pub type Result<T> = std::result::Result<T, error::Error>;
 ## Anchor Error
 
 When an error occurs in an Anchor program, it returns a custom
-[`Error`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/error.rs#L283-L287)
+[`Error`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/error.rs#L283-L287)
 type defined as:
 
 ```rust
@@ -41,7 +41,7 @@ pub enum Error {
 
 The `Error` type in Anchor programs can be one of two variants:
 
-1. [`ProgramErrorWithOrigin`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/error.rs#L395-L400):
+1. [`ProgramErrorWithOrigin`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/error.rs#L395-L400):
    Custom type that wraps a standard Solana
    [`ProgramError`](https://github.com/anza-xyz/agave/blob/v1.18.26/sdk/program/src/program_error.rs#L12-L66)
    type. These errors come from the `solana_program` crate.
@@ -55,7 +55,7 @@ pub struct ProgramErrorWithOrigin {
 }
 ```
 
-2. [`AnchorError`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/error.rs#L498-L505):
+2. [`AnchorError`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/error.rs#L498-L505):
    Errors defined by the Anchor framework.
 
 ```rust
@@ -73,7 +73,7 @@ An `AnchorError` can be thought of as having two categories:
 
 1. Internal Anchor Errors - These are built-in errors included with the Anchor
    framework. They are defined in the
-   [`ErrorCode`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/error.rs#L14-L281)
+   [`ErrorCode`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/error.rs#L14-L281)
    enum.
 
 2. Custom Program Errors - These are program specific errors that developers
@@ -96,7 +96,7 @@ scheme:
 
 Anchor provides a convenient way to define custom errors through the
 `error_code` attribute. The implementation details can be found
-[here](https://github.com/solana-foundation/anchor/blob/master/lang/syn/src/codegen/error.rs).
+[here](https://github.com/otter-sec/anchor/blob/master/lang/syn/src/codegen/error.rs).
 
 When you define an enum with the `error_code` attribute, Anchor automatically:
 
@@ -117,11 +117,11 @@ pub enum MyError {
 ### err!
 
 To throw an error, use the
-[`err!`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/lib.rs#L844-L852)
+[`err!`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/lib.rs#L844-L852)
 macro. The `err!` macro provides a convenient way to return custom errors from
 your program. Under the hood, `err!` uses the `error!` macro to construct
 `AnchorError`. The implementation can be found
-[here](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/error/src/lib.rs#L87-L119).
+[here](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/error/src/lib.rs#L87-L119).
 
 ```rust
 #[program]
@@ -149,7 +149,7 @@ pub enum MyError {
 ### require!
 
 The
-[`require!`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/lib.rs#L634-L646)
+[`require!`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/lib.rs#L634-L646)
 macro provides a more concise way to handle error conditions. It combines a
 condition check with returning an error if the condition is false. Here's how we
 can rewrite the previous example using `require!`:
@@ -177,7 +177,7 @@ pub enum MyError {
 
 Anchor provides several "require" macros for different validation needs. You can
 find the implementation of these macros
-[here](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/lib.rs).
+[here](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/src/lib.rs).
 
 | Macro               | Description                                                                                 |
 | ------------------- | ------------------------------------------------------------------------------------------- |
@@ -286,7 +286,7 @@ describe("custom-error", () = {
 </Tabs>
 
 When a program error occurs, Anchor's TypeScript Client SDK returns a detailed
-[error response](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/error.ts#L51-L71)
+[error response](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/ts/packages/anchor/src/error.ts#L51-L71)
 containing information about the error. Here's an example error response showing
 the structure and available fields:
 
@@ -317,5 +317,5 @@ the structure and available fields:
 ```
 
 For a more comprehensive example, you can also reference the
-[errors test program](https://github.com/solana-foundation/anchor/blob/master/tests/errors/programs/errors/src/lib.rs)
+[errors test program](https://github.com/otter-sec/anchor/blob/master/tests/errors/programs/errors/src/lib.rs)
 in the Anchor repository.

@@ -5,8 +5,8 @@
 //!
 //! 1. A hand-rolled fixed-size little-endian codec (`LeCodec`) — represents
 //!    a user with no schema library at all, just raw bytes.
-//! 2. A wincode-derive codec (`WincodeCodec`) — represents a user pulling in
-//!    a third-party schema library.
+//! 2. A Wincode-backed codec (`WincodeCodec`) — uses Anchor's derives and
+//!    public Wincode re-export without a direct Wincode dependency.
 //!
 //! Each codec is exercised through the same lifecycle as `BorshAccount<T>`:
 //! `load`, `load_mut` + mutate + `exit`, `release_borrow` + `reacquire_borrow_mut`,
@@ -20,11 +20,10 @@ use {
     anchor_lang::{
         accounts::{AnchorAccountSerialize, SerializedAccount},
         testing::AccountBuffer,
-        AnchorAccount, Discriminator, Owner,
+        wincode, AnchorAccount, AnchorDeserialize, AnchorSerialize, Discriminator, Owner,
     },
     pinocchio::{account::RuntimeAccount, address::Address},
     solana_program_error::ProgramError,
-    wincode::{SchemaRead, SchemaWrite},
 };
 
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
@@ -304,14 +303,14 @@ fn le_codec_exit_on_transient_zero_lamport_account_serializes() {
 }
 
 // =========================================================================
-// Codec 2: wincode (third-party schema library).
+// Codec 2: Wincode through Anchor's public re-export.
 // =========================================================================
 //
 // Demonstrates that `AnchorAccountSerialize<T>` can be implemented by
 // delegating to an external schema framework. We use the same
 // borsh-compatible wire config that v2 uses for events / instruction args.
 
-#[derive(Default, Clone, PartialEq, Debug, SchemaRead, SchemaWrite)]
+#[derive(Default, Clone, PartialEq, Debug, AnchorDeserialize, AnchorSerialize)]
 struct Ledger {
     balance: u64,
     nonce: u32,
@@ -328,8 +327,8 @@ impl Discriminator for Ledger {
 }
 
 /// Wincode-backed codec. Bounds restrict `T` to schemas that round-trip
-/// through themselves (`Src = T`, `Dst = T`), matching the contract
-/// `wincode::serialize` / `wincode::deserialize` expose at the crate root.
+/// through themselves (`Src = T`, `Dst = T`), matching the contract exposed
+/// by Anchor's `wincode::serialize` / `wincode::deserialize` re-export.
 struct WincodeCodec;
 
 impl<T> AnchorAccountSerialize<T> for WincodeCodec
@@ -627,4 +626,3 @@ fn sixteen_byte_discriminator_rejects_classic_eight_byte_prefix() {
     let err = WideAccount::load(view).err();
     assert_eq!(err, Some(ProgramError::AccountDataTooSmall));
 }
-

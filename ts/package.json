@@ -2,7 +2,9 @@
   "name": "@anchor-lang/monorepo",
   "private": true,
   "workspaces": [
-    "packages/*",
-    "tests"
-  ]
+    "packages/*"
+  ],
+  "resolutions": {
+    "**/@types/node": "^22.0.0"
+  }
 }

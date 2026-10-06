@@ -1,22 +1,18 @@
-import { Buffer } from "buffer";
-import { Layout } from "buffer-layout";
-import * as base64 from "../../utils/bytes/base64.js";
-import { Idl, IdlDiscriminator } from "../../idl.js";
+import { getBase64Encoder, ReadonlyUint8Array } from "@solana/kit";
+import { Idl } from "../../idl.js";
 import { IdlCoder } from "./idl.js";
+import { DiscriminatedIdlCodec, getDiscriminatedIdlCodec } from "./codecs.js";
 import { EventCoder } from "../index.js";
 
 export class BorshEventCoder implements EventCoder {
   /**
-   * Maps account type identifier to a layout.
+   * Maps event type identifier to a codec.
    */
-  private layouts: Map<
-    string,
-    { discriminator: IdlDiscriminator; layout: Layout }
-  >;
+  private codecs: Map<string, DiscriminatedIdlCodec>;
 
   public constructor(idl: Idl) {
     if (!idl.events) {
-      this.layouts = new Map();
+      this.codecs = new Map();
       return;
     }
 
@@ -25,42 +21,37 @@ export class BorshEventCoder implements EventCoder {
       throw new Error("Events require `idl.types`");
     }
 
-    const layouts = idl.events.map((ev) => {
+    const codecs = idl.events.map((ev) => {
       const typeDef = types.find((ty) => ty.name === ev.name);
       if (!typeDef) {
         throw new Error(`Event not found: ${ev.name}`);
       }
       return [
         ev.name,
-        {
-          discriminator: ev.discriminator,
-          layout: IdlCoder.typeDefLayout({ typeDef, types }),
-        },
+        getDiscriminatedIdlCodec(
+          ev.discriminator,
+          IdlCoder.typeDefCodec({ typeDef, types })
+        ),
       ] as const;
     });
-    this.layouts = new Map(layouts);
+    this.codecs = new Map(codecs);
   }
 
   public decode(log: string): {
     name: string;
     data: any;
   } | null {
-    let logArr: Buffer;
-    // This will throw if log length is not a multiple of 4.
+    let logArr: ReadonlyUint8Array;
+    // This will throw if the log is not valid base64.
     try {
-      logArr = base64.decode(log);
+      logArr = getBase64Encoder().encode(log);
     } catch (e) {
       return null;
     }
 
-    for (const [name, layout] of this.layouts) {
-      const givenDisc = logArr.subarray(0, layout.discriminator.length);
-      const matches = givenDisc.equals(Buffer.from(layout.discriminator));
-      if (matches) {
-        return {
-          name,
-          data: layout.layout.decode(logArr.subarray(givenDisc.length)),
-        };
+    for (const [name, codec] of this.codecs) {
+      if (codec.matches(logArr)) {
+        return { name, data: codec.decode(logArr) };
       }
     }
 

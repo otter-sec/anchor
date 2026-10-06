@@ -1,4 +1,5 @@
 import * as assert from "assert";
+import { AccountRole, address, getBase58Decoder } from "@solana/kit";
 import { BorshCoder, some } from "../src";
 import { Idl, IdlType } from "../src/idl";
 import { toInstruction } from "../src/program/common";
@@ -166,5 +167,73 @@ describe("coder.instructions", () => {
     assert.deepStrictEqual(decodedNone?.data["arg"], null);
     assert.deepStrictEqual(decodedSomeNone?.data["arg"], null);
     assert.deepStrictEqual(decodedSomeSome?.data["arg"], 1);
+  });
+});
+
+describe("coder.instruction bytes and display", () => {
+  const idl: Idl = {
+    address: "Test111111111111111111111111111111111111111",
+    metadata: { name: "test", version: "0.0.0", spec: "0.1.0" },
+    instructions: [
+      {
+        name: "increment",
+        discriminator: [1, 2, 3, 4, 5, 6, 7, 8],
+        accounts: [
+          { name: "counter", writable: true },
+          { name: "authority", signer: true },
+        ],
+        args: [{ name: "by", type: "u8" }],
+      },
+    ],
+  };
+
+  test("encodes to bytes and decodes from bytes, hex or base58", () => {
+    const coder = new BorshCoder(idl);
+    const encoded = coder.instruction.encode("increment", { by: 7 });
+
+    assert.ok(encoded instanceof Uint8Array);
+    assert.deepStrictEqual([...encoded], [1, 2, 3, 4, 5, 6, 7, 8, 7]);
+    const expected = { name: "increment", data: { by: 7 } };
+    assert.deepStrictEqual(coder.instruction.decode(encoded), expected);
+    assert.deepStrictEqual(
+      coder.instruction.decode("010203040506070807", "hex"),
+      expected
+    );
+    assert.deepStrictEqual(
+      coder.instruction.decode(getBase58Decoder().decode(encoded), "base58"),
+      expected
+    );
+    assert.strictEqual(coder.instruction.decode(new Uint8Array([9, 9])), null);
+  });
+
+  test("names Kit account metas after the IDL when formatting", () => {
+    const coder = new BorshCoder(idl);
+    const counter = address("SysvarRent111111111111111111111111111111111");
+    const authority = address("SysvarC1ock11111111111111111111111111111111");
+    const extra = address("11111111111111111111111111111111");
+
+    const display = coder.instruction.format(
+      { name: "increment", data: { by: 7 } },
+      [
+        { address: counter, role: AccountRole.WRITABLE },
+        { address: authority, role: AccountRole.READONLY_SIGNER },
+        { address: extra, role: AccountRole.READONLY },
+      ]
+    );
+
+    assert.deepStrictEqual(display?.args, [
+      { name: "by", type: "u8", data: "7" },
+    ]);
+    assert.deepStrictEqual(display?.accounts, [
+      // Names are capitalised for display, as before.
+      { name: "Counter", address: counter, role: AccountRole.WRITABLE },
+      {
+        name: "Authority",
+        address: authority,
+        role: AccountRole.READONLY_SIGNER,
+      },
+      // Remaining accounts are unnamed.
+      { name: undefined, address: extra, role: AccountRole.READONLY },
+    ]);
   });
 });

@@ -29,6 +29,49 @@ pub fn derive_accounts(input: TokenStream) -> TokenStream {
     TokenStream::from(impl_accounts(&input))
 }
 
+/// Derive Anchor's Wincode-backed serialization implementation.
+///
+/// Use `#[derive(AnchorSerialize)]` rather than deriving Wincode's
+/// `SchemaWrite` directly. The generated duplicate item is erased after
+/// Wincode emits the impl, so a downstream crate needs neither a direct
+/// `wincode` dependency nor the `#[wincode(crate = ...)]` escape hatch.
+/// Wincode attributes remain supported when required.
+#[proc_macro_derive(AnchorSerialize, attributes(wincode))]
+pub fn anchor_serialize(input: TokenStream) -> TokenStream {
+    derive_wincode_schema(input, quote!(anchor_lang::wincode::SchemaWrite))
+}
+
+/// Derive Anchor's Wincode-backed deserialization implementation.
+///
+/// Use `#[derive(AnchorDeserialize)]` rather than deriving Wincode's
+/// `SchemaRead` directly. See [`AnchorSerialize`] for why no direct Wincode
+/// dependency is needed.
+#[proc_macro_derive(AnchorDeserialize, attributes(wincode))]
+pub fn anchor_deserialize(input: TokenStream) -> TokenStream {
+    derive_wincode_schema(input, quote!(anchor_lang::wincode::SchemaRead))
+}
+
+fn derive_wincode_schema(
+    input: TokenStream,
+    schema_derive: TokenStream2,
+) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    quote! {
+        #[derive(#schema_derive)]
+        #[wincode(crate = "anchor_lang::wincode")]
+        #[anchor_lang::__erase]
+        #input
+    }
+    .into()
+}
+
+/// Removes the duplicate item emitted by the schema-derive wrappers.
+#[doc(hidden)]
+#[proc_macro_attribute]
+pub fn __erase(_: TokenStream, _: TokenStream) -> TokenStream {
+    TokenStream::new()
+}
+
 // ---------------------------------------------------------------------------
 // #[derive(ToCpiAccounts)]
 // ---------------------------------------------------------------------------
@@ -138,9 +181,9 @@ fn update_accounts_stmt_for_handler_pat(pat: &mut Pat) -> syn::Result<syn::Stmt>
             Ok(update_stmt(quote! { &mut #ctx_ident.accounts }))
         }
         Pat::Struct(ps) => {
-            let accounts_ident = if let Some(accounts_field) = ps.fields.iter_mut().find(|field| {
-                matches!(&field.member, syn::Member::Named(ident) if ident == "accounts")
-            }) {
+            let accounts_ident = if let Some(accounts_field) = ps.fields.iter_mut().find(
+                |field| matches!(&field.member, syn::Member::Named(ident) if ident == "accounts"),
+            ) {
                 match accounts_field.pat.as_mut() {
                     Pat::Ident(pi) => pi.ident.clone(),
                     Pat::Wild(_) => {
@@ -151,7 +194,9 @@ fn update_accounts_stmt_for_handler_pat(pat: &mut Pat) -> syn::Result<syn::Stmt>
                     other => {
                         return Err(syn::Error::new_spanned(
                             other,
-                            "`update(...)` handlers that destructure `Context { .. }` must bind `accounts` as a name or `_`, for example `Context { accounts, .. }` or `Context { accounts: _, .. }`",
+                            "`update(...)` handlers that destructure `Context { .. }` must bind \
+                             `accounts` as a name or `_`, for example `Context { accounts, .. }` \
+                             or `Context { accounts: _, .. }`",
                         ));
                     }
                 }
@@ -175,7 +220,9 @@ fn update_accounts_stmt_for_handler_pat(pat: &mut Pat) -> syn::Result<syn::Stmt>
         }
         _ => Err(syn::Error::new_spanned(
             pat,
-            "`update(...)` handlers must take `&mut Context<T>` as an identifier like `ctx`, `_`, or `Context { .. }`, for example `ctx: &mut Context<T>` or `Context { accounts, .. }: &mut Context<T>`",
+            "`update(...)` handlers must take `&mut Context<T>` as an identifier like `ctx`, `_`, \
+             or `Context { .. }`, for example `ctx: &mut Context<T>` or `Context { accounts, .. \
+             }: &mut Context<T>`",
         )),
     }
 }
@@ -758,6 +805,35 @@ fn has_cfg_attrs(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(is_cfg_control_attr)
 }
 
+fn handler_wrapper_inline_attr(attrs: &[syn::Attribute]) -> syn::Attribute {
+    attrs
+        .iter()
+        .find_map(|attr| {
+            if attr.path().is_ident("inline") {
+                return Some(attr.clone());
+            }
+
+            if !attr.path().is_ident("cfg_attr") {
+                return None;
+            }
+
+            let args = attr
+                .parse_args_with(
+                    syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+                )
+                .ok()?;
+            let condition = args.first()?.clone();
+            let inline = args
+                .iter()
+                .skip(1)
+                .find(|arg| arg.path().is_ident("inline"))
+                .cloned()?;
+
+            Some(syn::parse_quote!(#[cfg_attr(#condition, #inline)]))
+        })
+        .unwrap_or_else(|| syn::parse_quote!(#[inline(never)]))
+}
+
 fn cfg_field_dep_walkers(fields: &syn::Fields) -> Vec<TokenStream2> {
     fields
         .iter()
@@ -881,7 +957,7 @@ fn emit_args_deser(args: &[(&Ident, &Type)], struct_name: &str, inline_error: bo
             }
         };
         quote! {
-            #[derive(anchor_lang::wincode::SchemaRead)]
+            #[derive(anchor_lang::AnchorDeserialize)]
             struct #struct_ident #lt_decl { #(#names: #arg_types,)* }
             let __args: #struct_ident #lt_use = #error_handling;
             #(let #names = __args.#names;)*
@@ -995,6 +1071,9 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     if named_fields.named.len() > 255 {
+        // Syntactic top-level field cap. Flattened Nested account counts are
+        // separately bounded by the HEADER_SIZE assert emitted on the
+        // TryAccounts impl (duplicate-tracking / u8 offset domain is 256 bits).
         return syn::Error::new(name.span(), "`Accounts` derive supports at most 255 fields")
             .to_compile_error();
     }
@@ -1493,6 +1572,11 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             let attrs = parse::parse_account_attrs(&raw_field.attrs)
                 .expect("parse_field already validated account attributes");
             if let Some(ref seeds_expr) = attrs.seeds {
+                // `bump = <expr>` is verified on-chain; client auto-derive
+                // would use the canonical bump and can mismatch.
+                if matches!(attrs.bump, Some(Some(_))) {
+                    return (f, FieldKind::Required);
+                }
                 // Client-side PDA derivation only works when we can
                 // inspect individual seed expressions — requires the
                 // array-bracket form `seeds = [...]`. Expression-form
@@ -1723,6 +1807,10 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             )
             .expect("parse_field already validated account attributes");
             let seeds_expr = attrs.seeds.as_ref()?;
+            // Don't emit a canonical-bump helper for `bump = <expr>`.
+            if matches!(attrs.bump, Some(Some(_))) {
+                return None;
+            }
             // Expression-form seeds (e.g. `seeds = Counter::seeds()`) don't
             // support client-side PDA helpers — skip.
             let seed_arr = match seeds_expr {
@@ -2076,6 +2164,14 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             }
         }
 
+        // Flattened declared-account count must fit the 256-bit duplicate
+        // bitvec and u8 field-offset domain. Top-level field count alone is
+        // not enough: Nested<Inner> expands to Inner::HEADER_SIZE slots.
+        const _: () = assert!(
+            <#name as anchor_lang::TryAccounts>::HEADER_SIZE <= 255,
+            "`Accounts` flattened HEADER_SIZE must be <= 255 (duplicate-tracking domain)"
+        );
+
         #[cfg(feature = "idl-build")]
         #[doc(hidden)]
         impl #name {
@@ -2252,7 +2348,9 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let (struct_attrs, pod_impls) = if is_borsh {
         (
-            quote! { #[derive(anchor_lang::wincode::SchemaWrite, anchor_lang::wincode::SchemaRead)] },
+            quote! {
+                #[derive(anchor_lang::AnchorSerialize, anchor_lang::AnchorDeserialize)]
+            },
             quote! {},
         )
     } else {
@@ -2397,7 +2495,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// The same applies to custom structs passed as `#[program]` instruction
 /// arguments: the IDL build resolves every arg type through
 /// `IdlAccountType`, so a plain args struct (typically deriving
-/// `wincode::SchemaRead` / `wincode::SchemaWrite` for the wire format)
+/// `AnchorDeserialize` / `AnchorSerialize` for the wire format)
 /// additionally needs this derive or `anchor idl build` fails to compile.
 ///
 /// Unlike `#[account]`, this derive carries **none** of the account-kind
@@ -2431,7 +2529,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// }
 ///
 /// // Custom instruction-argument struct.
-/// #[derive(Clone, Copy, IdlType, wincode::SchemaRead, wincode::SchemaWrite)]
+/// #[derive(Clone, Copy, AnchorDeserialize, AnchorSerialize, IdlType)]
 /// pub struct MyArgs {
 ///     pub amount: u64,
 ///     pub tag: [u8; 3],
@@ -2466,28 +2564,35 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
     // `"bytemuck"` tag here would lie in the IDL for non-Pod types.
     let empty_disc: [u8; 0] = [];
     let (idl_type_def, field_dep_walkers, idl_validation_tokens) = match &input.data {
-        Data::Struct(data) => (
-            idl::build_struct_type_def_emission(
-                &name_str,
-                &docs,
-                &data.fields,
-                idl::TypeKind::Borsh,
-                &input.generics,
-            ),
-            cfg_field_dep_walkers(&data.fields),
-            wincode_idl_override_tokens_for_fields("`#[derive(IdlType)]`", &data.fields),
-        ),
-        Data::Enum(data) => (
-            idl::build_enum_type_def_emission(
-                &name_str,
-                &docs,
-                &data.variants,
-                idl::TypeKind::Borsh,
-                &input.generics,
-            ),
-            cfg_variant_dep_walkers(&data.variants),
-            wincode_idl_override_tokens_for_variants("`#[derive(IdlType)]`", &data.variants),
-        ),
+        Data::Struct(data) => {
+            (
+                idl::build_struct_type_def_emission(
+                    &name_str,
+                    &docs,
+                    &data.fields,
+                    idl::TypeKind::Borsh,
+                    &input.generics,
+                ),
+                cfg_field_dep_walkers(&data.fields),
+                wincode_idl_override_tokens_for_fields("`#[derive(IdlType)]`", &data.fields),
+            )
+        }
+        Data::Enum(data) => {
+            (
+                idl::build_enum_type_def_emission(
+                    &name_str,
+                    &docs,
+                    &data.variants,
+                    idl::TypeKind::Borsh,
+                    &input.generics,
+                ),
+                cfg_variant_dep_walkers(&data.variants),
+                wincode_idl_override_tokens_for_variants(
+                    "`#[derive(IdlType)]`",
+                    &data.variants,
+                ),
+            )
+        }
         Data::Union(_) => {
             return syn::Error::new(
                 name.span(),
@@ -2843,11 +2948,12 @@ fn gen_declared_program(
             arg_decls.push(quote! { #arg_ident: #ty });
             arg_uses.push(quote! { let _ = #arg_ident; });
         }
-        let return_ty = ix
-            .get("returns")
-            .map(|ty| declare_idl_type_to_tokens(ty, name.span()))
-            .transpose()?
-            .unwrap_or_else(|| quote! { () });
+        let return_ty = if let Some(returns) = ix.get("returns") {
+            let return_ty = declare_idl_type_to_tokens(returns, name.span())?;
+            return_ty
+        } else {
+            quote! { () }
+        };
 
         handlers.push(quote! {
             #[discrim = [#(#discrim_tokens),*]]
@@ -3290,8 +3396,14 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
         let docs = gen_declare_program_docs(ty_def, ident.span());
         let repr = gen_declare_program_repr(ty_def, ident.span())?;
         let serialization = declare_type_serialization(ty_def, ident.span())?;
-        let bytemuck_repr = if repr.is_none() && serialization.is_bytemuck() {
-            quote! { #[repr(C)] }
+        // Safe bytemuck defaults to repr(C). `bytemuckunsafe` matches v1
+        // `#[zero_copy(unsafe)]`: packed Rust layout when the IDL omits repr.
+        let bytemuck_repr = if repr.is_none() {
+            match serialization {
+                DeclareTypeSerialization::Bytemuck => quote! { #[repr(C)] },
+                DeclareTypeSerialization::BytemuckUnsafe => quote! { #[repr(Rust, packed)] },
+                DeclareTypeSerialization::Borsh => quote! {},
+            }
         } else {
             quote! { #repr }
         };
@@ -3373,10 +3485,17 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                         )
                     })
                     .unwrap_or_default();
-                let pod_impls = serialization
-                    .is_bytemuck()
-                    .then(|| gen_declare_program_pod_impls(&ident, &generics, &fields))
-                    .unwrap_or_default();
+                let pod_impls = if serialization.is_bytemuck() {
+                    gen_declare_program_pod_impls(
+                        &ident,
+                        &generics,
+                        &fields,
+                        serialization,
+                        idl_repr_guarantees_no_padding(ty_def),
+                    )?
+                } else {
+                    quote! {}
+                };
                 let impl_generics = &generics.impl_generics;
                 out.push(match fields {
                     DeclareTypeFields::Named { fields, .. } if serialization.is_bytemuck() => quote! {
@@ -3394,7 +3513,7 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                     DeclareTypeFields::Named { fields, .. } => quote! {
                         #(#docs)*
                         #repr
-                        #[derive(Clone, anchor_lang::wincode::SchemaRead, anchor_lang::wincode::SchemaWrite)]
+                        #[derive(Clone, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
                         pub struct #ident #impl_generics {
                             #(#fields)*
                         }
@@ -3415,7 +3534,7 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                     DeclareTypeFields::Tuple { fields, .. } => quote! {
                         #(#docs)*
                         #repr
-                        #[derive(Clone, anchor_lang::wincode::SchemaRead, anchor_lang::wincode::SchemaWrite)]
+                        #[derive(Clone, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
                         pub struct #ident #impl_generics(#(#fields),*);
                         #discriminator_impl
                         #account_deserialize_impl
@@ -3434,7 +3553,7 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                     DeclareTypeFields::Unit => quote! {
                         #(#docs)*
                         #repr
-                        #[derive(Clone, anchor_lang::wincode::SchemaRead, anchor_lang::wincode::SchemaWrite)]
+                        #[derive(Clone, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
                         pub struct #ident #impl_generics;
                         #discriminator_impl
                         #account_deserialize_impl
@@ -3498,7 +3617,7 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                 out.push(quote! {
                     #(#docs)*
                     #repr
-                    #[derive(Clone, anchor_lang::wincode::SchemaRead, anchor_lang::wincode::SchemaWrite)]
+                    #[derive(Clone, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
                     pub enum #ident #impl_generics {
                         #(#variant_tokens)*
                     }
@@ -3542,8 +3661,14 @@ enum DeclareTypeSerialization {
 }
 
 impl DeclareTypeSerialization {
+    // This intentionally matches both `Bytemuck` and `BytemuckUnsafe`.
+    // Use `is_bytemuck_unsafe` when the unsafe-only distinction matters.
     fn is_bytemuck(self) -> bool {
         matches!(self, Self::Bytemuck | Self::BytemuckUnsafe)
+    }
+
+    fn is_bytemuck_unsafe(self) -> bool {
+        matches!(self, Self::BytemuckUnsafe)
     }
 }
 
@@ -3608,6 +3733,19 @@ fn gen_declare_program_repr(
     .map(|modifier| quote! { , #modifier });
 
     Ok(Some(quote! { #[repr(#kind #modifier)] }))
+}
+
+fn idl_repr_guarantees_no_padding(ty_def: &serde_json::Value) -> bool {
+    let Some(repr) = ty_def.get("repr") else {
+        return false;
+    };
+    match repr.get("kind").and_then(serde_json::Value::as_str) {
+        Some("transparent") => true,
+        _ => repr
+            .get("packed")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+    }
 }
 
 fn declare_type_serialization(
@@ -3745,7 +3883,7 @@ fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStrea
                             self,
                             anchor_lang::BORSH_CONFIG,
                         )
-                        .expect("declared event serialization cannot fail for derived SchemaWrite types");
+                        .expect("declared event serialization cannot fail for derived AnchorSerialize types");
                         data
                     }
                 }
@@ -4149,10 +4287,32 @@ fn gen_declare_program_pod_impls(
     ident: &Ident,
     generics: &DeclareTypeGenerics,
     fields: &DeclareTypeFields,
-) -> TokenStream2 {
-    let field_types = fields.tys();
+    serialization: DeclareTypeSerialization,
+    layout_has_no_padding: bool,
+) -> syn::Result<TokenStream2> {
     let impl_generics = &generics.impl_generics;
     let ty_generics = &generics.ty_generics;
+    // `bytemuckunsafe` is an explicit opt-out of safe Pod derivability:
+    // imported layouts may include padding or non-Pod fields. Emit the
+    // unsafe impls without field-Pod / no-padding assertions.
+    if serialization.is_bytemuck_unsafe() {
+        let where_clause = &generics.pod_where_clause;
+        return Ok(quote! {
+            unsafe impl #impl_generics anchor_lang::bytemuck::Pod for #ident #ty_generics #where_clause {}
+            unsafe impl #impl_generics anchor_lang::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
+        });
+    }
+
+    // Same rule as bytemuck: generic types need packed or transparent.
+    // `T: Pod` does not prove there is no padding between fields.
+    if !impl_generics.is_empty() && !layout_has_no_padding {
+        return Err(syn::Error::new(
+            ident.span(),
+            "declare_program! generic bytemuck types must be `repr(packed)` or `repr(transparent)`",
+        ));
+    }
+
+    let field_types = fields.tys();
     let generic_where_clause = &generics.pod_where_clause;
     let where_clause = if field_types.is_empty() {
         generic_where_clause.clone()
@@ -4169,20 +4329,39 @@ fn gen_declare_program_pod_impls(
                 + anchor_lang::bytemuck::Zeroable),*
         }
     };
-    quote! {
-        impl #impl_generics #ident #ty_generics #where_clause {
-            const __ANCHOR_DECLARE_PROGRAM_POD_ASSERT: fn() = || {
+    // Item-level `const _: ()` is always evaluated. An unused associated const
+    // on an `impl` is not, so the previous padding `assert!` never ran.
+    //
+    // Same host-wide padding rule as `#[account]` / `#[event(bytemuck)]`
+    // (#4794): `repr(C)` padding follows the *host* backend, so a `u64`
+    // then `u128` layout that is packed on SBF fails here on x86. Unlike
+    // those macros, `declare_program!` cannot rewrite IDL fields to
+    // `PodU128`; padded layouts need `bytemuckunsafe` or a hand-written type.
+    let touch_no_padding = if impl_generics.is_empty() {
+        quote! {
+            const _: () = #ident::__ANCHOR_DECLARE_PROGRAM_NO_PADDING;
+        }
+    } else {
+        quote! {}
+    };
+    Ok(quote! {
+        const _: fn() = || {
+            fn __assert_declare_program_pod_fields #impl_generics () #where_clause {
                 fn assert_pod<T: anchor_lang::bytemuck::Pod>() {}
                 #( assert_pod::<#field_types>(); )*
-            };
-            const __ANCHOR_DECLARE_PROGRAM_NO_PADDING: () = assert!(
-                core::mem::size_of::<Self>() == 0 #(+ core::mem::size_of::<#field_types>())*,
+            }
+        };
+        impl #impl_generics #ident #ty_generics #where_clause {
+            const __ANCHOR_DECLARE_PROGRAM_NO_PADDING: () = ::core::assert!(
+                ::core::mem::size_of::<Self>()
+                    == 0 #(+ ::core::mem::size_of::<#field_types>())*,
                 "declared bytemuck type has padding bytes"
             );
         }
+        #touch_no_padding
         unsafe impl #impl_generics anchor_lang::bytemuck::Pod for #ident #ty_generics #where_clause {}
         unsafe impl #impl_generics anchor_lang::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
-    }
+    })
 }
 
 fn gen_declare_program_type_fields(
@@ -4329,6 +4508,8 @@ fn declare_idl_type_to_tokens(
 
 fn declare_idl_defined_builtin(name: &str) -> Option<TokenStream2> {
     match name {
+        "BTreeMap" => Some(quote! { anchor_lang::__alloc::collections::BTreeMap }),
+        "BTreeSet" => Some(quote! { anchor_lang::__alloc::collections::BTreeSet }),
         "PodBool" => Some(quote! { anchor_lang::pod::PodBool }),
         "PodU16" => Some(quote! { anchor_lang::pod::PodU16 }),
         "PodU32" => Some(quote! { anchor_lang::pod::PodU32 }),
@@ -4729,6 +4910,7 @@ fn process_handler(
     let fn_name = &handler.sig.ident;
     let fn_name_str = fn_name.to_string();
     let handler_cfg_attrs = cfg_attrs(&handler.attrs);
+    let handler_inline_attr = handler_wrapper_inline_attr(&handler.attrs);
     let return_type = match extract_result_return_type(&handler.sig.output) {
         Ok(return_ty) => return_ty,
         Err(err) => return HandlerCodegen::error(handler, err),
@@ -4809,7 +4991,6 @@ fn process_handler(
             None
         })
         .collect();
-
     let extra_arg_names: Vec<_> = extra_args.iter().map(|(n, _)| *n).collect();
     let (extra_arg_types, has_ref_args) = args_meta(&extra_args);
     let extra_arg_types = &extra_arg_types;
@@ -4868,7 +5049,7 @@ fn process_handler(
     let wrapper = if extra_arg_names.is_empty() {
         quote! {
             #(#handler_cfg_attrs)*
-            #[inline(always)]
+            #handler_inline_attr
             pub fn #fn_name<'a>(
                 __program_id: &'a anchor_lang::Address,
                 __cursor: &'a mut anchor_lang::AccountCursor,
@@ -4905,7 +5086,7 @@ fn process_handler(
         let deser_args = args_deser.deser;
         quote! {
             #(#handler_cfg_attrs)*
-            #[inline(always)]
+            #handler_inline_attr
             pub fn #fn_name<'a>(
                 __program_id: &'a anchor_lang::Address,
                 __cursor: &'a mut anchor_lang::AccountCursor,
@@ -4958,7 +5139,7 @@ fn process_handler(
     };
     let instruction_struct = quote! {
         #(#handler_cfg_attrs)*
-        #[derive(anchor_lang::wincode::SchemaWrite)]
+        #[derive(anchor_lang::AnchorSerialize)]
         pub struct #ix_struct_name #ix_lt_decl {
             #(pub #extra_arg_names: #extra_arg_types,)*
         }
@@ -5041,7 +5222,10 @@ fn process_handler(
                 __ctx: anchor_lang::CpiContext<'a, accounts::#accounts_ident<'a>>,
                 #(#extra_arg_names: #extra_arg_types,)*
             ) #ret_ty {
-                let __ix = super::instruction::#ix_struct_name #ix_lt_use_local {
+                // No lifetime arguments on the literal: a struct expression
+                // cannot carry them, and the type is already fixed by the
+                // annotation below.
+                let __ix = super::instruction::#ix_struct_name {
                     #(#extra_arg_names,)*
                 };
                 let __data = <
@@ -5640,8 +5824,8 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 ///
 /// Two modes:
 ///
-/// **Default (`#[event]`, wincode).** Derives `wincode::SchemaWrite` and
-/// serializes via `wincode::config::serialize_into` with `BORSH_CONFIG`, so
+/// **Default (`#[event]`, wincode).** Derives `AnchorSerialize` and
+/// serializes via Wincode with `BORSH_CONFIG`, so
 /// the on-chain wire format is byte-compatible with borsh while keeping
 /// wincode's faster encoding path. Supports arbitrary layouts, including
 /// `Vec`/`String`/`Option`/enums, and is materially cheaper than borsh on
@@ -5817,11 +6001,11 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     match mode {
         EventMode::Wincode => TokenStream::from(quote! {
-            // `#[derive(wincode::SchemaWrite)]` lays down the per-field encoder.
+            // `#[derive(AnchorSerialize)]` lays down the Wincode per-field encoder.
             // No `repr(C)` — wincode is layout-agnostic (it walks the derived
             // schema, not the in-memory byte layout) so the compiler is free
             // to pick whichever Rust layout is best.
-            #[derive(anchor_lang::wincode::SchemaWrite)]
+            #[derive(anchor_lang::AnchorSerialize)]
             #(#attrs)*
             #vis struct #name #fields
 
@@ -5845,7 +6029,7 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                         anchor_lang::BORSH_CONFIG,
                     )
                         .expect("`#[event]` wincode serialization cannot fail for \
-                                 derived SchemaWrite types");
+                                 derived AnchorSerialize types");
                     buf
                 }
             }
@@ -6644,6 +6828,52 @@ mod tests {
     }
 
     #[test]
+    fn process_handler_applies_inline_policy_to_generated_wrapper() {
+        let mod_name: syn::Ident = syn::parse_quote!(my_program);
+        let program_id: syn::Expr = syn::parse_quote!(crate::ID);
+        for (handler, expected) in [
+            (
+                syn::parse_quote! {
+                    pub fn default_handler(ctx: &mut Context<MyAccounts>) -> Result<()> {
+                        let _ = ctx;
+                        Ok(())
+                    }
+                },
+                "# [inline (never)] pub fn default_handler",
+            ),
+            (
+                syn::parse_quote! {
+                    #[inline(always)]
+                    pub fn fast_handler(ctx: &mut Context<MyAccounts>, amount: u64) -> Result<()> {
+                        let _ = (ctx, amount);
+                        Ok(())
+                    }
+                },
+                "# [inline (always)] pub fn fast_handler",
+            ),
+            (
+                syn::parse_quote! {
+                    #[cfg_attr(feature = "fast", inline(always), no_mangle)]
+                    pub fn conditional_handler(ctx: &mut Context<MyAccounts>) -> Result<()> {
+                        let _ = ctx;
+                        Ok(())
+                    }
+                },
+                "# [cfg_attr (feature = \"fast\" , inline (always))] pub fn conditional_handler",
+            ),
+        ] {
+            let wrapper = process_handler(&handler, &mod_name, None, &program_id)
+                .wrapper
+                .to_string();
+            assert!(wrapper.contains(expected), "unexpected wrapper: {wrapper}");
+            assert!(
+                !wrapper.contains("no_mangle"),
+                "wrapper copied an unrelated attribute: {wrapper}"
+            );
+        }
+    }
+
+    #[test]
     fn process_handler_emits_ixarg_fallback_for_missing_instruction_attr() {
         let handler: syn::ItemFn = syn::parse_quote! {
             pub fn do_it(ctx: &mut Context<MyAccounts>, amount: u64, step: u8) -> Result<()> {
@@ -6830,8 +7060,8 @@ mod tests {
         );
         assert!(
             !generated.contains(
-                "< anchor_lang :: Nested < Inner > as anchor_lang :: IdlAccountType > \
-                 :: __register_idl_deps"
+                "< anchor_lang :: Nested < Inner > as anchor_lang :: IdlAccountType > :: \
+                 __register_idl_deps"
             ),
             "nested accounts should not require an IdlAccountType impl on Inner via Nested: \
              {generated}"
@@ -6907,7 +7137,8 @@ mod tests {
             generated.contains(
                 "anchor_lang :: TryAccounts :: update_accounts (& mut ctx . accounts) ? ;"
             ),
-            "expected handler body to call update_accounts after access-control expansion, got: {generated}"
+            "expected handler body to call update_accounts after access-control expansion, got: \
+             {generated}"
         );
         assert!(
             generated.contains("access_control"),
@@ -6936,7 +7167,8 @@ mod tests {
 
         assert!(
             generated.contains("anchor_lang :: TryAccounts :: update_accounts (accounts) ? ;"),
-            "expected destructured handler body to call update_accounts via accounts binding, got: {generated}"
+            "expected destructured handler body to call update_accounts via accounts binding, \
+             got: {generated}"
         );
     }
 
@@ -6960,14 +7192,15 @@ mod tests {
         let generated = impl_program(&module, &config).to_string();
 
         assert!(
-            generated.contains(
-                "anchor_lang :: TryAccounts :: update_accounts (__anchor_accounts) ? ;"
-            ),
-            "expected struct-pattern handler body to call update_accounts via synthesized accounts binding, got: {generated}"
+            generated
+                .contains("anchor_lang :: TryAccounts :: update_accounts (__anchor_accounts) ? ;"),
+            "expected struct-pattern handler body to call update_accounts via synthesized \
+             accounts binding, got: {generated}"
         );
         assert!(
             generated.contains("Context { bumps , accounts : __anchor_accounts , .. }"),
-            "expected struct-pattern handler signature to include synthesized accounts binding, got: {generated}"
+            "expected struct-pattern handler signature to include synthesized accounts binding, \
+             got: {generated}"
         );
     }
 
@@ -6994,11 +7227,13 @@ mod tests {
             generated.contains(
                 "anchor_lang :: TryAccounts :: update_accounts (& mut __anchor_ctx . accounts) ? ;"
             ),
-            "expected wildcard handler body to call update_accounts via synthesized ctx binding, got: {generated}"
+            "expected wildcard handler body to call update_accounts via synthesized ctx binding, \
+             got: {generated}"
         );
         assert!(
             generated.contains("fn rotate (__anchor_ctx : & mut Context < RotateAuthority >)"),
-            "expected wildcard handler signature to be rewritten to a concrete ctx binding, got: {generated}"
+            "expected wildcard handler signature to be rewritten to a concrete ctx binding, got: \
+             {generated}"
         );
     }
 
@@ -7025,7 +7260,8 @@ mod tests {
 
         assert!(
             generated.contains("compile_error"),
-            "expected unsupported nested accounts destructuring to emit a compile error, got: {generated}"
+            "expected unsupported nested accounts destructuring to emit a compile error, got: \
+             {generated}"
         );
         assert!(
             generated.contains("must bind `accounts` as a name or `_`"),
@@ -7056,10 +7292,13 @@ mod tests {
 
         assert!(
             generated.contains("compile_error"),
-            "expected unsupported reference-pattern context to emit a compile error, got: {generated}"
+            "expected unsupported reference-pattern context to emit a compile error, got: \
+             {generated}"
         );
         assert!(
-            generated.contains("must take `&mut Context<T>` as an identifier like `ctx`, `_`, or `Context { .. }`"),
+            generated.contains(
+                "must take `&mut Context<T>` as an identifier like `ctx`, `_`, or `Context { .. }`"
+            ),
             "expected targeted top-level pattern error, got: {generated}"
         );
     }
@@ -7084,13 +7323,14 @@ mod tests {
         });
         let name: syn::Ident = syn::parse_quote!(fixture);
 
-        let generated = gen_declared_program(&name, &idl)
+        let generated = gen_declared_program(&name, &idl, std::path::Path::new("fixture.json"))
             .expect("fixture IDL should generate")
             .to_string();
 
         assert!(
             generated.contains(
-                "const IDL_ADDRESS : & 'static str = \"Externa1111111111111111111111111111111111111\""
+                "const IDL_ADDRESS : & 'static str = \
+                 \"Externa1111111111111111111111111111111111111\""
             ),
             "declare_program markers should expose their known address for IDL emission: \
              {generated}"
@@ -7100,18 +7340,12 @@ mod tests {
     #[test]
     fn declare_idl_defined_pod_wrappers_use_runtime_types() {
         let span = proc_macro2::Span::call_site();
-        let pod_u64 = declare_idl_type_to_tokens(
-            &json!({ "defined": { "name": "PodU64" } }),
-            span,
-        )
-        .unwrap();
+        let pod_u64 =
+            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodU64" } }), span).unwrap();
         assert_eq!(pod_u64.to_string(), "anchor_lang :: pod :: PodU64");
 
-        let pod_bool = declare_idl_type_to_tokens(
-            &json!({ "defined": { "name": "PodBool" } }),
-            span,
-        )
-        .unwrap();
+        let pod_bool =
+            declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodBool" } }), span).unwrap();
         assert_eq!(pod_bool.to_string(), "anchor_lang :: pod :: PodBool");
     }
 
@@ -7135,13 +7369,15 @@ mod tests {
         );
         assert!(
             generated.contains(
-                "let (__nested_inner , __anchor_bump_cache_inner , _) = < Inner as anchor_lang :: TryAccounts > :: validate_accounts"
+                "let (__nested_inner , __anchor_bump_cache_inner , _) = < Inner as anchor_lang :: \
+                 TryAccounts > :: validate_accounts"
             ),
             "expected nested validate_accounts call to keep the returned bumps value: {generated}"
         );
         assert!(
             generated.contains(
-                "let mut __anchor_bump_cache_inner : < Inner as anchor_lang :: Bumps > :: Bumps = :: core :: default :: Default :: default() ;"
+                "let mut __anchor_bump_cache_inner : < Inner as anchor_lang :: Bumps > :: Bumps = \
+                 :: core :: default :: Default :: default() ;"
             ),
             "expected nested bump cache local declaration: {generated}"
         );

@@ -58,6 +58,10 @@ fn declared_program_type_serialization_controls_account_traits() {
     assert_borsh_account_wrapper_idl::<serialization::ExplicitBorshAccount>();
     assert_zero_copy_account::<serialization::ZeroCopyAccount>();
     assert_zero_copy_account::<serialization::UnsafeZeroCopyAccount>();
+    assert_zero_copy_account::<serialization::PaddedUnsafeAccount>();
+
+    fn assert_pod<T: anchor_lang::bytemuck::Pod + anchor_lang::bytemuck::Zeroable>() {}
+    assert_pod::<serialization::PackedUnsafeAccount>();
 
     assert!(
         <serialization::ImplicitBorshAccount as anchor_lang::IdlAccountType>::__IDL_ACCOUNT_ENTRY
@@ -85,6 +89,10 @@ fn declared_program_type_serialization_controls_account_traits() {
     assert_eq!(
         <serialization::UnsafeZeroCopyAccount as Discriminator>::DISCRIMINATOR,
         &[41, 42, 43, 44, 45, 46, 47, 48]
+    );
+    assert_eq!(
+        <serialization::PaddedUnsafeAccount as Discriminator>::DISCRIMINATOR,
+        &[51, 52, 53, 54, 55, 56, 57, 58]
     );
 
     assert_eq!(
@@ -123,6 +131,30 @@ fn declared_program_type_serialization_controls_account_traits() {
     assert_eq!(&zero_bytes[..8], &0x0102_0304_0506_0708u64.to_le_bytes());
     assert_eq!(&zero_bytes[8..12], &0x1112_1314u32.to_le_bytes());
     assert_eq!(&zero_bytes[12..16], b"zero");
+
+    // `bytemuckunsafe` must accept layouts that fail safe Pod checks:
+    // non-Pod `bool` plus repr(C) padding after it, and the v1 default
+    // packed layout when the IDL omits repr.
+    assert_eq!(core::mem::size_of::<serialization::PaddedUnsafeAccount>(), 16);
+    assert_eq!(core::mem::align_of::<serialization::PaddedUnsafeAccount>(), 8);
+    let mut padded_bytes = [0u8; 16];
+    padded_bytes[0] = 1;
+    padded_bytes[8..16].copy_from_slice(&0x0102_0304_0506_0708u64.to_le_bytes());
+    let padded: serialization::PaddedUnsafeAccount =
+        anchor_lang::bytemuck::pod_read_unaligned(&padded_bytes);
+    assert!(padded.flag);
+    assert_eq!(padded.wide, 0x0102_0304_0506_0708);
+
+    assert_eq!(core::mem::size_of::<serialization::PackedUnsafeAccount>(), 9);
+    assert_eq!(core::mem::align_of::<serialization::PackedUnsafeAccount>(), 1);
+    let mut packed_bytes = [0u8; 9];
+    packed_bytes[0] = 7;
+    packed_bytes[1..9].copy_from_slice(&99u64.to_le_bytes());
+    let packed: serialization::PackedUnsafeAccount =
+        anchor_lang::bytemuck::pod_read_unaligned(&packed_bytes);
+    assert_eq!(packed.tag, 7);
+    let packed_wide = packed.wide;
+    assert_eq!(packed_wide, 99);
 }
 
 #[test]

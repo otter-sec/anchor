@@ -17,7 +17,7 @@ pub struct ReturnStore {
     pub _padding: [u8; 5],
 }
 
-#[derive(Clone, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(Clone, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
 pub struct ReturnPayload {
     pub amount: u64,
     pub label: String,

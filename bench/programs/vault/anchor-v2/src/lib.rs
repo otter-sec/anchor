@@ -9,6 +9,7 @@ pub mod vault_v2 {
     use super::*;
 
     #[discrim = 0]
+    #[inline(always)]
     pub fn deposit(ctx: &mut Context<Deposit>, amount: u64) -> Result<()> {
         pinocchio_system::instructions::Transfer {
             from: ctx.accounts.user.account(),
@@ -20,6 +21,7 @@ pub mod vault_v2 {
     }
 
     #[discrim = 1]
+    #[inline(always)]
     pub fn withdraw(ctx: &mut Context<Withdraw>, amount: u64) -> Result<()> {
         // `AccountView: Copy` — copies still point at the same backing
         // buffer, so `set_lamports(&mut self)` mutates the underlying

@@ -1,4 +1,9 @@
-import { Transaction, VersionedTransaction } from "@solana/web3.js";
+import {
+  Commitment,
+  isSolanaError,
+  SolanaError,
+  SolanaErrorCode,
+} from "@solana/kit";
 
 /**
  * Returns true if being run inside a web browser,
@@ -22,13 +27,32 @@ export function chunks<T>(array: T[], size: number): T[][] {
 }
 
 /**
- * Check if a transaction object is a VersionedTransaction or not
- *
- * @param tx
- * @returns bool
+ * Finds a Kit `SolanaError` with the given code in the cause chain of the
+ * given error, including the error itself.
  */
-export const isVersionedTransaction = (
-  tx: Transaction | VersionedTransaction
-): tx is VersionedTransaction => {
-  return "version" in tx;
-};
+export function findSolanaError<TCode extends SolanaErrorCode>(
+  err: unknown,
+  code: TCode
+): SolanaError<TCode> | undefined {
+  for (let cause: unknown = err; cause instanceof Error; cause = cause.cause) {
+    if (isSolanaError(cause, code)) {
+      return cause;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Fills a read config with the provider's defaults: today only `commitment`,
+ * so that an account written through the provider can be read straight back
+ * at the same commitment. Options are only set when they have a value: Kit
+ * strips an explicit `undefined` commitment without applying its own default.
+ */
+export function withProviderDefaults<C extends { commitment?: Commitment }>(
+  provider: { opts?: { commitment?: Commitment } },
+  config: C = {} as C
+): C {
+  const { commitment: _, ...rest } = config;
+  const commitment = config.commitment ?? provider.opts?.commitment;
+  return (commitment ? { ...rest, commitment } : rest) as C;
+}

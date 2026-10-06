@@ -12,14 +12,14 @@ export default {
     nodeResolve({
       browser: true,
       extensions: [".js", ".ts"],
-      dedupe: ["bn.js", "buffer"],
       preferBuiltins: false,
     }),
     typescript({
       tsconfig: "./tsconfig.base.json",
       moduleResolution: "node",
       outDir: "types",
-      target: "es2019",
+      target: "es2022",
+      lib: ["esnext", "dom"],
       outputToFilesystem: false,
     }),
     replace({
@@ -31,15 +31,11 @@ export default {
     }),
   ],
   external: [
-    "@anchor-lang/borsh",
-    "@solana/web3.js",
-    "bn.js",
-    "bs58",
-    "buffer",
+    "@solana/kit",
+    "@solana-program/system",
+    "@solana-program/program-metadata",
+    "@solana-program/token",
     "camelcase",
-    "eventemitter3",
-    "@noble/hashes/sha256",
-    "pako",
     "toml",
   ],
   output: {

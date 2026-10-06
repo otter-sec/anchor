@@ -9,7 +9,7 @@ pub mod declared {
         anchor_lang::address!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
 }
 
-#[derive(Clone, Copy, wincode::SchemaWrite)]
+#[derive(Clone, Copy, anchor_lang::AnchorSerialize)]
 pub struct ComplexArgs {
     pub amount: u64,
     pub tag: [u8; 3],

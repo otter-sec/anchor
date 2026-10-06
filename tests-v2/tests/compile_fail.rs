@@ -90,7 +90,6 @@ publish = false
 
 [dependencies]
 anchor-lang = {{ path = "{}" }}
-wincode = {{ version = "0.5", features = ["derive"] }}
 {}
 
 [features]
@@ -457,7 +456,7 @@ fn namespaced_constraints_accept_qualified_constants_as_values() {
         r#"
 use anchor_lang::prelude::*;
 
-#[derive(Default, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(Default, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
 pub struct Counter {
     pub value: u64,
 }
@@ -1383,6 +1382,143 @@ fn declare_program_rejects_bytemuck_enum_type() {
 }
 
 #[test]
+fn declare_program_rejects_bytemuck_padding() {
+    declare_program_compile_fail_case(
+        "declare_program_bytemuck_padding",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [],
+  "types": [
+    {
+      "name": "Padded",
+      "serialization": "bytemuck",
+      "repr": { "kind": "c" },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "flag", "type": "u8" },
+          { "name": "wide", "type": "u64" }
+        ]
+      }
+    }
+  ]
+}"#,
+        &["declared bytemuck type has padding bytes"],
+    );
+}
+
+#[test]
+fn declare_program_accepts_packed_bytemuck_layout() {
+    declare_program_case(
+        "declare_program_bytemuck_packed",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "ok", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [],
+  "types": [
+    {
+      "name": "Packed",
+      "serialization": "bytemuck",
+      "repr": { "kind": "c", "packed": true },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "flag", "type": "u8" },
+          { "name": "wide", "type": "u64" }
+        ]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect_pass();
+}
+
+#[test]
+fn declare_program_rejects_generic_bytemuck_repr_c() {
+    declare_program_compile_fail_case(
+        "declare_program_generic_bytemuck_repr_c",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [],
+  "types": [
+    {
+      "name": "Padded",
+      "serialization": "bytemuck",
+      "repr": { "kind": "c" },
+      "generics": [{ "kind": "type", "name": "T" }],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "flag", "type": "u8" },
+          { "name": "wide", "type": { "generic": "T" } }
+        ]
+      }
+    }
+  ]
+}"#,
+        &["generic bytemuck types must be `repr(packed)` or `repr(transparent)`"],
+    );
+}
+
+#[test]
+fn declare_program_accepts_generic_packed_bytemuck() {
+    declare_program_case(
+        "declare_program_generic_bytemuck_packed",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "ok", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [],
+  "types": [
+    {
+      "name": "Packed",
+      "serialization": "bytemuck",
+      "repr": { "kind": "c", "packed": true },
+      "generics": [{ "kind": "type", "name": "T" }],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "flag", "type": "u8" },
+          { "name": "wide", "type": { "generic": "T" } }
+        ]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect_pass();
+}
+
+#[test]
+fn declare_program_accepts_generic_transparent_bytemuck() {
+    declare_program_case(
+        "declare_program_generic_bytemuck_transparent",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "ok", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [],
+  "types": [
+    {
+      "name": "Wrapper",
+      "serialization": "bytemuck",
+      "repr": { "kind": "transparent" },
+      "generics": [{ "kind": "type", "name": "T" }],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "inner", "type": { "generic": "T" } }
+        ]
+      }
+    }
+  ]
+}"#,
+    )
+    .expect_pass();
+}
+
+#[test]
 fn declare_program_return_wrapper_compiles_for_returning_cpi() {
     CompileCase::new(
         "declare_program_return_wrapper",
@@ -2268,7 +2404,7 @@ fn realloc_on_borsh_account_alias_compiles() {
         r#"
 use anchor_lang::prelude::*;
 
-#[derive(wincode::SchemaRead, wincode::SchemaWrite, Default)]
+#[derive(anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize, Default)]
 pub struct Data {
     pub value: u64,
 }
@@ -2295,7 +2431,7 @@ pub struct Resize {
     .expect_pass();
 }
 
-// otter-sec/anchor#4850 — a plain arg struct with only the wincode schema
+// otter-sec/anchor#4850 — a plain arg struct with only Anchor's serialization
 // derives has no `IdlAccountType` impl, so idl-build compilation must fail
 // with a diagnostic that points at `#[derive(IdlType)]` (the old message
 // suggested `#[account]`, which drags in Pod/discriminator baggage).
@@ -2330,7 +2466,7 @@ pub mod defined_args {
 #[test]
 fn idl_build_rejects_arg_struct_without_idl_type_derive() {
     let source =
-        DEFINED_ARGS_PROGRAM.replace("DERIVE_LIST", "wincode::SchemaRead, wincode::SchemaWrite");
+        DEFINED_ARGS_PROGRAM.replace("DERIVE_LIST", "anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize");
     CompileCase::new("idl_build_arg_struct_missing_idl_type", &source)
         .features(&["idl-build"])
         .check_tests()
@@ -2344,7 +2480,7 @@ fn idl_build_rejects_arg_struct_without_idl_type_derive() {
 fn idl_build_accepts_arg_struct_with_idl_type_derive() {
     let source = DEFINED_ARGS_PROGRAM.replace(
         "DERIVE_LIST",
-        "IdlType, wincode::SchemaRead, wincode::SchemaWrite",
+        "IdlType, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize",
     );
     CompileCase::new("idl_build_arg_struct_with_idl_type", &source)
         .features(&["idl-build"])

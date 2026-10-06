@@ -10,7 +10,6 @@ idl-build = []
 
 [dependencies]
 anchor-lang = { path = "../../../lang-v2", default-features = false, features = ["alloc"] }
-wincode = { version = "0.5", features = ["derive"] }
 
 [lints.rust.unexpected_cfgs]
 level = "allow"

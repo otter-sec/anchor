@@ -1,4 +1,4 @@
-import { PublicKey } from "@solana/web3.js";
+import { address } from "@solana/kit";
 import { EventParser } from "../src/program/event";
 import { BorshCoder, Idl } from "../src";
 
@@ -28,7 +28,7 @@ describe("Events", () => {
       ],
     };
     const coder = new BorshCoder(idl);
-    const programId = PublicKey.default;
+    const programId = address("11111111111111111111111111111111");
     const eventParser = new EventParser(programId, coder);
 
     if (Array.from(eventParser.parseLogs(logs)).length > 0) {
@@ -61,7 +61,7 @@ describe("Events", () => {
       ],
     };
     const coder = new BorshCoder(idl);
-    const programId = PublicKey.default;
+    const programId = address("11111111111111111111111111111111");
     const eventParser = new EventParser(programId, coder);
 
     if (Array.from(eventParser.parseLogs(logs)).length > 0) {
@@ -135,9 +135,7 @@ describe("Events", () => {
     };
 
     const coder = new BorshCoder(idl);
-    const programId = new PublicKey(
-      "J2XMGdW2qQLx7rAdwWtSZpTXDgAQ988BLP9QTgUZvm54"
-    );
+    const programId = address("J2XMGdW2qQLx7rAdwWtSZpTXDgAQ988BLP9QTgUZvm54");
 
     const eventParser = new EventParser(programId, coder);
 
@@ -237,9 +235,7 @@ describe("Events", () => {
     };
 
     const coder = new BorshCoder(idl);
-    const programId = new PublicKey(
-      "J2XMGdW2qQLx7rAdwWtSZpTXDgAQ988BLP9QTgUZvm54"
-    );
+    const programId = address("J2XMGdW2qQLx7rAdwWtSZpTXDgAQ988BLP9QTgUZvm54");
     const eventParser = new EventParser(programId, coder);
 
     const gen = eventParser.parseLogs(logs);
@@ -306,9 +302,7 @@ describe("Events", () => {
     };
 
     const coder = new BorshCoder(idl);
-    const programId = new PublicKey(
-      "J2XMGdW2qQLx7rAdwWtSZpTXDgAQ988BLP9QTgUZvm54"
-    );
+    const programId = address("J2XMGdW2qQLx7rAdwWtSZpTXDgAQ988BLP9QTgUZvm54");
     const eventParser = new EventParser(programId, coder);
 
     if (Array.from(eventParser.parseLogs(logs)).length > 0) {
@@ -341,7 +335,7 @@ describe("Events", () => {
       ],
     };
     const coder = new BorshCoder(idl);
-    const programId = PublicKey.default;
+    const programId = address("11111111111111111111111111111111");
     const eventParser = new EventParser(programId, coder);
 
     // Should not find any events due to strict log parsing

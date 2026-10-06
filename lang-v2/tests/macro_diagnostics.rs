@@ -8,6 +8,11 @@ fn cargo_case(
 ) -> std::process::Output {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let crate_dir = manifest_dir.join("target/macro-diagnostics").join(name);
+    // Keep sources isolated for clear per-case diagnostics, but share Cargo
+    // artifacts across cases. The Rust test harness may invoke these helpers
+    // concurrently; Cargo coordinates the target-directory lock and avoids
+    // recompiling anchor-lang and its dependencies for every fixture.
+    let target_dir = manifest_dir.join("target/macro-diagnostics-target");
     let src_dir = crate_dir.join("src");
     fs::create_dir_all(&src_dir).unwrap();
     fs::write(
@@ -21,7 +26,6 @@ publish = false
 
 [dependencies]
 anchor-lang = {{ path = "{}" }}
-wincode = {{ version = "0.5", features = ["derive"] }}
 
 [features]
 idl-build = []
@@ -37,6 +41,7 @@ live = []
     fs::write(src_dir.join("lib.rs"), source).unwrap();
 
     Command::new("cargo")
+        .env("CARGO_TARGET_DIR", target_dir)
         .arg(command)
         .arg("--offline")
         .arg("--manifest-path")
@@ -88,6 +93,100 @@ fn compile_pass_case(name: &str, source: &str) {
     );
 }
 
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn btree_map_instruction_arguments_remain_supported() {
+    compile_pass_case(
+        "btree_map_instruction_arguments",
+        r#"
+extern crate alloc;
+
+use alloc::collections::BTreeMap;
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(Accounts)]
+pub struct Noop {}
+
+#[program]
+pub mod btree_map_instruction_arg {
+    use super::*;
+
+    pub fn set(_ctx: &mut Context<Noop>, value: BTreeMap<u8, u16>) -> Result<()> {
+        let _ = value;
+        Ok(())
+    }
+}
+"#,
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn btree_set_tuple_and_idl_type_arguments_remain_supported() {
+    cargo_test_pass_case(
+        "btree_set_tuple_and_idl_type_arguments",
+        r#"
+extern crate alloc;
+
+use alloc::collections::BTreeSet;
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd, AnchorDeserialize, AnchorSerialize, IdlType)]
+pub struct NestedArgs {
+    pub value: u64,
+}
+
+#[derive(AnchorDeserialize, AnchorSerialize, IdlType)]
+pub struct CollectionArgs {
+    pub values: BTreeSet<NestedArgs>,
+    pub pair: (NestedArgs, u16),
+}
+
+#[derive(Accounts)]
+pub struct Noop {}
+
+#[program]
+pub mod btree_set_tuple_and_idl_type_args {
+    use super::*;
+
+    pub fn set(
+        _ctx: &mut Context<Noop>,
+        values: BTreeSet<NestedArgs>,
+        pair: (u8, u16),
+        args: CollectionArgs,
+    ) -> Result<()> {
+        let _ = (values, pair, args);
+        Ok(())
+    }
+}
+
+#[cfg(feature = "idl-build")]
+#[test]
+fn nested_dependencies_are_forwarded() {
+    let type_def = <CollectionArgs as IdlAccountType>::__idl_type_def().unwrap();
+    assert!(type_def.contains("\"name\":\"BTreeSet\""));
+    assert!(type_def.contains("\"name\":\"(NestedArgs,u16)\""));
+
+    let mut accounts = alloc::vec::Vec::new();
+    let mut types = alloc::vec::Vec::new();
+    <CollectionArgs as IdlAccountType>::__register_idl_deps(&mut accounts, &mut types);
+    assert!(types.iter().any(|ty| ty.contains("\"name\":\"NestedArgs\"")));
+}
+"#,
+        &["idl-build"],
+    );
+}
+
 fn cargo_test_pass_case(name: &str, source: &str, features: &[&str]) {
     let mut args = Vec::new();
     if !features.is_empty() {
@@ -126,6 +225,41 @@ pub struct Bad {
             "`constraint` expects a boolean expression",
             "non-boolean literals",
         ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn nested_accounts_flattened_header_size_must_fit_u8_domain() {
+    // Top-level field count is only 2, but Nested expands to 128+128 = 256
+    // slots — past the 256-bit duplicate / u8 offset domain.
+    let chunk_fields: String = (0..128)
+        .map(|i| format!("    pub a{i}: UncheckedAccount,\n"))
+        .collect();
+    let source = format!(
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(Accounts)]
+pub struct Chunk {{
+{chunk_fields}}}
+
+#[derive(Accounts)]
+pub struct Outer {{
+    pub left: Nested<Chunk>,
+    pub right: Nested<Chunk>,
+}}
+"#
+    );
+    compile_fail_case(
+        "nested_header_size_overflow",
+        &source,
+        &["HEADER_SIZE must be <= 255"],
     );
 }
 
@@ -219,9 +353,9 @@ fn init_space_rejects_wincode_field_overrides() {
     compile_fail_case(
         "init_space_wincode_skip",
         r#"
-use anchor_lang::InitSpace;
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, InitSpace};
 
-#[derive(InitSpace, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(InitSpace, AnchorDeserialize, AnchorSerialize)]
 pub struct Bad {
     #[wincode(skip)]
     pub skipped: u64,
@@ -237,9 +371,9 @@ pub struct Bad {
     compile_fail_case(
         "init_space_wincode_skip_default_val",
         r#"
-use anchor_lang::InitSpace;
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, InitSpace};
 
-#[derive(InitSpace, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(InitSpace, AnchorDeserialize, AnchorSerialize)]
 pub struct Bad {
     #[wincode(skip(default_val = 9))]
     pub skipped: u64,
@@ -255,9 +389,9 @@ pub struct Bad {
     compile_fail_case(
         "init_space_wincode_with",
         r#"
-use anchor_lang::InitSpace;
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, InitSpace};
 
-#[derive(InitSpace, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(InitSpace, AnchorDeserialize, AnchorSerialize)]
 pub struct Bad {
     #[wincode(with = "shim::ByteCodec")]
     pub packed: u64,
@@ -276,9 +410,9 @@ mod shim {
     compile_fail_case(
         "init_space_wincode_tag_encoding",
         r#"
-use anchor_lang::InitSpace;
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, InitSpace};
 
-#[derive(InitSpace, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(InitSpace, AnchorDeserialize, AnchorSerialize)]
 #[wincode(tag_encoding = "u32")]
 pub enum Bad {
     A([u8; 32]),
@@ -301,9 +435,9 @@ fn idl_generation_rejects_wincode_field_overrides() {
     compile_fail_case(
         "idl_type_wincode_skip",
         r#"
-use anchor_lang::IdlType;
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, IdlType};
 
-#[derive(IdlType, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(IdlType, AnchorDeserialize, AnchorSerialize)]
 pub struct Bad {
     #[wincode(skip)]
     pub skipped: u64,
@@ -571,6 +705,213 @@ pub struct Outer {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn floats_are_allowed_on_borsh_compatible_surfaces() {
+    compile_pass_case(
+        "float_instruction_arg",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+pub mod float_instruction_arg {
+    use super::*;
+
+    pub fn set(_ctx: &mut Context<Noop>, value: f64) -> Result<()> {
+        let _ = value;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Noop {}
+"#,
+    );
+
+    compile_pass_case(
+        "float_instruction_attr_arg",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(Accounts)]
+#[instruction(price: f64)]
+pub struct SetPrice {
+    pub data: UncheckedAccount,
+}
+"#,
+    );
+
+    compile_pass_case(
+        "float_instruction_attr_alias",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+type Price = f64;
+
+#[derive(Accounts)]
+#[instruction(price: Price)]
+pub struct SetPrice {
+    pub data: UncheckedAccount,
+}
+"#,
+    );
+
+    compile_pass_case(
+        "float_borsh_account",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account(borsh)]
+pub struct Price {
+    pub value: Option<f32>,
+}
+"#,
+    );
+
+    compile_pass_case(
+        "float_event",
+        r#"
+use anchor_lang::prelude::*;
+
+#[event]
+pub struct PriceChanged {
+    pub value: f64,
+}
+"#,
+    );
+
+    compile_pass_case(
+        "float_idl_type",
+        r#"
+use anchor_lang::prelude::*;
+
+#[derive(IdlType)]
+pub struct Price {
+    pub value: Vec<f64>,
+}
+"#,
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn declared_program_accepts_external_float_instruction_types() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let idl_path = manifest_dir.join("target/idls/external_float.json");
+    fs::create_dir_all(idl_path.parent().unwrap()).unwrap();
+    fs::write(
+        &idl_path,
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": {
+    "name": "external_float",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
+  "instructions": [
+    {
+      "name": "useExternal",
+      "discriminator": [1, 2, 3, 4],
+      "accounts": [],
+      "args": [
+        {
+          "name": "value",
+          "type": { "defined": { "name": "ExternalFloat" } }
+        }
+      ]
+    }
+  ],
+  "types": []
+}"#,
+    )
+    .unwrap();
+
+    let output = cargo_case(
+        "declared_program_external_float",
+        r#"
+use anchor_lang::prelude::*;
+
+mod external_types {
+    pub type ExternalFloat = f64;
+}
+
+use external_types::ExternalFloat;
+
+declare_program!(external_float);
+"#,
+        "check",
+        &[],
+    );
+    fs::remove_file(idl_path).unwrap();
+
+    assert!(
+        output.status.success(),
+        "declared program with an external float type failed to compile:\n\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn nested_float_aliases_are_allowed_on_borsh_accounts() {
+    compile_pass_case(
+        "nested_safe_borsh_account",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct SafeInner {
+    pub value: u64,
+}
+
+#[account(borsh)]
+pub struct SafeAccount {
+    pub value: SafeInner,
+}
+"#,
+    );
+
+    compile_pass_case(
+        "nested_float_alias_borsh_account",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+type FloatAlias = f64;
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct HiddenFloat {
+    pub value: FloatAlias,
+}
+
+#[account(borsh)]
+pub struct Price {
+    pub value: HiddenFloat,
+}
+"#,
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn cfg_gated_public_handlers_do_not_emit_missing_wrappers() {
     compile_pass_case(
         "cfg_gated_handler",
@@ -677,7 +1018,13 @@ fn check() {
     assert_anchor_account::<Sysvar<SlotHashes>>();
 }
 "#,
-        &["SlotHashes", "SysvarId"],
+        // `SysvarLoad` is the bound `Sysvar<T>` actually requires; the
+        // `on_unimplemented` note names `SysvarId` alongside it.
+        &[
+            "SlotHashes",
+            "SysvarLoad",
+            "is not a sysvar Anchor can load",
+        ],
     );
 }
 
@@ -746,7 +1093,7 @@ use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
-#[derive(anchor_lang::wincode::SchemaRead, anchor_lang::wincode::SchemaWrite)]
+#[derive(anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
 pub struct SeedBuf(Vec<u8>);
 
 impl SeedBuf {
@@ -755,7 +1102,7 @@ impl SeedBuf {
     }
 }
 
-#[derive(anchor_lang::wincode::SchemaRead, anchor_lang::wincode::SchemaWrite)]
+#[derive(anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
 pub struct SeedConfig {
     pub seed: SeedBuf,
 }
@@ -783,6 +1130,58 @@ pub struct Good {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn empty_seeds_array_with_bump_compiles() {
+    // Pre-fix: `#(#seed_refs),* , bump` left a leading comma when
+    // `seeds = []`, producing invalid Rust. Post-fix: bump-only arrays.
+    compile_pass_case(
+        "empty_seeds_with_bump",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct Data {
+    pub value: u64,
+}
+
+impl Owner for Data {
+    const OWNER: Address = crate::ID;
+}
+
+impl Discriminator for Data {
+    const DISCRIMINATOR: &'static [u8] = &[0x65, 0x6d, 0x70, 0x74, 0x79, 0x73, 0x65, 0x64];
+}
+
+#[derive(Accounts)]
+pub struct VerifyEmptySeeds {
+    #[account(seeds = [], bump = 255)]
+    pub pda: BorshAccount<Data>,
+}
+
+#[derive(Accounts)]
+pub struct InitEmptySeeds {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + core::mem::size_of::<Data>(),
+        seeds = [],
+        bump
+    )]
+    pub pda: BorshAccount<Data>,
+    pub system_program: Program<System>,
+}
+"#,
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn init_opaque_seed_expressions_keep_bump_bytes_alive() {
     compile_pass_case(
         "init_opaque_seed_expr",
@@ -791,7 +1190,7 @@ use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
-#[derive(anchor_lang::wincode::SchemaRead, anchor_lang::wincode::SchemaWrite)]
+#[derive(anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
 pub struct Data {
     pub value: u64,
 }
@@ -1139,6 +1538,72 @@ pub struct Bad {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn associated_token_init_rejects_optional_sibling_refs() {
+    compile_fail_case(
+        "associated_token_init_rejects_optional_sibling_refs",
+        r#"
+use anchor_lang::prelude::*;
+use anchor_spl_v2::{
+    associated_token::AssociatedToken,
+    mint::Mint,
+    token::{Token, TokenAccount},
+};
+
+#[account]
+pub struct Holder {
+    pub value: u64,
+}
+
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(mut)]
+    pub payer: Signer,
+    pub mint: Option<Account<Mint>>,
+    pub authority: Option<Account<Holder>>,
+    pub token_program: Program<Token>,
+    #[account(
+        init,
+        payer = payer,
+        associated_token::mint = mint,
+        associated_token::authority = authority,
+        associated_token::token_program = token_program,
+    )]
+    pub token_account: Account<TokenAccount>,
+    pub associated_token_program: Program<AssociatedToken>,
+    pub system_program: Program<System>,
+}
+"#,
+        &["associated_token` constraints cannot reference optional account"],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn associated_token_update_constraints_are_rejected() {
+    compile_fail_case(
+        "associated_token_update_constraints_are_rejected",
+        r#"
+use anchor_lang::prelude::*;
+
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(update(associated_token::mint = mint))]
+    pub data: UncheckedAccount,
+    pub mint: UncheckedAccount,
+}
+"#,
+        &["`update(associated_token::...)` constraints are not supported"],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn optional_pda_init_payer_is_rejected() {
     compile_fail_case(
         "optional_pda_init_payer_is_rejected",
@@ -1250,5 +1715,61 @@ pub struct Bad {{
         "init_owner_override_boxed_borsh_account",
         "#[account(borsh)]",
         "Box<BorshAccount<Data>>",
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn optional_sibling_seed_is_rejected() {
+    // An optional sibling used as a bare PDA seed generates `sibling.address()`
+    // in the on-chain validation path; `Option<T>` has no `.address()` method,
+    // so the expansion never compiles. The derive should surface a clear
+    // diagnostic at attribute-parse time instead of a confusing type error
+    // inside the generated code.
+    compile_fail_case(
+        "optional_sibling_seed_non_init",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct Data { pub val: u64 }
+
+#[derive(Accounts)]
+pub struct Bad {
+    // `authority` is optional — using it bare as a seed is forbidden.
+    pub authority: Option<UncheckedAccount>,
+    #[account(seeds = [authority], bump)]
+    pub pda: Account<Data>,
+}
+"#,
+        &["optional account fields cannot be used as PDA seeds"],
+    );
+
+    compile_fail_case(
+        "optional_sibling_seed_init",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct Data { pub val: u64 }
+
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(mut)]
+    pub payer: Signer,
+    pub authority: Option<UncheckedAccount>,
+    #[account(init, payer = payer, space = 8 + 8, seeds = [authority], bump)]
+    pub pda: Account<Data>,
+    pub system_program: Program<System>,
+}
+"#,
+        &["optional account fields cannot be used as PDA seeds"],
     );
 }

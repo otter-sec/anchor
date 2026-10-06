@@ -7,7 +7,7 @@ The long-awaited v0.30.0 release is finally here!
 
 We'll go over the main changes, but if you'd like to see all notable changes,
 check out the
-[CHANGELOG](https://github.com/solana-foundation/anchor/blob/v0.30.0/CHANGELOG.md#0300---2024-04-15).
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/v0.30.0/CHANGELOG.md#0300---2024-04-15).
 
 ---
 
@@ -16,7 +16,7 @@ check out the
 1. Update `avm`:
 
    ```sh
-   cargo install --git https://github.com/solana-foundation/anchor --tag v0.30.0 avm --locked
+   cargo install --git https://github.com/otter-sec/anchor --tag v0.30.0 avm --locked
    ```
 
 2. Update `anchor-cli`:
@@ -43,7 +43,7 @@ solana-install init 1.18.8
 
 The IDL type specification and generation has been rewritten. To keep the
 release notes short, we won't go over the changes here, but see
-[this](https://github.com/solana-foundation/anchor/pull/2824) if you'd like to learn
+[this](https://github.com/otter-sec/anchor/pull/2824) if you'd like to learn
 more.
 
 ### `idl-build` feature
@@ -85,7 +85,7 @@ work.
 This works for both on-chain (CPI) and off-chain (RPC) usage, allowing program
 interactions without creating a
 [dependency hell](https://en.wikipedia.org/wiki/Dependency_hell). Check out
-[this](https://github.com/solana-foundation/anchor/blob/v0.30.0/tests/declare-program/programs/declare-program/src/lib.rs)
+[this](https://github.com/otter-sec/anchor/blob/v0.30.0/tests/declare-program/programs/declare-program/src/lib.rs)
 example for on-chain CPI usage.
 
 For more information, see the macro's
@@ -121,7 +121,7 @@ constraints) and have `extensions` prefix e.g.
 
 These constraints can be used both with or without the `init` constraint.
 
-[Here](https://github.com/solana-foundation/anchor/blob/v0.30.0/tests/spl/token-extensions/programs/token-extensions/src/instructions.rs)
+[Here](https://github.com/otter-sec/anchor/blob/v0.30.0/tests/spl/token-extensions/programs/token-extensions/src/instructions.rs)
 is an example program that uses these constraints.
 
 #### CPI wrappers
@@ -239,7 +239,7 @@ deactivate_feature = ["GDH5TVdbTPUpRnXaRyQqiKUa7uZAbZ28Q2N9bhbKoMLm", "zkiTNuzBK
 ### Crate and package compatibility
 
 Using non-matching versions of `anchor-cli`, `anchor-lang`, and
-`@solana-foundation/anchor` can result in unexpected behavior. In this release, you'll
+`@otter-sec/anchor` can result in unexpected behavior. In this release, you'll
 get a warning if any of them don't match.
 
 ### Explicit `overflow-checks` flag
@@ -394,9 +394,9 @@ store the program id in its `address` field:
 
 There are too many type changes to list here, especially the types that are
 related to the IDL. The new IDL types can be found
-[here](https://github.com/solana-foundation/anchor/blob/v0.30.0/ts/packages/anchor/src/idl.ts).
+[here](https://github.com/otter-sec/anchor/blob/v0.30.0/ts/packages/anchor/src/idl.ts).
 
 ---
 
 See the full list of notable changes in the
-[CHANGELOG](https://github.com/solana-foundation/anchor/blob/v0.30.0/CHANGELOG.md#0300---2024-04-15).
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/v0.30.0/CHANGELOG.md#0300---2024-04-15).

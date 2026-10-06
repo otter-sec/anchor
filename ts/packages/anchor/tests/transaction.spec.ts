@@ -1,21 +1,27 @@
+import {
+  AccountRole,
+  address,
+  createNoopSigner,
+  Instruction,
+} from "@solana/kit";
 import TransactionFactory from "../src/program/namespace/transaction";
 import InstructionFactory from "../src/program/namespace/instruction";
 import { BorshCoder, Idl } from "../src";
-import { PublicKey, TransactionInstruction } from "@solana/web3.js";
 
 describe("Transaction", () => {
-  const preIx = new TransactionInstruction({
-    keys: [],
-    programId: PublicKey.default,
-    data: Buffer.from("pre"),
-  });
-  const postIx = new TransactionInstruction({
-    keys: [],
-    programId: PublicKey.default,
-    data: Buffer.from("post"),
-  });
+  const programAddress = address("Test111111111111111111111111111111111111111");
+  const preIx: Instruction = {
+    programAddress: address("11111111111111111111111111111111"),
+    accounts: [],
+    data: new TextEncoder().encode("pre"),
+  };
+  const postIx: Instruction = {
+    programAddress: address("11111111111111111111111111111111"),
+    accounts: [],
+    data: new TextEncoder().encode("post"),
+  };
   const idl: Idl = {
-    address: "Test111111111111111111111111111111111111111",
+    address: programAddress,
     metadata: {
       name: "basic_0",
       version: "0.0.0",
@@ -24,53 +30,68 @@ describe("Transaction", () => {
     instructions: [
       {
         name: "initialize",
-        accounts: [],
+        accounts: [{ name: "authority", signer: true }],
         args: [],
-        discriminator: [],
+        discriminator: [1, 2, 3, 4, 5, 6, 7, 8],
       },
     ],
   };
+  const authority = createNoopSigner(
+    address("SysvarRent111111111111111111111111111111111")
+  );
 
-  it("should add pre instructions before method ix", async () => {
+  function buildTxFn() {
     const coder = new BorshCoder(idl);
-    const programId = PublicKey.default;
     const ixItem = InstructionFactory.build(
       idl.instructions[0],
       (ixName, ix) => coder.instruction.encode(ixName, ix),
-      programId
+      programAddress
     );
-    const txItem = TransactionFactory.build(idl.instructions[0], ixItem);
-    const tx = txItem({ accounts: {}, preInstructions: [preIx] });
-    expect(tx.instructions.length).toBe(2);
-    expect(tx.instructions[0]).toMatchObject(preIx);
+    return TransactionFactory.build(idl.instructions[0], ixItem);
+  }
+
+  it("builds a versioned message with the program instruction", () => {
+    const message = buildTxFn()({ accounts: { authority: authority.address } });
+    expect(message.version).toBe(0);
+    expect(message.instructions).toHaveLength(1);
+    expect(message.instructions[0].programAddress).toBe(programAddress);
+    expect(message.instructions[0].accounts).toEqual([
+      { address: authority.address, role: AccountRole.READONLY_SIGNER },
+    ]);
+    expect(message.instructions[0].data).toEqual(
+      new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])
+    );
+    // No fee payer nor lifetime: the provider sets them when sending.
+    expect("feePayer" in message).toBe(false);
+    expect("lifetimeConstraint" in message).toBe(false);
   });
 
-  it("should add post instructions after method ix", async () => {
-    const coder = new BorshCoder(idl);
-    const programId = PublicKey.default;
-    const ixItem = InstructionFactory.build(
-      idl.instructions[0],
-      (ixName, ix) => coder.instruction.encode(ixName, ix),
-      programId
-    );
-    const txItem = TransactionFactory.build(idl.instructions[0], ixItem);
-    const tx = txItem({ accounts: {}, postInstructions: [postIx] });
-    expect(tx.instructions.length).toBe(2);
-    expect(tx.instructions[1]).toMatchObject(postIx);
+  it("adds pre instructions before the method instruction", () => {
+    const message = buildTxFn()({
+      accounts: { authority: authority.address },
+      preInstructions: [preIx],
+    });
+    expect(message.instructions).toHaveLength(2);
+    expect(message.instructions[0]).toMatchObject(preIx);
   });
 
-  it("should throw error if both preInstructions and instructions are used", async () => {
-    const coder = new BorshCoder(idl);
-    const programId = PublicKey.default;
-    const ixItem = InstructionFactory.build(
-      idl.instructions[0],
-      (ixName, ix) => coder.instruction.encode(ixName, ix),
-      programId
-    );
-    const txItem = TransactionFactory.build(idl.instructions[0], ixItem);
+  it("adds post instructions after the method instruction", () => {
+    const message = buildTxFn()({
+      accounts: { authority: authority.address },
+      postInstructions: [postIx],
+    });
+    expect(message.instructions).toHaveLength(2);
+    expect(message.instructions[1]).toMatchObject(postIx);
+  });
 
-    expect(() =>
-      txItem({ accounts: {}, preInstructions: [preIx], instructions: [preIx] })
-    ).toThrow(new Error("instructions is deprecated, use preInstructions"));
+  it("attaches the context signers to the accounts they sign for", () => {
+    const message = buildTxFn()({
+      accounts: { authority: authority.address },
+      signers: [authority],
+    });
+    expect(message.instructions[0].accounts?.[0]).toMatchObject({
+      address: authority.address,
+      signer: authority,
+    });
   });
 });

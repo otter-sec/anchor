@@ -79,7 +79,6 @@ publish = false
 
 [dependencies]
 anchor-lang = {{ path = "{}" }}
-wincode = {{ version = "0.5", features = ["derive"] }}
 
 [workspace]
 "#,

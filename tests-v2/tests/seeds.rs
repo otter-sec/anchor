@@ -5,7 +5,10 @@
 //! bare-bump (runtime find) and explicit stored-bump variants.
 
 use {
-    anchor_lang::solana_program::instruction::{AccountMeta, Instruction},
+    anchor_lang::{
+        solana_program::instruction::{AccountMeta, Instruction},
+        ToAccountMetas,
+    },
     litesvm::{types::TransactionResult, LiteSVM},
     sha2::{Digest, Sha256},
     solana_account::Account,
@@ -54,6 +57,21 @@ fn find_on_curve_bump() -> (Pubkey, u8) {
         }
     }
     panic!("expected at least one on-curve bump");
+}
+
+fn non_canonical_data_pda() -> (Pubkey, u8) {
+    let (canonical, canonical_bump) = Pubkey::find_program_address(&[b"data"], &program_id());
+    for bump in (0..=u8::MAX).rev() {
+        if bump == canonical_bump {
+            continue;
+        }
+        let bump_seed = [bump];
+        if let Ok(address) = Pubkey::create_program_address(&[b"data", &bump_seed], &program_id()) {
+            assert_ne!(address, canonical);
+            return (address, bump);
+        }
+    }
+    panic!("expected at least one non-canonical off-curve bump");
 }
 
 fn setup() -> (LiteSVM, Keypair) {
@@ -398,6 +416,33 @@ fn literal_untrusted_bump_rejects_on_curve_address() {
         result.is_err(),
         "on-curve address derived from explicit bump must be rejected",
     );
+}
+
+// `bump = <expr>` must not auto-derive via find_program_address on Resolved.
+#[test]
+fn resolved_builder_requires_address_for_explicit_bump() {
+    let (mut svm, payer) = setup();
+    let (pda, bump) = non_canonical_data_pda();
+    assert_ne!(pda, data_pda(), "fixture must differ from the canonical PDA");
+
+    // Compiles only if `data` is Required (not Pda-auto-derived).
+    let metas = seeds::accounts::CheckLiteralUntrustedBumpResolved {
+        payer: payer.pubkey(),
+        data: pda,
+    }
+    .to_account_metas(None);
+    assert_eq!(metas[1].pubkey, pda);
+
+    set_system_account(&mut svm, pda, 1_000_000, 0);
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![12, bump],
+        metas,
+        &payer,
+        &[],
+    )
+    .expect("non-canonical explicit-bump PDA accepted when address is supplied");
 }
 
 #[test]

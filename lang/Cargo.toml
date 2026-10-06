@@ -46,15 +46,15 @@ lazy-account = [
 ]
 
 [dependencies]
-anchor-attribute-access-control = { path = "./attribute/access-control", version = "2.0.0-rc.1" }
-anchor-attribute-account = { path = "./attribute/account", version = "2.0.0-rc.1" }
-anchor-attribute-constant = { path = "./attribute/constant", version = "2.0.0-rc.1" }
-anchor-attribute-error = { path = "./attribute/error", version = "2.0.0-rc.1" }
-anchor-attribute-event = { path = "./attribute/event", version = "2.0.0-rc.1" }
-anchor-attribute-program = { path = "./attribute/program", version = "2.0.0-rc.1" }
-anchor-derive-accounts = { package = "anchor-derive-accounts-v1", path = "./derive/accounts", version = "2.0.0-rc.1" }
-anchor-derive-serde = { path = "./derive/serde", version = "2.0.0-rc.1" }
-anchor-derive-space = { path = "./derive/space", version = "2.0.0-rc.1" }
+anchor-attribute-access-control = { path = "./attribute/access-control", version = "2.0.0-rc.2" }
+anchor-attribute-account = { path = "./attribute/account", version = "2.0.0-rc.2" }
+anchor-attribute-constant = { path = "./attribute/constant", version = "2.0.0-rc.2" }
+anchor-attribute-error = { path = "./attribute/error", version = "2.0.0-rc.2" }
+anchor-attribute-event = { path = "./attribute/event", version = "2.0.0-rc.2" }
+anchor-attribute-program = { path = "./attribute/program", version = "2.0.0-rc.2" }
+anchor-derive-accounts = { package = "anchor-derive-accounts-v1", path = "./derive/accounts", version = "2.0.0-rc.2" }
+anchor-derive-serde = { path = "./derive/serde", version = "2.0.0-rc.2" }
+anchor-derive-space = { path = "./derive/space", version = "2.0.0-rc.2" }
 
 # `anchor-lang-idl` should only be included with `idl-build` feature
 anchor-lang-idl = { workspace = true, optional = true }

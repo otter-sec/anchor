@@ -19,7 +19,7 @@ On Solana, there are two main token programs (developed by
 
 ## Invoking Token Programs in an Anchor Program
 
-The [`anchor-spl`](https://github.com/solana-foundation/anchor/tree/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/spl) crate
+The [`anchor-spl`](https://github.com/otter-sec/anchor/tree/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/spl) crate
 simplifies the process of interacting with Solana's Token Programs in an Anchor
 program. This crate includes instructions and account types for both the
 original Token Program and the newer Token Extension Program (Token 2022).
@@ -50,11 +50,11 @@ The most commonly used modules provided by the `anchor-spl` crate include:
 
 | Module                                                                                                                                     | Description                                                                              |
 | -------------------------------------------------------------------------------------------------------------------------------------------| ---------------------------------------------------------------------------------------- |
-| [`token`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/spl/src/token.rs)                              | Token Program (legacy) instructions and account types                                    |
-| [`token_2022`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/spl/src/token_2022.rs)                    | Token 2022 base instructions (instructions matching the Token Program functionality)     |
-| [`token_2022_extensions`](https://github.com/solana-foundation/anchor/tree/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/spl/src/token_2022_extensions) | Token 2022 extensions instructions                                                       |
-| [`token_interface`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/spl/src/token_interface.rs)          | Implementation of account types that work with both Token Program and Token 2022 Program |
-| [`associated_token`](https://github.com/solana-foundation/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/spl/src/associated_token.rs)        | Associated token account instruction                                                     |
+| [`token`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/spl/src/token.rs)                              | Token Program (legacy) instructions and account types                                    |
+| [`token_2022`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/spl/src/token_2022.rs)                    | Token 2022 base instructions (instructions matching the Token Program functionality)     |
+| [`token_2022_extensions`](https://github.com/otter-sec/anchor/tree/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/spl/src/token_2022_extensions) | Token 2022 extensions instructions                                                       |
+| [`token_interface`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/spl/src/token_interface.rs)          | Implementation of account types that work with both Token Program and Token 2022 Program |
+| [`associated_token`](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/spl/src/associated_token.rs)        | Associated token account instruction                                                     |
 
 The following pages provide examples of how to use the `anchor-spl` crate in an
 Anchor program.

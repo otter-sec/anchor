@@ -347,9 +347,9 @@ jobs:
             --notes "$(cat <<EOF
           The $GITHUB_REF_NAME release is here.
 
-          Check out the release notes from [Anchor website](https://www.anchor-lang.com/docs/updates/release-notes/${RELEASE_URL}) or [GitHub](https://github.com/solana-foundation/anchor/blob/${GITHUB_REF_NAME}/docs/content/docs/updates/release-notes/${RELEASE_URL}.mdx).
+          Check out the release notes from [Anchor website](https://www.anchor-lang.com/docs/updates/release-notes/${RELEASE_URL}) or [GitHub](https://github.com/otter-sec/anchor/blob/${GITHUB_REF_NAME}/docs/content/docs/updates/release-notes/${RELEASE_URL}.mdx).
 
-          For a list of notable changes with their associated PRs, see the [CHANGELOG](https://github.com/solana-foundation/anchor/blob/${GITHUB_REF_NAME}/CHANGELOG.md#${RELEASE_CHANGELOG}).
+          For a list of notable changes with their associated PRs, see the [CHANGELOG](https://github.com/otter-sec/anchor/blob/${GITHUB_REF_NAME}/CHANGELOG.md#${RELEASE_CHANGELOG}).
           EOF
           )" \
             "${publish_args[@]}"

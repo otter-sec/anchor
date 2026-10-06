@@ -119,7 +119,7 @@ describe("typescript", () => {
 
   // TODO: Support more expressions in the IDL e.g. math operations?
   it("Can use unsupported expressions", () => {
-    // Compilation test to fix issues like https://github.com/solana-foundation/anchor/issues/2933
+    // Compilation test to fix issues like https://github.com/otter-sec/anchor/issues/2933
   });
 
   it("Includes the unresolved accounts if resolution fails", async () => {

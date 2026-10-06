@@ -17,6 +17,18 @@ pub mod callee {
         Ok(())
     }
 
+    /// Handler with an argument that borrows instruction data. The
+    /// borrow gives the generated instruction struct a lifetime
+    /// parameter. Drives the `has_ref_args` branch of the cpi-wrapper
+    /// codegen. Regression: the wrapper wrote the lifetime into the
+    /// struct literal, which does not parse, so any program with a
+    /// borrowing handler failed to compile.
+    pub fn set_data_from_bytes(ctx: &mut Context<SetData>, bytes: &[u8]) -> Result<()> {
+        require_eq!(bytes.len(), 8, ErrorCode::InstructionDidNotDeserialize);
+        ctx.accounts.data.value = u64::from_le_bytes(bytes.try_into().unwrap());
+        Ok(())
+    }
+
     /// No-extra-args handler reusing `SetData`. Drives the
     /// `extra_arg_names.is_empty()` branch in the cpi-wrapper codegen and
     /// the dedupe of `cpi::accounts` re-exports — `noop` and `set_data`

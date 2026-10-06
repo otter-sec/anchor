@@ -95,15 +95,17 @@ pub use wincode;
 ///
 /// Wincode with this config is byte-identical to borsh for the shapes Anchor
 /// programs commonly use (integers, fixed arrays, `Vec`, `String`, `Option`,
-/// tagged enums, nested structs). The following shapes are NOT byte-
-/// identical — if a program built on Anchor v1 (real borsh) used them, the
-/// on-chain bytes will NOT round-trip cleanly through v2:
+/// tagged enums, nested structs). The following shapes are supported but are
+/// NOT byte-identical — if a program built on Anchor v1 (real borsh) used
+/// them, the on-chain bytes will NOT necessarily round-trip cleanly through v2:
 ///
 /// - **`HashMap` / `HashSet`**: borsh sorts entries by key, wincode preserves
 ///   insertion order. Use `BTreeMap` / `BTreeSet` or `Vec<(K, V)>` if you
 ///   need canonical ordering.
-/// - **`f32` / `f64` NaN**: borsh rejects NaN on deserialize, wincode
-///   accepts it. v2 won't surface an error for a NaN-bearing account.
+/// - **`f32` / `f64`**: wincode accepts NaN while borsh rejects it. Anchor v2
+///   intentionally follows wincode here, so floating-point values (including
+///   NaN) are supported. Programs migrating from v1 should account for this
+///   serialization difference when validating or comparing float values.
 ///
 /// Programs that don't use these types are unaffected.
 ///
@@ -122,7 +124,9 @@ pub const MAX_PAYER_SEEDS: usize = 16;
 pub const MAX_PAYER_SEEDS_WITH_BUMP: usize = MAX_PAYER_SEEDS + 1;
 
 /// Concrete type of [`BORSH_CONFIG`]. Spelled out so downstream callers can
-/// name it in trait bounds (e.g. `T: wincode::SchemaRead<'de, BorshConfig>`).
+/// name it in manual trait bounds (e.g.
+/// `T: anchor_lang::wincode::SchemaRead<'de, BorshConfig>`). Most programs
+/// should derive [`AnchorDeserialize`] and [`AnchorSerialize`] instead.
 pub type BorshConfig = wincode::config::Configuration<
     true,
     { wincode::config::DEFAULT_PREALLOCATION_SIZE_LIMIT },
@@ -170,7 +174,7 @@ pub use {
     accounts::{AccountInitialize, SlabInit},
     anchor_derive_accounts::{
         access_control, account, constant, declare_program, emit, error_code, event, pod_wrapper,
-        program, Accounts, InitSpace, ToCpiAccounts,
+        program, Accounts, AnchorDeserialize, AnchorSerialize, InitSpace, ToCpiAccounts, __erase,
     },
     bytemuck,
     context::{Bumps, Context, MutMask},

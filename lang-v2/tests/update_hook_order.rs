@@ -4,9 +4,8 @@ use {
     anchor_lang::{
         accounts::{BorshAccount, Signer, UncheckedAccount},
         testing::AccountBuffer,
-        wincode::{SchemaRead, SchemaWrite},
-        AccountConstraint, Accounts, AnchorAccount, Discriminator, ErrorCode, Nested, Owner,
-        TryAccounts,
+        AccountConstraint, Accounts, AnchorAccount, AnchorDeserialize, AnchorSerialize,
+        Discriminator, ErrorCode, Nested, Owner, TryAccounts,
     },
     core::{mem::size_of, ptr},
     pinocchio::address::Address,
@@ -20,7 +19,7 @@ const PROGRAM_ID: [u8; 32] = [0x42; 32];
 const OLD_AUTHORITY: [u8; 32] = [0x10; 32];
 const NEW_AUTHORITY: [u8; 32] = [0x20; 32];
 
-#[derive(SchemaRead, SchemaWrite, Clone, Copy)]
+#[derive(AnchorDeserialize, AnchorSerialize, Clone, Copy)]
 struct Vault {
     current_authority: Address,
 }
@@ -33,7 +32,7 @@ impl Discriminator for Vault {
     const DISCRIMINATOR: &'static [u8] = &[0x41, 0x75, 0x74, 0x68, 0x56, 0x61, 0x75, 0x6c];
 }
 
-#[derive(SchemaRead, SchemaWrite, Clone, Copy)]
+#[derive(AnchorDeserialize, AnchorSerialize, Clone, Copy)]
 struct StepCounter {
     value: u64,
 }

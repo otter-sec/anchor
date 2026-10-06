@@ -1,8 +1,10 @@
-import bs58 from "bs58";
-import { Buffer } from "buffer";
-import { Layout } from "buffer-layout";
-import * as borsh from "@anchor-lang/borsh";
-import { AccountMeta, PublicKey } from "@solana/web3.js";
+import {
+  AccountMeta,
+  getBase16Encoder,
+  getBase58Encoder,
+  getStructCodec,
+  ReadonlyUint8Array,
+} from "@solana/kit";
 import {
   handleDefinedFields,
   Idl,
@@ -13,68 +15,65 @@ import {
   IdlInstructionAccountItem,
   IdlTypeVec,
   IdlInstructionAccounts,
-  IdlDiscriminator,
 } from "../../idl.js";
 import { IdlCoder } from "./idl.js";
+import {
+  DiscriminatedIdlCodec,
+  getDiscriminatedIdlCodec,
+  IdlCodec,
+} from "./codecs.js";
 import { InstructionCoder } from "../index.js";
 
 /**
  * Encodes and decodes program instructions.
  */
 export class BorshInstructionCoder implements InstructionCoder {
-  // Instruction args layout. Maps namespaced method
-  private ixLayouts: Map<
-    string,
-    { discriminator: IdlDiscriminator; layout: Layout }
-  >;
+  // Instruction args codec, prefixed by the instruction discriminator.
+  private ixCodecs: Map<string, DiscriminatedIdlCodec>;
 
   public constructor(private idl: Idl) {
-    const ixLayouts = idl.instructions.map((ix) => {
-      const name = ix.name;
-      const fieldLayouts = ix.args.map((arg) =>
-        IdlCoder.fieldLayout(arg, idl.types)
-      );
-      const layout = borsh.struct(fieldLayouts, name);
-      return [name, { discriminator: ix.discriminator, layout }] as const;
+    const ixCodecs = idl.instructions.map((ix) => {
+      const fieldCodecs = ix.args.map((arg): [string, IdlCodec] => [
+        arg.name,
+        IdlCoder.fieldCodec(arg, idl.types),
+      ]);
+      return [
+        ix.name,
+        getDiscriminatedIdlCodec(ix.discriminator, getStructCodec(fieldCodecs)),
+      ] as const;
     });
-    this.ixLayouts = new Map(ixLayouts);
+    this.ixCodecs = new Map(ixCodecs);
   }
 
   /**
    * Encodes a program instruction.
    */
-  public encode(ixName: string, ix: any): Buffer {
-    const buffer = Buffer.alloc(1000); // TODO: use a tighter buffer.
-    const encoder = this.ixLayouts.get(ixName);
-    if (!encoder) {
+  public encode(ixName: string, ix: any): ReadonlyUint8Array {
+    const codec = this.ixCodecs.get(ixName);
+    if (!codec) {
       throw new Error(`Unknown method: ${ixName}`);
     }
 
-    const len = encoder.layout.encode(ix, buffer);
-    const data = buffer.slice(0, len);
-
-    return Buffer.concat([Buffer.from(encoder.discriminator), data]);
+    return codec.encode(ix);
   }
 
   /**
    * Decodes a program instruction.
    */
   public decode(
-    ix: Buffer | string,
+    ix: ReadonlyUint8Array | string,
     encoding: "hex" | "base58" = "hex"
   ): Instruction | null {
-    if (typeof ix === "string") {
-      ix = encoding === "hex" ? Buffer.from(ix, "hex") : bs58.decode(ix);
-    }
+    const bytes =
+      typeof ix === "string"
+        ? (encoding === "hex" ? getBase16Encoder() : getBase58Encoder()).encode(
+            ix
+          )
+        : ix;
 
-    for (const [name, layout] of this.ixLayouts) {
-      const givenDisc = ix.subarray(0, layout.discriminator.length);
-      const matches = givenDisc.equals(Buffer.from(layout.discriminator));
-      if (matches) {
-        return {
-          name,
-          data: layout.layout.decode(ix.subarray(givenDisc.length)),
-        };
+    for (const [name, codec] of this.ixCodecs) {
+      if (codec.matches(bytes)) {
+        return { name, data: codec.decode(bytes) as Object };
       }
     }
 
@@ -86,7 +85,7 @@ export class BorshInstructionCoder implements InstructionCoder {
    */
   public format(
     ix: Instruction,
-    accountMetas: AccountMeta[]
+    accountMetas: readonly AccountMeta[]
   ): InstructionDisplay | null {
     return InstructionFormatter.format(ix, accountMetas, this.idl);
   }
@@ -99,18 +98,14 @@ export type Instruction = {
 
 export type InstructionDisplay = {
   args: { name: string; type: string; data: string }[];
-  accounts: {
-    name?: string;
-    pubkey: PublicKey;
-    isSigner: boolean;
-    isWritable: boolean;
-  }[];
+  /** The instruction's account metas, named after the IDL where known. */
+  accounts: (AccountMeta & { name?: string })[];
 };
 
 class InstructionFormatter {
   public static format(
     ix: Instruction,
-    accountMetas: AccountMeta[],
+    accountMetas: readonly AccountMeta[],
     idl: Idl
   ): InstructionDisplay | null {
     const idlIx = idl.instructions.find((i) => ix.name === i.name);

@@ -1663,7 +1663,7 @@
     {
       "name": "TEST_CONVERT_MODULE_PATHS",
       "docs": [
-        "IDL test for the issue explained in https://github.com/solana-foundation/anchor/issues/3358",
+        "IDL test for the issue explained in https://github.com/otter-sec/anchor/issues/3358",
         "",
         "For example, using [`SimpleAccount`] and adding the full path at the end of a doc comment",
         "used to result in a false-positive when detecting conflicts.",

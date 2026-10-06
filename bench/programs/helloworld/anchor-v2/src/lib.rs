@@ -6,6 +6,7 @@ declare_id!("B7ihZyoXZ1fwAY3TugkiFJ6SXkzJwMuQrxrekBaSmn32");
 pub mod hello_world_v2 {
     use super::*;
 
+    #[inline(always)]
     pub fn init(ctx: &mut Context<Init>) -> Result<()> {
         let counter = &mut ctx.accounts.counter;
         counter.value = 42;

@@ -50,6 +50,34 @@ describe("coder.accounts", () => {
     });
   });
 
+  test("Returns a copy of the account discriminator", async () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: { name: "basic_0", version: "0.0.0", spec: "0.1.0" },
+      instructions: [],
+      accounts: [{ name: "counter", discriminator: [0, 1, 2, 3, 4, 5, 6, 7] }],
+      types: [
+        {
+          name: "counter",
+          type: { kind: "struct", fields: [{ name: "count", type: "u8" }] },
+        },
+      ],
+    };
+    const coder = new BorshCoder(idl);
+
+    // Mutating the returned bytes must not corrupt the coder's own.
+    const discriminator = coder.accounts.accountDiscriminator("counter");
+    (discriminator as Uint8Array).fill(255);
+
+    assert.deepEqual(
+      [...coder.accounts.accountDiscriminator("counter")],
+      [0, 1, 2, 3, 4, 5, 6, 7]
+    );
+    const encoded = await coder.accounts.encode("counter", { count: 9 });
+    assert.deepEqual([...encoded], [0, 1, 2, 3, 4, 5, 6, 7, 9]);
+    assert.deepEqual(coder.accounts.decode("counter", encoded), { count: 9 });
+  });
+
   test("Can encode and decode user-defined accounts, including those with more nested & multiple const generics", () => {
     const idl: Idl = {
       address: "EQoYLkj17hXm8yc9qLq5Cm7FgCqujRVHd2ZhdEfAmrMF",

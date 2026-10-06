@@ -111,7 +111,8 @@ pub fn rent_exempt_lamports(space: usize) -> Result<u64, ProgramError> {
 #[cfg(target_os = "solana")]
 macro_rules! pda_find_loop {
     ($seeds:expr, $program_id:expr, |$h:ident, $b:ident| $on_found:expr) => {{
-        use solana_define_syscall::definitions::{sol_curve_validate_point, sol_sha256};
+        use solana_address::syscalls::sol_curve_validate_point;
+        use solana_sha256_hasher::sol_sha256;
         const CURVE25519_EDWARDS: u64 = 0;
         const PDA_MARKER: &[u8; 21] = b"ProgramDerivedAddress";
 
@@ -293,7 +294,7 @@ pub fn find_and_verify_program_address_skip_curve(
 #[cfg(target_os = "solana")]
 #[inline(always)]
 fn check_off_curve(addr: &Address) -> Result<(), ProgramError> {
-    use solana_define_syscall::definitions::sol_curve_validate_point;
+    use solana_address::syscalls::sol_curve_validate_point;
     const CURVE25519_EDWARDS: u64 = 0;
     let on_curve = unsafe {
         sol_curve_validate_point(
@@ -313,7 +314,7 @@ fn check_off_curve(addr: &Address) -> Result<(), ProgramError> {
 #[cfg(target_os = "solana")]
 #[inline(always)]
 fn hash_pda_seeds(seeds: &[&[u8]], program_id: &Address) -> Result<Address, ProgramError> {
-    use solana_define_syscall::definitions::sol_sha256;
+    use solana_sha256_hasher::sol_sha256;
     const PDA_MARKER: &[u8; 21] = b"ProgramDerivedAddress";
 
     validate_pda_seeds(seeds, MAX_PDA_SEEDS_TOTAL)?;

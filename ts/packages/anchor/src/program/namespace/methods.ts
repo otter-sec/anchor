@@ -1,12 +1,11 @@
 import {
   AccountMeta,
-  ConfirmOptions,
-  PublicKey,
-  Signer,
-  Transaction,
-  TransactionInstruction,
-  TransactionSignature,
-} from "@solana/web3.js";
+  Address,
+  Instruction,
+  Signature,
+  TransactionSigner,
+} from "@solana/kit";
+import { AccountsCoder } from "../../coder/index.js";
 import {
   Idl,
   IdlInstructionAccount,
@@ -14,19 +13,18 @@ import {
   IdlInstructionAccounts,
   IdlTypeDef,
 } from "../../idl.js";
-import Provider from "../../provider.js";
+import Provider, { ConfirmOptions } from "../../provider.js";
 import {
   AccountsGeneric,
   AccountsResolver,
   CustomAccountResolver,
 } from "../accounts-resolver.js";
-import { Address, translateAddress } from "../common.js";
+import { AddressInput, hasToBase58, toAddress } from "../common.js";
 import { Accounts } from "../context.js";
-import { AccountNamespace } from "./account.js";
 import { InstructionFn } from "./instruction.js";
 import { RpcFn } from "./rpc.js";
 import { SimulateFn, SimulateResponse } from "./simulate.js";
-import { TransactionFn } from "./transaction.js";
+import { ProgramTransactionMessage, TransactionFn } from "./transaction.js";
 import {
   AllInstructions,
   InstructionAccountAddresses,
@@ -43,14 +41,14 @@ export type MethodsNamespace<
 export class MethodsBuilderFactory {
   public static build<IDL extends Idl, I extends AllInstructions<IDL>>(
     provider: Provider,
-    programId: PublicKey,
+    programAddress: Address,
     idlIx: AllInstructions<IDL>,
     ixFn: InstructionFn<IDL>,
     txFn: TransactionFn<IDL>,
     rpcFn: RpcFn<IDL>,
     simulateFn: SimulateFn<IDL>,
     viewFn: ViewFn<IDL> | undefined,
-    accountNamespace: AccountNamespace<IDL>,
+    accountsCoder: AccountsCoder,
     idlTypes: IdlTypeDef[],
     customResolver?: CustomAccountResolver<IDL>
   ): MethodsFn<IDL, I, MethodsBuilder<IDL, I>> {
@@ -63,37 +61,70 @@ export class MethodsBuilderFactory {
         simulateFn,
         viewFn,
         provider,
-        programId,
+        programAddress,
         idlIx,
-        accountNamespace,
+        accountsCoder,
         idlTypes,
         customResolver
       );
   }
 }
 
-type ResolvedAccounts<
-  A extends IdlInstructionAccountItem = IdlInstructionAccountItem
-> = PartialUndefined<ResolvedAccountsRecursive<A>>;
+/**
+ * Accounts the caller must provide to `accounts()`: every account the
+ * resolver cannot fill in itself. Takes the instruction's account list as a
+ * tuple so that adjacency can be inspected.
+ */
+type ResolvedAccounts<Accounts extends readonly IdlInstructionAccountItem[]> =
+  PartialUndefined<ResolvedAccountsRecursive<Accounts>>;
 
 type ResolvedAccountsRecursive<
-  A extends IdlInstructionAccountItem = IdlInstructionAccountItem
+  Accounts extends readonly IdlInstructionAccountItem[]
 > = OmitNever<{
-  [N in A["name"]]: ResolvedAccount<A & { name: N }>;
+  [N in Accounts[number]["name"]]: ResolvedAccount<
+    Accounts[number] & { name: N },
+    EventCpiAccountNames<Accounts>
+  >;
 }>;
 
+/**
+ * Names of the event CPI accounts the resolver fills in, mirroring
+ * `AccountsResolver.resolveEventCpi`: only an `eventAuthority` immediately
+ * followed by `program` counts, so an unrelated account of either name stays
+ * required. Keep the two in sync.
+ */
+type EventCpiAccountNames<
+  Accounts extends readonly IdlInstructionAccountItem[]
+> = Accounts extends readonly [
+  infer Head extends IdlInstructionAccountItem,
+  infer Next extends IdlInstructionAccountItem,
+  ...infer Rest extends readonly IdlInstructionAccountItem[]
+]
+  ? Head extends { name: "eventAuthority" }
+    ? Next extends { name: "program" }
+      ? "eventAuthority" | "program"
+      : EventCpiAccountNames<[Next, ...Rest]>
+    : EventCpiAccountNames<[Next, ...Rest]>
+  : never;
+
 type ResolvedAccount<
-  A extends IdlInstructionAccountItem = IdlInstructionAccountItem
+  A extends IdlInstructionAccountItem,
+  EventCpi extends string
 > = A extends IdlInstructionAccounts
-  ? ResolvedAccountsRecursive<A["accounts"][number]>
+  ? // A composite whose accounts all resolve is itself omittable.
+    keyof ResolvedAccountsRecursive<A["accounts"]> extends never
+    ? never
+    : ResolvedAccountsRecursive<A["accounts"]>
   : A extends NonNullable<Pick<IdlInstructionAccount, "address">>
   ? never
   : A extends NonNullable<Pick<IdlInstructionAccount, "pda">>
   ? never
   : A extends NonNullable<Pick<IdlInstructionAccount, "relations">>
   ? never
+  : A extends { name: EventCpi }
+  ? never
   : A extends { signer: true }
-  ? Address | undefined
+  ? AddressInput | undefined
   : PartialAccount<A>;
 
 type PartialUndefined<
@@ -118,8 +149,8 @@ type PartialAccount<
 > = A extends IdlInstructionAccounts
   ? PartialAccounts<A["accounts"][number]>
   : A extends { optional: true }
-  ? Address | null
-  : Address;
+  ? AddressInput | null
+  : AddressInput;
 
 export function isPartialAccounts(
   partialAccount: any
@@ -127,7 +158,7 @@ export function isPartialAccounts(
   return (
     typeof partialAccount === "object" &&
     partialAccount !== null &&
-    !("_bn" in partialAccount) // Ensures not a pubkey
+    !hasToBase58(partialAccount) // Ensures not a legacy public key
   );
 }
 
@@ -147,7 +178,7 @@ export function flattenPartialAccounts<A extends IdlInstructionAccountItem>(
     }
     toReturn[accountName] = isPartialAccounts(account)
       ? flattenPartialAccounts(account, true)
-      : translateAddress(account);
+      : toAddress(account);
   }
   return toReturn;
 }
@@ -159,9 +190,9 @@ export class MethodsBuilder<
 > {
   private _accounts: AccountsGeneric = {};
   private _remainingAccounts: Array<AccountMeta> = [];
-  private _signers: Array<Signer> = [];
-  private _preInstructions: Array<TransactionInstruction> = [];
-  private _postInstructions: Array<TransactionInstruction> = [];
+  private _signers: Array<TransactionSigner> = [];
+  private _preInstructions: Array<Instruction> = [];
+  private _postInstructions: Array<Instruction> = [];
   private _accountsResolver: AccountsResolver<IDL>;
   private _resolveAccounts: boolean = true;
 
@@ -173,9 +204,9 @@ export class MethodsBuilder<
     private _simulateFn: SimulateFn<IDL>,
     private _viewFn: ViewFn<IDL> | undefined,
     provider: Provider,
-    programId: PublicKey,
+    programAddress: Address,
     idlIx: AllInstructions<IDL>,
-    accountNamespace: AccountNamespace<IDL>,
+    accountsCoder: AccountsCoder,
     idlTypes: IdlTypeDef[],
     customResolver?: CustomAccountResolver<IDL>
   ) {
@@ -183,9 +214,9 @@ export class MethodsBuilder<
       _args,
       this._accounts,
       provider,
-      programId,
+      programAddress,
       idlIx,
-      accountNamespace,
+      accountsCoder,
       idlTypes,
       customResolver
     );
@@ -204,7 +235,7 @@ export class MethodsBuilder<
    * See {@link accountsPartial} for overriding the account resolution or
    * {@link accountsStrict} for strictly specifying all accounts.
    */
-  public accounts(accounts: ResolvedAccounts<A>) {
+  public accounts(accounts: ResolvedAccounts<I["accounts"]>) {
     // @ts-ignore
     return this.accountsPartial(accounts);
   }
@@ -247,7 +278,7 @@ export class MethodsBuilder<
    *
    * @param signers signers to append
    */
-  public signers(signers: Array<Signer>) {
+  public signers(signers: Array<TransactionSigner>) {
     this._signers = this._signers.concat(signers);
     return this;
   }
@@ -273,7 +304,7 @@ export class MethodsBuilder<
    * @param ixs instructions
    * @param prepend whether to prepend to the existing previous instructions
    */
-  public preInstructions(ixs: Array<TransactionInstruction>, prepend = false) {
+  public preInstructions(ixs: Array<Instruction>, prepend = false) {
     if (prepend) {
       this._preInstructions = ixs.concat(this._preInstructions);
     } else {
@@ -289,21 +320,21 @@ export class MethodsBuilder<
    *
    * @param ixs instructions
    */
-  public postInstructions(ixs: Array<TransactionInstruction>) {
+  public postInstructions(ixs: Array<Instruction>) {
     this._postInstructions = this._postInstructions.concat(ixs);
     return this;
   }
 
   /**
-   * Get the public keys of the instruction accounts.
+   * Get the addresses of the instruction accounts.
    *
-   * The return type is an object with account names as keys and their public
-   * keys as their values.
+   * The return type is an object with account names as keys and their
+   * addresses as their values.
    *
-   * Note that an account key is `undefined` if the account hasn't yet been
-   * specified or resolved.
+   * Note that an account address is `undefined` if the account hasn't yet
+   * been specified or resolved.
    */
-  public async pubkeys(): Promise<
+  public async addresses(): Promise<
     Partial<InstructionAccountAddresses<IDL, I>>
   > {
     if (this._resolveAccounts) {
@@ -316,11 +347,11 @@ export class MethodsBuilder<
   /**
    * Create an instruction based on the current configuration.
    *
-   * See {@link transaction} to create a transaction instead.
+   * See {@link transactionMessage} to create a transaction message instead.
    *
-   * @returns the transaction instruction
+   * @returns the instruction
    */
-  public async instruction(): Promise<TransactionInstruction> {
+  public async instruction(): Promise<Instruction> {
     if (this._resolveAccounts) {
       await this._accountsResolver.resolve();
     }
@@ -336,16 +367,18 @@ export class MethodsBuilder<
   }
 
   /**
-   * Create a transaction based on the current configuration.
+   * Create a transaction message based on the current configuration.
    *
-   * This method doesn't send the created transaction. Use {@link rpc} method
-   * to conveniently send an confirm the configured transaction.
+   * The message carries the instructions and signers but no fee payer nor
+   * lifetime: the provider sets both when sending, and when signing
+   * manually they must be set before compiling. Use {@link rpc} to
+   * conveniently send and confirm the configured transaction instead.
    *
    * See {@link instruction} to only create an instruction instead.
    *
-   * @returns the transaction
+   * @returns the transaction message
    */
-  public async transaction(): Promise<Transaction> {
+  public async transactionMessage(): Promise<ProgramTransactionMessage> {
     if (this._resolveAccounts) {
       await this._accountsResolver.resolve();
     }
@@ -419,13 +452,13 @@ export class MethodsBuilder<
   /**
    * Send and confirm the configured transaction.
    *
-   * See {@link rpcAndKeys} to both send the transaction and get the resolved
-   * account public keys.
+   * See {@link rpcAndAddresses} to both send the transaction and get the
+   * resolved account addresses.
    *
    * @param options confirmation options
    * @returns the transaction signature
    */
-  public async rpc(options?: ConfirmOptions): Promise<TransactionSignature> {
+  public async rpc(options?: ConfirmOptions): Promise<Signature> {
     if (this._resolveAccounts) {
       await this._accountsResolver.resolve();
     }
@@ -442,18 +475,18 @@ export class MethodsBuilder<
   }
 
   /**
-   * Conveniently call both {@link rpc} and {@link pubkeys} methods.
+   * Conveniently call both {@link rpc} and {@link addresses} methods.
    *
    * @param options confirmation options
-   * @returns the transaction signature and account public keys
+   * @returns the transaction signature and account addresses
    */
-  public async rpcAndKeys(options?: ConfirmOptions): Promise<{
-    signature: TransactionSignature;
-    pubkeys: InstructionAccountAddresses<IDL, I>;
+  public async rpcAndAddresses(options?: ConfirmOptions): Promise<{
+    signature: Signature;
+    addresses: InstructionAccountAddresses<IDL, I>;
   }> {
     return {
       signature: await this.rpc(options),
-      pubkeys: (await this.pubkeys()) as Required<
+      addresses: (await this.addresses()) as Required<
         InstructionAccountAddresses<IDL, I>
       >,
     };
@@ -466,18 +499,18 @@ export class MethodsBuilder<
    * # Example
    *
    * ```ts
-   * const { instruction, signers, pubkeys } = await method.prepare();
+   * const { instruction, signers, addresses } = await method.prepare();
    * ```
    */
   public async prepare(): Promise<{
-    instruction: TransactionInstruction;
-    signers: Signer[];
-    pubkeys: Partial<InstructionAccountAddresses<IDL, I>>;
+    instruction: Instruction;
+    signers: TransactionSigner[];
+    addresses: Partial<InstructionAccountAddresses<IDL, I>>;
   }> {
     return {
       instruction: await this.instruction(),
       signers: this._signers,
-      pubkeys: await this.pubkeys(),
+      addresses: await this.addresses(),
     };
   }
 }

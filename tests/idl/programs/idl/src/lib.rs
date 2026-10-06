@@ -188,7 +188,7 @@ pub mod idl {
     }
 }
 
-/// IDL test for the issue explained in https://github.com/solana-foundation/anchor/issues/3358
+/// IDL test for the issue explained in https://github.com/otter-sec/anchor/issues/3358
 ///
 /// For example, using [`SimpleAccount`] and adding the full path at the end of a doc comment
 /// used to result in a false-positive when detecting conflicts.
@@ -428,7 +428,7 @@ pub struct SomeStruct {
     pub field: u16,
 }
 
-/// Compilation check for the issue described in https://github.com/solana-foundation/anchor/issues/3520
+/// Compilation check for the issue described in https://github.com/otter-sec/anchor/issues/3520
 // TODO: Use this from client-side (instead of hardcoding) once `program.constants` is supported
 const GENERIC_CONST: usize = 8;
 

@@ -54,6 +54,10 @@
     {
       "name": "UnsafeZeroCopyAccount",
       "discriminator": [41, 42, 43, 44, 45, 46, 47, 48]
+    },
+    {
+      "name": "PaddedUnsafeAccount",
+      "discriminator": [51, 52, 53, 54, 55, 56, 57, 58]
     }
   ],
   "types": [
@@ -146,6 +150,43 @@
             "type": {
               "array": ["u8", 4]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PaddedUnsafeAccount",
+      "serialization": "bytemuckunsafe",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "flag",
+            "type": "bool"
+          },
+          {
+            "name": "wide",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PackedUnsafeAccount",
+      "serialization": "bytemuckunsafe",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tag",
+            "type": "u8"
+          },
+          {
+            "name": "wide",
+            "type": "u64"
           }
         ]
       }

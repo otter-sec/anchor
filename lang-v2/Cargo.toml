@@ -44,7 +44,7 @@ anchor-derive-accounts = { workspace = true }
 # "account-resize" lets AccountView::resize enforce MAX_PERMITTED_DATA_INCREASE.
 pinocchio = { workspace = true, features = ["copy", "account-resize"] }
 pinocchio-system = "0.6"
-solana-address = { version = "2.0", features = ["bytemuck", "syscalls", "curve25519", "wincode"] }
+solana-address = { version = "2.7.0", features = ["bytemuck", "syscalls", "curve25519", "wincode"] }
 solana-instruction = { version = "3", default-features = false }
 solana-program-error = "3.0"
 solana-msg = { version = "3.1", default-features = false, features = ["alloc"] }
@@ -54,10 +54,7 @@ solana-sha256-hasher = { version = "3.1", features = ["sha2"] }
 solana-system-interface = { version = "2.0", features = ["bincode"] }
 solana-sysvar = "3.1.1"
 bytemuck = { version = "1", features = ["derive"] }
-wincode = { version = "0.5", features = ["derive"] }
-
-[target.'cfg(target_os = "solana")'.dependencies]
-solana-define-syscall = "5.0"
+wincode = { version = "0.6", features = ["derive"] }
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
 sha2 = "0.10"
@@ -168,6 +165,9 @@ required-features = ["testing"]
 
 [[test]]
 name = "address_idl_surface"
+
+[[test]]
+name = "init_space"
 
 [[test]]
 name = "update_hook_order"

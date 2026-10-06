@@ -48,10 +48,18 @@ pub struct LedgerEntry {
 /// Plain instruction-argument struct — not an account, not an event. The
 /// `IdlType` derive is what lets the idl-build arg-type walk resolve it
 /// (`IdlAccountType`); without it `--features idl-build` fails to compile.
-#[derive(Clone, Copy, IdlType, wincode::SchemaRead, wincode::SchemaWrite)]
+#[derive(Clone, Copy, IdlType, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
 pub struct BumpArgs {
     pub amount: u64,
     pub tag: [u8; 4],
+}
+
+/// Plain enum used to verify that `IdlType` emits the spec's `variants`
+/// collection rather than a struct-style `fields` collection.
+#[derive(Clone, Copy, IdlType)]
+pub enum DepositType {
+    Protected,
+    Boosted,
 }
 
 type LedgerAccount = Slab<Ledger, LedgerEntry>;
@@ -126,6 +134,46 @@ pub mod accounts_test {
             rent.try_minimum_balance(100)? > 0,
             ProgramError::InvalidAccountData
         );
+        Ok(())
+    }
+
+    /// Reads the Instructions sysvar for instruction introspection.
+    ///
+    /// Unlike Clock/Rent there is no syscall for this one — the value comes
+    /// from the account's data, which the wrapper borrows on load.
+    #[discrim = 41]
+    pub fn read_instructions(ctx: &mut Context<ReadInstructions>) -> Result<()> {
+        let instructions = &*ctx.accounts.instructions;
+
+        let current_index = instructions.load_current_index() as usize;
+        require!(
+            current_index < instructions.num_instructions(),
+            ProgramError::InvalidAccountData
+        );
+
+        // Relative 0 is this very instruction, so its program id must be ours
+        // and its data must start with this handler's discriminant.
+        let current = instructions.get_instruction_relative(0)?;
+        require!(
+            anchor_lang::address_eq(current.get_program_id(), &ID),
+            ProgramError::IncorrectProgramId
+        );
+        require!(
+            current.get_instruction_data().first() == Some(&41),
+            ProgramError::InvalidInstructionData
+        );
+
+        // The sysvar account itself is the only account on this instruction.
+        let meta = current.get_instruction_account_at(0)?;
+        require!(
+            anchor_lang::address_eq(
+                &meta.key,
+                &pinocchio::sysvars::instructions::INSTRUCTIONS_ID
+            ),
+            ProgramError::InvalidAccountData
+        );
+        require!(!meta.is_writable(), ProgramError::InvalidAccountData);
+
         Ok(())
     }
 
@@ -928,6 +976,11 @@ pub struct ReadClock {
 #[derive(Accounts)]
 pub struct ReadRent {
     pub rent: Sysvar<Rent>,
+}
+
+#[derive(Accounts)]
+pub struct ReadInstructions {
+    pub instructions: Sysvar<SysvarInstructions>,
 }
 
 #[derive(Accounts)]

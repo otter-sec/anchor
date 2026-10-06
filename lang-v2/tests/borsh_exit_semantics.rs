@@ -20,8 +20,7 @@ use {
     anchor_lang::{
         prelude::BorshAccount,
         testing::AccountBuffer,
-        wincode::{SchemaRead, SchemaWrite},
-        AnchorAccount, Discriminator, Owner,
+        AnchorAccount, AnchorDeserialize, AnchorSerialize, Discriminator, Owner,
     },
     pinocchio::{account::RuntimeAccount, address::Address},
     solana_program_error::ProgramError,
@@ -30,7 +29,7 @@ use {
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
 const FOREIGN_PROGRAM_ID: [u8; 32] = [0x24; 32];
 
-#[derive(SchemaRead, SchemaWrite, Default, Clone, PartialEq, Debug)]
+#[derive(AnchorDeserialize, AnchorSerialize, Default, Clone, PartialEq, Debug)]
 struct Counter {
     value: u64,
 }
@@ -44,7 +43,7 @@ impl Discriminator for Counter {
     const DISCRIMINATOR: &'static [u8] = &[0xff, 0xb0, 0x04, 0xf5, 0xbc, 0xfd, 0x7c, 0x19];
 }
 
-#[derive(SchemaRead, SchemaWrite, Default, Clone, PartialEq, Debug)]
+#[derive(AnchorDeserialize, AnchorSerialize, Default, Clone, PartialEq, Debug)]
 struct ForeignCounter {
     value: u64,
 }
@@ -57,7 +56,7 @@ impl Discriminator for ForeignCounter {
     const DISCRIMINATOR: &'static [u8] = &[0x23, 0xaa, 0x41, 0x17, 0x83, 0x62, 0xdd, 0x09];
 }
 
-#[derive(SchemaRead, SchemaWrite, Default, Clone, PartialEq, Debug)]
+#[derive(AnchorDeserialize, AnchorSerialize, Default, Clone, PartialEq, Debug)]
 struct ShrinkableBytes {
     items: Vec<u8>,
 }

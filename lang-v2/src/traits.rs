@@ -25,6 +25,9 @@ use {
 pub struct CpiHandle<'a> {
     view: &'a AccountView,
     writable: bool,
+    /// CPI meta signer bit. Defaults to the transaction view; set via
+    /// [`CpiHandle::as_signer`] for PDA remaining accounts.
+    signer: bool,
     borrow_check: bool,
     relax_readonly_borrow: bool,
 }
@@ -36,6 +39,7 @@ pub struct CpiHandle<'a> {
 #[derive(Clone, Copy)]
 pub struct CpiHandleMut<'a> {
     view: &'a AccountView,
+    signer: bool,
     borrow_check: bool,
 }
 
@@ -64,6 +68,7 @@ impl<'a> CpiHandle<'a> {
         Self {
             view,
             writable: false,
+            signer: view.is_signer(),
             borrow_check,
             relax_readonly_borrow,
         }
@@ -79,6 +84,7 @@ impl<'a> CpiHandle<'a> {
         Self {
             view,
             writable: true,
+            signer: view.is_signer(),
             borrow_check,
             relax_readonly_borrow: false,
         }
@@ -100,10 +106,28 @@ impl<'a> CpiHandle<'a> {
         self.writable
     }
 
-    /// Whether the underlying account is a signer on the transaction.
+    /// Whether this handle should be marked as a signer in CPI account metas.
+    ///
+    /// Defaults to the underlying transaction view. PDA remaining accounts
+    /// that will be signed via [`crate::CpiContext::with_signer`] should call
+    /// [`CpiHandle::as_signer`] so the callee sees a signer meta.
     #[inline(always)]
     pub fn is_signer(&self) -> bool {
-        self.view.is_signer()
+        self.signer
+    }
+
+    /// Mark this handle as a signer for CPI account metas.
+    ///
+    /// Transaction signers are already detected from the view. Use this for
+    /// PDA remaining accounts: `with_remaining_accounts` copies
+    /// [`CpiHandle::is_signer`] onto each remaining `InstructionAccount`, and
+    /// `invoke_signed` still requires matching [`crate::CpiContext::with_signer`]
+    /// seeds at runtime.
+    #[must_use]
+    #[inline(always)]
+    pub fn as_signer(mut self) -> Self {
+        self.signer = true;
+        self
     }
 
     /// Erase to a readonly CPI handle.
@@ -112,7 +136,10 @@ impl<'a> CpiHandle<'a> {
     /// `CpiHandleMut` field can emit a second readonly meta/handle pair.
     #[inline(always)]
     pub fn into_readonly(self) -> CpiHandle<'a> {
-        Self::readonly_with_flags(self.view, self.borrow_check, self.relax_readonly_borrow)
+        let mut handle =
+            Self::readonly_with_flags(self.view, self.borrow_check, self.relax_readonly_borrow);
+        handle.signer = self.signer;
+        handle
     }
 
     /// Access the underlying `AccountView` for CPI account construction.
@@ -162,7 +189,11 @@ impl<'a> CpiHandleMut<'a> {
 
     #[inline(always)]
     fn writable_with_borrow_check(view: &'a AccountView, borrow_check: bool) -> Self {
-        Self { view, borrow_check }
+        Self {
+            view,
+            signer: view.is_signer(),
+            borrow_check,
+        }
     }
 
     /// The account's on-chain address.
@@ -177,10 +208,22 @@ impl<'a> CpiHandleMut<'a> {
         true
     }
 
-    /// Whether the underlying account is a signer on the transaction.
+    /// Whether this handle should be marked as a signer in CPI account metas.
+    ///
+    /// See [`CpiHandle::is_signer`].
     #[inline(always)]
     pub fn is_signer(&self) -> bool {
-        self.view.is_signer()
+        self.signer
+    }
+
+    /// Mark this handle as a signer for CPI account metas.
+    ///
+    /// See [`CpiHandle::as_signer`].
+    #[must_use]
+    #[inline(always)]
+    pub fn as_signer(mut self) -> Self {
+        self.signer = true;
+        self
     }
 
     /// Erase to a readonly [`CpiHandle`].
@@ -189,7 +232,9 @@ impl<'a> CpiHandleMut<'a> {
     /// still emit a second readonly meta/handle pair.
     #[inline(always)]
     pub fn into_readonly(self) -> CpiHandle<'a> {
-        CpiHandle::readonly_with_borrow_check(self.view, self.borrow_check)
+        let mut handle = CpiHandle::readonly_with_borrow_check(self.view, self.borrow_check);
+        handle.signer = self.signer;
+        handle
     }
 }
 
@@ -199,6 +244,7 @@ impl<'a> From<CpiHandleMut<'a>> for CpiHandle<'a> {
         Self {
             view: handle.view,
             writable: true,
+            signer: handle.signer,
             borrow_check: handle.borrow_check,
             relax_readonly_borrow: false,
         }

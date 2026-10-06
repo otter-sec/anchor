@@ -43,7 +43,7 @@ use {
         solana_sbpf::ebpf,
     },
     solana_transaction::sanitized::SanitizedTransaction,
-    solana_transaction_context::{IndexOfAccount, InstructionContext},
+    solana_transaction_context::{instruction::InstructionContext, IndexOfAccount},
     std::{
         collections::HashMap,
         fs::{self, File},
@@ -265,13 +265,16 @@ impl InvocationInspectCallback for TestNameCallback {
         _: &LiteSVM,
         _: &SanitizedTransaction,
         _: &[IndexOfAccount],
-        _: &InvokeContext,
+        _: &mut InvokeContext,
+        _: bool,
     ) {
     }
 
     fn after_invocation(
         &self,
         _svm: &LiteSVM,
+        _: &SanitizedTransaction,
+        _: &[IndexOfAccount],
         invoke_context: &InvokeContext,
         register_tracing_enabled: bool,
     ) {

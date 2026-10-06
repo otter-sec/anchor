@@ -255,6 +255,12 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
                         result.is_mut = true;
                         while !content.is_empty() {
                             let ns_ident: Ident = Ident::parse_any(&content)?;
+                            if ns_ident == "associated_token" {
+                                return Err(syn::Error::new(
+                                    ns_ident.span(),
+                                    "`update(associated_token::...)` constraints are not supported",
+                                ));
+                            }
                             content.parse::<Token![::]>()?;
                             let key_ident: Ident = Ident::parse_any(&content)?;
                             content.parse::<Token![=]>()?;
@@ -868,7 +874,9 @@ fn validate_init_constraint_refs(
             return Err(syn::Error::new(
                 nc.value.span(),
                 format!(
-                    "SPL init constraint `{}::{}` needs an AccountView, not a pubkey. Use a sibling account field of your Accounts struct instead of a const or field access",
+                    "SPL init constraint `{}::{}` needs an AccountView, not a pubkey. Use a \
+                     sibling account field of your Accounts struct instead of a const or field \
+                     access",
                     nc.namespace, nc.raw_key
                 ),
             ));
@@ -1047,6 +1055,32 @@ fn parse_associated_token_init(
         authority,
         token_program,
     }))
+}
+
+fn validate_associated_token_init_refs(
+    attrs: &AccountAttrs,
+    associated_token: Option<&AssociatedTokenInit>,
+    field_summaries: &[FieldSummary],
+) -> syn::Result<()> {
+    let Some(at) = associated_token else {
+        return Ok(());
+    };
+    if !(attrs.is_init || attrs.is_init_if_needed) {
+        return Ok(());
+    }
+
+    for ident in [&at.mint, &at.authority, &at.token_program] {
+        if field_is_optional(field_summaries, ident) {
+            return Err(syn::Error::new(
+                ident.span(),
+                format!(
+                    "`associated_token` constraints cannot reference optional account `{ident}` during init"
+                ),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 /// Wrap the `Result<Self>`-yielding `init_body` so that each runtime-only
@@ -1422,18 +1456,19 @@ pub fn validate_account_fields(fields: &[FieldSummary]) -> syn::Result<()> {
                 } else {
                     for constraint in token_program_constraints {
                         let token_program =
-                            expr_as_known_field_ident(&constraint.value, &field_names)
-                                .ok_or_else(|| {
-                                syn::Error::new(
-                                    constraint.value.span(),
-                                    format!(
-                                        "SPL init constraint `{}::{}` needs an AccountView, not \
-                                         a pubkey. Use a sibling account field of your Accounts \
-                                         struct instead of a const or field access",
-                                        constraint.namespace, constraint.raw_key
-                                    ),
-                                )
-                            })?;
+                            expr_as_known_field_ident(&constraint.value, &field_names).ok_or_else(
+                                || {
+                                    syn::Error::new(
+                                        constraint.value.span(),
+                                        format!(
+                                            "SPL init constraint `{}::{}` needs an AccountView, \
+                                             not a pubkey. Use a sibling account field of your \
+                                             Accounts struct instead of a const or field access",
+                                            constraint.namespace, constraint.raw_key
+                                        ),
+                                    )
+                                },
+                            )?;
                         require_summary_field(
                             fields,
                             &token_program,
@@ -1449,17 +1484,19 @@ pub fn validate_account_fields(fields: &[FieldSummary]) -> syn::Result<()> {
                 constraint.raw_key == "mint"
                     && matches!(constraint.namespace.as_str(), "token" | "associated_token")
             }) {
-                let mint = expr_as_known_field_ident(&constraint.value, &field_names).ok_or_else(|| {
-                    syn::Error::new(
-                        constraint.value.span(),
-                        format!(
-                            "SPL init constraint `{}::{}` needs an AccountView, not a pubkey. \
-                             Use a sibling account field of your Accounts struct instead of a \
-                             const or field access",
-                            constraint.namespace, constraint.raw_key
-                        ),
-                    )
-                })?;
+                let mint = expr_as_known_field_ident(&constraint.value, &field_names).ok_or_else(
+                    || {
+                        syn::Error::new(
+                            constraint.value.span(),
+                            format!(
+                                "SPL init constraint `{}::{}` needs an AccountView, not a pubkey. \
+                                 Use a sibling account field of your Accounts struct instead of a \
+                                 const or field access",
+                                constraint.namespace, constraint.raw_key
+                            ),
+                        )
+                    },
+                )?;
                 require_summary_field(fields, &mint, target, "token mint", false)?;
             }
 
@@ -1562,6 +1599,42 @@ fn address_v1_relation_source(
     }
     let sibling = seg.ident.to_string();
     field_names.contains(&sibling).then_some(sibling)
+}
+
+/// Returns an error when any seed in `seeds` is a bare identifier that names
+/// an `Option<_>`-typed sibling field. Optional accounts carry no `.address()`
+/// method, so the generated `<sibling>.address()` call would not compile;
+/// surfacing a clear diagnostic here beats a type-error inside the generated
+/// expansion.
+fn reject_optional_sibling_seeds(
+    seeds: &[&Expr],
+    field_summaries: &[FieldSummary],
+) -> syn::Result<()> {
+    for seed in seeds {
+        let Expr::Path(ep) = seed else { continue };
+        if ep.qself.is_some()
+            || ep.path.leading_colon.is_some()
+            || ep.path.segments.len() != 1
+        {
+            continue;
+        }
+        let seg = &ep.path.segments[0];
+        if !seg.arguments.is_empty() {
+            continue;
+        }
+        let ident = &seg.ident;
+        if field_summaries
+            .iter()
+            .any(|s| s.name == *ident && extract_option_inner(&s.ty).is_some())
+        {
+            return Err(syn::Error::new(
+                ident.span(),
+                "optional account fields cannot be used as PDA seeds; \
+                 use a non-optional account for seed derivation",
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Rewrite a single seed expression so that a bare field-name identifier
@@ -1690,7 +1763,7 @@ fn emit_seeds_check(
                             #(#seed_bindings)*
                             let __bump_seed = [#bump_const];
                             let __seeds: Option<&[&[u8]]> =
-                                Some(&[#(#seed_refs),* , __bump_seed.as_ref()]);
+                                Some(&[#(#seed_refs,)* __bump_seed.as_ref()]);
                         }
                     } else {
                         // Wrap non-init in a block so the consts are
@@ -1737,7 +1810,7 @@ fn emit_seeds_check(
             #find
             let __bump_seed = [__bump];
             let __seeds: Option<&[&[u8]]> =
-                Some(&[#(#seed_refs),* , __bump_seed.as_ref()]);
+                Some(&[#(#seed_refs,)* __bump_seed.as_ref()]);
         }
     } else {
         find
@@ -1788,6 +1861,7 @@ fn emit_payer_signer_seeds_binding(
     let bump_cache = bump_cache_ident(bump_field);
     if let Expr::Array(arr) = seeds_expr {
         let seed_elems: Vec<&Expr> = arr.elems.iter().collect();
+        reject_optional_sibling_seeds(&seed_elems, field_summaries)?;
         let (seed_bindings, seed_refs) = materialize_seed_refs(&seed_elems, field_names);
         let seed_count = seed_refs.len();
         if let Some(Some(ref bump_expr)) = payer_field.attrs.bump {
@@ -1798,14 +1872,14 @@ fn emit_payer_signer_seeds_binding(
                 }
                 let __payer_bump: u8 = #bump_expr;
                 anchor_lang::verify_program_address(
-                    &[#(#seed_refs),* , &[__payer_bump]],
+                    &[#(#seed_refs,)* &[__payer_bump]],
                     __program_id,
                     __payer.address(),
                 )?;
                 #bump_cache = __payer_bump;
                 let __payer_bump_seed = [__payer_bump];
                 let __payer_signer_seeds: Option<&[&[u8]]> =
-                    Some(&[#(#seed_refs),* , __payer_bump_seed.as_ref()]);
+                    Some(&[#(#seed_refs,)* __payer_bump_seed.as_ref()]);
             });
         }
 
@@ -1821,7 +1895,7 @@ fn emit_payer_signer_seeds_binding(
             #bump_cache = __payer_bump;
             let __payer_bump_seed = [__payer_bump];
             let __payer_signer_seeds: Option<&[&[u8]]> =
-                Some(&[#(#seed_refs),* , __payer_bump_seed.as_ref()]);
+                Some(&[#(#seed_refs,)* __payer_bump_seed.as_ref()]);
         });
     }
 
@@ -1959,6 +2033,7 @@ fn emit_init_body(
         };
         if let Expr::Array(arr) = seeds_expr {
             let seed_elems: Vec<&Expr> = arr.elems.iter().collect();
+            reject_optional_sibling_seeds(&seed_elems, field_summaries)?;
             emit_seeds_check(
                 &seed_elems,
                 field_names,
@@ -2224,6 +2299,7 @@ pub fn parse_field(
     }
     let option_inner = extract_option_inner(field_ty);
     let associated_token = parse_associated_token_init(&attrs, field_names)?;
+    validate_associated_token_init_refs(&attrs, associated_token.as_ref(), field_summaries)?;
     let init_if_needed_reuse_validation = if attrs.is_init_if_needed {
         Some(emit_init_if_needed_reuse_validation(
             option_inner.unwrap_or(field_ty),
@@ -2718,6 +2794,7 @@ pub fn parse_field(
             if let Expr::Array(arr) = seeds_expr {
                 // Array-literal seeds: `seeds = [b"vault", user.address().as_ref()]`
                 let seed_elems: Vec<&Expr> = arr.elems.iter().collect();
+                reject_optional_sibling_seeds(&seed_elems, field_summaries)?;
                 let seed_constraint = if let Some(Some(ref bump_expr)) = attrs.bump {
                     let bump_cache = bump_cache_ident(field_name);
                     let bump_assign = if is_optional {
@@ -2732,7 +2809,7 @@ pub fn parse_field(
                             #(#seed_bindings)*
                             let __bump_val: u8 = #bump_expr;
                             anchor_lang::verify_program_address(
-                                &[#(#seed_refs),* , &[__bump_val]],
+                                &[#(#seed_refs,)* &[__bump_val]],
                                 #pda_program,
                                 #field_name.account().address(),
                             )?;
@@ -3035,14 +3112,8 @@ pub fn parse_field(
             } else {
                 quote! { &mut self.#field_name }
             };
-            let (update_expected_binding, update_expected_arg) = emit_constraint_expected_binding(
-                &ns,
-                &key,
-                nc,
-                field_names,
-                field_summaries,
-                true,
-            );
+            let (update_expected_binding, update_expected_arg) =
+                emit_constraint_expected_binding(&ns, &key, nc, field_names, field_summaries, true);
             // `update(...)` runs after validation + access-control.
             updates.push(quote! {
                 {
@@ -3340,6 +3411,21 @@ mod tests {
     }
 
     #[test]
+    fn associated_token_update_constraints_are_rejected() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(update(associated_token::mint = mint))]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("associated_token update constraints must be rejected"),
+            Err(err) => err,
+        };
+        assert_eq!(
+            err.to_string(),
+            "`update(associated_token::...)` constraints are not supported"
+        );
+    }
+
+    #[test]
     fn seeds_program_without_seeds_is_rejected() {
         let attrs: Vec<Attribute> = vec![syn::parse_quote!(
             #[account(seeds::program = other_program.key())]
@@ -3368,6 +3454,16 @@ mod tests {
             err.to_string().contains("`seeds` requires `bump`"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn empty_seed_array_with_bump_is_accepted() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(seeds = [], bump = 255)]
+        )];
+        let parsed = parse_account_attrs(&attrs).expect("empty seeds with bump must parse");
+        assert!(parsed.seeds.is_some());
+        assert!(matches!(parsed.bump, Some(Some(_))));
     }
 
     #[test]
@@ -3522,7 +3618,7 @@ mod tests {
     #[test]
     fn built_in_init_namespaces_skip_runtime_init_hooks() {
         let attrs: Vec<Attribute> = vec![syn::parse_quote!(
-            #[account(init, payer = payer, mint::authority = mint_authority)]
+            #[account(init, payer = payer, mint::decimals = 6, mint::authority = mint_authority)]
         )];
         let parsed = parse_account_attrs(&attrs).expect("built-in init namespace should parse");
         let init_body = quote::quote! { __init_body()? };

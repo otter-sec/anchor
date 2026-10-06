@@ -23,7 +23,6 @@ anchor-lang = { path = "../../../../lang-v2", default-features = false, features
 borsh = { version = "1", optional = true }
 bytemuck = { version = "1", features = ["derive"] }
 pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
-wincode = { version = "0.5", features = ["derive"] }
 
 [dev-dependencies]
 anchor-v2-testing = { path = "../../../../v2-testing" }

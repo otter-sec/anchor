@@ -1,6 +1,6 @@
-import { PublicKey } from "@solana/web3.js";
+import { Address } from "@solana/kit";
 import Provider from "../../provider.js";
-import { SuccessfulTxSimulationResponse } from "src/utils/rpc.js";
+import { SuccessfulTxSimulationResponse } from "../../utils/rpc.js";
 import { splitArgsAndCtx } from "../context.js";
 import { TransactionFn } from "./transaction.js";
 import { EventParser, Event } from "../event.js";
@@ -20,11 +20,11 @@ export default class SimulateFactory {
     idlErrors: Map<number, string>,
     provider: Provider,
     coder: Coder,
-    programId: PublicKey,
+    programAddress: Address,
     idl: IDL
   ): SimulateFn<IDL, I> {
     const simulate: SimulateFn<IDL> = async (...args) => {
-      const tx = txFn(...args);
+      const message = txFn(...args);
       const [, ctx] = splitArgsAndCtx(idlIx, [...args]);
       let resp: SuccessfulTxSimulationResponse | undefined = undefined;
       if (provider.simulate === undefined) {
@@ -33,8 +33,11 @@ export default class SimulateFactory {
         );
       }
       try {
-        resp = await provider!.simulate(
-          tx,
+        // The context signers are already attached to the message; passing
+        // them again only asks the provider to verify signatures when the
+        // caller provided signers, as before.
+        resp = await provider.simulate(
+          message,
           ctx.signers,
           ctx.options?.commitment
         );
@@ -51,7 +54,7 @@ export default class SimulateFactory {
 
       const events: Event[] = [];
       if (idl.events) {
-        let parser = new EventParser(programId, coder);
+        let parser = new EventParser(programAddress, coder);
         for (const event of parser.parseLogs(logs)) {
           events.push(event);
         }

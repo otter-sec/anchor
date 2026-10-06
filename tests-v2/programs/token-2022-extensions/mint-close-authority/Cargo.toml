@@ -19,7 +19,6 @@ no-log-ix-name = []
 anchor-lang = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
 anchor-spl = { path = "../../../../spl-v2", features = ["guardrails"] }
 solana-program-error = "3.0"
-wincode = { version = "0.5", features = ["derive"] }
 
 [lints.rust.unexpected_cfgs]
 level = "allow"

@@ -1,66 +1,63 @@
-import BN from "bn.js";
-import bs58 from "bs58";
+import { address, FetchAccountConfig } from "@solana/kit";
 import { PublicKey } from "@solana/web3.js";
 
-import NodeWallet from "../src/nodewallet";
-import { translateAddress } from "../src/program/common";
+import { createLocalWallet } from "../src/wallet";
+import { toAddress } from "../src/program/common";
+import { withProviderDefaults } from "../src/utils/common";
 
 describe("program/common", () => {
-  describe("translateAddress", () => {
-    it("should accept a valid string address", () => {
-      const address = "11111111111111111111111111111111";
-
-      const func = () => translateAddress(address);
-      expect(func).not.toThrow();
-
-      const output = func();
-      expect(output).toBeInstanceOf(PublicKey);
-      expect(new PublicKey(address).equals(output)).toBeTruthy();
+  describe("toAddress", () => {
+    it("accepts a Kit address", () => {
+      const input = address("11111111111111111111111111111111");
+      expect(toAddress(input)).toBe(input);
     });
 
-    it("should accept a PublicKey address", () => {
+    it("accepts an object exposing toBase58, e.g. a web3.js PublicKey", () => {
       const publicKey = new PublicKey("11111111111111111111111111111111");
-
-      const func = () => translateAddress(publicKey);
-      expect(func).not.toThrow();
-
-      const output = func();
-      expect(output).toBeInstanceOf(PublicKey);
-      expect(new PublicKey(publicKey).equals(output)).toBe(true);
+      expect(toAddress(publicKey)).toBe("11111111111111111111111111111111");
+      expect(
+        toAddress({ toBase58: () => "11111111111111111111111111111111" })
+      ).toBe("11111111111111111111111111111111");
     });
 
-    it("should accept an object with a PublicKey shape { _bn }", () => {
-      const obj = {
-        _bn: new BN(bs58.decode("11111111111111111111111111111111")),
-      } as any as PublicKey;
-      const func = () => translateAddress(obj);
-
-      expect(func).not.toThrow();
-      const output = func();
-
-      expect(output).toBeInstanceOf(PublicKey);
-      expect(new PublicKey(obj).equals(output)).toBe(true);
-    });
-
-    it("should not accept an invalid string address", () => {
-      const invalid = "invalid";
-      const func = () => translateAddress(invalid);
-      expect(func).toThrow();
-    });
-
-    it("should not accept an invalid object", () => {
-      const invalid = {} as PublicKey;
-      const func = () => translateAddress(invalid);
-      expect(func).toThrow();
+    it("rejects invalid addresses", () => {
+      expect(() => toAddress("invalid" as any)).toThrow();
+      expect(() => toAddress({ toBase58: () => "invalid" })).toThrow();
+      expect(() => toAddress({} as any)).toThrow();
     });
   });
 
-  describe("NodeWallet", () => {
+  describe("withProviderDefaults", () => {
+    const provider = { opts: { commitment: "processed" as const } };
+
+    it("fills the commitment from the provider", () => {
+      const config: FetchAccountConfig = { minContextSlot: 5n };
+      expect(withProviderDefaults(provider, config)).toEqual({
+        commitment: "processed",
+        minContextSlot: 5n,
+      });
+    });
+
+    it("lets the caller's commitment win", () => {
+      expect(
+        withProviderDefaults(provider, { commitment: "finalized" })
+      ).toEqual({ commitment: "finalized" });
+    });
+
+    it("never emits an undefined commitment", () => {
+      // Kit would strip it without applying its own default.
+      const config = withProviderDefaults({}, { commitment: undefined });
+      expect("commitment" in config).toBe(false);
+      expect(withProviderDefaults({ opts: {} })).toEqual({});
+    });
+  });
+
+  describe("createLocalWallet", () => {
     it("should throw an error when ANCHOR_WALLET is unset", () => {
       const oldValue = process.env.ANCHOR_WALLET;
       delete process.env.ANCHOR_WALLET;
 
-      expect(() => NodeWallet.local()).toThrowError(
+      expect(() => createLocalWallet()).toThrow(
         "expected environment variable `ANCHOR_WALLET` is not set."
       );
 

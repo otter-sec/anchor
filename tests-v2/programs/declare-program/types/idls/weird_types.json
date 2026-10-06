@@ -13,14 +13,6 @@
       "accounts": [],
       "args": [
         {
-          "name": "float32",
-          "type": "f32"
-        },
-        {
-          "name": "float64",
-          "type": "f64"
-        },
-        {
           "name": "unit",
           "type": {
             "defined": {
@@ -291,7 +283,7 @@
           {
             "name": "Tuple",
             "fields": [
-              "f32",
+              "u32",
               {
                 "generic": "T"
               }
@@ -446,7 +438,7 @@
           "type": "usize"
         }
       ],
-      "serialization": "bytemuck",
+      "serialization": "bytemuckunsafe",
       "repr": {
         "kind": "c"
       },

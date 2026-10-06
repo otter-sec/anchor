@@ -10,7 +10,7 @@ pub use crate::{
     // Account types
     accounts::{
         Account, BorshAccount, Interface, InterfaceAccount, Program, Signer, SlabSchema,
-        SystemAccount, Sysvar, SysvarId, UncheckedAccount,
+        SystemAccount, Sysvar, SysvarId, SysvarInstructions, SysvarLoad, UncheckedAccount,
     },
     constant,
     create_account,
@@ -58,6 +58,8 @@ pub use crate::{
     // Derive macros
     Accounts,
     AnchorAccount,
+    AnchorDeserialize,
+    AnchorSerialize,
     Bumps,
     // Context
     Context,

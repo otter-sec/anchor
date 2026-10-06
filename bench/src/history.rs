@@ -9,7 +9,8 @@ pub const RESULTS_FILE: &str = "results.json";
 /// Synthetic commit label used for the latest benchmark snapshot.
 pub const CURRENT_COMMIT: &str = "current";
 /// Preferred branch name used to validate persisted benchmark snapshots.
-pub const MASTER_BRANCH: &str = "master";
+/// Once v2 moves to master, this name should be updated.
+pub const MASTER_BRANCH: &str = "anchor-next";
 
 /// Stores the benchmark history as an ordered list of snapshots.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

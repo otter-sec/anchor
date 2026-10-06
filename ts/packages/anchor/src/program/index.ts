@@ -1,17 +1,23 @@
-import { Buffer } from "buffer";
-import { Commitment, PublicKey } from "@solana/web3.js";
-import { BorshCoder, Coder } from "../coder/index.js";
 import {
-  Idl,
-  IdlInstruction,
-  convertIdlToCamelCase,
-  decodeIdlAccount,
-  idlAddress,
-} from "../idl.js";
+  address,
+  Address,
+  ReadonlyUint8Array,
+  Signature,
+  Slot,
+} from "@solana/kit";
+import {
+  DataSource,
+  fetchMaybeMetadataFromSeeds,
+  Format,
+  unpackDirectData,
+} from "@solana-program/program-metadata";
+import { BorshCoder, Coder } from "../coder/index.js";
+import { Idl, IdlInstruction, convertIdlToCamelCase } from "../idl.js";
 import Provider, { getProvider } from "../provider.js";
 import { CustomAccountResolver } from "./accounts-resolver.js";
-import { Address, translateAddress } from "./common.js";
-import { EventManager } from "./event.js";
+import { AddressInput, toAddress } from "./common.js";
+import { EventListenerOptions, EventManager } from "./event.js";
+import { withProviderDefaults } from "../utils/common.js";
 import NamespaceFactory, {
   AccountNamespace,
   IdlEvents,
@@ -27,6 +33,9 @@ export * from "./common.js";
 export * from "./context.js";
 export * from "./event.js";
 export * from "./namespace/index.js";
+
+/** The metadata seed under which `anchor idl init` stores a program's IDL. */
+const IDL_METADATA_SEED = "idl";
 
 /**
  * ## Program
@@ -52,12 +61,12 @@ export * from "./namespace/index.js";
  *
  * API specifics are namespace dependent. The examples used in the documentation
  * below will refer to the two counter examples found
- * [here](https://github.com/solana-foundation/anchor#examples).
+ * [here](https://github.com/otter-sec/anchor#examples).
  */
 export class Program<IDL extends Idl = Idl> {
   /**
    * Async methods to send signed transactions to *non*-state methods on the
-   * program, returning a [[TransactionSignature]].
+   * program, returning the transaction signature.
    *
    * ## Usage
    *
@@ -112,8 +121,8 @@ export class Program<IDL extends Idl = Idl> {
   readonly account: AccountNamespace<IDL>;
 
   /**
-   * The namespace provides functions to build [[TransactionInstruction]]
-   * objects for each method of a program.
+   * The namespace provides functions to build Kit `Instruction` objects for
+   * each method of a program.
    *
    * ## Usage
    *
@@ -144,7 +153,7 @@ export class Program<IDL extends Idl = Idl> {
   readonly instruction: InstructionNamespace<IDL>;
 
   /**
-   * The namespace provides functions to build [[Transaction]] objects for each
+   * The namespace provides functions to build transaction messages for each
    * method of a program.
    *
    * ## Usage
@@ -162,10 +171,10 @@ export class Program<IDL extends Idl = Idl> {
    *
    * ## Example
    *
-   * To create an instruction for the `increment` method above,
+   * To create a transaction message for the `increment` method above,
    *
    * ```javascript
-   * const tx = await program.transaction.increment({
+   * const message = await program.transaction.increment({
    *   accounts: {
    *     counter,
    *   },
@@ -223,10 +232,10 @@ export class Program<IDL extends Idl = Idl> {
   /**
    * Address of the program.
    */
-  public get programId(): PublicKey {
-    return this._programId;
+  public get address(): Address {
+    return this._address;
   }
-  private _programId: PublicKey;
+  private _address: Address;
 
   /**
    * IDL in camelCase format to work in TypeScript.
@@ -265,34 +274,34 @@ export class Program<IDL extends Idl = Idl> {
    * discriminators and any future encoding changes.
    *
    * ```ts
-   * const ix = new TransactionInstruction({
-   *   programId: program.programId,
-   *   keys: [...],
+   * const ix: Instruction = {
+   *   programAddress: program.address,
+   *   accounts: [...],
    *   data: program.discriminator("instruction", "increment"),
-   * });
+   * };
    * ```
    *
    * Throws if the name isn't in the IDL section.
    */
   public discriminator(
     kind: "instruction" | "account" | "event",
-    name: string,
-  ): Buffer {
+    name: string
+  ): ReadonlyUint8Array {
     const section =
       kind === "instruction"
         ? this._rawIdl.instructions
         : kind === "account"
-          ? this._rawIdl.accounts ?? []
-          : this._rawIdl.events ?? [];
-    const entry = (section as Array<{ name: string; discriminator?: number[] }>).find(
-      (e) => e.name === name,
-    );
+        ? this._rawIdl.accounts ?? []
+        : this._rawIdl.events ?? [];
+    const entry = (
+      section as Array<{ name: string; discriminator?: number[] }>
+    ).find((e) => e.name === name);
     if (!entry?.discriminator) {
       throw new Error(
-        `anchor: no ${kind} named '${name}' with a discriminator in the IDL`,
+        `anchor: no ${kind} named '${name}' with a discriminator in the IDL`
       );
     }
-    return Buffer.from(entry.discriminator);
+    return new Uint8Array(entry.discriminator);
   }
 
   /**
@@ -328,16 +337,16 @@ export class Program<IDL extends Idl = Idl> {
     this._idl = convertIdlToCamelCase(idl);
     this._rawIdl = idl;
     this._provider = provider;
-    this._programId = translateAddress(idl.address);
+    this._address = address(idl.address);
     this._coder = coder ?? new BorshCoder(this._idl);
-    this._events = new EventManager(this._programId, provider, this._coder);
+    this._events = new EventManager(this._address, provider, this._coder);
 
     // Dynamic namespaces.
     const [rpc, instruction, transaction, account, simulate, methods, views] =
       NamespaceFactory.build(
         this._idl,
         this._coder,
-        this._programId,
+        this._address,
         provider,
         getCustomResolver
       );
@@ -356,18 +365,18 @@ export class Program<IDL extends Idl = Idl> {
    * In order to use this method, an IDL must have been previously initialized
    * via the anchor CLI's `anchor idl init` command.
    *
-   * @param programId The on-chain address of the program.
-   * @param provider  The network and wallet context.
+   * @param address  The on-chain address of the program.
+   * @param provider The network and wallet context.
    */
   public static async at<IDL extends Idl = Idl>(
-    address: Address,
+    address: AddressInput,
     provider?: Provider
   ): Promise<Program<IDL>> {
-    const programId = translateAddress(address);
+    const programAddress = toAddress(address);
 
-    const idl = await Program.fetchIdl<IDL>(programId, provider);
+    const idl = await Program.fetchIdl<IDL>(programAddress, provider);
     if (!idl) {
-      throw new Error(`IDL not found for program: ${address.toString()}`);
+      throw new Error(`IDL not found for program: ${programAddress}`);
     }
 
     return new Program(idl, provider);
@@ -377,47 +386,70 @@ export class Program<IDL extends Idl = Idl> {
    * Fetches an idl from the blockchain.
    *
    * In order to use this method, an IDL must have been previously initialized
-   * via the anchor CLI's `anchor idl init` command.
+   * via the anchor CLI's `anchor idl init` command, which stores it as the
+   * canonical `idl` metadata of the program.
    *
-   * @param programId The on-chain address of the program.
-   * @param provider  The network and wallet context.
+   * @param address  The on-chain address of the program.
+   * @param provider The network and wallet context.
    */
   public static async fetchIdl<IDL extends Idl = Idl>(
-    programAddress: Address,
+    address: AddressInput,
     provider?: Provider
   ): Promise<IDL | null> {
     provider = provider ?? getProvider();
-    const programId = translateAddress(programAddress);
-    const idlAddr = idlAddress(programId);
-    const accountInfo = await provider.connection.getAccountInfo(idlAddr);
-    if (!accountInfo) return null;
+    const metadata = await fetchMaybeMetadataFromSeeds(
+      provider.rpc,
+      { program: toAddress(address), authority: null, seed: IDL_METADATA_SEED },
+      withProviderDefaults(provider)
+    );
+    if (!metadata.exists) return null;
 
-    return decodeIdlAccount<IDL>(accountInfo.data);
+    const { format, dataSource, compression, encoding, data } = metadata.data;
+    if (format !== Format.Json) {
+      throw new Error(
+        `IDL has data format '${format}', only JSON IDLs (${Format.Json}) are supported`
+      );
+    }
+    if (dataSource !== DataSource.Direct) {
+      throw new Error(
+        `IDL has source '${dataSource}', only directly embedded data (${DataSource.Direct}) is supported`
+      );
+    }
+
+    return JSON.parse(unpackDirectData({ compression, encoding, data }));
   }
 
   /**
-   * Invokes the given callback every time the given event is emitted.
+   * Invokes the given callback every time the given event is emitted, until
+   * `options.abortSignal` fires.
    *
-   * @param eventName The PascalCase name of the event, provided by the IDL.
+   * ```typescript
+   * const controller = new AbortController();
+   * program.addEventListener("myEvent", (event, slot, signature) => {
+   *   console.log(event, slot, signature);
+   * }, { abortSignal: controller.signal });
+   * // Later, to stop listening:
+   * controller.abort();
+   * ```
+   *
+   * @param eventName The name of the event, as provided by the IDL.
    * @param callback  The function to invoke whenever the event is emitted from
    *                  program logs.
+   * @param options   The abort signal ending the subscription, the commitment
+   *                  to listen at, and an error handler: notifications that
+   *                  cannot be processed are reported and skipped, while a
+   *                  failure of the subscription itself is reported as fatal
+   *                  and ends the listener.
    */
   public addEventListener<E extends keyof IdlEvents<IDL>>(
     eventName: E & string,
     callback: (
       event: IdlEvents<IDL>[E],
-      slot: number,
-      signature: string
+      slot: Slot,
+      signature: Signature
     ) => void,
-    commitment?: Commitment
-  ): number {
-    return this._events.addEventListener(eventName, callback, commitment);
-  }
-
-  /**
-   * Unsubscribes from the given eventName.
-   */
-  public async removeEventListener(listener: number): Promise<void> {
-    return await this._events.removeEventListener(listener);
+    options: EventListenerOptions
+  ): void {
+    this._events.addEventListener(eventName, callback, options);
   }
 }

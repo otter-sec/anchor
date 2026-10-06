@@ -1,10 +1,6 @@
-import {
-  AccountMeta,
-  ConfirmOptions,
-  Signer,
-  TransactionInstruction,
-} from "@solana/web3.js";
-import { Address } from "./common.js";
+import { AccountMeta, Instruction, TransactionSigner } from "@solana/kit";
+import { AddressInput } from "./common.js";
+import type { ConfirmOptions } from "../provider.js";
 import {
   IdlInstructionAccountItem,
   IdlInstructionAccounts,
@@ -29,26 +25,19 @@ export type Context<A extends Accounts = Accounts> = {
   /**
    * Accounts that must sign a given transaction.
    */
-  signers?: Array<Signer>;
-
-  /**
-   * @deprecated use preInstructions instead.
-   * Instructions to run *before* a given method. Often this is used, for
-   * example to create accounts prior to executing a method.
-   */
-  instructions?: TransactionInstruction[];
+  signers?: TransactionSigner[];
 
   /**
    * Instructions to run *before* a given method. Often this is used, for
    * example to create accounts prior to executing a method.
    */
-  preInstructions?: TransactionInstruction[];
+  preInstructions?: Instruction[];
 
   /**
    * Instructions to run *after* a given method. Often this is used, for
    * example to close accounts after executing a method.
    */
-  postInstructions?: TransactionInstruction[];
+  postInstructions?: Instruction[];
 
   /**
    * Commitment parameters to use for a transaction.
@@ -75,10 +64,10 @@ type Account<A extends IdlInstructionAccountItem> =
   A extends IdlInstructionAccounts
     ? Accounts<A["accounts"][number]>
     : A extends { optional: true }
-    ? Address | null
+    ? AddressInput | null
     : A extends { signer: true }
-    ? Address | undefined
-    : Address;
+    ? AddressInput | undefined
+    : AddressInput;
 
 export function splitArgsAndCtx(
   idlIx: IdlInstruction,

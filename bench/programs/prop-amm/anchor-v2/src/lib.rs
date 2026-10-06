@@ -31,12 +31,14 @@ pub mod prop_amm_v2 {
     /// match arm runs. Declared so the macro emits `instruction::Update`
     /// + `accounts::Update` for clients and IDL.
     #[discrim = 0]
+    #[inline(always)]
     #[allow(unused_variables)]
     pub fn update(ctx: &mut Context<Update>, new_price: u64) -> Result<()> {
         unsafe { core::hint::unreachable_unchecked() }
     }
 
     #[discrim = 1]
+    #[inline(always)]
     pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {
         ctx.accounts.oracle.authority = *ctx.accounts.payer.address();
         ctx.accounts.oracle.price = 0;
@@ -44,6 +46,7 @@ pub mod prop_amm_v2 {
     }
 
     #[discrim = 2]
+    #[inline(always)]
     pub fn rotate_authority(
         ctx: &mut Context<RotateAuthority>,
         new_authority: [u8; 32],

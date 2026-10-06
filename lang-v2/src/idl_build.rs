@@ -74,8 +74,9 @@ pub trait IdlAccountType {
     /// Wrappers (`Box<T>`, `BorshAccount<T>`, `Nested<T>`) forward to the
     /// inner type. `Slab<H, T>` currently forwards only the header `H`;
     /// see [`crate::accounts::Slab`] for the limitation. Collection impls
-    /// (`Vec<T>`, `Option<T>`, `[T; N]`, `[T]`, `&T`, `PodVec<T, N>`) forward
-    /// to the element type. Primitive impls (bool, u*, i*, f*, String,
+    /// (`Vec<T>`, `BTreeMap<K, V>`, `BTreeSet<T>`, `Option<T>`, `[T; N]`,
+    /// `[T]`, `&T`, tuples, `PodVec<T, N>`) forward to their element types.
+    /// Primitive impls (bool, u*, i*, f*, String,
     /// Address, etc.) use the default no-op — they never appear in `types[]`.
     fn __register_idl_deps(
         _accounts: &mut alloc::vec::Vec<&'static str>,
@@ -172,6 +173,60 @@ impl<T: IdlAccountType> IdlAccountType for alloc::vec::Vec<T> {
     }
 }
 
+#[doc(hidden)]
+impl<K: IdlAccountType, V: IdlAccountType> IdlAccountType for alloc::collections::BTreeMap<K, V> {
+    fn __register_idl_deps(
+        accounts: &mut alloc::vec::Vec<&'static str>,
+        types: &mut alloc::vec::Vec<&'static str>,
+    ) {
+        K::__register_idl_deps(accounts, types);
+        V::__register_idl_deps(accounts, types);
+    }
+}
+
+#[doc(hidden)]
+impl<T: IdlAccountType> IdlAccountType for alloc::collections::BTreeSet<T> {
+    fn __register_idl_deps(
+        accounts: &mut alloc::vec::Vec<&'static str>,
+        types: &mut alloc::vec::Vec<&'static str>,
+    ) {
+        T::__register_idl_deps(accounts, types);
+    }
+}
+
+macro_rules! impl_idl_account_type_tuple {
+    ($($ty:ident),+ $(,)?) => {
+        #[doc(hidden)]
+        impl<$($ty: IdlAccountType),+> IdlAccountType for ($($ty,)+) {
+            fn __register_idl_deps(
+                accounts: &mut alloc::vec::Vec<&'static str>,
+                types: &mut alloc::vec::Vec<&'static str>,
+            ) {
+                $( $ty::__register_idl_deps(accounts, types); )+
+            }
+        }
+    };
+}
+
+#[doc(hidden)]
+impl IdlAccountType for () {}
+
+impl_idl_account_type_tuple!(A, B);
+impl_idl_account_type_tuple!(A, B, C);
+impl_idl_account_type_tuple!(A, B, C, D);
+impl_idl_account_type_tuple!(A, B, C, D, E);
+impl_idl_account_type_tuple!(A, B, C, D, E, F);
+impl_idl_account_type_tuple!(A, B, C, D, E, F, G);
+impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H);
+impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I);
+impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J);
+impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K);
+impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
+impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M);
+impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
+impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
+impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
+
 // Borrowed slice `&[T]` — surfaces on `#[derive(IdlType)]` structs that
 // carry borrowed slice fields (e.g. `MixedArgs<'a> { values: &'a [u64] }`),
 // which wincode supports as a zero-copy ix arg.
@@ -221,6 +276,8 @@ impl<T: IdlAccountType, const N: usize> IdlAccountType for [T; N] {
 // It contributes a generic type definition so downstream `declare_program!`
 // consumers can reconstruct the length prefix plus fixed-capacity backing
 // array, then recurses into the element type.
+// Pod is hand-written (`PodVecElement`), so the IDL uses `bytemuckunsafe`
+// and keeps this generic `repr(C)` layout.
 #[doc(hidden)]
 impl<T, const MAX: usize> IdlAccountType for crate::pod::PodVec<T, MAX>
 where
@@ -229,7 +286,7 @@ where
     const __IDL_TYPE_DEF: Option<&'static str> = Some(
         "{\"name\":\"PodVec\",\"generics\":[{\"kind\":\"type\",\"name\":\"T\"},\
          {\"kind\":\"const\",\"name\":\"MAX\",\"type\":\"usize\"}],\
-         \"serialization\":\"bytemuck\",\"repr\":{\"kind\":\"c\"},\
+         \"serialization\":\"bytemuckunsafe\",\"repr\":{\"kind\":\"c\"},\
          \"type\":{\"kind\":\"struct\",\"fields\":[{\"name\":\"len\",\"type\":{\"defined\":{\"name\":\"PodU16\"}}},\
          {\"name\":\"data\",\"type\":{\"array\":[{\"generic\":\"T\"},{\"generic\":\"MAX\"}]}}]}}",
     );

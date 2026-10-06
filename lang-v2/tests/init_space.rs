@@ -9,6 +9,7 @@
 #![allow(dead_code)]
 
 use anchor_lang::{prelude::*, InitSpace, Space};
+extern crate alloc;
 
 #[derive(InitSpace)]
 struct Primitives {
@@ -67,6 +68,16 @@ fn option_adds_one_byte_discriminator() {
 }
 
 #[derive(InitSpace)]
+struct WithQualifiedCoreOption {
+    _maybe: core::option::Option<u64>, // 1 + 8
+}
+
+#[test]
+fn qualified_core_option_uses_option_layout() {
+    assert_eq!(WithQualifiedCoreOption::INIT_SPACE, 9);
+}
+
+#[derive(InitSpace)]
 struct WithString {
     #[max_len(32)]
     _name: String, // 4 + 32
@@ -78,6 +89,17 @@ fn string_reserves_max_len_plus_length_prefix() {
 }
 
 #[derive(InitSpace)]
+struct WithQualifiedAllocString {
+    #[max_len(32)]
+    _name: alloc::string::String, // 4 + 32
+}
+
+#[test]
+fn qualified_alloc_string_uses_string_layout() {
+    assert_eq!(WithQualifiedAllocString::INIT_SPACE, 36);
+}
+
+#[derive(InitSpace)]
 struct WithVec {
     #[max_len(10)]
     _xs: Vec<u64>, // 4 + 8 * 10
@@ -86,6 +108,17 @@ struct WithVec {
 #[test]
 fn vec_reserves_max_len_times_element_plus_prefix() {
     assert_eq!(WithVec::INIT_SPACE, 84);
+}
+
+#[derive(InitSpace)]
+struct WithQualifiedAllocVec {
+    #[max_len(10)]
+    _xs: alloc::vec::Vec<u64>, // 4 + 8 * 10
+}
+
+#[test]
+fn qualified_alloc_vec_uses_vec_layout() {
+    assert_eq!(WithQualifiedAllocVec::INIT_SPACE, 84);
 }
 
 #[derive(InitSpace)]
@@ -126,6 +159,94 @@ fn nested_struct_uses_inner_init_space() {
     assert_eq!(Outer::INIT_SPACE, 8 + 24);
 }
 
+trait Schema {
+    type Value: Space;
+}
+
+struct SchemaHost;
+
+impl Schema for SchemaHost {
+    type Value = u64;
+}
+
+#[derive(InitSpace)]
+struct WithQualifiedAssoc {
+    _value: <SchemaHost as Schema>::Value,
+}
+
+#[test]
+fn qualified_associated_type_preserves_qself() {
+    assert_eq!(WithQualifiedAssoc::INIT_SPACE, 8);
+}
+
+mod custom {
+    use super::Space;
+
+    pub struct Address;
+
+    impl Space for Address {
+        const INIT_SPACE: usize = 8;
+    }
+}
+
+#[derive(InitSpace)]
+struct WithCustomAddress {
+    _addr: custom::Address,
+}
+
+#[test]
+fn qualified_path_does_not_use_builtin_address_size() {
+    assert_eq!(WithCustomAddress::INIT_SPACE, 8);
+}
+
+struct WideAddress;
+
+impl Space for WideAddress {
+    const INIT_SPACE: usize = 48;
+}
+
+struct WidePubkey;
+
+impl Space for WidePubkey {
+    const INIT_SPACE: usize = 64;
+}
+
+#[derive(InitSpace)]
+struct GenericAddressParam<Address: Space> {
+    _value: Address,
+}
+
+#[derive(InitSpace)]
+struct GenericPubkeyParam<Pubkey: Space> {
+    _value: Pubkey,
+}
+
+#[test]
+fn generic_parameters_named_like_builtins_use_space() {
+    assert_eq!(
+        GenericAddressParam::<WideAddress>::INIT_SPACE,
+        WideAddress::INIT_SPACE
+    );
+    assert_eq!(
+        GenericPubkeyParam::<WidePubkey>::INIT_SPACE,
+        WidePubkey::INIT_SPACE
+    );
+}
+
+#[derive(InitSpace)]
+struct NestedGenericAddress<Address: Space> {
+    _maybe: Option<Address>,
+    _array: [Address; 2],
+}
+
+#[test]
+fn nested_generic_parameters_use_space_recursively() {
+    assert_eq!(
+        NestedGenericAddress::<WideAddress>::INIT_SPACE,
+        (1 + WideAddress::INIT_SPACE) + 2 * WideAddress::INIT_SPACE
+    );
+}
+
 #[derive(InitSpace)]
 enum Variant {
     A,             // 0
@@ -138,6 +259,21 @@ enum Variant {
 #[test]
 fn enum_picks_largest_variant_plus_discriminator() {
     assert_eq!(Variant::INIT_SPACE, 1 + 16);
+}
+
+#[derive(InitSpace)]
+enum GenericVariant<T: Space> {
+    Empty,
+    One(T),
+    Two(u64, T),
+}
+
+#[test]
+fn generic_enum_emits_space_impl_with_type_params() {
+    // 1 (disc) + max(0, 8, 8+8) = 17 when T = u64
+    assert_eq!(GenericVariant::<u64>::INIT_SPACE, 1 + 16);
+    // 1 + max(0, 32, 8+32) = 41 when T = Address
+    assert_eq!(GenericVariant::<Address>::INIT_SPACE, 1 + 40);
 }
 
 #[derive(InitSpace)]

@@ -152,6 +152,44 @@ fn test_cpi_set_data() {
     assert_eq!(stored_value, 42, "CPI should have set value to 42");
 }
 
+/// Regression: a handler argument that borrows instruction data gives
+/// the generated instruction struct a lifetime parameter. The cpi
+/// wrapper wrote that lifetime into the struct literal, and a struct
+/// expression cannot carry lifetime arguments, so every program with
+/// such a handler failed to compile. Routes a `&[u8]` argument through
+/// `caller::cpi -> callee::set_data_from_bytes` end to end.
+#[test]
+fn test_cpi_ref_args() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("authority");
+    svm.airdrop(&authority.pubkey(), 1_000_000_000).unwrap();
+    let data_pda = init_data_account(&mut svm, &payer, &authority);
+
+    let value: u64 = 4242;
+    let bytes = value.to_le_bytes();
+    let proxy_data = caller::instruction::ProxySetDataFromBytes { bytes: &bytes }.data();
+    let proxy_metas = vec![
+        AccountMeta::new(data_pda, false),
+        AccountMeta::new_readonly(authority.pubkey(), true),
+        AccountMeta::new_readonly(callee_id(), false),
+    ];
+    send_instruction(
+        &mut svm,
+        caller_id(),
+        proxy_data,
+        proxy_metas,
+        &payer,
+        &[&authority],
+    )
+    .expect("caller::proxy_set_data_from_bytes should succeed");
+
+    let account = svm
+        .get_account(&data_pda)
+        .expect("data account should exist");
+    let stored_value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
+    assert_eq!(stored_value, 4242, "CPI should have set value to 4242");
+}
+
 fn call_raw(
     svm: &mut LiteSVM,
     program: Pubkey,

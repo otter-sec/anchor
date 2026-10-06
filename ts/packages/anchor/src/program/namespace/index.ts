@@ -1,4 +1,4 @@
-import { PublicKey } from "@solana/web3.js";
+import { Address } from "@solana/kit";
 import { Coder } from "../../coder/index.js";
 import Provider from "../../provider.js";
 import { Idl, IdlInstruction } from "../../idl.js";
@@ -14,11 +14,26 @@ import { CustomAccountResolver } from "../accounts-resolver.js";
 
 // Re-exports.
 export { InstructionNamespace, InstructionFn } from "./instruction.js";
-export { TransactionNamespace, TransactionFn } from "./transaction.js";
+export {
+  TransactionNamespace,
+  TransactionFn,
+  ProgramTransactionMessage,
+} from "./transaction.js";
 export { RpcNamespace, RpcFn } from "./rpc.js";
-export { AccountNamespace, AccountClient, ProgramAccount } from "./account.js";
+export {
+  AccountNamespace,
+  AccountClient,
+  AccountFilters,
+  AccountSubscriptionEvents,
+} from "./account.js";
 export { SimulateNamespace, SimulateFn } from "./simulate.js";
-export { IdlAccounts, IdlTypes, DecodeType, IdlEvents } from "./types.js";
+export {
+  IdlAccounts,
+  IdlTypes,
+  DecodeType,
+  EncodeType,
+  IdlEvents,
+} from "./types.js";
 export { MethodsBuilderFactory, MethodsNamespace } from "./methods";
 export { ViewNamespace, ViewFn } from "./views";
 
@@ -29,7 +44,7 @@ export default class NamespaceFactory {
   public static build<IDL extends Idl>(
     idl: IDL,
     coder: Coder,
-    programId: PublicKey,
+    programAddress: Address,
     provider: Provider,
     getCustomResolver?: (
       instruction: IdlInstruction
@@ -53,14 +68,14 @@ export default class NamespaceFactory {
     const idlErrors = parseIdlErrors(idl);
 
     const account: AccountNamespace<IDL> = idl.accounts
-      ? AccountFactory.build(idl, coder, programId, provider)
+      ? AccountFactory.build(idl, coder, programAddress, provider)
       : ({} as AccountNamespace<IDL>);
 
     idl.instructions.forEach((idlIx) => {
       const ixItem = InstructionFactory.build<IDL, typeof idlIx>(
         idlIx,
         (ixName, ix) => coder.instruction.encode(ixName, ix),
-        programId
+        programAddress
       );
       const txItem = TransactionFactory.build(idlIx, ixItem);
       const rpcItem = RpcFactory.build(idlIx, txItem, idlErrors, provider);
@@ -70,20 +85,25 @@ export default class NamespaceFactory {
         idlErrors,
         provider,
         coder,
-        programId,
+        programAddress,
         idl
       );
-      const viewItem = ViewFactory.build(programId, idlIx, simulateItem, idl);
+      const viewItem = ViewFactory.build(
+        programAddress,
+        idlIx,
+        simulateItem,
+        idl
+      );
       const methodItem = MethodsBuilderFactory.build<IDL, typeof idlIx>(
         provider,
-        programId,
+        programAddress,
         idlIx,
         ixItem,
         txItem,
         rpcItem,
         simulateItem,
         viewItem,
-        account,
+        coder.accounts,
         idl.types || [],
         getCustomResolver?.(idlIx)
       );

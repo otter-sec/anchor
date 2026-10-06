@@ -1,6 +1,5 @@
 mod common;
 
-mod cpi_guard;
 mod default_account_state;
 mod group_member_pointer;
 mod group_pointer;
