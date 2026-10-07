@@ -107,6 +107,7 @@ solana-transaction-status-client-types-v4 = { package = "solana-transaction-stat
 # Non solana crates
 cargo_toml = "0.22.3"
 heck = "0.5"
+tokio = { version = "1.53.1", features = ["rt", "sync"] }
 # Solana crates currently use 0.12, make sure to bump this to 0.13
 # when they do to avoid duplicate deps
 reqwest = { version = "0.12.28", default-features = false }

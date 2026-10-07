@@ -143,7 +143,7 @@ toml = "0.7.6"
 walkdir = "2.3.2"
 bs58 = "0.5.1"
 indicatif = "0.18.2"
-tokio = {version = "1.53.1" }
+tokio = { workspace = true }
 
 [target.'cfg(not(windows))'.dependencies]
 # `anchor test --profile` — flamegraph rendering from LiteSVM register traces.

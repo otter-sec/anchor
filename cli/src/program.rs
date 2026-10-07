@@ -1,3 +1,23 @@
+#[cfg(feature = "solana-v4")]
+use solana_client::send_and_confirm_transactions_in_parallel::{
+    send_and_confirm_transactions_in_parallel_v3, SendAndConfirmConfigV3,
+};
+#[cfg(feature = "solana-v3")]
+use {
+    crate::compat::solana_cli_config,
+    solana_cli_config::Config as SolanaCliConfig,
+    solana_client::{
+        connection_cache::ConnectionCache,
+        nonblocking::tpu_client::TpuClient as NonblockingTpuClient,
+        send_and_confirm_transactions_in_parallel::{
+            send_and_confirm_transactions_in_parallel_blocking_v2, SendAndConfirmConfigV2,
+        },
+        tpu_client::TpuClientConfig,
+    },
+    solana_packet::PACKET_DATA_SIZE,
+    solana_sdk_ids::compute_budget as compute_budget_program_id,
+    std::sync::Arc,
+};
 use {
     crate::{
         compat::{
@@ -31,8 +51,7 @@ use {
     solana_signature::Signature,
     solana_signer::{EncodableKey, Signer},
     solana_system_interface::MAX_PERMITTED_DATA_LENGTH,
-    solana_transaction::versioned::VersionedTransaction,
-    solana_transaction::Transaction,
+    solana_transaction::{versioned::VersionedTransaction, Transaction},
     std::{
         collections::{BTreeMap, HashSet},
         fs::{self, File},
@@ -41,28 +60,6 @@ use {
         thread,
         time::Duration,
     },
-};
-
-#[cfg(feature = "solana-v3")]
-use {
-    crate::compat::solana_cli_config,
-    solana_cli_config::Config as SolanaCliConfig,
-    solana_client::{
-        connection_cache::ConnectionCache,
-        nonblocking::tpu_client::TpuClient as NonblockingTpuClient,
-        send_and_confirm_transactions_in_parallel::{
-            send_and_confirm_transactions_in_parallel_blocking_v2, SendAndConfirmConfigV2,
-        },
-        tpu_client::TpuClientConfig,
-    },
-    solana_packet::PACKET_DATA_SIZE,
-    solana_sdk_ids::compute_budget as compute_budget_program_id,
-    std::sync::Arc,
-};
-
-#[cfg(feature = "solana-v4")]
-use solana_client::send_and_confirm_transactions_in_parallel::{
-    send_and_confirm_transactions_in_parallel_v3, SendAndConfirmConfigV3,
 };
 
 #[cfg(feature = "solana-v4")]
@@ -3032,7 +3029,7 @@ fn prepare_write_messages(
     let compute_unit_limit = WRITE_COMPUTE_UNIT_LIMIT * instructions_per_transaction;
     let priority_fee = if let Some(fee) = priority_fee {
         fee.checked_mul(compute_unit_limit as u64)
-            .and_then(|res| Some(res.div_ceil(MICRO_LAMPORTS_PER_LAMPORT)))
+            .map(|res| res.div_ceil(MICRO_LAMPORTS_PER_LAMPORT))
             .or(Some(1))
     } else {
         None
@@ -3081,7 +3078,7 @@ fn prepare_write_messages(
             }
         }
     }
-    if instructions.len() != 0 {
+    if !instructions.is_empty() {
         write_messages.push(create_msg(instructions));
     }
 
