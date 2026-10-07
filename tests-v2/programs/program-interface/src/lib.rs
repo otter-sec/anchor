@@ -36,7 +36,7 @@ pub struct Mixed {
 #[derive(Accounts)]
 #[accounts_program_id(declared::ID)]
 pub struct NestedOuter {
-    pub nested: Nested<AuthorityOnly>,
+    pub nested: AuthorityOnly,
     #[account(mut)]
     pub vault: UncheckedAccount,
 }

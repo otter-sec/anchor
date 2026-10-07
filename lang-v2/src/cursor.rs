@@ -224,7 +224,7 @@ pub const fn mut_mask_set_bit(mut mask: [u64; 4], bit: usize) -> [u64; 4] {
 }
 
 /// OR `other << shift` (as a 256-bit shift) into `mask`. Used by the derive
-/// to fold a `Nested<U>` child's `MUT_MASK` into its parent's at the child's
+/// to fold a child account group's `MUT_MASK` into its parent's at the child's
 /// account offset.
 pub const fn mut_mask_or_shifted(mut mask: [u64; 4], other: [u64; 4], shift: usize) -> [u64; 4] {
     let word_shift = shift / 64;

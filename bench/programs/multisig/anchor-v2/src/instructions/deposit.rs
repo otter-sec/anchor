@@ -7,8 +7,9 @@ pub struct Deposit {
     #[account(mut)]
     pub depositor: Signer,
     pub config: Account<MultisigConfig>,
-    #[account(mut, seeds = [b"vault", config.address().as_ref()], bump)]
+    #[account(mut, seeds = [b"vault", config.address().as_ref()], bump, resolve)]
     pub vault: UncheckedAccount,
+    #[account(resolve)]
     pub system_program: Program<System>,
 }
 

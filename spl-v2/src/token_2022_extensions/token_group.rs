@@ -6,6 +6,7 @@ use {
 };
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct TokenGroupInitialize<'a> {
     pub group: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
@@ -14,6 +15,7 @@ pub struct TokenGroupInitialize<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct TokenMemberInitialize<'a> {
     pub member: CpiHandleMut<'a>,
     pub member_mint: CpiHandle<'a>,

@@ -6,11 +6,13 @@ use {
 };
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct DefaultAccountStateInitialize<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct DefaultAccountStateUpdate<'a> {
     pub mint: CpiHandleMut<'a>,
     #[signer]

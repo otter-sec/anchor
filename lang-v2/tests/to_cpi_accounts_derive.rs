@@ -1,8 +1,10 @@
-use anchor_lang::{
-    prelude::*,
-    testing::{AccountBuffer, MIN_ACCOUNT_BUF},
+use {
+    anchor_lang::{
+        prelude::*,
+        testing::{AccountBuffer, MIN_ACCOUNT_BUF},
+    },
+    core::marker::PhantomData,
 };
-use core::marker::PhantomData;
 
 const ID: Address = Address::new_from_array([9; 32]);
 const AUTHORITY_SIGNER: bool = true;
@@ -31,6 +33,42 @@ struct OptionalReadonlyCpi<'a> {
     optional_readonly: Option<CpiHandle<'a>>,
 }
 
+type ReadonlyAlias<'a> = CpiHandle<'a>;
+type OptionalAlias<'a> = Option<CpiHandleMut<'a>>;
+
+#[derive(ToCpiAccounts)]
+struct AliasedCpi<'a> {
+    direct: ReadonlyAlias<'a>,
+    absent: OptionalAlias<'a>,
+    inner: InnerCpi<'a>,
+}
+
+#[test]
+fn aliases_and_nested_fields_compose_without_type_name_checks() {
+    let buffer = account([41; 32], false, true);
+    let writable_buffer = account([42; 32], false, true);
+    let view = unsafe { buffer.view() };
+    let mut writable_view = unsafe { writable_buffer.view() };
+    let accounts = AliasedCpi {
+        direct: view.to_cpi_handle(),
+        absent: None,
+        inner: InnerCpi {
+            inner_readonly: view.to_cpi_handle(),
+            inner_writable: writable_view.to_cpi_handle_mut(),
+        },
+    };
+    let metas = accounts.to_instruction_accounts();
+    assert_eq!(metas.len(), 4);
+    assert_eq!(metas[1].address, &ID);
+    assert!(!metas[1].is_writable);
+    assert!(metas[3].is_writable);
+    assert_eq!(accounts.to_cpi_handles().len(), 3);
+    assert_eq!(
+        accounts.optional_account_sentinel_flags(),
+        [false, true, false, false]
+    );
+}
+
 #[derive(ToCpiAccounts)]
 struct ManualCpi<'a> {
     readonly: CpiHandle<'a>,
@@ -39,7 +77,6 @@ struct ManualCpi<'a> {
     authority: CpiHandle<'a>,
     #[account_meta(skip)]
     authority_signer: bool,
-    #[nested]
     inner: InnerCpi<'a>,
     optional_readonly: Option<CpiHandle<'a>>,
     #[signer]

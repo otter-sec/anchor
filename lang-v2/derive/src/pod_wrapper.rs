@@ -163,6 +163,8 @@ pub fn expand(item: TokenStream) -> TokenStream {
     let invalid_debug_msg = format!("{}(invalid={{}})", name_str);
     let invalid_panic_msg = format!("invalid {} discriminant: {{}}", name_str);
 
+    let idl_reference_impl =
+        crate::idl::type_reference_impl(&pod_name.to_string(), &syn::Generics::default());
     let expanded: TokenStream2 = quote! {
         // Re-emit the annotated enum verbatim — attribute macros consume
         // their input, and every downstream `Enum::Variant` reference
@@ -181,6 +183,7 @@ pub fn expand(item: TokenStream) -> TokenStream {
         // cast time — so `bytemuck`'s zero-copy cast is always sound.
         unsafe impl anchor_lang::bytemuck::Pod for #pod_name {}
         unsafe impl anchor_lang::bytemuck::Zeroable for #pod_name {}
+        impl anchor_lang::__private::PodLayout for #pod_name {}
 
         impl #pod_name {
             #(#variant_consts)*
@@ -245,6 +248,7 @@ pub fn expand(item: TokenStream) -> TokenStream {
         // `declare_program!` consumers can resolve `Pod{Enum}` references.
         #[cfg(feature = "idl-build")]
         impl anchor_lang::IdlAccountType for #pod_name {
+            #idl_reference_impl
             const __IDL_TYPE_DEF: Option<&'static str> = Some(#idl_type_def);
 
             fn __register_idl_deps(

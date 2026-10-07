@@ -110,11 +110,13 @@ pub struct InitializeVault {
     pub authority: Signer,
     #[account(
         init,
+        resolve,
         payer = payer,
         seeds = [b"vault", authority.address().as_ref()],
         bump,
     )]
     pub vault: Account<Vault>,
+    #[account(resolve)]
     pub system_program: Program<System>,
 }
 
@@ -128,6 +130,7 @@ pub struct SetValue {
 
 #[derive(Accounts)]
 pub struct TouchProgramMarkers {
+    #[account(resolve)]
     pub system_program: Program<System>,
 }
 
@@ -135,6 +138,7 @@ pub struct TouchProgramMarkers {
 pub struct OptionalBuilderCase {
     #[account(mut)]
     pub user_state: Option<Account<UserState>>,
+    #[account(resolve)]
     pub system_program: Program<System>,
 }
 
@@ -147,7 +151,7 @@ pub struct OptionalDerivableBuilderCase {
 
 #[derive(Accounts)]
 pub struct CheckExternalPda {
-    #[account(seeds = [b"external"], bump, seeds::program = OTHER_PROGRAM)]
+    #[account(resolve, seeds = [b"external"], bump, seeds::program = OTHER_PROGRAM)]
     pub external_pda: UncheckedAccount,
 }
 

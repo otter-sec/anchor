@@ -38,8 +38,9 @@ pub mod vault_v2 {
 pub struct Deposit {
     #[account(mut)]
     pub user: Signer,
-    #[account(mut, seeds = [b"vault", user.address().as_ref()], bump)]
+    #[account(mut, seeds = [b"vault", user.address().as_ref()], bump, resolve)]
     pub vault: UncheckedAccount,
+    #[account(resolve)]
     pub system_program: Program<System>,
 }
 
@@ -47,6 +48,6 @@ pub struct Deposit {
 pub struct Withdraw {
     #[account(mut)]
     pub user: Signer,
-    #[account(mut, seeds = [b"vault", user.address().as_ref()], bump)]
+    #[account(mut, seeds = [b"vault", user.address().as_ref()], bump, resolve)]
     pub vault: UncheckedAccount,
 }

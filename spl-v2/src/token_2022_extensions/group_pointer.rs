@@ -8,11 +8,13 @@ use {
 };
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct GroupPointerInitialize<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct GroupPointerUpdate<'a> {
     pub mint: CpiHandleMut<'a>,
     #[signer]

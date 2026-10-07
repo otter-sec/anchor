@@ -13,9 +13,11 @@ pub struct Create {
         init,
         payer = creator,
         seeds = [b"multisig", creator.address().as_ref()],
-        bump
+        bump,
+        resolve
     )]
     pub config: Account<MultisigConfig>,
+    #[account(resolve)]
     pub system_program: Program<System>,
 }
 

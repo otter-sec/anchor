@@ -12,13 +12,25 @@ use {
 ///
 /// `try_accounts` receives a pre-walked `&[AccountView]` slice (from a
 /// single `walk_n(HEADER_SIZE)` in [`run_handler`]) rather than the raw
-/// cursor. This lets `Nested<Inner>` fields pass a sub-slice to
+/// cursor. This lets nested account groups pass a sub-slice to
 /// `Inner::validate_accounts` without re-walking the cursor or fighting
 /// borrow-checker splits.
 ///
-/// `HEADER_SIZE` is computed recursively at compile time: 1 per direct
-/// field, `+ <Inner as TryAccounts>::HEADER_SIZE` per `Nested<Inner>`.
+/// `HEADER_SIZE` is computed recursively at compile time by summing
+/// `<Field as AccountField>::HEADER_SIZE` across all fields.
 pub trait TryAccounts: Bumps + Sized {
+    /// Program ID used by generated clients and CPI account metadata.
+    const PROGRAM_ID: Address;
+
+    /// Complete client account addresses in declaration order.
+    type Client: crate::ToAccountMetas;
+
+    /// Client account addresses with explicitly resolved fields omitted.
+    type ResolvedClient: crate::ToAccountMetas;
+
+    /// CPI handles for the complete instruction account group.
+    type Cpi<'a>: crate::ToCpiAccounts<'a>;
+
     const HEADER_SIZE: usize;
 
     /// Bit `i` is set iff account-view index `i` (global, across nested
@@ -46,7 +58,7 @@ pub trait TryAccounts: Bumps + Sized {
     type IxArgs<'ix>;
 
     /// `base_offset` is the index of the first view in the global bitvec.
-    /// Top-level callers pass 0; `Nested<T>` passes its field's offset so
+    /// Top-level callers pass 0; nested groups pass their field's offset so
     /// the inner struct's duplicate-mutable-account checks hit the correct
     /// global bits.
     fn try_accounts<'ix>(

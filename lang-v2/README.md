@@ -20,7 +20,7 @@ Worked programs live under [`bench/programs/`](../bench/programs/), paired with 
 | [helloworld](../bench/programs/helloworld/anchor-v2) | Single-instruction counter | 6.9 KB | 1,383 | 18× | 4.2× |
 | [prop-amm](../bench/programs/prop-amm/anchor-v2) | Oracle feed with asm fast-path | 9.2 KB | 26–1,383 | 15× | 3.1–50× |
 | [vault](../bench/programs/vault/anchor-v2) | Single-depositor SOL vault | 5.9 KB | 403–1,910 | 18× | 3.0–6.1× |
-| [nested](../bench/programs/nested/anchor-v2) | Shared-validation via `Nested<T>` | 13 KB | 476–2,748 | 12× | 7.2–10× |
+| [nested](../bench/programs/nested/anchor-v2) | Shared validation through nested account groups | 13 KB | 476–2,748 | 12× | 7.2–10× |
 | [multisig](../bench/programs/multisig/anchor-v2) | Four-instruction SOL multisig | 31 KB | 477–2,363 | 5.3× | 3.0–9.1× |
 
 ## Getting started
@@ -122,7 +122,7 @@ None of these carry an `'info` lifetime — pinocchio's account model is static-
 | `BorshAccount<T>` | Data with `Vec` / `String` / enums. Deserializes on load, serializes on exit. |
 | `Slab<H, Item>` | Header + dynamic item tail. Zero-copy ledger / event-log accounts. `Account<T>` is `Slab<T, HeaderOnly>` under the hood. |
 | `Option<Account<T>>` | Optional account slot. Client sends program-ID as sentinel when absent; bumps become `Option<u8>`. |
-| `Nested<T>` | Compose `#[derive(Accounts)]` structs. Inline expansion, access via `ctx.accounts.inner.field`. |
+| Another `Accounts` struct | Compose account groups directly, as in v1. Access via `ctx.accounts.inner.field`. |
 | `Signer` | Transaction signer. Validates `is_signer`. (v1 compat) |
 | `Program<T>` | CPI targets (`Program<System>`, `Program<Token>`, …). Validates executable + program ID via `T: Id`. (v1 compat) |
 | `SystemAccount` | System-owned account. Owner check only. (v1 compat) |
@@ -130,11 +130,46 @@ None of these carry an `'info` lifetime — pinocchio's account model is static-
 | `Sysvar<T>` | `Sysvar<Clock>`, `Sysvar<Rent>`. Prefer `Clock::get()` / `Rent::get()` syscalls where possible. (v1 compat) |
 | `Sysvar<SysvarInstructions>` | Instruction introspection. No syscall exists for this sysvar, so the account must be passed in the transaction; the wrapper reads its data and derefs to pinocchio's `Instructions`. |
 
+### Nested accounts
+
+An account group is an ordinary field. No wrapper or nesting attribute is required:
+
+```rust
+#[derive(Accounts)]
+pub struct Authority {
+    pub signer: Signer,
+}
+
+type SharedAuthority = Authority;
+
+#[derive(Accounts)]
+pub struct Update {
+    pub authority: SharedAuthority,
+    #[account(mut)]
+    pub data: UncheckedAccount,
+}
+```
+
+The derive composes validation, account ordering, mutable masks, exit hooks,
+client and CPI types, IDL groups, and bump caches through `AccountField`.
+Child PDA bumps remain available at `ctx.bumps.authority.<pda_field>`.
+Unseeded leaf fields have a `()` bump entry, allowing the cache to compose
+without classifying types in the macro. Groups can validate the same instruction
+data with their own `#[instruction(...)]` declaration and can carry a whole-group
+`#[account(constraint = ...)]` expression.
+
+As in v1, `#[instruction(...)]` may declare a correctly typed prefix of the
+handler's arguments. The remaining arguments are decoded for the handler.
+
+`Accounts` and standalone `ToCpiAccounts` derives use `crate::ID` by default.
+Use `#[accounts_program_id(...)]` when defining bindings for another program or
+when the crate has no `ID` constant.
+
 ## CPI Semantics
 
-Same `CpiContext` shape as v1. The big caller-side win is the generated **`Resolved`** struct: alongside the full accounts struct for each handler, the derive emits a variant with only the fields a caller actually has to provide. The standard system and token programs auto-fill when you build the instruction metas, and PDAs derive in topological order so dependent seeds still work.
+Same `CpiContext` shape as v1. The big caller-side win is the generated **`Resolved`** struct: alongside the full accounts struct for each handler, the derive emits a variant with only the fields a caller actually has to provide. Fields marked `#[account(resolve)]` are computed when you build the instruction metas. Program accounts resolve through `Id`, and seed-constrained PDAs derive in dependency order. Optional fields remain caller-provided; their presence is never inferred.
 
-For example, the [multisig bench's `Create`](../bench/programs/multisig/anchor-v2/src/instructions/create.rs) takes `creator` (signer), `config` (PDA from `[b"multisig", creator]`), and `system_program`. The caller only passes `creator`:
+For example, the [multisig bench's `Create`](../bench/programs/multisig/anchor-v2/src/instructions/create.rs) takes `creator` (signer), `config` (PDA from `[b"multisig", creator]`), and `system_program`. With `resolve` on `config` and `system_program`, the caller only passes `creator`:
 
 ```rust
 // multisig_v2::accounts::Create { creator, config, system_program }   // full — all three
@@ -144,7 +179,14 @@ let metas = multisig_v2::accounts::CreateResolved { creator: creator.pubkey() }
     .to_account_metas(None);   // auto-derives `config` PDA, auto-fills `system_program`
 ```
 
-In v1, the caller built the `AccountMeta` vector by hand on every call — deriving the PDA, wiring up `system_program`, and keeping the order in sync with the handler's `#[derive(Accounts)]`.
+V1's generated Rust client structs handled account ordering, but callers supplied every account address, including PDAs and program IDs. Its TypeScript client could resolve those addresses from IDL metadata.
+
+`resolve` requires a fixed address supplied by `Id`, or canonical
+PDA seeds built from constants and sibling account addresses. PDAs using
+instruction arguments, account data, opaque seed expressions, or explicit bumps
+remain caller-provided. The attribute makes the generated builder's field
+omission explicit; `Program<T>`, aliases, and boxed program accounts forward
+the program marker's `Id` implementation.
 
 ## Interface programs
 
@@ -177,6 +219,50 @@ Imported `bytemuck` types use the same host-side no-padding assert as `#[account
 An important implication of our trait-based framework is: **you can write your own Anchor extensions.**
 
 In v1, anything the macro didn't already support meant forking the derive. v2 moves much of the account behavior behind traits, so anyone can ship new behavior from a separate crate — no fork, no upstream PR.
+
+Derives emit trait calls on field types and let Rust resolve their meaning.
+Aliases, qualified paths, and custom types therefore use their implementations
+instead of inheriting behavior from their spelling.
+
+The new composition and layout contracts, including the capacity-list types,
+live in the doc-hidden `anchor_lang::__private` module. They remain public for
+generated code and handwritten extensions, but are not exported at the crate
+root or through the prelude. Single-account wrappers still only need to
+implement `AnchorAccount` to obtain the account composition implementations.
+
+| Trait | Responsibility |
+|---|---|
+| `AnchorAccount` | Load and operate on one account; provides the leaf `AccountField` implementation. |
+| `__private::AccountField` | Compose account widths, masks, bumps, hooks, and client/CPI projections; derived for account groups. |
+| `__private::AccountSlot` | Apply constraints to a required or optional single account. |
+| `__private::PdaPayer` | Mark a system-owned account suitable for paying for PDA initialization. |
+| `TryAccounts` | Validate instruction account groups and project their client, resolved client, and CPI types. |
+| `Bumps` | Associate account fields and groups with their bump caches. |
+| `__private::CpiField` | Append CPI metas, handles, and optional-account sentinel flags. |
+| `__private::SingleCpiField` / `__private::CpiReadonlyField` | Support optional CPI fields and duplicate readonly handles. |
+| `Id` | Supply the program address used by fixed-address `#[account(resolve)]` fields. |
+| `Space` / `__private::BoundedSpace` | Calculate serialized sizes and consume `max_len` capacities. |
+| `__private::PodLayout` | Check zero-copy field invariants in addition to `bytemuck::Pod`. |
+| `IdlAccountType` | Describe resolved types and collect their IDL dependencies. |
+
+`Accounts` supplies the `TryAccounts` projections automatically. Handwritten
+`TryAccounts` implementations must provide `PROGRAM_ID`, `Client`,
+`ResolvedClient`, and `Cpi`, alongside their loading methods. Custom
+`__private::AccountField` implementations obtain their bump type from `Bumps`.
+
+`InitSpace` accepts aliases of collections and supplies both size traits for
+derived types. Capacities flow through tuples in field order. A handwritten
+`Space` implementation also works wherever no capacities remain. Import
+`BoundedSpace`, `Limits`, and `SpaceLimits` from `anchor_lang::__private` to
+implement `BoundedSpace<Limits<N, Tail>>` when that type must preserve or consume
+a pending capacity list.
+
+Account, event, and POD-wrapper macros supply `PodLayout` automatically. For a
+handwritten POD field, add `impl anchor_lang::__private::PodLayout for MyPod {}`;
+override `CHECK` when the type has additional invariants. Dynamic collections
+continue to use serialized accounts. Plain serialized types used in IDL metadata need
+`#[derive(IdlType)]`, including custom constant types. Tuple and map metadata
+registers the tuple definitions used by their wire representations.
 
 For example, [anchor-dynamic-account](https://github.com/chen-robert/anchor-dynamic-account) adds a brand-new primitive — zero-copy accounts with a `Vec<T>` / `String` tail that auto-reallocates to fit — behind a single `#[wrapped_account]` macro, with no changes to `anchor-lang`:
 

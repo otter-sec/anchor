@@ -6,6 +6,7 @@ use {
 };
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct ImmutableOwnerInitialize<'a> {
     pub token_account: CpiHandleMut<'a>,
 }

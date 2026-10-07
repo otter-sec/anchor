@@ -9,11 +9,13 @@ use {
 };
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct TransferFeeInitialize<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct TransferFeeSetTransferFee<'a> {
     pub mint: CpiHandleMut<'a>,
     #[signer]
@@ -21,6 +23,7 @@ pub struct TransferFeeSetTransferFee<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct TransferCheckedWithFee<'a> {
     pub source: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
@@ -30,11 +33,13 @@ pub struct TransferCheckedWithFee<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct HarvestWithheldTokensToMint<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct WithdrawWithheldTokensFromMint<'a> {
     pub mint: CpiHandleMut<'a>,
     pub destination: CpiHandleMut<'a>,
@@ -43,6 +48,7 @@ pub struct WithdrawWithheldTokensFromMint<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct WithdrawWithheldTokensFromAccounts<'a> {
     pub mint: CpiHandle<'a>,
     pub destination: CpiHandleMut<'a>,

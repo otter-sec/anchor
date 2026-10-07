@@ -23,335 +23,153 @@ use {
     },
 };
 
-const DYNAMIC_LEN_KEY: &str = "__anchor_private_const_len";
+const DYNAMIC_TYPE_KEY: &str = "__anchor_private_type_reference";
 
 #[derive(Default)]
 struct TypeLowerer<'a> {
     generics: Option<&'a Generics>,
-    dynamic_lengths: Vec<Expr>,
+    references: Vec<TokenStream2>,
 }
 
 impl<'a> TypeLowerer<'a> {
     fn with_generics(generics: &'a Generics) -> Self {
         Self {
             generics: Some(generics),
-            dynamic_lengths: Vec::new(),
+            references: Vec::new(),
         }
     }
-
     fn lower(&mut self, ty: &Type) -> Value {
-        if let Some(value) = pod_vec_type_to_idl_value(ty) {
-            return value;
-        }
-        match ty {
-            Type::Reference(reference) => self.lower(&reference.elem),
-            Type::Group(group) => self.lower(&group.elem),
-            Type::Paren(paren) => self.lower(&paren.elem),
-            Type::Slice(slice) if is_u8_path(&slice.elem) => json!("bytes"),
-            Type::Slice(slice) => json!({ "vec": self.lower(&slice.elem) }),
-            Type::Array(array) => {
-                let inner = self.lower(&array.elem);
-                let len = self.lower_array_len(&array.len);
-                json!({ "array": [inner, len] })
-            }
-            Type::Path(path) => self.lower_path(path),
-            _ => json!({
-                "defined": { "name": quote!(#ty).to_string().replace(' ', "") }
-            }),
-        }
-    }
-
-    fn lower_array_len(&mut self, expr: &Expr) -> Value {
-        let expr = peel_expr(expr);
-        if let Expr::Lit(syn::ExprLit {
-            lit: Lit::Int(len), ..
-        }) = expr
-        {
-            if let Ok(len) = len.base10_parse::<usize>() {
-                return json!(len);
-            }
-        }
-        if let Expr::Path(path) = expr {
-            if let Some(ident) = path.path.get_ident().filter(|_| path.qself.is_none()) {
-                if self
-                    .generics
-                    .is_some_and(|generics| generics.const_params().any(|p| p.ident == *ident))
-                {
-                    return json!({ "generic": ident.to_string() });
-                }
-            }
-        }
-
-        let marker = json!({ DYNAMIC_LEN_KEY: self.dynamic_lengths.len() });
-        self.dynamic_lengths.push(expr.clone());
+        let marker = json!({ DYNAMIC_TYPE_KEY: self.references.len() });
+        self.references.push(type_reference_expr(ty, self.generics));
         marker
     }
-
-    fn lower_path(&mut self, ty: &TypePath) -> Value {
-        let Some(segment) = ty.path.segments.last() else {
-            return json!({ "defined": { "name": quote!(#ty).to_string().replace(' ', "") } });
-        };
-        let path_name = path_name(ty);
-        let path = normalize_builtin_path(&path_name);
-
-        if let Some(ident) = ty.path.get_ident() {
-            if self
-                .generics
-                .is_some_and(|generics| generics.type_params().any(|p| p.ident == *ident))
-            {
-                return json!({ "generic": ident.to_string() });
-            }
-        }
-
-        match path {
-            "u8" | "u16" | "u32" | "u64" | "u128" | "i8" | "i16" | "i32" | "i64" | "i128"
-            | "f32" | "f64" | "bool" => json!(path),
-            "PodU16" | "PodU32" | "PodU64" | "PodU128" | "PodI16" | "PodI32" | "PodI64"
-            | "PodI128" | "PodBool" => {
-                json!(path.trim_start_matches("Pod").to_ascii_lowercase())
-            }
-            "String" | "string" | "str" => json!("string"),
-            "Pubkey" | "Address" | "pubkey" => json!("pubkey"),
-            "Vec" => {
-                let Some(inner) = first_type_arg(segment) else {
-                    return json!({ "defined": { "name": "Vec" } });
-                };
-                json!({ "vec": self.lower(inner) })
-            }
-            "Option" => {
-                let Some(inner) = first_type_arg(segment) else {
-                    return json!({ "defined": { "name": "Option" } });
-                };
-                json!({ "option": self.lower(inner) })
-            }
-            "Box" => first_type_arg(segment)
-                .map(|inner| self.lower(inner))
-                .unwrap_or_else(|| json!({ "defined": { "name": "Box" } })),
-            _ => self.lower_defined_path(segment),
-        }
-    }
-
-    fn lower_defined_path(&mut self, segment: &syn::PathSegment) -> Value {
-        let mut generics = Vec::new();
-        match &segment.arguments {
-            PathArguments::None => {}
-            PathArguments::AngleBracketed(arguments) => {
-                for argument in &arguments.args {
-                    match argument {
-                        // `MAX` in `Buf<MAX>` is parsed as a type by syn because
-                        // type and const identifiers are indistinguishable here.
-                        // Follow Rust naming conventions to recover the const form.
-                        syn::GenericArgument::Type(ty) if looks_like_const_ident(ty) => generics
-                            .push(json!({
-                                "kind": "const",
-                                "value": quote!(#ty).to_string().replace(' ', ""),
-                            })),
-                        syn::GenericArgument::Type(ty) => generics.push(json!({
-                            "kind": "type",
-                            "type": self.lower(ty),
-                        })),
-                        syn::GenericArgument::Const(expr) => generics.push(json!({
-                            "kind": "const",
-                            "value": quote!(#expr).to_string().replace(' ', ""),
-                        })),
-                        unsupported => panic!(
-                            "unsupported generic argument in IDL type `{}`: {}",
-                            segment.ident,
-                            quote!(#unsupported)
-                        ),
-                    }
-                }
-            }
-            PathArguments::Parenthesized(_) => {
-                panic!(
-                    "unsupported parenthesized generic arguments in IDL type `{}`",
-                    segment.ident
-                )
-            }
-        }
-
-        if generics.is_empty() {
-            json!({ "defined": { "name": segment.ident.to_string() } })
-        } else {
-            json!({
-                "defined": {
-                    "name": segment.ident.to_string(),
-                    "generics": generics,
-                }
-            })
-        }
-    }
-
     fn finish(self, value: Value) -> TokenStream2 {
         let mut remaining = value.to_string();
-        if self.dynamic_lengths.is_empty() {
+        if self.references.is_empty() {
             return quote! { #remaining };
         }
-
-        let mut steps = Vec::with_capacity(self.dynamic_lengths.len() * 2 + 1);
-        for (index, expr) in self.dynamic_lengths.iter().enumerate() {
-            let marker = json!({ DYNAMIC_LEN_KEY: index }).to_string();
+        let mut steps = Vec::new();
+        for (index, reference) in self.references.iter().enumerate() {
+            let marker = json!({ DYNAMIC_TYPE_KEY: index }).to_string();
             let (before, after) = remaining
                 .split_once(&marker)
-                .expect("dynamic IDL array marker should exist");
-            if !before.is_empty() {
-                steps.push(quote! {
-                    __s.push_str(#before);
-                });
-            }
-            steps.push(quote! {
-                __s.push_str(
-                    &anchor_lang::__alloc::string::ToString::to_string(&((#expr) as usize))
-                );
-            });
+                .expect("IDL reference marker exists");
+            steps.push(quote! { __s.push_str(#before); __s.push_str(&(#reference)); });
             remaining = after.to_owned();
-        }
-        if !remaining.is_empty() {
-            steps.push(quote! {
-                __s.push_str(#remaining);
-            });
         }
         quote! {{
             let mut __s = anchor_lang::__alloc::string::String::new();
             #(#steps)*
+            __s.push_str(#remaining);
             anchor_lang::__alloc::boxed::Box::leak(__s.into_boxed_str()) as &'static str
         }}
     }
 }
 
-/// Convert a Rust type to a generated expression containing its IDL JSON.
+fn generic_ident<'a>(path: &syn::Path, generics: Option<&'a Generics>) -> Option<&'a GenericParam> {
+    let ident = path.get_ident()?;
+    generics?.params.iter().find(|param| match param {
+        GenericParam::Type(ty) => ty.ident == *ident,
+        GenericParam::Const(value) => value.ident == *ident,
+        _ => false,
+    })
+}
+
+fn contains_generic(ty: &Type, generics: Option<&Generics>) -> bool {
+    struct Finder<'a> {
+        generics: Option<&'a Generics>,
+        found: bool,
+    }
+    impl<'ast> Visit<'ast> for Finder<'_> {
+        fn visit_type_path(&mut self, path: &'ast TypePath) {
+            self.found |=
+                path.qself.is_none() && generic_ident(&path.path, self.generics).is_some();
+            syn::visit::visit_type_path(self, path);
+        }
+        fn visit_expr_path(&mut self, path: &'ast syn::ExprPath) {
+            self.found |=
+                path.qself.is_none() && generic_ident(&path.path, self.generics).is_some();
+            syn::visit::visit_expr_path(self, path);
+        }
+    }
+    let mut finder = Finder {
+        generics,
+        found: false,
+    };
+    finder.visit_type(ty);
+    finder.found
+}
+
+fn type_reference_expr(ty: &Type, generics: Option<&Generics>) -> TokenStream2 {
+    match ty {
+        Type::Reference(reference) => return type_reference_expr(&reference.elem, generics),
+        Type::Group(group) => return type_reference_expr(&group.elem, generics),
+        Type::Paren(paren) => return type_reference_expr(&paren.elem, generics),
+        Type::Array(array) => {
+            let element = type_reference_expr(&array.elem, generics);
+            let length = peel_expr(&array.len);
+            let generic_len = match length {
+                Expr::Path(path) if path.qself.is_none() => generic_ident(&path.path, generics)
+                    .and_then(|param| match param {
+                        GenericParam::Const(value) => Some(value.ident.to_string()),
+                        _ => None,
+                    }),
+                _ => None,
+            };
+            let count = if let Some(name) = generic_len {
+                let json = json!({ "generic": name }).to_string();
+                quote! { anchor_lang::__alloc::string::String::from(#json) }
+            } else {
+                quote! { anchor_lang::__alloc::format!("{}", (#length) as usize) }
+            };
+            return quote! { anchor_lang::__alloc::format!("{{\"array\":[{},{}]}}", #element, #count) };
+        }
+        Type::Path(path) if path.qself.is_none() => {
+            if let Some(GenericParam::Type(param)) = generic_ident(&path.path, generics) {
+                let json = json!({ "generic": param.ident.to_string() }).to_string();
+                return quote! { anchor_lang::__alloc::string::String::from(#json) };
+            }
+        }
+        _ => {}
+    }
+    let type_override = |ty: &Type| {
+        if contains_generic(ty, generics) {
+            let reference = type_reference_expr(ty, generics);
+            quote! { Some(anchor_lang::idl_build::IdlGenericArg::Type(#reference)) }
+        } else {
+            quote! { None }
+        }
+    };
+    let overrides: Vec<_> = match ty {
+        Type::Path(path) => path.path.segments.last().map(|segment| match &segment.arguments {
+            PathArguments::AngleBracketed(args) => args.args.iter().filter_map(|arg| match arg {
+                syn::GenericArgument::Type(Type::Path(path)) if path.qself.is_none() && matches!(generic_ident(&path.path, generics), Some(GenericParam::Const(_))) => {
+                    let value = quote!(#path).to_string();
+                    Some(quote! { Some(anchor_lang::idl_build::IdlGenericArg::Const(anchor_lang::__alloc::string::String::from(#value))) })
+                }
+                syn::GenericArgument::Type(ty) => Some(type_override(ty)),
+                syn::GenericArgument::Const(expr) => {
+                    let contains = matches!(expr, Expr::Path(path) if generic_ident(&path.path, generics).is_some());
+                    Some(if contains {
+                        let value = quote!(#expr).to_string();
+                        quote! { Some(anchor_lang::idl_build::IdlGenericArg::Const(anchor_lang::__alloc::string::String::from(#value))) }
+                    } else { quote! { None } })
+                }
+                _ => None,
+            }).collect(),
+            _ => Vec::new(),
+        }).unwrap_or_default(),
+        Type::Tuple(tuple) => tuple.elems.iter().map(type_override).collect(),
+        Type::Slice(slice) => vec![type_override(&slice.elem)],
+        _ => Vec::new(),
+    };
+    quote! { <#ty as anchor_lang::IdlAccountType>::__idl_type_reference(&[#(#overrides),*]) }
+}
+
 pub fn rust_type_to_idl(ty: &Type) -> TokenStream2 {
     let mut lowerer = TypeLowerer::default();
     let value = lowerer.lower(ty);
     lowerer.finish(value)
-}
-
-fn pod_vec_type_to_idl_value(ty: &Type) -> Option<Value> {
-    match ty {
-        Type::Group(group) => pod_vec_type_to_idl_value(&group.elem),
-        Type::Paren(paren) => pod_vec_type_to_idl_value(&paren.elem),
-        Type::Reference(reference) => pod_vec_type_to_idl_value(reference.elem.as_ref()),
-        Type::Path(type_path) => {
-            let segment = type_path.path.segments.last()?;
-            if segment.ident != "PodVec" {
-                return None;
-            }
-            let PathArguments::AngleBracketed(args) = &segment.arguments else {
-                return None;
-            };
-            if args.args.len() != 2 {
-                return None;
-            }
-            let mut args_iter = args.args.iter();
-            let inner_ty = match args_iter.next()? {
-                syn::GenericArgument::Type(ty) => ty,
-                _ => return None,
-            };
-            let max_expr = match args_iter.next()? {
-                syn::GenericArgument::Const(expr) => expr,
-                _ => return None,
-            };
-            Some(json!({
-                "defined": {
-                    "name": "PodVec",
-                    "generics": [
-                        {
-                            "kind": "type",
-                            "type": pod_vec_element_type_to_idl_value(inner_ty),
-                        },
-                        {
-                            "kind": "const",
-                            "value": quote!(#max_expr).to_string().replace(' ', ""),
-                        },
-                    ],
-                }
-            }))
-        }
-        _ => None,
-    }
-}
-
-fn pod_vec_element_type_to_idl_value(ty: &Type) -> Value {
-    match ty {
-        Type::Path(type_path) => {
-            let Some(segment) = type_path.path.segments.last() else {
-                return TypeLowerer::default().lower(ty);
-            };
-            match normalize_builtin_path(&segment.ident.to_string()) {
-                "PodBool" | "PodU16" | "PodU32" | "PodU64" | "PodU128" | "PodI16" | "PodI32"
-                | "PodI64" | "PodI128" => json!({
-                    "defined": {
-                        "name": segment.ident.to_string(),
-                    }
-                }),
-                _ => TypeLowerer::default().lower(ty),
-            }
-        }
-        _ => TypeLowerer::default().lower(ty),
-    }
-}
-
-fn normalize_builtin_path(ty: &str) -> &str {
-    let ty = ty.trim_start_matches("::");
-    [
-        "core::primitive::",
-        "std::primitive::",
-        "alloc::vec::",
-        "std::vec::",
-        "alloc::string::",
-        "std::string::",
-        "alloc::boxed::",
-        "std::boxed::",
-        "core::option::",
-        "std::option::",
-        "solana_pubkey::",
-        "solana_program::pubkey::",
-        "solana_address::",
-        "pinocchio::address::",
-        "anchor_lang::solana_program::pubkey::",
-        "anchor_lang::pod::",
-        "anchor_lang::prelude::",
-        "anchor_lang::",
-    ]
-    .iter()
-    .find_map(|prefix| ty.strip_prefix(prefix))
-    .unwrap_or(ty)
-}
-
-fn path_name(ty: &TypePath) -> String {
-    ty.path
-        .segments
-        .iter()
-        .map(|segment| segment.ident.to_string())
-        .collect::<Vec<_>>()
-        .join("::")
-}
-
-fn first_type_arg(segment: &syn::PathSegment) -> Option<&Type> {
-    let PathArguments::AngleBracketed(args) = &segment.arguments else {
-        return None;
-    };
-    args.args.iter().find_map(|arg| match arg {
-        syn::GenericArgument::Type(ty) => Some(ty),
-        _ => None,
-    })
-}
-
-fn is_u8_path(ty: &Type) -> bool {
-    matches!(ty, Type::Path(path) if path.qself.is_none()
-        && normalize_builtin_path(&path_name(path)) == "u8")
-}
-
-fn looks_like_const_ident(ty: &Type) -> bool {
-    let Type::Path(path) = ty else { return false };
-    if path.qself.is_some() {
-        return false;
-    }
-    let Some(segment) = path.path.segments.last() else {
-        return false;
-    };
-    let ident = segment.ident.to_string();
-    ident.len() > 1 && ident == ident.to_uppercase()
 }
 
 fn peel_expr(expr: &Expr) -> &Expr {
@@ -362,20 +180,30 @@ fn peel_expr(expr: &Expr) -> &Expr {
     }
 }
 
-#[cfg(test)]
-fn rust_type_to_idl_value(ty: &Type) -> Value {
-    TypeLowerer::default().lower(ty)
-}
-
-#[cfg(test)]
-fn type_str_to_idl_value(s: &str) -> Value {
-    match s {
-        "f32" | "f64" => Value::String(s.to_owned()),
-        _ => syn::parse_str::<Type>(s)
-            .map(|ty| rust_type_to_idl_value(&ty))
-            .unwrap_or_else(|_| json!({ "defined": { "name": s } })),
+/// Metadata for a defined type, using its definition name and resolved generic
+/// arguments. No concrete field-type names are interpreted by the macro.
+pub fn type_reference_impl(name: &str, generics: &Generics) -> TokenStream2 {
+    let args: Vec<_> = generics.params.iter().filter_map(|param| match param {
+        GenericParam::Type(ty) => {
+            let ident = &ty.ident;
+            Some(quote! { anchor_lang::idl_build::IdlGenericArg::Type(<#ident as anchor_lang::IdlAccountType>::__idl_type_reference(&[])) })
+        }
+        GenericParam::Const(value) => {
+            let ident = &value.ident;
+            Some(quote! { anchor_lang::idl_build::IdlGenericArg::Const(anchor_lang::__alloc::format!("{}", #ident)) })
+        }
+        _ => None,
+    }).collect();
+    quote! {
+        const __IDL_TYPE_NAME: Option<&'static str> = Some(#name);
+        fn __idl_type_reference(overrides: &[Option<anchor_lang::idl_build::IdlGenericArg>]) -> anchor_lang::__alloc::string::String {
+            let mut args = [#(#args),*];
+            anchor_lang::idl_build::__idl_override_args(&mut args, overrides);
+            anchor_lang::idl_build::__idl_defined_reference(#name, &args)
+        }
     }
 }
+
 /// Per-field input to the runtime `__idl_accounts()` emission. See
 /// [`build_accounts_emission`].
 pub struct AccountsJsonField<'a> {
@@ -385,7 +213,6 @@ pub struct AccountsJsonField<'a> {
     /// True when the field type is `Option<T>`. Surfaces as
     /// `"optional":true` in the emitted JSON (matches
     /// `IdlInstructionAccount.optional` in `idl/spec/src/lib.rs:89`).
-    pub is_optional: bool,
     /// Names of sibling fields whose `has_one` chain targets this field.
     /// Emitted as `"relations":[...]`. Matches v1's semantics: relations
     /// live on the *target* account (the account being referenced), not
@@ -409,13 +236,8 @@ pub struct AccountsJsonField<'a> {
     /// Runtime-resolved static address expression. Evaluated inside
     /// `__idl_accounts()` and rendered as base58.
     pub address_override_expr: Option<&'a TokenStream2>,
-    /// Set when this field is a `Nested<Inner>`, carrying the inner
-    /// struct type. The emission splices the inner struct's own
-    /// `__idl_accounts()` into the outer array instead of producing a
-    /// single account entry for the `Nested` wrapper, so the IDL's
-    /// `accounts[]` list flattens the nested block in source order —
-    /// matching how the runtime actually consumes accounts.
-    pub nested_inner_ty: Option<&'a Type>,
+    /// Resolved field type used to compose nested account groups.
+    pub composition_ty: &'a Type,
 }
 
 /// Build a `fn __idl_accounts() -> alloc::string::String` body that assembles
@@ -432,40 +254,8 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
     let parts: Vec<TokenStream2> = fields
         .iter()
         .map(|f| {
-            // `Nested<Inner>` flattens at IDL time. Ask the inner struct
-            // for its own `__idl_accounts()` string, strip the outer
-            // `[` / `]`, and splice the element sequence in place. The
-            // outer's join-with-`,` loop then produces a single flat
-            // array in source order.
-            if let Some(inner) = f.nested_inner_ty {
-                return quote! {
-                    {
-                        let __inner = <#inner>::__idl_accounts();
-                        // Strip the bracketing `[`/`]` produced by the
-                        // inner emission. Use char-indexed slicing
-                        // rather than `trim_matches`, which would also
-                        // eat balanced brackets from inside string
-                        // literals (there are none today, but the
-                        // narrow form is future-proof).
-                        let __bytes = __inner.as_bytes();
-                        if __bytes.len() >= 2
-                            && __bytes[0] == b'['
-                            && __bytes[__bytes.len() - 1] == b']'
-                        {
-                            __inner[1..__inner.len() - 1].to_string()
-                        } else {
-                            __inner
-                        }
-                    }
-                };
-            }
             let name = f.name;
             let writable_json = if f.writable { ",\"writable\":true" } else { "" };
-            let optional_json = if f.is_optional {
-                ",\"optional\":true"
-            } else {
-                ""
-            };
             let relations_json = if f.relations.is_empty() {
                 String::new()
             } else {
@@ -492,7 +282,7 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
                 },
             };
             let init_signer = f.init_signer;
-            if let Some(ty) = f.field_ty {
+            let leaf = if let Some(ty) = f.field_ty {
                 let addr_json_expr = if let Some(address_expr) = f.address_override_expr {
                     quote! {
                         let __addr: anchor_lang::Address =
@@ -532,6 +322,7 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
                         let __signer = <#ty as anchor_lang::IdlAccountType>::__IDL_IS_SIGNER
                             || #init_signer;
                         let __signer_json: &str = if __signer { ",\"signer\":true" } else { "" };
+                        let __optional_json: &str = if <#ty as anchor_lang::IdlAccountType>::__IDL_IS_OPTIONAL { ",\"optional\":true" } else { "" };
                         #addr_json_expr
                         #pda_json_expr
                         anchor_lang::__alloc::format!(
@@ -540,7 +331,7 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
                             #writable_json,
                             __signer_json,
                             __addr_json,
-                            #optional_json,
+                            __optional_json,
                             #relations_json,
                             #docs_json,
                             __pda_json,
@@ -576,13 +367,19 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
                             #writable_json,
                             #signer_json,
                             __addr_json,
-                            #optional_json,
+                            "",
                             #relations_json,
                             #docs_json,
                             __pda_json,
                         )
                     }
                 }
+            };
+            let ty = f.composition_ty;
+            quote! {
+                if let Some(__inner) = <#ty as anchor_lang::IdlAccountType>::__idl_nested_accounts() {
+                    __inner.strip_prefix('[').and_then(|s| s.strip_suffix(']')).unwrap_or(&__inner).to_string()
+                } else { #leaf }
             }
         })
         .collect();
@@ -599,9 +396,8 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
             let mut __s = anchor_lang::__alloc::string::String::from("[");
             let mut __first = true;
             for __p in &__parts {
-                // A `Nested<Inner>` whose inner has zero fields contributes
-                // an empty part — skip it so we don't emit `,,` or a leading
-                // comma.
+                // A cfg-disabled field contributes an empty part. Skip it
+                // so we don't emit `,,` or a leading comma.
                 if __p.is_empty() { continue; }
                 if !__first { __s.push(','); }
                 __first = false;
@@ -1498,190 +1294,16 @@ mod tests {
     }
 
     #[test]
-    fn qualified_builtin_paths_lower_like_builtins() {
-        let vec_ty: Type = syn::parse_quote!(alloc::vec::Vec<alloc::string::String>);
-        assert_eq!(rust_type_to_idl_value(&vec_ty), json!({ "vec": "string" }));
-
-        let set_ty: Type = syn::parse_quote!(alloc::collections::BTreeSet<models::Inner>);
-        assert_eq!(
-            rust_type_to_idl_value(&set_ty),
-            json!({
-                "defined": {
-                    "name": "BTreeSet",
-                    "generics": [{
-                        "kind": "type",
-                        "type": { "defined": { "name": "Inner" } },
-                    }],
-                }
-            })
-        );
-
-        let bare_address_ty: Type = syn::parse_quote!(Address);
-        assert_eq!(rust_type_to_idl_value(&bare_address_ty), json!("pubkey"));
-
-        let root_address_ty: Type = syn::parse_quote!(::anchor_lang::Address);
-        assert_eq!(rust_type_to_idl_value(&root_address_ty), json!("pubkey"));
-
-        let crate_root_address_ty: Type = syn::parse_quote!(anchor_lang::Address);
-        assert_eq!(
-            rust_type_to_idl_value(&crate_root_address_ty),
-            json!("pubkey")
-        );
-
-        let address_ty: Type = syn::parse_quote!(anchor_lang::prelude::Address);
-        assert_eq!(rust_type_to_idl_value(&address_ty), json!("pubkey"));
-
-        let pinocchio_address_ty: Type = syn::parse_quote!(pinocchio::address::Address);
-        assert_eq!(
-            rust_type_to_idl_value(&pinocchio_address_ty),
-            json!("pubkey")
-        );
-
-        let compat_pubkey_ty: Type = syn::parse_quote!(anchor_lang::solana_program::pubkey::Pubkey);
-        assert_eq!(rust_type_to_idl_value(&compat_pubkey_ty), json!("pubkey"));
-
-        let user_ty: Type = syn::parse_quote!(crate::models::Inner);
-        assert_eq!(
-            rust_type_to_idl_value(&user_ty),
-            json!({ "defined": { "name": "Inner" } })
-        );
-
-        let user_address_ty: Type = syn::parse_quote!(crate::models::Address);
-        assert_eq!(
-            rust_type_to_idl_value(&user_address_ty),
-            json!({ "defined": { "name": "Address" } })
-        );
-
-        let primitive_named_user_ty: Type = syn::parse_quote!(models::u8);
-        assert_eq!(
-            rust_type_to_idl_value(&primitive_named_user_ty),
-            json!({ "defined": { "name": "u8" } })
-        );
-    }
-
-    #[test]
-    fn pod_vec_references_preserve_type_and_const_generics() {
-        let ty: Type = syn::parse_quote!(PodVec<PodU64, 4>);
-        assert_eq!(
-            rust_type_to_idl_value(&ty),
-            json!({
-                "defined": {
-                    "name": "PodVec",
-                    "generics": [
-                        {
-                            "kind": "type",
-                            "type": {
-                                "defined": {
-                                    "name": "PodU64",
-                                }
-                            }
-                        },
-                        {
-                            "kind": "const",
-                            "value": "4",
-                        }
-                    ]
-                }
-            })
-        );
-    }
-
-    #[test]
-    fn defined_references_preserve_type_and_const_generics() {
-        let wrapper_u64: Type = syn::parse_quote!(Wrapper<u64>);
-        assert_eq!(
-            rust_type_to_idl_value(&wrapper_u64),
-            json!({
-                "defined": {
-                    "name": "Wrapper",
-                    "generics": [{ "kind": "type", "type": "u64" }],
-                }
-            })
-        );
-
-        let wrapper_address: Type = syn::parse_quote!(Wrapper<Address>);
-        assert_eq!(
-            rust_type_to_idl_value(&wrapper_address),
-            json!({
-                "defined": {
-                    "name": "Wrapper",
-                    "generics": [{ "kind": "type", "type": "pubkey" }],
-                }
-            })
-        );
-
-        let buf_64: Type = syn::parse_quote!(Buf<64>);
-        let buf_128: Type = syn::parse_quote!(Buf<128>);
-        assert_eq!(
-            rust_type_to_idl_value(&buf_64),
-            json!({
-                "defined": {
-                    "name": "Buf",
-                    "generics": [{ "kind": "const", "value": "64" }],
-                }
-            })
-        );
-        assert_eq!(
-            rust_type_to_idl_value(&buf_128),
-            json!({
-                "defined": {
-                    "name": "Buf",
-                    "generics": [{ "kind": "const", "value": "128" }],
-                }
-            })
-        );
-
-        let buf_max: Type = syn::parse_quote!(Buf<MAX>);
-        assert_eq!(
-            rust_type_to_idl_value(&buf_max),
-            json!({
-                "defined": {
-                    "name": "Buf",
-                    "generics": [{ "kind": "const", "value": "MAX" }],
-                }
-            })
-        );
-
-        let nested: Type = syn::parse_quote!(Wrapper<Vec<u64>>);
-        assert_eq!(
-            rust_type_to_idl_value(&nested),
-            json!({
-                "defined": {
-                    "name": "Wrapper",
-                    "generics": [{ "kind": "type", "type": { "vec": "u64" } }],
-                }
-            })
-        );
-
-        let plain: Type = syn::parse_quote!(Wrapper);
-        assert_eq!(
-            rust_type_to_idl_value(&plain),
-            json!({ "defined": { "name": "Wrapper" } })
-        );
-    }
-
-    #[test]
-    fn array_lengths_are_lowered_in_their_defining_context() {
-        let generics: Generics = syn::parse_quote!(<const N: usize>);
-        let mut lowerer = TypeLowerer::with_generics(&generics);
-        let generic_len: Type = syn::parse_quote!([u8; N]);
-        assert_eq!(
-            lowerer.lower(&generic_len),
-            json!({ "array": ["u8", { "generic": "N" }] })
-        );
-        assert_eq!(
-            generic_definitions(&generics),
-            vec![json!({ "kind": "const", "name": "N", "type": "usize" })]
-        );
-
-        let mut lowerer = TypeLowerer::default();
-        let path_len: Type = syn::parse_quote!([u8; limits::ITEMS]);
-        let value = lowerer.lower(&path_len);
-        let generated = lowerer.finish(value).to_string();
-        assert!(generated.contains("String :: new"));
-        assert!(generated.contains("Box :: leak"));
-        assert!(generated.contains("limits :: ITEMS"));
-        assert!(!generated.contains("generic"));
+    fn generated_references_delegate_to_the_resolved_type() {
+        for ty in [
+            syn::parse_quote!(Alias),
+            syn::parse_quote!(custom::Vec<u64>),
+            syn::parse_quote!(Buf<MAX>),
+        ] {
+            let generated = rust_type_to_idl(&ty).to_string();
+            assert!(generated.contains("IdlAccountType"));
+            assert!(generated.contains("__idl_type_reference"));
+        }
     }
 
     #[test]
@@ -1924,23 +1546,5 @@ mod tests {
         // The program override gets its own runtime push under the
         // "program" key.
         assert!(ts.contains(r#",\"program\":"#), "missing program key: {ts}");
-    }
-
-    #[test]
-    fn float_primitives_map_to_scalar_idl_types() {
-        assert_eq!(type_str_to_idl_value("f32"), Value::String("f32".into()));
-        assert_eq!(type_str_to_idl_value("f64"), Value::String("f64".into()));
-    }
-
-    #[test]
-    fn float_primitives_do_not_fall_back_to_defined_types() {
-        assert_ne!(
-            type_str_to_idl_value("f32"),
-            json!({ "defined": { "name": "f32" } })
-        );
-        assert_ne!(
-            type_str_to_idl_value("f64"),
-            json!({ "defined": { "name": "f64" } })
-        );
     }
 }

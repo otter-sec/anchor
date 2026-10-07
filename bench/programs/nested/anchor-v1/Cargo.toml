@@ -1,7 +1,7 @@
 [package]
 name = "nested-v1"
 version = "0.1.0"
-description = "Anchor v1 equivalent of the nested demo (no Nested<T>, duplicated fields)"
+description = "Anchor v1 baseline of the nested demo with flattened instruction accounts"
 edition = "2021"
 publish = false
 

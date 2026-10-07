@@ -177,11 +177,11 @@ fn fresh_trailing_accounts_are_allowed() {
 
 #[test]
 fn trailing_account_aliasing_nested_mut_is_rejected() {
-    // Simulate `Parent { a: UncheckedAccount, inner: Nested<Inner> }`
+    // Simulate `Parent { a: UncheckedAccount, inner: Inner }`
     // where `Inner { #[account(mut)] b }`. Parent's `MUT_MASK` has
     // bit 1 set (slot 0 = parent's plain `a`; slot 1 = Inner's mut
     // `b` after the nested-shift). A trailing account aliasing slot 1
-    // must still be caught — this is the "Nested children merge into
+    // must still be caught — this is the "nested children merge into
     // the top-level mask" case.
     static NESTED_MUT_MASK: [u64; 4] = [0b10, 0, 0, 0];
 

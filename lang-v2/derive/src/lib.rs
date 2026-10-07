@@ -59,10 +59,7 @@ pub fn anchor_deserialize(input: TokenStream) -> TokenStream {
     derive_wincode_schema(input, quote!(anchor_lang::wincode::SchemaRead))
 }
 
-fn derive_wincode_schema(
-    input: TokenStream,
-    schema_derive: TokenStream2,
-) -> TokenStream {
+fn derive_wincode_schema(input: TokenStream, schema_derive: TokenStream2) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     quote! {
         #[derive(#schema_derive)]
@@ -84,23 +81,10 @@ pub fn __erase(_: TokenStream, _: TokenStream) -> TokenStream {
 // #[derive(ToCpiAccounts)]
 // ---------------------------------------------------------------------------
 
-#[proc_macro_derive(
-    ToCpiAccounts,
-    attributes(signer, nested, account_meta, accounts_program_id)
-)]
+#[proc_macro_derive(ToCpiAccounts, attributes(signer, account_meta, accounts_program_id))]
 pub fn derive_to_cpi_accounts(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     TokenStream::from(impl_to_cpi_accounts(&input))
-}
-
-#[derive(Clone, Copy)]
-enum CpiFieldKind {
-    Readonly,
-    Writable,
-    OptionalReadonly,
-    OptionalWritable,
-    Nested,
-    Phantom,
 }
 
 struct SignerExpr {
@@ -172,8 +156,9 @@ fn unsupported_wincode_from_cfg_attr_args(
                 }
             }
             syn::Meta::List(list) if list.path.is_ident("cfg_attr") => {
-                let Ok(nested) = syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated
-                    .parse2(list.tokens.clone())
+                let Ok(nested) =
+                    syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated
+                        .parse2(list.tokens.clone())
                 else {
                     continue;
                 };
@@ -297,32 +282,29 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         Data::Struct(s) => match &s.fields {
             Fields::Named(fields) => &fields.named,
             _ => {
-                return syn::Error::new_spanned(
-                    input,
-                    "ToCpiAccounts can only be derived for structs with named fields",
-                )
-                .to_compile_error();
+                return syn::Error::new_spanned(input, "ToCpiAccounts requires named fields")
+                    .to_compile_error()
             }
         },
         _ => {
             return syn::Error::new_spanned(input, "ToCpiAccounts can only be derived for structs")
-                .to_compile_error();
+                .to_compile_error()
         }
     };
-
-    let accounts_program_id = match accounts_program_id_expr(input) {
+    let program_id = match accounts_program_id_expr(input) {
         Ok(expr) => expr,
         Err(err) => return err.to_compile_error(),
     };
-
-    let mut cpi_fields = Vec::new();
-    let mut cpi_lifetime = None::<syn::Lifetime>;
+    let lifetime: syn::Lifetime = syn::parse_quote!('__anchor_cpi);
+    let mut generics = input.generics.clone();
+    generics.params.insert(0, syn::parse_quote!('__anchor_cpi));
+    let mut metas = Vec::new();
+    let mut handles = Vec::new();
+    let mut flags = Vec::new();
     for field in fields {
-        let ident = field
-            .ident
-            .as_ref()
-            .expect("named fields always have identifiers");
-        let account_meta = match account_meta_attrs(field) {
+        let ident = field.ident.as_ref().expect("named field");
+        let ty = &field.ty;
+        let attrs = match account_meta_attrs(field) {
             Ok(attrs) => attrs,
             Err(err) => return err.to_compile_error(),
         };
@@ -330,186 +312,75 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
             Ok(signer) => signer,
             Err(err) => return err.to_compile_error(),
         };
-        let nested = match has_nested_attr(field) {
-            Ok(nested) => nested,
-            Err(err) => return err.to_compile_error(),
-        };
-        if account_meta.skip {
-            if signer.present {
-                return syn::Error::new_spanned(
-                    field,
-                    "#[account_meta(skip)] cannot be combined with #[signer]",
-                )
+        if attrs.skip && signer.present {
+            return syn::Error::new_spanned(field, "skip fields cannot have #[signer]")
                 .to_compile_error();
-            }
-            if nested {
-                return syn::Error::new_spanned(
-                    field,
-                    "#[account_meta(skip)] cannot be combined with #[nested]",
-                )
-                .to_compile_error();
-            }
+        }
+        if attrs.skip {
             continue;
         }
-        if nested && signer.present {
-            return syn::Error::new_spanned(field, "#[nested] cannot be combined with #[signer]")
-                .to_compile_error();
+        generics
+            .make_where_clause()
+            .predicates
+            .push(syn::parse_quote!(#ty: anchor_lang::__private::CpiField<#lifetime>));
+        if attrs.duplicate_readonly {
+            generics
+                .make_where_clause()
+                .predicates
+                .push(syn::parse_quote!(#ty: anchor_lang::__private::CpiReadonlyField<#lifetime>));
+            metas.push(quote! {
+                __accounts.push(anchor_lang::pinocchio::instruction::InstructionAccount::readonly(
+                    <#ty as anchor_lang::__private::CpiReadonlyField<#lifetime>>::readonly_handle(&self.#ident).address(),
+                ));
+            });
+            handles.push(quote! {
+                __handles.push(<#ty as anchor_lang::__private::CpiReadonlyField<#lifetime>>::readonly_handle(&self.#ident));
+            });
+            flags.push(quote! { __flags.push(false); });
         }
-        let (kind, lifetime) = match cpi_field_kind(&field.ty, nested) {
-            Ok(kind) => kind,
-            Err(err) => return err.to_compile_error(),
-        };
-        if matches!(kind, CpiFieldKind::Phantom) && signer.present {
-            return syn::Error::new_spanned(
-                field,
-                "PhantomData fields cannot be combined with #[signer]",
-            )
-            .to_compile_error();
-        }
-        if let Some(existing) = &cpi_lifetime {
-            if existing.ident != lifetime.ident {
-                return syn::Error::new_spanned(
-                    &field.ty,
-                    "all CpiHandle and CpiHandleMut fields must use the same lifetime",
-                )
-                .to_compile_error();
-            }
-        } else {
-            cpi_lifetime = Some(lifetime);
-        }
-        if !matches!(kind, CpiFieldKind::Phantom) {
-            if account_meta.duplicate_readonly {
-                if !matches!(kind, CpiFieldKind::Readonly | CpiFieldKind::Writable) {
-                    return syn::Error::new_spanned(
-                        field,
-                        "#[account_meta(duplicate_readonly)] requires a direct CpiHandle or \
-                         CpiHandleMut field",
-                    )
-                    .to_compile_error();
-                }
-                cpi_fields.push((ident, CpiFieldKind::Readonly, quote! { false }));
-            }
-            cpi_fields.push((ident, kind, signer.expr));
-        }
-    }
-
-    let Some(cpi_lifetime) = cpi_lifetime else {
-        return syn::Error::new_spanned(
-            input,
-            "ToCpiAccounts requires at least one CpiHandle or CpiHandleMut field",
-        )
-        .to_compile_error();
-    };
-
-    let name = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-
-    let meta_steps = cpi_fields.iter().map(|(ident, kind, signer)| {
-        let writable = matches!(
-            kind,
-            CpiFieldKind::Writable | CpiFieldKind::OptionalWritable
-        );
-        match kind {
-            CpiFieldKind::Phantom => quote! {},
-            CpiFieldKind::Nested => quote! {
-                __accounts.extend(anchor_lang::ToCpiAccounts::to_instruction_accounts(&self.#ident));
-            },
-            CpiFieldKind::Readonly | CpiFieldKind::Writable => quote! {
-                __accounts.push(
-                    anchor_lang::pinocchio::instruction::InstructionAccount::new(
-                        self.#ident.address(),
-                        #writable,
-                        #signer,
-                    ),
-                );
-            },
-            CpiFieldKind::OptionalReadonly | CpiFieldKind::OptionalWritable => quote! {
-                match self.#ident {
-                    ::core::option::Option::Some(__account) => {
-                        __accounts.push(
-                            anchor_lang::pinocchio::instruction::InstructionAccount::new(
-                                __account.address(),
-                                #writable,
-                                #signer,
-                            ),
-                        );
-                    }
-                    ::core::option::Option::None => {
-                        __accounts.push(
-                            anchor_lang::pinocchio::instruction::InstructionAccount::readonly(
-                                &#accounts_program_id,
-                            ),
-                        );
-                    }
-                }
-            },
-        }
-    });
-
-    let handle_steps = cpi_fields.iter().map(|(ident, kind, _)| match kind {
-        CpiFieldKind::Phantom => quote! {},
-        CpiFieldKind::Nested => quote! {
-            __handles.extend(anchor_lang::ToCpiAccounts::to_cpi_handles(&self.#ident));
-        },
-        CpiFieldKind::Readonly => quote! {
-            __handles.push(self.#ident.into_readonly());
-        },
-        CpiFieldKind::Writable => quote! {
-            __handles.push(self.#ident.into());
-        },
-        CpiFieldKind::OptionalReadonly => quote! {
-            if let ::core::option::Option::Some(__account) = self.#ident {
-                __handles.push(__account.into_readonly());
-            }
-        },
-        CpiFieldKind::OptionalWritable => quote! {
-            if let ::core::option::Option::Some(__account) = self.#ident {
-                __handles.push(__account.into());
-            }
-        },
-    });
-
-    let flag_steps = cpi_fields.iter().map(|(ident, kind, _)| match kind {
-        CpiFieldKind::Phantom => quote! {},
-        CpiFieldKind::Nested => quote! {
-            __flags.extend(
-                anchor_lang::ToCpiAccounts::optional_account_sentinel_flags(&self.#ident),
+        let signer = signer.expr;
+        metas.push(quote! {
+            <#ty as anchor_lang::__private::CpiField<#lifetime>>::append_instruction_accounts(
+                &self.#ident, &const { #program_id }, #signer, &mut __accounts,
             );
-        },
-        CpiFieldKind::Readonly | CpiFieldKind::Writable => quote! {
-            __flags.push(false);
-        },
-        CpiFieldKind::OptionalReadonly | CpiFieldKind::OptionalWritable => quote! {
-            __flags.push(self.#ident.is_none());
-        },
-    });
-
+        });
+        handles.push(quote! {
+            <#ty as anchor_lang::__private::CpiField<#lifetime>>::append_cpi_handles(&self.#ident, &mut __handles);
+        });
+        flags.push(quote! {
+            <#ty as anchor_lang::__private::CpiField<#lifetime>>::append_sentinel_flags(&self.#ident, &mut __flags);
+        });
+    }
+    let name = &input.ident;
+    let (_, ty_generics, _) = input.generics.split_for_impl();
+    let (impl_generics, _, where_clause) = generics.split_for_impl();
     quote! {
-        impl #impl_generics anchor_lang::ToCpiAccounts<#cpi_lifetime>
-            for #name #ty_generics #where_clause
-        {
-            fn to_instruction_accounts(
-                &self,
-            ) -> anchor_lang::__alloc::vec::Vec<
-                anchor_lang::pinocchio::instruction::InstructionAccount<#cpi_lifetime>,
-            > {
+        impl #impl_generics anchor_lang::ToCpiAccounts<#lifetime> for #name #ty_generics #where_clause {
+            fn to_instruction_accounts(&self) -> anchor_lang::__alloc::vec::Vec<anchor_lang::pinocchio::instruction::InstructionAccount<#lifetime>> {
                 let mut __accounts = anchor_lang::__alloc::vec::Vec::new();
-                #(#meta_steps)*
+                #(#metas)*
                 __accounts
             }
-
-            fn to_cpi_handles(
-                &self,
-            ) -> anchor_lang::__alloc::vec::Vec<anchor_lang::CpiHandle<#cpi_lifetime>> {
+            fn to_cpi_handles(&self) -> anchor_lang::__alloc::vec::Vec<anchor_lang::CpiHandle<#lifetime>> {
                 let mut __handles = anchor_lang::__alloc::vec::Vec::new();
-                #(#handle_steps)*
+                #(#handles)*
                 __handles
             }
-
             fn optional_account_sentinel_flags(&self) -> anchor_lang::__alloc::vec::Vec<bool> {
                 let mut __flags = anchor_lang::__alloc::vec::Vec::new();
-                #(#flag_steps)*
+                #(#flags)*
                 __flags
+            }
+        }
+        impl #impl_generics anchor_lang::__private::CpiField<#lifetime> for #name #ty_generics #where_clause {
+            fn append_instruction_accounts(&self, _: &#lifetime anchor_lang::Address, _: bool, out: &mut anchor_lang::__alloc::vec::Vec<anchor_lang::pinocchio::instruction::InstructionAccount<#lifetime>>) {
+                out.extend(<Self as anchor_lang::ToCpiAccounts<#lifetime>>::to_instruction_accounts(self));
+            }
+            fn append_cpi_handles(&self, out: &mut anchor_lang::__alloc::vec::Vec<anchor_lang::CpiHandle<#lifetime>>) {
+                out.extend(<Self as anchor_lang::ToCpiAccounts<#lifetime>>::to_cpi_handles(self));
+            }
+            fn append_sentinel_flags(&self, out: &mut anchor_lang::__alloc::vec::Vec<bool>) {
+                out.extend(<Self as anchor_lang::ToCpiAccounts<#lifetime>>::optional_account_sentinel_flags(self));
             }
         }
     }
@@ -585,26 +456,6 @@ fn signer_expr_attr(field: &syn::Field) -> syn::Result<SignerExpr> {
     })
 }
 
-fn has_nested_attr(field: &syn::Field) -> syn::Result<bool> {
-    let mut nested = false;
-    for attr in &field.attrs {
-        if !attr.path().is_ident("nested") {
-            continue;
-        }
-        if nested {
-            return Err(syn::Error::new_spanned(
-                attr,
-                "duplicate #[nested] attribute",
-            ));
-        }
-        if !matches!(attr.meta, syn::Meta::Path(_)) {
-            return Err(syn::Error::new_spanned(attr, "expected #[nested]"));
-        }
-        nested = true;
-    }
-    Ok(nested)
-}
-
 fn account_meta_attrs(field: &syn::Field) -> syn::Result<AccountMetaAttrs> {
     let mut attrs = AccountMetaAttrs::default();
     for attr in &field.attrs {
@@ -642,132 +493,6 @@ fn account_meta_attrs(field: &syn::Field) -> syn::Result<AccountMetaAttrs> {
         ));
     }
     Ok(attrs)
-}
-
-fn cpi_field_kind(ty: &Type, nested: bool) -> syn::Result<(CpiFieldKind, syn::Lifetime)> {
-    if nested {
-        if option_inner(ty).is_some() {
-            return Err(syn::Error::new_spanned(
-                ty,
-                "#[nested] fields cannot be wrapped in Option",
-            ));
-        }
-        let Some(lifetime) = path_type_first_lifetime(ty) else {
-            return Err(syn::Error::new_spanned(
-                ty,
-                "#[nested] fields must name a type carrying the CPI lifetime, e.g. Inner<'a>",
-            ));
-        };
-        return Ok((CpiFieldKind::Nested, lifetime));
-    }
-    if let Some(lifetime) = phantom_data_lifetime(ty) {
-        return Ok((CpiFieldKind::Phantom, lifetime));
-    }
-    if let Some((inner, _)) = option_inner(ty) {
-        let (kind, lifetime) = direct_cpi_field_kind(inner)?;
-        return match kind {
-            CpiFieldKind::Readonly => Ok((CpiFieldKind::OptionalReadonly, lifetime)),
-            CpiFieldKind::Writable => Ok((CpiFieldKind::OptionalWritable, lifetime)),
-            _ => unreachable!("direct_cpi_field_kind never returns optional kinds"),
-        };
-    }
-    direct_cpi_field_kind(ty)
-}
-
-fn phantom_data_lifetime(ty: &Type) -> Option<syn::Lifetime> {
-    let Type::Path(tp) = ty else {
-        return None;
-    };
-    let seg = tp.path.segments.last()?;
-    if seg.ident != "PhantomData" {
-        return None;
-    }
-    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
-        return None;
-    };
-    if args.args.len() != 1 {
-        return None;
-    }
-    let syn::GenericArgument::Type(Type::Reference(reference)) = args.args.first()? else {
-        return None;
-    };
-    let Type::Tuple(tuple) = reference.elem.as_ref() else {
-        return None;
-    };
-    if !tuple.elems.is_empty() {
-        return None;
-    }
-    reference.lifetime.clone()
-}
-
-fn direct_cpi_field_kind(ty: &Type) -> syn::Result<(CpiFieldKind, syn::Lifetime)> {
-    let Some((ident, lifetime)) = path_type_ident_and_lifetime(ty) else {
-        return Err(syn::Error::new_spanned(
-            ty,
-            "expected CpiHandle<'a>, CpiHandleMut<'a>, Option<CpiHandle<'a>>, or \
-             Option<CpiHandleMut<'a>>",
-        ));
-    };
-    match ident.to_string().as_str() {
-        "CpiHandle" => Ok((CpiFieldKind::Readonly, lifetime)),
-        "CpiHandleMut" => Ok((CpiFieldKind::Writable, lifetime)),
-        _ => Err(syn::Error::new_spanned(
-            ty,
-            "expected CpiHandle<'a> or CpiHandleMut<'a>",
-        )),
-    }
-}
-
-fn option_inner(ty: &Type) -> Option<(&Type, &syn::Path)> {
-    let Type::Path(tp) = ty else {
-        return None;
-    };
-    let seg = tp.path.segments.last()?;
-    if seg.ident != "Option" {
-        return None;
-    }
-    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
-        return None;
-    };
-    if args.args.len() != 1 {
-        return None;
-    }
-    let syn::GenericArgument::Type(inner) = args.args.first()? else {
-        return None;
-    };
-    Some((inner, &tp.path))
-}
-
-fn path_type_ident_and_lifetime(ty: &Type) -> Option<(Ident, syn::Lifetime)> {
-    let Type::Path(tp) = ty else {
-        return None;
-    };
-    let seg = tp.path.segments.last()?;
-    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
-        return None;
-    };
-    if args.args.len() != 1 {
-        return None;
-    }
-    let syn::GenericArgument::Lifetime(lifetime) = args.args.first()? else {
-        return None;
-    };
-    Some((seg.ident.clone(), lifetime.clone()))
-}
-
-fn path_type_first_lifetime(ty: &Type) -> Option<syn::Lifetime> {
-    let Type::Path(tp) = ty else {
-        return None;
-    };
-    tp.path.segments.iter().find_map(|seg| {
-        let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
-            return None;
-        };
-        args.args.iter().find_map(|arg| match arg {
-            syn::GenericArgument::Lifetime(lifetime) => Some(lifetime.clone()),
-            _ => None,
-        })
-    })
 }
 
 /// Returns true if `ty` needs the `'ix` lifetime injected when used as an
@@ -841,18 +566,6 @@ fn with_ix_lifetime(ty: &Type, ix: &syn::Lifetime) -> Type {
         }
         _ => ty.clone(),
     }
-}
-
-fn nested_client_accounts_type(ty: &Type) -> Option<TokenStream2> {
-    let inner = parse::extract_nested_inner_type(ty)?;
-    let inner_path = QualifiedTypePath::from_type(inner)?;
-    let inner_ident = &inner_path.leaf_ident;
-    let module_path = inner_path.helper_module_path("__client_accounts_", 1, inner_ident.span());
-    Some(quote! { #module_path::#inner_ident })
-}
-
-fn idl_field_ty(field: &parse::AccountField) -> Option<&Type> {
-    field.idl_field_ty.as_ref()
 }
 
 fn cfg_attrs(attrs: &[syn::Attribute]) -> Vec<syn::Attribute> {
@@ -933,28 +646,15 @@ fn cfg_variant_dep_walkers(
 }
 
 fn client_meta_signer_expr(field: &parse::AccountField) -> TokenStream2 {
+    let ty = &field.ty;
     let init_signer = field.idl_init_signer;
-    match idl_field_ty(field) {
-        Some(ty) => quote! {
-            if <#ty as anchor_lang::AnchorAccount>::IS_SIGNER || #init_signer {
-                _is_signer.unwrap_or(true)
-            } else {
-                false
-            }
-        },
-        None if init_signer => quote! { _is_signer.unwrap_or(true) },
-        None => quote! { false },
-    }
+    quote! { (<#ty as anchor_lang::__private::AccountField>::IS_SIGNER || #init_signer) && _is_signer.unwrap_or(true) }
 }
 
 fn cpi_meta_signer_expr(field: &parse::AccountField) -> TokenStream2 {
+    let ty = &field.ty;
     let init_signer = field.idl_init_signer;
-    match idl_field_ty(field) {
-        Some(ty) => quote! {
-            <#ty as anchor_lang::AnchorAccount>::IS_SIGNER || #init_signer
-        },
-        None => quote! { #init_signer },
-    }
+    quote! { <#ty as anchor_lang::__private::AccountField>::IS_SIGNER || #init_signer }
 }
 
 struct ArgsDeser {
@@ -1143,7 +843,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     if named_fields.named.len() > 255 {
-        // Syntactic top-level field cap. Flattened Nested account counts are
+        // Syntactic top-level field cap. Flattened account group counts are
         // separately bounded by the HEADER_SIZE assert emitted on the
         // TryAccounts impl (duplicate-tracking / u8 offset domain is 256 bits).
         return syn::Error::new(name.span(), "`Accounts` derive supports at most 255 fields")
@@ -1159,20 +859,14 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     };
     let ix_arg_names: Vec<String> = ix_args.iter().map(|(n, _)| n.to_string()).collect();
 
-    // Compute the views-slice offset for each field. Direct fields occupy 1
-    // slot; `Nested<Inner>` fields occupy `Inner::HEADER_SIZE` slots. Each
-    // offset is a const expression resolved at monomorphization time.
-    let mut offset_exprs: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut current_offset: proc_macro2::TokenStream = quote::quote! { 0usize };
-    for f in named_fields.named.iter() {
+    // Every field reports its flattened width through its resolved Rust type.
+    let mut offset_exprs = Vec::new();
+    let mut current_offset = quote! { 0usize };
+    for f in &named_fields.named {
+        let ty = &f.ty;
         offset_exprs.push(current_offset.clone());
-        if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
-            current_offset = quote::quote! {
-                #current_offset + <#inner_ty as anchor_lang::TryAccounts>::HEADER_SIZE
-            };
-        } else {
-            current_offset = quote::quote! { #current_offset + 1 };
-        }
+        current_offset =
+            quote! { #current_offset + <#ty as anchor_lang::__private::AccountField>::HEADER_SIZE };
     }
     let field_offsets: Vec<(String, proc_macro2::TokenStream)> = raw_field_names
         .iter()
@@ -1221,6 +915,8 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         }
     }
 
+    let field_checks = parse::account_field_checks(&field_summaries);
+
     let fields: Vec<parse::AccountField> = match named_fields
         .named
         .iter()
@@ -1252,201 +948,104 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     let constraints: Vec<_> = fields.iter().flat_map(|f| &f.constraints).collect();
     let updates: Vec<_> = fields.iter().filter_map(|f| f.update.as_ref()).collect();
     let exits: Vec<_> = fields.iter().filter_map(|f| f.exit.as_ref()).collect();
-    // Bump-cache surface:
-    //   - direct PDA fields keep their existing `u8` / `Option<u8>` entries;
-    //     optional accounts still use `Option<u8>` so the sentinel-`None`
-    //     path mirrors v1's `bumps.rs:36` handling
-    //   - `Nested<Inner>` fields preserve the inner `Inner::Bumps` payload so
-    //     handlers can reach it through `ctx.bumps.<nested>.*`
-    //
-    // Direct fields still use per-field mutable locals during parsing; nested
-    // fields bind the inner bumps value returned by `Inner::try_accounts`.
-    let bump_fields: Vec<proc_macro2::TokenStream> = fields
+    // Unit-valued leaf entries let bump caches compose without identifying
+    // aggregate fields. PDA constraints supply their own cached bump value.
+    let bump_fields: Vec<_> = fields
         .iter()
-        .filter_map(|f| {
+        .map(|f| {
             let n = &f.name;
+            let ty = &f.ty;
             if f.has_bump {
-                Some(if f.is_optional {
-                    quote! { pub #n: Option<u8> }
-                } else {
-                    quote! { pub #n: u8 }
-                })
+                quote! { pub #n: <#ty as anchor_lang::__private::AccountSlot>::PdaBump }
             } else {
-                parse::extract_nested_inner_type(&f.ty)
-                    .map(|inner_ty| quote! { pub #n: <#inner_ty as anchor_lang::Bumps>::Bumps })
+                quote! { pub #n: <#ty as anchor_lang::Bumps>::Bumps }
             }
         })
         .collect();
-    let nested_bump_default_bounds: Vec<proc_macro2::TokenStream> = fields
+    let bump_cache_locals: Vec<_> = fields
         .iter()
-        .filter_map(|f| {
-            parse::extract_nested_inner_type(&f.ty).map(|inner_ty| {
-                quote! { <#inner_ty as anchor_lang::Bumps>::Bumps: ::core::default::Default }
-            })
-        })
-        .collect();
-    let bump_cache_locals: Vec<proc_macro2::TokenStream> = fields
-        .iter()
-        .filter(|f| f.has_bump || parse::extract_nested_inner_type(&f.ty).is_some())
+        .filter(|field| !field.composed_load)
         .map(|f| {
-            let bump_cache = parse::bump_cache_ident(&f.name);
-            if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
-                quote! {
-                    let mut #bump_cache: <#inner_ty as anchor_lang::Bumps>::Bumps =
-                        ::core::default::Default::default();
-                }
-            } else if f.is_optional {
-                quote! {
-                    let mut #bump_cache: ::core::option::Option<u8> = ::core::default::Default::default();
-                }
+            let cache = parse::bump_cache_ident(&f.name);
+            let ty = &f.ty;
+            let bump_ty = if f.has_bump {
+                quote! { <#ty as anchor_lang::__private::AccountSlot>::PdaBump }
             } else {
-                quote! {
-                    let mut #bump_cache: u8 = ::core::default::Default::default();
-                }
-            }
+                quote! { <#ty as anchor_lang::Bumps>::Bumps }
+            };
+            quote! { let mut #cache: #bump_ty = ::core::default::Default::default(); }
         })
         .collect();
-    let bump_cache_fields: Vec<proc_macro2::TokenStream> = fields
+    let bump_cache_fields: Vec<_> = fields
         .iter()
-        .filter(|f| f.has_bump || parse::extract_nested_inner_type(&f.ty).is_some())
         .map(|f| {
             let n = &f.name;
-            let bump_cache = parse::bump_cache_ident(n);
-            quote! { #n: #bump_cache }
+            let cache = parse::bump_cache_ident(n);
+            quote! { #n: #cache }
         })
         .collect();
-    let bump_default_fields: Vec<proc_macro2::TokenStream> = fields
+    let bump_default_fields: Vec<_> = fields
         .iter()
-        .filter(|f| f.has_bump || parse::extract_nested_inner_type(&f.ty).is_some())
         .map(|f| {
             let n = &f.name;
             quote! { #n: ::core::default::Default::default() }
         })
         .collect();
-
-    // Compile-time sum for `<T as TryAccounts>::HEADER_SIZE`:
-    //   - 1 per non-`Nested<_>` field (consumes one account view)
-    //   - `<Inner as TryAccounts>::HEADER_SIZE` per `Nested<Inner>` field,
-    //     which recursively expands at monomorphization time.
-    // The direct-field count is a single literal so the emitted
-    // const is short in the common (no-nested) case.
-    let direct_count: usize = fields
-        .iter()
-        .filter(|f| !parse::is_nested_type(&f.ty))
-        .count();
-    let nested_inner_types: Vec<&syn::Type> = fields
-        .iter()
-        .filter_map(|f| parse::extract_nested_inner_type(&f.ty))
-        .collect();
-    let header_size_expr = if nested_inner_types.is_empty() {
-        quote::quote! { #direct_count }
-    } else {
-        quote::quote! {
-            #direct_count #(+ <#nested_inner_types as anchor_lang::TryAccounts>::HEADER_SIZE)*
+    let field_types: Vec<_> = fields.iter().map(|f| &f.ty).collect();
+    let header_size_expr =
+        quote! { 0usize #(+ <#field_types as anchor_lang::__private::AccountField>::HEADER_SIZE)* };
+    let mut_mask_steps: Vec<_> = fields.iter().map(|f| {
+        let ty = &f.ty;
+        let offset = &f.offset_expr;
+        let direct = if f.contributes_mut_bit { quote! { !<#ty as anchor_lang::__private::AccountSlot>::IS_OPTIONAL } } else { quote! { false } };
+        quote! {
+            if #direct { __mask = anchor_lang::mut_mask_set_bit(__mask, #offset); }
+            __mask = anchor_lang::mut_mask_or_shifted(__mask, <#ty as anchor_lang::__private::AccountField>::MUT_MASK, #offset);
         }
-    };
-
-    // Compile-time `MUT_MASK` composition:
-    //   - bit at `offset` per direct mut field (non-Option, non-`unsafe(dup)`)
-    //   - `<Inner as TryAccounts>::MUT_MASK << child_offset` per `Nested<Inner>`
-    // Folded into a single `const` expression so LLVM sees a literal at
-    // `run_handler`'s inline site — zero runtime composition cost, and the
-    // `intersects(&T::MUT_MASK)` call const-folds away entirely when the
-    // resulting mask is all-zero.
-    let mut_mask_steps: Vec<proc_macro2::TokenStream> = fields
+    }).collect();
+    let mut_mask_expr = quote! {{
+        let mut __mask = [0u64; 4];
+        #(#mut_mask_steps)*
+        __mask
+    }};
+    let dynamic_mut_mask_terms: Vec<_> = fields
         .iter()
-        .filter_map(|f| {
-            let offset = &f.offset_expr;
-            if f.contributes_mut_bit {
-                Some(quote! {
-                    __mask = anchor_lang::mut_mask_set_bit(__mask, #offset);
-                })
-            } else if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
-                Some(quote! {
-                    __mask = anchor_lang::mut_mask_or_shifted(
-                        __mask,
-                        <#inner_ty as anchor_lang::TryAccounts>::MUT_MASK,
-                        #offset,
-                    );
-                })
+        .map(|f| {
+            let ty = &f.ty;
+            let direct = if f.contributes_active_mut_bit {
+                quote! { <#ty as anchor_lang::__private::AccountSlot>::IS_OPTIONAL }
             } else {
-                None
-            }
+                quote! { false }
+            };
+            quote! { #direct || <#ty as anchor_lang::__private::AccountField>::HAS_DYNAMIC_MUT_MASK }
         })
         .collect();
-    let mut_mask_expr = if mut_mask_steps.is_empty() {
-        quote::quote! { [0u64; 4] }
-    } else {
-        quote::quote! {
-            {
-                let mut __mask = [0u64; 4];
-                #(#mut_mask_steps)*
-                __mask
+    let has_dynamic_mut_mask_expr = quote! { false #(|| (#dynamic_mut_mask_terms))* };
+    let active_mut_mask_steps: Vec<_> = fields.iter().map(|f| {
+        let ty = &f.ty;
+        let n = &f.name;
+        let offset = &f.offset_expr;
+        let direct = if f.contributes_active_mut_bit {
+            quote! { if <#ty as anchor_lang::__private::AccountSlot>::IS_OPTIONAL && <#ty as anchor_lang::__private::AccountSlot>::as_account(&self.#n).is_some() { __mask = anchor_lang::mut_mask_set_bit(__mask, #offset); } }
+        } else { quote! {} };
+        quote! {
+            #direct
+            if <#ty as anchor_lang::__private::AccountField>::HAS_DYNAMIC_MUT_MASK {
+                __mask = anchor_lang::mut_mask_or_shifted(__mask, <#ty as anchor_lang::__private::AccountField>::active_mut_mask(&self.#n), #offset);
             }
         }
-    };
-    let dynamic_mut_mask_terms: Vec<proc_macro2::TokenStream> = fields
-        .iter()
-        .filter_map(|f| {
-            if f.contributes_active_mut_bit {
-                Some(quote::quote! { true })
-            } else {
-                parse::extract_nested_inner_type(&f.ty).map(|inner_ty| {
-                    quote::quote! {
-                        <#inner_ty as anchor_lang::TryAccounts>::HAS_DYNAMIC_MUT_MASK
-                    }
-                })
-            }
-        })
-        .collect();
-    let has_dynamic_mut_mask_expr = if dynamic_mut_mask_terms.is_empty() {
-        quote::quote! { false }
-    } else {
-        quote::quote! {
-            false #(|| #dynamic_mut_mask_terms)*
-        }
-    };
-    let active_mut_mask_steps: Vec<proc_macro2::TokenStream> = fields
-        .iter()
-        .filter_map(|f| {
-            let field_name = &f.name;
-            let offset = &f.offset_expr;
-            if f.contributes_active_mut_bit {
-                Some(quote! {
-                    if self.#field_name.is_some() {
-                        __mask = anchor_lang::mut_mask_set_bit(__mask, #offset);
-                    }
-                })
-            } else if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
-                Some(quote! {
-                    if <#inner_ty as anchor_lang::TryAccounts>::HAS_DYNAMIC_MUT_MASK {
-                        __mask = anchor_lang::mut_mask_or_shifted(
-                            __mask,
-                            <#inner_ty as anchor_lang::TryAccounts>::active_mut_mask(&self.#field_name.0),
-                            #offset,
-                        );
-                    }
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-    let active_mut_mask_body = if active_mut_mask_steps.is_empty() {
-        quote::quote! { Self::MUT_MASK }
-    } else {
-        quote::quote! {
-            let mut __mask = Self::MUT_MASK;
-            #(#active_mut_mask_steps)*
-            __mask
-        }
+    }).collect();
+    let active_mut_mask_body = quote! {
+        let mut __mask = Self::MUT_MASK;
+        #(#active_mut_mask_steps)*
+        __mask
     };
 
     // IDL collection — the accounts-JSON emission is a runtime function
     // (not a `&'static str` const) so it can read
-    // `<FieldTy as IdlAccountType>::__IDL_IS_SIGNER / __IDL_ADDRESS` off
-    // the wrapper type. Compile-time flags (writable, init_signer,
-    // optional, relations) are baked directly into the format strings, so
+    // signer, optional, address, and group metadata off the resolved field
+    // type. Attribute flags (writable, init_signer, relations) are baked
+    // directly into the format strings, so
     // the runtime only pays for trait dispatch + concatenation.
     let field_names_str: Vec<String> = fields.iter().map(|f| f.name.to_string()).collect();
 
@@ -1501,40 +1100,22 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 name,
                 writable: f.idl_writable,
                 init_signer: f.idl_init_signer,
-                is_optional: f.is_optional,
                 relations,
                 docs: &f.idl_docs,
                 pda_json: pda_jsons[i].clone(),
                 field_ty: &f.idl_field_ty,
                 address_override: f.idl_address.as_deref(),
                 address_override_expr: f.idl_address_expr.as_ref(),
-                // `Nested<Inner>` flattens at IDL emission time by calling
-                // into `Inner::__idl_accounts()`. Grab the inner `Type` so
-                // the emitter can synthesize that call.
-                nested_inner_ty: parse::extract_nested_inner_type(&f.ty),
+                composition_ty: &f.ty,
             }
         })
         .collect();
     let idl_accounts_fn = idl::build_accounts_emission(&accounts_fields);
-    // Most field types register transitive IDL deps through
-    // `IdlAccountType::__register_idl_deps`. `Nested<Inner>` is special:
-    // `#[derive(Accounts)]` emits an inherent `Inner::__idl_register_deps`
-    // helper, not an `IdlAccountType` impl for `Inner`, so route those
-    // fields to the inner helper directly.
-    let idl_dep_walkers: Vec<TokenStream2> = fields
+    let idl_dep_walkers: Vec<_> = fields
         .iter()
-        .filter_map(|f| {
-            if let Some(inner_ty) = parse::extract_nested_inner_type(&f.ty) {
-                Some(quote! {
-                    <#inner_ty>::__idl_register_deps(accounts, types);
-                })
-            } else {
-                f.idl_field_ty.as_ref().map(|ty| {
-                    quote! {
-                        <#ty as anchor_lang::IdlAccountType>::__register_idl_deps(accounts, types);
-                    }
-                })
-            }
+        .map(|f| {
+            let ty = &f.ty;
+            quote! { <#ty as anchor_lang::IdlAccountType>::__register_idl_deps(accounts, types); }
         })
         .collect();
 
@@ -1559,10 +1140,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             #[derive(Clone)]
             pub struct #bumps_name { #(#bump_fields,)* }
 
-            impl ::core::default::Default for #bumps_name
-            where
-                #(#nested_bump_default_bounds,)*
-            {
+            impl ::core::default::Default for #bumps_name {
                 fn default() -> Self {
                     Self {
                         #(#bump_default_fields,)*
@@ -1583,11 +1161,9 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
 
     // --- Client-side struct for off-chain usage (tests, CPI, SDK) ---
     //
-    // The struct only contains fields the user must provide (Signer, raw
-    // accounts, optional Program/PDA presence, etc.). Non-optional derivable
-    // fields (Program<T>, PDAs) are computed inside `to_account_metas()` so
-    // the user never has to fill them. Optional Program/PDA stay on the
-    // struct as `Option<Address>` so `None` can emit the program-id sentinel.
+    // Fields explicitly marked `resolve` are computed inside
+    // `to_account_metas()`. Other fields use AccountField::Client, including
+    // optional account presence and nested account groups.
     let client_mod_name = syn::Ident::new(
         &format!("__client_accounts_{}", name.to_string().to_lowercase()),
         name.span(),
@@ -1609,40 +1185,29 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .iter()
         .zip(named_fields.named.iter())
         .map(|(f, raw_field)| {
-            let base_ty = match parse::extract_option_inner(&f.ty) {
-                Some(inner) => inner,
-                None => &f.ty,
-            };
-            let ty_name = parse::field_ty_str(base_ty);
-
-            // Optional Program<T> / seed PDAs must stay caller-provided on the
-            // *Resolved builder so `None` can emit the program-id sentinel.
-            // Auto-deriving them as `Some(address)` made that sentinel arm
-            // unreachable while the full (non-Resolved) builder could still
-            // represent absence.
-            if f.is_optional {
-                return (f, FieldKind::Required);
-            }
-
-            if ty_name == "Program" {
-                if let Type::Path(tp) = base_ty {
-                    if let Some(seg) = tp.path.segments.last() {
-                        if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
-                            if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                                return (
-                                    f,
-                                    FieldKind::Program(quote! {
-                                        <#inner as anchor_lang::Id>::id()
-                                    }),
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
             let attrs = parse::parse_account_attrs(&raw_field.attrs)
                 .expect("parse_field already validated account attributes");
+            if !attrs.resolve {
+                return (f, FieldKind::Required);
+            }
+            if attrs.seeds.is_none() {
+                let ty = &f.ty;
+                return (
+                    f,
+                    FieldKind::Program(
+                        quote! {{
+                            fn __anchor_resolve<T>() -> anchor_lang::Address
+                            where
+                                T: anchor_lang::__private::AccountField<Client = anchor_lang::Address>
+                                    + anchor_lang::Id,
+                            {
+                                <T as anchor_lang::Id>::id()
+                            }
+                            __anchor_resolve::<#ty>()
+                        }},
+                    ),
+                );
+            }
             if let Some(ref seeds_expr) = attrs.seeds {
                 // `bump = <expr>` is verified on-chain; client auto-derive
                 // would use the canonical bump and can mismatch.
@@ -1738,19 +1303,28 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         })
         .collect();
 
+    for ((_, kind), raw_field) in field_kinds.iter().zip(&named_fields.named) {
+        let attrs = parse::parse_account_attrs(&raw_field.attrs)
+            .expect("parse_field already validated account attributes");
+        if attrs.resolve && matches!(kind, FieldKind::Required) {
+            return syn::Error::new_spanned(
+                raw_field,
+                "resolve requires canonical PDA seeds built from constants and sibling account \
+                 addresses; provide this account explicitly for instruction arguments, account \
+                 data, opaque seed expressions, or an explicit bump",
+            )
+            .to_compile_error();
+        }
+    }
+
     // Client struct fields: only the ones the user must provide.
     let client_fields: Vec<_> = field_kinds
         .iter()
         .filter(|(_, kind)| matches!(kind, FieldKind::Required))
         .map(|(f, _)| {
-            let fname = &f.name;
-            if let Some(nested_ty) = nested_client_accounts_type(&f.ty) {
-                quote! { pub #fname: #nested_ty }
-            } else if f.is_optional {
-                quote! { pub #fname: Option<anchor_lang::Address> }
-            } else {
-                quote! { pub #fname: anchor_lang::Address }
-            }
+            let n = &f.name;
+            let ty = &f.ty;
+            quote! { pub #n: <#ty as anchor_lang::__private::AccountField>::Client }
         })
         .collect();
 
@@ -1786,18 +1360,24 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             }
         }
     }
+    if let Some((field, _)) = field_kinds
+        .iter()
+        .find(|(field, _)| !resolved.contains(&field.name.to_string()))
+    {
+        return syn::Error::new(
+            field.name.span(),
+            "resolved PDA accounts have a cyclic dependency",
+        )
+        .to_compile_error();
+    }
 
     // Inside to_account_metas: copy required fields to locals, then derive the rest.
     let required_locals: Vec<_> = field_kinds
         .iter()
         .filter(|(_, kind)| matches!(kind, FieldKind::Required))
         .map(|(f, _)| {
-            let fname = &f.name;
-            if nested_client_accounts_type(&f.ty).is_some() {
-                quote! { let #fname = &self.#fname; }
-            } else {
-                quote! { let #fname = self.#fname; }
-            }
+            let n = &f.name;
+            quote! { let #n = &self.#n; }
         })
         .collect();
 
@@ -1806,9 +1386,8 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .filter_map(|&i| {
             let (f, kind) = &field_kinds[i];
             let ident = &f.name;
-            // Non-optional Program/PDA locals are bare Address values.
-            // Optional accounts never reach FieldKind::Program/Pda — they stay
-            // FieldKind::Required so callers can pass None for the sentinel.
+            // Resolved accounts have bare Address locals. The resolved trait
+            // or the PDA projection rejects optional account types.
             match kind {
                 FieldKind::Program(expr) => Some(quote! { let #ident = #expr; }),
                 FieldKind::Pda {
@@ -1826,45 +1405,16 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Build AccountMeta entries in original field order, using bare idents.
-    let client_meta_steps: Vec<_> = field_kinds
-        .iter()
-        .map(|(field, _kind)| {
-            let writable = field.idl_writable;
-            let signer_expr = client_meta_signer_expr(field);
-            let field_ident = &field.name;
-            if nested_client_accounts_type(&field.ty).is_some() {
-                quote! {
-                    __metas.extend(anchor_lang::ToAccountMetas::to_account_metas(
-                        #field_ident,
-                        _is_signer,
-                    ));
-                }
-            } else if field.is_optional {
-                quote! {
-                    match #field_ident {
-                        Some(__addr) => __metas.push(anchor_lang::AccountMeta {
-                            pubkey: __addr,
-                            is_writable: #writable,
-                            is_signer: #signer_expr,
-                        }),
-                        None => __metas.push(anchor_lang::AccountMeta {
-                            pubkey: #accounts_program_id,
-                            is_writable: false,
-                            is_signer: false,
-                        }),
-                    }
-                }
-            } else {
-                quote! {
-                    __metas.push(anchor_lang::AccountMeta {
-                        pubkey: #field_ident,
-                        is_writable: #writable,
-                        is_signer: #signer_expr,
-                    });
-                }
-            }
-        })
-        .collect();
+    let client_meta_steps: Vec<_> = field_kinds.iter().map(|(field, kind)| {
+        let ty = &field.ty;
+        let n = &field.name;
+        let writable = field.idl_writable;
+        let signer = client_meta_signer_expr(field);
+        let client = if matches!(kind, FieldKind::Required) { quote! { #n } } else { quote! { &#n } };
+        quote! {
+            <#ty as anchor_lang::__private::AccountField>::append_client_metas(#client, &#accounts_program_id, #writable, #signer, _is_signer, &mut __metas);
+        }
+    }).collect();
 
     // PDA finder functions for seed-bearing fields.
     let pda_fns: Vec<TokenStream2> = fields
@@ -1967,61 +1517,23 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         })
         .collect();
 
-    // Full struct: all fields as Address, user fills every one manually.
     let all_client_fields: Vec<_> = fields
         .iter()
         .map(|f| {
-            let fname = &f.name;
-            if let Some(nested_ty) = nested_client_accounts_type(&f.ty) {
-                quote! { pub #fname: #nested_ty }
-            } else if f.is_optional {
-                quote! { pub #fname: Option<anchor_lang::Address> }
-            } else {
-                quote! { pub #fname: anchor_lang::Address }
-            }
+            let n = &f.name;
+            let ty = &f.ty;
+            quote! { pub #n: <#ty as anchor_lang::__private::AccountField>::Client }
         })
         .collect();
-
-    // Full struct to_account_metas: straightforward self.field access.
-    let full_meta_steps: Vec<_> = fields
-        .iter()
-        .map(|field| {
-            let writable = field.idl_writable;
-            let signer_expr = client_meta_signer_expr(field);
-            let field_ident = &field.name;
-            if nested_client_accounts_type(&field.ty).is_some() {
-                quote! {
-                    __metas.extend(anchor_lang::ToAccountMetas::to_account_metas(
-                        &self.#field_ident,
-                        _is_signer,
-                    ));
-                }
-            } else if field.is_optional {
-                quote! {
-                    match self.#field_ident {
-                        Some(__addr) => __metas.push(anchor_lang::AccountMeta {
-                            pubkey: __addr,
-                            is_writable: #writable,
-                            is_signer: #signer_expr,
-                        }),
-                        None => __metas.push(anchor_lang::AccountMeta {
-                            pubkey: #accounts_program_id,
-                            is_writable: false,
-                            is_signer: false,
-                        }),
-                    }
-                }
-            } else {
-                quote! {
-                    __metas.push(anchor_lang::AccountMeta {
-                        pubkey: self.#field_ident,
-                        is_writable: #writable,
-                        is_signer: #signer_expr,
-                    });
-                }
-            }
-        })
-        .collect();
+    let full_meta_steps: Vec<_> = fields.iter().map(|field| {
+        let ty = &field.ty;
+        let n = &field.name;
+        let writable = field.idl_writable;
+        let signer = client_meta_signer_expr(field);
+        quote! {
+            <#ty as anchor_lang::__private::AccountField>::append_client_metas(&self.#n, &#accounts_program_id, #writable, #signer, _is_signer, &mut __metas);
+        }
+    }).collect();
 
     let resolved_name = syn::Ident::new(&format!("{name}Resolved"), name.span());
 
@@ -2030,7 +1542,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     // Emits a sibling `__cpi_accounts_<name>` module containing a struct of
     // `CpiHandle<'a>` / `CpiHandleMut<'a>` fields and a `ToCpiAccounts<'a>`
     // impl driven by each field's compile-time writable / signer flags.
-    // `Nested<T>` fields hold T's generated CPI accounts struct and flatten through `ToCpiAccounts`,
+    // Account groups project their generated CPI types and flatten through ToCpiAccounts,
     // matching the account ordering used by `TryAccounts`. Optional accounts
     // are emitted as `Option<CpiHandle<'a>>` or `Option<CpiHandleMut<'a>>`;
     // `None` emits the program-id sentinel account meta and omits the handle,
@@ -2047,43 +1559,14 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             .iter()
             .map(|f| {
                 let n = &f.name;
-                if parse::is_nested_type(&f.ty) {
-                    let inner_ty = parse::extract_nested_inner_type(&f.ty).expect(
-                        "is_nested_type was true but extract_nested_inner_type returned None",
-                    );
-                    let inner_path = QualifiedTypePath::from_type(inner_ty)
-                        .expect("Nested<T> inner type must be a path");
-                    let inner_ident = &inner_path.leaf_ident;
-                    let inner_mod = inner_path.helper_module_path("__cpi_accounts_", 1, n.span());
-                    quote! {
-                        #[nested]
-                        pub #n: #inner_mod::#inner_ident<'a>
-                    }
-                } else if f.is_optional && f.idl_writable {
-                    let signer_expr = cpi_meta_signer_expr(f);
-                    quote! {
-                        #[signer(#signer_expr)]
-                        pub #n: ::core::option::Option<anchor_lang::CpiHandleMut<'a>>
-                    }
-                } else if f.is_optional {
-                    let signer_expr = cpi_meta_signer_expr(f);
-                    quote! {
-                        #[signer(#signer_expr)]
-                        pub #n: ::core::option::Option<anchor_lang::CpiHandle<'a>>
-                    }
-                } else if f.idl_writable {
-                    let signer_expr = cpi_meta_signer_expr(f);
-                    quote! {
-                        #[signer(#signer_expr)]
-                        pub #n: anchor_lang::CpiHandleMut<'a>
-                    }
+                let ty = &f.ty;
+                let signer = cpi_meta_signer_expr(f);
+                let cpi_ty = if f.idl_writable {
+                    quote! { <#ty as anchor_lang::__private::AccountField>::CpiMut<'a> }
                 } else {
-                    let signer_expr = cpi_meta_signer_expr(f);
-                    quote! {
-                        #[signer(#signer_expr)]
-                        pub #n: anchor_lang::CpiHandle<'a>
-                    }
-                }
+                    quote! { <#ty as anchor_lang::__private::AccountField>::Cpi<'a> }
+                };
+                quote! { #[signer(#signer)] pub #n: #cpi_ty }
             })
             .collect();
         // An empty Accounts struct would otherwise emit `pub struct Foo<'a> {}`,
@@ -2146,6 +1629,29 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         }
     };
 
+    let field_impl = quote! {
+            impl anchor_lang::__private::AccountField for #name {
+                const HEADER_SIZE: usize = <Self as anchor_lang::TryAccounts>::HEADER_SIZE;
+                const MUT_MASK: [u64; 4] = <Self as anchor_lang::TryAccounts>::MUT_MASK;
+                const HAS_DYNAMIC_MUT_MASK: bool = <Self as anchor_lang::TryAccounts>::HAS_DYNAMIC_MUT_MASK;
+                type Target = Self;
+                fn constraint_target(&self) -> Option<&Self> { Some(self) }
+                type Client = #client_mod_name::#name;
+                type Cpi<'a> = #cpi_mod_name::#name<'a>;
+                type CpiMut<'a> = #cpi_mod_name::#name<'a>;
+                fn load(program_id: &anchor_lang::Address, views: &[anchor_lang::AccountView], duplicates: Option<&anchor_lang::AccountBitvec>, base_offset: usize, ix_data: &[u8]) -> anchor_lang::Result<(Self, Self::Bumps)> {
+                    let (accounts, bumps, _) = <Self as anchor_lang::TryAccounts>::validate_accounts(program_id, views, duplicates, base_offset, ix_data)?;
+                    Ok((accounts, bumps))
+                }
+                fn active_mut_mask(&self) -> [u64; 4] { <Self as anchor_lang::TryAccounts>::active_mut_mask(self) }
+                fn update(&mut self) -> anchor_lang::Result<()> { <Self as anchor_lang::TryAccounts>::update_accounts(self) }
+                fn exit(&mut self, ix_data: &[u8]) -> anchor_lang::Result<()> { <Self as anchor_lang::TryAccounts>::exit_accounts(self, ix_data) }
+                fn append_client_metas(client: &Self::Client, _: &anchor_lang::Address, _: bool, _: bool, signer_override: Option<bool>, out: &mut anchor_lang::__alloc::vec::Vec<anchor_lang::AccountMeta>) {
+                    out.extend(anchor_lang::ToAccountMetas::to_account_metas(client, signer_override));
+                }
+            }
+    };
+
     quote! {
         pub mod #client_mod_name {
             extern crate alloc;
@@ -2169,12 +1675,25 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         #cpi_accounts_mod
 
         #bumps_def
+        #field_checks
+        #field_impl
+
+        #[cfg(feature = "idl-build")]
+        impl anchor_lang::IdlAccountType for #name {
+            fn __idl_nested_accounts() -> Option<anchor_lang::__alloc::string::String> { Some(Self::__idl_accounts()) }
+            fn __register_idl_deps(accounts: &mut anchor_lang::__alloc::vec::Vec<&'static str>, types: &mut anchor_lang::__alloc::vec::Vec<&'static str>) { Self::__idl_register_deps(accounts, types); }
+        }
 
         impl anchor_lang::Bumps for #name {
             type Bumps = #bumps_name;
         }
 
         impl anchor_lang::TryAccounts for #name {
+            const PROGRAM_ID: anchor_lang::Address = #accounts_program_id;
+            type Client = #client_mod_name::#name;
+            type ResolvedClient = #client_mod_name::#resolved_name;
+            type Cpi<'a> = #cpi_mod_name::#name<'a>;
+
             const HEADER_SIZE: usize = #header_size_expr;
             const MUT_MASK: [u64; 4] = #mut_mask_expr;
             const HAS_DYNAMIC_MUT_MASK: bool = #has_dynamic_mut_mask_expr;
@@ -2240,7 +1759,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
 
         // Flattened declared-account count must fit the 256-bit duplicate
         // bitvec and u8 field-offset domain. Top-level field count alone is
-        // not enough: Nested<Inner> expands to Inner::HEADER_SIZE slots.
+        // not enough: child groups can expand to multiple slots.
         const _: () = assert!(
             <#name as anchor_lang::TryAccounts>::HEADER_SIZE <= 255,
             "`Accounts` flattened HEADER_SIZE must be <= 255 (duplicate-tracking domain)"
@@ -2297,8 +1816,8 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
     if !matches!(fields, Fields::Named(_)) {
         return syn::Error::new(
             name.span(),
-            "`#[account]` only supports structs with named fields (tuple and unit structs are \
-             not supported)",
+            "`#[account]` only supports structs with named fields (tuple and unit structs are not \
+             supported)",
         )
         .to_compile_error()
         .into();
@@ -2453,31 +1972,6 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
             quote! {},
         )
     } else {
-        // Targeted diagnostics for common non-Pod field types. Emits a
-        // `compile_error!` with a concrete suggestion instead of letting the
-        // user hit an opaque `the trait bound Vec<u8>: Pod is not satisfied`.
-        // Intentionally avoids recommending `#[account(borsh)]` — borsh is a
-        // per-instruction serialization cost, rarely what the user actually
-        // wants. The fix is almost always a Pod-compatible alternative.
-        let field_diagnostics: Vec<proc_macro2::TokenStream> = if let Fields::Named(named) = fields
-        {
-            named
-                .named
-                .iter()
-                .filter_map(|field| {
-                    let field_name = field.ident.as_ref()?.to_string();
-                    let msg = diagnose_non_pod_field(&field.ty, &field_name, &name_str)?;
-                    let cfg_attrs = cfg_attrs(&field.attrs);
-                    let span = field.ty.span();
-                    Some(quote::quote_spanned!(span=>
-                        #(#cfg_attrs)*
-                        const _: () = { compile_error!(#msg); };
-                    ))
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
         let field_pod_asserts: Vec<proc_macro2::TokenStream> = if let Fields::Named(named) = fields
         {
             named
@@ -2489,7 +1983,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
                     quote! {
                         #(#cfg_attrs)*
                         const _: fn() = || {
-                            fn assert_pod<T: anchor_lang::bytemuck::Pod>() {}
+                            fn assert_pod<T: anchor_lang::__private::PodLayout>() {}
                             assert_pod::<#ty>();
                         };
                     }
@@ -2505,11 +1999,10 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .map(|field| {
                     let ty = &field.ty;
                     let cfg_attrs = cfg_attrs(&field.attrs);
-                    let capacity_check = pod_vec_capacity_check(ty);
                     quote! {
                         #(#cfg_attrs)*
                         {
-                            #capacity_check
+                            let () = <#ty as anchor_lang::__private::PodLayout>::CHECK;
                             __size += core::mem::size_of::<#ty>();
                         }
                     }
@@ -2522,7 +2015,6 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
         (
             quote! { #[derive(Clone, Copy)] #[repr(C)] },
             quote! {
-                #(#field_diagnostics)*
                 #(#field_pod_asserts)*
                 // Verify no padding: struct size must equal sum of field sizes.
                 // repr(C) inserts padding between fields with different alignments
@@ -2538,10 +2030,12 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
                 };
                 unsafe impl anchor_lang::bytemuck::Pod for #name {}
                 unsafe impl anchor_lang::bytemuck::Zeroable for #name {}
+                impl anchor_lang::__private::PodLayout for #name {}
             },
         )
     };
 
+    let idl_reference_impl = idl::type_reference_impl(&name_str, &input.generics);
     TokenStream::from(quote! {
         #(#attrs)*
         #struct_attrs
@@ -2560,6 +2054,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[cfg(feature = "idl-build")]
         #[doc(hidden)]
         impl anchor_lang::IdlAccountType for #name {
+            #idl_reference_impl
             const __IDL_ACCOUNT_ENTRY: Option<&'static str> = #idl_account_entry;
             #idl_account_entry_fn
             fn __idl_type_def() -> Option<&'static str> {
@@ -2616,6 +2111,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// #[derive(Clone, Copy, Pod, Zeroable, IdlType)]
 /// #[idl(bytemuck)]
 /// pub struct Inner { pub a: u64, pub b: u64 }
+/// impl anchor_lang::__private::PodLayout for Inner {}
 ///
 /// #[event(bytemuck)]
 /// pub struct NestedEvent {
@@ -2764,11 +2260,13 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
         quote! { #where_clause }
     };
 
+    let idl_reference_impl = idl::type_reference_impl(&name_str, &input.generics);
     TokenStream::from(quote! {
         #(#idl_validation_tokens)*
         #[cfg(feature = "idl-build")]
         #[doc(hidden)]
         impl #impl_generics anchor_lang::IdlAccountType for #name #ty_generics #idl_where_clause {
+            #idl_reference_impl
             fn __idl_type_def() -> Option<&'static str> {
                 #idl_type_def
             }
@@ -2836,65 +2334,6 @@ fn has_repr_c(attrs: &[syn::Attribute]) -> bool {
         })
         .flatten()
         .any(|meta| matches!(meta, Meta::Path(path) if path.is_ident("C")))
-}
-
-/// Syntactic diagnosis for common non-Pod field types on `#[account]` structs.
-/// Produces a targeted, actionable error message when we can recognize the
-/// shape of the offending type (Vec, String, Option, Box, bool, etc.). Falls
-/// through to `None` for types we can't identify by name — the surrounding
-/// `assert_pod::<T>` check in the macro output catches those generically.
-///
-/// Intentionally never suggests `#[account(borsh)]`: borsh accounts incur a
-/// per-instruction (de)serialization cost that's rarely what a user actually
-/// wants. The fix for "this field isn't Pod" is almost always a Pod-
-/// compatible alternative (fixed-size array, sentinel value, `PodBool`, a
-/// `Slab<H, T>` tail, etc.).
-fn diagnose_non_pod_field(ty: &Type, field_name: &str, struct_name: &str) -> Option<String> {
-    let Type::Path(tp) = ty else { return None };
-    let seg = tp.path.segments.last()?;
-    let ident = seg.ident.to_string();
-    match ident.as_str() {
-        "Vec" => Some(format!(
-            "field `{field_name}` on `#[account] struct {struct_name}` uses `Vec`, which \
-             allocates on the heap and isn't Pod. Zero-copy accounts need fixed-size fields. Use \
-             `[T; N]` for a bounded array, or restructure `{struct_name}` as `Slab<Header, T>` if \
-             you need a dynamic tail."
-        )),
-        "String" => Some(format!(
-            "field `{field_name}` on `#[account] struct {struct_name}` uses `String`, which \
-             allocates on the heap and isn't Pod. Use a fixed-size `[u8; N]` buffer to store \
-             string data in a zero-copy account."
-        )),
-        "Option" => Some(format!(
-            "field `{field_name}` on `#[account] struct {struct_name}` uses `Option`, which \
-             carries a discriminant byte that breaks the zero-copy layout contract. Use a \
-             sentinel value (e.g. an all-zero `[u8; 32]` for \"no address\") or a `PodBool` flag \
-             stored alongside the value."
-        )),
-        "Box" | "Rc" | "Arc" => Some(format!(
-            "field `{field_name}` on `#[account] struct {struct_name}` uses `{ident}`, which \
-             heap-allocates and isn't valid in a zero-copy account. Store the inner type directly."
-        )),
-        "bool" => Some(format!(
-            "field `{field_name}` on `#[account] struct {struct_name}` uses `bool`. `bytemuck` \
-             disallows `bool` as Pod because only `0x00` and `0x01` are valid bit-patterns (any \
-             other byte read as `bool` is UB). Use `anchor_lang::PodBool` instead."
-        )),
-        _ => None,
-    }
-}
-
-/// Force the capacity invariant while evaluating the account's layout const,
-/// even if no `PodVec` methods are used. Rust resolves and evaluates `MAX`,
-/// including named constants and const expressions that the macro cannot
-/// evaluate from syntax alone.
-fn pod_vec_capacity_check(ty: &Type) -> Option<TokenStream2> {
-    let Type::Path(tp) = ty else { return None };
-    let seg = tp.path.segments.last()?;
-    if seg.ident != "PodVec" {
-        return None;
-    }
-    Some(quote::quote_spanned!(ty.span()=> let _ = <#ty>::CAPACITY;))
 }
 
 // ---------------------------------------------------------------------------
@@ -3422,9 +2861,9 @@ fn instruction_discriminator_validation_tokens(
                 };
                 (
                     format!(
-                        "instruction `{missing_name}` is missing `#[discrim = N]`; all instructions \
-                         in `#[program]` must specify custom discriminators when one instruction \
-                         does"
+                        "instruction `{missing_name}` is missing `#[discrim = N]`; all \
+                         instructions in `#[program]` must specify custom discriminators when one \
+                         instruction does"
                     ),
                     missing_span,
                 )
@@ -3617,7 +3056,7 @@ fn collect_declare_account_group(
             let nested_ident = Ident::new(&generated_nested_name, span);
             fields.push(DeclareAccountField {
                 name: ident,
-                ty: quote! { anchor_lang::Nested<#nested_ident> },
+                ty: quote! { #nested_ident },
                 attrs: quote! {},
             });
             continue;
@@ -4470,9 +3909,13 @@ fn gen_declare_program_idl_account_type_impl(
     let impl_generics = &generics.impl_generics;
     let ty_generics = &generics.ty_generics;
     let where_clause = &generics.idl_where_clause;
+    let rust_generics: syn::Generics =
+        syn::parse2(generics.impl_generics.clone()).expect("generated generics");
+    let idl_reference_impl = idl::type_reference_impl(&ident.to_string(), &rust_generics);
     quote! {
         #[doc(hidden)]
         impl #impl_generics anchor_lang::IdlAccountType for #ident #ty_generics #where_clause {
+            #idl_reference_impl
             const __IDL_ACCOUNT_ENTRY: Option<&'static str> = #account_entry;
             const __IDL_TYPE_DEF: Option<&'static str> = Some(#type_def);
 
@@ -4593,6 +4036,7 @@ fn gen_declare_program_pod_impls(
         return Ok(quote! {
             unsafe impl #impl_generics anchor_lang::bytemuck::Pod for #ident #ty_generics #where_clause {}
             unsafe impl #impl_generics anchor_lang::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
+            impl #impl_generics anchor_lang::__private::PodLayout for #ident #ty_generics #where_clause {}
         });
     }
 
@@ -4621,6 +4065,11 @@ fn gen_declare_program_pod_impls(
             #(#field_types: anchor_lang::bytemuck::Pod
                 + anchor_lang::bytemuck::Zeroable),*
         }
+    };
+    let layout_where_clause = if where_clause.is_empty() {
+        quote! {}
+    } else {
+        quote! { #where_clause, #(#field_types: anchor_lang::__private::PodLayout,)* }
     };
     // Item-level `const _: ()` is always evaluated. An unused associated const
     // on an `impl` is not, so the previous padding `assert!` never ran.
@@ -4654,6 +4103,12 @@ fn gen_declare_program_pod_impls(
         #touch_no_padding
         unsafe impl #impl_generics anchor_lang::bytemuck::Pod for #ident #ty_generics #where_clause {}
         unsafe impl #impl_generics anchor_lang::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
+        impl #impl_generics anchor_lang::__private::PodLayout for #ident #ty_generics #layout_where_clause {
+            const CHECK: () = {
+                #(let () = <#field_types as anchor_lang::__private::PodLayout>::CHECK;)*
+                let () = Self::__ANCHOR_DECLARE_PROGRAM_NO_PADDING;
+            };
+        }
     })
 }
 
@@ -5016,13 +4471,6 @@ struct QualifiedTypePath {
 }
 
 impl QualifiedTypePath {
-    fn from_type(ty: &Type) -> Option<Self> {
-        let Type::Path(type_path) = ty else {
-            return None;
-        };
-        Self::from_path(&type_path.path)
-    }
-
     fn from_path(path: &syn::Path) -> Option<Self> {
         let leaf_ident = path.segments.last()?.ident.clone();
         Some(Self {
@@ -5031,45 +4479,18 @@ impl QualifiedTypePath {
         })
     }
 
-    fn helper_module_path(
-        &self,
-        prefix: &str,
-        relative_depth: usize,
-        span: proc_macro2::Span,
-    ) -> TokenStream2 {
-        let helper_ident = Ident::new(
-            &format!("{prefix}{}", self.leaf_ident.to_string().to_lowercase()),
-            span,
-        );
-
-        let mut prefix_segments: Vec<_> = self.path.segments.iter().cloned().collect();
-        prefix_segments.pop();
-
-        let is_absolute = self.path.leading_colon.is_some()
-            || prefix_segments
-                .first()
-                .map(|seg| seg.ident == "crate")
-                .unwrap_or(false);
-
-        if prefix_segments
-            .first()
-            .map(|seg| seg.ident == "self")
-            .unwrap_or(false)
-        {
-            prefix_segments.remove(0);
+    fn scoped_path(&self, relative_depth: usize) -> TokenStream2 {
+        let mut segments: Vec<_> = self.path.segments.iter().cloned().collect();
+        let absolute = self.path.leading_colon.is_some()
+            || segments.first().is_some_and(|seg| seg.ident == "crate");
+        if segments.first().is_some_and(|seg| seg.ident == "self") {
+            segments.remove(0);
         }
-
-        let super_prefix: Vec<_> = if is_absolute {
-            Vec::new()
-        } else {
-            (0..relative_depth).map(|_| quote! { super :: }).collect()
-        };
-
-        quote! {
-            #(#super_prefix)*
-            #(#prefix_segments ::)*
-            #helper_ident
-        }
+        let supers = if absolute { 0 } else { relative_depth };
+        let prefix: Vec<_> = (0..supers).map(|_| quote! { super:: }).collect();
+        let leading_colon = &self.path.leading_colon;
+        let path: syn::punctuated::Punctuated<_, syn::Token![::]> = segments.into_iter().collect();
+        quote! { #leading_colon #(#prefix)* #path }
     }
 }
 
@@ -5133,9 +4554,7 @@ fn wincode_idl_override_tokens_for_variants(
         .iter()
         .flat_map(|variant| {
             variant.fields.iter().filter_map(move |field| {
-                Some(
-                    unsupported_wincode_idl_attr_error(surface, &field.attrs)?.to_compile_error(),
-                )
+                Some(unsupported_wincode_idl_attr_error(surface, &field.attrs)?.to_compile_error())
             })
         })
         .collect()
@@ -5368,6 +4787,21 @@ fn process_handler(
         let tuple_ty = quote! { (#(#extra_arg_types,)*) };
         let args_deser = emit_args_deser(&extra_args, "__Args", false);
         let deser_args = args_deser.deser;
+        // As in v1, Accounts may declare only the prefix its constraints need.
+        // Type-check each accepted prefix; reuse a complete decoded tuple below.
+        let prefix_coercions = (0..extra_arg_types.len()).map(|count| {
+            let prefix = &extra_arg_types[..count];
+            quote! {
+                impl<'ix> __AnchorIxArgCoerce<'ix> for (#(#prefix,)*) {
+                    #[inline(always)]
+                    fn __coerce(self, __ix_data: &'ix [u8]) -> anchor_lang::Result<#tuple_ty> {
+                        let _ = self;
+                        #deser_args
+                        Ok((#(#extra_arg_names,)*))
+                    }
+                }
+            }
+        });
         quote! {
             #(#handler_cfg_attrs)*
             #handler_inline_attr
@@ -5384,12 +4818,12 @@ fn process_handler(
                     fn __coerce(self, __ix_data: &'ix [u8]) -> anchor_lang::Result<#tuple_ty>;
                 }
 
-                impl<'ix, __AnchorIxArgs> __AnchorIxArgCoerce<'ix> for __AnchorIxArgs {
+                #(#prefix_coercions)*
+
+                impl<'ix> __AnchorIxArgCoerce<'ix> for #tuple_ty {
                     #[inline(always)]
-                    fn __coerce(self, __ix_data: &'ix [u8]) -> anchor_lang::Result<#tuple_ty> {
-                        let _ = self;
-                        #deser_args
-                        Ok((#(#extra_arg_names,)*))
+                    fn __coerce(self, _: &'ix [u8]) -> anchor_lang::Result<#tuple_ty> {
+                        Ok(self)
                     }
                 }
 
@@ -5460,30 +4894,24 @@ fn process_handler(
         }
     };
 
-    // Client accounts re-export.
-    let client_mod = accounts_type.helper_module_path("__client_accounts_", 1, fn_name.span());
+    // Associated projections preserve aliases and ordinary Rust name resolution.
+    let client_accounts_ty = accounts_type.scoped_path(1);
+    let cpi_accounts_ty = accounts_type.scoped_path(2);
+    let accounts_ty_from_cpi = accounts_type.scoped_path(1);
     let resolved_type =
         syn::Ident::new(&format!("{accounts_ident}Resolved"), accounts_ident.span());
     let accounts_reexport = quote! {
-        pub use #client_mod::#accounts_ident;
-        pub use #client_mod::#resolved_type;
+        pub type #accounts_ident = <#client_accounts_ty as anchor_lang::TryAccounts>::Client;
+        pub type #resolved_type = <#client_accounts_ty as anchor_lang::TryAccounts>::ResolvedClient;
     };
-
-    // CPI accounts re-export — `__cpi_accounts_<lowercase>` is emitted by
-    // `#[derive(Accounts)]` at the same scope as the program's outputs.
-    let cpi_mod = accounts_type.helper_module_path("__cpi_accounts_", 2, fn_name.span());
     let cpi_accounts_reexport = quote! {
-        pub use #cpi_mod::#accounts_ident;
+        pub type #accounts_ident<'a> = <#cpi_accounts_ty as anchor_lang::TryAccounts>::Cpi<'a>;
     };
-    // Emitted in `cpi` (which `use super::*`s), not `cpi::accounts`, so a
-    // user `program_id = declared::ID` path resolves the same way the
-    // instruction builder's `#program_id` does.
-    let cpi_mod_from_cpi = accounts_type.helper_module_path("__cpi_accounts_", 1, fn_name.span());
     let accounts_program_id_check = if config.mode == ProgramMode::Interface {
         quote! {
             const _: () = {
                 let __interface_id = (#program_id).to_bytes();
-                let __accounts_id = #cpi_mod_from_cpi::__ANCHOR_ACCOUNTS_PROGRAM_ID.to_bytes();
+                let __accounts_id = <#accounts_ty_from_cpi as anchor_lang::TryAccounts>::PROGRAM_ID.to_bytes();
                 let mut __i = 0;
                 while __i < 32 {
                     if __interface_id[__i] != __accounts_id[__i] {
@@ -6263,10 +5691,12 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
     // program-level `accounts[]` array — `__IDL_ACCOUNT_ENTRY` defaults
     // to `None`. Their discriminator lives in `event_header_json` (the
     // `--- IDL begin event ---` payload prefix), not in `__IDL_TYPE_DEF`.
+    let idl_reference_impl = idl::type_reference_impl(&event_name, &input.generics);
     let idl_account_type_impl = quote! {
         #[cfg(feature = "idl-build")]
         #[doc(hidden)]
         impl anchor_lang::IdlAccountType for #name {
+            #idl_reference_impl
             fn __idl_type_def() -> Option<&'static str> {
                 #event_type_def
             }
@@ -6327,29 +5757,6 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
             #idl_event_print
         }),
         EventMode::Bytemuck => {
-            // Targeted diagnostics for common non-Pod field types. Fires
-            // *before* the generic `assert_pod::<T>` bound so users hit a
-            // field-specific migration hint instead of the opaque
-            // `Vec<u8>: Pod is not satisfied` error. Mirrors the pattern in
-            // `#[account]` zero-copy codegen. Borsh mode is suggested here
-            // because (unlike `#[account]`) events have a correct dynamic
-            // fallback — see `diagnose_non_pod_event_field`.
-            let field_diagnostics: Vec<_> = fields
-                .iter()
-                .filter_map(|field| {
-                    let field_name = field
-                        .ident
-                        .as_ref()
-                        .map(|i| i.to_string())
-                        .unwrap_or_default();
-                    let msg = diagnose_non_pod_event_field(&field.ty, &field_name)?;
-                    let cfg_attrs = cfg_attrs(&field.attrs);
-                    Some(quote! {
-                        #(#cfg_attrs)*
-                        ::core::compile_error!(#msg);
-                    })
-                })
-                .collect();
             let field_pod_asserts: Vec<_> = fields
                 .iter()
                 .map(|field| {
@@ -6358,7 +5765,7 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                     quote! {
                         #(#cfg_attrs)*
                         const _: fn() = || {
-                            fn assert_pod<T: anchor_lang::bytemuck::Pod>() {}
+                            fn assert_pod<T: anchor_lang::__private::PodLayout>() {}
                             assert_pod::<#ty>();
                         };
                     }
@@ -6372,6 +5779,7 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                     quote! {
                         #(#cfg_attrs)*
                         {
+                            let () = <#ty as anchor_lang::__private::PodLayout>::CHECK;
                             __size += ::core::mem::size_of::<#ty>();
                         }
                     }
@@ -6398,11 +5806,6 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #[derive(::core::clone::Clone, ::core::marker::Copy)]
                 #(#attrs)*
                 #vis struct #name #fields
-
-                // Targeted diagnostics fire first so users see a specific
-                // migration hint (e.g. "drop `bytemuck` for dynamic strings")
-                // instead of bytemuck's opaque `Pod not satisfied`.
-                #(#field_diagnostics)*
 
                 // Transitive Pod bound per field — catches fat pointers even
                 // when hidden inside an opaque user-defined struct (the
@@ -6460,6 +5863,7 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                 // bytemuck's generic trait errors.
                 unsafe impl anchor_lang::bytemuck::Pod for #name {}
                 unsafe impl anchor_lang::bytemuck::Zeroable for #name {}
+                impl anchor_lang::__private::PodLayout for #name {}
 
                 #discriminator_impl
 
@@ -6606,58 +6010,6 @@ fn is_valid_event_name(name: &str) -> bool {
     let mut chars = name.chars();
     matches!(chars.next(), Some(c) if c == '_' || c.is_ascii_alphabetic())
         && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
-}
-
-/// Targeted diagnostics for common non-Pod field types on
-/// `#[event(bytemuck)]` structs. Bytemuck mode is strict by design —
-/// `Vec`/`String`/`Option`/etc. can't round-trip through a `copy_nonoverlapping`
-/// of the struct bytes. The hint steers authors to drop the `bytemuck` flag
-/// (getting the wincode default, which handles these fine). Returns `None`
-/// for types we can't recognize by name — the `assert_pod::<T>` bound
-/// catches those generically via `bytemuck::Pod`.
-fn diagnose_non_pod_event_field(ty: &Type, field_name: &str) -> Option<String> {
-    let Type::Path(tp) = ty else { return None };
-    let seg = tp.path.segments.last()?;
-    let ident = seg.ident.to_string();
-    match ident.as_str() {
-        "Vec" => Some(format!(
-            "event field `{field_name}` uses `Vec`, which is a fat pointer — the \
-             `#[event(bytemuck)]` memcpy path would emit the `(ptr, len, cap)` bits instead of \
-             the elements. Use `[T; N]` for a fixed-size array, or drop the `bytemuck` attribute \
-             to use the default wincode encoding, which handles `Vec` natively."
-        )),
-        "String" => Some(format!(
-            "event field `{field_name}` uses `String`, which is a fat pointer — the \
-             `#[event(bytemuck)]` memcpy path would emit the `(ptr, len, cap)` bits instead of \
-             the UTF-8 bytes. Use `[u8; N]` for a bounded buffer, or drop the `bytemuck` \
-             attribute to use the default wincode encoding, which handles `String` natively."
-        )),
-        "Option" => Some(format!(
-            "event field `{field_name}` uses `Option`, whose niche-or-tag layout isn't guaranteed \
-             to match the client decoder. Use a sentinel value (e.g. an all-zero `[u8; 32]` for \
-             \"no address\"), or drop the `bytemuck` attribute to use the default wincode \
-             encoding."
-        )),
-        "Box" | "Rc" | "Arc" | "Cow" | "Weak" => Some(format!(
-            "event field `{field_name}` uses `{ident}`, which is a heap/shared pointer — its \
-             bytes are a pointer, not the referenced data. Inline the value directly (`T` instead \
-             of `{ident}<T>`), or drop the `bytemuck` attribute to use the default wincode \
-             encoding."
-        )),
-        "HashMap" | "HashSet" | "BTreeMap" | "BTreeSet" | "BinaryHeap" | "LinkedList"
-        | "VecDeque" => Some(format!(
-            "event field `{field_name}` uses `{ident}`, which allocates on the heap. Drop the \
-             `bytemuck` attribute to use the default wincode encoding, which handles dynamic \
-             collections."
-        )),
-        "bool" => Some(format!(
-            "event field `{field_name}` is `bool`. `bytemuck` disallows `bool` as Pod because \
-             only `0x00` and `0x01` are valid — any other byte is UB. Use a `u8` and treat `0` / \
-             non-zero as the boolean, or drop the `bytemuck` attribute to use the default wincode \
-             encoding."
-        )),
-        _ => None,
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -7333,10 +6685,12 @@ mod tests {
             "expected fallback coercion trait in wrapper: {wrapper}"
         );
         assert!(
-            wrapper.contains(
-                "impl < 'ix , __AnchorIxArgs > __AnchorIxArgCoerce < 'ix > for __AnchorIxArgs"
-            ),
-            "expected generic instruction-arg coercion impl in wrapper: {wrapper}"
+            wrapper.contains("impl < 'ix > __AnchorIxArgCoerce < 'ix > for ()"),
+            "expected fallback for accounts without instruction args: {wrapper}"
+        );
+        assert!(
+            wrapper.contains("for (u64 , u8 ,)"),
+            "expected exact argument tuple: {wrapper}"
         );
     }
 
@@ -7355,22 +6709,18 @@ mod tests {
     }
 
     #[test]
-    fn qualified_type_helper_module_path_tracks_original_scope() {
-        let ty: Type = syn::parse_quote!(crate::shared::Inner);
-        let qualified =
-            QualifiedTypePath::from_type(&ty).expect("qualified nested path should parse");
-        let client_path =
-            qualified.helper_module_path("__client_accounts_", 1, proc_macro2::Span::call_site());
-        let cpi_path =
-            qualified.helper_module_path("__cpi_accounts_", 2, proc_macro2::Span::call_site());
-
+    fn qualified_type_projection_tracks_original_scope() {
+        let path: syn::Path = syn::parse_quote!(crate::shared::Inner);
+        let qualified = QualifiedTypePath::from_path(&path).unwrap();
         assert_eq!(
-            quote!(#client_path::Inner).to_string(),
-            "crate :: shared :: __client_accounts_inner :: Inner"
+            qualified.scoped_path(2).to_string(),
+            "crate :: shared :: Inner"
         );
+        let path: syn::Path = syn::parse_quote!(shared::Alias);
+        let qualified = QualifiedTypePath::from_path(&path).unwrap();
         assert_eq!(
-            quote!(#cpi_path::Inner).to_string(),
-            "crate :: shared :: __cpi_accounts_inner :: Inner"
+            qualified.scoped_path(2).to_string(),
+            "super :: super :: shared :: Alias"
         );
     }
 
@@ -7455,11 +6805,13 @@ mod tests {
         let default_generated = impl_accounts(&default_input).to_string();
         assert!(
             default_generated.contains("pub const __ANCHOR_ACCOUNTS_PROGRAM_ID"),
-            "Accounts derive should expose the program id used for optional sentinels and default PDAs: {default_generated}"
+            "Accounts derive should expose the program id used for optional sentinels and default \
+             PDAs: {default_generated}"
         );
         assert!(
             default_generated.contains("crate :: ID"),
-            "unannotated Accounts should default the exposed program id to crate::ID: {default_generated}"
+            "unannotated Accounts should default the exposed program id to crate::ID: \
+             {default_generated}"
         );
 
         let override_input: syn::DeriveInput = syn::parse_quote! {
@@ -7498,7 +6850,7 @@ mod tests {
         let generated = impl_program(&module, &config).to_string();
 
         assert!(
-            generated.contains("__ANCHOR_ACCOUNTS_PROGRAM_ID"),
+            generated.contains("as anchor_lang :: TryAccounts > :: PROGRAM_ID"),
             "interface mode should compare against the Accounts-side program id const: {generated}"
         );
         assert!(
@@ -7528,7 +6880,8 @@ mod tests {
 
         assert!(
             !generated.contains("interface program_id does not match accounts_program_id"),
-            "executable programs share crate::ID by construction and should not emit the interface assertion: {generated}"
+            "executable programs share crate::ID by construction and should not emit the \
+             interface assertion: {generated}"
         );
     }
 
@@ -7568,27 +6921,17 @@ mod tests {
     }
 
     #[test]
-    fn nested_accounts_register_idl_deps_through_nested_wrapper() {
+    fn nested_accounts_register_idl_deps_through_direct_group() {
         let input: syn::DeriveInput = syn::parse_quote! {
             pub struct Outer {
-                pub nested: anchor_lang::Nested<Inner>,
+                pub nested: Inner,
             }
         };
 
         let generated = impl_accounts(&input).to_string();
 
         assert!(
-            generated.contains("< Inner > :: __idl_register_deps"),
-            "nested accounts should forward IDL dep registration through the inner helper: \
-             {generated}"
-        );
-        assert!(
-            !generated.contains(
-                "< anchor_lang :: Nested < Inner > as anchor_lang :: IdlAccountType > :: \
-                 __register_idl_deps"
-            ),
-            "nested accounts should not require an IdlAccountType impl on Inner via Nested: \
-             {generated}"
+            generated.contains("< Inner as anchor_lang :: IdlAccountType > :: __register_idl_deps")
         );
     }
 
@@ -7871,44 +7214,5 @@ mod tests {
         let pod_bool =
             declare_idl_type_to_tokens(&json!({ "defined": { "name": "PodBool" } }), span).unwrap();
         assert_eq!(pod_bool.to_string(), "anchor_lang :: pod :: PodBool");
-    }
-
-    fn nested_accounts_preserve_inner_bumps_in_generated_surface() {
-        let input: syn::DeriveInput = syn::parse_quote! {
-            pub struct Outer {
-                pub authority: anchor_lang::accounts::UncheckedAccount,
-                pub inner: anchor_lang::Nested<Inner>,
-            }
-        };
-
-        let generated = impl_accounts(&input).to_string();
-
-        assert!(
-            generated.contains("pub struct OuterBumps"),
-            "expected outer bumps struct: {generated}"
-        );
-        assert!(
-            generated.contains("pub inner : < Inner as anchor_lang :: Bumps > :: Bumps"),
-            "expected nested field to retain the inner bumps type: {generated}"
-        );
-        assert!(
-            generated.contains(
-                "let (__nested_inner , __anchor_bump_cache_inner , _) = < Inner as anchor_lang :: \
-                 TryAccounts > :: validate_accounts"
-            ),
-            "expected nested validate_accounts call to keep the returned bumps value: {generated}"
-        );
-        assert!(
-            generated.contains(
-                "let mut __anchor_bump_cache_inner : < Inner as anchor_lang :: Bumps > :: Bumps = \
-                 :: core :: default :: Default :: default() ;"
-            ),
-            "expected nested bump cache local declaration: {generated}"
-        );
-        assert!(
-            generated
-                .contains("let __bumps = OuterBumps { inner : __anchor_bump_cache_inner , } ;"),
-            "expected final outer bumps assembly to include the nested bump cache: {generated}"
-        );
     }
 }

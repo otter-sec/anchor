@@ -41,6 +41,7 @@ pub fn get_associated_token_address_with_program_id(
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct Create<'a> {
     #[signer]
     pub payer: CpiHandleMut<'a>,

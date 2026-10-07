@@ -14,10 +14,11 @@ pub struct ExecuteTransfer {
     )]
     pub config: Account<MultisigConfig>,
     pub creator: UncheckedAccount,
-    #[account(mut, seeds = [b"vault", config.address().as_ref()], bump)]
+    #[account(mut, seeds = [b"vault", config.address().as_ref()], bump, resolve)]
     pub vault: UncheckedAccount,
     #[account(mut)]
     pub recipient: UncheckedAccount,
+    #[account(resolve)]
     pub system_program: Program<System>,
 }
 

@@ -149,7 +149,16 @@ impl<'a, T: Bumps> Context<'a, T> {
     }
 }
 
-/// Trait linking an accounts struct to its generated bumps struct.
+/// Trait linking an account field or group to its bump cache.
+/// Individual account wrappers and optional accounts use `()`.
 pub trait Bumps {
     type Bumps;
+}
+
+impl<T: crate::AnchorAccount> Bumps for T {
+    type Bumps = ();
+}
+
+impl<T: crate::AnchorAccount> Bumps for Option<T> {
+    type Bumps = ();
 }

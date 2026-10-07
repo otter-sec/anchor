@@ -19,8 +19,9 @@ pub mod hello_world_v2 {
 pub struct Init {
     #[account(mut)]
     pub payer: Signer,
-    #[account(init, payer = payer, seeds = [b"counter"], bump)]
+    #[account(init, payer = payer, seeds = [b"counter"], bump, resolve)]
     pub counter: Account<Counter>,
+    #[account(resolve)]
     pub system_program: Program<System>,
 }
 

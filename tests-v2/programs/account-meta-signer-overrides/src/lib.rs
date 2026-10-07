@@ -46,7 +46,7 @@ pub struct NestedSignerInner {
 
 #[derive(Accounts)]
 pub struct NestedSignerOuter {
-    pub inner: Nested<NestedSignerInner>,
+    pub inner: NestedSignerInner,
     pub spectator: UncheckedAccount,
 }
 

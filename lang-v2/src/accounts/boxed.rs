@@ -91,6 +91,11 @@ impl<T: crate::AccountClose> crate::AccountClose for Box<T> {
 
 #[doc(hidden)]
 impl<T: crate::IdlAccountType> crate::IdlAccountType for Box<T> {
+    fn __idl_type_reference(
+        args: &[Option<crate::idl_build::IdlGenericArg>],
+    ) -> alloc::string::String {
+        crate::idl_build::__idl_type_argument::<T>(args, 0)
+    }
     const __IDL_ACCOUNT_ENTRY: Option<&'static str> = T::__IDL_ACCOUNT_ENTRY;
     const __IDL_TYPE_DEF: Option<&'static str> = T::__IDL_TYPE_DEF;
     const __IDL_IS_SIGNER: bool = T::__IDL_IS_SIGNER;
@@ -149,6 +154,15 @@ impl<T: ForeignOwnerInit> ForeignOwnerInit for Box<T> {}
 
 impl<T: Space> Space for Box<T> {
     const INIT_SPACE: usize = T::INIT_SPACE;
+}
+
+impl<T: crate::Id> crate::Id for Box<T> {
+    #[inline(always)]
+    fn id() -> Address {
+        T::id()
+    }
+
+    const IDL_ADDRESS: &'static str = T::IDL_ADDRESS;
 }
 
 impl<T: Discriminator> Discriminator for Box<T> {

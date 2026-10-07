@@ -468,6 +468,7 @@ pub fn unverify_sized_collection_item<'info>(
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct ApproveCollectionAuthority<'info> {
     pub collection_authority_record: CpiHandleMut<'info>,
     pub new_collection_authority: CpiHandle<'info>,
@@ -481,6 +482,7 @@ pub struct ApproveCollectionAuthority<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct BubblegumSetCollectionSize<'info> {
     pub metadata_account: CpiHandleMut<'info>,
     #[signer]
@@ -491,6 +493,7 @@ pub struct BubblegumSetCollectionSize<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct BurnEditionNft<'info> {
     pub metadata: CpiHandleMut<'info>,
     #[signer]
@@ -506,6 +509,7 @@ pub struct BurnEditionNft<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct BurnNft<'info> {
     pub metadata: CpiHandleMut<'info>,
     #[signer]
@@ -517,6 +521,7 @@ pub struct BurnNft<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct CreateMetadataAccountsV3<'info> {
     pub metadata: CpiHandleMut<'info>,
     pub mint: CpiHandle<'info>,
@@ -532,6 +537,7 @@ pub struct CreateMetadataAccountsV3<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct UpdateMetadataAccountsV2<'info> {
     pub metadata: CpiHandleMut<'info>,
     #[signer]
@@ -539,6 +545,7 @@ pub struct UpdateMetadataAccountsV2<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct CreateMasterEditionV3<'info> {
     pub edition: CpiHandleMut<'info>,
     pub mint: CpiHandleMut<'info>,
@@ -554,6 +561,7 @@ pub struct CreateMasterEditionV3<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct MintNewEditionFromMasterEditionViaToken<'info> {
     pub new_metadata: CpiHandleMut<'info>,
     pub new_edition: CpiHandleMut<'info>,
@@ -574,6 +582,7 @@ pub struct MintNewEditionFromMasterEditionViaToken<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct RevokeCollectionAuthority<'info> {
     pub collection_authority_record: CpiHandleMut<'info>,
     pub delegate_authority: CpiHandle<'info>,
@@ -584,6 +593,7 @@ pub struct RevokeCollectionAuthority<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct SetCollectionSize<'info> {
     pub metadata: CpiHandleMut<'info>,
     #[signer]
@@ -592,6 +602,7 @@ pub struct SetCollectionSize<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct SetTokenStandard<'info> {
     pub metadata_account: CpiHandleMut<'info>,
     #[signer]
@@ -600,6 +611,7 @@ pub struct SetTokenStandard<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct VerifyCollection<'info> {
     pub metadata: CpiHandleMut<'info>,
     #[signer]
@@ -612,6 +624,7 @@ pub struct VerifyCollection<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct VerifySizedCollectionItem<'info> {
     pub metadata: CpiHandleMut<'info>,
     #[signer]
@@ -624,6 +637,7 @@ pub struct VerifySizedCollectionItem<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct SetAndVerifyCollection<'info> {
     pub metadata: CpiHandleMut<'info>,
     #[signer]
@@ -637,6 +651,7 @@ pub struct SetAndVerifyCollection<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct SetAndVerifySizedCollectionItem<'info> {
     pub metadata: CpiHandleMut<'info>,
     #[signer]
@@ -650,6 +665,7 @@ pub struct SetAndVerifySizedCollectionItem<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct FreezeDelegatedAccount<'info> {
     #[signer]
     pub delegate: CpiHandleMut<'info>,
@@ -660,6 +676,7 @@ pub struct FreezeDelegatedAccount<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct ThawDelegatedAccount<'info> {
     #[signer]
     pub delegate: CpiHandleMut<'info>,
@@ -670,6 +687,7 @@ pub struct ThawDelegatedAccount<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct UpdatePrimarySaleHappenedViaToken<'info> {
     pub metadata: CpiHandleMut<'info>,
     #[signer]
@@ -678,6 +696,7 @@ pub struct UpdatePrimarySaleHappenedViaToken<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct SignMetadata<'info> {
     pub metadata: CpiHandleMut<'info>,
     #[signer]
@@ -685,6 +704,7 @@ pub struct SignMetadata<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct RemoveCreatorVerification<'info> {
     pub metadata: CpiHandleMut<'info>,
     #[signer]
@@ -692,6 +712,7 @@ pub struct RemoveCreatorVerification<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct Utilize<'info> {
     pub metadata: CpiHandleMut<'info>,
     pub token_account: CpiHandleMut<'info>,
@@ -706,6 +727,7 @@ pub struct Utilize<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct UnverifyCollection<'info> {
     pub metadata: CpiHandleMut<'info>,
     #[signer]
@@ -716,6 +738,7 @@ pub struct UnverifyCollection<'info> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct UnverifySizedCollectionItem<'info> {
     pub metadata: CpiHandleMut<'info>,
     #[signer]

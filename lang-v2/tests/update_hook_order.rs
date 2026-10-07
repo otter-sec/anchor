@@ -5,7 +5,7 @@ use {
         accounts::{BorshAccount, Signer, UncheckedAccount},
         testing::AccountBuffer,
         AccountConstraint, Accounts, AnchorAccount, AnchorDeserialize, AnchorSerialize,
-        Discriminator, ErrorCode, Nested, Owner, TryAccounts,
+        Discriminator, ErrorCode, Owner, TryAccounts,
     },
     core::{mem::size_of, ptr},
     pinocchio::address::Address,
@@ -100,12 +100,12 @@ struct InnerIncrement {
 
 #[derive(Accounts)]
 struct OuterNestedIncrement {
-    inner: Nested<InnerIncrement>,
+    inner: InnerIncrement,
 }
 
 #[derive(Accounts)]
 struct OuterNestedGate {
-    inner: Nested<InnerIncrement>,
+    inner: InnerIncrement,
     #[account(constraint = inner.counter.value == 1u64)]
     witness: UncheckedAccount,
 }

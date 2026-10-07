@@ -1,7 +1,7 @@
 [package]
 name = "nested-v2"
 version = "0.1.0"
-description = "Demonstrates Nested<T> account composition in Anchor v2"
+description = "Demonstrates automatic account composition in Anchor v2"
 edition = "2021"
 publish = false
 

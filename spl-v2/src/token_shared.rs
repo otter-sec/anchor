@@ -41,6 +41,7 @@ pub(crate) fn validate_token_interface_program(_program_id: &Address) -> Result<
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct InitializeAccount<'a> {
     pub account: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
@@ -49,6 +50,7 @@ pub struct InitializeAccount<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct InitializeAccount3<'a> {
     pub account: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
@@ -57,12 +59,14 @@ pub struct InitializeAccount3<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct InitializeMint<'a> {
     pub mint: CpiHandleMut<'a>,
     pub rent: CpiHandle<'a>,
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct InitializeMint2<'a> {
     pub mint: CpiHandleMut<'a>,
 }
@@ -72,6 +76,7 @@ pub struct InitializeMint2<'a> {
 ///   1. `[writable]` to
 ///   2. `[signer]` authority, or `[]` multisig authority followed by member signers
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct Transfer<'a> {
     pub from: CpiHandleMut<'a>,
     pub to: CpiHandleMut<'a>,
@@ -86,6 +91,7 @@ pub struct Transfer<'a> {
 ///   2. `[writable]` to
 ///   3. `[signer]` authority, or `[]` multisig authority followed by member signers
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct TransferChecked<'a> {
     pub from: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
@@ -95,6 +101,7 @@ pub struct TransferChecked<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct MintTo<'a> {
     pub mint: CpiHandleMut<'a>,
     pub to: CpiHandleMut<'a>,
@@ -103,6 +110,7 @@ pub struct MintTo<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct MintToChecked<'a> {
     pub mint: CpiHandleMut<'a>,
     pub to: CpiHandleMut<'a>,
@@ -111,6 +119,7 @@ pub struct MintToChecked<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct Burn<'a> {
     pub from: CpiHandleMut<'a>,
     pub mint: CpiHandleMut<'a>,
@@ -119,6 +128,7 @@ pub struct Burn<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct BurnChecked<'a> {
     pub from: CpiHandleMut<'a>,
     pub mint: CpiHandleMut<'a>,
@@ -127,6 +137,7 @@ pub struct BurnChecked<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct Approve<'a> {
     pub to: CpiHandleMut<'a>,
     pub delegate: CpiHandle<'a>,
@@ -135,6 +146,7 @@ pub struct Approve<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct ApproveChecked<'a> {
     pub to: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
@@ -144,6 +156,7 @@ pub struct ApproveChecked<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct Revoke<'a> {
     pub source: CpiHandleMut<'a>,
     #[signer]
@@ -151,6 +164,7 @@ pub struct Revoke<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct SetAuthority<'a> {
     pub account_or_mint: CpiHandleMut<'a>,
     #[signer]
@@ -158,6 +172,7 @@ pub struct SetAuthority<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct CloseAccount<'a> {
     pub account: CpiHandleMut<'a>,
     pub destination: CpiHandleMut<'a>,
@@ -166,6 +181,7 @@ pub struct CloseAccount<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct FreezeAccount<'a> {
     pub account: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
@@ -174,6 +190,7 @@ pub struct FreezeAccount<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct ThawAccount<'a> {
     pub account: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
@@ -182,6 +199,7 @@ pub struct ThawAccount<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))]
 pub struct SyncNative<'a> {
     pub account: CpiHandleMut<'a>,
 }

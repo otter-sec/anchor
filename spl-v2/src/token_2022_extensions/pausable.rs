@@ -7,11 +7,13 @@ use {
 };
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct PausableInitialize<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct PausableToggle<'a> {
     pub mint: CpiHandleMut<'a>,
     #[signer]

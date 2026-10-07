@@ -10,6 +10,7 @@ use {
 pub use spl_token_metadata_interface::state::Field;
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct TokenMetadataInitialize<'a> {
     pub metadata: CpiHandleMut<'a>,
     pub update_authority: CpiHandle<'a>,
@@ -19,6 +20,7 @@ pub struct TokenMetadataInitialize<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct TokenMetadataUpdateAuthority<'a> {
     pub metadata: CpiHandleMut<'a>,
     #[signer]
@@ -26,6 +28,7 @@ pub struct TokenMetadataUpdateAuthority<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct TokenMetadataUpdateField<'a> {
     pub metadata: CpiHandleMut<'a>,
     #[signer]
@@ -33,6 +36,7 @@ pub struct TokenMetadataUpdateField<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct TokenMetadataRemoveKey<'a> {
     pub metadata: CpiHandleMut<'a>,
     #[signer]

@@ -228,9 +228,9 @@ pub const SUITES: &[ProgramSuite] = &[
             InstructionSuite { name: "rotate_authority", program_id: prop_amm_id, build: prop_amm_anchor_v2::build_rotate_authority_case },
         ],
     },
-    // Nested<T> account composition demo. v2 uses Nested<AdminConfig> to
-    // reuse admin+config validation across increment and reset. v1 must
-    // duplicate the admin + config fields in every instruction struct.
+    // Account composition demo. v2 embeds AdminConfig directly to reuse
+    // admin+config validation across increment and reset. The v1 baseline
+    // keeps the admin + config fields flat in its instruction structs.
     ProgramSuite {
         name: "nested_v1",
         family: "nested",

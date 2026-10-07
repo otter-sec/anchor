@@ -516,7 +516,7 @@ mod idl_tests {
     }
 
     /// Unwrap a `Single` account at the given index or panic. `Composite`
-    /// would only appear for a `Nested<Inner>` field, which none of the
+    /// would only appear for a nested account group, which none of the
     /// fixtures below use.
     fn single(items: &[IdlInstructionAccountItem], idx: usize) -> &IdlInstructionAccount {
         match &items[idx] {

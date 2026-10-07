@@ -309,13 +309,13 @@ fn test_unsafe_dup_distinct_ok() {
 }
 
 // ===========================================================================
-// Nested<Inner> variants — mirror the above cases one-for-one through a
-// `Nested<Inner>` wrapper. This exercises the derive's `base_offset`
-// threading: `Inner::try_accounts` is called with `__base_offset + offset`
+// Nested group variants — mirror the above cases one-for-one through
+// directly embedded account groups. This exercises the derive's `base_offset`
+// threading: `Inner::validate_accounts` receives `__base_offset + offset`
 // so bitvec indices stay in the global coordinate system.
 // ===========================================================================
 
-// -- Two mut via Nested -----------------------------------------------------
+// -- Two mut via nested groups ---------------------------------------------
 
 #[test]
 fn test_nested_two_mut_distinct_ok() {
@@ -343,7 +343,7 @@ fn test_nested_two_mut_dup_rejected() {
     assert_custom_error(&result, DUPLICATE_MUT_ERROR);
 }
 
-// -- Three mut via Nested — every dup position -----------------------------
+// -- Three mut via nested groups — every dup position -----------------------
 
 #[test]
 fn test_nested_three_mut_all_distinct_ok() {
@@ -414,7 +414,7 @@ fn test_nested_three_mut_dup_positions_1_and_2() {
     assert_custom_error(&result, DUPLICATE_MUT_ERROR);
 }
 
-// -- Mut + readonly via Nested ---------------------------------------------
+// -- Mut + readonly via nested groups --------------------------------------
 
 #[test]
 fn test_nested_mut_readonly_distinct_ok() {
@@ -447,7 +447,7 @@ fn test_nested_mut_readonly_dup_rejected() {
     assert_custom_error(&result, DUPLICATE_MUT_ERROR);
 }
 
-// -- Asymmetric unsafe(dup) via Nested -------------------------------------
+// -- Asymmetric unsafe(dup) via nested groups -------------------------------
 
 #[test]
 fn test_nested_asym_unsafe_dup_still_rejected() {
@@ -475,7 +475,7 @@ fn test_nested_asym_unsafe_dup_distinct_ok() {
     assert_eq!(read_value(&svm, &b), 6);
 }
 
-// -- Symmetric unsafe(dup) via Nested --------------------------------------
+// -- Symmetric unsafe(dup) via nested groups --------------------------------
 
 #[test]
 fn test_nested_unsafe_dup_aliased_ok() {
@@ -506,7 +506,7 @@ fn test_nested_unsafe_dup_distinct_ok() {
     assert_eq!(read_value(&svm, &b), 0);
 }
 
-// -- Cross-boundary: outer mut + Nested<InnerTwoMut> -----------------------
+// -- Cross-boundary: outer mut + InnerTwoMut --------------------------------
 //
 // Global offsets: outer=0, pair.data_a=1, pair.data_b=2.
 // Exercises that bit indices stay global across the boundary — the

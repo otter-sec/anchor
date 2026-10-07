@@ -669,7 +669,8 @@ pub trait Owner {
     const OWNER: Address;
 }
 
-/// Declares the on-chain address for a program marker type.
+/// Declares the on-chain address for a program marker or account wrapper.
+/// Fixed-address wrappers implement this for `#[account(resolve)]` clients.
 ///
 /// `Address` is re-exported from `pinocchio`, which itself re-exports
 /// `solana_address::Address`. That means built-in markers such as
@@ -851,38 +852,5 @@ pub trait AccountConstraint<A> {
     #[inline(always)]
     fn exit(_account: &mut A, _value: &Self::Value) -> core::result::Result<(), ProgramError> {
         Ok(())
-    }
-}
-
-pub struct Nested<T>(pub T);
-
-impl<T> Deref for Nested<T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        &self.0
-    }
-}
-
-impl<T> core::ops::DerefMut for Nested<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.0
-    }
-}
-
-#[doc(hidden)]
-impl<T: crate::IdlAccountType> crate::IdlAccountType for Nested<T> {
-    const __IDL_ACCOUNT_ENTRY: Option<&'static str> = T::__IDL_ACCOUNT_ENTRY;
-    const __IDL_TYPE_DEF: Option<&'static str> = T::__IDL_TYPE_DEF;
-    fn __idl_account_entry() -> Option<&'static str> {
-        T::__idl_account_entry()
-    }
-    fn __idl_type_def() -> Option<&'static str> {
-        T::__idl_type_def()
-    }
-    fn __register_idl_deps(
-        accounts: &mut ::alloc::vec::Vec<&'static str>,
-        types: &mut ::alloc::vec::Vec<&'static str>,
-    ) {
-        T::__register_idl_deps(accounts, types);
     }
 }

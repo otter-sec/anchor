@@ -27,7 +27,7 @@ pub mod nested_v2 {
     }
 
     /// Reset the counter to zero. Same admin gate, different action —
-    /// the `Nested<AdminConfig>` reuses the identical validation.
+    /// the nested `AdminConfig` reuses the identical validation.
     #[discrim = 2]
     #[inline(always)]
     pub fn reset(ctx: &mut Context<Reset>) -> Result<()> {
@@ -38,8 +38,7 @@ pub mod nested_v2 {
 
 // --- Shared admin validation ---
 //
-// In v1 you'd duplicate these two fields + constraints in every instruction
-// that needs admin access. With Nested<T>, define them once.
+// As in v1, an Accounts struct can contain another Accounts struct directly.
 
 #[derive(Accounts)]
 pub struct AdminConfig {
@@ -54,17 +53,18 @@ pub struct AdminConfig {
 pub struct Initialize {
     #[account(mut)]
     pub admin: Signer,
-    #[account(init, payer = admin, seeds = [b"config"], bump)]
+    #[account(init, payer = admin, seeds = [b"config"], bump, resolve)]
     pub config: Account<Config>,
-    #[account(init, payer = admin, seeds = [b"counter"], bump)]
+    #[account(init, payer = admin, seeds = [b"counter"], bump, resolve)]
     pub counter: Account<Counter>,
+    #[account(resolve)]
     pub system_program: Program<System>,
 }
 
 #[derive(Accounts)]
 pub struct Increment {
     /// Reuses AdminConfig's signer + has_one check.
-    pub admin_config: Nested<AdminConfig>,
+    pub admin_config: AdminConfig,
     #[account(mut, seeds = [b"counter"], bump = counter.bump)]
     pub counter: Account<Counter>,
 }
@@ -72,7 +72,7 @@ pub struct Increment {
 #[derive(Accounts)]
 pub struct Reset {
     /// Same composition — zero duplication.
-    pub admin_config: Nested<AdminConfig>,
+    pub admin_config: AdminConfig,
     #[account(mut, seeds = [b"counter"], bump = counter.bump)]
     pub counter: Account<Counter>,
 }

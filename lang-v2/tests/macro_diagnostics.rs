@@ -1,5 +1,75 @@
 use std::{fs, path::PathBuf, process::Command};
 
+#[test]
+#[cfg_attr(miri, ignore = "spawns cargo")]
+fn fixed_address_resolution_requires_a_single_address_client() {
+    compile_fail_case(
+        "resolved_group_with_id",
+        r#"
+use anchor_lang::prelude::*;
+declare_id!("11111111111111111111111111111111");
+#[derive(Accounts)]
+pub struct Inner { pub signer: Signer }
+impl Id for Inner {
+    fn id() -> Address { crate::ID }
+}
+#[derive(Accounts)]
+pub struct Outer {
+    #[account(resolve)]
+    pub inner: Inner,
+}
+"#,
+        &["type mismatch resolving", "__anchor_resolve"],
+    );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "spawns cargo")]
+fn resolved_builders_diagnose_unsupported_seeds_and_cycles() {
+    compile_fail_case(
+        "resolved_pda_explicit_bump",
+        r#"
+use anchor_lang::prelude::*;
+declare_id!("11111111111111111111111111111111");
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(seeds = [b"data"], bump = 1, resolve)]
+    pub data: UncheckedAccount,
+}
+"#,
+        &["resolve requires canonical PDA seeds"],
+    );
+    compile_fail_case(
+        "resolved_pda_instruction_seed",
+        r#"
+use anchor_lang::prelude::*;
+declare_id!("11111111111111111111111111111111");
+#[derive(Accounts)]
+#[instruction(value: u64)]
+pub struct Bad {
+    #[account(seeds = [value.to_le_bytes().as_ref()], bump, resolve)]
+    pub data: UncheckedAccount,
+}
+"#,
+        &["resolve requires canonical PDA seeds"],
+    );
+    compile_fail_case(
+        "resolved_pda_cycle",
+        r#"
+use anchor_lang::prelude::*;
+declare_id!("11111111111111111111111111111111");
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(seeds = [other.address().as_ref()], bump, resolve)]
+    pub data: UncheckedAccount,
+    #[account(seeds = [data.address().as_ref()], bump, resolve)]
+    pub other: UncheckedAccount,
+}
+"#,
+        &["resolved PDA accounts have a cyclic dependency"],
+    );
+}
+
 fn cargo_case(
     name: &str,
     source: &str,
@@ -174,8 +244,8 @@ pub mod btree_set_tuple_and_idl_type_args {
 #[test]
 fn nested_dependencies_are_forwarded() {
     let type_def = <CollectionArgs as IdlAccountType>::__idl_type_def().unwrap();
-    assert!(type_def.contains("\"name\":\"BTreeSet\""));
-    assert!(type_def.contains("\"name\":\"(NestedArgs,u16)\""));
+    assert!(type_def.contains("\"vec\":{\"defined\":{\"name\":\"NestedArgs\""));
+    assert!(type_def.contains("\"name\":\"__anchor_tuple_2\""));
 
     let mut accounts = alloc::vec::Vec::new();
     let mut types = alloc::vec::Vec::new();
@@ -234,7 +304,7 @@ pub struct Bad {
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
 fn nested_accounts_flattened_header_size_must_fit_u8_domain() {
-    // Top-level field count is only 2, but Nested expands to 128+128 = 256
+    // Top-level field count is only 2, but nested groups expand to 128+128 = 256
     // slots — past the 256-bit duplicate / u8 offset domain.
     let chunk_fields: String = (0..128)
         .map(|i| format!("    pub a{i}: UncheckedAccount,\n"))
@@ -251,8 +321,8 @@ pub struct Chunk {{
 
 #[derive(Accounts)]
 pub struct Outer {{
-    pub left: Nested<Chunk>,
-    pub right: Nested<Chunk>,
+    pub left: Chunk,
+    pub right: Chunk,
 }}
 "#
     );
@@ -793,8 +863,8 @@ pub struct Bad {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
-fn nested_accounts_reject_instruction_arguments() {
-    compile_fail_case(
+fn nested_accounts_read_instruction_arguments() {
+    compile_pass_case(
         "nested_instruction_args",
         r#"
 use anchor_lang::prelude::*;
@@ -820,10 +890,9 @@ pub struct Inner {
 
 #[derive(Accounts)]
 pub struct Outer {
-    pub inner: Nested<Inner>,
+    pub inner: Inner,
 }
 "#,
-        &["expected `()`, found `(u8,)`"],
     );
 }
 
@@ -1218,7 +1287,7 @@ pub mod shared {
 
     #[derive(Accounts)]
     pub struct Outer {
-        pub inner: Nested<crate::shared2::Leaf>,
+        pub inner: crate::shared2::Leaf,
     }
 }
 
@@ -1569,7 +1638,7 @@ pub struct Bad {
     pub system_program: Program<System>,
 }
 "#,
-        &["PDA init payers must be declared as `SystemAccount`"],
+        &["PdaPayer"],
     );
 }
 
@@ -2015,5 +2084,98 @@ mod tests {
 }
 "#,
         &["idl-build"],
+    );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "spawns cargo")]
+fn zero_copy_checks_resolved_layouts_instead_of_type_names() {
+    compile_pass_case(
+        "pod_fields_named_like_collections",
+        r#"
+use anchor_lang::prelude::*;
+declare_id!("11111111111111111111111111111111");
+mod custom {
+    use super::*;
+    #[account]
+    pub struct Vec { pub value: u64 }
+    #[account]
+    pub struct String { pub value: u64 }
+}
+type Value = custom::Vec;
+#[account]
+pub struct State { pub value: Value, pub text: custom::String }
+#[event(bytemuck)]
+pub struct Changed { pub value: Value }
+"#,
+    );
+    compile_fail_case(
+        "aliased_podvec_capacity",
+        r#"
+use anchor_lang::prelude::*;
+declare_id!("11111111111111111111111111111111");
+type Items = PodVec<u8, 70000>;
+#[account]
+pub struct State { pub items: Items }
+"#,
+        &["MAX must be <= 65_535"],
+    );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "spawns cargo")]
+fn bounded_space_rejects_missing_and_surplus_capacities() {
+    compile_fail_case(
+        "aliased_space_missing_capacity",
+        r#"
+use anchor_lang::prelude::*;
+type Text = String;
+#[derive(InitSpace)]
+pub struct State { pub text: Text }
+const _: usize = State::INIT_SPACE;
+"#,
+        &["max_len"],
+    );
+    compile_fail_case(
+        "aliased_space_surplus_capacity",
+        r#"
+use anchor_lang::prelude::*;
+type Text = String;
+#[derive(InitSpace)]
+pub struct State { #[max_len(1, 2)] pub text: Text }
+const _: usize = State::INIT_SPACE;
+"#,
+        &["too many max_len capacities"],
+    );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "spawns cargo")]
+fn program_account_aliases_project_client_and_cpi_types() {
+    compile_pass_case(
+        "program_account_alias_projections",
+        r#"
+use anchor_lang::prelude::*;
+declare_id!("11111111111111111111111111111111");
+#[derive(Accounts)]
+pub struct Original { pub signer: Signer }
+type PublicAccounts = Original;
+#[program(interface, program_id = crate::ID)]
+pub mod interface {
+    use super::*;
+    pub fn call(ctx: &mut Context<PublicAccounts>) -> Result<()> {
+        let _ = ctx;
+        Ok(())
+    }
+}
+pub fn build() {
+    let accounts = accounts::PublicAccounts { signer: crate::ID };
+    let _ = accounts.to_account_metas(None);
+    let _ = accounts::PublicAccountsResolved { signer: crate::ID };
+}
+pub fn cpi_fields<'a>(signer: CpiHandle<'a>) -> cpi::accounts::PublicAccounts<'a> {
+    cpi::accounts::PublicAccounts { signer }
+}
+"#,
     );
 }

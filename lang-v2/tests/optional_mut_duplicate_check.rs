@@ -49,3 +49,32 @@ struct OptionalSpyAccounts {
 fn optional_mut_duplicate_derive_smoke() {
     let _ = size_of::<OptionalSpyAccounts>();
 }
+
+type MaybeSpy = Option<SpyAccount>;
+#[derive(Accounts)]
+struct AliasedOptional {
+    #[account(mut, constraint = present.account().is_writable())]
+    present: MaybeSpy,
+    #[account(mut, constraint = false)]
+    absent: MaybeSpy,
+}
+
+#[test]
+fn optional_aliases_use_the_same_constraint_and_mask_protocol() {
+    use anchor_lang::{
+        testing::{AccountBuffer, MIN_ACCOUNT_BUF},
+        TryAccounts,
+    };
+    let present = AccountBuffer::<MIN_ACCOUNT_BUF>::new();
+    present.init([2; 32], [0; 32], 0, false, true, false);
+    let absent = AccountBuffer::<MIN_ACCOUNT_BUF>::new();
+    absent.init(crate::ID.to_bytes(), [0; 32], 0, false, false, false);
+    let views = [unsafe { present.view() }, unsafe { absent.view() }];
+    let (accounts, _, ()) =
+        AliasedOptional::try_accounts(&crate::ID, &views, None, 0, &[]).unwrap();
+    assert!(accounts.present.is_some());
+    assert!(accounts.absent.is_none());
+    assert_eq!(AliasedOptional::MUT_MASK, [0; 4]);
+    assert!(AliasedOptional::HAS_DYNAMIC_MUT_MASK);
+    assert_eq!(accounts.active_mut_mask(), [1, 0, 0, 0]);
+}

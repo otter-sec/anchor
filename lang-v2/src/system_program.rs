@@ -5,6 +5,7 @@
 
 extern crate alloc;
 
+pub use crate::programs::System;
 use {
     crate::{require, CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts},
     alloc::{string::String, vec::Vec},
@@ -12,8 +13,6 @@ use {
     solana_address::Address,
     solana_program_error::{ProgramError, ProgramResult},
 };
-
-pub use crate::programs::System;
 
 pub const ID: Address = crate::address!("11111111111111111111111111111111");
 
@@ -62,6 +61,7 @@ pub fn advance_nonce_account<'a>(ctx: CpiContext<'a, AdvanceNonceAccount<'a>>) -
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct AdvanceNonceAccount<'a> {
     pub nonce: CpiHandleMut<'a>,
     pub recent_blockhashes: CpiHandle<'a>,
@@ -77,6 +77,7 @@ pub fn allocate<'a>(ctx: CpiContext<'a, Allocate<'a>>, space: u64) -> ProgramRes
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct Allocate<'a> {
     #[signer]
     pub account_to_allocate: CpiHandleMut<'a>,
@@ -100,6 +101,7 @@ pub fn allocate_with_seed<'a>(
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct AllocateWithSeed<'a> {
     pub account_to_allocate: CpiHandleMut<'a>,
     #[signer]
@@ -114,6 +116,7 @@ pub fn assign<'a>(ctx: CpiContext<'a, Assign<'a>>, owner: &Address) -> ProgramRe
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct Assign<'a> {
     #[signer]
     pub account_to_assign: CpiHandleMut<'a>,
@@ -135,6 +138,7 @@ pub fn assign_with_seed<'a>(
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct AssignWithSeed<'a> {
     pub account_to_assign: CpiHandleMut<'a>,
     #[signer]
@@ -152,6 +156,7 @@ pub fn authorize_nonce_account<'a>(
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct AuthorizeNonceAccount<'a> {
     pub nonce: CpiHandleMut<'a>,
     #[signer]
@@ -173,6 +178,7 @@ pub fn create_account<'a>(
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct CreateAccount<'a> {
     #[signer]
     pub from: CpiHandleMut<'a>,
@@ -200,6 +206,7 @@ pub fn create_account_with_seed<'a>(
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct CreateAccountWithSeed<'a> {
     #[signer]
     pub from: CpiHandleMut<'a>,
@@ -237,6 +244,7 @@ pub fn create_nonce_account<'a>(
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct CreateNonceAccount<'a> {
     #[signer]
     pub from: CpiHandleMut<'a>,
@@ -278,6 +286,7 @@ pub fn create_nonce_account_with_seed<'a>(
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct CreateNonceAccountWithSeed<'a> {
     #[signer]
     pub from: CpiHandleMut<'a>,
@@ -296,6 +305,7 @@ pub fn transfer<'a>(ctx: CpiContext<'a, Transfer<'a>>, lamports: u64) -> Program
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct Transfer<'a> {
     #[signer]
     pub from: CpiHandleMut<'a>,
@@ -319,6 +329,7 @@ pub fn transfer_with_seed<'a>(
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct TransferWithSeed<'a> {
     pub from: CpiHandleMut<'a>,
     #[signer]
@@ -337,6 +348,7 @@ pub fn withdraw_nonce_account<'a>(
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 pub struct WithdrawNonceAccount<'a> {
     pub nonce: CpiHandleMut<'a>,
     pub to: CpiHandleMut<'a>,
@@ -347,6 +359,7 @@ pub struct WithdrawNonceAccount<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(ID)]
 struct InitializeNonceAccount<'a> {
     nonce: CpiHandleMut<'a>,
     recent_blockhashes: CpiHandle<'a>,

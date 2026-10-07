@@ -1192,7 +1192,7 @@ pub struct NestedIdlDepsInner {
 
 #[derive(Accounts)]
 pub struct NestedIdlDepsOuter {
-    pub inner: Nested<NestedIdlDepsInner>,
+    pub inner: NestedIdlDepsInner,
 }
 
 #[derive(Accounts)]
@@ -1202,5 +1202,5 @@ pub struct NestedNoDepsInner {
 
 #[derive(Accounts)]
 pub struct NestedNoDepsOuter {
-    pub inner: Nested<NestedNoDepsInner>,
+    pub inner: NestedNoDepsInner,
 }

@@ -532,6 +532,8 @@ fn namespaced_constraints_accept_qualified_constants_as_values() {
         r#"
 use anchor_lang::prelude::*;
 
+declare_id!("11111111111111111111111111111111");
+
 #[derive(Default, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
 pub struct Counter {
     pub value: u64,
@@ -673,7 +675,7 @@ fn namespaced_constraints_reject_self_refs_during_init() {
         "namespaced_constraint_init_self_ref",
         r#"
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Token, TokenAccount};
+use anchor_spl::{mint::Mint, token::{Token, TokenAccount}};
 
 declare_id!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
 
@@ -681,7 +683,8 @@ declare_id!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
 pub struct Bad {
     #[account(mut)]
     pub payer: Signer,
-    #[account(init, payer = payer, token::authority = token_account)]
+    pub mint: Account<Mint>,
+    #[account(init, payer = payer, token::mint = mint, token::authority = token_account)]
     pub token_account: Account<TokenAccount>,
     pub token_program: Program<Token>,
     pub system_program: Program<System>,
@@ -1006,7 +1009,7 @@ pub struct Inner {
 #[derive(Accounts)]
 pub struct Outer {
     pub authority: UncheckedAccount,
-    pub inner: Nested<Inner>,
+    pub inner: Inner,
 }
 
 pub fn nested_bump(ctx: &Context<'_, Outer>) -> u8 {
@@ -1035,7 +1038,7 @@ pub struct Inner {
 #[derive(Accounts)]
 pub struct Outer {
     pub authority: UncheckedAccount,
-    pub inner: Nested<Inner>,
+    pub inner: Inner,
 }
 
 pub fn nested_bump(ctx: &Context<'_, Outer>) -> u8 {
@@ -1184,6 +1187,33 @@ fn declare_program_account_group_variants_do_not_collide_with_existing_types() {
     let idl = Box::leak(surface.to_string().into_boxed_str());
 
     declare_program_case("declare_program_account_group_type_name_collision", idl).expect_pass();
+}
+
+#[test]
+fn declare_program_emits_direct_nested_account_groups() {
+    CompileCase::new(
+        "declare_program_direct_nested_groups",
+        r#"
+use anchor_lang::prelude::*;
+declare_program!(bad);
+
+pub fn take_inner(accounts: bad::Ix) -> bad::Inner {
+    accounts.inner
+}
+"#,
+    )
+    .file(
+        "idls/bad.json",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [{
+    "name": "ix", "discriminator": [1], "args": [],
+    "accounts": [{ "name": "inner", "accounts": [{ "name": "data" }] }]
+  }]
+}"#,
+    )
+    .expect_pass();
 }
 
 #[test]
@@ -1991,7 +2021,7 @@ pub struct Bad {
 }
 
 #[test]
-fn missing_instruction_args_do_not_compile() {
+fn instruction_arg_prefix_compiles() {
     CompileCase::new(
         "missing_instruction_args",
         r#"
@@ -2017,7 +2047,7 @@ pub struct Bad {
 }
 "#,
     )
-    .expect_fail(&["the trait bound", "__AnchorIxArgCoerce"]);
+    .expect_pass();
 }
 
 #[test]
@@ -2254,7 +2284,7 @@ pub struct Close {
 }
 
 #[test]
-fn account_attrs_on_nested_field_do_not_compile() {
+fn nested_account_constraints_must_be_valid_rust() {
     CompileCase::new(
         "account_attrs_on_nested_field",
         r#"
@@ -2281,11 +2311,11 @@ pub struct Inner {
 #[derive(Accounts)]
 pub struct Outer {
     #[account(constraint = missing_symbol_that_should_not_compile())]
-    pub inner: Nested<Inner>,
+    pub inner: Inner,
 }
 "#,
     )
-    .expect_fail(&["`#[account(...)]` attributes are not supported on `Nested<T>` fields"]);
+    .expect_fail(&["cannot find function `missing_symbol_that_should_not_compile`"]);
 }
 
 #[test]
@@ -2733,6 +2763,8 @@ fn realloc_on_borsh_account_alias_compiles() {
         "realloc_on_borsh_account_alias",
         r#"
 use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
 
 #[derive(anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize, Default)]
 pub struct Data {

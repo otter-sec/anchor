@@ -66,7 +66,7 @@ fn test_increment() {
     let config = config_address();
     let counter = counter_address();
 
-    // Accounts: Nested<AdminConfig>{admin, config}, counter
+    // Accounts: AdminConfig { admin, config }, counter
     let metas = vec![
         AccountMeta::new_readonly(admin.pubkey(), true),
         AccountMeta::new_readonly(config, false),

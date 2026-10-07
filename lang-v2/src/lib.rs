@@ -6,16 +6,21 @@
 extern crate alloc;
 extern crate self as anchor_lang;
 
+mod pod_layout;
+
+mod account_field;
 pub mod accounts;
 pub mod context;
 mod context_cpi;
 pub mod cpi;
+mod cpi_field;
 pub mod cursor;
 mod dispatch;
 pub mod event;
 pub mod hash;
 #[doc(hidden)]
 pub mod idl_build;
+mod idl_type;
 pub mod loader;
 pub mod pod;
 pub mod prelude;
@@ -27,7 +32,6 @@ pub mod testing;
 mod traits;
 
 // Re-export derive macros and bytemuck for generated code
-pub use cpi::realloc_account;
 /// Chunked 4×u64 equality compare for `Address`. Preferred over `==`
 /// on `&Address`. See <https://github.com/anza-xyz/solana-sdk/issues/345>.
 pub use pinocchio::address::address_eq;
@@ -43,6 +47,7 @@ pub use solana_msg;
 #[cfg(feature = "compat")]
 #[doc(hidden)]
 pub use solana_program_log::log as __log_str;
+pub use cpi::realloc_account;
 
 // Ungated re-export so generated macro code (`#[event]`, `debug!`, etc.)
 // can reach `Vec` without std or `extern crate alloc;` in user crates.
@@ -195,8 +200,9 @@ pub use solana_instruction::account_meta::AccountMeta;
 pub use {
     accounts::{AccountInitialize, SlabInit},
     anchor_derive_accounts::{
-        access_control, account, constant, declare_program, emit, error_code, event, pod_wrapper,
-        program, Accounts, AnchorDeserialize, AnchorSerialize, InitSpace, ToCpiAccounts, __erase,
+        __erase, access_control, account, constant, declare_program, emit, error_code, event,
+        pod_wrapper, program, Accounts, AnchorDeserialize, AnchorSerialize, InitSpace,
+        ToCpiAccounts,
     },
     bytemuck,
     context::{Bumps, Context, MutMask},
@@ -265,51 +271,20 @@ pub trait InstructionData: Discriminator {
     fn data(&self) -> alloc::vec::Vec<u8>;
 }
 
-/// Compile-time account-size calculation. Derived via `#[derive(InitSpace)]`.
-/// Typically used to size account rent: `space = 8 + MyAccount::INIT_SPACE`.
-///
-/// The derive handles Borsh-size accounting for variable-length fields via a
-/// `#[max_len(N)]` helper attribute on `String` / `Vec<T>` fields. POD accounts
-/// that use the default wincode backing should just use `core::mem::size_of`.
-pub trait Space {
-    const INIT_SPACE: usize;
-}
-
-macro_rules! impl_space_for_primitives {
-    ($($ty:ty => $space:expr),* $(,)?) => {
-        $(
-            impl Space for $ty {
-                const INIT_SPACE: usize = $space;
-            }
-        )*
-    };
-}
-
-impl_space_for_primitives! {
-    bool => 1,
-    i8 => 1,
-    u8 => 1,
-    i16 => 2,
-    u16 => 2,
-    i32 => 4,
-    u32 => 4,
-    f32 => 4,
-    i64 => 8,
-    u64 => 8,
-    f64 => 8,
-    i128 => 16,
-    u128 => 16,
-    Address => 32,
-}
-
-impl<T: Space, const N: usize> Space for [T; N] {
-    const INIT_SPACE: usize = T::INIT_SPACE * N;
-}
+mod space;
+pub use space::Space;
 
 #[doc(hidden)]
 pub mod __private {
-    use crate::CpiHandle;
-    use pinocchio::account::AccountView;
+    use {crate::CpiHandle, pinocchio::account::AccountView};
+
+    // Public for code generated in downstream crates and handwritten extensions.
+    pub use crate::{
+        account_field::{AccountField, AccountSlot, PdaPayer},
+        cpi_field::{CpiField, CpiReadonlyField, SingleCpiField},
+        pod_layout::PodLayout,
+        space::{BoundedSpace, Limits, NoLimits, SpaceLimits},
+    };
 
     /// Used by `#[derive(InitSpace)]` on enums to pick the largest variant size.
     pub const fn max(a: usize, b: usize) -> usize {

@@ -79,8 +79,6 @@ pub use crate::{
     InstructionData,
     Lamports,
     LamportsMutable,
-    // Nested
-    Nested,
     // Marker traits
     Owner,
     // Error

@@ -30,9 +30,9 @@ pub mod nested_v1 {
 
 // --- Instructions ---
 //
-// Without Nested<T>, admin + config must be duplicated in every
-// instruction that needs admin access. Compare with v2 which
-// defines AdminConfig once and embeds it via Nested<AdminConfig>.
+// This baseline keeps admin + config fields flat in each instruction.
+// The v2 example defines AdminConfig once and embeds it directly.
+// V1 also supports composite Accounts structs.
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
@@ -47,7 +47,7 @@ pub struct Initialize<'info> {
 
 #[derive(Accounts)]
 pub struct Increment<'info> {
-    // Duplicated admin gate — in v2 this is `admin_config: Nested<AdminConfig>`
+    // Duplicated admin gate — in v2 this is `admin_config: AdminConfig`
     pub admin: Signer<'info>,
     #[account(has_one = admin, seeds = [b"config"], bump = config.bump)]
     pub config: Account<'info, Config>,

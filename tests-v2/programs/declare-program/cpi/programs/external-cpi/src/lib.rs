@@ -120,7 +120,7 @@ pub struct Inner {
 
 #[derive(Accounts)]
 pub struct Composite {
-    pub inner: Nested<Inner>,
+    pub inner: Inner,
     #[account(mut)]
     pub payer: Signer,
 }

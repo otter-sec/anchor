@@ -6,6 +6,7 @@ use {
 };
 
 #[derive(ToCpiAccounts)]
+#[accounts_program_id(anchor_lang::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"))]
 pub struct MemoTransfer<'a> {
     pub account: CpiHandleMut<'a>,
     #[signer]

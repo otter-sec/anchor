@@ -143,7 +143,7 @@ pub mod anchor_v2 {
         let (config, _) = config_address();
         let (counter, _) = counter_address();
 
-        // Accounts in order: Nested<AdminConfig>{admin, config}, counter
+        // Accounts in order: AdminConfig { admin, config }, counter
         let metas = vec![
             AccountMeta::new_readonly(admin.pubkey(), true),
             AccountMeta::new_readonly(config, false),

@@ -28,6 +28,15 @@ impl<T: Id> Program<T> {
     }
 }
 
+impl<T: Id> Id for Program<T> {
+    #[inline(always)]
+    fn id() -> Address {
+        T::id()
+    }
+
+    const IDL_ADDRESS: &'static str = T::IDL_ADDRESS;
+}
+
 impl<T: Id> AnchorAccount for Program<T> {
     type Data = AccountView;
     #[inline(always)]

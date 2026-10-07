@@ -60,10 +60,10 @@ pub mod dup_mut {
         Ok(())
     }
 
-    // -- Nested<Inner> variants ----------------------------------------------
+    // -- Nested account group variants ---------------------------------------
     //
     // Each of the direct-field scenarios above is mirrored through a
-    // `Nested<Inner>` wrapper so the bitvec `base_offset` threading is
+    // direct inner account group so the bitvec `base_offset` threading is
     // exercised: the derive's duplicate-mut constraint check uses
     // `__base_offset + offset_expr`, so a bug that dropped the offset would
     // surface as either false positives (distinct accounts rejected) or
@@ -111,7 +111,7 @@ pub mod dup_mut {
         Ok(())
     }
 
-    // Cross-boundary: outer mut account sitting next to Nested<Pair>. Lets
+    // Cross-boundary: outer mut account sitting next to an inner pair. Lets
     // tests alias the outer field against either of the inner fields and
     // confirm the check fires regardless of which side of the boundary the
     // duplicate lives on.
@@ -182,7 +182,7 @@ pub struct TouchTwoMutUnsafe {
     pub data_b: Account<Data>,
 }
 
-// --- Inner `Accounts` structs (embedded via `Nested<_>`) -------------------
+// --- Inner `Accounts` structs (embedded directly) -------------------------
 //
 // These mirror the direct-field variants one-for-one. They are plain
 // `#[derive(Accounts)]` structs, so the derive emits a `TryAccounts` impl
@@ -230,38 +230,38 @@ pub struct InnerUnsafe {
     pub data_b: Account<Data>,
 }
 
-// --- Outer instructions that wrap each Inner via Nested<_> -----------------
+// --- Outer instructions that contain each inner group directly ------------
 
 #[derive(Accounts)]
 pub struct TouchNestedTwoMut {
-    pub pair: Nested<InnerTwoMut>,
+    pub pair: InnerTwoMut,
 }
 
 #[derive(Accounts)]
 pub struct TouchNestedThreeMut {
-    pub trio: Nested<InnerThreeMut>,
+    pub trio: InnerThreeMut,
 }
 
 #[derive(Accounts)]
 pub struct TouchNestedMutReadonly {
-    pub pair: Nested<InnerMutReadonly>,
+    pub pair: InnerMutReadonly,
 }
 
 #[derive(Accounts)]
 pub struct TouchNestedAsymUnsafe {
-    pub pair: Nested<InnerAsymUnsafe>,
+    pub pair: InnerAsymUnsafe,
 }
 
 #[derive(Accounts)]
 pub struct TouchNestedUnsafe {
-    pub pair: Nested<InnerUnsafe>,
+    pub pair: InnerUnsafe,
 }
 
 #[derive(Accounts)]
 pub struct TouchOuterMutPlusNested {
     #[account(mut)]
     pub outer: Account<Data>,
-    pub pair: Nested<InnerTwoMut>,
+    pub pair: InnerTwoMut,
 }
 
 #[account]

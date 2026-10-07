@@ -43,6 +43,7 @@ anchor-lang = {{ path = "{}" }}
         r#"
 use anchor_lang::prelude::*;
 
+#[derive(IdlType)]
 struct Weird;
 
 impl core::fmt::Debug for Weird {
