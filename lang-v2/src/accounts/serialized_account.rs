@@ -266,8 +266,8 @@ where
         let data_ref = view.try_borrow()?;
         let (data, serialized_len) = Self::validate_and_load(view, &data_ref)?;
         // SAFETY: AccountView's raw pointer is valid for the entire instruction
-        // lifetime (Solana runtime guarantee). We hold the Ref to prevent
-        // subsequent mutable borrows on the same account (duplicate detection).
+        // lifetime (Solana runtime guarantee). We hold the Ref so an aliased
+        // view of the same account cannot take a mutable borrow.
         let guard: Ref<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
         Ok(Self {
             view,
@@ -279,11 +279,7 @@ where
         })
     }
 
-    /// # Safety
-    ///
-    /// See [`AnchorAccount::load_mut`] — caller must ensure no other live
-    /// `&mut` to the same account data exists.
-    unsafe fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
+    fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
         // Guardrail: catches "forgot `#[account(mut)]`" early with a clear
         // error. Under `default-features = false` the Solana runtime still
         // rejects the tx when we try to write, just with a less specific

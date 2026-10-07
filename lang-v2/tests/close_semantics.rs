@@ -121,7 +121,7 @@ fn close_zeros_the_48_byte_header() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+        let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
         vault.close(dest_view).unwrap();
     }
 
@@ -155,7 +155,7 @@ fn close_rejects_non_writable_destination() {
 
     let view = unsafe { buf.view() };
     let dest_view = unsafe { dest_buf.view() };
-    let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+    let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
 
     let err = vault.close(dest_view).unwrap_err();
 
@@ -187,7 +187,7 @@ fn close_scrubs_discriminator_to_closed_sentinel() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+        let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
         vault.close(dest_view).unwrap();
     }
 
@@ -227,7 +227,7 @@ fn close_scrubs_discriminator_even_after_release_borrow() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+        let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
 
         // Simulate the handler committing state and dropping the guard
         // (e.g. pre-CPI) before close runs in exit_accounts.
@@ -255,7 +255,7 @@ fn second_borsh_close_after_manual_close_is_noop() {
 
     let view = unsafe { buf.view() };
     let dest_view = unsafe { dest_buf.view() };
-    let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+    let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
 
     vault.close(dest_view).unwrap();
     vault.close(dest_view).unwrap();
@@ -281,7 +281,7 @@ fn load_after_close_rejects_with_data_too_small() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+        let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
         vault.close(dest_view).unwrap();
     }
 
@@ -314,7 +314,7 @@ fn resurrected_account_reload_rejects_after_disc_scrub() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+        let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
         vault.close(dest_view).unwrap();
     }
 
@@ -435,7 +435,7 @@ fn slab_close_scrubs_discriminator_to_closed_sentinel() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
+        let mut counter = Slab::<CounterHeader>::load_mut(view).unwrap();
         counter.close(dest_view).unwrap();
     }
 
@@ -458,7 +458,7 @@ fn close_rejects_self_as_destination() {
     let view = unsafe { buf.view() };
     // Same account handed in as the close destination.
     let self_as_dest = unsafe { buf.view() };
-    let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+    let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
 
     let err = vault.close(self_as_dest).unwrap_err();
 
@@ -484,7 +484,7 @@ fn slab_close_rejects_self_as_destination() {
 
     let view = unsafe { buf.view() };
     let self_as_dest = unsafe { buf.view() };
-    let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
+    let mut counter = Slab::<CounterHeader>::load_mut(view).unwrap();
 
     let err = counter.close(self_as_dest).unwrap_err();
 
@@ -512,7 +512,7 @@ fn slab_close_rejects_non_writable_destination() {
 
     let view = unsafe { buf.view() };
     let dest_view = unsafe { dest_buf.view() };
-    let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
+    let mut counter = Slab::<CounterHeader>::load_mut(view).unwrap();
 
     let err = counter.close(dest_view).unwrap_err();
 
@@ -570,7 +570,7 @@ fn slab_close_flips_is_mutable_so_deref_mut_panics() {
     dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
     let view = unsafe { buf.view() };
     let dest_view = unsafe { dest_buf.view() };
-    let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
+    let mut counter = Slab::<CounterHeader>::load_mut(view).unwrap();
     counter.close(dest_view).unwrap();
 
     // Post-close: is_mutable should be flipped to false. DerefMut must
@@ -590,7 +590,7 @@ fn second_slab_close_after_manual_close_panics() {
 
     let view = unsafe { buf.view() };
     let dest_view = unsafe { dest_buf.view() };
-    let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
+    let mut counter = Slab::<CounterHeader>::load_mut(view).unwrap();
 
     counter.close(dest_view).unwrap();
     counter.close(dest_view).unwrap();
@@ -607,7 +607,7 @@ fn slab_resurrected_account_reload_rejects_after_disc_scrub() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
+        let mut counter = Slab::<CounterHeader>::load_mut(view).unwrap();
         counter.close(dest_view).unwrap();
     }
 
