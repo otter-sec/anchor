@@ -65,6 +65,9 @@ use solana_client::send_and_confirm_transactions_in_parallel::{
     send_and_confirm_transactions_in_parallel_v3, SendAndConfirmConfigV3,
 };
 
+#[cfg(feature = "solana-v4")]
+const MICRO_LAMPORTS_PER_LAMPORT: u64 = 1_000_000;
+
 /// Outer retry cap on the full deploy/upgrade cycle; inner per-batch resign is `max_sign_attempts`.
 const MAX_DEPLOY_ATTEMPTS: u32 = 3;
 
@@ -3022,6 +3025,17 @@ fn prepare_write_messages(
     let chunks = program_data.chunks(instruction_chunk_size).zip(0usize..);
 
     let mut instructions = Vec::new();
+    // Priority fee input is in micro-lamports per CU requested
+    // calculate the final value as expected by transaction v1 
+    // (round to 1 lamport if non zero value was requested)
+    // https://solana.com/docs/core/transactions/versioned-transactions#resource-limits-in-v1-the-transaction-config
+    let compute_unit_limit = WRITE_COMPUTE_UNIT_LIMIT * instructions_per_transaction;
+    let priority_fee = if let Some(fee) = priority_fee {
+        fee.checked_mul(compute_unit_limit as u64)
+            .and_then(|res| Some(res.div_ceil(MICRO_LAMPORTS_PER_LAMPORT))).or(Some(1))
+    } else {
+        None
+    };
 
     let create_msg = |instructions: Vec<Instruction>| {
         let msg = solana_message::v1::Message::try_compile_with_config(
@@ -3032,7 +3046,7 @@ fn prepare_write_messages(
                 loaded_accounts_data_size_limit: Some(
                     program_data.len() as u32 + LOADED_DATA_SIZE_HEADROOM,
                 ),
-                compute_unit_limit: Some(WRITE_COMPUTE_UNIT_LIMIT * instructions_per_transaction),
+                compute_unit_limit: Some(compute_unit_limit),
                 priority_fee,
                 ..Default::default()
             },
@@ -3060,7 +3074,7 @@ fn prepare_write_messages(
             );
             instructions.push(ix);
 
-            if instructions.len() == instructions_per_transaction {
+            if instructions.len() == instructions_per_transaction as usize {
                 write_messages.push(create_msg(instructions));
                 instructions = Vec::new();
             }
