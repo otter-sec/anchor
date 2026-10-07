@@ -3026,13 +3026,14 @@ fn prepare_write_messages(
 
     let mut instructions = Vec::new();
     // Priority fee input is in micro-lamports per CU requested
-    // calculate the final value as expected by transaction v1 
+    // calculate the final value as expected by transaction v1
     // (round to 1 lamport if non zero value was requested)
     // https://solana.com/docs/core/transactions/versioned-transactions#resource-limits-in-v1-the-transaction-config
     let compute_unit_limit = WRITE_COMPUTE_UNIT_LIMIT * instructions_per_transaction;
     let priority_fee = if let Some(fee) = priority_fee {
         fee.checked_mul(compute_unit_limit as u64)
-            .and_then(|res| Some(res.div_ceil(MICRO_LAMPORTS_PER_LAMPORT))).or(Some(1))
+            .and_then(|res| Some(res.div_ceil(MICRO_LAMPORTS_PER_LAMPORT)))
+            .or(Some(1))
     } else {
         None
     };
