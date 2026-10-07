@@ -470,7 +470,7 @@ jobs:
             path: tests/typescript
           - cmd: cd tests/duplicate-mutable-accounts && anchor test --skip-lint
             path: tests/duplicate-mutable-accounts
-          - cmd: cd tests/zero-copy && anchor test --skip-lint && cd programs/zero-copy && cargo test-sbf
+          - cmd: cd tests/zero-copy && anchor test --skip-lint && cd programs/zero-copy && cargo test-sbf --tools-version v1.57
             path: tests/zero-copy
           - cmd: cd tests/chat && anchor test --skip-lint
             path: tests/chat

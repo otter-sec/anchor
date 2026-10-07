@@ -5,7 +5,7 @@ publish = true
 repository.workspace = true
 license = "Apache-2.0"
 description = "Anchor attribute macro for defining an event"
-rust-version = "1.60"
+rust-version = "1.95.0"
 edition = "2021"
 
 [package.metadata.docs.rs]
