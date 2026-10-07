@@ -314,4 +314,59 @@ describe("AccountsResolver", () => {
       pda: expectedPda,
     });
   });
+
+  // Rust encodes signed integer seeds with `to_le_bytes`, i.e. two's
+  // complement. Expected bytes below were produced by Rust.
+  it.each([
+    ["i16", -2, "feff"],
+    ["i32", -1000, "18fcffff"],
+    ["i64", new BN(-1), "ffffffffffffffff"],
+    ["i64", new BN("-9223372036854775808"), "0000000000000080"],
+    ["i64", new BN(1000), "e803000000000000"],
+    ["i128", new BN(-1000000007), "f93565c4ffffffffffffffffffffffff"],
+    ["i256", new BN(-1), "ff".repeat(32)],
+  ])(
+    "encodes %s arg seed %s like Rust to_le_bytes",
+    async (type, value, expectedHex) => {
+      const programId = new PublicKey(
+        "Test111111111111111111111111111111111111111"
+      );
+      const idl: Idl = {
+        address: programId.toBase58(),
+        metadata: { name: "test", version: "0.0.0", spec: "0.1.0" },
+        instructions: [
+          {
+            name: "doThing",
+            discriminator: [0, 0, 0, 0, 0, 0, 0, 0],
+            args: [{ name: "value", type: type as any }],
+            accounts: [
+              {
+                name: "pda",
+                pda: { seeds: [{ kind: "arg", path: "value" }] },
+              },
+            ],
+          },
+        ],
+      };
+
+      const accounts: Record<string, PublicKey> = {};
+      const resolver = new AccountsResolver(
+        [value],
+        accounts,
+        {} as any,
+        programId,
+        idl.instructions[0] as any,
+        {} as any,
+        []
+      );
+
+      await resolver.resolve();
+
+      const [expectedPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from(expectedHex, "hex")],
+        programId
+      );
+      expect(accounts.pda).toEqual(expectedPda);
+    }
+  );
 });

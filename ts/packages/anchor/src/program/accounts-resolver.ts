@@ -574,20 +574,25 @@ export class AccountsResolver<IDL extends Idl> {
       case "i8":
         return Buffer.from([value]);
       case "u16":
-      case "i16":
         return new BN(value).toArrayLike(Buffer, "le", 2);
+      case "i16":
+        return new BN(value).toTwos(16).toArrayLike(Buffer, "le", 2);
       case "u32":
-      case "i32":
         return new BN(value).toArrayLike(Buffer, "le", 4);
+      case "i32":
+        return new BN(value).toTwos(32).toArrayLike(Buffer, "le", 4);
       case "u64":
-      case "i64":
         return new BN(value).toArrayLike(Buffer, "le", 8);
+      case "i64":
+        return new BN(value).toTwos(64).toArrayLike(Buffer, "le", 8);
       case "u128":
-      case "i128":
         return new BN(value).toArrayLike(Buffer, "le", 16);
+      case "i128":
+        return new BN(value).toTwos(128).toArrayLike(Buffer, "le", 16);
       case "u256":
-      case "i256":
         return new BN(value).toArrayLike(Buffer, "le", 32);
+      case "i256":
+        return new BN(value).toTwos(256).toArrayLike(Buffer, "le", 32);
       case "string":
         return Buffer.from(value);
       case "pubkey":
