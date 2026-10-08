@@ -17,6 +17,34 @@ Anchor supports overriding discriminators with custom values for accounts, event
   An all-zero account discriminator is indistinguishable from a freshly allocated, uninitialized account. A program-owned account whose data is still zero (for example, an `AccountInfo{:rs}` that has been allocated but not yet written, or one prepared for `#[zero]{:rs}` initialization) would pass the discriminator check, exposing the program to takeover via IDL instructions and other security and usability issues.
 </Callout>
 
+## Generic account types
+
+Different instantiations of the same generic `#[account]{:rs}` type share a default discriminator:
+generic arguments are not part of its derivation.
+
+```rust showLineNumbers=false
+#[account]
+pub struct State<T: AnchorSerialize + AnchorDeserialize + Clone> {
+    pub value: T,
+}
+
+// State<A> and State<B> share a discriminator despite being distinct Rust types.
+// State<u64>
+// State<u128>
+```
+
+An account serialized as `State<u128>{:rs}` can deserialize as `State<u64>{:rs}`: the discriminator
+matches, and deserialization reads the first eight bytes of the value, leaving the remaining
+bytes unchecked. The reverse requires enough account data for a `u128{:rs}`; a minimally sized
+`State<u64>{:rs}` account is too short.
+
+<Callout variant="danger" title="Generic arguments do not distinguish accounts">
+  If the serialized data for one instantiation can be deserialized as another, an account can
+  pass the discriminator check and be interpreted as the wrong type. Do not rely on generic
+  arguments to prevent this type confusion. Use distinct account structs with distinct
+  discriminators, or explicitly validate a stored type tag before using the account data.
+</Callout>
+
 ## Borrowed data in account types
 
 Account types used with `Context` should own their values rather than hold references borrowed

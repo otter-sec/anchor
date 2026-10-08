@@ -572,13 +572,25 @@ pub fn gen_idl_type(
             Ok((quote! { #idl::IdlType::I128 }, vec![]))
         }
         syn::Type::Path(path)
-            if path_is_builtin(path, "String", &[&["std", "string", "String"]])
-                || the_only_segment_is(path, "str") =>
+            if path_is_builtin(
+                path,
+                "String",
+                &[&["std", "string", "String"], &["alloc", "string", "String"]],
+            ) || the_only_segment_is(path, "str") =>
         {
             Ok((quote! { #idl::IdlType::String }, vec![]))
         }
         syn::Type::Path(path)
-            if path_is_builtin(path, "Pubkey", &[&["anchor_lang", "prelude", "Pubkey"]]) =>
+            if path_is_builtin(
+                path,
+                "Pubkey",
+                &[
+                    &["anchor_lang", "prelude", "Pubkey"],
+                    &["anchor_lang", "solana_program", "pubkey", "Pubkey"],
+                    &["solana_program", "pubkey", "Pubkey"],
+                    &["solana_pubkey", "Pubkey"],
+                ],
+            ) =>
         {
             Ok((quote! { #idl::IdlType::Pubkey }, vec![]))
         }
@@ -682,6 +694,8 @@ pub fn gen_idl_type(
                     defined_names: HashSet<String>,
                     /// Type aliases stored as (name, source_text) for re-parsing
                     type_aliases: HashMap<String, String>,
+                    /// Alias names defined differently in more than one module
+                    ambiguous_aliases: HashSet<String>,
                 }
 
                 static CRATE_DATA_CACHE: OnceLock<std::result::Result<CachedCrateData, String>> =
@@ -710,15 +724,11 @@ pub fn gen_idl_type(
                                     .map(|s| s.ident.to_string())
                                     .chain(ctx.enums().map(|e| e.ident.to_string()))
                                     .collect();
-                                let mut type_aliases: HashMap<String, String> = HashMap::new();
-                                for ty in ctx.type_aliases() {
-                                    type_aliases
-                                        .entry(ty.ident.to_string())
-                                        .or_insert_with(|| ty.to_token_stream().to_string());
-                                }
+                                let (type_aliases, ambiguous_aliases) = collect_type_aliases(&ctx);
                                 CachedCrateData {
                                     defined_names,
                                     type_aliases,
+                                    ambiguous_aliases,
                                 }
                             })
                     });
@@ -732,6 +742,17 @@ pub fn gen_idl_type(
                             ));
                         }
                     };
+
+                    if cache.ambiguous_aliases.contains(&name) {
+                        return Err(syn::Error::new_spanned(
+                            path,
+                            format!(
+                                "Type alias `{name}` is defined differently in more than one \
+                                 module, so the IDL can't tell which definition this refers to. \
+                                 Rename one of the aliases."
+                            ),
+                        ));
+                    }
 
                     let alias_src = cache.type_aliases.get(&name).cloned();
                     let is_external = !cache.defined_names.contains(&name);
@@ -901,6 +922,35 @@ fn get_last_segment(type_path: &syn::TypePath) -> Result<&syn::PathSegment> {
         .ok_or_else(|| syn::Error::new_spanned(type_path, "Expected a non-empty type path"))
 }
 
+/// Groups the crate's type aliases by name, keeping the source text of each. A name defined with
+/// different source in more than one module can't be resolved from the bare name the IDL sees, so
+/// it is reported separately instead of silently using whichever definition came first.
+fn collect_type_aliases(
+    ctx: &crate::parser::context::CrateContext,
+) -> (
+    std::collections::HashMap<String, String>,
+    std::collections::HashSet<String>,
+) {
+    use {quote::ToTokens, std::collections::hash_map::Entry};
+
+    let mut type_aliases = std::collections::HashMap::new();
+    let mut ambiguous = std::collections::HashSet::new();
+    for ty in ctx.type_aliases() {
+        let src = ty.to_token_stream().to_string();
+        match type_aliases.entry(ty.ident.to_string()) {
+            Entry::Vacant(entry) => {
+                entry.insert(src);
+            }
+            Entry::Occupied(entry) => {
+                if *entry.get() != src {
+                    ambiguous.insert(entry.key().clone());
+                }
+            }
+        }
+    }
+    (type_aliases, ambiguous)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -959,5 +1009,56 @@ mod tests {
         };
 
         assert!(gen_idl_type_def_enum(&item).is_ok());
+    }
+
+    fn aliases_of(tag: &str, files: &[(&str, &str)]) -> (Vec<String>, Vec<String>) {
+        let dir =
+            std::env::temp_dir().join(format!("anchor-syn-aliases-{}-{tag}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, src) in files {
+            std::fs::write(dir.join(name), src).unwrap();
+        }
+        let ctx = crate::parser::context::CrateContext::parse(dir.join("lib.rs")).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        let (aliases, ambiguous) = collect_type_aliases(&ctx);
+        let mut aliases = aliases.into_keys().collect::<Vec<_>>();
+        let mut ambiguous = ambiguous.into_iter().collect::<Vec<_>>();
+        aliases.sort();
+        ambiguous.sort();
+        (aliases, ambiguous)
+    }
+
+    #[test]
+    fn same_name_alias_with_different_definitions_is_ambiguous() {
+        let (aliases, ambiguous) = aliases_of(
+            "different",
+            &[
+                (
+                    "lib.rs",
+                    "pub mod order;\npub mod pool { pub type Id = [u8; 32]; }\npub type Fee = \
+                     u64;\n",
+                ),
+                ("order.rs", "pub type Id = u64;\n"),
+            ],
+        );
+        assert_eq!(aliases, ["Fee", "Id"]);
+        assert_eq!(ambiguous, ["Id"]);
+    }
+
+    #[test]
+    fn same_name_alias_with_identical_definitions_is_not_ambiguous() {
+        let (aliases, ambiguous) = aliases_of(
+            "identical",
+            &[
+                (
+                    "lib.rs",
+                    "pub mod order;\npub mod pool { pub type Id = u64; }\n",
+                ),
+                ("order.rs", "pub type Id = u64;\n"),
+            ],
+        );
+        assert_eq!(aliases, ["Id"]);
+        assert!(ambiguous.is_empty());
     }
 }

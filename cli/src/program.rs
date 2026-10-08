@@ -9,6 +9,7 @@ use {
         metadata::SecurityCommand,
         redact_url, target_dir, ConfigOverride, ProgramCommand, DEFAULT_MAX_SIGN_ATTEMPTS,
     },
+    anchor_client::Cluster,
     anchor_lang_idl::types::Idl,
     anyhow::{anyhow, bail, Result},
     cargo_metadata::{Metadata, MetadataCommand, Package, TargetKind},
@@ -792,7 +793,64 @@ fn security_metadata_path(config: Option<&WithPath<Config>>) -> Result<PathBuf> 
         );
     }
 
+    if has_default_values(&value)? {
+        bail!(
+            "Security metadata in `{}` still matches the `anchor init` template. Replace the \
+             default fields before uploading with `--security-metadata`",
+            path.display()
+        );
+    }
+
     Ok(path)
+}
+
+/// Fields a reviewed `security.json` may leave at the `anchor init` default.
+/// These default values can be accepted since they are not unique.
+const SECURITY_TEMPLATE_KEEP: &[&str] = &[
+    "name", // project name
+    "logo",
+    "notification",
+    "preferred_languages",
+    "source_release",
+    "version",
+];
+
+/// True when a field still has the exact `anchor init` template value.
+fn has_default_values(value: &serde_json::Value) -> Result<bool> {
+    let name = value
+        .get("name")
+        .and_then(|name| name.as_str())
+        .unwrap_or("");
+    let template = crate::template::get_security_metadata_content(name);
+    let template = template
+        .as_object()
+        .ok_or_else(|| anyhow!("Failed to get default security.json"))?;
+    let file = value
+        .as_object()
+        .ok_or_else(|| anyhow!("Failed to read security.json from current project"))?;
+
+    for (key, template_value) in template {
+        if SECURITY_TEMPLATE_KEEP.contains(&key.as_str()) {
+            continue;
+        }
+        if file.get(key) == Some(template_value) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn is_mainnet_deploy(cluster: Option<&Cluster>, rpc_client: &RpcClient) -> bool {
+    const MAINNET_GENESIS_HASH: &str = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
+
+    match cluster {
+        Some(Cluster::Mainnet) => true,
+        Some(Cluster::Devnet | Cluster::Testnet | Cluster::Localnet | Cluster::Debug) => false,
+        Some(Cluster::Custom(..)) | None => rpc_client
+            .get_genesis_hash()
+            .map(|hash| hash.to_string() == MAINNET_GENESIS_HASH)
+            .unwrap_or(false),
+    }
 }
 
 fn requested_security_metadata_path(
@@ -855,6 +913,17 @@ pub fn program_deploy(
     let payer = get_payer_keypair(cfg_override, &config)?;
     // Resolve requested metadata before performing any on-chain mutations.
     let security_path = requested_security_metadata_path(security_metadata, config.as_ref())?;
+    if security_path.is_none()
+        && is_mainnet_deploy(
+            config.as_ref().map(|cfg| &cfg.provider.cluster),
+            &rpc_client,
+        )
+    {
+        eprintln!(
+            "Warning: deploying to mainnet without `--security-metadata`. Publish a reviewed \
+             `security.json` with `anchor program deploy --security-metadata`."
+        );
+    }
     let (_cluster_url, wallet_path) = crate::get_cluster_and_wallet(cfg_override)?;
     let upgrade_authority_path = upgrade_authority
         .clone()
@@ -3103,6 +3172,39 @@ resolver = "2"
         let err = security_metadata_path(Some(&cfg)).unwrap_err().to_string();
 
         assert!(err.contains("must be a JSON object"));
+    }
+
+    #[test]
+    fn security_metadata_path_rejects_template_placeholders() {
+        let dir = tempdir().unwrap();
+        let template = crate::template::get_security_metadata_content("counter");
+        fs::write(
+            dir.path().join("security.json"),
+            serde_json::to_vec(&template).unwrap(),
+        )
+        .unwrap();
+        let cfg = WithPath::new(Config::default(), dir.path().join("Anchor.toml"));
+
+        let err = security_metadata_path(Some(&cfg)).unwrap_err().to_string();
+
+        assert!(err.contains("anchor init"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn security_metadata_path_rejects_partially_edited_template() {
+        let dir = tempdir().unwrap();
+        let mut template = crate::template::get_security_metadata_content("counter");
+        template["description"] = serde_json::json!("reviewed-description");
+        fs::write(
+            dir.path().join("security.json"),
+            serde_json::to_vec(&template).unwrap(),
+        )
+        .unwrap();
+        let cfg = WithPath::new(Config::default(), dir.path().join("Anchor.toml"));
+
+        let err = security_metadata_path(Some(&cfg)).unwrap_err().to_string();
+
+        assert!(err.contains("anchor init"), "unexpected error: {err}");
     }
 
     #[test]

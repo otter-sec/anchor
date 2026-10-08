@@ -65,6 +65,10 @@
 
 #[cfg(feature = "async")]
 pub use nonblocking::ThreadSafeSigner;
+#[cfg(feature = "solana-v4")]
+use solana_message::v1;
+#[cfg(feature = "solana-v4")]
+pub use solana_message::v1::TransactionConfig as V1TransactionConfig;
 use {
     crate::compat::{
         solana_account_decoder, solana_hash, solana_message, solana_pubsub_client,
@@ -78,7 +82,7 @@ use {
     regex::Regex,
     solana_account_decoder::{UiAccount, UiAccountEncoding},
     solana_instruction::AccountMeta,
-    solana_message::v0,
+    solana_message::{v0, VersionedMessage},
     solana_pubsub_client::nonblocking::pubsub_client::PubsubClient,
     solana_rpc_client::nonblocking::rpc_client::RpcClient as AsyncRpcClient,
     solana_rpc_client_api::{
@@ -131,12 +135,37 @@ pub mod compat;
 
 /// Specifies which transaction version to use when building transactions.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub enum TransactionVersion<'a> {
+    #[default]
+    Legacy,
+    V0(&'a [AddressLookupTableAccount]),
+    #[cfg(feature = "solana-v4")]
+    V1(V1TransactionConfig),
+}
+
+#[allow(deprecated)]
+#[derive(Debug, Clone, Default)]
+#[deprecated(
+    note = "use `TransactionVersion` instead, which is `#[non_exhaustive]` and so can carry \
+            transaction versions added after this one"
+)]
 pub enum TxVersion<'a> {
     /// Legacy transaction format.
     #[default]
     Legacy,
     /// Versioned transaction format (v0) with optional address lookup tables.
     V0(&'a [AddressLookupTableAccount]),
+}
+
+#[allow(deprecated)]
+impl<'a> From<TxVersion<'a>> for TransactionVersion<'a> {
+    fn from(version: TxVersion<'a>) -> Self {
+        match version {
+            TxVersion::Legacy => Self::Legacy,
+            TxVersion::V0(address_lookup_table_accounts) => Self::V0(address_lookup_table_accounts),
+        }
+    }
 }
 
 #[cfg(not(feature = "async"))]
@@ -698,13 +727,13 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     ///
     /// # Arguments
     ///
-    /// * `version` - The transaction version to use ([`TxVersion::Legacy`] or [`TxVersion::V0`]).
+    /// * `version` - The transaction version to use. See [`TransactionVersion`].
     /// * `recent_blockhash` - A recent blockhash to include in the transaction message.
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use anchor_client::{Client, Cluster, TxVersion};
+    /// use anchor_client::{Client, Cluster, TransactionVersion};
     /// use anchor_lang::prelude::Pubkey;
     /// use solana_signer::null_signer::NullSigner;
     /// use anchor_client::AddressLookupTableAccount;
@@ -720,88 +749,84 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     ///
     /// let request = program.request();
     /// // Legacy transaction
-    /// let tx = request.transaction_versioned(TxVersion::Legacy, blockhash).unwrap();
+    /// let tx = request.transaction_versioned(TransactionVersion::Legacy, blockhash).unwrap();
     ///
     /// // V0 transaction with address lookup tables
-    /// let tx = request.transaction_versioned(TxVersion::V0(&[lookup_table]), blockhash).unwrap();
+    /// let tx = request.transaction_versioned(TransactionVersion::V0(&[lookup_table]), blockhash).unwrap();
     ///
     /// // V0 transaction without lookup tables
-    /// let tx = request.transaction_versioned(TxVersion::V0(&[]), blockhash).unwrap();
-    //// ```
-    pub fn transaction_versioned(
+    /// let tx = request.transaction_versioned(TransactionVersion::V0(&[]), blockhash).unwrap();
+    #[cfg_attr(
+        feature = "solana-v4",
+        doc = r#"
+// V1 transaction with explicit resource limits
+let config = anchor_client::V1TransactionConfig::default()
+    .with_compute_unit_limit(200_000)
+    .with_loaded_accounts_data_size_limit(64 * 1024 * 1024);
+let tx = request.transaction_versioned(TransactionVersion::V1(config), blockhash).unwrap();"#
+    )]
+    /// ```
+    pub fn transaction_versioned<'v>(
         &self,
-        version: TxVersion<'_>,
+        version: impl Into<TransactionVersion<'v>>,
         recent_blockhash: Hash,
     ) -> Result<solana_transaction::versioned::VersionedTransaction, ClientError> {
+        let message = self.versioned_message(version.into(), recent_blockhash)?;
+        Ok(VersionedTransaction {
+            signatures: vec![
+                Signature::default();
+                message.header().num_required_signatures as usize
+            ],
+            message,
+        })
+    }
+
+    fn versioned_message(
+        &self,
+        version: TransactionVersion<'_>,
+        recent_blockhash: Hash,
+    ) -> Result<VersionedMessage, ClientError> {
         let instructions = self.instructions();
         let payer = self.payer.pubkey();
 
         match version {
-            TxVersion::Legacy => {
-                let message = solana_message::legacy::Message::new_with_blockhash(
+            TransactionVersion::Legacy => Ok(VersionedMessage::Legacy(
+                solana_message::legacy::Message::new_with_blockhash(
                     &instructions,
                     Some(&payer),
                     &recent_blockhash,
-                );
-                Ok(solana_transaction::versioned::VersionedTransaction {
-                    signatures: vec![
-                        solana_signature::Signature::default();
-                        message.header.num_required_signatures as usize
-                    ],
-                    message: solana_message::VersionedMessage::Legacy(message),
-                })
-            }
-            TxVersion::V0(address_lookup_table_accounts) => {
-                let message = v0::Message::try_compile(
-                    &payer,
-                    &instructions,
-                    address_lookup_table_accounts,
-                    recent_blockhash,
-                )
-                .map_err(ClientError::other)?;
-                Ok(solana_transaction::versioned::VersionedTransaction {
-                    signatures: vec![
-                        solana_signature::Signature::default();
-                        message.header.num_required_signatures as usize
-                    ],
-                    message: solana_message::VersionedMessage::V0(message),
-                })
-            }
+                ),
+            )),
+            TransactionVersion::V0(address_lookup_table_accounts) => v0::Message::try_compile(
+                &payer,
+                &instructions,
+                address_lookup_table_accounts,
+                recent_blockhash,
+            )
+            .map(VersionedMessage::V0)
+            .map_err(ClientError::other),
+            #[cfg(feature = "solana-v4")]
+            TransactionVersion::V1(config) => v1::Message::try_compile_with_config(
+                &payer,
+                &instructions,
+                recent_blockhash,
+                config,
+            )
+            .map(VersionedMessage::V1)
+            .map_err(ClientError::other),
         }
     }
 
     fn signed_transaction_with_blockhash_versioned(
         &self,
-        version: TxVersion<'_>,
+        version: TransactionVersion<'_>,
         latest_hash: Hash,
     ) -> Result<solana_transaction::versioned::VersionedTransaction, ClientError> {
         let signers: Vec<&dyn Signer> = self.signers.iter().map(|s| s.as_signer()).collect();
         let mut all_signers = signers;
         all_signers.push(&*self.payer);
 
-        let instructions = self.instructions();
-        let payer = self.payer.pubkey();
-
-        let message = match version {
-            TxVersion::Legacy => {
-                let msg = solana_message::legacy::Message::new_with_blockhash(
-                    &instructions,
-                    Some(&payer),
-                    &latest_hash,
-                );
-                solana_message::VersionedMessage::Legacy(msg)
-            }
-            TxVersion::V0(address_lookup_table_accounts) => {
-                let msg = v0::Message::try_compile(
-                    &payer,
-                    &instructions,
-                    address_lookup_table_accounts,
-                    latest_hash,
-                )
-                .map_err(ClientError::other)?;
-                solana_message::VersionedMessage::V0(msg)
-            }
-        };
+        let message = self.versioned_message(version, latest_hash)?;
 
         let tx =
             solana_transaction::versioned::VersionedTransaction::try_new(message, &all_signers)?;
@@ -811,7 +836,7 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
 
     async fn signed_transaction_internal(
         &self,
-        version: TxVersion<'_>,
+        version: TransactionVersion<'_>,
     ) -> Result<solana_transaction::versioned::VersionedTransaction, ClientError> {
         let latest_hash = self
             .internal_rpc_client
@@ -823,7 +848,10 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
         self.signed_transaction_with_blockhash_versioned(version, latest_hash)
     }
 
-    async fn send_internal(&self, version: TxVersion<'_>) -> Result<Signature, ClientError> {
+    async fn send_internal(
+        &self,
+        version: TransactionVersion<'_>,
+    ) -> Result<Signature, ClientError> {
         let (latest_hash, _) = self
             .internal_rpc_client
             .get_latest_blockhash_with_commitment(self.options)
@@ -881,7 +909,7 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
 
     async fn send_with_spinner_and_config_internal(
         &self,
-        version: TxVersion<'_>,
+        version: TransactionVersion<'_>,
         config: RpcSendTransactionConfig,
     ) -> Result<Signature, ClientError> {
         let (latest_hash, _) = self

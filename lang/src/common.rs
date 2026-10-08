@@ -43,6 +43,21 @@ where
     }
 }
 
+/// Finds the first key that repeats an earlier one, for the duplicate mutable
+/// account check. `None` entries (absent optional accounts) never match.
+///
+/// Quadratic, but a compare is ~10 CU and the keys before the first repeat are
+/// distinct writable accounts, so their count is capped by the transaction's
+/// account lock limit. Sorting would only win past ~64 keys and costs far more
+/// program size.
+#[doc(hidden)]
+pub fn find_duplicate_key<'a>(keys: &[Option<&'a Pubkey>]) -> Option<(usize, &'a Pubkey)> {
+    keys.iter().enumerate().find_map(|(i, key)| {
+        let key = (*key)?;
+        keys[..i].contains(&Some(key)).then_some((i, key))
+    })
+}
+
 /// `Write` sink that checks written bytes against an existing buffer
 /// instead of storing them.
 pub struct CompareWriter<'a> {
@@ -75,5 +90,32 @@ impl Write for CompareWriter<'_> {
 
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn keys(n: u8) -> Vec<Pubkey> {
+        (0..n).map(|i| Pubkey::new_from_array([i; 32])).collect()
+    }
+
+    #[test]
+    fn find_duplicate_key_matches_insert_order() {
+        let k = keys(8);
+        let mut refs: Vec<Option<&Pubkey>> = k.iter().map(Some).collect();
+        assert_eq!(find_duplicate_key(&refs), None);
+
+        // Absent optional accounts never collide with each other.
+        refs[1] = None;
+        refs[3] = None;
+        assert_eq!(find_duplicate_key(&refs), None);
+
+        // Two collisions: the one whose later key comes first is reported.
+        refs[6] = Some(&k[2]);
+        refs[5] = Some(&k[4]);
+        refs[7] = Some(&k[2]);
+        assert_eq!(find_duplicate_key(&refs), Some((5, &k[4])));
     }
 }

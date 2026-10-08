@@ -189,10 +189,20 @@ pub(super) fn fetch_transaction(
     signature: &Signature,
     tuning: &FetchTuning,
 ) -> Result<EncodedConfirmedTransactionWithStatusMeta> {
+    // V1 transactions only exist in the `solana-v4` cohort; a `solana-v3` build cannot
+    // decode one, so it must not ask the RPC for them.
+    let max_supported_transaction_version = if cfg!(feature = "solana-v3") {
+        Some(0)
+    } else if cfg!(feature = "solana-v4") {
+        Some(1)
+    } else {
+        unreachable!("exactly one solana cohort must be activated")
+    };
+
     let config = RpcTransactionConfig {
         encoding: Some(UiTransactionEncoding::Json),
         commitment: Some(CommitmentConfig::confirmed()),
-        max_supported_transaction_version: Some(0),
+        max_supported_transaction_version,
     };
 
     let mut attempt: u32 = 0;

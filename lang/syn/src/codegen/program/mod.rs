@@ -23,7 +23,9 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
     #[allow(clippy::let_and_return)]
     let ret = {
         quote! {
-            // TODO: remove once we allow segmented paths in `Accounts` structs.
+            // Segmented paths are now allowed in `Accounts` structs, but this
+            // re-export is kept for backwards compatibility with programs
+            // importing handler functions from the crate root.
             use self::#mod_name::*;
 
             #entry

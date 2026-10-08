@@ -1252,28 +1252,22 @@ impl _TestToml {
     }
 }
 
-/// canonicalizes the `file_path` arg.
-/// uses the `path` arg as the current dir
-/// from which to turn the relative path
-/// into a canonical one
+/// Canonicalizes `file_path` relative to the directory containing `origin`.
 fn canonicalize_filepath_from_origin(
     file_path: impl AsRef<Path>,
     origin: impl AsRef<Path>,
 ) -> Result<String> {
-    let previous_dir = std::env::current_dir()?;
-    std::env::set_current_dir(origin.as_ref().parent().unwrap())?;
-    let result = fs::canonicalize(&file_path)
+    let result = fs::canonicalize(origin.as_ref().parent().unwrap().join(&file_path))
         .with_context(|| {
             format!(
-                "Error reading (possibly relative) path: {}. If relative, this is the path that \
-                 was used as the current path: {}",
+                "Error reading (possibly relative) path: {}. If relative, this path is resolved \
+                 relative to the directory containing: {}",
                 file_path.as_ref().display(),
                 origin.as_ref().display()
             )
         })?
         .display()
         .to_string();
-    std::env::set_current_dir(previous_dir)?;
     Ok(result)
 }
 

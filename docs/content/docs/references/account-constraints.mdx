@@ -180,6 +180,16 @@ Examples: [Github](https://github.com/solana-developers/anchor-examples/tree/mai
 #[account(owner = <expr> @ <custom_error>)]
 ```
 
+This constraint cannot override the owner of an account type implementing `Owner`.
+For example, `Account<T>` checks `T::owner()` first and rejects a different owner.
+Use an untyped account when supplying the owner check yourself:
+
+```rust
+/// CHECK: Only the account owner is checked.
+#[account(owner = token_program.key())]
+pub data: UncheckedAccount<'info>,
+```
+
 ### `#[account(executable)]`
 
 Description: Checks the account is executable (i.e. the account is a program).  
@@ -296,6 +306,12 @@ Examples: [Github](https://github.com/solana-developers/anchor-examples/tree/mai
 ### `#[account(mint::*)]`
 
 Description: Create or validate mint accounts with specified parameters.
+
+You can set `mint::authority` or `mint::freeze_authority` to `None` to require
+that authority not to be set. With `init`, `mint::freeze_authority = None`
+creates a mint with no freeze authority. `mint::authority = None` cannot be
+used with `init` because SPL Token requires a mint authority at initialization.
+
 Examples: [Github](https://github.com/solana-developers/anchor-examples/tree/main/account-constraints/mint)
 |
 [Solpg](https://beta.solpg.io/https://github.com/solana-developers/anchor-examples/tree/main/account-constraints/mint)
@@ -310,6 +326,11 @@ Examples: [Github](https://github.com/solana-developers/anchor-examples/tree/mai
     mint::authority = <target_account>,
     mint::decimals = <expr>,
     mint::freeze_authority = <target_account>
+)]
+
+#[account(
+    mint::authority = None,
+    mint::freeze_authority = None
 )]
 ```
 

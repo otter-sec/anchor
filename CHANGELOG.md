@@ -12,12 +12,20 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+- cli: Add `anchor security fetch` to read on-chain `security.json` ([#5124](https://github.com/otter-sec/anchor/issues/5124)).
+- cli: Warn on mainnet deploy without `--security-metadata`, and reject a `security.json` that still matches the `anchor init` template ([#5124](https://github.com/otter-sec/anchor/issues/5124)).
+- client: Add support for v1 transactions ([#5076](https://github.com/otter-sec/anchor/pull/5076)).
 - lang: Add support for Solana v4 crates using the `solana-v4` feature ([#5081](https://github.com/otter-sec/anchor/pull/5081)).
 - cli: Add `NO_DNA` mode to disable supported interactive prompts for CI, scripts, and agent runs ([#4773](https://github.com/otter-sec/anchor/pull/4773)).
 - lang: Use `CreateAccountAllowPrefund` to initialize accounts that already hold lamports, replacing the `Transfer` + `Allocate` + `Assign` CPIs ([#5057](https://github.com/otter-sec/anchor/pull/5057)).
+- lang: Allow `None` in `mint::authority` and `mint::freeze_authority` constraints ([#5007](https://github.com/otter-sec/anchor/pull/5007)).
+- lang: Implement `Space` for `NonZero*` integers so `#[derive(InitSpace)]` supports them ([#5132](https://github.com/otter-sec/anchor/pull/5132)).
 
 ### Fixes
 
+- Block mutable aliasing between accounts marked `zero` and `init` ([#4871](https://github.com/otter-sec/anchor/pull/4871)).
+- lang: Support fully qualified account types in `Context` ([#4836](https://github.com/otter-sec/anchor/pull/4836)).
+- ts: Support `delegatedAmount` in accounts resolver ([#4957](https://github.com/otter-sec/anchor/pull/4957)).
 - lang: Improve macro hygiene to address potential issues with key validation ([#5105](https://github.com/otter-sec/anchor/pull/5105)).
 - client: Ignore logs from failed transactions in event subscriptions so reverted executions do not emit events ([#4884](https://github.com/otter-sec/anchor/pull/4884)).
 - lang: Accept arbitrary expressions in `declare_id!`. ([#5010](https://github.com/otter-sec/anchor/pull/5010)).
@@ -27,9 +35,12 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Validate Token-2022 mint extension constraints when reusing existing mints with `init_if_needed` ([#4845](https://github.com/otter-sec/anchor/pull/4845)).
 - cli: Make `anchor keygen new --silent` withhold the seed phrase instead of only the pubkey, matching `solana-keygen new --silent`. ([#5080](https://github.com/otter-sec/anchor/pull/5080)).
 - deps: Bump `heck` to 0.5 to avoid incompatible dependencies ([#4960](https://github.com/otter-sec/anchor/pull/4960)).
+- idl: Fail with an error when a type alias name is defined differently in more than one module, instead of silently using the first definition ([#5131](https://github.com/otter-sec/anchor/pull/5131)).
 - avm: Validate and normalize `platform-tools` versions before building install and uninstall paths, so a version like `v1.54/../../../victim` cannot delete outside `$AVM_HOME/platform-tools` ([#4806](https://github.com/otter-sec/anchor/pull/4806)).
 
 ### Breaking
+
+- cli: Display `None` as `null` when displaying account data ([#4758](https://github.com/otter-sec/anchor/pull/4758)).
 
 ## [1.2.0] - 2026-09-04
 
@@ -51,6 +62,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang, ts: Improve error message wording, and sync messages between TS and Rust ([#4772](https://github.com/otter-sec/anchor/pull/4772)).
 - spl: Fix `anchor-spl` failing to build with only the `metadata` feature ([#4742](https://github.com/solana-foundation/anchor/pull/4742)).
 - lang: Honor `is_signer` in generated client and CPI account metas, enabling PDA signer usage ([#3322](https://github.com/otter-sec/anchor/pull/3322)).
 - lang: Report invalid instruction arguments instead of silently omitting their instructions during parsing ([#4008](https://github.com/otter-sec/anchor/pull/4008)).

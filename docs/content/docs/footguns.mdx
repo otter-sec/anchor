@@ -17,6 +17,34 @@ All-zero discriminators are only supported in events and instructions. In the ca
 they are explicitly not supported, as all-zero discriminators are indistinguishable from
 newly allocated accounts and can expose your code to security and usability issues.
 
+## Generic Account Types
+
+Different instantiations of the same generic `#[account]` type share a default discriminator:
+generic arguments are not part of its derivation.
+
+```rust
+#[account]
+pub struct State<T: AnchorSerialize + AnchorDeserialize + Clone> {
+    pub value: T,
+}
+
+// State<A> and State<B> share a discriminator despite being distinct Rust types.
+// State<u64>
+// State<u128>
+```
+
+An account serialized as `State<u128>` can deserialize as `State<u64>`: the discriminator
+matches, and deserialization reads the first eight bytes of the value, leaving the remaining
+bytes unchecked. The reverse requires enough account data for a `u128`; a minimally sized
+`State<u64>` account is too short.
+
+<Callout type="warn" title="Generic arguments do not distinguish accounts">
+  If the serialized data for one instantiation can be deserialized as another, an account can
+  pass the discriminator check and be interpreted as the wrong type. Do not rely on generic
+  arguments to prevent this type confusion. Use distinct account structs with distinct
+  discriminators, or explicitly validate a stored type tag before using the account data.
+</Callout>
+
 ## Borrowed Data in Account Types
 
 Account types used with `Context` should own their values rather than hold references borrowed

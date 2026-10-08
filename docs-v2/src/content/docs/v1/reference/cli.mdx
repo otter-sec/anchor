@@ -20,6 +20,7 @@ $ <blue>anchor</blue> <dim>--help</dim>
   <bold>fuzz</bold>          Coverage-guided fuzzing for Solana programs (powered by Crucible).
   <bold>new</bold>           Creates a new program
   <bold>idl</bold>           Commands for interacting with interface definitions
+  <bold>security</bold>      Commands for interacting with on-chain security.json metadata
   <bold>clean</bold>         Remove all artifacts from the generated directories except program keypairs
   <bold>migrate</bold>       Runs the deploy migration script
   <bold>airdrop</bold>       Request an airdrop of SOL
@@ -152,6 +153,8 @@ $ <blue>anchor</blue> deploy
 
 Deploys all programs in the workspace to the configured cluster.
 
+On mainnet, a deploy without `<dim>--security-metadata</dim>` prints a warning and continues. A deploy counts as mainnet when the configured cluster is mainnet, or when the RPC host contains `mainnet`. `$ <blue>anchor</blue> program deploy <dim>--security-metadata</dim>` uploads `security.json{:file}` and stops if that file still contains default values.
+
 <Callout variant="tip" title="Different from solana program deploy">
   Each invocation of `$ <blue>anchor</blue> deploy` generates a *new* program address. To upgrade an
   existing program, use `$ <blue>anchor</blue> upgrade` or `$ <blue>solana</blue> program deploy`
@@ -267,6 +270,14 @@ Pass `<dim>--close-buffer</dim>` to close the buffer account after writing:
 ```console
 $ <blue>anchor</blue> idl write-buffer <dim><program-id></dim> <dim>-b</dim> <dim><buffer></dim> <dim>--close-buffer</dim>
 ```
+
+## `<blue>anchor</blue> security fetch`
+
+```console
+$ <blue>anchor</blue> security fetch <dim>-o</dim> <dim><security.json></dim> <dim><program-id></dim>
+```
+
+Fetches the on-chain `security.json{:file}` published with `<dim>--security-metadata</dim>` from the configured cluster. Output goes to stdout when `<dim>-o</dim>` is omitted. Pass `<dim>--non-canonical</dim>` to read a third-party metadata account.
 
 ## `<blue>anchor</blue> init`
 

@@ -329,6 +329,13 @@ export class Program<IDL extends Idl = Idl> {
     if (!idl) {
       throw new Error(`IDL not found for program: ${address.toString()}`);
     }
+    if (!programId.equals(translateAddress(idl.address))) {
+      throw new Error(
+        `IDL address ${
+          idl.address
+        } does not match requested program ${programId.toBase58()}`
+      );
+    }
 
     return new Program(idl, provider);
   }

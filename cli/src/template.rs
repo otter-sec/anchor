@@ -1025,7 +1025,8 @@ fn package_json_v2(jest: bool, license: String) -> String {
   "license": "{license}",
   "scripts": {{
     "lint:fix": "prettier */*.js \"*/**/*{{.js,.ts}}\" -w",
-    "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check"
+    "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check",
+    "tsx": "tsx"
   }},
   "dependencies": {{
     "@anchor-lang/core": "^1.0.0"
@@ -1095,6 +1096,7 @@ fn ts_package_json_v1(jest: bool, license: String) -> String {
     "jest": "^29.0.3",
     "prettier": "^2.6.2",
     "ts-jest": "^29.0.2",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.3"
   }},
   "overrides": {{
@@ -1117,7 +1119,8 @@ fn ts_package_json_v1(jest: bool, license: String) -> String {
   "license": "{license}",
   "scripts": {{
     "lint:fix": "prettier */*.js \"*/**/*{{.js,.ts}}\" -w",
-    "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check"
+    "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check",
+    "tsx": "tsx"
   }},
   "dependencies": {{
     "@anchor-lang/core": "^{VERSION}"
@@ -1125,10 +1128,10 @@ fn ts_package_json_v1(jest: bool, license: String) -> String {
   "devDependencies": {{
     "chai": "^4.3.4",
     "mocha": "^9.0.3",
-    "ts-mocha": "^10.0.0",
     "@types/bn.js": "^5.1.0",
     "@types/chai": "^4.3.0",
     "@types/mocha": "^9.0.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.3",
     "prettier": "^2.6.2"
   }}
@@ -1187,12 +1190,11 @@ fn ts_package_json_v2(jest: bool, license: String) -> String {
   "devDependencies": {{
     "chai": "^4.5.0",
     "mocha": "^11.7.5",
-    "ts-mocha": "^11.1.0",
-    "ts-node": "^10.9.2",
     "@types/bn.js": "^5.2.0",
     "@types/chai": "^4.3.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.6.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.9.3",
     "prettier": "^3.8.3"
   }}
@@ -1202,14 +1204,14 @@ fn ts_package_json_v2(jest: bool, license: String) -> String {
     }
 }
 
-pub fn ts_mocha(name: &str, anchor_version: AnchorVersion) -> String {
+pub fn typescript_test(name: &str, anchor_version: AnchorVersion) -> String {
     match anchor_version {
-        AnchorVersion::V1 => ts_mocha_v1(name),
-        AnchorVersion::V2 => ts_mocha_v2(name),
+        AnchorVersion::V1 => typescript_test_v1(name),
+        AnchorVersion::V2 => typescript_test_v2(name),
     }
 }
 
-fn ts_mocha_v1(name: &str) -> String {
+fn typescript_test_v1(name: &str) -> String {
     format!(
         r#"import * as anchor from "@anchor-lang/core";
 import {{ Program }} from "@anchor-lang/core";
@@ -1249,7 +1251,7 @@ describe("{}", () => {{
     )
 }
 
-fn ts_mocha_v2(name: &str) -> String {
+fn typescript_test_v2(name: &str) -> String {
     format!(
         r#"import * as anchor from "@anchor-lang/core";
 import {{ Program }} from "@anchor-lang/core";
@@ -1496,7 +1498,7 @@ impl TestTemplate {
                     format!("{pkg_manager_exec_cmd} mocha -t 1000000 tests/")
                 } else {
                     format!(
-                        r#"{pkg_manager_exec_cmd} ts-mocha -p ./tsconfig.json -t 1000000 "tests/**/*.ts""#
+                        r#"{pkg_manager_exec_cmd} mocha --import=tsx -t 1000000 "tests/**/*.ts""#
                     )
                 }
             }
@@ -1529,7 +1531,7 @@ impl TestTemplate {
                     test.write_all(mocha(project_name, anchor_version).as_bytes())?;
                 } else {
                     let mut mocha = File::create(format!("tests/{}.ts", project_name))?;
-                    mocha.write_all(ts_mocha(project_name, anchor_version).as_bytes())?;
+                    mocha.write_all(typescript_test(project_name, anchor_version).as_bytes())?;
                 }
             }
             Self::Jest => {
@@ -2194,7 +2196,7 @@ mod tests {
         assert!(manifest.contains("litesvm = \"0.15.0\""));
         assert!(!manifest.contains("anchor-lang-v2"));
 
-        let test = ts_mocha("counter", AnchorVersion::V1);
+        let test = typescript_test("counter", AnchorVersion::V1);
         assert!(test.contains("[Buffer.from(\"counter\")]"));
         assert!(test.contains(".accountsPartial({ counter })"));
         assert!(!test.contains("counter: counter.publicKey"));
@@ -2207,7 +2209,7 @@ mod tests {
         assert!(manifest.contains("profile = [\"anchor-v2-testing/profile\"]"));
         assert!(manifest.contains("anchor-v2-testing = { git = "));
 
-        let test = ts_mocha("counter", AnchorVersion::V2);
+        let test = typescript_test("counter", AnchorVersion::V2);
         assert!(test.contains("const counter = anchor.web3.Keypair.generate();"));
         assert!(test.contains("counter: counter.publicKey"));
     }

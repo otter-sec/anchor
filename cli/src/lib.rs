@@ -481,6 +481,11 @@ pub enum Command {
         #[clap(subcommand)]
         subcmd: IdlCommand,
     },
+    /// Commands for interacting with on-chain `security.json` metadata.
+    Security {
+        #[clap(subcommand)]
+        subcmd: SecurityCommand,
+    },
     /// Remove all artifacts from the generated directories except program keypairs.
     Clean,
     /// Deploys each program in the workspace.
@@ -881,6 +886,20 @@ pub enum ProgramCommand {
         program_name: Option<String>,
         /// Additional bytes to allocate
         additional_bytes: usize,
+    },
+}
+
+#[derive(Debug, Parser, AbsolutePath)]
+pub enum SecurityCommand {
+    /// Fetches a program's `security.json` from a cluster.
+    Fetch {
+        program_id: Pubkey,
+        /// Output file for the metadata (stdout if not specified).
+        #[clap(short, long)]
+        out: Option<String>,
+        /// Fetch non-canonical metadata account (third-party metadata)
+        #[clap(long)]
+        non_canonical: bool,
     },
 }
 
@@ -1599,6 +1618,7 @@ fn process_command(opts: Opts) -> Result<()> {
             )
         }
         Command::Idl { subcmd } => idl(&opts.cfg_override, subcmd),
+        Command::Security { subcmd } => security(&opts.cfg_override, subcmd),
         Command::LegacyIdl { subcmd } => {
             legacy_idl::handle_legacy_idl_command(&opts.cfg_override, subcmd)
         }
@@ -3589,6 +3609,35 @@ fn generate_idl(
     Ok(idl)
 }
 
+fn security(cfg_override: &ConfigOverride, subcmd: SecurityCommand) -> Result<()> {
+    match subcmd {
+        SecurityCommand::Fetch {
+            program_id,
+            out,
+            non_canonical,
+        } => security_fetch(cfg_override, program_id, out, non_canonical),
+    }
+}
+
+fn security_fetch(
+    cfg_override: &ConfigOverride,
+    address: Pubkey,
+    out: Option<String>,
+    non_canonical: bool,
+) -> Result<()> {
+    let (cluster_url, _) = get_cluster_and_wallet(cfg_override)?;
+    let command = metadata::SecurityCommand::Fetch {
+        program_id: address.to_string(),
+        out,
+        non_canonical,
+    };
+
+    if !command.status(&cluster_url)?.success() {
+        return Err(anyhow!("Failed to fetch security metadata"));
+    }
+    Ok(())
+}
+
 fn idl_fetch(
     cfg_override: &ConfigOverride,
     address: Pubkey,
@@ -3929,6 +3978,7 @@ fn write_idl(idl: &Idl, out: OutFile) -> Result<()> {
 
     Ok(())
 }
+
 fn account(
     cfg_override: &ConfigOverride,
     account_type: String,
@@ -4001,11 +4051,10 @@ fn account(
     };
 
     let data = create_client(cluster.url()).get_account_data(&address)?;
-    let disc_len = idl
+    let idl_account = idl
         .accounts
         .iter()
         .find(|acc| acc.name == *account_type_name)
-        .map(|acc| acc.discriminator.len())
         .ok_or_else(|| {
             let mut available_accounts: Vec<String> =
                 idl.accounts.iter().map(|acc| acc.name.clone()).collect();
@@ -4024,7 +4073,14 @@ fn account(
                 )
             }
         })?;
-    let mut data_view = &data[disc_len..];
+    let mut data_view = data
+        .strip_prefix(idl_account.discriminator.as_slice())
+        .ok_or_else(|| {
+            anyhow!(
+                "Account {address} does not match discriminator of `{account_type_name}` (data \
+                 too short or wrong account type)"
+            )
+        })?;
 
     let deserialized_json =
         deserialize_idl_defined_type_to_json(&idl, account_type_name, &mut data_view)?;
@@ -4191,7 +4247,7 @@ fn deserialize_idl_type_to_json(
             let is_present = <u8 as AnchorDeserialize>::deserialize(data)?;
 
             if is_present == 0 {
-                JsonValue::String("None".to_string())
+                JsonValue::Null
             } else {
                 deserialize_idl_type_to_json(ty, data, parent_idl)?
             }
@@ -4890,16 +4946,21 @@ fn run_test_suite(
     }
     let url = cluster_url(cfg, test_validator, surfpool_config);
 
-    let node_options = format!(
-        "{} {}",
-        match std::env::var_os("NODE_OPTIONS") {
-            Some(value) => value
+    let mut node_options_parts = Vec::new();
+    if let Some(value) = std::env::var_os("NODE_OPTIONS") {
+        node_options_parts.push(
+            value
                 .into_string()
                 .map_err(std::env::VarError::NotUnicode)?,
-            None => "".to_owned(),
-        },
-        get_node_dns_option(),
-    );
+        );
+    }
+    node_options_parts.push(get_node_dns_option().to_string());
+    // Note: --no-experimental-strip-types cannot be set via NODE_OPTIONS.
+    let node_options = node_options_parts
+        .into_iter()
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
 
     // Setup log reader - kept alive until end of scope
     let log_streams = if stream_program_logs {
@@ -6398,6 +6459,7 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
 
         let url = cluster_url(cfg, &cfg.test_validator, &cfg.surfpool_config);
         let cur_dir = std::env::current_dir()?;
+        let workspace_root = cur_dir.clone();
         let migrations_dir = cur_dir.join("migrations");
         let deploy_ts = Path::new("deploy.ts");
 
@@ -6414,19 +6476,34 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
                 template::deploy_ts_script_host(&url, &module_path.display().to_string());
             fs::write(deploy_ts, deploy_script_host_str)?;
 
-            let pkg_manager_cmd =
-                resolve_package_manager(cfg.toolchain.package_manager.clone())?.to_string();
+            let pkg_manager = resolve_package_manager(cfg.toolchain.package_manager.clone())?;
+            let deploy_module_path = fs::canonicalize(deploy_ts)?.to_string_lossy().to_string();
 
-            std::process::Command::new(pkg_manager_cmd)
-                .args([
-                    "run",
-                    "ts-node",
-                    &fs::canonicalize(deploy_ts)?.to_string_lossy(),
-                ])
-                .env("ANCHOR_WALLET", cfg.provider.wallet.to_string())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .output()?
+            let has_tsx = {
+                let bin_dir = workspace_root.join("node_modules").join(".bin");
+                let mut candidates = vec![bin_dir.join("tsx")];
+                if cfg!(target_os = "windows") {
+                    candidates.push(bin_dir.join("tsx.cmd"));
+                    candidates.push(bin_dir.join("tsx.ps1"));
+                }
+                candidates.into_iter().any(|path| path.exists())
+            };
+
+            let run_ts_command = |bin: &str| -> Result<std::process::Output> {
+                let (command, args) = build_ts_command(&pkg_manager, bin, &deploy_module_path);
+
+                std::process::Command::new(&command)
+                    .args(&args)
+                    .env("ANCHOR_WALLET", cfg.provider.wallet.to_string())
+                    .output()
+                    .map_err(|e| anyhow::format_err!("{}", e))
+            };
+
+            if has_tsx {
+                run_ts_command("tsx")?
+            } else {
+                run_ts_command("ts-node")?
+            }
         } else {
             let deploy_js = deploy_ts.with_extension("js");
             let module_path = migrations_dir.join(&deploy_js);
@@ -7237,6 +7314,31 @@ fn get_node_dns_option() -> &'static str {
     }
 }
 
+fn build_ts_command(
+    pkg_manager: &PackageManager,
+    bin: &str,
+    module_path: &str,
+) -> (String, Vec<String>) {
+    match pkg_manager {
+        PackageManager::Yarn => (
+            "yarn".to_string(),
+            vec!["run".to_string(), bin.to_string(), module_path.to_string()],
+        ),
+        PackageManager::NPM => (
+            "npx".to_string(),
+            vec![bin.to_string(), module_path.to_string()],
+        ),
+        PackageManager::PNPM => (
+            "pnpm".to_string(),
+            vec!["exec".to_string(), bin.to_string(), module_path.to_string()],
+        ),
+        PackageManager::Bun => (
+            "bunx".to_string(),
+            vec![bin.to_string(), module_path.to_string()],
+        ),
+    }
+}
+
 // Remove the current workspace directory if it prefixes a string.
 // This is used as a workaround for the Solana CLI using the uriparse crate to
 // parse args but not handling percent encoding/decoding when using the path as
@@ -7544,6 +7646,18 @@ mod tests {
     #[test]
     fn test_redact_url_falls_back_on_unparseable_input() {
         assert_eq!(redact_url("not-a-url"), "not-a-url");
+    }
+
+    #[test]
+    fn test_deserialize_idl_option_none_to_json_null() {
+        let idl_type = IdlType::Option(Box::new(IdlType::String));
+        let mut data: &[u8] = &[0]; // is_present = 0, meaning None
+        let idl: Idl = serde_json::from_str(
+            r#"{"address":"","metadata":{"name":"","version":"","spec":""},"instructions":[]}"#,
+        )
+        .unwrap();
+        let json = deserialize_idl_type_to_json(&idl_type, &mut data, &idl).unwrap();
+        assert_eq!(json, JsonValue::Null);
     }
 
     #[test]
