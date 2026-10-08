@@ -70,6 +70,7 @@ pub mod spl_ata_test {
                 mint: ctx.accounts.mint.cpi_handle_mut(),
                 to: ctx.accounts.token_account.cpi_handle_mut(),
                 authority: ctx.accounts.authority.cpi_handle(),
+                signers: &[],
             },
         );
         anchor_spl::token::mint_to(cpi_ctx, amount)?;
@@ -104,6 +105,7 @@ pub mod spl_ata_test {
             token::SetAuthority {
                 account_or_mint: ctx.accounts.token_account.cpi_handle_mut(),
                 current_authority: ctx.accounts.current_authority.cpi_handle(),
+                signers: &[],
             },
         );
         token::set_authority(

@@ -11,6 +11,7 @@ pub mod token_2022_ext_memo_transfer {
         let accs = token_2022_ext::MemoTransfer {
             account: ctx.accounts.account.cpi_handle_mut(),
             owner: ctx.accounts.owner.cpi_handle(),
+            signers: &[],
         };
         token_2022_ext::memo_transfer_initialize(CpiContext::new(
             ctx.accounts.token_program.address(),
@@ -24,6 +25,7 @@ pub mod token_2022_ext_memo_transfer {
         let accs = token_2022_ext::MemoTransfer {
             account: ctx.accounts.account.cpi_handle_mut(),
             owner: ctx.accounts.owner.cpi_handle(),
+            signers: &[],
         };
         token_2022_ext::memo_transfer_disable(CpiContext::new(
             ctx.accounts.token_program.address(),

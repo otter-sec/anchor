@@ -57,6 +57,7 @@ pub mod token_interface_test {
                 mint: ctx.accounts.mint.cpi_handle_mut(),
                 to: ctx.accounts.to.cpi_handle_mut(),
                 authority: ctx.accounts.authority.cpi_handle(),
+                signers: &[],
             },
         );
         token::mint_to(cpi_ctx, amount)?;
