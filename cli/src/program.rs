@@ -1,28 +1,21 @@
-#[cfg(feature = "solana-v4")]
-use solana_client::send_and_confirm_transactions_in_parallel::{
-    send_and_confirm_transactions_in_parallel_v3, SendAndConfirmConfigV3,
-};
 #[cfg(feature = "solana-v3")]
-use {
-    crate::compat::solana_cli_config,
-    solana_cli_config::Config as SolanaCliConfig,
-    solana_client::{
-        connection_cache::ConnectionCache,
-        nonblocking::tpu_client::TpuClient as NonblockingTpuClient,
-        send_and_confirm_transactions_in_parallel::{
-            send_and_confirm_transactions_in_parallel_blocking_v2, SendAndConfirmConfigV2,
-        },
-        tpu_client::TpuClientConfig,
-    },
-    solana_packet::PACKET_DATA_SIZE,
-    solana_sdk_ids::compute_budget as compute_budget_program_id,
-    std::sync::Arc,
+mod deploy_v3;
+#[cfg(feature = "solana-v3")]
+use deploy_v3::{
+    prepare_write_messages, send_messages_in_batches, simulate_and_update_write_compute_unit_limit,
+};
+
+#[cfg(feature = "solana-v4")]
+mod deploy_v4;
+#[cfg(feature = "solana-v4")]
+use deploy_v4::{
+    prepare_write_messages, send_messages_in_batches, simulate_and_update_write_compute_unit_limit,
 };
 use {
     crate::{
         compat::{
-            solana_client, solana_loader_v3_interface, solana_message, solana_packet,
-            solana_pubkey, solana_rpc_client, solana_rpc_client_api, solana_transaction,
+            solana_loader_v3_interface, solana_message, solana_pubkey, solana_rpc_client,
+            solana_rpc_client_api, solana_transaction,
         },
         config::{Config, Program, WithPath},
         metadata::SecurityCommand,
@@ -40,7 +33,7 @@ use {
         instruction::{self as loader_v3_instruction, MINIMUM_EXTEND_PROGRAM_BYTES},
         state::UpgradeableLoaderState,
     },
-    solana_message::{Hash, Message, VersionedMessage},
+    solana_message::{Message, VersionedMessage},
     solana_pubkey::Pubkey,
     solana_rpc_client::rpc_client::RpcClient,
     solana_rpc_client_api::{
@@ -62,18 +55,11 @@ use {
     },
 };
 
-#[cfg(feature = "solana-v4")]
-const MICRO_LAMPORTS_PER_LAMPORT: u64 = 1_000_000;
-
 /// Outer retry cap on the full deploy/upgrade cycle; inner per-batch resign is `max_sign_attempts`.
 const MAX_DEPLOY_ATTEMPTS: u32 = 3;
 
 /// Tight CU limit per Write tx (~2,670 actual + headroom) so priority-fee-per-CU is competitive.
 const WRITE_COMPUTE_UNIT_LIMIT: u32 = 3_000;
-
-#[cfg(feature = "solana-v4")]
-/// Headroom after program data to account for signer(s) and buffer header without simulation.
-const LOADED_DATA_SIZE_HEADROOM: u32 = 512;
 
 /// Max seconds `wait_for_buffer_stable` polls before giving up and using
 /// the latest snapshot.
@@ -2589,42 +2575,6 @@ fn program_extend(
     Ok(())
 }
 
-// ========== Agave's core parallel deployment functions ==========
-
-#[cfg(feature = "solana-v3")]
-pub fn calculate_max_chunk_size(baseline_msg: Message) -> usize {
-    let tx_size = bincode::serialized_size(&Transaction {
-        signatures: vec![
-            Signature::default();
-            baseline_msg.header.num_required_signatures as usize
-        ],
-        message: baseline_msg,
-    })
-    .unwrap() as usize;
-    // add 1 byte buffer to account for shortvec encoding
-    PACKET_DATA_SIZE.saturating_sub(tx_size).saturating_sub(1)
-}
-
-#[cfg(feature = "solana-v3")]
-fn set_compute_unit_limit_ix_data(message: &mut Message, ix_index: usize, compute_unit_limit: u32) {
-    let ix = &mut message.instructions[ix_index];
-    let program_id = message.account_keys[ix.program_id_index as usize];
-    assert_eq!(program_id, compute_budget_program_id::id());
-    ix.data = ComputeBudgetInstruction::set_compute_unit_limit(compute_unit_limit).data;
-}
-
-#[cfg(feature = "solana-v4")]
-fn set_compute_unit_limit_ix_data(
-    message: &mut VersionedMessage,
-    simulation_result: &TransactionSimulationResults,
-) {
-    if let VersionedMessage::V1(inner_message) = message {
-        inner_message.config.compute_unit_limit = Some(simulation_result.compute_units);
-        inner_message.config.loaded_accounts_data_size_limit =
-            Some(simulation_result.loaded_data_size);
-    }
-}
-
 fn simulate_write_compute_unit_limit(
     rpc_client: &RpcClient,
     message: &VersionedMessage,
@@ -2683,78 +2633,6 @@ fn simulate_write_compute_unit_limit(
         #[cfg(feature = "solana-v4")]
         loaded_data_size: loaded_accounts_data_size,
     })
-}
-
-#[cfg(feature = "solana-v3")]
-fn simulate_and_update_write_compute_unit_limit(
-    rpc_client: &RpcClient,
-    mut write_messages: Vec<Message>,
-    fee_payer_signer: &dyn Signer,
-    write_signer: &dyn Signer,
-) -> Result<Vec<Message>> {
-    if write_messages.is_empty() {
-        return Ok(write_messages);
-    }
-
-    let compute_unit_limit_ix_index = usize::from(write_messages[0].instructions.len() == 3);
-    let compute_unit_limit = match simulate_write_compute_unit_limit(
-        rpc_client,
-        &VersionedMessage::Legacy(write_messages[0].clone()),
-        fee_payer_signer,
-        write_signer,
-    ) {
-        Ok(compute_unit_limit) => compute_unit_limit,
-        Err(err) => {
-            eprintln!(
-                "Note: write transaction simulation failed ({}); keeping placeholder compute unit \
-                 limit.",
-                err
-            );
-            return Ok(write_messages);
-        }
-    }
-    .compute_units;
-
-    for message in &mut write_messages {
-        set_compute_unit_limit_ix_data(message, compute_unit_limit_ix_index, compute_unit_limit);
-    }
-
-    Ok(write_messages)
-}
-
-#[cfg(feature = "solana-v4")]
-fn simulate_and_update_write_compute_unit_limit(
-    rpc_client: &RpcClient,
-    mut write_messages: Vec<VersionedMessage>,
-    fee_payer_signer: &dyn Signer,
-    write_signer: &dyn Signer,
-) -> Result<Vec<VersionedMessage>> {
-    if write_messages.is_empty() {
-        return Ok(write_messages);
-    }
-
-    let simulation_result = match simulate_write_compute_unit_limit(
-        rpc_client,
-        &write_messages[0],
-        fee_payer_signer,
-        write_signer,
-    ) {
-        Ok(simulation_result) => simulation_result,
-        Err(err) => {
-            eprintln!(
-                "Note: write transaction simulation failed ({}); keeping placeholder compute unit \
-                 limit and loaded data size.",
-                err
-            );
-            return Ok(write_messages);
-        }
-    };
-
-    for message in &mut write_messages {
-        set_compute_unit_limit_ix_data(message, &simulation_result);
-    }
-
-    Ok(write_messages)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2937,294 +2815,6 @@ pub fn write_program_buffer(
         send_transaction_config,
     )?;
     Ok(buffer_pubkey)
-}
-
-/// Prepare write messages. When `existing_buffer_data` is provided, skip
-/// chunks that already match on-chain bytes — letting resume after a failed
-/// deploy only re-send the chunks that didn't land.
-#[cfg(feature = "solana-v3")]
-fn prepare_write_messages(
-    program_data: &[u8],
-    buffer_pubkey: &Pubkey,
-    buffer_authority: &Pubkey,
-    fee_payer: &Pubkey,
-    blockhash: &Hash,
-    priority_fee: Option<u64>,
-    existing_buffer_data: Option<&[u8]>,
-) -> Vec<Message> {
-    let create_msg = |offset: u32, bytes: Vec<u8>| {
-        let mut instructions: Vec<Instruction> = Vec::with_capacity(3);
-        if let Some(price) = priority_fee {
-            if price > 0 {
-                instructions.push(ComputeBudgetInstruction::set_compute_unit_price(price));
-            }
-        }
-        instructions.push(ComputeBudgetInstruction::set_compute_unit_limit(
-            WRITE_COMPUTE_UNIT_LIMIT,
-        ));
-        instructions.push(loader_v3_instruction::write(
-            buffer_pubkey,
-            buffer_authority,
-            offset,
-            bytes,
-        ));
-        Message::new_with_blockhash(&instructions, Some(fee_payer), blockhash)
-    };
-
-    let mut write_messages = Vec::new();
-    let chunk_size = calculate_max_chunk_size(create_msg(0, Vec::new()));
-
-    for (chunk, i) in program_data.chunks(chunk_size).zip(0usize..) {
-        let offset = i.saturating_mul(chunk_size);
-        let already_written = match existing_buffer_data {
-            Some(existing) => {
-                let end = offset.saturating_add(chunk.len());
-                end <= existing.len() && &existing[offset..end] == chunk
-            }
-            None => false,
-        };
-        if !already_written {
-            write_messages.push(create_msg(offset as u32, chunk.to_vec()));
-        }
-    }
-
-    write_messages
-}
-
-#[cfg(feature = "solana-v4")]
-/// Prepare write messages
-fn prepare_write_messages(
-    program_data: &[u8],
-    buffer_pubkey: &Pubkey,
-    buffer_authority: &Pubkey,
-    fee_payer: &Pubkey,
-    blockhash: &Hash,
-    priority_fee: Option<u64>,
-    existing_buffer_data: Option<&[u8]>,
-) -> Vec<VersionedMessage> {
-    let mut write_messages = Vec::new();
-
-    // Current BPFLoader accepts 1232 bytes of instruction data
-    // construct an instruction with empty bytes to figure how much hwe have left
-    let bpf_loader_write_size = bincode::serialize(
-        &loader_v3_instruction::UpgradeableLoaderInstruction::Write {
-            offset: 0,
-            bytes: Vec::new(),
-        },
-    )
-    .unwrap()
-    .len();
-    let instruction_chunk_size = solana_packet::PACKET_DATA_SIZE - bpf_loader_write_size;
-    // with tx v1 we have 4096bytes available in a transaction
-    // its enough for 3x instructions with some remaining bytes
-    // which may vary depending on number of signers
-    let instructions_per_transaction = 3;
-    let chunks = program_data.chunks(instruction_chunk_size).zip(0usize..);
-
-    let mut instructions = Vec::new();
-    // Priority fee input is in micro-lamports per CU requested
-    // calculate the final value as expected by transaction v1
-    // (round to 1 lamport if non zero value was requested)
-    // https://solana.com/docs/core/transactions/versioned-transactions#resource-limits-in-v1-the-transaction-config
-    let compute_unit_limit = WRITE_COMPUTE_UNIT_LIMIT * instructions_per_transaction;
-    let priority_fee = if let Some(fee) = priority_fee {
-        fee.checked_mul(compute_unit_limit as u64)
-            .map(|res| res.div_ceil(MICRO_LAMPORTS_PER_LAMPORT))
-            .or(Some(1))
-    } else {
-        None
-    };
-
-    let create_msg = |instructions: Vec<Instruction>| {
-        let msg = solana_message::v1::Message::try_compile_with_config(
-            fee_payer,
-            &instructions,
-            *blockhash,
-            solana_message::v1::TransactionConfig {
-                loaded_accounts_data_size_limit: Some(
-                    program_data.len() as u32 + LOADED_DATA_SIZE_HEADROOM,
-                ),
-                compute_unit_limit: Some(compute_unit_limit),
-                priority_fee,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        VersionedMessage::V1(msg)
-    };
-
-    for (chunk, chunk_idx) in chunks {
-        let offset = chunk_idx.saturating_mul(instruction_chunk_size);
-        let already_written = match existing_buffer_data {
-            Some(existing) => {
-                let end = offset.saturating_add(chunk.len());
-                end <= existing.len() && &existing[offset..end] == chunk
-            }
-            None => false,
-        };
-        if !already_written {
-            let ix = loader_v3_instruction::write(
-                buffer_pubkey,
-                buffer_authority,
-                offset as u32,
-                chunk.to_vec(),
-            );
-            instructions.push(ix);
-
-            if instructions.len() == instructions_per_transaction as usize {
-                write_messages.push(create_msg(instructions));
-                instructions = Vec::new();
-            }
-        }
-    }
-    if !instructions.is_empty() {
-        write_messages.push(create_msg(instructions));
-    }
-
-    write_messages
-}
-
-#[cfg(feature = "solana-v3")]
-/// Send messages in parallel
-fn send_messages_in_batches(
-    rpc_client: &RpcClient,
-    messages: &[Message],
-    signers: &[&dyn Signer],
-    max_sign_attempts: usize,
-    use_rpc: bool,
-    commitment: CommitmentConfig,
-    send_config: RpcSendTransactionConfig,
-) -> Result<()> {
-    // Use parallel send and confirm function
-    // Create a new RpcClient with the same URL and wrap in Arc for parallel processing
-    let url = rpc_client.url();
-    let new_rpc_client = RpcClient::new_with_commitment(url.clone(), commitment);
-    let rpc_client_arc = Arc::new(new_rpc_client);
-
-    // Construct a TPU client so chunk writes go directly to validator leaders
-    // via QUIC, bypassing the RPC node's send path.
-    //
-    // Failure-tolerant: if TPU construction errors (firewall blocks QUIC,
-    // websocket unreachable, etc.) we fall back to `None` and the parallel
-    // sender uses the RpcClient — slower but functional.
-    let tpu_client = if use_rpc {
-        None
-    } else {
-        let ws_url = SolanaCliConfig::compute_websocket_url(&url);
-        if ws_url.is_empty() {
-            None
-        } else {
-            match ConnectionCache::new_quic("anchor_program_deploy_tpu", 1) {
-                ConnectionCache::Quic(cache_inner) => {
-                    let inner_rpc = rpc_client_arc.get_inner_client().clone();
-                    let fut = NonblockingTpuClient::new_with_connection_cache(
-                        inner_rpc,
-                        &ws_url,
-                        TpuClientConfig::default(),
-                        cache_inner,
-                    );
-                    match rpc_client_arc.runtime().block_on(fut) {
-                        Ok(client) => Some(client),
-                        Err(e) => {
-                            eprintln!(
-                                "Note: TPU client construction failed ({}); falling back to RPC \
-                                 for chunk writes. This is slower but functional.",
-                                e
-                            );
-                            None
-                        }
-                    }
-                }
-                ConnectionCache::Udp(_) => None,
-            }
-        }
-    };
-
-    let transaction_errors = send_and_confirm_transactions_in_parallel_blocking_v2(
-        rpc_client_arc,
-        tpu_client,
-        messages,
-        signers,
-        SendAndConfirmConfigV2 {
-            resign_txs_count: Some(max_sign_attempts),
-            with_spinner: true,
-            rpc_send_transaction_config: send_config,
-        },
-    )
-    .map_err(|err| anyhow!("Data writes to account failed: {}", err))?
-    .into_iter()
-    .flatten()
-    // Drop AlreadyProcessed — tx landed via TPU fanout
-    .filter(|e| format!("{:?}", e) != "AlreadyProcessed")
-    .collect::<Vec<_>>();
-
-    if !transaction_errors.is_empty() {
-        for transaction_error in &transaction_errors {
-            eprintln!("{:?}", transaction_error);
-        }
-        return Err(anyhow!(
-            "{} write transactions failed",
-            transaction_errors.len()
-        ));
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "solana-v4")]
-/// Send messages in parallel
-fn send_messages_in_batches(
-    rpc_client: &RpcClient,
-    messages: Vec<VersionedMessage>,
-    signers: &[&dyn Signer],
-    max_sign_attempts: usize,
-    _use_rpc: bool,
-    commitment: CommitmentConfig,
-    send_config: RpcSendTransactionConfig,
-) -> Result<()> {
-    let mut seen_signers: HashSet<Pubkey> = HashSet::new();
-    let deduped_signers = signers
-        .iter()
-        .filter(|v| seen_signers.insert(v.pubkey()))
-        .copied()
-        .collect::<Vec<&dyn Signer>>();
-
-    let fut = send_and_confirm_transactions_in_parallel_v3(
-        rpc_client.get_inner_client().clone(),
-        solana_client::send_and_confirm_transactions_in_parallel::SendTransport::Rpc(
-            RpcSendTransactionConfig {
-                preflight_commitment: Some(commitment.commitment),
-                ..send_config
-            },
-        ),
-        messages,
-        &deduped_signers,
-        SendAndConfirmConfigV3 {
-            max_sign_attempts: std::num::NonZero::new(max_sign_attempts)
-                .expect("should be non zero sign attempts"),
-            with_spinner: true,
-            ..SendAndConfirmConfigV3::default()
-        },
-    );
-
-    let transaction_errors = tokio::task::block_in_place(|| rpc_client.runtime().block_on(fut))
-        .map_err(|err| anyhow!("Data writes to account failed: {}", err))?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-
-    if !transaction_errors.is_empty() {
-        for transaction_error in &transaction_errors {
-            eprintln!("{:?}", transaction_error);
-        }
-        return Err(anyhow!(
-            "{} write transactions failed",
-            transaction_errors.len()
-        ));
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
