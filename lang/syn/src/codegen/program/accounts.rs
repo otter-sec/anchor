@@ -1,31 +1,24 @@
-use {crate::Program, heck::SnakeCase, quote::quote};
+use {
+    crate::{codegen::program::common::generated_accounts_mod_path, Program},
+    quote::quote,
+};
 
 pub fn generate(program: &Program) -> proc_macro2::TokenStream {
     let mut accounts = std::collections::HashMap::new();
 
     // Go through instruction accounts.
     for ix in &program.ixs {
-        let anchor_ident = &ix.anchor_ident;
-        // TODO: move to fn and share with accounts.rs.
-        let macro_name = format!(
-            "__client_accounts_{}",
-            anchor_ident.to_string().to_snake_case()
-        );
-        accounts.insert(macro_name, ix.cfgs.as_slice());
+        let mod_path = generated_accounts_mod_path(&ix.anchor_path(), "__client_accounts_");
+        accounts.insert(mod_path, ix.cfgs.as_slice());
     }
 
     // Build the tokens from all accounts
     let account_structs: Vec<proc_macro2::TokenStream> = accounts
         .iter()
-        .map(|(macro_name, cfgs)| {
-            #[allow(
-                clippy::unwrap_used,
-                reason = "computed from valid Rust identifier via snake_case"
-            )]
-            let macro_name: proc_macro2::TokenStream = macro_name.parse().unwrap();
+        .map(|(mod_path, cfgs)| {
             quote! {
                 #(#cfgs)*
-                pub use crate::#macro_name::*;
+                pub use #mod_path::*;
             }
         })
         .collect();

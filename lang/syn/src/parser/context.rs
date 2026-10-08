@@ -61,7 +61,7 @@ impl CrateContext {
     pub fn safety_checks(&self) -> Result<()> {
         // Check all structs for unsafe field types, i.e. AccountInfo and UncheckedAccount.
         for ctx in self.modules.values() {
-            for unsafe_field in ctx.unsafe_struct_fields() {
+            for (item_struct, unsafe_field) in ctx.unsafe_struct_fields() {
                 // Check if unsafe field type has been documented with a /// SAFETY: doc string.
                 let is_documented = unsafe_field.attrs.iter().any(|attr| {
                     if let syn::Meta::NameValue(syn::MetaNameValue {
@@ -85,6 +85,9 @@ impl CrateContext {
                     )]
                     let ident = unsafe_field.ident.as_ref().unwrap();
                     let span = ident.span();
+                    let (line, column) = ctx
+                        .field_location(item_struct, ident)
+                        .unwrap_or_else(|| (span.start().line, span.start().column));
                     // Error if undocumented.
                     #[allow(
                         clippy::unwrap_used,
@@ -103,8 +106,8 @@ impl CrateContext {
         See https://www.anchor-lang.com/docs/references/account-types#uncheckedaccountinfo for more information.
                     "#,
                             canonical.display(),
-                            span.start().line,
-                            span.start().column,
+                            line,
+                            column,
                             ident,
                         ),
                     ));
@@ -255,7 +258,8 @@ impl ParsedModule {
         })
     }
 
-    fn unsafe_struct_fields(&self) -> impl Iterator<Item = &syn::Field> {
+    /// Returns each unsafe account field together with the `Accounts` struct that contains it.
+    fn unsafe_struct_fields(&self) -> impl Iterator<Item = (&syn::ItemStruct, &syn::Field)> {
         let accounts_filter = |item_struct: &&syn::ItemStruct| {
             item_struct.attrs.iter().any(|attr| {
                 attr.path().is_ident("derive")
@@ -273,17 +277,54 @@ impl ParsedModule {
 
         self.structs()
             .filter(accounts_filter)
-            .flat_map(|s| &s.fields)
-            .filter(|f| match &f.ty {
-                syn::Type::Path(syn::TypePath {
-                    path: syn::Path { segments, .. },
-                    ..
-                }) => {
-                    segments.len() == 1 && segments[0].ident == "UncheckedAccount"
-                        || segments[0].ident == "AccountInfo"
-                }
-                _ => false,
+            .flat_map(|item_struct| {
+                item_struct.fields.iter().filter_map(move |field| {
+                    match &field.ty {
+                        syn::Type::Path(syn::TypePath {
+                            path: syn::Path { segments, .. },
+                            ..
+                        }) => {
+                            segments.len() == 1 && segments[0].ident == "UncheckedAccount"
+                                || segments[0].ident == "AccountInfo"
+                        }
+                        _ => false,
+                    }
+                    .then_some((item_struct, field))
+                })
             })
+    }
+
+    /// Returns the source line and column of a field within an `Accounts` struct, when found.
+    fn field_location(
+        &self,
+        item_struct: &syn::ItemStruct,
+        ident: &Ident,
+    ) -> Option<(usize, usize)> {
+        let source = std::fs::read_to_string(&self.file).ok()?;
+        let struct_start = source.find(&format!("struct {}", item_struct.ident))?;
+        let field_name = ident.to_string();
+        let field_start = source[struct_start..]
+            .match_indices(&field_name)
+            .map(|(index, _)| struct_start + index)
+            .find(|index| {
+                source[..*index]
+                    .chars()
+                    .next_back()
+                    .is_none_or(|character| character != '_' && !character.is_alphanumeric())
+                    && source[*index + field_name.len()..]
+                        .trim_start()
+                        .starts_with(':')
+            })?;
+        let line = source[..field_start]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count()
+            + 1;
+        let column = source[..field_start]
+            .rsplit_once('\n')
+            .map_or(field_start, |(_, line)| line.len());
+
+        Some((line, column))
     }
 
     fn enums(&self) -> impl Iterator<Item = &syn::ItemEnum> {

@@ -1,12 +1,31 @@
 use {
+    crate::compat::solana_pubkey::Pubkey,
     anchor_attribute_error::error_code,
     solana_program_error::ProgramError,
-    solana_pubkey::Pubkey,
     std::{
         fmt::{Debug, Display},
         num::TryFromIntError,
     },
 };
+
+/// Aliases the active Solana cohort back to its unsuffixed crate name.
+mod compat {
+    #[cfg(all(feature = "solana-v3", feature = "solana-v4"))]
+    compile_error!(
+        "anchor-lang-error: features `solana-v3` and `solana-v4` are mutually exclusive. A \
+         dependency most likely re-enabled default features; pass `default-features = false` \
+         there, or pick a single cohort."
+    );
+    #[cfg(not(any(feature = "solana-v3", feature = "solana-v4")))]
+    compile_error!(
+        "anchor-lang-error: enable exactly one of the `solana-v3` or `solana-v4` features."
+    );
+
+    #[cfg(feature = "solana-v3")]
+    pub(crate) use solana_pubkey_v3 as solana_pubkey;
+    #[cfg(feature = "solana-v4")]
+    pub(crate) use solana_pubkey_v4 as solana_pubkey;
+}
 
 /// The starting point for user defined error codes.
 pub const ERROR_CODE_OFFSET: u32 = 6000;
@@ -36,8 +55,11 @@ pub enum ErrorCode {
     /// 100 - Instruction discriminator not provided
     #[msg("Instruction discriminator not provided")]
     InstructionMissing = 100,
-    /// 101 - Fallback functions are not supported
-    #[msg("Fallback functions are not supported")]
+    /// 101 - The instruction discriminator did not match any instruction, and no fallback function is defined
+    #[msg(
+        "The instruction discriminator did not match any instruction, and no fallback function is \
+         defined"
+    )]
     InstructionFallbackNotFound,
     /// 102 - The program could not deserialize the given instruction
     #[msg("The program could not deserialize the given instruction")]
@@ -136,7 +158,7 @@ pub enum ErrorCode {
     /// 2022 - A mint token program constraint was violated
     #[msg("A mint token program constraint was violated")]
     ConstraintMintTokenProgram,
-    /// 2023 - A mint token program constraint was violated
+    /// 2023 - An associated token account token program constraint was violated
     #[msg("An associated token account token program constraint was violated")]
     ConstraintAssociatedTokenTokenProgram,
     /// Extension constraints
@@ -157,7 +179,7 @@ pub enum ErrorCode {
     #[msg("A group member pointer extension authority constraint was violated")]
     ConstraintMintGroupMemberPointerExtensionAuthority,
     /// 2029 - A group member pointer extension member address constraint was violated
-    #[msg("A group member pointer extension group address constraint was violated")]
+    #[msg("A group member pointer extension member address constraint was violated")]
     ConstraintMintGroupMemberPointerExtensionMemberAddress,
     /// 2030 - A metadata pointer extension constraint was violated
     #[msg("A metadata pointer extension constraint was violated")]
@@ -169,7 +191,7 @@ pub enum ErrorCode {
     #[msg("A metadata pointer extension metadata address constraint was violated")]
     ConstraintMintMetadataPointerExtensionMetadataAddress,
     /// 2033 - A close authority extension constraint was violated
-    #[msg("A close authority constraint was violated")]
+    #[msg("A close authority extension constraint was violated")]
     ConstraintMintCloseAuthorityExtension,
     /// 2034 - A close authority extension authority constraint was violated
     #[msg("A close authority extension authority constraint was violated")]
@@ -177,7 +199,7 @@ pub enum ErrorCode {
     /// 2035 - A permanent delegate extension constraint was violated
     #[msg("A permanent delegate extension constraint was violated")]
     ConstraintMintPermanentDelegateExtension,
-    /// 2036 - A permanent delegate extension authority constraint was violated
+    /// 2036 - A permanent delegate extension delegate constraint was violated
     #[msg("A permanent delegate extension delegate constraint was violated")]
     ConstraintMintPermanentDelegateExtensionDelegate,
     /// 2037 - A transfer hook extension constraint was violated
@@ -235,17 +257,20 @@ pub enum ErrorCode {
     /// 3000 - The account discriminator was already set on this account
     #[msg("The account discriminator was already set on this account")]
     AccountDiscriminatorAlreadySet = 3000,
-    /// 3001 - No discriminator was found on the account
-    #[msg("No discriminator was found on the account")]
+    /// 3001 - The account data is too small to contain a discriminator
+    #[msg("The account data is too small to contain a discriminator")]
     AccountDiscriminatorNotFound,
     /// 3002 - Account discriminator did not match what was expected
     #[msg("Account discriminator did not match what was expected")]
     AccountDiscriminatorMismatch,
-    /// 3003 - Failed to deserialize the account
-    #[msg("Failed to deserialize the account")]
+    /// 3003 - Failed to deserialize the account because the account data may be too small for the expected type
+    #[msg(
+        "Failed to deserialize the account because the account data may be too small for the \
+         expected type"
+    )]
     AccountDidNotDeserialize,
-    /// 3004 - Failed to serialize the account
-    #[msg("Failed to serialize the account")]
+    /// 3004 - Failed to serialize the account because the account may be too small to hold the data
+    #[msg("Failed to serialize the account because the account may be too small to hold the data")]
     AccountDidNotSerialize,
     /// 3005 - Not enough account keys given to the instruction
     #[msg("Not enough account keys given to the instruction")]

@@ -1,7 +1,7 @@
 use {super::common::gen_print_section, proc_macro2::TokenStream, quote::quote};
 
-pub fn gen_idl_print_fn_address(address: String) -> TokenStream {
-    let fn_body = gen_print_section("address", quote! { #address });
+pub fn gen_idl_print_fn_address() -> TokenStream {
+    let fn_body = gen_print_section("address", quote! { ID.to_string() });
 
     quote! {
         #[test]

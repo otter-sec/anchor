@@ -126,7 +126,9 @@ jobs:
 
       # FIXME: https://github.com/rust-lang/cargo/issues/17093
       # Stable cargo has a publishing bug. Switch back to stable when the fix is out
-      - uses: dtolnay/rust-toolchain@7c8d7d138f5c09cef361f8214cf96882cd029cdb # nightly
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: nightly
 
       - name: Install cargo-release
         run: cargo install cargo-release --version 1.1.1 --locked

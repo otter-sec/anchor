@@ -56,6 +56,9 @@ import { BenchData, BenchResult, Markdown, formatNumber } from "./utils";
         noChangeCb: ({ name, value }) => {
           table.insert(name, formatNumber(value), +i === 0 ? "N/A" : "-");
         },
+        // Each row intentionally compares two historical versions, so their
+        // differences are expected even when this runs in CI.
+        throwOnChange: false,
       });
 
       // Update version data

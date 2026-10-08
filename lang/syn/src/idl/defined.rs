@@ -81,13 +81,8 @@ pub fn gen_idl_type_def_struct(
         let (fields, defined) = match &strct.fields {
             syn::Fields::Unit => (quote! { None }, vec![]),
             syn::Fields::Named(fields) => {
-                let (fields, defined) = fields
-                    .named
-                    .iter()
-                    .map(|f| gen_idl_field(f, generic_params, no_docs))
-                    .collect::<Result<Vec<_>>>()?
-                    .into_iter()
-                    .unzip::<_, _, Vec<_>, Vec<_>>();
+                let (fields, defined) =
+                    gen_named_fields(fields.named.iter(), generic_params, no_docs)?;
 
                 (
                     quote! { Some(#idl::IdlDefinedFields::Named(vec![#(#fields),*])) },
@@ -95,13 +90,7 @@ pub fn gen_idl_type_def_struct(
                 )
             }
             syn::Fields::Unnamed(fields) => {
-                let (types, defined) = fields
-                    .unnamed
-                    .iter()
-                    .map(|f| gen_idl_type(&f.ty, generic_params))
-                    .collect::<Result<Vec<_>>>()?
-                    .into_iter()
-                    .unzip::<_, Vec<_>, Vec<_>, Vec<_>>();
+                let (types, defined) = gen_tuple_fields(fields.unnamed.iter(), generic_params)?;
 
                 (
                     quote! { Some(#idl::IdlDefinedFields::Tuple(vec![#(#types),*])) },
@@ -123,6 +112,13 @@ pub fn gen_idl_type_def_struct(
 }
 
 fn gen_idl_type_def_enum(enm: &syn::ItemEnum) -> Result<(TokenStream, Vec<syn::TypePath>)> {
+    if get_borsh_use_discriminant(&enm.attrs)? {
+        return Err(syn::Error::new_spanned(
+            &enm.ident,
+            "IDL building does not support custom discriminators",
+        ));
+    }
+
     gen_idl_type_def(&enm.attrs, &enm.generics, |generic_params| {
         let no_docs = get_no_docs();
         let idl = get_idl_module_path();
@@ -135,14 +131,8 @@ fn gen_idl_type_def_enum(enm: &syn::ItemEnum) -> Result<(TokenStream, Vec<syn::T
                 let (fields, defined) = match &variant.fields {
                     syn::Fields::Unit => (quote! { None }, vec![]),
                     syn::Fields::Named(fields) => {
-                        let (fields, defined) = fields
-                            .named
-                            .iter()
-                            .map(|f| gen_idl_field(f, generic_params, no_docs))
-                            .collect::<Result<Vec<_>>>()?
-                            .into_iter()
-                            .unzip::<_, Vec<_>, Vec<_>, Vec<_>>();
-                        let defined = defined.into_iter().flatten().collect::<Vec<_>>();
+                        let (fields, defined) =
+                            gen_named_fields(fields.named.iter(), generic_params, no_docs)?;
 
                         (
                             quote! { Some(#idl::IdlDefinedFields::Named(vec![#(#fields),*])) },
@@ -150,14 +140,8 @@ fn gen_idl_type_def_enum(enm: &syn::ItemEnum) -> Result<(TokenStream, Vec<syn::T
                         )
                     }
                     syn::Fields::Unnamed(fields) => {
-                        let (types, defined) = fields
-                            .unnamed
-                            .iter()
-                            .map(|f| gen_idl_type(&f.ty, generic_params))
-                            .collect::<Result<Vec<_>>>()?
-                            .into_iter()
-                            .unzip::<_, Vec<_>, Vec<_>, Vec<_>>();
-                        let defined = defined.into_iter().flatten().collect::<Vec<_>>();
+                        let (types, defined) =
+                            gen_tuple_fields(fields.unnamed.iter(), generic_params)?;
 
                         (
                             quote! { Some(#idl::IdlDefinedFields::Tuple(vec![#(#types),*])) },
@@ -174,7 +158,7 @@ fn gen_idl_type_def_enum(enm: &syn::ItemEnum) -> Result<(TokenStream, Vec<syn::T
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .unzip::<_, _, Vec<_>, Vec<_>>();
-        let defined = defined.into_iter().flatten().collect::<Vec<_>>();
+        let defined = defined.into_iter().flatten().flatten().collect::<Vec<_>>();
 
         Ok((
             quote! {
@@ -185,6 +169,83 @@ fn gen_idl_type_def_enum(enm: &syn::ItemEnum) -> Result<(TokenStream, Vec<syn::T
             defined,
         ))
     })
+}
+
+fn gen_named_fields<'a>(
+    fields: impl Iterator<Item = &'a syn::Field>,
+    generic_params: &[syn::Ident],
+    no_docs: bool,
+) -> Result<(Vec<TokenStream>, Vec<Vec<syn::TypePath>>)> {
+    let mut idl_fields = Vec::new();
+    let mut defined = Vec::new();
+
+    for field in fields {
+        if is_borsh_skipped(&field.attrs)? {
+            continue;
+        }
+
+        let (field, field_defined) = gen_idl_field(field, generic_params, no_docs)?;
+        idl_fields.push(field);
+        defined.push(field_defined);
+    }
+
+    Ok((idl_fields, defined))
+}
+
+fn gen_tuple_fields<'a>(
+    fields: impl Iterator<Item = &'a syn::Field>,
+    generic_params: &[syn::Ident],
+) -> Result<(Vec<TokenStream>, Vec<Vec<syn::TypePath>>)> {
+    let mut idl_fields = Vec::new();
+    let mut defined = Vec::new();
+
+    for field in fields {
+        if is_borsh_skipped(&field.attrs)? {
+            continue;
+        }
+
+        let (field_ty, field_defined) = gen_idl_type(&field.ty, generic_params)?;
+        idl_fields.push(field_ty);
+        defined.push(field_defined);
+    }
+
+    Ok((idl_fields, defined))
+}
+
+fn get_borsh_use_discriminant(attrs: &[syn::Attribute]) -> Result<bool> {
+    let mut use_discriminant = None;
+
+    for attr in attrs.iter().filter(|attr| attr.path().is_ident("borsh")) {
+        attr.parse_nested_meta(|meta| {
+            if !meta.path.is_ident("use_discriminant") {
+                return Ok(());
+            }
+
+            let value = meta.value()?;
+            let value: syn::LitBool = value.parse()?;
+            use_discriminant = Some(value.value);
+
+            Ok(())
+        })?;
+    }
+
+    Ok(use_discriminant.unwrap_or(false))
+}
+
+fn is_borsh_skipped(attrs: &[syn::Attribute]) -> Result<bool> {
+    let mut skipped = false;
+
+    for attr in attrs.iter().filter(|attr| attr.path().is_ident("borsh")) {
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("skip") {
+                skipped = true;
+            }
+
+            Ok(())
+        })?;
+    }
+
+    Ok(skipped)
 }
 
 fn gen_idl_type_def<F>(
@@ -470,6 +531,30 @@ pub fn gen_idl_type(
             })
     }
 
+    /// Returns the inner integer for `NonZeroU8`, `std::num::NonZeroU64`, etc.
+    fn nonzero_alias_inner(path: &syn::TypePath) -> Option<&'static str> {
+        const ALIASES: [(&str, &str); 10] = [
+            ("NonZeroU8", "u8"),
+            ("NonZeroI8", "i8"),
+            ("NonZeroU16", "u16"),
+            ("NonZeroI16", "i16"),
+            ("NonZeroU32", "u32"),
+            ("NonZeroI32", "i32"),
+            ("NonZeroU64", "u64"),
+            ("NonZeroI64", "i64"),
+            ("NonZeroU128", "u128"),
+            ("NonZeroI128", "i128"),
+        ];
+        ALIASES.iter().find_map(|(alias, inner)| {
+            path_is_builtin(
+                path,
+                alias,
+                &[&["std", "num", alias], &["core", "num", alias]],
+            )
+            .then_some(*inner)
+        })
+    }
+
     match ty {
         syn::Type::Path(path) if the_only_segment_is(path, "bool") => {
             Ok((quote! { #idl::IdlType::Bool }, vec![]))
@@ -511,13 +596,25 @@ pub fn gen_idl_type(
             Ok((quote! { #idl::IdlType::I128 }, vec![]))
         }
         syn::Type::Path(path)
-            if path_is_builtin(path, "String", &[&["std", "string", "String"]])
-                || the_only_segment_is(path, "str") =>
+            if path_is_builtin(
+                path,
+                "String",
+                &[&["std", "string", "String"], &["alloc", "string", "String"]],
+            ) || the_only_segment_is(path, "str") =>
         {
             Ok((quote! { #idl::IdlType::String }, vec![]))
         }
         syn::Type::Path(path)
-            if path_is_builtin(path, "Pubkey", &[&["anchor_lang", "prelude", "Pubkey"]]) =>
+            if path_is_builtin(
+                path,
+                "Pubkey",
+                &[
+                    &["anchor_lang", "prelude", "Pubkey"],
+                    &["anchor_lang", "solana_program", "pubkey", "Pubkey"],
+                    &["solana_program", "pubkey", "Pubkey"],
+                    &["solana_pubkey", "Pubkey"],
+                ],
+            ) =>
         {
             Ok((quote! { #idl::IdlType::Pubkey }, vec![]))
         }
@@ -561,6 +658,24 @@ pub fn gen_idl_type(
             let segment = get_last_segment(path)?;
             let arg = get_first_type_arg(segment)?;
             gen_idl_type(arg, generic_params)
+        }
+        // Borsh serializes `NonZero*` exactly like the inner integer, so the IDL
+        // describes them as that integer. The non-zero invariant is not recorded.
+        syn::Type::Path(path)
+            if path_is_builtin(
+                path,
+                "NonZero",
+                &[&["std", "num", "NonZero"], &["core", "num", "NonZero"]],
+            ) =>
+        {
+            let segment = get_last_segment(path)?;
+            let arg = get_first_type_arg(segment)?;
+            gen_idl_type(arg, generic_params)
+        }
+        syn::Type::Path(path) if nonzero_alias_inner(path).is_some() => {
+            #[allow(clippy::unwrap_used, reason = "checked by the match guard")]
+            let inner = nonzero_alias_inner(path).unwrap();
+            gen_idl_type(&syn::parse_str(inner)?, generic_params)
         }
         syn::Type::Array(arr) => {
             let len = &arr.len;
@@ -621,6 +736,8 @@ pub fn gen_idl_type(
                     defined_names: HashSet<String>,
                     /// Type aliases stored as (name, source_text) for re-parsing
                     type_aliases: HashMap<String, String>,
+                    /// Alias names defined differently in more than one module
+                    ambiguous_aliases: HashSet<String>,
                 }
 
                 static CRATE_DATA_CACHE: OnceLock<std::result::Result<CachedCrateData, String>> =
@@ -649,15 +766,11 @@ pub fn gen_idl_type(
                                     .map(|s| s.ident.to_string())
                                     .chain(ctx.enums().map(|e| e.ident.to_string()))
                                     .collect();
-                                let mut type_aliases: HashMap<String, String> = HashMap::new();
-                                for ty in ctx.type_aliases() {
-                                    type_aliases
-                                        .entry(ty.ident.to_string())
-                                        .or_insert_with(|| ty.to_token_stream().to_string());
-                                }
+                                let (type_aliases, ambiguous_aliases) = collect_type_aliases(&ctx);
                                 CachedCrateData {
                                     defined_names,
                                     type_aliases,
+                                    ambiguous_aliases,
                                 }
                             })
                     });
@@ -671,6 +784,17 @@ pub fn gen_idl_type(
                             ));
                         }
                     };
+
+                    if cache.ambiguous_aliases.contains(&name) {
+                        return Err(syn::Error::new_spanned(
+                            path,
+                            format!(
+                                "Type alias `{name}` is defined differently in more than one \
+                                 module, so the IDL can't tell which definition this refers to. \
+                                 Rename one of the aliases."
+                            ),
+                        ));
+                    }
 
                     let alias_src = cache.type_aliases.get(&name).cloned();
                     let is_external = !cache.defined_names.contains(&name);
@@ -838,4 +962,145 @@ fn get_last_segment(type_path: &syn::TypePath) -> Result<&syn::PathSegment> {
         .segments
         .last()
         .ok_or_else(|| syn::Error::new_spanned(type_path, "Expected a non-empty type path"))
+}
+
+/// Groups the crate's type aliases by name, keeping the source text of each. A name defined with
+/// different source in more than one module can't be resolved from the bare name the IDL sees, so
+/// it is reported separately instead of silently using whichever definition came first.
+fn collect_type_aliases(
+    ctx: &crate::parser::context::CrateContext,
+) -> (
+    std::collections::HashMap<String, String>,
+    std::collections::HashSet<String>,
+) {
+    use {quote::ToTokens, std::collections::hash_map::Entry};
+
+    let mut type_aliases = std::collections::HashMap::new();
+    let mut ambiguous = std::collections::HashSet::new();
+    for ty in ctx.type_aliases() {
+        let src = ty.to_token_stream().to_string();
+        match type_aliases.entry(ty.ident.to_string()) {
+            Entry::Vacant(entry) => {
+                entry.insert(src);
+            }
+            Entry::Occupied(entry) => {
+                if *entry.get() != src {
+                    ambiguous.insert(entry.key().clone());
+                }
+            }
+        }
+    }
+    (type_aliases, ambiguous)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_gen_named_fields_skips_borsh_skipped_fields() {
+        let item: syn::ItemStruct = syn::parse_quote! {
+            struct SkipField {
+                head: u8,
+                #[borsh(skip)]
+                skipped: u64,
+                tail: u16,
+            }
+        };
+
+        let (fields, defined) = gen_named_fields(item.fields.iter(), &[], false).unwrap();
+        let rendered = fields
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        assert_eq!(fields.len(), 2);
+        assert_eq!(defined.len(), 2);
+        assert!(rendered.contains("head"));
+        assert!(rendered.contains("tail"));
+        assert!(!rendered.contains("skipped"));
+    }
+
+    #[test]
+    fn test_gen_idl_type_def_enum_rejects_explicit_borsh_discriminants() {
+        let item: syn::ItemEnum = syn::parse_quote! {
+            #[borsh(use_discriminant = true)]
+            #[repr(u8)]
+            enum Animal {
+                Cat = 0,
+                Dog = 1,
+                Mouse = 5,
+            }
+        };
+
+        let err = gen_idl_type_def_enum(&item).unwrap_err();
+        assert!(err.to_string().contains("custom discriminators"));
+    }
+
+    #[test]
+    fn test_gen_idl_type_def_enum_allows_default_borsh_discriminants() {
+        let item: syn::ItemEnum = syn::parse_quote! {
+            #[borsh(use_discriminant = false)]
+            #[repr(u8)]
+            enum Animal {
+                Cat = 0,
+                Dog = 1,
+                Mouse = 5,
+            }
+        };
+
+        assert!(gen_idl_type_def_enum(&item).is_ok());
+    }
+
+    fn aliases_of(tag: &str, files: &[(&str, &str)]) -> (Vec<String>, Vec<String>) {
+        let dir =
+            std::env::temp_dir().join(format!("anchor-syn-aliases-{}-{tag}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, src) in files {
+            std::fs::write(dir.join(name), src).unwrap();
+        }
+        let ctx = crate::parser::context::CrateContext::parse(dir.join("lib.rs")).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        let (aliases, ambiguous) = collect_type_aliases(&ctx);
+        let mut aliases = aliases.into_keys().collect::<Vec<_>>();
+        let mut ambiguous = ambiguous.into_iter().collect::<Vec<_>>();
+        aliases.sort();
+        ambiguous.sort();
+        (aliases, ambiguous)
+    }
+
+    #[test]
+    fn same_name_alias_with_different_definitions_is_ambiguous() {
+        let (aliases, ambiguous) = aliases_of(
+            "different",
+            &[
+                (
+                    "lib.rs",
+                    "pub mod order;\npub mod pool { pub type Id = [u8; 32]; }\npub type Fee = \
+                     u64;\n",
+                ),
+                ("order.rs", "pub type Id = u64;\n"),
+            ],
+        );
+        assert_eq!(aliases, ["Fee", "Id"]);
+        assert_eq!(ambiguous, ["Id"]);
+    }
+
+    #[test]
+    fn same_name_alias_with_identical_definitions_is_not_ambiguous() {
+        let (aliases, ambiguous) = aliases_of(
+            "identical",
+            &[
+                (
+                    "lib.rs",
+                    "pub mod order;\npub mod pool { pub type Id = u64; }\n",
+                ),
+                ("order.rs", "pub type Id = u64;\n"),
+            ],
+        );
+        assert_eq!(aliases, ["Id"]);
+        assert!(ambiguous.is_empty());
+    }
 }

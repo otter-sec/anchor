@@ -72,6 +72,17 @@ pub mod caller {
         Ok(())
     }
 
+    // Regression guard for #4658: CPI into an instruction whose accounts struct
+    // has no fields. Before the fix, `callee::cpi::accounts::NoAccounts<'info>`
+    // failed to compile (the generated struct had no `<'info>`).
+    pub fn cpi_call_no_accounts(ctx: Context<CpiReturnContext>) -> Result<()> {
+        let cpi_program_id = ctx.accounts.cpi_return_program.key();
+        let cpi_accounts = callee::cpi::accounts::NoAccounts {
+            ..Default::default()
+        };
+        callee::cpi::no_accounts(CpiContext::new(cpi_program_id, cpi_accounts))
+    }
+
     pub fn return_u64(_ctx: Context<ReturnContext>) -> Result<u64> {
         Ok(99)
     }

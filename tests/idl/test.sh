@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
+export ENV_ID_ADDRESS=EnvProgram111111111111111111111111111111111
+
 # Generate temp directory
 tmp_dir=$(mktemp -d)
 
@@ -53,5 +55,6 @@ compare() {
 compare "idl"
 compare "generics"
 compare "relations"
+compare "env_id"
 
 exit $ret

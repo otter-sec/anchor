@@ -147,6 +147,11 @@ requirement, AVM considers hosted Solana CLI versions satisfying that
 requirement and prefers one whose platform-tools rustc can compile the locked
 program dependency graph.
 
+AVM also queries the latest platform-tools release at most once every 24 hours
+and checks whether it is present in `cargo build-sbf`'s cache. If it is
+missing, AVM prints the exact `cargo build-sbf --install-only` command needed
+to install it; it never installs the toolchain automatically.
+
 ## Self-update
 
 ```shell

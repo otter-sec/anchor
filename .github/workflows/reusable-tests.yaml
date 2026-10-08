@@ -32,11 +32,9 @@ env:
   ANCHOR_BINARY_NAME: ${{ inputs.anchor_binary_name }}
   SURFPOOL_CLI_VERSION: ${{ inputs.surfpool_cli_version }}
   CARGO_CACHE_PATH: |
-    ~/.cargo/bin/
     ~/.cargo/registry/index/
     ~/.cargo/registry/cache/
     ~/.cargo/git/db/
-    ./target/
 
 jobs:
   test-core:
@@ -57,13 +55,15 @@ jobs:
         id: cache-cargo-build
         with:
           path: ${{ env.CARGO_CACHE_PATH }}
-          key: cargo-${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
       - run: cargo build
       - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu rustfmt && cargo +nightly fmt -- --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: ./.github/scripts/check-solana-program-version.sh
       # FIXME: Enable `idl-build`
       - run: cargo test --workspace --exclude avm --features allow-missing-optionals,anchor-debug,derive,event-cpi,init-if-needed,lazy-account
+      # run async tests for anchor-client
+      - run: cargo test -p anchor-client --features async
       # using singlethreaded testing for avm so that tests that change files do not conflict with each other
       - run: cargo test --package avm -- --test-threads=1
       # Init local borsh package
@@ -77,6 +77,32 @@ jobs:
       - run: cd tests && yarn --frozen-lockfile
       - run: cd tests && yarn lint
       - uses: ./.github/actions/git-diff/
+
+  # The `solana-v4` half of `test-core`. Kept separate so that job's TS suites,
+  # which are cohort-independent, don't run twice.
+  test-core-v4:
+    name: Core Tests (Solana v4 cohort)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup/
+      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+        if: ${{ env.CACHE != 'false' }}
+        name: Cache Cargo registry + index
+        id: cache-cargo-build
+        with:
+          path: ${{ env.CARGO_CACHE_PATH }}
+          key: cargo-v4-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      # `--no-default-features` also drops anchor-spl's capability features, so
+      # they have to be re-listed alongside the cohort.
+      - run: cargo clippy --workspace --exclude avm --all-targets --no-default-features --features solana-v4,associated_token,mint,token,token_2022,token_2022_extensions -- -D warnings
+      # FIXME: Enable `idl-build`
+      - run: cargo test --workspace --exclude avm --no-default-features --features solana-v4,allow-missing-optionals,anchor-debug,derive,event-cpi,init-if-needed,lazy-account,associated_token,mint,token,token_2022,token_2022_extensions
+      # run async tests for anchor-client
+      - run: cargo test -p anchor-client --no-default-features --features solana-v4,async
 
   setup-anchor-cli:
     name: Setup Anchor cli
@@ -93,18 +119,21 @@ jobs:
         id: cache-anchor
         with:
           path: ${{ env.CARGO_CACHE_PATH }}
-          key: cargo-${{ runner.os }}-${{ env.CARGO_PROFILE }}-anchor-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
       - run: cargo install --path cli anchor-cli --locked --force --debug --features idl-localnet-testing
         if: env.CARGO_PROFILE == 'debug'
       - run: cargo install --path cli anchor-cli --locked --force --features idl-localnet-testing
         if: env.CARGO_PROFILE != 'debug'
+      - run: cargo install --path avm --locked --force
 
-      - run: chmod +x ~/.cargo/bin/anchor
+      - run: chmod +x ~/.cargo/bin/anchor ~/.cargo/bin/avm
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ env.ANCHOR_BINARY_NAME }}
-          path: ~/.cargo/bin/anchor
+          path: |
+            ~/.cargo/bin/anchor
+            ~/.cargo/bin/avm
 
       - uses: ./.github/actions/git-diff/
 
@@ -121,52 +150,12 @@ jobs:
         with:
           name: ${{ env.ANCHOR_BINARY_NAME }}
           path: ~/.cargo/bin/
-      - run: chmod +rwx ~/.cargo/bin/anchor
+      - run: chmod +rwx ~/.cargo/bin/anchor ~/.cargo/bin/avm
 
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-solana/
       - uses: ./.github/actions/setup-ts/
       - uses: ./.github/actions/setup-surfpool/
-
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: basic-0 cache
-        id: cache-basic-0
-        with:
-          path: ./examples/tutorial/basic-0/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('./examples/tutorial/basic-0/**/Cargo.toml') }}-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: basic-1 cache
-        id: cache-basic-1
-        with:
-          path: ./examples/tutorial/basic-1/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('./examples/tutorial/basic-1/**/Cargo.toml') }}-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: basic-2 cache
-        id: cache-basic-2
-        with:
-          path: ./examples/tutorial/basic-2/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('./examples/tutorial/basic-2/**/Cargo.toml') }}-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: basic-3 cache
-        id: cache-basic-3
-        with:
-          path: ./examples/tutorial/basic-3/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('./examples/tutorial/basic-3/**/Cargo.toml') }}-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: basic-4 cache
-        id: cache-basic-4
-        with:
-          path: ./examples/tutorial/basic-4/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('./examples/tutorial/basic-4/**/Cargo.toml') }}-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
 
       - run: cd examples/tutorial && yarn workspaces run test
       - uses: ./.github/actions/git-diff/
@@ -201,7 +190,7 @@ jobs:
         with:
           name: ${{ env.ANCHOR_BINARY_NAME }}
           path: ~/.cargo/bin/
-      - run: chmod +rwx ~/.cargo/bin/anchor
+      - run: chmod +rwx ~/.cargo/bin/anchor ~/.cargo/bin/avm
 
       - run: cd ${{ matrix.node.path }} && anchor build --skip-lint --ignore-keys
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -226,7 +215,7 @@ jobs:
         with:
           name: ${{ env.ANCHOR_BINARY_NAME }}
           path: ~/.cargo/bin/
-      - run: chmod +x ~/.cargo/bin/anchor
+      - run: chmod +x ~/.cargo/bin/anchor ~/.cargo/bin/avm
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -248,13 +237,6 @@ jobs:
         with:
           name: composite.so
           path: tests/composite/target/deploy/
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: Cache client/example target
-        id: cache-test-target
-        with:
-          path: client/example/target
-          key: cargo-${{ runner.os }}-client/example-${{ env.ANCHOR_VERSION }}-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
       - uses: ./.github/actions/setup-solana/
       - uses: ./.github/actions/setup-surfpool/
       - run: cd client/example && ./run-test.sh
@@ -280,21 +262,13 @@ jobs:
         id: cache-anchor
         with:
           path: ${{ env.CARGO_CACHE_PATH }}
-          key: cargo-${{ runner.os }}-${{ env.CARGO_PROFILE }}-anchor-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ env.ANCHOR_BINARY_NAME }}
           path: ~/.cargo/bin/
-      - run: chmod +x ~/.cargo/bin/anchor
-
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: Cache tests/bpf-upgradeable-state target
-        id: cache-test-target
-        with:
-          path: tests/bpf-upgradeable-state/target
-          key: cargo-${{ runner.os }}-tests/bpf-upgradeable-state-${{ env.ANCHOR_VERSION }}-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+      - run: chmod +x ~/.cargo/bin/anchor ~/.cargo/bin/avm
 
       - run: surfpool start --ci --offline &
         name: start surfpool
@@ -367,6 +341,9 @@ jobs:
     strategy:
       matrix:
         template: [mocha, jest, rust, mollusk, litesvm]
+        include:
+          # Scaffolds the `litesvm` template but builds it against `solana-v4`.
+          - template: litesvm-solana-v4
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -382,26 +359,42 @@ jobs:
         id: cache-anchor
         with:
           path: ${{ env.CARGO_CACHE_PATH }}
-          key: cargo-${{ runner.os }}-${{ env.CARGO_PROFILE }}-anchor-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ env.ANCHOR_BINARY_NAME }}
           path: ~/.cargo/bin/
-      - run: chmod +x ~/.cargo/bin/anchor
+      - run: chmod +x ~/.cargo/bin/anchor ~/.cargo/bin/avm
 
       - name: Init project
         working-directory: /tmp
-        run: anchor init --test-template ${{ matrix.template }} hello-anchor-${{ matrix.template }}
+        run: anchor init --test-template ${{ matrix.template == 'litesvm-solana-v4' && 'litesvm' || matrix.template }} hello-anchor-${{ matrix.template }}
 
       - name: Remove anchor-client dependency first to avoid conflicts
         if: ${{ matrix.template == 'rust' }}
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
         run: cargo remove anchor-client --manifest-path tests/Cargo.toml
 
+      # litesvm 0.15 and the committed Cargo.lock pin a wincode 0.5 graph that
+      # doesn't build on v4, which also needs a 1.97.1 toolchain.
+      - name: Retarget the litesvm template at solana-v4
+        if: ${{ matrix.template == 'litesvm-solana-v4' }}
+        working-directory: /tmp/hello-anchor-${{ matrix.template }}
+        run: |
+          sed -i 's/^litesvm = "0.15.0"$/litesvm = "0.17.0"/' programs/hello-anchor-${{ matrix.template }}/Cargo.toml
+          rm -f Cargo.lock
+          sed -i 's/^channel = ".*"$/channel = "1.97.1"/' rust-toolchain.toml
+
       - name: Point anchor-lang to workspace
+        if: ${{ matrix.template != 'litesvm-solana-v4' }}
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
         run: cargo add anchor-lang --manifest-path programs/hello-anchor-${{ matrix.template }}/Cargo.toml --path "$GITHUB_WORKSPACE/lang"
+
+      - name: Point anchor-lang to workspace (solana-v4)
+        if: ${{ matrix.template == 'litesvm-solana-v4' }}
+        working-directory: /tmp/hello-anchor-${{ matrix.template }}
+        run: cargo add anchor-lang --manifest-path programs/hello-anchor-${{ matrix.template }}/Cargo.toml --path "$GITHUB_WORKSPACE/lang" --no-default-features --features solana-v4
 
       - name: Point anchor-client to workspace
         if: ${{ matrix.template == 'rust' }}
@@ -416,7 +409,7 @@ jobs:
         run: yarn link @anchor-lang/core && yarn && anchor test && yarn lint:fix
 
       - name: Run generated Rust project tests
-        if: ${{ matrix.template == 'rust' || matrix.template == 'mollusk' || matrix.template == 'litesvm' }}
+        if: ${{ matrix.template == 'rust' || matrix.template == 'mollusk' || matrix.template == 'litesvm' || matrix.template == 'litesvm-solana-v4' }}
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
         run: anchor test
 
@@ -497,7 +490,10 @@ jobs:
             path: tests/custom-coder
           - cmd: cd tests/custom-discriminator && anchor test --skip-lint && npx tsc --noEmit
             path: tests/custom-discriminator
-          - cmd: cd tests/validator-clone && anchor test --skip-lint && npx tsc --noEmit
+          - cmd: cd tests/modularized-program && anchor test --skip-lint && npx tsc --noEmit
+            path: tests/modularized-program
+          # FIXME: Return to using Surfpool once https://github.com/solana-foundation/surfpool/pull/733 is released
+          - cmd: cd tests/validator-clone && anchor test --skip-lint --validator legacy && npx tsc --noEmit
             path: tests/validator-clone
           - cmd: cd tests/cpi-returns && anchor test --skip-lint && npx tsc --noEmit
             path: tests/cpi-returns
@@ -517,7 +513,7 @@ jobs:
             path: tests/anchor-cli-legacy-idl
           - cmd: cd tests/anchor-cli-account && anchor test --skip-lint
             path: tests/anchor-cli-account
-          - cmd: cd tests/bench && anchor test --skip-lint
+          - cmd: cd tests/bench && ./test.sh
             path: tests/bench
           - cmd: cd tests/idl && ./test.sh
             path: tests/idl
@@ -549,21 +545,13 @@ jobs:
         id: cache-anchor
         with:
           path: ${{ env.CARGO_CACHE_PATH }}
-          key: cargo-${{ runner.os }}-${{ env.CARGO_PROFILE }}-anchor-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ env.ANCHOR_BINARY_NAME }}
           path: ~/.cargo/bin/
-      - run: chmod +x ~/.cargo/bin/anchor
-
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: Cache ${{ matrix.node.path }} target
-        id: cache-test-target
-        with:
-          path: ${{ matrix.node.path }}/target
-          key: cargo-${{ runner.os }}-${{ matrix.node.path }}-${{ env.ANCHOR_VERSION }}-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+      - run: chmod +x ~/.cargo/bin/anchor ~/.cargo/bin/avm
 
       - run: ${{ matrix.node.cmd }}
         name: ${{ matrix.node.path }} program test

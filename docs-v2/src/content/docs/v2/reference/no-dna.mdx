@@ -1,0 +1,43 @@
+---
+title: NO_DNA
+description: Reference documentation for Anchor's NO_DNA support
+---
+
+Anchor supports the `NO_DNA` convention for non-human CLI usage. See
+[no-dna.org](https://no-dna.org/). Set `NO_DNA` to a non-empty value when
+invoking Anchor from an agent, automation, or another non-interactive
+workflow that should not block on supported interactive waits or confirmation
+prompts. `NO_DNA=1` is the standard example.
+
+## Usage
+
+Prefix the command:
+
+```bash
+NO_DNA=1 anchor test --detach
+NO_DNA=1 anchor localnet
+NO_DNA=1 anchor program close <ACCOUNT> --bypass-warning
+```
+
+Or export it for a session:
+
+```bash
+export NO_DNA=1
+anchor test --detach
+```
+
+<Callout type="info" title="Destructive commands stay explicit">
+`NO_DNA` does not auto-confirm destructive actions. For commands such as
+`anchor program close`, pass the existing explicit bypass flag yourself.
+</Callout>
+
+## Checking support from the CLI
+
+The CLI help text documents `NO_DNA` where it applies:
+
+```bash
+anchor --help
+anchor test --help
+anchor localnet --help
+anchor program close --help
+```

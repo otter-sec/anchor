@@ -75,6 +75,17 @@ pub mod idl {
         Ok(())
     }
 
+    pub fn non_zero_types(
+        _ctx: Context<NonZeroTypes>,
+        non_zero_u8: core::num::NonZeroU8,
+        non_zero_i64: std::num::NonZero<i64>,
+        fields: NonZeroFields,
+    ) -> Result<core::num::NonZeroU8> {
+        msg!("non_zero_i64: {}", non_zero_i64);
+        msg!("fields.non_zero_i64: {}", fields.non_zero_i64);
+        Ok(non_zero_u8)
+    }
+
     pub fn strct(
         ctx: Context<Struct>,
         unit: UnitStruct,
@@ -254,6 +265,16 @@ pub struct UnsizedTypes<'info> {
 pub struct UnsizedAccount {
     pub string: String,
     pub bytes: Vec<u8>,
+}
+
+#[derive(Accounts)]
+pub struct NonZeroTypes {}
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct NonZeroFields {
+    pub non_zero_u8: core::num::NonZeroU8,
+    pub non_zero_i64: std::num::NonZero<i64>,
+    pub option_non_zero_u32: Option<core::num::NonZeroU32>,
 }
 
 #[derive(Accounts)]

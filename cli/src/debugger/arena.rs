@@ -19,7 +19,6 @@ use {
         InvocationFiles, INSN_ENTRY_SIZE, KNOWN_SYSCALLS, REGS_ENTRY_SIZE,
     },
     anyhow::{anyhow, bail, Context, Result},
-    solana_compute_budget::compute_budget::ComputeBudget,
     solana_sbpf::{ebpf, static_analysis::Analysis},
     std::{
         collections::BTreeMap,
@@ -155,7 +154,7 @@ pub fn build_session(
                 let mut steps: Vec<DebugStep> = Vec::with_capacity(count);
                 let mut node_cu: u64 = 0;
 
-                let budget = ComputeBudget::new_with_defaults(false, false);
+                let budget = crate::compat::default_compute_budget();
                 let mut step_idx = 0usize;
 
                 stream_trace(
@@ -444,13 +443,23 @@ impl solana_sbpf::vm::ContextObject for NoopCtx {
     fn get_remaining(&self) -> u64 {
         0
     }
+    fn active_mapping_ptr(
+        &mut self,
+    ) -> std::ptr::NonNull<solana_sbpf::memory_region::MemoryMapping> {
+        // `NoopCtx` only type-parameterizes `Executable::from_elf` for static
+        // disassembly/analysis; we never construct an `EbpfVm` (the only
+        // caller of this method), so it's unreachable in practice. Mirrors
+        // `solana_sbpf::static_analysis::DummyContextObject`, upstream's own
+        // test-only stub for the same situation.
+        unreachable!("NoopCtx is only used for static analysis, never for VM execution")
+    }
 }
 
 /// No-op `BuiltinFunction<NoopCtx>` used to register syscall names in the
 /// loader's function registry. Never called — we replay traces, never
 /// execute — so the body is unreachable in practice.
 fn syscall_stub(
-    _vm: *mut solana_sbpf::vm::EbpfVm<NoopCtx>,
+    _vm: solana_sbpf::vm::EncryptedHostAddressToEbpfVm<NoopCtx>,
     _r1: u64,
     _r2: u64,
     _r3: u64,
@@ -458,6 +467,12 @@ fn syscall_stub(
     _r5: u64,
 ) {
 }
+
+/// No-op `BuiltinCodegen<NoopCtx>` paired with [`syscall_stub`]. Registering
+/// a function now requires both the interpreter and JIT entry points; like
+/// `syscall_stub`, this is never actually invoked since we never JIT-compile
+/// or execute — the registry is consulted only for the (hash → name) lookup.
+fn syscall_stub_codegen(_jit: &mut solana_sbpf::program::JitCompiler<NoopCtx>) {}
 
 fn load_program_ctx<'a>(
     program_id: &str,
@@ -483,7 +498,7 @@ fn build_program_ctx(
         Ok(x) => x,
         Err(e) => {
             // Common cause: bench-style workspaces produce a raw cargo
-            // SBF ELF in `target/sbpf-solana-solana/release/` that
+            // SBF ELF in `target/<sbpf-target>/release/` that
             // solana-sbpf can't parse without `cargo build-sbf`'s
             // post-link step. Surface this clearly so the user knows
             // what to do instead of silently dropping the trace.
@@ -512,7 +527,7 @@ fn build_program_ctx(
         // syscalls collide in `KNOWN_SYSCALLS`, which is a list bug, not
         // a per-program issue. Continuing yields a partial registry
         // (better than no names at all).
-        let _ = loader_inner.register_function(name, syscall_stub);
+        let _ = loader_inner.register_function(name, (syscall_stub, syscall_stub_codegen));
     }
     let loader = Arc::new(loader_inner);
     let executable = solana_sbpf::elf::Executable::<NoopCtx>::from_elf(&elf_bytes, loader).ok()?;

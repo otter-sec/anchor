@@ -5,11 +5,24 @@ on:
     branches:
       - master
     paths-ignore:
+      # Docs/changelog cannot affect these tests.
       - "docs/**"
+      - "docs-v2/**"
+      - "**/*.md"
+      - "**/*.mdx"
+      - ".cspell-anchor-dictionary.txt"
   pull_request:
     paths-ignore:
       - "docs/**"
+      - "docs-v2/**"
+      - "**/*.md"
+      - "**/*.mdx"
+      - ".cspell-anchor-dictionary.txt"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -23,6 +36,7 @@ jobs:
   # Build CLI once to share across test jobs
   build-cli:
     name: Build CLI
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release-bump/')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -61,6 +75,7 @@ jobs:
   # apply, so the matrix is just template x test-template (2 x 3 = 6 cells).
   template-rust-tests:
     name: ${{ matrix.template }} + ${{ matrix.test_template }}
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release-bump/')
     needs: build-cli
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -93,7 +108,7 @@ jobs:
           max_attempts: 3
           retry_on: error
           shell: bash
-          command: cargo build-sbf --tools-version v1.52 --install-only
+          command: cargo build-sbf --tools-version v1.57 --install-only
 
       # Cache the generated project's `target/` so subsequent runs reuse
       # compiled deps. Restored before `anchor init` (which is invoked with
@@ -140,6 +155,7 @@ jobs:
   # package manager (2 x 2 x 2 x 4 = 32 cells).
   template-js-tests:
     name: ${{ matrix.template }} + ${{ matrix.test_template }} + ${{ matrix.language }} + ${{ matrix.package_manager }}
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release-bump/')
     needs: build-cli
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -191,7 +207,7 @@ jobs:
           max_attempts: 3
           retry_on: error
           shell: bash
-          command: cargo build-sbf --tools-version v1.52 --install-only
+          command: cargo build-sbf --tools-version v1.57 --install-only
 
       # Cache cargo `target/` and `node_modules/` for the generated project.
       # `anchor init --force` leaves both alone, so the dirs survive a fresh

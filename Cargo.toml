@@ -16,7 +16,7 @@ exclude = ["tests/cfo/deps/openbook-dex", "tests/swap/deps/openbook-dex"]
 resolver = "2"
 
 [workspace.package]
-version = "1.1.2"
+version = "1.2.0"
 readme = "README.md"
 repository = "https://github.com/otter-sec/anchor"
 
@@ -25,71 +25,115 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace.dependencies]
-solana-account = "3.2.0"
-solana-account-decoder = "3.0.14"
+# Anchor supports two curated Solana dependency sets, selected by the
+# mutually-exclusive `solana-v3`/`solana-v4` features with `solana-v3` being the default.
+#
+# Crates whose resolved major is the same in both cohorts are declared once
+# under "shared" below. 
+
+# --- shared by both cohorts ---
 solana-account-info = "3.1.0"
-solana-cli-config = "3.0.14"
-solana-client = "3.0.14"
-solana-clock = "3.0.1"
 solana-commitment-config = "3.1.1"
 solana-compute-budget-interface = "3.0.0"
 solana-cpi = "3.0.0"
-solana-define-syscall = "3.0.0"
-solana-faucet = "3.0.14"
-solana-feature-gate-interface = "3.0.0"
-solana-hash = "3.1.0"
-solana-instruction = "3.0.0"
-solana-instructions-sysvar = "3.0.0"
+solana-faucet = "3.1.14"
+# Deliberately permissive, and it cannot be cohort-split: both cohorts want a
+# 3.x and Cargo unifies versions within a major. v4's Agave 4.3 RPC cohort
+# requires ^3.5.0 and pulls 3.5.x on its own. Pinning ^3.5 here would force it
+# on v3 consumers too, where it drags in the solana-instruction 4.0 shim and
+# its wincode 0.6 -- which does not unify with the wincode 0.5 that litesvm
+# 0.15's graph (solana-nonce, solana-system-interface, ...) is built against.
+solana-instruction = "3"
 solana-invoke = "0.5.0"
 solana-keypair = "3.0.1"
-solana-loader-v3-interface = "6.1.1"
-solana-message = "3.0.1"
 solana-msg = "3.1.0"
-solana-packet = "3.0.0"
-solana-program = "3.0.0" # must be kept in sync with `cli/solana-program-version`
+solana-program = "4.1.0" # must be kept in sync with `cli/solana-program-version`
 solana-program-entrypoint = "3.1.1"
 solana-program-error = "3.0.0"
 solana-program-memory = "3.1.0"
 solana-program-option = "3.0.1"
 solana-program-pack = "3.1.0"
-solana-pubkey = "3.0.0"
-solana-pubsub-client = "3.0.14"
-solana-rpc-client = "3.0.14"
-solana-rpc-client-api = "3.0.14"
+solana-sbpf = "0.23.0"
 solana-sdk-ids = "3.1.0"
 solana-signature = "3.3.0"
 solana-signer = "3.0.0"
-solana-stake-interface = "2.0.2"
-solana-system-interface = "2.0.0"
-solana-transaction-status-client-types = "3.0.0"
-# FIXME: solana-sysvar 3.1.x contains breaking changes to sysvar retrieval
-solana-sysvar = "3.1.1"
+solana-system-interface = "3.2.0"
 solana-sysvar-id = "3.1.0"
-solana-transaction = "3.0.1"
+
+# --- v3 cohort (default) ---
+solana-account-decoder-v3 = { package = "solana-account-decoder", version = "3.0.14" }
+solana-cli-config-v3 = { package = "solana-cli-config", version = "3.0.14" }
+solana-client-v3 = { package = "solana-client", version = "3.0.14" }
+solana-clock-v3 = { package = "solana-clock", version = "3.0.1" }
+solana-compute-budget-v3 = { package = "solana-compute-budget", version = "3.1.10", features = ["agave-unstable-api"] }
+solana-define-syscall-v3 = { package = "solana-define-syscall", version = "3.0.0" }
+solana-feature-gate-interface-v3 = { package = "solana-feature-gate-interface", version = "3.0.0" }
+solana-hash-v3 = { package = "solana-hash", version = "3.1.0" }
+solana-instructions-sysvar-v3 = { package = "solana-instructions-sysvar", version = "3.0.0" }
+solana-loader-v3-interface-v3 = { package = "solana-loader-v3-interface", version = "6.1.1" }
+solana-message-v3 = { package = "solana-message", version = "3.0.1" }
+solana-packet-v3 = { package = "solana-packet", version = "3.0.0" }
+solana-pubkey-v3 = { package = "solana-pubkey", version = "3.0.0" }
+solana-pubsub-client-v3 = { package = "solana-pubsub-client", version = "3.0.14" }
+solana-rpc-client-v3 = { package = "solana-rpc-client", version = "3.0.14" }
+solana-rpc-client-api-v3 = { package = "solana-rpc-client-api", version = "3.0.14" }
+solana-stake-interface-v3 = { package = "solana-stake-interface", version = "2.0.2" }
+solana-sysvar-v3 = { package = "solana-sysvar", version = "3.1.1" }
+solana-transaction-v3 = { package = "solana-transaction", version = "3.0.1" }
+solana-transaction-status-client-types-v3 = { package = "solana-transaction-status-client-types", version = "3.0.0" }
+
+# --- v4 cohort (Agave 4.3) ---
+solana-account-decoder-v4 = { package = "solana-account-decoder", version = "4.3" }
+solana-cli-config-v4 = { package = "solana-cli-config", version = "4.3.0" }
+solana-client-v4 = { package = "solana-client", version = "4.3.0" }
+solana-clock-v4 = { package = "solana-clock", version = "4.0.0" }
+solana-compute-budget-v4 = { package = "solana-compute-budget", version = "4.3.0", features = ["agave-unstable-api"] }
+solana-define-syscall-v4 = { package = "solana-define-syscall", version = "4.0.1" }
+solana-feature-gate-interface-v4 = { package = "solana-feature-gate-interface", version = "4.0.0" }
+solana-hash-v4 = { package = "solana-hash", version = "4.6" }
+solana-instructions-sysvar-v4 = { package = "solana-instructions-sysvar", version = "4.0.0" }
+solana-loader-v3-interface-v4 = { package = "solana-loader-v3-interface", version = "7.0.0" }
+solana-message-v4 = { package = "solana-message", version = "4.5" }
+solana-packet-v4 = { package = "solana-packet", version = "4.4.0" }
+solana-pubkey-v4 = { package = "solana-pubkey", version = "4.3" }
+solana-pubsub-client-v4 = { package = "solana-pubsub-client", version = "4.3.0" }
+solana-rpc-client-v4 = { package = "solana-rpc-client", version = "4.3.0" }
+solana-rpc-client-api-v4 = { package = "solana-rpc-client-api", version = "4.3.0" }
+solana-stake-interface-v4 = { package = "solana-stake-interface", version = "4.4" }
+solana-sysvar-v4 = { package = "solana-sysvar", version = "4.2" }
+solana-transaction-v4 = { package = "solana-transaction", version = "4.2", features = ["wincode"] }
+solana-transaction-status-client-types-v4 = { package = "solana-transaction-status-client-types", version = "4.3.0" }
 
 # Non solana crates
 cargo_toml = "0.22.3"
+heck = "0.5"
 # Solana crates currently use 0.12, make sure to bump this to 0.13
 # when they do to avoid duplicate deps
 reqwest = { version = "0.12.28", default-features = false }
 syn = "2"
 
 # Internal anchor crates
-anchor-lang = { path = "lang", version = "=1.1.2" }
-anchor-spl = { path = "spl", version = "=1.1.2" }
-anchor-client = { path = "client", version = "=1.1.2" }
-anchor-syn = { path = "lang/syn", version = "=1.1.2" }
-anchor-lang-error = { path = "lang/error", version = "=1.1.2" }
-anchor-attribute-access-control = { path = "lang/attribute/access-control", version = "=1.1.2" }
-anchor-attribute-account = { path = "lang/attribute/account", version = "=1.1.2" }
-anchor-attribute-constant = { path = "lang/attribute/constant", version = "=1.1.2" }
-anchor-attribute-error = { path = "lang/attribute/error", version = "=1.1.2" }
-anchor-attribute-event = { path = "lang/attribute/event", version = "=1.1.2" }
-anchor-attribute-program = { path = "lang/attribute/program", version = "=1.1.2" }
-anchor-derive-accounts = { path = "lang/derive/accounts", version = "=1.1.2" }
-anchor-derive-serde = { path = "lang/derive/serde", version = "=1.1.2" }
-anchor-derive-space = { path = "lang/derive/space", version = "=1.1.2" }
-anchor-cli-macros = { path = "cli/cli-macros", version = "=1.1.2" }
+# `default-features = false` on the cohort-aware crates: each workspace member
+# selects `solana-v3`/`solana-v4` explicitly through its own feature of the same name, so
+# inheriting anchor-lang's default cohort here would pin every member to `solana-v3`
+# and make `solana-v3` and `solana-v4` collide in a `--features solana-v4` build.
+anchor-lang = { path = "lang", version = "=1.2.0", default-features = false }
+anchor-spl = { path = "spl", version = "=1.2.0", default-features = false }
+anchor-client = { path = "client", version = "=1.2.0", default-features = false }
+anchor-syn = { path = "lang/syn", version = "=1.2.0" }
+anchor-lang-error = { path = "lang/error", version = "=1.2.0", default-features = false }
+anchor-attribute-access-control = { path = "lang/attribute/access-control", version = "=1.2.0" }
+anchor-attribute-account = { path = "lang/attribute/account", version = "=1.2.0" }
+anchor-attribute-constant = { path = "lang/attribute/constant", version = "=1.2.0" }
+anchor-attribute-error = { path = "lang/attribute/error", version = "=1.2.0" }
+anchor-attribute-event = { path = "lang/attribute/event", version = "=1.2.0" }
+anchor-attribute-program = { path = "lang/attribute/program", version = "=1.2.0" }
+anchor-derive-accounts = { path = "lang/derive/accounts", version = "=1.2.0" }
+# `default-features = false`: this crate carries a `solana-v3` default for its own
+# doc tests, which must not feed back into anchor-lang's cohort selection.
+anchor-derive-serde = { path = "lang/derive/serde", version = "=1.2.0", default-features = false }
+anchor-derive-space = { path = "lang/derive/space", version = "=1.2.0" }
+anchor-cli-macros = { path = "cli/cli-macros", version = "=1.2.0" }
 anchor-lang-idl = { path = "idl", version = "=0.1.4" }
 anchor-lang-idl-spec = { path = "idl/spec", version = "=0.1.0" }
 

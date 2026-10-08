@@ -3,7 +3,7 @@ use {
         common::{gen_print_section, get_idl_module_path, get_serde_json_module_path},
         defined::gen_idl_type_def_struct,
     },
-    heck::SnakeCase,
+    heck::ToSnakeCase,
     proc_macro2::TokenStream,
     quote::{format_ident, quote},
 };

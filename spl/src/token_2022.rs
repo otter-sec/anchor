@@ -5,7 +5,7 @@ use anchor_lang::{
     solana_program::{account_info::AccountInfo, pubkey::Pubkey},
     Accounts, Result,
 };
-pub use {spl_token_2022::ID, spl_token_2022_interface as spl_token_2022};
+pub use {crate::compat::spl_token_2022_interface as spl_token_2022, spl_token_2022::ID};
 
 #[deprecated(
     since = "0.28.0",

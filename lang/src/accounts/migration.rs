@@ -39,9 +39,11 @@ pub enum MigrationInner<From, To> {
 /// schema (`To`). During deserialization, the account must be in the `From` format -
 /// accounts already in the `To` format will be rejected with an error.
 ///
-/// The migrated data is stored in memory and will be serialized to the account when the
-/// instruction exits. On exit, the account must be in the migrated state or an error will
-/// be returned.
+/// The migrated data is stored in memory and will be serialized to the account
+/// when the instruction exits. On exit, the account must be in the migrated
+/// state or an error will be returned. If ownership moved during the
+/// instruction, the account is not written: exit succeeds only when the
+/// account data already matches the migrated value.
 ///
 /// This type is typically used with the `realloc` constraint to resize the account
 /// during migration.
@@ -84,7 +86,7 @@ pub enum MigrationInner<From, To> {
 /// let migrated = ctx.accounts.my_account.into_inner(AccountV2 {
 ///     data: ctx.accounts.my_account.data,
 ///     new_field: ctx.accounts.my_account.data * 2,
-/// })?;
+/// });
 ///
 /// // Use migrated data (safe to call multiple times!)
 /// msg!("New field: {}", migrated.new_field);
@@ -97,7 +99,7 @@ pub enum MigrationInner<From, To> {
 /// let migrated = ctx.accounts.my_account.into_inner_mut(AccountV2 {
 ///     data: ctx.accounts.my_account.data,
 ///     new_field: 0,
-/// })?;
+/// });
 ///
 /// // Mutate the new data
 /// migrated.new_field = 42;
@@ -118,7 +120,7 @@ pub enum MigrationInner<From, To> {
 ///         let migrated = ctx.accounts.my_account.into_inner(AccountV2 {
 ///             data: ctx.accounts.my_account.data,
 ///             new_field: ctx.accounts.my_account.data * 2,
-///         })?;
+///         });
 ///
 ///         msg!("Migrated! New field: {}", migrated.new_field);
 ///         Ok(())
@@ -236,7 +238,7 @@ where
     ///     let migrated = ctx.accounts.my_account.into_inner(AccountV2 {
     ///         data: ctx.accounts.my_account.data,
     ///         new_field: 42,
-    ///     })?;
+    ///     });
     ///
     ///     // Use migrated...
     ///     msg!("Migrated data: {}", migrated.data);
@@ -272,7 +274,7 @@ where
     ///     let migrated = ctx.accounts.my_account.into_inner_mut(AccountV2 {
     ///         data: ctx.accounts.my_account.data,
     ///         new_field: 0,
-    ///     })?;
+    ///     });
     ///
     ///     // Mutate the migrated value
     ///     migrated.new_field = 42;
@@ -375,6 +377,12 @@ where
                 if &expected_owner != program_id {
                     return Err(Error::from(ErrorCode::InvalidProgramId)
                         .with_pubkeys((*program_id, expected_owner)));
+                }
+
+                if self.info.owner != program_id {
+                    return crate::common::exit_unowned(self.info, program_id, |writer| {
+                        to.try_serialize(writer)
+                    });
                 }
 
                 // Serialize the migrated data

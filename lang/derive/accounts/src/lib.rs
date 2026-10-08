@@ -334,12 +334,17 @@ use {proc_macro::TokenStream, quote::ToTokens, syn::parse_macro_input};
 ///             <td>
 ///                 Checks the account owner matches <code>expr</code>.<br>
 ///                 Custom errors are supported via <code>@</code>.<br><br>
+///                 This constraint cannot override the owner of an account type implementing
+///                 <code>Owner</code>. For example, <code>Account&lt;T&gt;</code> checks
+///                 <code>T::owner()</code> first and rejects a different owner.<br><br>
 ///                 Example:
 ///                 <pre><code>
+/// /// CHECK: Only the account owner is checked.
 /// #[account(owner = Token::ID @ MyError::MyErrorCode)]
-/// pub data: Account&lt;'info, MyData&gt;,
+/// pub data: UncheckedAccount&lt;'info&gt;,
+/// /// CHECK: Only the account owner is checked.
 /// #[account(owner = token_program.key())]
-/// pub data_two: Account&lt;'info, MyData&gt;,
+/// pub data_two: UncheckedAccount&lt;'info&gt;,
 /// pub token_program: Program&lt;'info, Token&gt;
 ///                 </code></pre>
 ///             </td>
@@ -534,7 +539,10 @@ use {proc_macro::TokenStream, quote::ToTokens, syn::parse_macro_input};
 ///             <td>
 ///                 Can be used as a check or with <code>init</code> to create a mint
 ///                 account with the given mint decimals and mint authority.<br>
-///                 The freeze authority is optional when used with <code>init</code>.<br>
+///                 The freeze authority is optional when used with <code>init</code>.
+///                 <code>mint::authority = None</code> cannot be combined with
+///                 <code>init</code> because SPL Token requires a mint authority
+///                 at initialization.<br>
 ///                 When used as a check, it's possible to only specify a subset of the constraints.
 ///                 <br><br>
 ///                 Example:

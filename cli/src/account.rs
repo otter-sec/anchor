@@ -1,5 +1,6 @@
 use {
     crate::{
+        compat::{solana_pubkey, solana_rpc_client},
         config::{Config, ConfigOverride},
         AbsolutePath,
     },

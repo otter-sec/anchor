@@ -8,10 +8,49 @@ license = "Apache-2.0"
 description = "CPI clients for SPL programs"
 
 [package.metadata.docs.rs]
-workspace = true
+# Not `workspace = true`: `all-features` would enable both `solana-v3` and `solana-v4` and
+# trip the guard in `src/compat.rs`. The cohort comes from the default (`solana-v3`).
+features = [
+    "anchor-debug",
+    "devnet",
+    "governance",
+    "idl-build",
+    "memo",
+    "metadata",
+    "stake",
+]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["associated_token", "mint", "token", "token_2022", "token_2022_extensions"]
+default = [
+    "associated_token",
+    "mint",
+    "token",
+    "token_2022",
+    "token_2022_extensions",
+    "solana-v3",
+]
+
+# Solana cohort selection; mirrors anchor-lang's. Exactly one must be active --
+# `src/compat.rs` enforces it. See the comment block in the root Cargo.toml.
+solana-v3 = [
+    "anchor-lang/solana-v3",
+    "dep:solana-stake-interface-v3",
+    "dep:solana-sysvar-v3",
+    "dep:spl-token-2022-interface-v3",
+    "dep:spl-token-interface-v3",
+    "dep:spl-token-metadata-interface-v3",
+]
+solana-v4 = [
+    "anchor-lang/solana-v4",
+    "dep:solana-nullable",
+    "dep:solana-stake-interface-v4",
+    "dep:solana-sysvar-v4",
+    "dep:spl-token-2022-interface-v4",
+    "dep:spl-token-interface-v4",
+    "dep:spl-token-metadata-interface-v4",
+]
+
 anchor-debug = ["anchor-lang/anchor-debug"]
 associated_token = ["spl-associated-token-account-interface"]
 devnet = []
@@ -20,12 +59,11 @@ idl-build = ["anchor-lang/idl-build"]
 memo = ["spl-memo-interface"]
 metadata = [
     "mpl-token-metadata",
-    "dep:solana-sysvar",
-    "spl-token-interface",
     "spl-associated-token-account-interface",
+    "spl-token-interface",
 ]
 mint = []
-stake = ["dep:borsh", "dep:solana-stake-interface"]
+stake = ["dep:borsh"]
 token = ["spl-token-interface"]
 token_2022 = ["spl-token-2022-interface"]
 token_2022_extensions = [
@@ -35,16 +73,38 @@ token_2022_extensions = [
     "spl-pod",
 ]
 
+# Back-compat no-ops. These names used to exist as implicit features created by
+# the optional dependencies of the same name, and the capability features above
+# enabled them. Those dependencies are now cohort-suffixed (so their implicit
+# features are gone) and are activated by `solana-v3`/`solana-v4` instead, but the names are
+# kept -- and kept reachable from the same capability features -- so the public
+# feature graph is unchanged for dependents.
+spl-token-interface = []
+spl-token-2022-interface = []
+spl-token-metadata-interface = []
+
 [dependencies]
 anchor-lang = { workspace = true, features = ["derive"] }
 borsh = { version = "1.5.7", optional = true }
 mpl-token-metadata = { version = "=5.1.2-alpha.2", optional = true }
-solana-stake-interface = { workspace = true, features = ["borsh"], optional = true }
-solana-sysvar = { version = "3", optional = true }
+
+# Cohort-independent.
 spl-associated-token-account-interface = { version = "2", optional = true }
 spl-memo-interface = { version = "2", optional = true }
 spl-pod = { version = "0.7", optional = true }
-spl-token-interface = { version = "2", optional = true }
-spl-token-2022-interface = { version = "2", optional = true }
 spl-token-group-interface = { version = "0.7", optional = true }
-spl-token-metadata-interface = { version = "0.8", optional = true }
+
+# Cohort-specific; aliased back to plain names in `src/compat.rs`.
+solana-stake-interface-v3 = { workspace = true, features = ["borsh"], optional = true }
+solana-stake-interface-v4 = { workspace = true, features = ["borsh"], optional = true }
+solana-sysvar-v3 = { workspace = true, optional = true }
+solana-sysvar-v4 = { workspace = true, optional = true }
+spl-token-interface-v3 = { package = "spl-token-interface", version = "2", optional = true }
+spl-token-interface-v4 = { package = "spl-token-interface", version = "3", optional = true }
+spl-token-2022-interface-v3 = { package = "spl-token-2022-interface", version = "2", optional = true }
+spl-token-2022-interface-v4 = { package = "spl-token-2022-interface", version = "3", optional = true }
+spl-token-metadata-interface-v3 = { package = "spl-token-metadata-interface", version = "0.8", optional = true }
+spl-token-metadata-interface-v4 = { package = "spl-token-metadata-interface", version = "1", optional = true }
+
+# v4 only: v3 uses spl-pod's `OptionalNonZeroPubkey` for the same purpose.
+solana-nullable = { version = "1", optional = true }

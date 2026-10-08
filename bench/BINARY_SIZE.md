@@ -14,11 +14,21 @@ The programs and their tests are located in [/tests/bench](https://github.com/ot
 
 ## [Unreleased]
 
+Solana version: 4.2.0
+
+| Program | Binary Size | -                       |
+| ------- | ----------- | ----------------------- |
+| bench   | 800,288     | 🟢 **-90,856 (10.20%)** |
+
+---
+
+## [1.2.0]
+
 Solana version: 3.1.10
 
-| Program | Binary Size | -   |
-| ------- | ----------- | --- |
-| bench   | 932,992     | -   |
+| Program | Binary Size | -                      |
+| ------- | ----------- | ---------------------- |
+| bench   | 891,144     | 🟢 **-40,904 (4.39%)** |
 
 ### Notable changes
 
@@ -30,7 +40,7 @@ Solana version: 3.1.10
 
 | Program | Binary Size | -   |
 | ------- | ----------- | --- |
-| bench   | 932,992     | -   |
+| bench   | 932,048     | -   |
 
 ### Notable changes
 
@@ -40,9 +50,9 @@ Solana version: 3.1.10
 
 Solana version: 3.1.10
 
-| Program | Binary Size | -   |
-| ------- | ----------- | --- |
-| bench   | 932,992     | -   |
+| Program | Binary Size | -                   |
+| ------- | ----------- | ------------------- |
+| bench   | 932,048     | 🟢 **-944 (0.10%)** |
 
 ### Notable changes
 

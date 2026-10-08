@@ -148,6 +148,16 @@ Checks the account owner matches `expr{:rs}`:
 #[account(owner = <expr> @ <custom_error>)]
 ```
 
+This constraint cannot override the owner of an account type implementing `Owner{:rs}`.
+For example, `Account<T>{:rs}` checks `T::owner(){:rs}` first and rejects a different owner.
+Use an untyped account when supplying the owner check yourself:
+
+```rust showLineNumbers=false
+/// CHECK: Only the account owner is checked.
+#[account(owner = token_program.key())]
+pub data: UncheckedAccount<'info>,
+```
+
 ### `#[account(executable)]{:rs}`
 
 Checks the account is executable (the account is a program):
@@ -237,6 +247,8 @@ Creates or validates token accounts with the specified mint and authority:
 
 Creates or validates mint accounts with the specified parameters:
 
+You can set `mint::authority{:rs}` or `mint::freeze_authority{:rs}` to `None{:rs}` to require that authority not to be set. With `init{:rs}`, `mint::freeze_authority = None{:rs}` creates a mint with no freeze authority. `mint::authority = None{:rs}` cannot be used with `init{:rs}` because SPL Token requires a mint authority at initialization.
+
 ```rust showLineNumbers=false
 #[account(
     mint::authority = <target_account>,
@@ -247,6 +259,11 @@ Creates or validates mint accounts with the specified parameters:
     mint::authority = <target_account>,
     mint::decimals = <expr>,
     mint::freeze_authority = <target_account>
+)]
+
+#[account(
+    mint::authority = None,
+    mint::freeze_authority = None
 )]
 ```
 
@@ -276,6 +293,9 @@ Overrides the token program used by `token{:rs}`, `mint{:rs}`, or `associated_to
 ```
 
 ## Token extensions constraints
+
+These extensions are checked both when the mint is initialized and when an
+existing mint is reused with `init_if_needed`.
 
 ### `#[account(extensions::close_authority::*)]{:rs}`
 

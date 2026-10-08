@@ -7,13 +7,51 @@ edition = "2021"
 rust-version = "1.89"
 license = "Apache-2.0"
 description = "Solana Sealevel eDSL"
-readme.workspace = true
 homepage = "https://anchor-lang.com"
 
 [package.metadata.docs.rs]
-workspace = true
+# Not `workspace = true`: that sets `all-features`, which would turn on both
+# `solana-v3` and `solana-v4` at once and trip the guard in `src/compat.rs`. The cohort comes
+# from the default feature (`solana-v3`); everything else is listed explicitly.
+features = [
+    "allow-missing-optionals",
+    "anchor-debug",
+    "derive",
+    "event-cpi",
+    "idl-build",
+    "init-if-needed",
+    "lazy-account",
+]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
+# Solana cohort selection. `solana-v3` and `solana-v4` are mutually exclusive and exactly one
+# must be active; `src/compat.rs` enforces that with a `compile_error!`. `solana-v3` is
+# the default so that existing dependents are unaffected by the v4 work.
+default = ["solana-v3"]
+solana-v3 = [
+    "anchor-lang-error/solana-v3",
+    "dep:solana-clock-v3",
+    "dep:solana-define-syscall-v3",
+    "dep:solana-feature-gate-interface-v3",
+    "dep:solana-instructions-sysvar-v3",
+    "dep:solana-loader-v3-interface-v3",
+    "dep:solana-pubkey-v3",
+    "dep:solana-stake-interface-v3",
+    "dep:solana-sysvar-v3",
+]
+solana-v4 = [
+    "anchor-lang-error/solana-v4",
+    "dep:solana-clock-v4",
+    "dep:solana-define-syscall-v4",
+    "dep:solana-feature-gate-interface-v4",
+    "dep:solana-instructions-sysvar-v4",
+    "dep:solana-loader-v3-interface-v4",
+    "dep:solana-pubkey-v4",
+    "dep:solana-stake-interface-v4",
+    "dep:solana-sysvar-v4",
+]
+
 allow-missing-optionals = ["anchor-derive-accounts/allow-missing-optionals"]
 anchor-debug = [
     "anchor-attribute-account/anchor-debug",
@@ -54,7 +92,7 @@ anchor-attribute-program = { workspace = true }
 anchor-derive-accounts = { workspace = true }
 anchor-derive-serde = { workspace = true }
 anchor-derive-space = { workspace = true }
-anchor-lang-error = { workspace = true }
+anchor-lang-error = { workspace = true, features = ["borsh"] }
 
 # `anchor-lang-idl` should only be included with `idl-build` feature
 anchor-lang-idl = { workspace = true, optional = true }
@@ -64,28 +102,43 @@ bincode = "1"
 borsh = "1.5.7"
 bytemuck = { version = "1", features = ["derive"] }
 const-crypto = "0.3.0"
+serde = "1"
 
+# Cohort-independent: these resolve to the same major under both `solana-v3` and `solana-v4`.
 solana-account-info.workspace = true
-solana-clock.workspace = true
 solana-cpi.workspace = true
-solana-define-syscall.workspace = true
-solana-feature-gate-interface.workspace = true
 solana-instruction.workspace = true
-solana-instructions-sysvar.workspace = true
 solana-invoke.workspace = true
-solana-loader-v3-interface = { workspace = true, features = ["bincode"] }
 solana-msg.workspace = true
 solana-program-entrypoint.workspace = true
 solana-program-error = { workspace = true, features = ["borsh"] }
 solana-program-memory.workspace = true
 solana-program-option.workspace = true
 solana-program-pack.workspace = true
-solana-pubkey = { workspace = true, features = ["borsh", "bytemuck", "serde"] }
 solana-sdk-ids.workspace = true
-solana-stake-interface = { workspace = true, features = ["sysvar", "bincode"] }
 solana-system-interface.workspace = true
-solana-sysvar = { workspace = true, features = ["bincode"] }
 solana-sysvar-id.workspace = true
+
+# Cohort-specific. Exactly one column is ever activated; `src/compat.rs` aliases
+# the active one back to its unsuffixed name for the rest of the crate.
+solana-clock-v3 = { workspace = true, optional = true }
+solana-clock-v4 = { workspace = true, optional = true }
+solana-define-syscall-v3 = { workspace = true, optional = true }
+solana-define-syscall-v4 = { workspace = true, optional = true }
+solana-feature-gate-interface-v3 = { workspace = true, optional = true }
+solana-feature-gate-interface-v4 = { workspace = true, optional = true }
+solana-instructions-sysvar-v3 = { workspace = true, optional = true }
+solana-instructions-sysvar-v4 = { workspace = true, optional = true }
+solana-loader-v3-interface-v3 = { workspace = true, optional = true, features = ["bincode"] }
+solana-loader-v3-interface-v4 = { workspace = true, optional = true, features = ["bincode"] }
+solana-pubkey-v3 = { workspace = true, optional = true, features = ["borsh", "bytemuck", "serde"] }
+solana-pubkey-v4 = { workspace = true, optional = true, features = ["borsh", "bytemuck", "serde"] }
+solana-stake-interface-v3 = { workspace = true, optional = true, features = ["sysvar", "bincode"] }
+solana-stake-interface-v4 = { workspace = true, optional = true, features = ["sysvar", "bincode"] }
+# v3 decodes sysvars through the (now-removed) `SysvarSerialize` bincode path;
+# v4 needs `serde` for the hand-rolled `deserialize_sysvar` in accounts/sysvar.rs.
+solana-sysvar-v3 = { workspace = true, optional = true, features = ["bincode"] }
+solana-sysvar-v4 = { workspace = true, optional = true, features = ["serde"] }
 
 thiserror = "1"
 

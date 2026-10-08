@@ -1,9 +1,13 @@
 use {
     crate::{
-        codegen::program::common::{generate_ix_variant, generate_ix_variant_name},
+        codegen::{
+            private_ident,
+            program::common::{
+                generate_ix_variant, generate_ix_variant_name, generated_accounts_mod_path,
+            },
+        },
         Program,
     },
-    heck::SnakeCase,
     quote::{quote, ToTokens},
 };
 
@@ -36,6 +40,7 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                 };
                 let ret_type = &ix.returns.ty.to_token_stream();
                 let ix_cfgs = &ix.cfgs;
+                let ctx = private_ident("ctx");
                 let (method_ret, maybe_return) = match ret_type.to_string().as_str() {
                     "()" => (quote! {anchor_lang::Result<()> }, quote! { Ok(()) }),
                     _ => (
@@ -43,7 +48,7 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                         quote! {
                             Ok(crate::cpi::Return::<#ret_type> {
                                 phantom: crate::cpi::PhantomData,
-                                program_id: ctx.program_id,
+                                program_id: #ctx.program_id,
                                 return_data: anchor_lang::__private::CpiReturnData::snapshot(),
                             })
                         }
@@ -53,7 +58,7 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                 quote! {
                     #(#ix_cfgs)*
                     pub fn #method_name<'a, 'b, 'c, 'info>(
-                        ctx: anchor_lang::context::CpiContext<'a, 'b, 'c, 'info, #accounts_ident<'info>>,
+                        #ctx: anchor_lang::context::CpiContext<'a, 'b, 'c, 'info, #accounts_ident<'info>>,
                         #(#args),*
                     ) -> #method_ret {
                         let ix = {
@@ -62,18 +67,18 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                             data.extend_from_slice(#discriminator);
                             AnchorSerialize::serialize(&ix, &mut data)
                                 .map_err(|_| anchor_lang::error::ErrorCode::InstructionDidNotSerialize)?;
-                            let accounts = ctx.to_account_metas(None);
+                            let accounts = #ctx.to_account_metas(None);
                             anchor_lang::solana_program::instruction::Instruction {
-                                program_id: ctx.program_id,
+                                program_id: #ctx.program_id,
                                 accounts,
                                 data,
                             }
                         };
-                        let mut acc_infos = ctx.to_account_infos();
+                        let mut acc_infos = #ctx.to_account_infos();
                         anchor_lang::solana_program::program::invoke_signed(
                             &ix,
                             &acc_infos,
-                            ctx.signer_seeds,
+                            #ctx.signer_seeds,
                         ).map_or_else(
                             |e| Err(Into::into(e)),
                             // Maybe handle Solana return data.
@@ -96,16 +101,16 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
             use ::std::marker::PhantomData;
 
 
-            #[derive(Debug, Clone, Copy)]
+            #[derive(Debug, Clone)]
             pub struct Return<T> {
                 phantom: ::std::marker::PhantomData<T>,
                 program_id: anchor_lang::solana_program::pubkey::Pubkey,
-                return_data: anchor_lang::__private::CpiReturnData,
+                return_data: Option<anchor_lang::__private::CpiReturnData>,
             }
 
             impl<T: AnchorDeserialize> Return<T> {
                 pub fn get(&self) -> T {
-                    self.return_data.get(self.program_id)
+                    self.return_data.as_ref().unwrap().get(self.program_id)
                 }
 
                 /// Read return data without validating the program_id.
@@ -129,28 +134,17 @@ pub fn generate_accounts(program: &Program) -> proc_macro2::TokenStream {
 
     // Go through instruction accounts.
     for ix in &program.ixs {
-        let anchor_ident = &ix.anchor_ident;
-        // TODO: move to fn and share with accounts.rs.
-        let macro_name = format!(
-            "__cpi_client_accounts_{}",
-            anchor_ident.to_string().to_snake_case()
-        );
-        let cfgs = &ix.cfgs;
-        accounts.insert(macro_name, cfgs.as_slice());
+        let mod_path = generated_accounts_mod_path(&ix.anchor_path(), "__cpi_client_accounts_");
+        accounts.insert(mod_path, ix.cfgs.as_slice());
     }
 
     // Build the tokens from all accounts
     let account_structs: Vec<proc_macro2::TokenStream> = accounts
         .iter()
-        .map(|(macro_name, cfgs)| {
-            #[allow(
-                clippy::unwrap_used,
-                reason = "computed from valid Rust identifier via snake_case"
-            )]
-            let macro_name: proc_macro2::TokenStream = macro_name.parse().unwrap();
+        .map(|(mod_path, cfgs)| {
             quote! {
                 #(#cfgs)*
-                pub use crate::#macro_name::*;
+                pub use #mod_path::*;
             }
         })
         .collect();

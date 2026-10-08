@@ -5,6 +5,7 @@
     "account-constraints",
     "anchor-toml",
     "cli",
+    "no-dna",
     "avm",
     "space",
     "type-conversion",

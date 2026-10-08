@@ -1,0 +1,67 @@
+---
+title: 0.32.2
+description: Anchor - Release Notes 0.32.2
+---
+
+`0.32.2` adds TypeScript client support for parsing Solana transaction version 1
+(v1) transactions. This is a TypeScript-only patch release.
+
+---
+
+## How to upgrade
+
+1. Update `anchor-cli`:
+
+   ```sh
+   avm install 0.32.2
+   ```
+
+2. Update Anchor crate(s) to `0.32.2`.
+
+3. Replace the legacy `@coral-xyz/anchor` and related `@coral-xyz/*` packages
+   with `@anchor-lang/core`:
+
+   ```sh
+   npm install @anchor-lang/core
+   ```
+
+   Update imports accordingly:
+
+   ```ts
+   // Before
+   import * as anchor from "@coral-xyz/anchor";
+
+   // After
+   import * as anchor from "@anchor-lang/core";
+   ```
+
+## Recommended Solana Version
+
+The recommended Solana version is `2.3.0`. Install it with:
+
+```sh
+sh -c "$(curl -sSfL https://release.anza.xyz/v2.3.0/install)"
+```
+
+## TypeScript
+
+### Solana transaction version 1
+
+`AnchorProvider` can now deserialize and process Solana v1 transactions. When a
+transaction fails, Anchor also retrieves the transaction with
+`maxSupportedTransactionVersion` set to `1`, so the client can return the
+program logs instead of failing while parsing the response.
+
+The client now uses `@solana/web3.js 1.99.0` and requires Node.js `20.18.0` or
+later.
+
+### TypeScript package migration
+
+Users must switch from the legacy `@coral-xyz/anchor` packages to
+`@anchor-lang/core`. Update both the package dependency and all imports; the
+legacy package line is not the supported path for this release.
+
+---
+
+See the full list of notable changes in the
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/v0.32.2/CHANGELOG.md#0322---2026-09-12).

@@ -1,14 +1,23 @@
 use {
     crate::{
-        codegen::accounts::{bumps, constraints, generics, ParsedGenerics},
+        codegen::{
+            accounts::{constraints, generics, ParsedGenerics},
+            private_ident,
+        },
         AccountField, AccountsStruct, Ty,
     },
     quote::{quote, quote_spanned},
+    syn::spanned::Spanned,
 };
 
 // Generates the `Accounts` trait implementation.
 pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
     let name = &accs.ident;
+    let program_id = private_ident("__program_id");
+    let accounts = private_ident("__accounts");
+    let ix_data = private_ident("__ix_data");
+    let bumps = private_ident("__bumps");
+    let reallocs = private_ident("__reallocs");
     let ParsedGenerics {
         combined_generics,
         trait_generics,
@@ -28,7 +37,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                     quote! {
                         #[cfg(feature = "anchor-debug")]
                         ::anchor_lang::solana_program::log::sol_log(stringify!(#name));
-                        let #name: #ty = anchor_lang::Accounts::try_accounts(__program_id, __accounts, __ix_data, &mut __bumps.#name, __reallocs)?;
+                        let #name: #ty = anchor_lang::Accounts::try_accounts(#program_id, #accounts, #ix_data, &mut #bumps.#name, #reallocs)?;
                     }
                 }
                 AccountField::Field(f) => {
@@ -48,24 +57,24 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                                 quote!{ return Err(anchor_lang::error::ErrorCode::AccountNotEnoughKeys.into()); }
                             };
                             quote! {
-                                let #name = if __accounts.is_empty() {
+                                let #name = if #accounts.is_empty() {
                                     #empty_behavior
-                                } else if __accounts[0].key == __program_id {
-                                    *__accounts = &__accounts[1..];
+                                } else if #accounts[0].key == #program_id {
+                                    *#accounts = &#accounts[1..];
                                     None
                                 } else {
-                                    let account = &__accounts[0];
-                                    *__accounts = &__accounts[1..];
+                                    let account = &#accounts[0];
+                                    *#accounts = &#accounts[1..];
                                     Some(account)
                                 };
                             }
                         } else {
                             quote!{
-                                if __accounts.is_empty() {
+                                if #accounts.is_empty() {
                                     return Err(anchor_lang::error::ErrorCode::AccountNotEnoughKeys.into());
                                 }
-                                let #name = &__accounts[0];
-                                *__accounts = &__accounts[1..];
+                                let #name = &#accounts[0];
+                                *#accounts = &#accounts[1..];
                             }
                         }
                     } else {
@@ -83,7 +92,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                         quote! {
                             #[cfg(feature = "anchor-debug")]
                             ::anchor_lang::solana_program::log::sol_log(stringify!(#typed_name));
-                            let #typed_name = anchor_lang::Accounts::try_accounts(__program_id, __accounts, __ix_data, __bumps, __reallocs)
+                            let #typed_name = anchor_lang::Accounts::try_accounts(#program_id, #accounts, #ix_data, #bumps, #reallocs)
                                 .map_err(|e| e.with_account_name(#name))?;
                             #warning
                         }
@@ -95,19 +104,23 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
 
     let constraints = generate_constraints(accs);
     let accounts_instance = generate_accounts_instance(accs);
-    let bumps_struct_name = bumps::generate_bumps_name(&accs.ident);
+    let bumps_struct_name = syn::Ident::new(
+        &format!("{}Bumps", accs.ident),
+        proc_macro2::Span::call_site(),
+    );
 
     let ix_de = match &accs.instruction_api {
         None => quote! {},
         Some(ix_api) => {
-            let strct_inner = &ix_api;
-            let field_names: Vec<proc_macro2::TokenStream> = ix_api
+            let field_deserializers: Vec<proc_macro2::TokenStream> = ix_api
                 .iter()
                 .map(|expr: &syn::FnArg| match expr {
                     syn::FnArg::Typed(arg) => {
                         let field = &arg.pat;
+                        let ty = &arg.ty;
                         quote! {
-                            #field
+                            let #field: #ty = <#ty as anchor_lang::AnchorDeserialize>::deserialize(&mut #ix_data)
+                                .map_err(|_| anchor_lang::error::ErrorCode::InstructionDidNotDeserialize)?;
                         }
                     }
                     #[allow(
@@ -119,20 +132,15 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                 })
                 .collect();
             quote! {
-                let mut __ix_data = __ix_data;
-                #[derive(anchor_lang::AnchorSerialize, anchor_lang::AnchorDeserialize)]
-                struct __Args {
-                    #strct_inner
-                }
-                let __Args {
-                    #(#field_names),*
-                } = __Args::deserialize(&mut __ix_data)
-                    .map_err(|_| anchor_lang::error::ErrorCode::InstructionDidNotDeserialize)?;
+                let mut #ix_data = #ix_data;
+                #(#field_deserializers)*
             }
         }
     };
 
     // Generate type validation methods for instruction parameters
+    let type_param = private_ident("__T");
+    let type_validation_arg = private_ident("_arg");
     let type_validation_methods = match &accs.instruction_api {
         None => {
             // generate stub methods for up to 32 possible arguments
@@ -146,7 +154,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                         #[doc(hidden)]
                         #[inline(always)]
                         #[allow(unused)]
-                        pub fn #method_name<__T>(_arg: &__T) {
+                        pub fn #method_name<#type_param>(#type_validation_arg: &#type_param) {
                             // no type validation when #[instruction(...)] is missing
                         }
                     }
@@ -169,15 +177,12 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                         let ty = &arg.ty;
                         let method_name = syn::Ident::new(
                             &format!("__anchor_validate_ix_arg_type_{}", idx),
-                            proc_macro2::Span::call_site(),
+                            proc_macro2::Span::call_site().located_at(ty.span()),
                         );
                         quote! {
                             #[doc(hidden)]
                             #[inline(always)]
-                            pub fn #method_name<__T>(_arg: &__T)
-                            where
-                                __T: anchor_lang::__private::IsSameType<#ty>,
-                            {}
+                            pub fn #method_name(#type_validation_arg: &#ty) {}
                         }
                     } else {
                         #[allow(
@@ -203,7 +208,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                         #[doc(hidden)]
                         #[inline(always)]
                         #[allow(unused)]
-                        pub fn #method_name<__T>(_arg: &__T) {
+                        pub fn #method_name<#type_param>(#type_validation_arg: &#type_param) {
                         }
                     }
                 })
@@ -247,11 +252,11 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
         impl<#combined_generics> anchor_lang::Accounts<#trait_generics, #bumps_struct_name> for #name<#struct_generics> #where_clause {
             #[inline(never)]
             fn try_accounts(
-                __program_id: &anchor_lang::solana_program::pubkey::Pubkey,
-                __accounts: &mut &#trait_generics [anchor_lang::solana_program::account_info::AccountInfo<#trait_generics>],
-                __ix_data: &[u8],
-                __bumps: &mut #bumps_struct_name,
-                __reallocs: &mut ::std::collections::BTreeSet<anchor_lang::solana_program::pubkey::Pubkey>,
+                #program_id: &anchor_lang::solana_program::pubkey::Pubkey,
+                #accounts: &mut &#trait_generics [anchor_lang::solana_program::account_info::AccountInfo<#trait_generics>],
+                #ix_data: &[u8],
+                #bumps: &mut #bumps_struct_name,
+                #reallocs: &mut ::std::collections::BTreeSet<anchor_lang::solana_program::pubkey::Pubkey>,
             ) -> anchor_lang::Result<Self> {
                 // Deserialize instruction, if declared.
                 #ix_de
@@ -337,10 +342,29 @@ fn is_init(af: &AccountField) -> bool {
 
 // Generates duplicate mutable account validation logic
 fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::TokenStream {
+    // Collect composite field idents (nested account structs)
+    let composite_fields: Vec<_> = accs
+        .fields
+        .iter()
+        .filter_map(|af| match af {
+            AccountField::CompositeField(s) => Some(&s.ident),
+            _ => None,
+        })
+        .collect();
+    let has_composites = !composite_fields.is_empty();
+
     // Collect all mutable account fields without `dup` constraint that serialize on exit.
     // Only types that serialize on exit are included, as duplicate mutable accounts
     // are problematic due to double serialization (the second write overwrites the first).
     // Types like UncheckedAccount, Signer, SystemAccount, AccountLoader, etc. don't serialize on exit
+    //
+    // Pure-`init` accounts participate only when the struct has composite fields. A fresh
+    // `init` account cannot collide with an already-initialized account, but it can collide
+    // with a `zero` account: `init` runs first and leaves the account program-owned and
+    // zero-filled, which is exactly what `zero` accepts. Within a single struct that alias is
+    // already rejected by the `zero` constraint's own uniqueness scan, so flat structs skip
+    // the per-key comparison cost here; across composite boundaries only this check can see
+    // the collision.
     let candidates: Vec<_> = accs
         .fields
         .iter()
@@ -348,7 +372,7 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
             AccountField::Field(f)
                 if f.constraints.is_mutable()
                     && !f.constraints.is_dup()
-                    && !f.constraints.is_pure_init() =>
+                    && (has_composites || !f.constraints.is_pure_init()) =>
             {
                 match &f.ty {
                     // Only include types that serialize on exit
@@ -363,71 +387,63 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
         })
         .collect();
 
-    // Collect composite field idents (nested account structs)
-    let composite_fields: Vec<_> = accs
-        .fields
-        .iter()
-        .filter_map(|af| match af {
-            AccountField::CompositeField(s) => Some(&s.ident),
-            _ => None,
-        })
-        .collect();
-
-    if candidates.is_empty() && composite_fields.is_empty() {
+    // A duplicate needs two keys, so skip the check entirely unless at least two sources
+    // (direct candidates and composite fields) can contribute one. A lone composite is
+    // also a single source: duplicates within it are rejected by its own `try_accounts`,
+    // which runs before this check.
+    if candidates.len() + composite_fields.len() < 2 {
         return quote! {};
     }
 
-    let mut field_keys = Vec::with_capacity(candidates.len());
-    let mut field_name_strs = Vec::with_capacity(candidates.len());
+    let keys = private_ident("__keys");
+    let names = private_ident("__names");
+    let index = private_ident("__index");
+    let key = private_ident("__key");
 
-    for f in candidates.iter() {
-        let name = &f.ident;
-
-        if f.is_optional {
-            field_keys.push(quote! { #name.as_ref().map(|f| f.key()) });
-        } else {
-            field_keys.push(quote! { Some(#name.key()) });
-        }
-
-        // Use stringify! to avoid runtime allocation
-        field_name_strs.push(quote! { stringify!(#name) });
-    }
-
-    // Generate code to check composite field keys
-    let composite_checks: Vec<proc_macro2::TokenStream> = composite_fields
+    // Borrow each key from its `AccountInfo` rather than copying it, so the array
+    // stays small on the stack. Absent optional accounts become `None`.
+    let direct_keys: Vec<proc_macro2::TokenStream> = candidates
         .iter()
-        .map(|composite_name| {
-            quote! {
-                for key in #composite_name.duplicate_mutable_account_keys() {
-                    if !__mutable_accounts.insert(key) {
-                        return Err(anchor_lang::error::Error::from(
-                            anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount
-                        ).with_account_name(format!("{}", key)));
-                    }
-                }
+        .map(|f| {
+            let name = &f.ident;
+            let account_ref = constraints::generate_account_ref(f);
+            if f.is_optional {
+                quote! { #name.as_ref().map(|#name| #account_ref.key) }
+            } else {
+                quote! { Some(#account_ref.key) }
             }
         })
         .collect();
+    let direct_names = candidates.iter().map(|f| &f.ident);
+
+    // Composite keys go after the direct keys, in field order. The reported account is
+    // the first key in this order that repeats an earlier one.
+    let composite_keys: Vec<_> = (0..composite_fields.len())
+        .map(|i| private_ident(&format!("__composite_keys_{i}")))
+        .collect();
+    let collect_keys = if composite_fields.is_empty() {
+        quote! { let #keys = [#(#direct_keys),*]; }
+    } else {
+        quote! {
+            #(let #composite_keys = #composite_fields.duplicate_mutable_account_keys();)*
+            let #keys: Vec<Option<&anchor_lang::solana_program::pubkey::Pubkey>> =
+                [#(#direct_keys),*]
+                    .into_iter()
+                    #(.chain(#composite_keys.iter().map(Some)))*
+                    .collect();
+        }
+    };
 
     quote! {
-        // Duplicate mutable account validation - using HashSet
         {
-            let mut __mutable_accounts = ::std::collections::HashSet::new();
-
-            // Check declared mutable accounts for duplicates among themselves
-            #(
-                if let Some(key) = #field_keys {
-                    // Check for duplicates and insert the key and account name
-                    if !__mutable_accounts.insert(key) {
-                        return Err(anchor_lang::error::Error::from(
-                            anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount
-                        ).with_account_name(#field_name_strs));
-                    }
-                }
-            )*
-
-            // Check composite (nested) account struct keys for duplicates
-            #(#composite_checks)*
+            #collect_keys
+            if let Some((#index, #key)) = anchor_lang::__private::find_duplicate_key(&#keys) {
+                // Composite keys have no field name here, so name them by key.
+                let #names: &[&str] = &[#(stringify!(#direct_names)),*];
+                return Err(anchor_lang::error::Error::from(
+                    anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount
+                ).with_account_name(#names.get(#index).map_or_else(|| #key.to_string(), |n| n.to_string())));
+            }
         }
     }
 }

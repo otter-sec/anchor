@@ -521,7 +521,12 @@ fn decode_regs_hex(hex: &str) -> Result<([u8; REG_BYTES], u64, u64, [u8; 8])> {
         ));
     }
     let mut regs = [0u8; REG_BYTES];
-    for (i, pair) in hex.as_bytes()[..REG_HEX_LEN].chunks_exact(2).enumerate() {
+    for (i, pair) in hex.as_bytes()[..REG_HEX_LEN]
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .enumerate()
+    {
         let s = std::str::from_utf8(pair).unwrap();
         regs[i] = u8::from_str_radix(s, 16).context("invalid hex")?;
     }
@@ -537,7 +542,7 @@ fn decode_u64_hex(hex: &str) -> Option<u64> {
         return None;
     }
     let mut bytes = [0u8; 8];
-    for (i, pair) in hex.as_bytes()[..16].chunks_exact(2).enumerate() {
+    for (i, pair) in hex.as_bytes()[..16].as_chunks::<2>().0.iter().enumerate() {
         bytes[i] = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
     }
     Some(u64::from_le_bytes(bytes))
@@ -558,7 +563,12 @@ fn decode_bytes_hex<const N: usize>(hex: &str) -> Result<[u8; N]> {
         ));
     }
     let mut out = [0u8; N];
-    for (i, pair) in hex.as_bytes()[..N * 2].chunks_exact(2).enumerate() {
+    for (i, pair) in hex.as_bytes()[..N * 2]
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .enumerate()
+    {
         out[i] =
             u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).context("invalid hex")?;
     }

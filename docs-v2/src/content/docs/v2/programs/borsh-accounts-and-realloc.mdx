@@ -66,7 +66,7 @@ The `8` is the Anchor discriminator. The `4` is the borsh length prefix for `Vec
 
 ## CPI re-entry
 
-`BorshAccount<T>{:rs}` holds a borrow guard. If a CPI will mutate the same account, release the borrow before the CPI and reacquire it after:
+`BorshAccount<T>{:rs}` holds a borrow guard. Passing the account to a CPI with `cpi_handle_mut(){:rs}` releases it on every call, whether or not the callee touches the account. If the account reaches the callee some other way, release the borrow yourself before the CPI. Either way, reacquire it after:
 
 ```rust showLineNumbers=false
 ctx.accounts.profile.release_borrow()?;
@@ -77,3 +77,5 @@ ctx.accounts.profile.reacquire_borrow_mut()?;
 `release_borrow(){:rs}` commits in-memory changes first, so the CPI sees the latest state. `reacquire_borrow_mut(){:rs}` reruns owner, discriminator, and size checks before deserializing the post-CPI bytes.
 
 `Account<T>{:rs}` does not need this pattern because it reads zero-copy from the account buffer.
+
+See [After a CPI](/docs/v2/fundamentals/cpi/#after-a-cpi) for the per-wrapper rules.
