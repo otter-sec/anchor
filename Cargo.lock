@@ -560,6 +560,7 @@ dependencies = [
  "solana-program-error 3.0.0",
  "solana-program-pack 3.1.0",
  "solana-pubkey 3.0.0",
+ "spl-memo-interface",
  "spl-pod",
  "spl-token-2022-interface",
  "spl-token-group-interface",
@@ -3889,6 +3890,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "714098028fe011992e1c3962653c96b2d578c4b4bce9036e15ff220319b1e0e3"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "memo"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+ "solana-program-error 3.0.0",
+]
+
+[[package]]
+name = "memo-spy"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "pinocchio",
+ "solana-msg 3.1.0",
+ "solana-program-error 3.0.0",
 ]
 
 [[package]]

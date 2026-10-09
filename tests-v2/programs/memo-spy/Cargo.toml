@@ -1,0 +1,18 @@
+[package]
+name = "memo-spy"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "memo_spy"
+
+[dependencies]
+anchor-lang = { path = "../../../lang-v2", default-features = false, features = ["alloc"] }
+pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
+solana-msg = "3.0"
+solana-program-error = "3.0"
+
+[lints.rust.unexpected_cfgs]
+level = "allow"

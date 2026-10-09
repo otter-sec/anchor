@@ -19,6 +19,10 @@ path = "tests/equivalence/metadata.rs"
 name = "token_2022_extensions"
 path = "tests/token_2022_extensions/main.rs"
 
+[[test]]
+name = "memo"
+path = "tests/memo.rs"
+
 [dependencies]
 anchor-lang = { path = "../lang-v2" }
 account-address-constraints = { path = "programs/account-address-constraints" }

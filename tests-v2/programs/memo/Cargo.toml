@@ -1,0 +1,24 @@
+[package]
+name = "memo"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = ["no-log-ix-name"]
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+no-idl = []
+no-log-ix-name = []
+idl-build = []
+
+[dependencies]
+anchor-lang = { path = "../../../lang-v2", default-features = false, features = ["alloc"] }
+anchor-spl = { path = "../../../spl-v2", features = ["memo"] }
+solana-program-error = "3.0"
+
+[lints.rust.unexpected_cfgs]
+level = "allow"

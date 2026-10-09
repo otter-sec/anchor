@@ -17,6 +17,8 @@ extern crate alloc;
 
 pub mod associated_token;
 pub mod extensions;
+#[cfg(feature = "memo")]
+pub mod memo;
 #[cfg(feature = "metadata")]
 pub mod metadata;
 pub mod mint;

@@ -13,6 +13,7 @@ default = ["guardrails"]
 # every caller uses typed `Program` / `Interface` accounts or performs equivalent
 # validation before constructing CPI contexts.
 guardrails = []
+memo = ["dep:spl-memo-interface"]
 metadata = ["dep:mpl-token-metadata"]
 
 [dependencies]
@@ -27,6 +28,7 @@ solana-instruction = "3.0"
 solana-program-error = "3.0"
 solana-pubkey = "3.0"
 spl-pod = "0.7"
+spl-memo-interface = { version = "2", optional = true }
 spl-token-interface = "2"
 spl-token-2022-interface = "2"
 spl-token-group-interface = "0.7"

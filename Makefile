@@ -45,6 +45,7 @@ TESTS_V2_COVERAGE_TESTS := \
 	instruction_prefix \
 	ix_macro \
 	min_ix_data_len \
+	memo \
 	optional_accounts \
 	pda_payer \
 	program_interface \
