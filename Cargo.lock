@@ -369,6 +369,7 @@ dependencies = [
  "tempfile",
  "terminal-colorsaurus",
  "tiny-bip39",
+ "tokio",
  "toml 0.7.8",
  "two-face",
  "url",

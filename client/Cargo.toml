@@ -73,7 +73,7 @@ solana-rpc-client-api-v4 = { workspace = true, optional = true }
 solana-transaction-v3 = { workspace = true, optional = true }
 solana-transaction-v4 = { workspace = true, optional = true }
 thiserror = "1"
-tokio = { version = "1", features = ["rt", "sync"] }
+tokio = { workspace = true }
 url = "2"
 
 [dev-dependencies]
