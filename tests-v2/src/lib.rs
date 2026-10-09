@@ -55,6 +55,25 @@ pub fn send_instruction(
     })
 }
 
+/// `[lib] name` from a program's Cargo.toml, falling back to the package name.
+fn lib_name(manifest_dir: &str) -> String {
+    let manifest = std::fs::read_to_string(format!("{manifest_dir}/Cargo.toml")).unwrap();
+    let name_in = |section: &str| {
+        manifest
+            .split("\n[")
+            .find(|s| s.trim_start_matches('[').starts_with(section))?
+            .lines()
+            .find_map(|l| {
+                let (k, v) = l.split_once('=')?;
+                (k.trim() == "name").then(|| v.trim().trim_matches('"').to_string())
+            })
+    };
+    name_in("lib]")
+        .or_else(|| name_in("package]"))
+        .unwrap()
+        .replace('-', "_")
+}
+
 /// Build the .so for a program by running cargo build-sbf.
 ///
 /// Memoized by `manifest_dir`: within a single test-binary process each
@@ -76,6 +95,20 @@ pub fn build_program(manifest_dir: &str, sbf_out_dir: &str) {
     };
 
     once.call_once(|| {
+        // Opt-in: use binaries produced elsewhere (e.g. the upstream BPF
+        // toolchain, see `tests-v2/upstream-bpf`) instead of `cargo build-sbf`.
+        if let Some(prebuilt) = std::env::var_os("ANCHOR_V2_PREBUILT_SO_DIR") {
+            let so = format!("{}.so", lib_name(manifest_dir));
+            let src = std::path::Path::new(&prebuilt).join(&so);
+            let dst = std::path::Path::new(sbf_out_dir).join(&so);
+            let tmp = dst.with_extension("so.tmp");
+            std::fs::create_dir_all(sbf_out_dir).unwrap();
+            std::fs::copy(&src, &tmp)
+                .unwrap_or_else(|e| panic!("copy prebuilt {}: {e}", src.display()));
+            std::fs::rename(&tmp, &dst).unwrap();
+            return;
+        }
+
         let mut cmd = std::process::Command::new("cargo");
         if std::env::var_os("SBF_TRACE_DIR").is_some() {
             cmd.env("CARGO_PROFILE_RELEASE_OPT_LEVEL", "1");

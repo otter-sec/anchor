@@ -55,15 +55,15 @@ spl-ata-test = { path = "programs/spl-ata", features = ["cpi"] }
 token-interface-test = { path = "programs/token-interface", features = ["cpi"] }
 accounts-test = { path = "programs/accounts", features = ["idl-build"] }
 derives-test = { path = "programs/derives" }
-litesvm = { version = "0.13.1", features = ["register-tracing"] }
+litesvm = { version = "0.18", features = ["register-tracing"] }
 pinocchio = { version = "0.11", default-features = false }
-solana-account = "3.2.0"
+solana-account = "4"
 solana-keypair = "3.0.1"
-solana-message = "3.0.1"
+solana-message = "4"
 solana-pubkey = "3.0"
 solana-sdk-ids = "3.1"
 solana-signer = "3.0.0"
-solana-transaction = "3.0.1"
+solana-transaction = "4"
 spl-token = "=7.0.0"
 base64 = "0.22"
 sha2 = "0.10"

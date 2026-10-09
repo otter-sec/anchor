@@ -1,0 +1,21 @@
+[target.bpfel-unknown-none]
+rustflags = [
+    "-C", "linker=sbpf-linker",
+    "-C", "panic=abort",
+    "-C", "relocation-model=static",
+    "-C", "target-cpu=v4",
+    "-C", "target-feature=+allows-misaligned-mem-access",
+    "-C", "link-arg=--llvm-args=--bpf-stack-size=4096",
+    "-C", "link-arg=--llvm-args=--bpf-max-stores-per-memfunc=5",
+    "-C", "link-arg=--llvm-args=--disable-gotox",
+    "-C", "link-arg=--llvm-args=--disable-ldsx",
+    "-C", "link-arg=--llvm-args=--disable-movsx",
+    "--cfg=target_os=\"solana\"",
+    "--cfg=target_feature=\"static-syscalls\"",
+    "-A", "explicit_builtin_cfgs_in_flags"
+]
+
+[alias]
+# `-Zbuild-std` lives in the alias rather than `[unstable]` so it only applies
+# to the BPF build; host builds (`cargo test`) keep using the prebuilt std.
+build-bpf = "build --release --target bpfel-unknown-none -Zbuild-std=core,alloc"

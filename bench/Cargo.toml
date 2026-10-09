@@ -14,8 +14,8 @@ anchor-lang-v1 = { path = "../lang" }
 anchor-lang = { path = "../lang-v2" }
 hello-world = { path = "programs/helloworld/anchor-v1", features = ["no-entrypoint"] }
 hello-world-v2 = { path = "programs/helloworld/anchor-v2", features = ["cpi"], package = "hello-world-v2" }
-litesvm = "0.13.1"
-solana-account = "3.0"
+litesvm = "0.18"
+solana-account = "4"
 solana-compute-budget = "3.1.12"
 solana-rent = "3.0"
 multisig-v1 = { path = "programs/multisig/anchor-v1", features = ["no-entrypoint"], package = "multisig-v1" }
@@ -30,10 +30,10 @@ paste = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 solana-keypair = "3.0.1"
-solana-message = "3.0.1"
+solana-message = "4"
 solana-pubkey = "3.0.0"
 solana-signer = "3.0.0"
-solana-transaction = "3.0.1"
+solana-transaction = "4"
 plotters = "0.3.7"
 
 [workspace]

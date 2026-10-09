@@ -51,13 +51,24 @@ solana-msg = { version = "3.1", default-features = false, features = ["alloc"] }
 solana-program-memory.workspace = true
 solana-program-log = { version = "1.1", features = ["macro"], optional = true }
 solana-sha256-hasher = { version = "3.1", features = ["sha2"] }
-solana-system-interface = { version = "2.0", features = ["bincode"] }
-solana-sysvar = "3.1.1"
+# no_std-clean (upstream `bpfel-unknown-none` has only core + alloc): the
+# system-interface builders use wincode instead of bincode, and `solana-rent`
+# replaces `solana-sysvar`, which hard-depends on std (`lazy_static`, `bv`).
+# system-interface 3.3 needs solana-instruction ^3.5, so test harnesses must be
+# on litesvm >= 0.17 / mollusk-svm >= 0.16 (agave 4.3).
+solana-system-interface = { version = "3.3", default-features = false, features = ["wincode"] }
+solana-rent = { version = "4.3", features = ["sysvar"] }
 bytemuck = { version = "1", features = ["derive"] }
-wincode = { version = "0.6", features = ["derive"] }
+# `std` off: upstream `bpfel-unknown-none` has no `std` (only core + alloc).
+wincode = { version = "0.6", default-features = false, features = ["alloc", "derive"] }
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
 sha2 = "0.10"
+
+# Upstream BPF only: SVM-friendly libcalls (`__multi3`, float ops, ...) that
+# sbpf-linker links in. Referenced from lib.rs so user programs don't have to.
+[target.'cfg(target_arch = "bpf")'.dependencies]
+solana-compiler-builtins = "0.1"
 
 [lints.rust.unexpected_cfgs]
 level = "warn"
