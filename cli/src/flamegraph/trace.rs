@@ -44,7 +44,7 @@ fn syscall_cost(budget: &ComputeBudget, syscall_name: &str) -> u64 {
         "sol_big_mod_exp" => budget.big_modular_exponentiation_base_cost,
         "sol_remaining_compute_units" => budget.get_remaining_compute_units_cost,
         "sol_alt_bn128_compression" => budget.alt_bn128_g1_compress,
-        "sol_alt_bn128_group_op" => budget.alt_bn128_addition_cost,
+        "sol_alt_bn128_group_op" => budget.alt_bn128_g1_addition_cost,
         "sol_poseidon" => budget.poseidon_cost_coefficient_c,
         // Includes sol_log_, sol_log_data, sol_log_compute_units_, abort,
         // sol_panic_, sol_set_return_data, sol_get_return_data,
@@ -96,6 +96,11 @@ impl ContextObject for NoopContext {
     fn consume(&mut self, _amount: u64) {}
     fn get_remaining(&self) -> u64 {
         0
+    }
+    fn active_mapping_ptr(
+        &mut self,
+    ) -> std::ptr::NonNull<solana_sbpf::memory_region::MemoryMapping> {
+        unreachable!("static executable inspection does not access VM memory")
     }
 }
 
@@ -386,7 +391,7 @@ pub fn build_tx_reports(
 
     let mut reports: std::collections::BTreeMap<u32, (BTreeMap<Vec<String>, u64>, u64)> =
         std::collections::BTreeMap::new();
-    let budget = ComputeBudget::new_with_defaults(false, false);
+    let budget = ComputeBudget::new_with_defaults(false);
 
     for inv in &invocations {
         let regs = fs::read(&inv.regs_path)

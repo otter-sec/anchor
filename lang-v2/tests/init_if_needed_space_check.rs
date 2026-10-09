@@ -18,7 +18,7 @@ anchor_lang::declare_id!("11111111111111111111111111111111");
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable, InitSpace)]
+#[derive(Clone, Copy, Pod, Zeroable, InitSpace, anchor_lang::IdlType)]
 struct Vault {
     value: u64,
 }

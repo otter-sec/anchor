@@ -1,6 +1,14 @@
-use anyhow::Result;
-use clap::Parser;
-use solana_sdk::pubkey::Pubkey;
+use {anchor_lang::prelude::*, anyhow::Result, clap::Parser, solana_sdk::pubkey::Pubkey};
+
+anchor_lang::declare_program!(basic_2);
+anchor_lang::declare_program!(basic_4);
+anchor_lang::declare_program!(composite);
+anchor_lang::declare_program!(events);
+anchor_lang::declare_program!(optional);
+
+// Associated constants and PDA seed literals are not included in the IDL.
+const DATA_ACCOUNT_SPACE: usize = 8 + 8; // Discriminator followed by a u64.
+const DATA_PDA_SEED: &[u8] = b"data_pda";
 
 #[cfg(not(feature = "async"))]
 mod blocking;
@@ -36,3 +44,6 @@ fn main() -> Result<()> {
 async fn main() -> Result<()> {
     nonblocking::main().await
 }
+
+#[cfg(test)]
+mod tests;

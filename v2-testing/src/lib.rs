@@ -7,8 +7,7 @@
 //! `anchor test --profile` builds your tests with this feature active
 //! and post-processes the trace files into flamegraphs.
 
-pub use litesvm::LiteSVM;
-
+pub use litesvm;
 // Re-exports so scaffold test files can `use anchor_v2_testing::{Keypair,
 // Signer, Message, VersionedMessage, VersionedTransaction}` without each
 // scaffold carrying direct deps on the individual `solana-*` crates.
@@ -28,11 +27,11 @@ pub use profile::{svm, svm_with_trace_dir};
 /// When the `profile` feature is off, `svm()` is just `LiteSVM::new()`
 /// with zero runtime overhead.
 #[cfg(not(feature = "profile"))]
-pub fn svm() -> LiteSVM {
-    LiteSVM::new()
+pub fn svm() -> litesvm::LiteSVM {
+    litesvm::LiteSVM::new()
 }
 
 #[cfg(not(feature = "profile"))]
-pub fn svm_with_trace_dir(_trace_dir: impl Into<std::path::PathBuf>) -> LiteSVM {
-    LiteSVM::new()
+pub fn svm_with_trace_dir(_trace_dir: impl Into<std::path::PathBuf>) -> litesvm::LiteSVM {
+    litesvm::LiteSVM::new()
 }

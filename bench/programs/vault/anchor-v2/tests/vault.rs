@@ -1,6 +1,11 @@
 use {
-    anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction},
-    litesvm::types::{FailedTransactionMetadata, TransactionMetadata},
+    anchor_v2_testing::{
+        litesvm::{
+            types::{FailedTransactionMetadata, TransactionMetadata},
+            LiteSVM,
+        },
+        Keypair, Message, Signer, VersionedMessage, VersionedTransaction,
+    },
     solana_account::Account as SolanaAccount,
     vault_v2::instruction,
 };
@@ -18,7 +23,11 @@ fn setup() -> (LiteSVM, Keypair) {
     (svm, user)
 }
 
-fn send(svm: &mut LiteSVM, ix: anchor_lang::solana_program::instruction::Instruction, signers: &[&Keypair]) -> TxResult {
+fn send(
+    svm: &mut LiteSVM,
+    ix: anchor_lang::solana_program::instruction::Instruction,
+    signers: &[&Keypair],
+) -> TxResult {
     let blockhash = svm.latest_blockhash();
     let msg = Message::new_with_blockhash(&[ix], Some(&signers[0].pubkey()), &blockhash);
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), signers).unwrap();
@@ -35,7 +44,9 @@ fn test_deposit() {
     let (vault, _) = vault_address(&user.pubkey());
 
     let ix = instruction::Deposit { amount: 1_000_000 }.to_instruction(
-        vault_v2::accounts::DepositResolved { user: user.pubkey() },
+        vault_v2::accounts::DepositResolved {
+            user: user.pubkey(),
+        },
     );
     let res = send(&mut svm, ix, &[&user]).expect("deposit");
     println!("deposit CUs: {}", res.compute_units_consumed);
@@ -65,7 +76,9 @@ fn test_withdraw() {
     .unwrap();
 
     let ix = instruction::Withdraw { amount: 500_000 }.to_instruction(
-        vault_v2::accounts::WithdrawResolved { user: user.pubkey() },
+        vault_v2::accounts::WithdrawResolved {
+            user: user.pubkey(),
+        },
     );
     let res = send(&mut svm, ix, &[&user]).expect("withdraw");
     println!("withdraw CUs: {}", res.compute_units_consumed);

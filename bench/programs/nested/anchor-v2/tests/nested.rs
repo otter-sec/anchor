@@ -1,11 +1,17 @@
 use {
     anchor_lang::{
-        accounts::Account, bytemuck,
+        accounts::Account,
+        bytemuck,
         solana_program::instruction::{AccountMeta, Instruction},
         InstructionData, Space, ToAccountMetas,
     },
-    anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction},
-    litesvm::types::{FailedTransactionMetadata, TransactionMetadata},
+    anchor_v2_testing::{
+        litesvm::{
+            types::{FailedTransactionMetadata, TransactionMetadata},
+            LiteSVM,
+        },
+        Keypair, Message, Signer, VersionedMessage, VersionedTransaction,
+    },
     nested_v2::{instruction, Counter},
 };
 
@@ -38,9 +44,9 @@ fn config_address() -> anchor_lang::Address {
 }
 
 fn init(svm: &mut LiteSVM, admin: &Keypair) {
-    let ix = instruction::Initialize {}.to_instruction(
-        nested_v2::accounts::InitializeResolved { admin: admin.pubkey() },
-    );
+    let ix = instruction::Initialize {}.to_instruction(nested_v2::accounts::InitializeResolved {
+        admin: admin.pubkey(),
+    });
     send(svm, ix, &[admin]).expect("initialize");
 }
 
@@ -72,11 +78,7 @@ fn test_increment() {
         AccountMeta::new_readonly(config, false),
         AccountMeta::new(counter, false),
     ];
-    let ix = Instruction::new_with_bytes(
-        nested_v2::id(),
-        &instruction::Increment {}.data(),
-        metas,
-    );
+    let ix = Instruction::new_with_bytes(nested_v2::id(), &instruction::Increment {}.data(), metas);
     let res = send(&mut svm, ix, &[&admin]).expect("increment");
     println!("increment CUs: {}", res.compute_units_consumed);
 
@@ -106,11 +108,7 @@ fn test_reset() {
     assert_eq!(read_counter(&svm), 1);
 
     // Reset
-    let ix = Instruction::new_with_bytes(
-        nested_v2::id(),
-        &instruction::Reset {}.data(),
-        metas,
-    );
+    let ix = Instruction::new_with_bytes(nested_v2::id(), &instruction::Reset {}.data(), metas);
     let res = send(&mut svm, ix, &[&admin]).expect("reset");
     println!("reset CUs: {}", res.compute_units_consumed);
 

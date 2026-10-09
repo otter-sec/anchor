@@ -21,7 +21,7 @@ debug = []
 # literals. Reverting to master masks ~19% of quasar's helloworld CU
 # budget and makes the bench unfair.
 quasar-lang = { git = "https://github.com/chen-robert/quasar", branch = "notdeghost/const-pda-seeded-accounts" }
-solana-program-log = "1.0.0"
+solana-program-log = "1.2.0"
 
 [lints.rust.unexpected_cfgs]
 level = "allow"

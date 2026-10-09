@@ -11,7 +11,7 @@
 
 use {
     anchor_lang::solana_program::instruction::AccountMeta,
-    litesvm::LiteSVM,
+    anchor_v2_testing::litesvm::LiteSVM,
     solana_account::Account,
     solana_keypair::Keypair,
     solana_program_option::COption as Token2022COption,
@@ -1215,7 +1215,8 @@ fn token_account_accessors_decode_delegate_native_close_and_frozen_state() {
     data.extend_from_slice(&native_reserve.to_le_bytes());
     let metas = vec![AccountMeta::new_readonly(token, false)];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[]).expect(
-        "token account accessors should decode delegate, native reserve, close authority, and frozen state",
+        "token account accessors should decode delegate, native reserve, close authority, and \
+         frozen state",
     );
 }
 
@@ -4582,7 +4583,8 @@ fn token_2022_mint_close_authority_initialize_helper_invokes_token_2022_program(
         AccountMeta::new_readonly(token_2022_program_id(), false),
     ];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[]).expect(
-        "direct Token-2022 mint close authority helper should invoke the canonical Token-2022 program",
+        "direct Token-2022 mint close authority helper should invoke the canonical Token-2022 \
+         program",
     );
 }
 
@@ -4601,7 +4603,8 @@ fn token_2022_non_transferable_mint_initialize_helper_invokes_token_2022_program
         AccountMeta::new_readonly(token_2022_program_id(), false),
     ];
     send_instruction(&mut svm, program_id(), vec![70], metas, &payer, &[]).expect(
-        "direct Token-2022 non-transferable mint helper should invoke the canonical Token-2022 program",
+        "direct Token-2022 non-transferable mint helper should invoke the canonical Token-2022 \
+         program",
     );
 }
 
@@ -4623,7 +4626,8 @@ fn token_2022_permanent_delegate_initialize_helper_invokes_token_2022_program() 
         AccountMeta::new_readonly(token_2022_program_id(), false),
     ];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[]).expect(
-        "direct Token-2022 permanent delegate helper should invoke the canonical Token-2022 program",
+        "direct Token-2022 permanent delegate helper should invoke the canonical Token-2022 \
+         program",
     );
 }
 
@@ -4728,7 +4732,8 @@ fn non_transferable_mint_initialize_helper_rejects_non_token_2022_program() {
     ];
     assert_incorrect_token_2022_program_error(
         send_instruction(&mut svm, program_id(), vec![58], metas, &payer, &[]),
-        "non-transferable mint initialize helper should reject non-Token-2022 program ids before CPI",
+        "non-transferable mint initialize helper should reject non-Token-2022 program ids before \
+         CPI",
     );
 }
 
@@ -4772,7 +4777,8 @@ fn mint_close_authority_initialize_helper_rejects_non_token_2022_program() {
     ];
     assert_incorrect_token_2022_program_error(
         send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
-        "mint close authority initialize helper should reject non-Token-2022 program ids before CPI",
+        "mint close authority initialize helper should reject non-Token-2022 program ids before \
+         CPI",
     );
 }
 
@@ -4856,7 +4862,8 @@ fn default_account_state_initialize_helper_rejects_non_token_2022_program() {
     ];
     assert_incorrect_token_2022_program_error(
         send_instruction(&mut svm, program_id(), vec![61], metas, &payer, &[]),
-        "default account state initialize helper should reject non-Token-2022 program ids before CPI",
+        "default account state initialize helper should reject non-Token-2022 program ids before \
+         CPI",
     );
 }
 
@@ -5022,7 +5029,8 @@ fn interest_bearing_mint_initialize_helper_rejects_non_token_2022_program() {
     ];
     assert_incorrect_token_2022_program_error(
         send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
-        "interest-bearing mint initialize helper should reject non-Token-2022 program ids before CPI",
+        "interest-bearing mint initialize helper should reject non-Token-2022 program ids before \
+         CPI",
     );
 }
 
@@ -5322,7 +5330,8 @@ fn token_metadata_update_authority_helper_rejects_non_token_2022_program() {
             &payer,
             &[&current_authority],
         ),
-        "token metadata update_authority helper should reject non-Token-2022 program ids before CPI",
+        "token metadata update_authority helper should reject non-Token-2022 program ids before \
+         CPI",
     );
 }
 

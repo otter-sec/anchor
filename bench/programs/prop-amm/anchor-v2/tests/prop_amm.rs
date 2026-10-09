@@ -1,10 +1,15 @@
 use {
     anchor_lang::{
-        accounts::Account, bytemuck, programs::System,
-        solana_program::instruction::Instruction, Id, InstructionData, Space, ToAccountMetas,
+        accounts::Account, bytemuck, programs::System, solana_program::instruction::Instruction,
+        Id, InstructionData, Space, ToAccountMetas,
     },
-    anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction},
-    litesvm::types::{FailedTransactionMetadata, TransactionMetadata},
+    anchor_v2_testing::{
+        litesvm::{
+            types::{FailedTransactionMetadata, TransactionMetadata},
+            LiteSVM,
+        },
+        Keypair, Message, Signer, VersionedMessage, VersionedTransaction,
+    },
     prop_amm_v2::{instruction, state::Oracle, UPDATE_AUTHORITY},
 };
 
@@ -41,10 +46,7 @@ fn read_oracle(svm: &LiteSVM, oracle_pubkey: &Keypair) -> Oracle {
     let account = svm
         .get_account(&oracle_pubkey.pubkey())
         .expect("oracle account");
-    assert_eq!(
-        account.data.len(),
-        <Account<Oracle> as Space>::INIT_SPACE,
-    );
+    assert_eq!(account.data.len(), <Account<Oracle> as Space>::INIT_SPACE,);
     *bytemuck::from_bytes::<Oracle>(&account.data[8..])
 }
 

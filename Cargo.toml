@@ -13,6 +13,7 @@ members = [
     "lang-v2",
     "lang-v2/derive",
     "spl-v2",
+    "v2-testing",
     "tests-v2",
     "tests-v2/programs/account-address-constraints",
     "tests-v2/programs/account-meta-signer-overrides",
@@ -79,47 +80,55 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace.dependencies]
 pinocchio = { version = "0.11", default-features = false }
-solana-account = "3.2.0"
-solana-account-decoder = "3.0.14"
-solana-account-info = "3.1.0"
-solana-cli-config = "3.0.14"
-solana-client = "3.0.14"
-solana-clock = "3.0.1"
+# SDK crate versions used by Agave v4.3.0.
+solana-account = "4.5.0"
+solana-account-decoder = "4.3.0"
+solana-account-info = "3.1.1"
+solana-address = "2.7.0"
+solana-cli-config = "4.3.0"
+solana-client = "4.3.0"
+solana-clock = "3.2.0"
 solana-commitment-config = "3.1.1"
-solana-compute-budget-interface = "3.0.0"
-solana-cpi = "3.0.0"
-solana-define-syscall = "3.0.0"
-solana-feature-gate-interface = "3.0.0"
-solana-instruction = "3.0.0"
-solana-instructions-sysvar = "3.0.0"
+solana-compute-budget = "4.3.0"
+solana-compute-budget-interface = "3.1.0"
+solana-cpi = "3.1.0"
+solana-define-syscall = "5.2.0"
+solana-feature-gate-interface = "4.0.0"
+solana-instruction = { version = "3.5.0", default-features = false }
+solana-instructions-sysvar = "4.0.0"
 solana-invoke = "0.5.0"
-solana-keypair = "3.0.1"
-solana-loader-v3-interface = "6.0.1"
-solana-message = "3.0.1"
-solana-msg = "3.1.0"
-solana-packet = "3.0.0"
-solana-program = "3.0.0" # must be kept in sync with `cli/solana-program-version`
+solana-keypair = "3.1.2"
+solana-loader-v3-interface = "7.0.0"
+solana-message = "4.5.0"
+solana-msg = { version = "3.1.0", default-features = false }
+solana-packet = "4.3.0"
+solana-program = "4.1.0" # must be kept in sync with `cli/solana-program-version`
 solana-program-entrypoint = "3.1.1"
-solana-program-error = "3.0.0"
+solana-program-error = "3.0.1"
+solana-program-log = "1.2.0"
 solana-program-memory = "3.1.0"
-solana-program-option = "3.0.1"
+solana-program-option = "3.1.0"
 solana-program-pack = "3.1.0"
-solana-pubkey = "3.0.0"
-solana-pubsub-client = "3.0.14"
-solana-rpc-client = "3.0.14"
-solana-rpc-client-api = "3.0.14"
+solana-program-runtime = "4.3.0"
+solana-pubkey = "4.3.0"
+solana-pubsub-client = "4.3.0"
+solana-rpc-client = "4.3.0"
+solana-rpc-client-api = "4.3.0"
+solana-sbpf = "0.23.0"
 solana-sdk-ids = "3.1.0"
-solana-signature = "3.3.0"
-solana-signer = "3.0.0"
-solana-stake-interface = "2.0.2"
-solana-system-interface = "2.0.0"
-# FIXME: solana-sysvar 3.1.x contains breaking changes to sysvar retrieval
-solana-sysvar = "3.1.1"
+solana-sha256-hasher = "3.1.0"
+solana-signature = "3.5.2"
+solana-signer = "3.0.1"
+solana-stake-interface = "4.4.0"
+solana-system-interface = "3.3.0"
+solana-sysvar = "4.2.0"
 solana-sysvar-id = "3.1.0"
-solana-transaction = "3.0.1"
+solana-transaction = "4.2.0"
+solana-transaction-context = "4.3.0"
 
 # Non solana crates
 cargo_toml = "0.22.3"
+litesvm = "0.18.0"
 
 # Internal anchor crates
 anchor-lang = { path = "lang-v2", version = "=2.0.0-rc.1" }

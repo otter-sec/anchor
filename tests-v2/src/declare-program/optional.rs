@@ -1,9 +1,7 @@
 use {
-    anchor_lang::{
-        solana_program::instruction::AccountMeta, Id, InstructionData, ToAccountMetas,
-    },
+    anchor_lang::{solana_program::instruction::AccountMeta, Id, InstructionData, ToAccountMetas},
+    anchor_v2_testing::litesvm::LiteSVM,
     declare_program_optional::{instruction, optional_callee},
-    litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_pubkey::Pubkey,
     solana_signer::Signer,

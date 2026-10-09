@@ -3,10 +3,10 @@ use {
         solana_program::instruction::AccountMeta, Discriminator, Id, InstructionData,
         ToAccountMetas,
     },
+    anchor_v2_testing::litesvm::LiteSVM,
     declare_program_cpi::{
         alt_cpi, cpi_account_type_is_generated, external, external_cpi, hash_cpi, instruction,
     },
-    litesvm::LiteSVM,
     sha2::{Digest, Sha256},
     solana_keypair::Keypair,
     solana_pubkey::Pubkey,

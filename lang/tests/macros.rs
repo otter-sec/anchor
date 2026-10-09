@@ -1,3 +1,5 @@
+extern crate anchor_lang_v1 as anchor_lang;
+
 use {anchor_lang::solana_program::pubkey::Pubkey, core::str::FromStr};
 
 mod id {

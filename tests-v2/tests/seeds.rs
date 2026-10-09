@@ -9,7 +9,7 @@ use {
         solana_program::instruction::{AccountMeta, Instruction},
         ToAccountMetas,
     },
-    litesvm::{types::TransactionResult, LiteSVM},
+    anchor_v2_testing::litesvm::{types::TransactionResult, LiteSVM},
     sha2::{Digest, Sha256},
     solana_account::Account,
     solana_keypair::Keypair,
@@ -423,7 +423,11 @@ fn literal_untrusted_bump_rejects_on_curve_address() {
 fn resolved_builder_requires_address_for_explicit_bump() {
     let (mut svm, payer) = setup();
     let (pda, bump) = non_canonical_data_pda();
-    assert_ne!(pda, data_pda(), "fixture must differ from the canonical PDA");
+    assert_ne!(
+        pda,
+        data_pda(),
+        "fixture must differ from the canonical PDA"
+    );
 
     // Compiles only if `data` is Required (not Pda-auto-derived).
     let metas = seeds::accounts::CheckLiteralUntrustedBumpResolved {
@@ -434,15 +438,8 @@ fn resolved_builder_requires_address_for_explicit_bump() {
     assert_eq!(metas[1].pubkey, pda);
 
     set_system_account(&mut svm, pda, 1_000_000, 0);
-    send_instruction(
-        &mut svm,
-        program_id(),
-        vec![12, bump],
-        metas,
-        &payer,
-        &[],
-    )
-    .expect("non-canonical explicit-bump PDA accepted when address is supplied");
+    send_instruction(&mut svm, program_id(), vec![12, bump], metas, &payer, &[])
+        .expect("non-canonical explicit-bump PDA accepted when address is supplied");
 }
 
 #[test]

@@ -8,17 +8,20 @@ edition = "2021"
 
 [features]
 async = ["anchor-client/async"]
+idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
 anchor-client = { path = "../", features = ["debug"] }
-basic-2 = { path = "../../examples/tutorial/basic-2/programs/basic-2", features = ["no-entrypoint"] }
-basic-4 = { path = "../../examples/tutorial/basic-4/programs/basic-4", features = ["no-entrypoint"] }
-composite = { path = "../../tests/composite/programs/composite", features = ["no-entrypoint"] }
-optional = { path = "../../tests/optional/programs/optional", features = ["no-entrypoint"] }
-events = { path = "../../tests/events/programs/events", features = ["no-entrypoint"] }
+anchor-lang = { path = "../../lang-v2" }
 anyhow = "1.0.32"
 clap = { version = "4.2.4", features = ["derive"] }
 shellexpand = "2.1.0"
-solana-sdk = "3.0.0"
-solana-system-interface = "2.0.0"
+solana-sdk = "4.0.1"
+solana-system-interface = "3.3.0"
 tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+anchor-lang-v1 = { path = "../../lang" }
+legacy-basic-2 = { package = "basic-2", path = "../../examples/tutorial/basic-2/programs/basic-2", features = ["no-entrypoint"] }
+legacy-composite = { package = "composite", path = "../../tests/composite/programs/composite", features = ["no-entrypoint"] }
+legacy-events = { package = "events", path = "../../tests/events/programs/events", features = ["no-entrypoint"] }

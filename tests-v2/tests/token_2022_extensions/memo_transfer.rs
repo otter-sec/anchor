@@ -52,7 +52,11 @@ fn initializes_and_disables_memo_transfer_requirement() {
     );
 }
 
-fn assert_memo_required(svm: &litesvm::LiteSVM, account: Pubkey, expected: bool) {
+fn assert_memo_required(
+    svm: &anchor_v2_testing::litesvm::LiteSVM,
+    account: Pubkey,
+    expected: bool,
+) {
     let mut data = svm.get_account(&account).expect("token exists").data;
     let state =
         StateWithExtensionsMut::<Token2022Account>::unpack(&mut data).expect("unpack token");

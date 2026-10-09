@@ -124,7 +124,7 @@ fn initializes_group_on_the_mint_and_rejects_wrong_program() {
 }
 
 fn assert_group_state(
-    svm: &litesvm::LiteSVM,
+    svm: &anchor_v2_testing::litesvm::LiteSVM,
     mint: Pubkey,
     expected_update_authority: Option<Pubkey>,
     expected_mint: Pubkey,
@@ -146,7 +146,7 @@ fn assert_group_state(
 }
 
 fn assert_member_state(
-    svm: &litesvm::LiteSVM,
+    svm: &anchor_v2_testing::litesvm::LiteSVM,
     member: Pubkey,
     expected_mint: Pubkey,
     expected_group: Pubkey,

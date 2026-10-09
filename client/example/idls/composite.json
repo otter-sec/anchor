@@ -1,0 +1,132 @@
+{
+  "address": "EHthziFziNoac9LBGxEaVN47Y3uUiRoXvqAiR6oes4iU",
+  "metadata": {
+    "name": "composite",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "composite_update",
+      "discriminator": [
+        154,
+        25,
+        49,
+        254,
+        53,
+        162,
+        167,
+        200
+      ],
+      "accounts": [
+        {
+          "name": "foo",
+          "accounts": [
+            {
+              "name": "dummy_a",
+              "writable": true
+            }
+          ]
+        },
+        {
+          "name": "bar",
+          "accounts": [
+            {
+              "name": "dummy_b",
+              "writable": true
+            }
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "dummy_a",
+          "type": "u64"
+        },
+        {
+          "name": "dummy_b",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "dummy_a",
+          "writable": true
+        },
+        {
+          "name": "dummy_b",
+          "writable": true
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "DummyA",
+      "discriminator": [
+        248,
+        202,
+        56,
+        194,
+        34,
+        52,
+        164,
+        111
+      ]
+    },
+    {
+      "name": "DummyB",
+      "discriminator": [
+        189,
+        219,
+        250,
+        54,
+        234,
+        102,
+        242,
+        132
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "DummyA",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "data",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DummyB",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "data",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

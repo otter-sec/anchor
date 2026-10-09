@@ -1,6 +1,11 @@
 use {
-    anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction},
-    litesvm::types::{FailedTransactionMetadata, TransactionMetadata},
+    anchor_v2_testing::{
+        litesvm::{
+            types::{FailedTransactionMetadata, TransactionMetadata},
+            LiteSVM,
+        },
+        Keypair, Message, Signer, VersionedMessage, VersionedTransaction,
+    },
     solana_account::Account,
     solana_instruction::{AccountMeta, Instruction},
     solana_pubkey::{pubkey, Pubkey},

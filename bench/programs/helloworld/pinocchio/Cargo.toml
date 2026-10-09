@@ -15,7 +15,7 @@ profile = ["anchor-v2-testing/profile"]
 [dependencies]
 pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
 pinocchio-system = "0.6"
-solana-program-error = "3.0"
+solana-program-error = "3.0.1"
 # Used only as a utility shim for PDA derivation + signed create_account —
 # we do NOT use any anchor macros, just the `find_program_address` and
 # `create_account_signed` helpers that wrap raw pinocchio primitives.
@@ -23,9 +23,8 @@ anchor-lang = { path = "../../../../lang-v2", default-features = false, features
 
 [dev-dependencies]
 anchor-v2-testing = { path = "../../../../v2-testing" }
-litesvm = "0.11"
-solana-pubkey = "3.0"
-solana-instruction = "3.0"
+solana-pubkey = "4.3.0"
+solana-instruction = "3.5.0"
 
 [lints.rust.unexpected_cfgs]
 level = "allow"

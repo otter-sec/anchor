@@ -1,6 +1,6 @@
 use {
     anchor_lang::solana_program::instruction::{AccountMeta, Instruction},
-    litesvm::LiteSVM,
+    anchor_v2_testing::litesvm::LiteSVM,
     proptest::prelude::*,
     sha2::{Digest, Sha256},
     solana_account::Account,
@@ -36,8 +36,7 @@ use {
             pausable::{PausableAccount, PausableConfig},
             permanent_delegate::PermanentDelegate,
             scaled_ui_amount::ScaledUiAmountConfig,
-            transfer_fee::TransferFeeAmount,
-            transfer_fee::TransferFeeConfig,
+            transfer_fee::{TransferFeeAmount, TransferFeeConfig},
             transfer_hook::{TransferHook, TransferHookAccount},
             BaseStateWithExtensionsMut, ExtensionType as Token2022ExtensionType,
             StateWithExtensionsMut,

@@ -52,7 +52,7 @@ fn initializes_pauses_and_resumes_mint() {
 }
 
 fn assert_pausable(
-    svm: &litesvm::LiteSVM,
+    svm: &anchor_v2_testing::litesvm::LiteSVM,
     mint: Pubkey,
     expected_authority: Option<Pubkey>,
     expected_paused: bool,

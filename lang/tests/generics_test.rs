@@ -3,6 +3,8 @@
 // Generic accounts are not supported with `Lazy`
 #![cfg(not(feature = "lazy-account"))]
 
+extern crate anchor_lang_v1 as anchor_lang;
+
 use {
     anchor_lang::prelude::{borsh::io::Write, *},
     borsh::{BorshDeserialize, BorshSerialize},

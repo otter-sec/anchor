@@ -62,7 +62,7 @@ fn initializes_and_updates_group_pointer() {
 }
 
 fn assert_group_pointer(
-    svm: &litesvm::LiteSVM,
+    svm: &anchor_v2_testing::litesvm::LiteSVM,
     mint: Pubkey,
     expected_authority: Option<Pubkey>,
     expected_group: Option<Pubkey>,

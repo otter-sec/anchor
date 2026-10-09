@@ -1,7 +1,7 @@
 use {
     anchor_lang::{Discriminator, InstructionData, ToAccountMetas},
+    anchor_v2_testing::litesvm::{types::TransactionResult, LiteSVM},
     client_builders::{accounts, instruction},
-    litesvm::{types::TransactionResult, LiteSVM},
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
     solana_pubkey::Pubkey,

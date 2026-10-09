@@ -13,7 +13,7 @@ use {
         solana_program::instruction::{AccountMeta, Instruction},
         InstructionData,
     },
-    litesvm::LiteSVM,
+    anchor_v2_testing::litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
     solana_pubkey::Pubkey,
@@ -75,7 +75,7 @@ fn send_raw(
     data: Vec<u8>,
     metas: Vec<AccountMeta>,
     payer: &Keypair,
-) -> litesvm::types::TransactionResult {
+) -> anchor_v2_testing::litesvm::types::TransactionResult {
     let ix = Instruction::new_with_bytes(program_id(), &data, metas);
     let blockhash = svm.latest_blockhash();
     let message = Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &blockhash);
@@ -85,7 +85,10 @@ fn send_raw(
 }
 
 #[track_caller]
-fn assert_custom_error(result: &litesvm::types::TransactionResult, expected: u32) {
+fn assert_custom_error(
+    result: &anchor_v2_testing::litesvm::types::TransactionResult,
+    expected: u32,
+) {
     let failure = match result {
         Ok(_) => panic!("expected transaction to fail with Custom({expected}), got success"),
         Err(f) => f,

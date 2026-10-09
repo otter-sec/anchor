@@ -170,7 +170,7 @@ dependencies = [
  "quasar-derive",
  "solana-account-view",
  "solana-address",
- "solana-define-syscall 5.1.0",
+ "solana-define-syscall",
  "solana-instruction",
  "solana-instruction-view",
  "solana-program-error",
@@ -292,17 +292,11 @@ checksum = "5f08236dacd0e6dc8234becef58e27c8567856644ef509d7e97957d55a91dc72"
 dependencies = [
  "five8",
  "five8_const",
- "solana-define-syscall 5.1.0",
+ "solana-define-syscall",
  "solana-program-error",
  "solana-sanitize",
  "wincode",
 ]
-
-[[package]]
-name = "solana-define-syscall"
-version = "4.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57e5b1c0bc1d4a4d10c88a4100499d954c09d3fecfae4912c1a074dff68b1738"
 
 [[package]]
 name = "solana-define-syscall"
@@ -316,7 +310,7 @@ version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37ebb0ffd19263051bc3f683fcc086134b8ff23af894dcb63f7563c7137b42f1"
 dependencies = [
- "solana-define-syscall 5.1.0",
+ "solana-define-syscall",
  "solana-instruction-error",
  "solana-pubkey",
 ]
@@ -339,7 +333,7 @@ checksum = "7c35d02cd27575b1fd05938d3624e476b0173208139053b51aa48dd9bec149f1"
 dependencies = [
  "solana-account-view",
  "solana-address",
- "solana-define-syscall 5.1.0",
+ "solana-define-syscall",
  "solana-program-error",
 ]
 
@@ -351,19 +345,19 @@ checksum = "4f04fa578707b3612b095f0c8e19b66a1233f7c42ca8082fcb3b745afcc0add6"
 
 [[package]]
 name = "solana-program-log"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b26115ff9ec592bb4407379c82e7f00b9d0ae4e3fac80c3fd28c932aec852dc6"
+checksum = "ffd48ddef444e6db138fb11bdb9ab8117bb830a78cef051a453454de5613039b"
 dependencies = [
- "solana-define-syscall 4.0.1",
+ "solana-define-syscall",
  "solana-program-log-macro",
 ]
 
 [[package]]
 name = "solana-program-log-macro"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de2b224806ef141865d2f4b4614179089e3b80ba7311fc3bb28742c1d8323946"
+checksum = "73b234f83b71ba6b5d3236b69ba42ccb639907cb724bf58e94ce8398b51ac87c"
 dependencies = [
  "quote",
  "regex",

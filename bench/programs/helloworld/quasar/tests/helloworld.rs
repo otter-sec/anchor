@@ -1,7 +1,9 @@
 //! Smoke test for `anchor debugger`: load the .so, run `init`, assert success.
 
 use {
-    anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction},
+    anchor_v2_testing::{
+        litesvm::LiteSVM, Keypair, Message, Signer, VersionedMessage, VersionedTransaction,
+    },
     solana_instruction::{AccountMeta, Instruction},
     solana_pubkey::Pubkey,
 };

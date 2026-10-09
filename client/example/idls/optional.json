@@ -1,0 +1,298 @@
+{
+  "address": "FNqz6pqLAwvMSds2FYjR4nKV3moVpPNtvkfGFrqLKrgG",
+  "metadata": {
+    "name": "optional",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "close",
+      "discriminator": [
+        98,
+        165,
+        201,
+        177,
+        108,
+        65,
+        206,
+        96
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true,
+          "optional": true
+        },
+        {
+          "name": "optional_pda",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "data_account",
+          "writable": true,
+          "signer": true,
+          "optional": true,
+          "relations": [
+            "optional_pda"
+          ]
+        },
+        {
+          "name": "system_program",
+          "optional": true,
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true,
+          "optional": true
+        },
+        {
+          "name": "optional_account",
+          "writable": true,
+          "signer": true,
+          "optional": true
+        },
+        {
+          "name": "system_program",
+          "optional": true,
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "required",
+          "writable": true
+        },
+        {
+          "name": "optional_pda",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  97,
+                  95,
+                  112,
+                  100,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "optional_account"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "value",
+          "type": "u64"
+        },
+        {
+          "name": "key",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "realloc",
+      "discriminator": [
+        138,
+        139,
+        3,
+        51,
+        58,
+        130,
+        86,
+        208
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true,
+          "optional": true
+        },
+        {
+          "name": "optional_pda",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "required"
+        },
+        {
+          "name": "system_program",
+          "optional": true,
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "optional_account",
+          "writable": true,
+          "signer": true,
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_size",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update",
+      "discriminator": [
+        219,
+        200,
+        88,
+        176,
+        158,
+        63,
+        253,
+        127
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true,
+          "optional": true
+        },
+        {
+          "name": "optional_pda",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  97,
+                  95,
+                  112,
+                  100,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "optional_account"
+              }
+            ]
+          }
+        },
+        {
+          "name": "optional_account",
+          "writable": true,
+          "signer": true,
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "value",
+          "type": "u64"
+        },
+        {
+          "name": "key",
+          "type": "pubkey"
+        },
+        {
+          "name": "_pda_bump",
+          "type": "u8"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "DataAccount",
+      "discriminator": [
+        85,
+        240,
+        182,
+        158,
+        76,
+        7,
+        18,
+        233
+      ]
+    },
+    {
+      "name": "DataPda",
+      "discriminator": [
+        218,
+        61,
+        68,
+        248,
+        25,
+        91,
+        15,
+        93
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "ReallocFailed",
+      "msg": "Failed realloc"
+    }
+  ],
+  "types": [
+    {
+      "name": "DataAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "data",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DataPda",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "data_account",
+            "type": "pubkey"
+          }
+        ]
+      }
+    }
+  ]
+}

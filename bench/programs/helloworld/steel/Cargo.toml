@@ -14,14 +14,13 @@ profile = ["anchor-v2-testing/profile"]
 
 [dependencies]
 steel = "4.0.4"
-solana-program = "2.0"
+solana-program = "4.1.0"
 bytemuck = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 anchor-v2-testing = { path = "../../../../v2-testing" }
-litesvm = "0.11"
-solana-pubkey = "3.0"
-solana-instruction = "3.0"
+solana-pubkey = "4.3.0"
+solana-instruction = "3.5.0"
 # Force `five8 >= 1.0.0` — solana-keypair 3.1.2 (pulled via litesvm) calls
 # an API on `DecodeError` that only exists in the 1.x line. Steel's
 # `solana-program = "2.0"` tree otherwise resolves to 0.x.

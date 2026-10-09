@@ -222,7 +222,7 @@ fn token_metadata_helpers_reject_wrong_program_before_state_changes() {
 }
 
 fn assert_metadata_state(
-    svm: &litesvm::LiteSVM,
+    svm: &anchor_v2_testing::litesvm::LiteSVM,
     mint: Pubkey,
     expected_update_authority: Pubkey,
     expected_mint: Pubkey,
@@ -244,7 +244,7 @@ fn assert_metadata_state(
 }
 
 fn assert_metadata_field(
-    svm: &litesvm::LiteSVM,
+    svm: &anchor_v2_testing::litesvm::LiteSVM,
     mint: Pubkey,
     expected_key: &str,
     expected_value: Option<&str>,

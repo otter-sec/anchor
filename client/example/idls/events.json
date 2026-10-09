@@ -1,0 +1,125 @@
+{
+  "address": "2dhGsWUzy5YKUsjZdLHLmkNpUDAXkNa9MYWsPc4Ziqzy",
+  "metadata": {
+    "name": "events",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [],
+      "args": []
+    },
+    {
+      "name": "test_event",
+      "discriminator": [
+        73,
+        92,
+        55,
+        0,
+        53,
+        248,
+        112,
+        109
+      ],
+      "accounts": [],
+      "args": []
+    },
+    {
+      "name": "test_event_cpi",
+      "discriminator": [
+        61,
+        120,
+        51,
+        92,
+        93,
+        89,
+        17,
+        176
+      ],
+      "accounts": [
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "events": [
+    {
+      "name": "MyEvent",
+      "discriminator": [
+        96,
+        184,
+        197,
+        243,
+        139,
+        2,
+        90,
+        148
+      ]
+    },
+    {
+      "name": "MyOtherEvent",
+      "discriminator": [
+        133,
+        194,
+        247,
+        98,
+        118,
+        178,
+        28,
+        182
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "MyEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "data",
+            "type": "u64"
+          },
+          {
+            "name": "label",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MyOtherEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "data",
+            "type": "u64"
+          },
+          {
+            "name": "label",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ]
+}

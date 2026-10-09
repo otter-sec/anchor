@@ -11,6 +11,8 @@
 
 #![allow(dead_code)]
 
+extern crate anchor_lang_v1 as anchor_lang;
+
 use anchor_lang::prelude::*;
 
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");

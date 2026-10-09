@@ -72,7 +72,11 @@ fn initializes_and_updates_default_account_state() {
     );
 }
 
-fn assert_default_state(svm: &litesvm::LiteSVM, mint: Pubkey, expected: AccountState) {
+fn assert_default_state(
+    svm: &anchor_v2_testing::litesvm::LiteSVM,
+    mint: Pubkey,
+    expected: AccountState,
+) {
     let mut data = svm.get_account(&mint).expect("mint exists").data;
     let state = mint_state(&mut data);
     let extension = state

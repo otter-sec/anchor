@@ -6,8 +6,13 @@ use {
         },
         InstructionData, ToAccountMetas,
     },
-    anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction},
-    litesvm::types::{FailedTransactionMetadata, TransactionMetadata},
+    anchor_v2_testing::{
+        litesvm::{
+            types::{FailedTransactionMetadata, TransactionMetadata},
+            LiteSVM,
+        },
+        Keypair, Message, Signer, VersionedMessage, VersionedTransaction,
+    },
     multisig_v1::instruction,
     solana_pubkey::Pubkey,
 };
@@ -40,12 +45,7 @@ fn vault_address(config: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[b"vault", config.as_ref()], &multisig_v1::id())
 }
 
-fn create_multisig(
-    svm: &mut LiteSVM,
-    creator: &Keypair,
-    signers: &[&Keypair],
-    threshold: u8,
-) {
+fn create_multisig(svm: &mut LiteSVM, creator: &Keypair, signers: &[&Keypair], threshold: u8) {
     let (config, _) = config_address(&creator.pubkey());
     let mut metas = multisig_v1::accounts::Create {
         creator: creator.pubkey(),
@@ -171,7 +171,6 @@ fn test_execute_transfer() {
         data: instruction::ExecuteTransfer { amount: 500_000 }.data(),
         accounts: metas,
     };
-    let res =
-        send(&mut svm, ix, &[&creator, &signer_one, &signer_two]).expect("execute_transfer");
+    let res = send(&mut svm, ix, &[&creator, &signer_one, &signer_two]).expect("execute_transfer");
     println!("execute_transfer CUs: {}", res.compute_units_consumed);
 }

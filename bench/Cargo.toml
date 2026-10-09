@@ -9,15 +9,15 @@ default = ["bin"]
 bin = []
 
 [dependencies]
+anchor-v2-testing = { path = "../v2-testing" }
 anyhow = "1.0"
 anchor-lang-v1 = { path = "../lang" }
 anchor-lang = { path = "../lang-v2" }
 hello-world = { path = "programs/helloworld/anchor-v1", features = ["no-entrypoint"] }
 hello-world-v2 = { path = "programs/helloworld/anchor-v2", features = ["cpi"], package = "hello-world-v2" }
-litesvm = "0.13.1"
-solana-account = "3.0"
-solana-compute-budget = "3.1.12"
-solana-rent = "3.0"
+solana-account = "4.5.0"
+solana-compute-budget = "4.3.0"
+solana-rent = "4.4.0"
 multisig-v1 = { path = "programs/multisig/anchor-v1", features = ["no-entrypoint"], package = "multisig-v1" }
 multisig-v2 = { path = "programs/multisig/anchor-v2", features = ["cpi"], package = "multisig-v2" }
 vault-v1 = { path = "programs/vault/anchor-v1", features = ["no-entrypoint"], package = "vault-v1" }
@@ -29,11 +29,11 @@ nested-v2 = { path = "programs/nested/anchor-v2", features = ["cpi"], package = 
 paste = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-solana-keypair = "3.0.1"
-solana-message = "3.0.1"
-solana-pubkey = "3.0.0"
-solana-signer = "3.0.0"
-solana-transaction = "3.0.1"
+solana-keypair = "3.1.2"
+solana-message = "4.5.0"
+solana-pubkey = "4.3.0"
+solana-signer = "3.0.1"
+solana-transaction = "4.2.0"
 plotters = "0.3.7"
 
 [workspace]

@@ -2,7 +2,7 @@
 
 use {
     anchor_lang::solana_program::instruction::AccountMeta,
-    litesvm::LiteSVM,
+    anchor_v2_testing::litesvm::LiteSVM,
     solana_account::Account,
     solana_keypair::Keypair,
     solana_program_option::COption,
@@ -20,9 +20,10 @@ use {
             mint_close_authority::MintCloseAuthority,
             non_transferable::{NonTransferable, NonTransferableAccount},
             permanent_delegate::PermanentDelegate,
-            set_account_type, BaseStateWithExtensions, BaseStateWithExtensionsMut, ExtensionType,
-            StateWithExtensions, StateWithExtensionsMut,
+            set_account_type,
             transfer_hook::TransferHook,
+            BaseStateWithExtensions, BaseStateWithExtensionsMut, ExtensionType,
+            StateWithExtensions, StateWithExtensionsMut,
         },
         state::{Account as Token2022Account, Mint as Token2022Mint},
     },
@@ -68,7 +69,7 @@ fn check_token_program(
     svm: &mut LiteSVM,
     payer: &Keypair,
     token_program: Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![AccountMeta::new_readonly(token_program, false)];
     send_instruction(svm, program_id(), vec![0], metas, payer, &[])
 }
@@ -79,7 +80,7 @@ fn init_mint(
     mint: &Keypair,
     authority: &Pubkey,
     token_program: Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new(payer.pubkey(), true),
         AccountMeta::new_readonly(*authority, false),
@@ -96,7 +97,7 @@ fn init_mint_decimals_9(
     mint: &Keypair,
     authority: &Pubkey,
     token_program: Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new(payer.pubkey(), true),
         AccountMeta::new_readonly(*authority, false),
@@ -114,7 +115,7 @@ fn init_mint_with_freeze_authority(
     authority: &Pubkey,
     freeze_authority: &Pubkey,
     token_program: Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new(payer.pubkey(), true),
         AccountMeta::new_readonly(*authority, false),
@@ -133,7 +134,7 @@ fn init_token_account(
     token_account: &Keypair,
     authority: &Pubkey,
     token_program: Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new(payer.pubkey(), true),
         AccountMeta::new_readonly(*mint, false),
@@ -151,7 +152,7 @@ fn init_mint_pda(
     mint: Pubkey,
     authority: Pubkey,
     token_program: Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new(payer.pubkey(), true),
         AccountMeta::new_readonly(authority, false),
@@ -169,7 +170,7 @@ fn init_token_account_pda(
     token_account: Pubkey,
     authority: Pubkey,
     token_program: Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new(payer.pubkey(), true),
         AccountMeta::new_readonly(mint, false),
@@ -188,7 +189,7 @@ fn check_token_constraints(
     authority: Pubkey,
     token_program: Pubkey,
     token_account: Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new_readonly(mint, false),
         AccountMeta::new_readonly(authority, false),
@@ -204,7 +205,7 @@ fn check_mint_constraints(
     authority: Pubkey,
     token_program: Pubkey,
     mint: Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new_readonly(authority, false),
         AccountMeta::new_readonly(token_program, false),
@@ -218,7 +219,7 @@ fn check_mint_freeze_authority(
     payer: &Keypair,
     expected: Pubkey,
     mint: Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new_readonly(expected, false),
         AccountMeta::new_readonly(mint, false),
@@ -234,7 +235,7 @@ fn mint_to(
     authority: &Keypair,
     token_program: Pubkey,
     amount: u64,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new(mint, false),
         AccountMeta::new(token_account, false),
@@ -950,7 +951,7 @@ fn init_mint_with_space(
     mint: &Keypair,
     authority: &Pubkey,
     token_program: Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new(payer.pubkey(), true),
         AccountMeta::new_readonly(*authority, false),
@@ -967,7 +968,7 @@ fn init_mint_too_small(
     mint: &Keypair,
     authority: &Pubkey,
     token_program: Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new(payer.pubkey(), true),
         AccountMeta::new_readonly(*authority, false),
@@ -1047,7 +1048,7 @@ fn init_mint_with_extensions(
     payer: &Keypair,
     mint: &Keypair,
     authority: &Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new(payer.pubkey(), true),
         AccountMeta::new_readonly(*authority, false),
@@ -1082,10 +1083,7 @@ fn interface_init_creates_token_2022_mint_with_extensions() {
     let state =
         StateWithExtensions::<Token2022Mint>::unpack(&account.data).expect("unpack extended mint");
     assert_eq!(state.base.decimals, 0);
-    assert_eq!(
-        state.base.mint_authority,
-        COption::Some(authority.pubkey())
-    );
+    assert_eq!(state.base.mint_authority, COption::Some(authority.pubkey()));
 
     let types = state.get_extension_types().expect("extension types");
     assert!(types.contains(&ExtensionType::MetadataPointer));
@@ -1126,7 +1124,9 @@ fn interface_init_creates_token_2022_mint_with_extensions() {
         Some(authority.pubkey())
     );
 
-    let hook = state.get_extension::<TransferHook>().expect("transfer hook");
+    let hook = state
+        .get_extension::<TransferHook>()
+        .expect("transfer hook");
     assert_eq!(
         Option::<Pubkey>::from(hook.authority),
         Some(authority.pubkey())
@@ -1147,7 +1147,7 @@ fn init_if_needed_mint_with_extensions(
     payer: &Keypair,
     mint: &Keypair,
     authority: &Pubkey,
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let metas = vec![
         AccountMeta::new(payer.pubkey(), true),
         AccountMeta::new_readonly(*authority, false),

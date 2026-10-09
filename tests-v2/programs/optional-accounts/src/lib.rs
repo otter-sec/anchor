@@ -18,6 +18,9 @@ pub struct SpyAccount {
     view: AccountView,
 }
 
+// SpyAccount wraps an untyped account view and contributes no IDL data type.
+impl IdlAccountType for SpyAccount {}
+
 impl Deref for SpyAccount {
     type Target = AccountView;
 

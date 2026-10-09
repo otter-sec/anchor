@@ -62,7 +62,7 @@
 //! This feature allows passing in a custom RPC client when creating program instances, which is
 //! useful for mocking RPC responses, e.g. via [`RpcClient::new_mock`].
 //!
-//! [`RpcClient::new_mock`]: https://docs.rs/solana-rpc-client/3.0.0/solana_rpc_client/rpc_client/struct.RpcClient.html#method.new_mock
+//! [`RpcClient::new_mock`]: https://docs.rs/solana-rpc-client/4.3.0/solana_rpc_client/rpc_client/struct.RpcClient.html#method.new_mock
 
 #[cfg(feature = "async")]
 pub use nonblocking::ThreadSafeSigner;
@@ -1067,7 +1067,13 @@ mod tests {
             super::Cluster::Custom(ws_url.clone(), ws_url),
             std::sync::Arc::new(solana_keypair::Keypair::new()),
         );
-        let program = client.program(Pubkey::new_unique()).unwrap();
+        let program = client
+            .program(
+                Pubkey::new_unique(),
+                #[cfg(feature = "mock")]
+                super::AsyncRpcClient::new_mock("succeeds".to_owned()),
+            )
+            .unwrap();
 
         // With the old RwLock-based code, the second call would deadlock.
         // Use a timeout to ensure the test fails instead of hanging forever.

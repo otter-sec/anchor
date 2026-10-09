@@ -3,9 +3,14 @@ use {
         solana_program::{instruction::Instruction, system_program},
         AccountDeserialize, InstructionData, ToAccountMetas,
     },
-    anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction},
+    anchor_v2_testing::{
+        litesvm::{
+            types::{FailedTransactionMetadata, TransactionMetadata},
+            LiteSVM,
+        },
+        Keypair, Message, Signer, VersionedMessage, VersionedTransaction,
+    },
     hello_world::{instruction, Counter},
-    litesvm::types::{FailedTransactionMetadata, TransactionMetadata},
     solana_pubkey::Pubkey,
 };
 

@@ -10,7 +10,7 @@
 
 use {
     anchor_lang::solana_program::instruction::AccountMeta,
-    litesvm::LiteSVM,
+    anchor_v2_testing::litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_pubkey::Pubkey,
     solana_signer::Signer,

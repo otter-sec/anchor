@@ -3,8 +3,13 @@ use {
         solana_program::instruction::{AccountMeta, Instruction},
         InstructionData, ToAccountMetas,
     },
-    anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction},
-    litesvm::types::{FailedTransactionMetadata, TransactionMetadata},
+    anchor_v2_testing::{
+        litesvm::{
+            types::{FailedTransactionMetadata, TransactionMetadata},
+            LiteSVM,
+        },
+        Keypair, Message, Signer, VersionedMessage, VersionedTransaction,
+    },
     multisig_v2::instruction,
 };
 
@@ -32,14 +37,11 @@ fn config_address(creator: &anchor_lang::Address) -> (anchor_lang::Address, u8) 
     multisig_v2::accounts::Create::find_config_address(creator)
 }
 
-fn create_multisig(
-    svm: &mut LiteSVM,
-    creator: &Keypair,
-    signers: &[&Keypair],
-    threshold: u8,
-) {
-    let mut metas = multisig_v2::accounts::CreateResolved { creator: creator.pubkey() }
-        .to_account_metas(None);
+fn create_multisig(svm: &mut LiteSVM, creator: &Keypair, signers: &[&Keypair], threshold: u8) {
+    let mut metas = multisig_v2::accounts::CreateResolved {
+        creator: creator.pubkey(),
+    }
+    .to_account_metas(None);
     for s in signers {
         metas.push(AccountMeta::new_readonly(s.pubkey(), true));
     }
@@ -107,8 +109,11 @@ fn test_set_label() {
             label,
         }
         .data(),
-        multisig_v2::accounts::SetLabelResolved { creator: creator.pubkey(), config }
-            .to_account_metas(None),
+        multisig_v2::accounts::SetLabelResolved {
+            creator: creator.pubkey(),
+            config,
+        }
+        .to_account_metas(None),
     );
     let res = send(&mut svm, ix, &[&creator]).expect("set_label");
     println!("set_label CUs: {}", res.compute_units_consumed);

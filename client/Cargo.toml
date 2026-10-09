@@ -27,7 +27,7 @@ serde = { version = "1", features = ["derive"] }
 solana-account.workspace = true
 solana-account-decoder.workspace = true
 solana-commitment-config.workspace = true
-solana-instruction.workspace = true
+solana-instruction = { workspace = true, default-features = true }
 solana-program.workspace = true
 solana-pubsub-client.workspace = true
 solana-rpc-client.workspace = true

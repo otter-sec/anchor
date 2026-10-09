@@ -24,6 +24,5 @@ anchor-lang = { package = "anchor-lang-v1", path = "../../../../lang" }
 
 [dev-dependencies]
 anchor-v2-testing = { path = "../../../../v2-testing" }
-litesvm = "0.11"
-solana-account = "3.0"
-solana-pubkey = "3.0"
+solana-account = "4.5.0"
+solana-pubkey = "4.3.0"

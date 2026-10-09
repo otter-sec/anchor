@@ -18,4 +18,4 @@ idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
 anchor-lang = { package = "anchor-lang-v1", path = "../../../../../lang" }
-solana-program = "3.0.0"
+solana-program = "4.1.0"

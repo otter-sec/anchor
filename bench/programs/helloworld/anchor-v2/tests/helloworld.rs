@@ -1,7 +1,12 @@
 use {
     anchor_lang::{accounts::Account, bytemuck, Space},
-    anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction},
-    litesvm::types::{FailedTransactionMetadata, TransactionMetadata},
+    anchor_v2_testing::{
+        litesvm::{
+            types::{FailedTransactionMetadata, TransactionMetadata},
+            LiteSVM,
+        },
+        Keypair, Message, Signer, VersionedMessage, VersionedTransaction,
+    },
     hello_world_v2::{instruction, Counter},
 };
 
@@ -18,7 +23,11 @@ fn setup() -> (LiteSVM, Keypair) {
     (svm, payer)
 }
 
-fn send(svm: &mut LiteSVM, ix: anchor_lang::solana_program::instruction::Instruction, signers: &[&Keypair]) -> TxResult {
+fn send(
+    svm: &mut LiteSVM,
+    ix: anchor_lang::solana_program::instruction::Instruction,
+    signers: &[&Keypair],
+) -> TxResult {
     let blockhash = svm.latest_blockhash();
     let msg = Message::new_with_blockhash(&[ix], Some(&signers[0].pubkey()), &blockhash);
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), signers).unwrap();
@@ -34,9 +43,9 @@ fn test_init() {
     let (mut svm, payer) = setup();
     let (counter_pda, _) = counter_address();
 
-    let ix = instruction::Init {}.to_instruction(
-        hello_world_v2::accounts::InitResolved { payer: payer.pubkey() },
-    );
+    let ix = instruction::Init {}.to_instruction(hello_world_v2::accounts::InitResolved {
+        payer: payer.pubkey(),
+    });
     let res = send(&mut svm, ix, &[&payer]).expect("init");
     println!("init CUs: {}", res.compute_units_consumed);
 

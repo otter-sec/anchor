@@ -1733,10 +1733,9 @@ fn program_extend(
         ));
     }
 
-    // Use the checked version which requires upgrade authority signature
-    let extend_ix = loader_v3_instruction::extend_program_checked(
+    // Agave 4.3 exposes ExtendProgram; the upgrade authority was checked above.
+    let extend_ix = loader_v3_instruction::extend_program(
         &program_id,
-        &upgrade_authority_address,
         Some(&payer.pubkey()),
         additional_bytes as u32,
     );

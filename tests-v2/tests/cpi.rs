@@ -3,7 +3,7 @@ use {
         solana_program::instruction::{AccountMeta, Instruction},
         InstructionData,
     },
-    litesvm::{types::TransactionResult, LiteSVM},
+    anchor_v2_testing::litesvm::{types::TransactionResult, LiteSVM},
     solana_message::{Message, VersionedMessage},
     solana_pubkey::Pubkey,
     solana_signer::Signer,

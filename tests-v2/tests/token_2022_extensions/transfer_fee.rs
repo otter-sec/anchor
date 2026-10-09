@@ -296,7 +296,7 @@ fn transfer_fee_non_initialize_helpers_reject_wrong_program_before_state_changes
 }
 
 fn seed_transfer_fee_token_account(
-    svm: &mut litesvm::LiteSVM,
+    svm: &mut anchor_v2_testing::litesvm::LiteSVM,
     account: Pubkey,
     mint: Pubkey,
     owner: Pubkey,
@@ -317,7 +317,7 @@ fn seed_transfer_fee_token_account(
 }
 
 fn assert_transfer_fee_config(
-    svm: &litesvm::LiteSVM,
+    svm: &anchor_v2_testing::litesvm::LiteSVM,
     mint: Pubkey,
     expected_config_authority: Option<Pubkey>,
     expected_withdraw_authority: Option<Pubkey>,
@@ -352,14 +352,18 @@ fn assert_transfer_fee_config(
     );
 }
 
-fn assert_token_amount(svm: &litesvm::LiteSVM, account: Pubkey, expected: u64) {
+fn assert_token_amount(svm: &anchor_v2_testing::litesvm::LiteSVM, account: Pubkey, expected: u64) {
     let mut data = svm.get_account(&account).expect("token exists").data;
     let state =
         StateWithExtensionsMut::<Token2022Account>::unpack(&mut data).expect("unpack token");
     assert_eq!(state.base.amount, expected);
 }
 
-fn assert_transfer_fee_amount(svm: &litesvm::LiteSVM, account: Pubkey, expected: u64) {
+fn assert_transfer_fee_amount(
+    svm: &anchor_v2_testing::litesvm::LiteSVM,
+    account: Pubkey,
+    expected: u64,
+) {
     let mut data = svm.get_account(&account).expect("token exists").data;
     let state =
         StateWithExtensionsMut::<Token2022Account>::unpack(&mut data).expect("unpack token");

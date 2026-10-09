@@ -39,6 +39,14 @@ main() {
     cd ../../tests/optional && anchor build --skip-lint --ignore-keys && cd -
     [ $? -ne 0 ] && exit 1
 
+    # Refresh the v2 client bindings from the IDLs generated for these v1 programs.
+    mkdir -p idls
+    cp ../../tests/composite/target/idl/composite.json idls/
+    cp ../../examples/tutorial/basic-2/target/idl/basic_2.json idls/
+    cp ../../examples/tutorial/basic-4/target/idl/basic_4.json idls/
+    cp ../../tests/events/target/idl/events.json idls/
+    cp ../../tests/optional/target/idl/optional.json idls/
+
     #
     # Bootup validator.
     #

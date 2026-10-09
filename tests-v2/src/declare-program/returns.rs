@@ -2,8 +2,8 @@ use {
     anchor_lang::{
         solana_program::instruction::AccountMeta, Discriminator, InstructionData, ToAccountMetas,
     },
+    anchor_v2_testing::litesvm::LiteSVM,
     declare_program_returns::{instruction, return_callee},
-    litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_pubkey::Pubkey,
     solana_signer::Signer,

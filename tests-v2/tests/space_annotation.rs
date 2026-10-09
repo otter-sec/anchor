@@ -1,5 +1,5 @@
 use {
-    litesvm::{types::TransactionResult, LiteSVM},
+    anchor_v2_testing::litesvm::{types::TransactionResult, LiteSVM},
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
     solana_pubkey::Pubkey,

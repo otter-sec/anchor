@@ -3,8 +3,13 @@ use {
         solana_program::{instruction::Instruction, system_program},
         AccountDeserialize, InstructionData, ToAccountMetas,
     },
-    anchor_v2_testing::{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction},
-    litesvm::types::{FailedTransactionMetadata, TransactionMetadata},
+    anchor_v2_testing::{
+        litesvm::{
+            types::{FailedTransactionMetadata, TransactionMetadata},
+            LiteSVM,
+        },
+        Keypair, Message, Signer, VersionedMessage, VersionedTransaction,
+    },
     prop_amm_v1::{instruction, Oracle},
 };
 
@@ -108,7 +113,10 @@ fn test_rotate_authority() {
     let new_auth = Keypair::new();
     let ix = Instruction {
         program_id: prop_amm_v1::id(),
-        data: instruction::RotateAuthority { new_authority: new_auth.pubkey() }.data(),
+        data: instruction::RotateAuthority {
+            new_authority: new_auth.pubkey(),
+        }
+        .data(),
         accounts: prop_amm_v1::accounts::RotateAuthority {
             oracle: oracle.pubkey(),
             authority: payer.pubkey(),

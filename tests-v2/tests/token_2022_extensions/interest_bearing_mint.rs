@@ -52,7 +52,7 @@ fn initializes_and_updates_interest_rate() {
 }
 
 fn assert_interest_config(
-    svm: &litesvm::LiteSVM,
+    svm: &anchor_v2_testing::litesvm::LiteSVM,
     mint: Pubkey,
     expected_authority: Option<Pubkey>,
     expected_rate: i16,

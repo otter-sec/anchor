@@ -1,6 +1,6 @@
 use {
     anchor_lang::solana_program::instruction::AccountMeta,
-    litesvm::{types::TransactionMetadata, LiteSVM},
+    anchor_v2_testing::litesvm::{types::TransactionMetadata, LiteSVM},
     solana_account::Account,
     solana_keypair::Keypair,
     solana_program_option::COption,
@@ -22,8 +22,12 @@ pub const PROGRAMDATA_METADATA_LEN: usize = 45;
 
 pub use {
     anchor_lang::solana_program::instruction::AccountMeta as Meta,
-    litesvm, sha2, solana_loader_v3_interface, solana_rpc_client, spl_token_2022_interface,
-    spl_token_2022_interface::extension::{BaseStateWithExtensions, BaseStateWithExtensionsMut},
+    anchor_v2_testing::litesvm,
+    sha2, solana_loader_v3_interface, solana_rpc_client,
+    spl_token_2022_interface::{
+        self,
+        extension::{BaseStateWithExtensions, BaseStateWithExtensionsMut},
+    },
 };
 
 pub fn token_2022_program_id() -> Pubkey {

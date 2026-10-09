@@ -19,7 +19,7 @@ const PROGRAM_ID: [u8; 32] = [0x42; 32];
 const OLD_AUTHORITY: [u8; 32] = [0x10; 32];
 const NEW_AUTHORITY: [u8; 32] = [0x20; 32];
 
-#[derive(AnchorDeserialize, AnchorSerialize, Clone, Copy)]
+#[derive(AnchorDeserialize, AnchorSerialize, Clone, Copy, anchor_lang::IdlType)]
 struct Vault {
     current_authority: Address,
 }
@@ -32,7 +32,7 @@ impl Discriminator for Vault {
     const DISCRIMINATOR: &'static [u8] = &[0x41, 0x75, 0x74, 0x68, 0x56, 0x61, 0x75, 0x6c];
 }
 
-#[derive(AnchorDeserialize, AnchorSerialize, Clone, Copy)]
+#[derive(AnchorDeserialize, AnchorSerialize, Clone, Copy, anchor_lang::IdlType)]
 struct StepCounter {
     value: u64,
 }

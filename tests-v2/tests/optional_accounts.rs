@@ -1,6 +1,6 @@
 use {
     anchor_lang::solana_program::instruction::{AccountMeta, Instruction},
-    litesvm::{types::TransactionResult, LiteSVM},
+    anchor_v2_testing::litesvm::{types::TransactionResult, LiteSVM},
     solana_account::Account,
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},

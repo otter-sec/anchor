@@ -2,7 +2,7 @@ use {
     anchor_lang::{
         event::EVENT_IX_TAG_LE, solana_program::instruction::AccountMeta, InstructionData,
     },
-    litesvm::LiteSVM,
+    anchor_v2_testing::litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_pubkey::Pubkey,
     solana_signer::Signer,

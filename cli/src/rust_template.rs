@@ -271,10 +271,10 @@ fn cargo_toml(name: &str, test_template: Option<&TestTemplate>) -> String {
         Some(TestTemplate::Mollusk) => {
             r#"
 [dev-dependencies]
-mollusk-svm = "0.13"
-solana-account = "3"
-solana-pubkey = "4"
-solana-sdk-ids = "3"
+mollusk-svm = "0.16"
+solana-account = "4.5.0"
+solana-pubkey = "4.3.0"
+solana-sdk-ids = "3.1.0"
 bytemuck = "1"
 "#
         }
@@ -310,7 +310,7 @@ idl-build = []
 [dependencies]
 # Once anchor-lang is published to crates.io, swap to: anchor-lang = "{3}"
 anchor-lang = {{ git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }}
-solana-program-log = {{ version = "1.1", features = ["macro"] }}
+solana-program-log = {{ version = "1.2.0", features = ["macro"] }}
 {4}
 
 [lints.rust]
@@ -899,10 +899,10 @@ rust-version = "{ANCHOR_MSRV}"
 # Once anchor-client v2 is published to crates.io, swap to: anchor-client = "{VERSION}"
 anchor-client = {{ git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }}
 {name} = {{ version = "0.1.0", path = "../programs/{name}" }}
-solana-keypair = "3.0.0"
-solana-pubkey = "3.0.0"
-solana-sdk-ids = "3"
-solana-signer = "3"
+solana-keypair = "3.1.2"
+solana-pubkey = "4.3.0"
+solana-sdk-ids = "3.1.0"
+solana-signer = "3.0.1"
 "#
     )
 }
@@ -1042,7 +1042,7 @@ use {{
         accounts::Account, bytemuck, programs::System,
         solana_program::instruction::Instruction, Id, InstructionData, Space, ToAccountMetas,
     }},
-    anchor_v2_testing::{{Keypair, LiteSVM, Message, Signer, VersionedMessage, VersionedTransaction}},
+    anchor_v2_testing::{{litesvm::LiteSVM, Keypair, Message, Signer, VersionedMessage, VersionedTransaction}},
 }};
 
 #[test]

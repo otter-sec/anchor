@@ -70,11 +70,11 @@ solana-clock.workspace = true
 solana-cpi.workspace = true
 solana-define-syscall.workspace = true
 solana-feature-gate-interface.workspace = true
-solana-instruction.workspace = true
+solana-instruction = { workspace = true, default-features = true }
 solana-instructions-sysvar.workspace = true
 solana-invoke.workspace = true
 solana-loader-v3-interface = { workspace = true, features = ["bincode"] }
-solana-msg.workspace = true
+solana-msg = { workspace = true, default-features = true }
 solana-program-entrypoint.workspace = true
 solana-program-error = { workspace = true, features = ["borsh"] }
 solana-program-memory.workspace = true

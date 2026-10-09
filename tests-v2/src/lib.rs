@@ -2,7 +2,7 @@
 
 use {
     anchor_lang::solana_program::instruction::{AccountMeta, Instruction},
-    litesvm::LiteSVM,
+    anchor_v2_testing::litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
     solana_signer::Signer,
@@ -34,7 +34,7 @@ pub fn send_instruction(
     account_metas: Vec<AccountMeta>,
     payer: &Keypair,
     extra_signers: &[&Keypair],
-) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
     let instruction = Instruction::new_with_bytes(program_id, &instruction_data, account_metas);
     let blockhash = svm.latest_blockhash();
     let message = Message::new_with_blockhash(&[instruction], Some(&payer.pubkey()), &blockhash);

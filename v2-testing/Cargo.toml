@@ -8,6 +8,7 @@ publish = false
 
 [features]
 default = []
+register-tracing = ["litesvm/register-tracing"]
 
 # Runtime PC tracing for per-test flamegraphs. Activates litesvm's
 # register-tracing feature and installs a callback that keys trace files
@@ -15,7 +16,7 @@ default = []
 profile = [
     "dep:solana-program-runtime",
     "dep:solana-transaction-context",
-    "litesvm/register-tracing",
+    "register-tracing",
     # Activates sbpf's gdb-stub through LiteSVM. When
     # `VM_DEBUG_PORT` is set in env, every `EbpfVm::new` blocks on that
     # port waiting for a client — this is what `anchor debugger --gdb`
@@ -24,19 +25,13 @@ profile = [
 ]
 
 [dependencies]
-litesvm = "=0.13.1"
+litesvm.workspace = true
 # Re-exported so scaffold tests import `Keypair` / `Signer` / `Message` / ...
 # via `anchor_v2_testing` and don't need direct deps on each.
-solana-keypair = "3.0.1"
-solana-message = "3.0.1"
-solana-signer = "3.0.0"
-solana-transaction = "3.0.2"
-# LiteSVM 0.13.1's callbacks use the Agave 4.0 API.
-solana-program-runtime = { version = "=4.0.0", optional = true }
-solana-transaction-context = { version = "=4.0.0", optional = true }
-
-# Nested workspace so dep resolution is independent of the outer anchor
-# workspace — litesvm's transitive `agave-*` pins conflict with
-# `anchor-cli`'s `solana-faucet` + `agave-unstable-api` requirement.
-# Matches `bench/Cargo.toml`'s approach.
-[workspace]
+solana-keypair.workspace = true
+solana-message.workspace = true
+solana-signer.workspace = true
+solana-transaction.workspace = true
+# Match the Agave runtime API used by LiteSVM's callbacks.
+solana-program-runtime = { workspace = true, optional = true }
+solana-transaction-context = { workspace = true, optional = true }

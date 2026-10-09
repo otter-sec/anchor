@@ -17,10 +17,9 @@ profile = ["anchor-v2-testing/profile"]
 
 [dev-dependencies]
 anchor-v2-testing = { path = "../../../../v2-testing" }
-litesvm = "0.11"
-solana-account = "3.0"
-solana-pubkey = "3.0"
-solana-instruction = "3.0"
+solana-account = "4.5.0"
+solana-pubkey = "4.3.0"
+solana-instruction = "3.5.0"
 
 [lints.rust.unexpected_cfgs]
 level = "allow"

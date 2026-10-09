@@ -1,5 +1,7 @@
 extern crate alloc;
 
+extern crate anchor_lang_v1 as anchor_lang;
+
 use {alloc::vec::Vec, anchor_lang::prelude::*};
 
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");

@@ -1,6 +1,6 @@
 use {
     anchor_lang::{solana_program::instruction::AccountMeta, InstructionData},
-    litesvm::LiteSVM,
+    anchor_v2_testing::litesvm::LiteSVM,
     solana_pubkey::Pubkey,
     solana_signer::Signer,
     tests_v2::{build_program, keypair_for, send_instruction},

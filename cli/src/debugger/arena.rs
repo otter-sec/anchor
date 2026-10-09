@@ -155,7 +155,7 @@ pub fn build_session(
                 let mut steps: Vec<DebugStep> = Vec::with_capacity(count);
                 let mut node_cu: u64 = 0;
 
-                let budget = ComputeBudget::new_with_defaults(false, false);
+                let budget = ComputeBudget::new_with_defaults(false);
                 let mut step_idx = 0usize;
 
                 stream_trace(
@@ -444,19 +444,29 @@ impl solana_sbpf::vm::ContextObject for NoopCtx {
     fn get_remaining(&self) -> u64 {
         0
     }
+    fn active_mapping_ptr(
+        &mut self,
+    ) -> std::ptr::NonNull<solana_sbpf::memory_region::MemoryMapping> {
+        unreachable!("static executable inspection does not access VM memory")
+    }
 }
 
-/// No-op `BuiltinFunction<NoopCtx>` used to register syscall names in the
-/// loader's function registry. Never called — we replay traces, never
-/// execute — so the body is unreachable in practice.
-fn syscall_stub(
-    _vm: *mut solana_sbpf::vm::EbpfVm<NoopCtx>,
-    _r1: u64,
-    _r2: u64,
-    _r3: u64,
-    _r4: u64,
-    _r5: u64,
-) {
+/// Registers syscall names for static disassembly; these functions are never executed.
+struct NoopSyscall;
+
+impl solana_sbpf::program::BuiltinFunctionDefinition<NoopCtx> for NoopSyscall {
+    type Error = std::io::Error;
+
+    fn rust(
+        _ctx: &mut NoopCtx,
+        _r1: u64,
+        _r2: u64,
+        _r3: u64,
+        _r4: u64,
+        _r5: u64,
+    ) -> Result<u64, Self::Error> {
+        unreachable!("static disassembly does not execute syscalls")
+    }
 }
 
 fn load_program_ctx<'a>(
@@ -512,7 +522,7 @@ fn build_program_ctx(
         // syscalls collide in `KNOWN_SYSCALLS`, which is a list bug, not
         // a per-program issue. Continuing yields a partial registry
         // (better than no names at all).
-        let _ = loader_inner.register_function(name, syscall_stub);
+        let _ = loader_inner.register_definition::<NoopSyscall>(name);
     }
     let loader = Arc::new(loader_inner);
     let executable = solana_sbpf::elf::Executable::<NoopCtx>::from_elf(&elf_bytes, loader).ok()?;

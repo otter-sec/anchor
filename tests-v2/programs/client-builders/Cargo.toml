@@ -20,7 +20,7 @@ anchor-lang = { path = "../../../lang-v2", default-features = false, features = 
 bytemuck = { version = "1", features = ["derive"] }
 pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
 pinocchio-system = "0.6"
-solana-program-error = "3.0"
+solana-program-error.workspace = true
 
 [lints.rust.unexpected_cfgs]
 level = "allow"

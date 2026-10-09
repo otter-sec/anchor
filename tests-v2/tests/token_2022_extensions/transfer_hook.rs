@@ -67,7 +67,7 @@ fn initializes_and_updates_transfer_hook_program_id() {
 }
 
 fn assert_transfer_hook(
-    svm: &litesvm::LiteSVM,
+    svm: &anchor_v2_testing::litesvm::LiteSVM,
     mint: Pubkey,
     expected_authority: Option<Pubkey>,
     expected_program: Option<Pubkey>,

@@ -52,7 +52,7 @@ solana-client.workspace = true
 solana-clock.workspace = true
 solana-commitment-config.workspace = true
 solana-compute-budget-interface.workspace = true
-solana-instruction.workspace = true
+solana-instruction = { workspace = true, default-features = true }
 solana-keypair.workspace = true
 solana-loader-v3-interface = { workspace = true, features = ["bincode"] }
 solana-message.workspace = true
@@ -82,8 +82,8 @@ walkdir = "2.3.2"
 inferno = { version = "0.12", default-features = false }
 object = { version = "0.37.3", features = ["read_core", "elf"] }
 rustc-demangle = "0.1"
-solana-compute-budget = { version = "3.1.10", features = ["agave-unstable-api"] }
-solana-sbpf = "0.13.1"
+solana-compute-budget = { workspace = true, features = ["agave-unstable-api"] }
+solana-sbpf.workspace = true
 
 # `anchor debugger` — foundry-style TUI stepper over the profile traces.
 addr2line = { version = "0.24", default-features = false, features = ["std", "rustc-demangle", "loader"] }

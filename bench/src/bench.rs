@@ -1,10 +1,13 @@
+// Import history types only when building the binary (main.rs uses these functions).
+#[cfg(feature = "bin")]
+use crate::history::{BenchmarkResult, ProgramBenchmark, CURRENT_COMMIT};
 use {
     anchor_lang_v1::{
         prelude::Pubkey,
         solana_program::instruction::{AccountMeta, Instruction},
     },
+    anchor_v2_testing::litesvm::{types::TransactionMetadata, LiteSVM},
     anyhow::{anyhow, bail, Context, Result},
-    litesvm::{types::TransactionMetadata, LiteSVM},
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
     solana_signer::Signer,
@@ -16,10 +19,6 @@ use {
         process::Command,
     },
 };
-
-// Import history types only when building the binary (main.rs uses these functions).
-#[cfg(feature = "bin")]
-use crate::history::{BenchmarkResult, ProgramBenchmark, CURRENT_COMMIT};
 
 /// Describes a benchmarked program and the instruction cases it exposes.
 #[derive(Clone, Copy)]
@@ -106,7 +105,10 @@ impl<'a> BenchCase<'a> {
     where
         F: Fn(&mut BenchContext) -> Result<BenchInstruction> + 'a,
     {
-        Self { label, builder: Box::new(builder) }
+        Self {
+            label,
+            builder: Box::new(builder),
+        }
     }
 }
 
@@ -122,7 +124,10 @@ pub struct BenchSuite<'a> {
 
 impl<'a> BenchSuite<'a> {
     pub fn new(name: &'a str) -> Self {
-        Self { name, cases: Vec::new() }
+        Self {
+            name,
+            cases: Vec::new(),
+        }
     }
 
     pub fn add<F>(mut self, label: &'a str, builder: F) -> Self
@@ -135,20 +140,19 @@ impl<'a> BenchSuite<'a> {
 
     /// Runs every case in this suite against the given program binary,
     /// returning a vector of (label, Result<CU>) pairs.
-    pub fn run_against(
-        &self,
-        program_path: &Path,
-        program_id: Pubkey,
-    ) -> Vec<(&str, Result<u64>)> {
-        self.cases.iter().map(|case| {
-            let result = (|| -> Result<u64> {
-                let mut ctx = BenchContext::new(program_path, program_id)?;
-                let instruction = (case.builder)(&mut ctx)?;
-                let meta = ctx.execute(instruction)?;
-                Ok(meta.compute_units_consumed)
-            })();
-            (case.label, result)
-        }).collect()
+    pub fn run_against(&self, program_path: &Path, program_id: Pubkey) -> Vec<(&str, Result<u64>)> {
+        self.cases
+            .iter()
+            .map(|case| {
+                let result = (|| -> Result<u64> {
+                    let mut ctx = BenchContext::new(program_path, program_id)?;
+                    let instruction = (case.builder)(&mut ctx)?;
+                    let meta = ctx.execute(instruction)?;
+                    Ok(meta.compute_units_consumed)
+                })();
+                (case.label, result)
+            })
+            .collect()
     }
 }
 
@@ -161,7 +165,10 @@ pub fn print_comparison(
     right_name: &str,
     right_results: &[(&str, Result<u64>)],
 ) {
-    println!("\n{:<20}  {:>12}  {:>12}  {:>10}  {:>8}", "Instruction", left_name, right_name, "Diff", "Pct");
+    println!(
+        "\n{:<20}  {:>12}  {:>12}  {:>10}  {:>8}",
+        "Instruction", left_name, right_name, "Diff", "Pct"
+    );
     println!("{}", "-".repeat(70));
 
     for (label, left) in left_results {
@@ -178,13 +185,22 @@ pub fn print_comparison(
                 println!("{label:<20}  {l:>12}  {r:>12}  {sign}{diff:>9}  {sign}{pct:>7.1}%");
             }
             (Some(l), None) => {
-                println!("{label:<20}  {l:>12}  {:>12}  {:>10}  {:>8}", "FAILED", "-", "-");
+                println!(
+                    "{label:<20}  {l:>12}  {:>12}  {:>10}  {:>8}",
+                    "FAILED", "-", "-"
+                );
             }
             (None, Some(r)) => {
-                println!("{label:<20}  {:>12}  {r:>12}  {:>10}  {:>8}", "FAILED", "-", "-");
+                println!(
+                    "{label:<20}  {:>12}  {r:>12}  {:>10}  {:>8}",
+                    "FAILED", "-", "-"
+                );
             }
             (None, None) => {
-                println!("{label:<20}  {:>12}  {:>12}  {:>10}  {:>8}", "FAILED", "FAILED", "-", "-");
+                println!(
+                    "{label:<20}  {:>12}  {:>12}  {:>10}  {:>8}",
+                    "FAILED", "FAILED", "-", "-"
+                );
             }
         }
     }
@@ -349,7 +365,6 @@ pub fn build_programs(bench_dir: &Path, suites: &[ProgramSuite]) -> Result<()> {
                 suite.name
             );
         }
-
     }
 
     Ok(())

@@ -1,6 +1,6 @@
 use {
     anchor_lang::solana_program::instruction::{AccountMeta, Instruction},
-    litesvm::LiteSVM,
+    anchor_v2_testing::litesvm::LiteSVM,
     proptest::prelude::*,
     sha2::{Digest, Sha256},
     solana_account::Account,

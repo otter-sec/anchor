@@ -20,5 +20,5 @@ idl-build = []
 anchor-lang = { path = "../../../../../lang-v2", default-features = false, features = ["alloc"] }
 anchor-spl = { path = "../../../../../spl-v2", features = ["guardrails"] }
 pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
-solana-program-error = "3.0"
+solana-program-error.workspace = true
 

@@ -16,6 +16,8 @@ struct SpyAccount {
     view: AccountView,
 }
 
+impl anchor_lang::IdlAccountType for SpyAccount {}
+
 impl Deref for SpyAccount {
     type Target = AccountView;
 

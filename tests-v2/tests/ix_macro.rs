@@ -1,6 +1,6 @@
 use {
     anchor_lang::{prelude::Address, solana_program::instruction::AccountMeta, InstructionData},
-    litesvm::LiteSVM,
+    anchor_v2_testing::litesvm::LiteSVM,
     solana_account::Account,
     solana_keypair::Keypair,
     solana_pubkey::Pubkey,
@@ -136,9 +136,7 @@ fn instruction_arg_address_constraint_rejects_wrong_account() {
     .expect_err("address constraint should reject mismatched marker")
     .to_string();
     assert!(
-        err.contains("Custom(2012)")
-            || err.contains("0x7dc")
-            || err.contains("ConstraintAddress"),
+        err.contains("Custom(2012)") || err.contains("0x7dc") || err.contains("ConstraintAddress"),
         "unexpected error: {err}"
     );
 }
