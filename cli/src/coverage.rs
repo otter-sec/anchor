@@ -11,9 +11,9 @@ use {
         debugger::source::SourceResolver,
         flamegraph::trace::{find_unstripped_binary, REGS_ENTRY_SIZE},
     },
-    anyhow::{bail, Context, Result},
+    anyhow::{anyhow, bail, Context, Result},
     std::{
-        collections::{BTreeMap, BTreeSet, HashMap},
+        collections::{BTreeMap, BTreeSet},
         fs,
         io::Write,
         path::{Path, PathBuf},
@@ -43,13 +43,12 @@ pub fn generate_lcov(
 ) -> Result<()> {
     let pc_sets = collect_pcs_from_traces(trace_dir)?;
     if pc_sets.is_empty() {
-        eprintln!("warning: no trace data found in {}", trace_dir.display());
-        return Ok(());
+        return Err(anyhow!("no trace data found in {}", trace_dir.display()));
     }
 
     eprintln!("found {} program(s) in traces", pc_sets.len());
 
-    let mut line_hits: HashMap<PathBuf, BTreeMap<u32, u64>> = HashMap::new();
+    let mut line_hits: BTreeMap<PathBuf, BTreeMap<u32, u64>> = BTreeMap::new();
 
     for (program_id, pcs) in &pc_sets {
         let deployed = match programs.get(program_id) {
@@ -61,7 +60,7 @@ pub fn generate_lcov(
         };
 
         // DWARF lives in the unstripped sibling at
-        // `<workspace_root>/target/sbpf-solana-solana/release/<name>.so`.
+        // `<workspace_root>/target/<sbpf-target>/release/<name>.so`.
         // `find_unstripped_binary` walks up from `manifest_dir` to locate it
         // deterministically (no guessing, no SHA matching).
         let dwarf_path = find_unstripped_binary(deployed, manifest_dir)
@@ -74,6 +73,16 @@ pub fn generate_lcov(
                 dwarf_path.display()
             );
             continue;
+        }
+
+        for loc in resolver.executable_lines() {
+            if let Some(path) = resolve_source_path(&loc.file, manifest_dir) {
+                line_hits
+                    .entry(path)
+                    .or_default()
+                    .entry(loc.line)
+                    .or_insert(0);
+            }
         }
 
         // Walk the full DWARF inlining chain per PC so `#[inline(always)]`
@@ -107,29 +116,18 @@ pub fn generate_lcov(
         );
     }
 
-    // Write LCOV format.
-    let mut out =
-        fs::File::create(output).with_context(|| format!("create {}", output.display()))?;
-
-    let mut sorted_files: Vec<_> = line_hits.into_iter().collect();
-    sorted_files.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let total_files = sorted_files.len();
-    let total_lines: usize = sorted_files.iter().map(|(_, l)| l.len()).sum();
-
-    for (file, lines) in &sorted_files {
-        writeln!(out, "SF:{}", file.display())?;
-        for (&line, &hits) in lines {
-            writeln!(out, "DA:{line},{hits}")?;
-        }
-        let lf = lines.len();
-        let lh = lines.values().filter(|&&h| h > 0).count();
-        writeln!(out, "LF:{lf}")?;
-        writeln!(out, "LH:{lh}")?;
-        writeln!(out, "end_of_record")?;
+    if line_hits.is_empty() {
+        return Err(anyhow!(
+            "no source lines resolved from trace data in {}",
+            trace_dir.display()
+        ));
     }
 
-    eprintln!("  {total_files} source files, {total_lines} lines covered");
+    let summary = write_lcov_records(&line_hits, output)?;
+    eprintln!(
+        "  {} source files, {}/{} lines hit",
+        summary.files, summary.hit_lines, summary.total_lines
+    );
     Ok(())
 }
 
@@ -201,8 +199,8 @@ pub fn filter_host_lcov(sbf_lcov: &Path, host_lcov: &Path, output: &Path) -> Res
     fs::write(output, out).with_context(|| format!("write {}", output.display()))?;
     eprintln!(
         "filtered host zero-hit DA lines: {exact_suppressed} exact SBF line hits, \
-         {source_suppressed} non-executable Rust source lines, \
-         {function_hits_inferred} SBF-backed function hits"
+         {source_suppressed} non-executable Rust source lines, {function_hits_inferred} \
+         SBF-backed function hits"
     );
 
     Ok(())
@@ -523,8 +521,8 @@ fn signature_lines_for_body(
         }
         if line_no != start && looks_executable(stripped) {
             bail!(
-                "{}:{line_no}: refusing to suppress executable-looking line in covered \
-                 function signature: {line:?}",
+                "{}:{line_no}: refusing to suppress executable-looking line in covered function \
+                 signature: {line:?}",
                 source_path.display()
             );
         }
@@ -1008,8 +1006,8 @@ fn macro_continuation_lines(
             }
             if looks_executable(stripped) {
                 bail!(
-                    "{}:{line_no}: refusing to suppress executable-looking line in covered \
-                     macro continuation: {line:?}",
+                    "{}:{line_no}: refusing to suppress executable-looking line in covered macro \
+                     continuation: {line:?}",
                     source_path.display()
                 );
             }
@@ -1138,13 +1136,9 @@ mod tests {
             "",
             "fn next() {}",
         ];
-        let body = find_rust_function_body(
-            Path::new("fixture.rs"),
-            &source,
-            1,
-        )
-        .unwrap()
-        .expect("function should have a body");
+        let body = find_rust_function_body(Path::new("fixture.rs"), &source, 1)
+            .unwrap()
+            .expect("function should have a body");
 
         assert_eq!((body.end_line, body.end_col), (3, 0));
     }
@@ -1174,7 +1168,13 @@ mod tests {
         fs::write(
             &sbf,
             format!(
-                "SF:{}\nDA:1,3\nDA:4,2\nDA:8,3\nend_of_record\n",
+                concat!(
+                    "SF:{}\n",
+                    "DA:1,3\n",
+                    "DA:4,2\n",
+                    "DA:8,3\n",
+                    "end_of_record\n"
+                ),
                 source.display()
             ),
         )
@@ -1184,7 +1184,18 @@ mod tests {
         fs::write(
             &host,
             format!(
-                "SF:{}\nDA:1,0\nDA:2,0\nDA:3,0\nDA:4,0\nDA:5,0\nDA:6,0\nDA:7,0\nDA:8,0\nend_of_record\n",
+                concat!(
+                    "SF:{}\n",
+                    "DA:1,0\n",
+                    "DA:2,0\n",
+                    "DA:3,0\n",
+                    "DA:4,0\n",
+                    "DA:5,0\n",
+                    "DA:6,0\n",
+                    "DA:7,0\n",
+                    "DA:8,0\n",
+                    "end_of_record\n"
+                ),
                 source.display()
             ),
         )
@@ -1241,14 +1252,20 @@ mod tests {
         let sbf = tmp.path().join("sbf.lcov");
         fs::write(
             &sbf,
-            format!("SF:{}\nDA:1,1\nend_of_record\n", source.display()),
+            format!(
+                concat!("SF:{}\n", "DA:1,1\n", "end_of_record\n"),
+                source.display()
+            ),
         )
         .unwrap();
 
         let host = tmp.path().join("host.lcov");
         fs::write(
             &host,
-            format!("SF:{}\nDA:2,0\nend_of_record\n", source.display()),
+            format!(
+                concat!("SF:{}\n", "DA:2,0\n", "end_of_record\n"),
+                source.display()
+            ),
         )
         .unwrap();
 
@@ -1285,7 +1302,10 @@ mod tests {
         let sbf = tmp.path().join("sbf.lcov");
         fs::write(
             &sbf,
-            format!("SF:{}\nDA:2,5\nend_of_record\n", source.display()),
+            format!(
+                concat!("SF:{}\n", "DA:2,5\n", "end_of_record\n"),
+                source.display()
+            ),
         )
         .unwrap();
 
@@ -1293,7 +1313,18 @@ mod tests {
         fs::write(
             &host,
             format!(
-                "SF:{}\nDA:1,0\nDA:2,0\nDA:3,0\nDA:4,0\nDA:5,0\nDA:6,0\nDA:7,0\nDA:8,0\nend_of_record\n",
+                concat!(
+                    "SF:{}\n",
+                    "DA:1,0\n",
+                    "DA:2,0\n",
+                    "DA:3,0\n",
+                    "DA:4,0\n",
+                    "DA:5,0\n",
+                    "DA:6,0\n",
+                    "DA:7,0\n",
+                    "DA:8,0\n",
+                    "end_of_record\n"
+                ),
                 source.display()
             ),
         )
@@ -1337,14 +1368,20 @@ mod tests {
         let sbf = tmp.path().join("sbf.lcov");
         fs::write(
             &sbf,
-            format!("SF:{}\nDA:2,1\nend_of_record\n", source.display()),
+            format!(
+                concat!("SF:{}\n", "DA:2,1\n", "end_of_record\n"),
+                source.display()
+            ),
         )
         .unwrap();
 
         let host = tmp.path().join("host.lcov");
         fs::write(
             &host,
-            format!("SF:{}\nDA:3,0\nend_of_record\n", source.display()),
+            format!(
+                concat!("SF:{}\n", "DA:3,0\n", "end_of_record\n"),
+                source.display()
+            ),
         )
         .unwrap();
 
@@ -1388,7 +1425,14 @@ mod tests {
         fs::write(
             &sbf,
             format!(
-                "SF:{}\nDA:1,7\nDA:2,9\nDA:10,4\nDA:14,2\nend_of_record\n",
+                concat!(
+                    "SF:{}\n",
+                    "DA:1,7\n",
+                    "DA:2,9\n",
+                    "DA:10,4\n",
+                    "DA:14,2\n",
+                    "end_of_record\n"
+                ),
                 source.display()
             ),
         )
@@ -1398,7 +1442,31 @@ mod tests {
         fs::write(
             &host,
             format!(
-                "SF:{}\nFN:1,_hit\nFN:5,_miss\nFN:9,_body_only\nFN:13,_delimiter_only\nFNDA:0,_hit\nFNDA:0,_miss\nFNDA:0,_body_only\nFNDA:0,_delimiter_only\nFNF:4\nFNH:0\nDA:1,0\nDA:2,0\nDA:3,0\nDA:5,0\nDA:6,0\nDA:7,0\nDA:9,0\nDA:10,0\nDA:11,0\nDA:13,0\nDA:14,0\nend_of_record\n",
+                concat!(
+                    "SF:{}\n",
+                    "FN:1,_hit\n",
+                    "FN:5,_miss\n",
+                    "FN:9,_body_only\n",
+                    "FN:13,_delimiter_only\n",
+                    "FNDA:0,_hit\n",
+                    "FNDA:0,_miss\n",
+                    "FNDA:0,_body_only\n",
+                    "FNDA:0,_delimiter_only\n",
+                    "FNF:4\n",
+                    "FNH:0\n",
+                    "DA:1,0\n",
+                    "DA:2,0\n",
+                    "DA:3,0\n",
+                    "DA:5,0\n",
+                    "DA:6,0\n",
+                    "DA:7,0\n",
+                    "DA:9,0\n",
+                    "DA:10,0\n",
+                    "DA:11,0\n",
+                    "DA:13,0\n",
+                    "DA:14,0\n",
+                    "end_of_record\n"
+                ),
                 source.display()
             ),
         )
@@ -1455,7 +1523,10 @@ mod tests {
         let sbf = tmp.path().join("sbf.lcov");
         fs::write(
             &sbf,
-            format!("SF:{}\nDA:6,3\nend_of_record\n", source.display()),
+            format!(
+                concat!("SF:{}\n", "DA:6,3\n", "end_of_record\n"),
+                source.display()
+            ),
         )
         .unwrap();
 
@@ -1463,7 +1534,22 @@ mod tests {
         fs::write(
             &host,
             format!(
-                "SF:{}\nFN:1,_first\nFN:5,_second\nFNDA:0,_first\nFNDA:0,_second\nFNF:2\nFNH:0\nDA:1,0\nDA:2,0\nDA:3,0\nDA:5,0\nDA:6,0\nDA:7,0\nend_of_record\n",
+                concat!(
+                    "SF:{}\n",
+                    "FN:1,_first\n",
+                    "FN:5,_second\n",
+                    "FNDA:0,_first\n",
+                    "FNDA:0,_second\n",
+                    "FNF:2\n",
+                    "FNH:0\n",
+                    "DA:1,0\n",
+                    "DA:2,0\n",
+                    "DA:3,0\n",
+                    "DA:5,0\n",
+                    "DA:6,0\n",
+                    "DA:7,0\n",
+                    "end_of_record\n"
+                ),
                 source.display()
             ),
         )
@@ -1493,7 +1579,10 @@ mod tests {
         let sbf = tmp.path().join("sbf.lcov");
         fs::write(
             &sbf,
-            format!("SF:{}\nDA:1,1\nend_of_record\n", source.display()),
+            format!(
+                concat!("SF:{}\n", "DA:1,1\n", "end_of_record\n"),
+                source.display()
+            ),
         )
         .unwrap();
 
@@ -1501,7 +1590,15 @@ mod tests {
         fs::write(
             &host,
             format!(
-                "SF:{}\nFN:1,_hit\nFNDA:0,_hit\nFNDA:0,_unknown\nFNF:2\nFNH:0\nend_of_record\n",
+                concat!(
+                    "SF:{}\n",
+                    "FN:1,_hit\n",
+                    "FNDA:0,_hit\n",
+                    "FNDA:0,_unknown\n",
+                    "FNF:2\n",
+                    "FNH:0\n",
+                    "end_of_record\n"
+                ),
                 source.display()
             ),
         )
@@ -1592,4 +1689,85 @@ fn visit_dir(dir: &Path, result: &mut BTreeMap<String, BTreeSet<u64>>) -> Result
         }
     }
     Ok(())
+}
+
+fn write_lcov_records(
+    line_hits: &BTreeMap<PathBuf, BTreeMap<u32, u64>>,
+    output: &Path,
+) -> Result<LcovSummary> {
+    let mut out =
+        fs::File::create(output).with_context(|| format!("create {}", output.display()))?;
+
+    let mut summary = LcovSummary {
+        files: line_hits.len(),
+        total_lines: 0,
+        hit_lines: 0,
+    };
+
+    for (file, lines) in line_hits {
+        writeln!(out, "SF:{}", file.display())?;
+        for (&line, &hits) in lines {
+            writeln!(out, "DA:{line},{hits}")?;
+        }
+        let lf = lines.len();
+        let lh = lines.values().filter(|&&h| h > 0).count();
+        writeln!(out, "LF:{lf}")?;
+        writeln!(out, "LH:{lh}")?;
+        writeln!(out, "end_of_record")?;
+
+        summary.total_lines += lf;
+        summary.hit_lines += lh;
+    }
+
+    Ok(summary)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct LcovSummary {
+    files: usize,
+    total_lines: usize,
+    hit_lines: usize,
+}
+
+#[cfg(test)]
+mod lcov_tests {
+    use {super::*, tempfile::tempdir};
+
+    #[test]
+    fn generate_lcov_errors_when_no_trace_data_found() {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("lcov.info");
+        let err =
+            generate_lcov(dir.path(), &BTreeMap::new(), None, &output).expect_err("expected error");
+
+        assert!(err.to_string().contains("no trace data found"));
+        assert!(!output.exists());
+    }
+
+    #[test]
+    fn lcov_writer_preserves_zero_hit_lines() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("program.rs");
+        let output = dir.path().join("lcov.info");
+        let line_hits =
+            BTreeMap::from([(source.clone(), BTreeMap::from([(10, 3), (11, 0), (12, 1)]))]);
+
+        let summary = write_lcov_records(&line_hits, &output).unwrap();
+        let lcov = fs::read_to_string(output).unwrap();
+
+        assert_eq!(
+            summary,
+            LcovSummary {
+                files: 1,
+                total_lines: 3,
+                hit_lines: 2,
+            }
+        );
+        assert!(lcov.contains(&format!(concat!("SF:{}"), source.display())));
+        assert!(lcov.contains("DA:10,3\n"));
+        assert!(lcov.contains("DA:11,0\n"));
+        assert!(lcov.contains("DA:12,1\n"));
+        assert!(lcov.contains("LF:3\n"));
+        assert!(lcov.contains("LH:2\n"));
+    }
 }

@@ -46,3 +46,32 @@ fn error_svg(msg: &str) -> String {
         msg.replace('<', "&lt;").replace('&', "&amp;")
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, std::collections::BTreeMap};
+
+    #[test]
+    fn render_outputs_svg_with_title_subtitle_and_cu_label() {
+        let report = FlamegraphReport {
+            program_name: "demo · tx1".to_string(),
+            total_cu: 7,
+            stacks: BTreeMap::from([(
+                vec![
+                    "[program demo]".to_string(),
+                    "entry @ 0x0".to_string(),
+                    "handler @ 0x4".to_string(),
+                ],
+                7,
+            )]),
+        };
+
+        let svg = render(&report);
+
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("demo · tx1 flamegraph"));
+        assert!(svg.contains("Approximate CU: 7"));
+        assert!(svg.contains("entry @ 0x0"));
+        assert!(svg.contains("CU"));
+    }
+}

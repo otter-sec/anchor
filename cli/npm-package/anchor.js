@@ -74,7 +74,7 @@ function trySystemAnchor() {
 
   if (!absolutePath) {
     console.error(`Could not find globally installed anchor, install with cargo.`);
-    process.exit();
+    process.exit(1);
   }
 
   const absoluteBinaryPath = `${absolutePath}/anchor`;
@@ -82,13 +82,13 @@ function trySystemAnchor() {
   const [error, binaryVersion] = getBinaryVersion(absoluteBinaryPath);
   if (error !== null) {
     console.error(`Failed to get version of global binary: ${error}`);
-    return;
+    process.exit(1);
   }
   if (binaryVersion !== PACKAGE_VERSION) {
     console.error(
       `Globally installed anchor version is not correct. Expected "${PACKAGE_VERSION}", found "${binaryVersion}".`
     );
-    return;
+    process.exit(1);
   }
 
   runAnchor(absoluteBinaryPath);

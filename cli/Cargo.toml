@@ -8,6 +8,9 @@ repository = "https://github.com/otter-sec/anchor"
 description = "Anchor CLI"
 license = "Apache-2.0"
 
+[package.metadata.docs.rs]
+workspace = true
+
 [[bin]]
 name = "anchor"
 path = "src/bin/main.rs"
@@ -20,6 +23,7 @@ idl-localnet-testing = []
 [dependencies]
 anchor-cli-macros = { workspace = true }
 anchor-client = { workspace = true }
+anchor-lang = { workspace = true }
 anchor-lang-idl = { workspace = true, features = ["build", "convert"] }
 anyhow = "1.0.32"
 base64 = "0.21"
@@ -30,22 +34,26 @@ cargo_metadata = "0.23.1"
 cargo_toml.workspace = true
 chrono = "0.4.19"
 clap = { version = "4.5.17", features = ["derive"] }
+crucible-fuzz-cli = "0.2.1"
 clap_complete = "4.5.26"
 console = "0.15"
 dirs = "4.0"
 ed25519-dalek = "2"
-heck = "0.4.0"
+flate2 = "1.0.19"
+heck = "0.5"
+indicatif = "0.18.2"
 pathdiff = "0.2.0"
 portpicker = "0.1.1"
 regex = "1.8.3"
-reqwest = { version = "0.11.4", default-features = false, features = [
+reqwest = { version = "0.12.23", default-features = false, features = [
   "multipart",
   "blocking",
   "rustls-tls",
 ] }
 semver = "1.0.4"
 serde = { version = "1.0.130", features = ["derive"] }
-serde_json = "1.0"
+serde_ignored = "0.1.14"
+serde_json = { version = "1.0", features = ["preserve_order"] }
 shellexpand = "2.1.0"
 solana-cli-config.workspace = true
 solana-client.workspace = true
@@ -66,6 +74,7 @@ solana-transaction.workspace = true
 solana-rpc-client.workspace = true
 solana-rpc-client-api.workspace = true
 solana-pubsub-client.workspace = true
+solana-transaction-status-client-types = "3.0.14"
 syn = { version = "1.0.60", features = ["full", "extra-traits"] }
 tempfile = "3"
 tiny-bip39 = "2.0"
@@ -75,26 +84,28 @@ tiny-bip39 = "2.0"
 pbkdf2 = "0.12"
 sha2 = "0.10"
 toml = "0.7.6"
+url = "2"
 walkdir = "2.3.2"
 
-# `anchor test --profile` — flamegraph rendering from the LiteSVM register
-# traces written by `anchor-v2-testing`.
+[target.'cfg(not(windows))'.dependencies]
+# `anchor test --profile` — flamegraph rendering from LiteSVM register traces.
 inferno = { version = "0.12", default-features = false }
 object = { version = "0.37.3", features = ["read_core", "elf"] }
 rustc-demangle = "0.1"
 solana-compute-budget = { version = "3.1.10", features = ["agave-unstable-api"] }
-solana-sbpf = "0.13.1"
+solana-sbpf = "0.23.0"
 
-# `anchor debugger` — foundry-style TUI stepper over the profile traces.
-addr2line = { version = "0.24", default-features = false, features = ["std", "rustc-demangle", "loader"] }
-crossterm = "0.28"
-ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
-# Syntax highlighting in the source + instructions panes. `two-face` adds
-# extra Sublime syntaxes (Rust grammar quality + GAS assembly) on top of
-# syntect's stripped default set.
-syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
-syntect-tui = { version = "3.0", default-features = false }
+# `anchor debugger` — foundry-style TUI stepper over profile traces.
+addr2line = { version = "0.24", default-features = false, features = [
+  "std",
+  "rustc-demangle",
+  "loader",
+] }
+ratatui = { version = "0.30", default-features = false, features = [
+  "crossterm"
+] }
+syntect = { version = "5.3", default-features = false, features = [
+  "default-fancy"
+] }
 two-face = "0.5"
-# OSC 11 / COLORFGBG terminal background detection — picks a light vs dark
-# syntect theme automatically, the same way `bat` and `delta` do.
 terminal-colorsaurus = "1.0"

@@ -1,5 +1,8 @@
 use {
-    crate::{get_keypair, is_hidden, keys_sync, target_dir, AbsolutePath, DEFAULT_RPC_PORT},
+    crate::{
+        compat::{solana_cli_config, solana_clock, solana_pubkey},
+        get_keypair, is_hidden, keys_sync, target_dir, AbsolutePath, DEFAULT_RPC_PORT,
+    },
     anchor_client::Cluster,
     anchor_lang_idl::types::Idl,
     anyhow::{anyhow, bail, Context, Error, Result},
@@ -19,7 +22,7 @@ use {
     solana_pubkey::Pubkey,
     solana_signer::Signer,
     std::{
-        collections::{BTreeMap, HashMap},
+        collections::{BTreeMap, BTreeSet, HashMap},
         convert::TryFrom,
         fmt,
         fs::{self, File},
@@ -29,6 +32,7 @@ use {
         path::{Path, PathBuf},
         process::Command,
         str::FromStr,
+        sync::{LazyLock, Mutex},
     },
     walkdir::WalkDir,
 };
@@ -185,7 +189,7 @@ impl Deref for Manifest {
 }
 
 impl WithPath<Config> {
-    pub fn get_rust_program_list(&self) -> Result<Vec<PathBuf>> {
+    pub fn get_program_list(&self) -> Result<Vec<PathBuf>> {
         // Canonicalize the workspace filepaths to compare with relative paths.
         let (members, exclude) = self.canonicalize_workspace()?;
 
@@ -220,7 +224,7 @@ impl WithPath<Config> {
 
     pub fn read_all_programs(&self) -> Result<Vec<Program>> {
         let mut r = vec![];
-        for path in self.get_rust_program_list()? {
+        for path in self.get_program_list()? {
             let cargo = Manifest::from_path(path.join("Cargo.toml"))?;
             let lib_name = cargo.lib_name()?;
 
@@ -249,12 +253,31 @@ impl WithPath<Config> {
         let programs = self.read_all_programs()?;
         let programs = match name {
             Some(name) => vec![programs
-                .into_iter()
+                .iter()
                 .find(|program| {
-                    name == program.lib_name
-                        || name == program.path.file_name().unwrap().to_str().unwrap()
+                    program.lib_name == name
+                        || program
+                            .path
+                            .file_name()
+                            .and_then(|f| f.to_str())
+                            .map(|f| f == name)
+                            .unwrap_or(false)
                 })
-                .ok_or_else(|| anyhow!("Program {name} not found"))?],
+                .cloned()
+                .ok_or_else(|| {
+                    let mut available_programs: Vec<String> =
+                        programs.iter().map(|p| p.lib_name.clone()).collect();
+                    available_programs.sort();
+
+                    if available_programs.is_empty() {
+                        anyhow!("Program '{name}' not found. No programs available in workspace.")
+                    } else {
+                        anyhow!(
+                            "Program '{name}' not found.\n\nAvailable programs:\n  {}",
+                            available_programs.join("\n  ")
+                        )
+                    }
+                })?],
             None => programs,
         };
 
@@ -350,7 +373,7 @@ pub struct Config {
     pub surfpool_config: Option<SurfpoolConfig>,
     /// If `Some(true)`, `anchor test` won't auto-start a validator for this
     /// workspace. Emitted by `anchor init` for in-process test templates
-    /// (litesvm / rust / mollusk) where the test harness never opens an RPC.
+    /// (litesvm / mollusk) where the test harness never opens an RPC.
     pub skip_local_validator: Option<bool>,
 }
 
@@ -370,10 +393,9 @@ pub struct ToolchainConfig {
 
 /// Package manager to use for the project.
 ///
-/// No `Default` impl — the enum represents an explicit user choice. Call sites
-/// that need to resolve a concrete package manager (when nothing is configured)
-/// should go through `crate::resolve_package_manager` so the waterfall
-/// (pnpm → yarn → npm) and missing-binary diagnostics are centralized.
+/// No `Default` impl; this enum represents an explicit user choice. Call sites
+/// that need a concrete package manager should go through `resolve_package_manager`
+/// so fallback behavior and missing-binary diagnostics stay centralized.
 #[derive(Clone, Debug, Eq, PartialEq, Parser, ValueEnum, Serialize, Deserialize, AbsolutePath)]
 #[serde(rename_all = "lowercase")]
 pub enum PackageManager {
@@ -483,23 +505,21 @@ pub enum HookType {
 /// `[clients]` section of `Anchor.toml`.
 ///
 /// Declares which Codama-generated client SDKs the workspace ships, where
-/// they live on disk, and whether they should be regenerated automatically
-/// (e.g. as part of `anchor build` once that integration lands).
+/// they live on disk, and whether they should be regenerated automatically.
 ///
 /// TOML shape:
 ///
 /// ```toml
 /// [clients]
 /// auto = true
-/// rust = true                                    # enables `clients/rust`
-/// js   = { enable = true }                       # equivalent to `js = true`
-/// go   = { enable = true, path = "go-client" }   # custom output dir
-/// js-umi = false                                 # explicitly disabled
+/// rust = true
+/// js = { enable = true }
+/// go = { enable = true, path = "go-client" }
+/// js-umi = false
 /// ```
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ClientsConfig {
-    /// Regenerate clients automatically on `anchor build` / IDL change.
+    /// Regenerate clients automatically on `anchor build`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub auto: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -540,7 +560,7 @@ impl ClientLanguageConfig {
 
     pub fn is_enabled(&self) -> bool {
         match self {
-            Self::Enabled(b) => *b,
+            Self::Enabled(enabled) => *enabled,
             Self::Detailed { enable, .. } => *enable,
         }
     }
@@ -553,8 +573,7 @@ impl ClientLanguageConfig {
     }
 }
 
-/// Stable identifiers used both as TOML keys and as Codama script names so
-/// `Anchor.toml` and `anchor codama generate -l <lang>` agree on spelling.
+/// Stable identifiers used both as TOML keys and as Codama script names.
 pub const CLIENT_LANGUAGES: &[&str] = &["js", "js-umi", "rust", "go"];
 
 impl ClientsConfig {
@@ -570,8 +589,11 @@ impl ClientsConfig {
     }
 
     /// Languages the user has explicitly enabled, paired with the resolved
-    /// output directory (`<base>/<lang>` if no `path` was set on the entry).
-    pub fn enabled(&self, base: &Path) -> Vec<(&'static str, PathBuf)> {
+    /// output directory (`<workspace>/clients/<lang>` if no `path` was set on
+    /// the entry). Relative custom paths are resolved from the workspace root,
+    /// not the process cwd.
+    pub fn enabled(&self, workspace_dir: &Path) -> Vec<(&'static str, PathBuf)> {
+        let base = workspace_dir.join("clients");
         CLIENT_LANGUAGES
             .iter()
             .filter_map(|&lang| {
@@ -581,11 +603,20 @@ impl ClientsConfig {
                 }
                 let path = entry
                     .path()
-                    .map(PathBuf::from)
+                    .map(|path| resolve_client_path(workspace_dir, path))
                     .unwrap_or_else(|| base.join(lang));
                 Some((lang, path))
             })
             .collect()
+    }
+}
+
+fn resolve_client_path(workspace_dir: &Path, path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        path
+    } else {
+        workspace_dir.join(path)
     }
 }
 
@@ -599,6 +630,8 @@ pub struct WorkspaceConfig {
     pub members: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub idls: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub types: String,
 }
@@ -633,7 +666,7 @@ impl Config {
             .anchor_version
             .as_deref()
             .unwrap_or(crate::DOCKER_BUILDER_VERSION);
-        format!("solanafoundation/anchor:v{version}")
+        format!("quay.io/ottersec/anchor:v{version}")
     }
 
     pub fn discover(cfg_override: &ConfigOverride) -> Result<Option<WithPath<Config>>> {
@@ -689,10 +722,42 @@ impl Config {
         Ok(None)
     }
 
-    fn from_path(p: impl AsRef<Path>) -> Result<Self> {
-        fs::read_to_string(&p)
-            .with_context(|| format!("Error reading the file with path: {}", p.as_ref().display()))?
-            .parse::<Self>()
+    fn from_path(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let cfg = fs::read_to_string(path)
+            .with_context(|| format!("Error reading configuration file: {path:?}"))?;
+
+        let mut unused = BTreeSet::new();
+        let de = toml::Deserializer::new(&cfg);
+        let cfg: _Config = serde_ignored::deserialize(de, |path| {
+            unused.insert(path.to_string());
+        })?;
+
+        // File path -> unused field paths
+        static CACHE: LazyLock<Mutex<HashMap<PathBuf, BTreeSet<String>>>> =
+            LazyLock::new(Default::default);
+        let mut cache = CACHE
+            .lock()
+            .map_err(|e| anyhow!("Failed to acquire the cache lock ({path:?}): {e}"))?;
+        match cache.get(path) {
+            Some(cached_unused) if *cached_unused == unused => return Self::try_from(cfg),
+            _ => cache.insert(path.to_path_buf(), unused.clone()),
+        };
+
+        if let Some(paths) = unused.into_iter().reduce(|mut acc, path| {
+            if !acc.is_empty() {
+                acc.push_str(", ");
+            }
+
+            acc.push('`');
+            acc.push_str(&path);
+            acc.push('`');
+            acc
+        }) {
+            eprintln!("Warning: Unused Anchor.toml field(s): {paths}");
+        }
+
+        Self::try_from(cfg)
     }
 
     pub fn wallet_kp(&self) -> Result<Keypair> {
@@ -844,17 +909,13 @@ impl fmt::Display for Config {
             surfpool: self.surfpool_config.clone().map(Into::into),
             skip_local_validator: self.skip_local_validator,
             clients: {
-                let c = &self.clients;
-                let empty = !c.auto
-                    && c.js.is_none()
-                    && c.js_umi.is_none()
-                    && c.rust.is_none()
-                    && c.go.is_none();
-                if empty {
-                    None
-                } else {
-                    Some(c.clone())
-                }
+                let clients = &self.clients;
+                let empty = !clients.auto
+                    && clients.js.is_none()
+                    && clients.js_umi.is_none()
+                    && clients.rust.is_none()
+                    && clients.go.is_none();
+                (!empty).then(|| clients.clone())
             },
         };
 
@@ -863,12 +924,10 @@ impl fmt::Display for Config {
     }
 }
 
-impl FromStr for Config {
-    type Err = Error;
+impl TryFrom<_Config> for Config {
+    type Error = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let cfg: _Config =
-            toml::from_str(s).map_err(|e| anyhow!("Unable to deserialize config: {e}"))?;
+    fn try_from(cfg: _Config) -> std::result::Result<Self, Self::Error> {
         Ok(Config {
             toolchain: cfg.toolchain.unwrap_or_default(),
             features: cfg.features.unwrap_or_default(),
@@ -887,6 +946,16 @@ impl FromStr for Config {
             skip_local_validator: cfg.skip_local_validator,
             clients: cfg.clients.unwrap_or_default(),
         })
+    }
+}
+
+impl FromStr for Config {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        toml::from_str::<_Config>(s)
+            .map_err(|e| anyhow!("Unable to deserialize config: {e}"))
+            .map(TryFrom::try_from)?
     }
 }
 
@@ -965,14 +1034,14 @@ fn deser_programs(
 pub struct TestValidator {
     pub genesis: Option<Vec<GenesisEntry>>,
     pub validator: Option<Validator>,
-    pub startup_wait: i32,
+    pub startup_wait: u64,
     pub shutdown_wait: i32,
     pub upgradeable: bool,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct SurfpoolConfig {
-    pub startup_wait: i32,
+    pub startup_wait: u64,
     pub shutdown_wait: i32,
     pub rpc_port: u16,
     pub ws_port: Option<u16>,
@@ -994,7 +1063,7 @@ pub struct _TestValidator {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validator: Option<_Validator>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub startup_wait: Option<i32>,
+    pub startup_wait: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shutdown_wait: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1004,7 +1073,7 @@ pub struct _TestValidator {
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct _SurfpoolConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub startup_wait: Option<i32>,
+    pub startup_wait: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shutdown_wait: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1070,7 +1139,7 @@ impl From<SurfpoolConfig> for _SurfpoolConfig {
         }
     }
 }
-pub const STARTUP_WAIT: i32 = 5000;
+pub const STARTUP_WAIT: u64 = 30000;
 pub const SHUTDOWN_WAIT: i32 = 2000;
 
 impl From<_TestValidator> for TestValidator {
@@ -1166,9 +1235,6 @@ impl _TestToml {
                 }
             }
             if let Some(validator) = &mut test.validator {
-                if let Some(ledger_dir) = &mut validator.ledger {
-                    *ledger_dir = canonicalize_filepath_from_origin(&ledger_dir, &path)?;
-                }
                 if let Some(accounts) = &mut validator.account {
                     for entry in accounts {
                         entry.filename = canonicalize_filepath_from_origin(&entry.filename, &path)?;
@@ -1186,28 +1252,22 @@ impl _TestToml {
     }
 }
 
-/// canonicalizes the `file_path` arg.
-/// uses the `path` arg as the current dir
-/// from which to turn the relative path
-/// into a canonical one
+/// Canonicalizes `file_path` relative to the directory containing `origin`.
 fn canonicalize_filepath_from_origin(
     file_path: impl AsRef<Path>,
     origin: impl AsRef<Path>,
 ) -> Result<String> {
-    let previous_dir = std::env::current_dir()?;
-    std::env::set_current_dir(origin.as_ref().parent().unwrap())?;
-    let result = fs::canonicalize(&file_path)
+    let result = fs::canonicalize(origin.as_ref().parent().unwrap().join(&file_path))
         .with_context(|| {
             format!(
-                "Error reading (possibly relative) path: {}. If relative, this is the path that \
-                 was used as the current path: {}",
-                &file_path.as_ref().display(),
-                &origin.as_ref().display()
+                "Error reading (possibly relative) path: {}. If relative, this path is resolved \
+                 relative to the directory containing: {}",
+                file_path.as_ref().display(),
+                origin.as_ref().display()
             )
         })?
         .display()
         .to_string();
-    std::env::set_current_dir(previous_dir)?;
     Ok(result)
 }
 
@@ -1332,6 +1392,45 @@ pub struct AccountDirEntry {
     pub directory: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FundedAccount {
+    // Base58 pubkey string of the account to fund, or "new" to generate a random keypair
+    pub address: String,
+    // Amount of lamports to fund the account with (default: 1 SOL = 1_000_000_000 lamports)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lamports: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenMint {
+    // Base58 pubkey string of the mint account, or "new" to generate a random keypair
+    pub address: String,
+    // Number of base 10 digits to the right of the decimal place (required)
+    pub decimals: u8,
+    // Initial supply of tokens (default: 0)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supply: Option<u64>,
+    // Optional mint authority (default: None = fixed supply)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mint_authority: Option<String>,
+    // Optional freeze authority (default: None = no freeze authority)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub freeze_authority: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenAccount {
+    // Reference to mint (pubkey string or "new" to use the most recently created mint)
+    pub mint: String,
+    // Owner of the token account ("new" to generate random keypair, or specific pubkey)
+    pub owner: String,
+    // Amount of tokens to fund the account with
+    pub amount: u64,
+    // Optional: specific token account address (default: generate new)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct _Validator {
     // Load an account from the provided JSON file
@@ -1340,6 +1439,15 @@ pub struct _Validator {
     // Load all the accounts from the JSON files found in the specified DIRECTORY
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_dir: Option<Vec<AccountDirEntry>>,
+    // Generate and fund accounts with lamports
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fund_accounts: Option<Vec<FundedAccount>>,
+    // Create SPL token mints
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mints: Option<Vec<TokenMint>>,
+    // Create and fund SPL token accounts
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_accounts: Option<Vec<TokenAccount>>,
     // IP address to bind the validator ports. [default: 127.0.0.1]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bind_address: Option<String>,
@@ -1388,6 +1496,9 @@ pub struct _Validator {
     // Deactivate one or more features.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deactivate_feature: Option<Vec<String>>,
+    // Extra arguments to pass through to solana-test-validator.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_args: Option<Vec<String>>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -1396,6 +1507,12 @@ pub struct Validator {
     pub account: Option<Vec<AccountEntry>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_dir: Option<Vec<AccountDirEntry>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fund_accounts: Option<Vec<FundedAccount>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mints: Option<Vec<TokenMint>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_accounts: Option<Vec<TokenAccount>>,
     pub bind_address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clone: Option<Vec<CloneEntry>>,
@@ -1425,6 +1542,8 @@ pub struct Validator {
     pub warp_slot: Option<Slot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deactivate_feature: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_args: Option<Vec<String>>,
 }
 
 impl From<_Validator> for Validator {
@@ -1432,6 +1551,9 @@ impl From<_Validator> for Validator {
         Self {
             account: _validator.account,
             account_dir: _validator.account_dir,
+            fund_accounts: _validator.fund_accounts,
+            mints: _validator.mints,
+            token_accounts: _validator.token_accounts,
             bind_address: _validator
                 .bind_address
                 .unwrap_or_else(|| DEFAULT_BIND_ADDRESS.to_string()),
@@ -1452,6 +1574,7 @@ impl From<_Validator> for Validator {
             ticks_per_slot: _validator.ticks_per_slot,
             warp_slot: _validator.warp_slot,
             deactivate_feature: _validator.deactivate_feature,
+            extra_args: _validator.extra_args,
         }
     }
 }
@@ -1461,6 +1584,9 @@ impl From<Validator> for _Validator {
         Self {
             account: validator.account,
             account_dir: validator.account_dir,
+            fund_accounts: validator.fund_accounts,
+            mints: validator.mints,
+            token_accounts: validator.token_accounts,
             bind_address: Some(validator.bind_address),
             clone: validator.clone,
             dynamic_port_range: validator.dynamic_port_range,
@@ -1477,6 +1603,7 @@ impl From<Validator> for _Validator {
             ticks_per_slot: validator.ticks_per_slot,
             warp_slot: validator.warp_slot,
             deactivate_feature: validator.deactivate_feature,
+            extra_args: validator.extra_args,
         }
     }
 }
@@ -1486,6 +1613,17 @@ pub fn get_default_ledger_path() -> PathBuf {
 }
 
 const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1";
+
+fn is_generated_address(address: &str) -> bool {
+    address.eq_ignore_ascii_case("new")
+}
+
+fn explicit_token_account_address(address: Option<&str>) -> Option<&str> {
+    match address {
+        Some(address) if !is_generated_address(address) => Some(address),
+        _ => None,
+    }
+}
 
 impl Merge for _Validator {
     fn merge(&mut self, other: Self) {
@@ -1521,6 +1659,69 @@ impl Merge for _Validator {
                                 .iter()
                                 .position(|my_entry| *my_entry.directory == other_entry.directory)
                             {
+                                None => entries.push(other_entry),
+                                Some(i) => entries[i] = other_entry,
+                            };
+                        }
+                        Some(entries)
+                    }
+                },
+            },
+            fund_accounts: match self.fund_accounts.take() {
+                None => other.fund_accounts,
+                Some(mut entries) => match other.fund_accounts {
+                    None => Some(entries),
+                    Some(other_entries) => {
+                        for other_entry in other_entries {
+                            match entries.iter().position(|my_entry| {
+                                !is_generated_address(&my_entry.address)
+                                    && !is_generated_address(&other_entry.address)
+                                    && *my_entry.address == other_entry.address
+                            }) {
+                                None => entries.push(other_entry),
+                                Some(i) => entries[i] = other_entry,
+                            };
+                        }
+                        Some(entries)
+                    }
+                },
+            },
+            mints: match self.mints.take() {
+                None => other.mints,
+                Some(mut entries) => match other.mints {
+                    None => Some(entries),
+                    Some(other_entries) => {
+                        for other_entry in other_entries {
+                            match entries.iter().position(|my_entry| {
+                                !is_generated_address(&my_entry.address)
+                                    && !is_generated_address(&other_entry.address)
+                                    && *my_entry.address == other_entry.address
+                            }) {
+                                None => entries.push(other_entry),
+                                Some(i) => entries[i] = other_entry,
+                            };
+                        }
+                        Some(entries)
+                    }
+                },
+            },
+            token_accounts: match self.token_accounts.take() {
+                None => other.token_accounts,
+                Some(mut entries) => match other.token_accounts {
+                    None => Some(entries),
+                    Some(other_entries) => {
+                        // Generated token accounts do not have a stable merge key.
+                        // Only explicitly addressed accounts override inherited entries.
+                        for other_entry in other_entries {
+                            match entries.iter().position(|my_entry| {
+                                explicit_token_account_address(my_entry.address.as_deref())
+                                    .zip(explicit_token_account_address(
+                                        other_entry.address.as_deref(),
+                                    ))
+                                    .is_some_and(|(my_address, other_address)| {
+                                        my_address == other_address
+                                    })
+                            }) {
                                 None => entries.push(other_entry),
                                 Some(i) => entries[i] = other_entry,
                             };
@@ -1572,6 +1773,15 @@ impl Merge for _Validator {
             deactivate_feature: other
                 .deactivate_feature
                 .or_else(|| self.deactivate_feature.take()),
+            extra_args: match self.extra_args.take() {
+                None => other.extra_args,
+                Some(mut args) => {
+                    if let Some(other_args) = other.extra_args {
+                        args.extend(other_args);
+                    }
+                    Some(args)
+                }
+            },
         };
     }
 }
@@ -1612,7 +1822,7 @@ impl Program {
         let program_kp = Keypair::new();
         let mut file = File::create(&path)
             .with_context(|| format!("Error creating file with path: {}", path.display()))?;
-        file.write_all(format!("{:?}", &program_kp.to_bytes()).as_bytes())?;
+        file.write_all(format!("{:?}", program_kp.to_bytes()).as_bytes())?;
         Ok(WithPath::new(file, path))
     }
 
@@ -1798,6 +2008,143 @@ mod tests {
     }
 
     #[test]
+    fn parse_fund_accounts_config() {
+        let config_str = r#"
+        [provider]
+        cluster = "localnet"
+        wallet = "id.json"
+
+        [test.validator]
+        [[test.validator.fund_accounts]]
+        address = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+        lamports = 2000000000
+
+        [[test.validator.fund_accounts]]
+        address = "GjJyeC1rB1hL8ZkLqKqJzJzJzJzJzJzJzJzJzJzJzJzJz"
+        "#;
+
+        let config = Config::from_str(config_str).unwrap();
+        assert!(config.test_validator.is_some());
+        let test_validator = config.test_validator.as_ref().unwrap();
+        assert!(test_validator.validator.is_some());
+        let validator = test_validator.validator.as_ref().unwrap();
+        assert!(validator.fund_accounts.is_some());
+
+        let fund_accounts = validator.fund_accounts.as_ref().unwrap();
+        assert_eq!(fund_accounts.len(), 2);
+        assert_eq!(
+            fund_accounts[0].address,
+            "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+        );
+        assert_eq!(fund_accounts[0].lamports, Some(2000000000));
+        assert_eq!(
+            fund_accounts[1].address,
+            "GjJyeC1rB1hL8ZkLqKqJzJzJzJzJzJzJzJzJzJzJzJzJz"
+        );
+        assert_eq!(fund_accounts[1].lamports, None); // Should default to 1 SOL
+    }
+
+    #[test]
+    fn parse_fund_accounts_without_lamports() {
+        let config_str = r#"
+        [provider]
+        cluster = "localnet"
+        wallet = "id.json"
+
+        [test.validator]
+        [[test.validator.fund_accounts]]
+        address = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+        "#;
+
+        let config = Config::from_str(config_str).unwrap();
+        let fund_accounts = config
+            .test_validator
+            .as_ref()
+            .unwrap()
+            .validator
+            .as_ref()
+            .unwrap()
+            .fund_accounts
+            .as_ref()
+            .unwrap();
+        assert_eq!(fund_accounts.len(), 1);
+        assert_eq!(fund_accounts[0].lamports, None);
+    }
+
+    #[test]
+    fn test_toml_extends_preserves_generated_validator_accounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let suite_dir = dir.path().join("tests").join("suite");
+        fs::create_dir_all(&suite_dir).unwrap();
+
+        let base_toml = suite_dir.join("Base.toml");
+        fs::write(
+            &base_toml,
+            r#"
+[scripts]
+test = "true"
+
+[[test.validator.fund_accounts]]
+address = "new"
+lamports = 1
+
+[[test.validator.mints]]
+address = "new"
+decimals = 6
+
+[[test.validator.token_accounts]]
+mint = "new"
+owner = "new"
+amount = 1
+"#,
+        )
+        .unwrap();
+
+        let test_toml = suite_dir.join("Test.toml");
+        fs::write(
+            &test_toml,
+            r#"
+extends = ["Base.toml"]
+
+[scripts]
+test = "true"
+
+[[test.validator.fund_accounts]]
+address = "new"
+lamports = 2
+
+[[test.validator.mints]]
+address = "new"
+decimals = 9
+
+[[test.validator.token_accounts]]
+mint = "new"
+owner = "new"
+amount = 2
+"#,
+        )
+        .unwrap();
+
+        let parsed = TestToml::from_path(test_toml).unwrap();
+        let validator = parsed.test.unwrap().validator.unwrap();
+
+        let fund_accounts = validator.fund_accounts.unwrap();
+        assert_eq!(fund_accounts.len(), 2);
+        assert_eq!(fund_accounts[0].lamports, Some(1));
+        assert_eq!(fund_accounts[1].lamports, Some(2));
+
+        let mints = validator.mints.unwrap();
+        assert_eq!(mints.len(), 2);
+        assert_eq!(mints[0].decimals, 6);
+        assert_eq!(mints[1].decimals, 9);
+
+        let token_accounts = validator.token_accounts.unwrap();
+        assert_eq!(token_accounts.len(), 2);
+        assert_eq!(token_accounts[0].amount, 1);
+        assert_eq!(token_accounts[1].amount, 2);
+    }
+
+    #[test]
     fn parse_skip_lint_no_value() {
         let string = BASE_CONFIG.to_owned() + "[features]";
         let config = Config::from_str(&string).unwrap();
@@ -1832,24 +2179,45 @@ go = { enable = true, path = "go-client" }
         assert!(go.is_enabled());
         assert_eq!(go.path(), Some("go-client"));
 
-        let resolved = clients.enabled(Path::new("clients"));
-        // js is explicitly disabled; rust gets the default path; go uses the
-        // override; js-umi is enabled with no `path` so it falls back to the
-        // base+id default.
+        let workspace_dir = Path::new("workspace");
+        let resolved = clients.enabled(workspace_dir);
         assert_eq!(
             resolved,
             vec![
-                ("js-umi", PathBuf::from("clients/js-umi")),
-                ("rust", PathBuf::from("clients/rust")),
-                ("go", PathBuf::from("go-client")),
+                ("js-umi", workspace_dir.join("clients/js-umi")),
+                ("rust", workspace_dir.join("clients/rust")),
+                ("go", workspace_dir.join("go-client")),
+            ]
+        );
+    }
+
+    #[test]
+    fn clients_custom_paths_resolve_from_workspace_root() {
+        let workspace_dir = Path::new("workspace-root");
+        let clients = ClientsConfig {
+            rust: Some(ClientLanguageConfig::Detailed {
+                enable: true,
+                path: Some("sdk/rust".to_owned()),
+            }),
+            go: Some(ClientLanguageConfig::Detailed {
+                enable: true,
+                path: Some("/tmp/go-client".to_owned()),
+            }),
+            ..Default::default()
+        };
+
+        let resolved = clients.enabled(workspace_dir);
+        assert_eq!(
+            resolved,
+            vec![
+                ("rust", workspace_dir.join("sdk/rust")),
+                ("go", PathBuf::from("/tmp/go-client")),
             ]
         );
     }
 
     #[test]
     fn clients_section_round_trips() {
-        // Round-trip the table form through Display+FromStr to make sure
-        // serde's untagged enum picks the same variant we wrote out.
         let toml = BASE_CONFIG.to_owned()
             + r#"
 [clients]
@@ -1863,27 +2231,77 @@ go = { enable = true, path = "go-client" }
         assert!(reparsed.clients.auto);
         assert!(reparsed.clients.rust.as_ref().unwrap().is_enabled());
         assert_eq!(
-            reparsed.clients.go.as_ref().and_then(|g| g.path()),
+            reparsed.clients.go.as_ref().and_then(|go| go.path()),
             Some("go-client"),
         );
     }
 
     #[test]
     fn clients_section_omitted_when_default() {
-        // An empty [clients] section should not be emitted: a fresh `anchor
-        // init` workspace has no clients configured, so we don't want a
-        // confusing empty stanza in `Anchor.toml`.
         let config = Config::from_str(BASE_CONFIG).unwrap();
         assert!(!config.to_string().contains("[clients]"));
     }
 
     #[test]
-    fn unknown_clients_field_is_rejected() {
-        // `deny_unknown_fields` on `ClientsConfig` catches typos like
-        // `[clients] python = true` so users don't silently ship a config
-        // that no Codama renderer will pick up.
-        let toml = BASE_CONFIG.to_owned() + "[clients]\npython = true\n";
-        assert!(Config::from_str(&toml).is_err());
+    fn unknown_clients_fields_are_ignored_for_compatibility() {
+        let toml = BASE_CONFIG.to_owned()
+            + r#"
+[clients]
+python = true
+metadata = { owner = "sdk-team" }
+rust = true
+"#;
+        let config = Config::from_str(&toml).unwrap();
+
+        assert!(config.clients.rust.as_ref().unwrap().is_enabled());
+    }
+
+    #[test]
+    fn skip_local_validator_round_trips() {
+        let toml = "skip_local_validator = true\n".to_owned() + BASE_CONFIG;
+        let config = Config::from_str(&toml).unwrap();
+        assert_eq!(config.skip_local_validator, Some(true));
+        let serialized = config.to_string();
+        assert!(serialized.contains("skip_local_validator = true"));
+    }
+
+    #[test]
+    fn test_validator_extra_args_round_trips() {
+        let toml = BASE_CONFIG.to_owned()
+            + r#"
+[test.validator]
+extra_args = [
+    "--rpc-pubsub-enable-block-subscription",
+    "--geyser-plugin-config",
+    "geyser.json",
+]
+"#;
+        let config = Config::from_str(&toml).unwrap();
+        let extra_args = config
+            .test_validator
+            .as_ref()
+            .and_then(|test| test.validator.as_ref())
+            .and_then(|validator| validator.extra_args.as_ref())
+            .unwrap();
+
+        assert_eq!(
+            extra_args,
+            &vec![
+                "--rpc-pubsub-enable-block-subscription".to_string(),
+                "--geyser-plugin-config".to_string(),
+                "geyser.json".to_string(),
+            ]
+        );
+
+        let serialized = config.to_string();
+        let reparsed = Config::from_str(&serialized).unwrap();
+        let reparsed_extra_args = reparsed
+            .test_validator
+            .as_ref()
+            .and_then(|test| test.validator.as_ref())
+            .and_then(|validator| validator.extra_args.as_ref())
+            .unwrap();
+        assert_eq!(reparsed_extra_args, extra_args);
     }
 
     #[test]
@@ -1931,5 +2349,38 @@ directory = "accounts"
             validator.account_dir.unwrap()[0].directory,
             accounts_dir.canonicalize().unwrap().display().to_string()
         );
+    }
+
+    #[test]
+    fn test_toml_keeps_ledger_path_relative() {
+        let dir = tempfile::tempdir().unwrap();
+        let suite_dir = dir.path().join("tests").join("suite");
+        fs::create_dir_all(&suite_dir).unwrap();
+
+        let test_toml = suite_dir.join("Test.toml");
+        fs::write(
+            &test_toml,
+            r#"
+[scripts]
+test = "true"
+
+[test.validator]
+ledger = "ledgers/local"
+"#,
+        )
+        .unwrap();
+
+        let parsed = TestToml::from_path(test_toml).unwrap();
+        let validator = parsed.test.unwrap().validator.unwrap();
+
+        assert_eq!(validator.ledger, "ledgers/local");
+
+        fs::create_dir_all(suite_dir.join("ledgers").join("local")).unwrap();
+
+        let test_toml = suite_dir.join("Test.toml");
+        let parsed = TestToml::from_path(test_toml).unwrap();
+        let validator = parsed.test.unwrap().validator.unwrap();
+
+        assert_eq!(validator.ledger, "ledgers/local");
     }
 }

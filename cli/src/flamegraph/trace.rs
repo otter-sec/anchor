@@ -1,4 +1,5 @@
 use {
+    crate::{compat::solana_compute_budget, sbpf_target_triples},
     anyhow::{anyhow, Context, Result},
     object::{Object, ObjectSection, ObjectSymbol, SymbolKind},
     rustc_demangle::demangle,
@@ -41,16 +42,20 @@ fn syscall_cost(budget: &ComputeBudget, syscall_name: &str) -> u64 {
         | "sol_get_sysvar" => budget.sysvar_base_cost,
         "sol_curve_validate_point" => budget.curve25519_edwards_validate_point_cost,
         "sol_curve_group_op" => budget.curve25519_edwards_add_cost,
-        "sol_big_mod_exp" => budget.big_modular_exponentiation_base_cost,
         "sol_remaining_compute_units" => budget.get_remaining_compute_units_cost,
         "sol_alt_bn128_compression" => budget.alt_bn128_g1_compress,
+        "sol_big_mod_exp" => budget.big_modular_exponentiation_base_cost,
         "sol_alt_bn128_group_op" => budget.alt_bn128_addition_cost,
         "sol_poseidon" => budget.poseidon_cost_coefficient_c,
         // Includes sol_log_, sol_log_data, sol_log_compute_units_, abort,
         // sol_panic_, sol_set_return_data, sol_get_return_data,
         // sol_get_stack_height, sol_get_epoch_stake,
-        // sol_get_processed_sibling_instruction, and anything agave added
-        // that we haven't mapped yet.
+        // sol_get_processed_sibling_instruction, sol_big_mod_exp (its
+        // per-call base cost field was removed from `ComputeBudget`; its
+        // true cost is input-size-dependent anyway, so it falls into the
+        // same "can't infer from registers" bucket as the other variable-cost
+        // syscalls this function already approximates), and anything agave
+        // added that we haven't mapped yet.
         _ => budget.syscall_base_cost,
     }
 }
@@ -60,6 +65,10 @@ pub struct FlamegraphReport {
     pub total_cu: u64,
     pub stacks: BTreeMap<Vec<String>, u64>,
 }
+
+type FunctionSymbolMap = BTreeMap<u64, String>;
+type SyscallSymbolMap = BTreeMap<u32, String>;
+type SymbolCache = BTreeMap<String, (FunctionSymbolMap, SyscallSymbolMap)>;
 
 /// Size in bytes of one register trace entry: 12 x u64 = 96 bytes.
 pub const REGS_ENTRY_SIZE: usize = 12 * std::mem::size_of::<u64>();
@@ -97,6 +106,16 @@ impl ContextObject for NoopContext {
     fn get_remaining(&self) -> u64 {
         0
     }
+    fn active_mapping_ptr(
+        &mut self,
+    ) -> std::ptr::NonNull<solana_sbpf::memory_region::MemoryMapping> {
+        // `NoopContext` only type-parameterizes `Executable::from_elf` for
+        // static disassembly/analysis; we never construct an `EbpfVm` (the
+        // only caller of this method), so it's unreachable in practice.
+        // Mirrors `solana_sbpf::static_analysis::DummyContextObject`,
+        // upstream's own test-only stub for the same situation.
+        unreachable!("NoopContext is only used for static analysis, never for VM execution")
+    }
 }
 
 /// Streams a trace (regs + insns pair), invoking `visit` for every step with
@@ -116,6 +135,7 @@ impl ContextObject for NoopContext {
 /// syscall does not change the persistent call stack (the caller resumes at
 /// the next instruction), but we still want to attribute its single traced
 /// CU to a `[syscall] {name}` leaf frame for display.
+#[allow(clippy::too_many_arguments)]
 pub fn stream_trace(
     regs_data: &[u8],
     insns_data: &[u8],
@@ -248,10 +268,10 @@ fn process_trace(
 pub fn read_regs(data: &[u8], i: usize) -> [u64; 12] {
     let offset = i * REGS_ENTRY_SIZE;
     let mut regs = [0u64; 12];
-    for r in 0..12 {
+    for (r, reg) in regs.iter_mut().enumerate() {
         let start = offset + r * 8;
         let bytes: [u8; 8] = data[start..start + 8].try_into().unwrap();
-        regs[r] = u64::from_le_bytes(bytes);
+        *reg = u64::from_le_bytes(bytes);
     }
     regs
 }
@@ -368,10 +388,7 @@ pub fn build_tx_reports(
     }
 
     // Cache symbol maps per program — loading an ELF is expensive.
-    let mut symbol_cache: std::collections::BTreeMap<
-        String,
-        (BTreeMap<u64, String>, BTreeMap<u32, String>),
-    > = std::collections::BTreeMap::new();
+    let mut symbol_cache: SymbolCache = BTreeMap::new();
     for (pid, elf) in programs {
         if let Ok(maps) = load_function_map(elf, manifest_dir) {
             symbol_cache.insert(pid.clone(), maps);
@@ -386,7 +403,7 @@ pub fn build_tx_reports(
 
     let mut reports: std::collections::BTreeMap<u32, (BTreeMap<Vec<String>, u64>, u64)> =
         std::collections::BTreeMap::new();
-    let budget = ComputeBudget::new_with_defaults(false, false);
+    let budget = crate::compat::default_compute_budget();
 
     for inv in &invocations {
         let regs = fs::read(&inv.regs_path)
@@ -469,8 +486,8 @@ fn short_pid(pid: &str) -> String {
 /// table (dynamic symbols) as a fallback.
 ///
 /// If the deployed binary is stripped (common for `cargo-build-sbf`), we also
-/// try loading symbols from the unstripped build artifact in the
-/// `target/sbpf-solana-solana/release/` directory.
+/// try loading symbols from the unstripped build artifact in the matching
+/// SBPF target directory.
 pub fn load_function_map(
     elf_path: &Path,
     manifest_dir: Option<&Path>,
@@ -507,7 +524,7 @@ pub fn load_function_map(
 
     // Tertiary source: the unstripped pre-deploy binary in the build directory.
     // cargo-build-sbf strips the binary before copying to target/deploy/, but
-    // the unstripped version remains in target/sbpf-solana-solana/release/.
+    // the unstripped version remains in the matching SBPF target directory.
     if let Some(unstripped_path) = find_unstripped_binary(elf_path, manifest_dir) {
         if let Ok(unstripped_bytes) = fs::read(&unstripped_path) {
             if let Ok(extra) = load_elf_symbols(&unstripped_bytes) {
@@ -613,18 +630,18 @@ fn syscall_hash_map() -> BTreeMap<u32, String> {
 /// tree of whichever workspace actually compiled the program. In the bench
 /// setup that can be any of:
 ///
-///   - `<bench>/target/sbpf-solana-solana/release/<name>.so` — for programs
+///   - `<bench>/target/<sbpf-target>/release/<name>.so` — for programs
 ///     that are bench-workspace members (anchor v1 / v2).
-///   - `<bench>/programs/<family>/<variant>/target/sbpf-solana-solana/release/<name>.so`
+///   - `<bench>/programs/<family>/<variant>/target/<sbpf-target>/release/<name>.so`
 ///     — for programs with their own `[workspace]` (pinocchio / steel / quasar).
-///   - `<repo>/target/sbpf-solana-solana/release/<name>.so` — historical
+///   - `<repo>/target/<sbpf-target>/release/<name>.so` — historical
 ///     location when building from the repo root.
 ///
 /// Rather than enumerate every path combinatorially, we walk upward from the
 /// deployed .so until we hit a directory that contains a `bench/` or
 /// `programs/` sibling (the repo root-ish), then do a bounded recursive
 /// search under it for a file matching `name` inside any
-/// `sbpf-solana-solana/release` directory. Returns the first non-stripped
+/// SBPF target release directory. Returns the first non-stripped
 /// match, or `None` if nothing is found.
 pub fn find_unstripped_binary(
     deployed_path: &Path,
@@ -643,29 +660,15 @@ pub fn find_unstripped_binary(
     // because the workspace root is deterministic from the manifest path.
     if let Some(manifest) = manifest_dir {
         if let Some(root) = find_workspace_root(manifest) {
-            let direct = root
-                .join("target")
-                .join("sbpf-solana-solana")
-                .join("release")
-                .join(&file_name);
-            if direct.exists() {
-                return Some(direct);
-            }
-            let deps = root
-                .join("target")
-                .join("sbpf-solana-solana")
-                .join("release")
-                .join("deps")
-                .join(&file_name);
-            if deps.exists() {
-                return Some(deps);
+            if let Some(path) = find_unstripped_in_target(&root, &file_name) {
+                return Some(path);
             }
         }
     }
 
     // Fallback: walk up the deployed path to a plausible repo root and
-    // recursively search for the file under any `sbpf-solana-solana/release`
-    // directory. This handles historical layouts and cases where no
+    // recursively search for the file under any SBPF target release directory.
+    // This handles historical layouts and cases where no
     // manifest_dir was supplied.
     let mut root = deployed_path.parent()?;
     loop {
@@ -699,15 +702,13 @@ fn find_workspace_root(manifest_dir: &Path) -> Option<std::path::PathBuf> {
                 }
             }
         }
-        match current.parent() {
-            Some(parent) => current = parent.to_path_buf(),
-            None => return None,
-        }
+        let parent = current.parent()?;
+        current = parent.to_path_buf();
     }
 }
 
 /// Recursively searches `dir` for `file_name` inside any
-/// `sbpf-solana-solana/release` subdirectory. Depth-limited to avoid
+/// SBPF target release subdirectory. Depth-limited to avoid
 /// pathological descent into dependencies. Returns the first match that is
 /// not stripped (larger than the matching deployed .so would be — we can't
 /// cheaply check strip state, but filtering by "inside release" usually
@@ -720,24 +721,10 @@ fn search_for_unstripped(dir: &Path, file_name: &str, depth: usize) -> Option<st
         return None;
     }
 
-    // Quick check: does this directory already contain the file we want at
-    // the expected `sbpf-solana-solana/release/<file>` path?
-    let direct = dir
-        .join("target")
-        .join("sbpf-solana-solana")
-        .join("release")
-        .join(file_name);
-    if direct.exists() {
-        return Some(direct);
-    }
-    let deps = dir
-        .join("target")
-        .join("sbpf-solana-solana")
-        .join("release")
-        .join("deps")
-        .join(file_name);
-    if deps.exists() {
-        return Some(deps);
+    // Quick check: does this directory already contain the file we want in
+    // an SBPF target release directory?
+    if let Some(path) = find_unstripped_in_target(dir, file_name) {
+        return Some(path);
     }
 
     // Recurse into subdirectories — but skip well-known noisy subtrees.
@@ -763,6 +750,19 @@ fn search_for_unstripped(dir: &Path, file_name: &str, depth: usize) -> Option<st
         }
     }
 
+    None
+}
+
+fn find_unstripped_in_target(dir: &Path, file_name: &str) -> Option<std::path::PathBuf> {
+    for target_triple in sbpf_target_triples() {
+        let release_dir = dir.join("target").join(target_triple).join("release");
+        for artifact_dir in [&release_dir, &release_dir.join("deps")] {
+            let path = artifact_dir.join(file_name);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+    }
     None
 }
 
@@ -857,4 +857,220 @@ fn shorten_qualified_name(name: &str) -> String {
     }
 
     parts[parts.len() - 3..].join("::")
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, std::path::Path, tempfile::tempdir};
+
+    fn regs_bytes(pcs: &[u64]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(pcs.len() * REGS_ENTRY_SIZE);
+        for pc in pcs {
+            let mut regs = [0u64; 12];
+            regs[11] = *pc;
+            for reg in regs {
+                out.extend_from_slice(&reg.to_le_bytes());
+            }
+        }
+        out
+    }
+
+    fn insns_bytes(insns: &[[u8; INSN_ENTRY_SIZE]]) -> Vec<u8> {
+        insns.iter().flat_map(|insn| insn.iter().copied()).collect()
+    }
+
+    fn plain_insns(count: usize) -> Vec<[u8; INSN_ENTRY_SIZE]> {
+        vec![[0; INSN_ENTRY_SIZE]; count]
+    }
+
+    fn call_imm(imm: u32) -> [u8; INSN_ENTRY_SIZE] {
+        let mut insn = [0; INSN_ENTRY_SIZE];
+        insn[0] = ebpf::CALL_IMM;
+        insn[4..8].copy_from_slice(&imm.to_le_bytes());
+        insn
+    }
+
+    fn write_invocation(dir: &Path, stem: &str, program_id: &str, pcs: &[u64]) {
+        std::fs::create_dir_all(dir).unwrap();
+        let insns = plain_insns(pcs.len());
+        std::fs::write(dir.join(format!("{stem}.regs")), regs_bytes(pcs)).unwrap();
+        std::fs::write(dir.join(format!("{stem}.insns")), insns_bytes(&insns)).unwrap();
+        std::fs::write(dir.join(format!("{stem}.program_id")), program_id).unwrap();
+    }
+
+    #[test]
+    fn lookup_function_with_pc_uses_nearest_lower_symbol() {
+        let symbols = BTreeMap::from([
+            (10, "entry".to_string()),
+            (20, "callee".to_string()),
+            (40, "tail".to_string()),
+        ]);
+
+        assert_eq!(
+            lookup_function_with_pc(&symbols, 20),
+            ("callee".to_string(), 20)
+        );
+        assert_eq!(
+            lookup_function_with_pc(&symbols, 27),
+            ("callee".to_string(), 20)
+        );
+        assert_eq!(
+            lookup_function_with_pc(&symbols, 9),
+            ("unknown_0x9".to_string(), 9)
+        );
+    }
+
+    #[test]
+    fn stream_trace_resyncs_call_stack_from_pc_flow() {
+        let symbols = BTreeMap::from([
+            (0, "entry".to_string()),
+            (10, "callee".to_string()),
+            (20, "tail".to_string()),
+        ]);
+        let pcs = [0, 1, 10, 11, 2, 20, 21, 3];
+        let insns = plain_insns(pcs.len());
+        let mut observed = Vec::new();
+
+        stream_trace(
+            &regs_bytes(&pcs),
+            &insns_bytes(&insns),
+            pcs.len(),
+            &symbols,
+            &BTreeMap::new(),
+            "program",
+            &crate::compat::default_compute_budget(),
+            |step| observed.push((step.pc, step.func.to_owned(), step.call_stack.to_vec())),
+        );
+
+        assert_eq!(
+            observed
+                .iter()
+                .map(|(_, _, stack)| stack.len())
+                .collect::<Vec<_>>(),
+            vec![2, 2, 3, 3, 2, 3, 3, 2]
+        );
+        assert_eq!(observed[2].1, "callee");
+        assert_eq!(observed[4].1, "entry");
+        assert_eq!(observed[5].1, "tail");
+        assert_eq!(observed[7].1, "entry");
+    }
+
+    #[test]
+    fn stream_trace_attributes_sequential_call_imm_as_syscall_leaf() {
+        let symbols = BTreeMap::from([(0, "entry".to_string())]);
+        let syscall_hash = ebpf::hash_symbol_name(b"sol_log_64_");
+        let syscall_names = BTreeMap::from([(syscall_hash, "sol_log_64_".to_string())]);
+        let pcs = [0, 1];
+        let insns = [call_imm(syscall_hash), [0; INSN_ENTRY_SIZE]];
+        let mut observed = Vec::new();
+
+        stream_trace(
+            &regs_bytes(&pcs),
+            &insns_bytes(&insns),
+            pcs.len(),
+            &symbols,
+            &syscall_names,
+            "program",
+            &crate::compat::default_compute_budget(),
+            |step| {
+                observed.push((
+                    step.pc,
+                    step.syscall.clone(),
+                    step.cu_cost,
+                    step.call_stack.to_vec(),
+                ))
+            },
+        );
+
+        assert_eq!(observed[0].0, 0);
+        assert_eq!(observed[0].1.as_deref(), Some("sol_log_64_"));
+        assert!(observed[0].2 > 1);
+        assert_eq!(observed[0].3, vec!["program", "entry @ 0x0"]);
+        assert_eq!(observed[1].1, None);
+        assert_eq!(observed[1].3, vec!["program", "entry @ 0x0"]);
+    }
+
+    #[test]
+    fn stream_trace_does_not_treat_last_call_imm_as_syscall() {
+        let symbols = BTreeMap::from([(0, "entry".to_string())]);
+        let syscall_hash = ebpf::hash_symbol_name(b"sol_log_64_");
+        let syscall_names = BTreeMap::from([(syscall_hash, "sol_log_64_".to_string())]);
+        let mut observed = Vec::new();
+
+        stream_trace(
+            &regs_bytes(&[0]),
+            &insns_bytes(&[call_imm(syscall_hash)]),
+            1,
+            &symbols,
+            &syscall_names,
+            "program",
+            &crate::compat::default_compute_budget(),
+            |step| observed.push((step.syscall.clone(), step.cu_cost)),
+        );
+
+        assert_eq!(observed, vec![(None, 1)]);
+    }
+
+    #[test]
+    fn discover_invocations_sorts_by_tx_then_inv_and_ignores_incomplete_files() {
+        let dir = tempdir().unwrap();
+        write_invocation(dir.path(), "0002__tx1", "pid_b", &[0]);
+        write_invocation(dir.path(), "0001__tx2", "pid_c", &[0]);
+        write_invocation(dir.path(), "0001__tx1", "pid_a", &[0]);
+        std::fs::write(dir.path().join("bad.regs"), regs_bytes(&[0])).unwrap();
+        std::fs::write(dir.path().join("0003__tx1.regs"), regs_bytes(&[0])).unwrap();
+        std::fs::write(dir.path().join("0004__tx1.regs"), regs_bytes(&[0])).unwrap();
+        std::fs::write(
+            dir.path().join("0004__tx1.insns"),
+            insns_bytes(&plain_insns(1)),
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("0005__tx1.gdb.regs"), regs_bytes(&[0])).unwrap();
+
+        let found = discover_invocations(dir.path()).unwrap();
+
+        assert_eq!(found.len(), 3);
+        assert_eq!(
+            found
+                .iter()
+                .map(|inv| (inv.tx_seq, inv.inv_seq, inv.program_id.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(1, 1, "pid_a"), (1, 2, "pid_b"), (2, 1, "pid_c")]
+        );
+    }
+
+    #[test]
+    fn build_tx_reports_separates_transactions_and_keeps_unresolved_program_cu() {
+        let dir = tempdir().unwrap();
+        let pid = "Program111111111111111111111111111111111";
+        write_invocation(dir.path(), "0001__tx1", pid, &[0, 1]);
+        write_invocation(dir.path(), "0002__tx2", pid, &[0]);
+
+        let reports = build_tx_reports("case", dir.path(), &BTreeMap::new(), None).unwrap();
+
+        assert_eq!(reports.keys().copied().collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(reports[&1].program_name, "case · tx1");
+        assert_eq!(reports[&1].total_cu, 2);
+        assert_eq!(reports[&2].total_cu, 1);
+        assert!(reports[&1]
+            .stacks
+            .keys()
+            .any(|stack| stack.first().is_some_and(|f| f.starts_with("[unresolved "))));
+    }
+
+    #[test]
+    fn build_tx_reports_merges_multiple_invocations_in_same_tx() {
+        let dir = tempdir().unwrap();
+        let pid = "Program222222222222222222222222222222222";
+        write_invocation(dir.path(), "0001__tx7", pid, &[0]);
+        write_invocation(dir.path(), "0002__tx7", pid, &[0]);
+
+        let reports = build_tx_reports("case", dir.path(), &BTreeMap::new(), None).unwrap();
+
+        assert_eq!(reports.keys().copied().collect::<Vec<_>>(), vec![7]);
+        let report = &reports[&7];
+        assert_eq!(report.total_cu, 2);
+        assert_eq!(report.stacks.len(), 1);
+        assert_eq!(*report.stacks.values().next().unwrap(), 2);
+    }
 }

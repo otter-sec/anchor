@@ -71,3 +71,54 @@ pub fn render_all_tests(
 
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::flamegraph::trace::{INSN_ENTRY_SIZE, REGS_ENTRY_SIZE},
+        tempfile::tempdir,
+    };
+
+    fn regs_bytes(pcs: &[u64]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(pcs.len() * REGS_ENTRY_SIZE);
+        for pc in pcs {
+            let mut regs = [0u64; 12];
+            regs[11] = *pc;
+            for reg in regs {
+                out.extend_from_slice(&reg.to_le_bytes());
+            }
+        }
+        out
+    }
+
+    fn write_invocation(dir: &Path, stem: &str, program_id: &str, pcs: &[u64]) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join(format!("{stem}.regs")), regs_bytes(pcs)).unwrap();
+        fs::write(
+            dir.join(format!("{stem}.insns")),
+            vec![0; pcs.len() * INSN_ENTRY_SIZE],
+        )
+        .unwrap();
+        fs::write(dir.join(format!("{stem}.program_id")), program_id).unwrap();
+    }
+
+    #[test]
+    fn render_all_tests_skips_empty_trace_dirs_and_returns_written_paths() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("empty_test")).unwrap();
+        write_invocation(
+            &dir.path().join("with_trace"),
+            "0001__tx1",
+            "Program1111111111111111111",
+            &[0],
+        );
+
+        let rendered = render_all_tests(dir.path(), None, &BTreeMap::new()).unwrap();
+
+        assert_eq!(rendered.len(), 1);
+        assert_eq!(rendered[0].test_name, "with_trace");
+        assert_eq!(rendered[0].svg_paths.len(), 1);
+        assert!(rendered[0].svg_paths[0].exists());
+    }
+}

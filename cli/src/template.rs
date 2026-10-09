@@ -6,6 +6,7 @@ use {
     anyhow::Result,
     clap::{Parser, ValueEnum},
     heck::{ToLowerCamelCase, ToPascalCase, ToSnakeCase},
+    serde_json::{json, Value},
     solana_keypair::{read_keypair_file, write_keypair_file, Keypair},
     solana_pubkey::Pubkey,
     solana_signer::Signer,
@@ -480,7 +481,8 @@ pub fn package_json(jest: bool, license: String) -> String {
   "license": "{license}",
   "scripts": {{
     "lint:fix": "prettier */*.js \"*/**/*{{.js,.ts}}\" -w",
-    "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check"
+    "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check",
+    "tsx": "tsx"
   }},
   "dependencies": {{
     "@anchor-lang/core": "^1.0.0"
@@ -544,6 +546,7 @@ pub fn ts_package_json(jest: bool, license: String) -> String {
     "jest": "^30.3.0",
     "prettier": "^3.8.3",
     "ts-jest": "^29.4.9",
+    "tsx": "^4.19.0",
     "typescript": "^5.9.3"
   }},
   "overrides": {{
@@ -574,12 +577,11 @@ pub fn ts_package_json(jest: bool, license: String) -> String {
   "devDependencies": {{
     "chai": "^4.5.0",
     "mocha": "^11.7.5",
-    "ts-mocha": "^11.1.0",
-    "ts-node": "^10.9.2",
     "@types/bn.js": "^5.2.0",
     "@types/chai": "^4.3.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.6.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.9.3",
     "prettier": "^3.8.3"
   }}
@@ -770,12 +772,17 @@ pub enum TestTemplate {
 }
 
 impl TestTemplate {
-    pub fn get_test_script(&self, js: bool, pkg_manager: &PackageManager) -> String {
+    pub fn uses_node(&self) -> bool {
+        matches!(self, Self::Mocha | Self::Jest)
+    }
+
+    pub fn get_test_script(&self, js: bool, pkg_manager: Option<&PackageManager>) -> String {
         let pkg_manager_exec_cmd = match pkg_manager {
-            PackageManager::Yarn => "yarn run",
-            PackageManager::NPM => "npx",
-            PackageManager::PNPM => "pnpm exec",
-            PackageManager::Bun => "bunx",
+            Some(PackageManager::Yarn) => "yarn run",
+            Some(PackageManager::NPM) => "npx",
+            Some(PackageManager::PNPM) => "pnpm exec",
+            Some(PackageManager::Bun) => "bunx",
+            None => "",
         };
 
         match &self {
@@ -784,7 +791,7 @@ impl TestTemplate {
                     format!("{pkg_manager_exec_cmd} mocha -t 1000000 tests/")
                 } else {
                     format!(
-                        r#"{pkg_manager_exec_cmd} ts-mocha -p ./tsconfig.json -t 1000000 "tests/**/*.ts""#
+                        r#"{pkg_manager_exec_cmd} mocha --import=tsx -t 1000000 "tests/**/*.ts""#
                     )
                 }
             }
@@ -1099,4 +1106,50 @@ fn test_initialize() {{
             name.to_snake_case(),
         ),
     )]
+}
+
+pub fn get_security_metadata_content(project_name: &str) -> Value {
+    json!({
+        "name": project_name,
+        "logo": "https://solana.com/src/img/branding/solanaLogoMark.png",
+        "description": "A fresh Anchor program!",
+        "notification": "Remember to review and publish this metadata with `anchor program deploy --security-metadata` once the contents are accurate.",
+        "sdk": "https://github.com/your-sdk",
+        "project_url": "https://github.com/your-project/",
+        "contacts": [
+        "email:security@example.com",
+        "discord:MyProgram#1234",
+        "twitter:@MyProgram"
+        ],
+        "policy": "https://example.com/security-policy",
+        "preferred_languages": ["en", "de"],
+        "encryption": "https://example.com/pgp-key",
+        "source_code": "https://github.com/your-source-code/",
+        "source_release": "v0.1.0",
+        "source_revision": "abc123def456",
+        "auditors": ["Audit Firm A", "Security Researcher B"],
+        "acknowledgements": "https://example.com/security-acknowledgements",
+        "version": "0.1.0"
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scaffold_keeps_v2_runtime_and_master_typescript_runner() {
+        let manifest = cargo_toml("counter", Some(&TestTemplate::Litesvm));
+        assert!(manifest.contains("anchor-lang = { git = "));
+        assert!(manifest.contains("profile = [\"anchor-v2-testing/profile\"]"));
+        assert!(!manifest.contains("anchor-lang-v2"));
+        for jest in [false, true] {
+            let package: Value =
+                serde_json::from_str(&ts_package_json(jest, "ISC".into())).unwrap();
+            assert!(package["devDependencies"]["tsx"].is_string());
+            assert!(package["devDependencies"].get("ts-node").is_none());
+        }
+        let script = TestTemplate::Mocha.get_test_script(false, Some(&PackageManager::NPM));
+        assert!(script.contains("mocha --import=tsx"));
+    }
 }

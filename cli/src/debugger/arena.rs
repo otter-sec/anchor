@@ -19,7 +19,6 @@ use {
         InvocationFiles, INSN_ENTRY_SIZE, KNOWN_SYSCALLS, REGS_ENTRY_SIZE,
     },
     anyhow::{anyhow, bail, Context, Result},
-    solana_compute_budget::compute_budget::ComputeBudget,
     solana_sbpf::{ebpf, static_analysis::Analysis},
     std::{
         collections::BTreeMap,
@@ -43,7 +42,7 @@ pub fn build_session(
 ) -> Result<DebugSession> {
     let mut txs: Vec<DebugTx> = Vec::new();
     let mut src_roots: Vec<PathBuf> = Vec::new();
-    // Path deps (e.g. `anchor-lang = { path = "../../../../lang-v2" }`)
+    // Path deps (e.g. `anchor-lang-v2 = { path = "../../../../lang-v2" }`)
     // must come before the workspace root so their `src/lib.rs` wins over
     // a same-named file at the workspace root (`bench/src/lib.rs`). SBF
     // DWARF omits `DW_AT_comp_dir`, so relative paths like `src/lib.rs`
@@ -155,7 +154,7 @@ pub fn build_session(
                 let mut steps: Vec<DebugStep> = Vec::with_capacity(count);
                 let mut node_cu: u64 = 0;
 
-                let budget = ComputeBudget::new_with_defaults(false, false);
+                let budget = crate::compat::default_compute_budget();
                 let mut step_idx = 0usize;
 
                 stream_trace(
@@ -444,13 +443,23 @@ impl solana_sbpf::vm::ContextObject for NoopCtx {
     fn get_remaining(&self) -> u64 {
         0
     }
+    fn active_mapping_ptr(
+        &mut self,
+    ) -> std::ptr::NonNull<solana_sbpf::memory_region::MemoryMapping> {
+        // `NoopCtx` only type-parameterizes `Executable::from_elf` for static
+        // disassembly/analysis; we never construct an `EbpfVm` (the only
+        // caller of this method), so it's unreachable in practice. Mirrors
+        // `solana_sbpf::static_analysis::DummyContextObject`, upstream's own
+        // test-only stub for the same situation.
+        unreachable!("NoopCtx is only used for static analysis, never for VM execution")
+    }
 }
 
 /// No-op `BuiltinFunction<NoopCtx>` used to register syscall names in the
 /// loader's function registry. Never called — we replay traces, never
 /// execute — so the body is unreachable in practice.
 fn syscall_stub(
-    _vm: *mut solana_sbpf::vm::EbpfVm<NoopCtx>,
+    _vm: solana_sbpf::vm::EncryptedHostAddressToEbpfVm<NoopCtx>,
     _r1: u64,
     _r2: u64,
     _r3: u64,
@@ -458,6 +467,12 @@ fn syscall_stub(
     _r5: u64,
 ) {
 }
+
+/// No-op `BuiltinCodegen<NoopCtx>` paired with [`syscall_stub`]. Registering
+/// a function now requires both the interpreter and JIT entry points; like
+/// `syscall_stub`, this is never actually invoked since we never JIT-compile
+/// or execute — the registry is consulted only for the (hash → name) lookup.
+fn syscall_stub_codegen(_jit: &mut solana_sbpf::program::JitCompiler<NoopCtx>) {}
 
 fn load_program_ctx<'a>(
     program_id: &str,
@@ -483,7 +498,7 @@ fn build_program_ctx(
         Ok(x) => x,
         Err(e) => {
             // Common cause: bench-style workspaces produce a raw cargo
-            // SBF ELF in `target/sbpf-solana-solana/release/` that
+            // SBF ELF in `target/<sbpf-target>/release/` that
             // solana-sbpf can't parse without `cargo build-sbf`'s
             // post-link step. Surface this clearly so the user knows
             // what to do instead of silently dropping the trace.
@@ -512,7 +527,7 @@ fn build_program_ctx(
         // syscalls collide in `KNOWN_SYSCALLS`, which is a list bug, not
         // a per-program issue. Continuing yields a partial registry
         // (better than no names at all).
-        let _ = loader_inner.register_function(name, syscall_stub);
+        let _ = loader_inner.register_function(name, (syscall_stub, syscall_stub_codegen));
     }
     let loader = Arc::new(loader_inner);
     let executable = solana_sbpf::elf::Executable::<NoopCtx>::from_elf(&elf_bytes, loader).ok()?;
@@ -568,5 +583,198 @@ fn short_pid(pid: &str) -> String {
         pid.to_owned()
     } else {
         format!("{}…{}", &pid[..8], &pid[pid.len() - 4..])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, tempfile::tempdir};
+
+    fn invocation(dir: &Path) -> InvocationFiles {
+        InvocationFiles {
+            inv_seq: 1,
+            tx_seq: 1,
+            program_id: "Program1111111111111111111".to_string(),
+            regs_path: dir.join("0001__tx1.regs"),
+            insns_path: dir.join("0001__tx1.insns"),
+        }
+    }
+
+    fn regs_entries(pcs: &[u64]) -> Vec<[u64; 12]> {
+        pcs.iter()
+            .map(|pc| {
+                let mut regs = [0u64; 12];
+                regs[0] = 0x55;
+                regs[11] = *pc;
+                regs
+            })
+            .collect()
+    }
+
+    fn regs_bytes(entries: &[[u64; 12]]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(entries.len() * REGS_ENTRY_SIZE);
+        for regs in entries {
+            for reg in regs {
+                out.extend_from_slice(&reg.to_le_bytes());
+            }
+        }
+        out
+    }
+
+    fn insns_bytes(count: usize, byte: u8) -> Vec<u8> {
+        vec![byte; count * INSN_ENTRY_SIZE]
+    }
+
+    fn cu_bytes(values: &[u64]) -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect()
+    }
+
+    fn gdb_entries_for_regular(entries: &[[u64; 12]], text_addr: u64) -> Vec<[u64; 12]> {
+        entries
+            .iter()
+            .map(|regular| {
+                let mut gdb = *regular;
+                gdb[11] = text_addr + regular[11] * INSN_ENTRY_SIZE as u64;
+                gdb
+            })
+            .collect()
+    }
+
+    fn write_sidecars(
+        inv: &InvocationFiles,
+        gdb_regs: &[[u64; 12]],
+        gdb_insns: &[u8],
+        cu_remaining: &[u64],
+    ) {
+        fs::write(
+            inv.regs_path.with_extension("gdb.regs"),
+            regs_bytes(gdb_regs),
+        )
+        .unwrap();
+        fs::write(inv.regs_path.with_extension("gdb.insns"), gdb_insns).unwrap();
+        fs::write(
+            inv.regs_path.with_extension("gdb.cu"),
+            cu_bytes(cu_remaining),
+        )
+        .unwrap();
+    }
+
+    fn sidecar_err(
+        inv: &InvocationFiles,
+        regular_regs: &[u8],
+        regular_insns: &[u8],
+        regular_count: usize,
+    ) -> String {
+        match load_gdb_sidecars(inv, regular_regs, regular_insns, regular_count) {
+            Ok(_) => panic!("expected gdb sidecar validation error"),
+            Err(err) => format!("{err:#}"),
+        }
+    }
+
+    #[test]
+    fn gdb_sidecars_normalize_virtual_pc_and_override_cu_costs() {
+        let dir = tempdir().unwrap();
+        let inv = invocation(dir.path());
+        let regular_entries = regs_entries(&[0, 1, 2]);
+        let regular_regs = regs_bytes(&regular_entries);
+        let regular_insns = insns_bytes(3, 0xab);
+        let gdb_entries = gdb_entries_for_regular(&regular_entries, 0x1000);
+        write_sidecars(&inv, &gdb_entries, &regular_insns, &[100, 93, 90]);
+
+        let sidecar = load_gdb_sidecars(&inv, &regular_regs, &regular_insns, 3)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(sidecar.regs, regular_regs);
+        assert_eq!(sidecar.insns, regular_insns);
+        assert_eq!(sidecar.cu_costs, vec![0, 7, 3]);
+    }
+
+    #[test]
+    fn gdb_sidecars_reject_incomplete_sets() {
+        let dir = tempdir().unwrap();
+        let inv = invocation(dir.path());
+        let regular_entries = regs_entries(&[0]);
+        let regular_regs = regs_bytes(&regular_entries);
+        let regular_insns = insns_bytes(1, 0xab);
+        fs::write(
+            inv.regs_path.with_extension("gdb.regs"),
+            regs_bytes(&gdb_entries_for_regular(&regular_entries, 0x1000)),
+        )
+        .unwrap();
+
+        let err = sidecar_err(&inv, &regular_regs, &regular_insns, 1);
+
+        assert!(err.contains("incomplete gdb sidecar set"));
+    }
+
+    #[test]
+    fn gdb_sidecars_reject_count_mismatch() {
+        let dir = tempdir().unwrap();
+        let inv = invocation(dir.path());
+        let regular_entries = regs_entries(&[0, 1]);
+        let regular_regs = regs_bytes(&regular_entries);
+        let regular_insns = insns_bytes(2, 0xab);
+        let gdb_entries = gdb_entries_for_regular(&regular_entries[..1], 0x1000);
+        write_sidecars(
+            &inv,
+            &gdb_entries,
+            &regular_insns[..INSN_ENTRY_SIZE],
+            &[100],
+        );
+
+        let err = sidecar_err(&inv, &regular_regs, &regular_insns, 2);
+
+        assert!(err.contains("gdb sidecar count mismatch"));
+    }
+
+    #[test]
+    fn gdb_sidecars_reject_instruction_mismatch() {
+        let dir = tempdir().unwrap();
+        let inv = invocation(dir.path());
+        let regular_entries = regs_entries(&[0, 1]);
+        let regular_regs = regs_bytes(&regular_entries);
+        let regular_insns = insns_bytes(2, 0xab);
+        let gdb_entries = gdb_entries_for_regular(&regular_entries, 0x1000);
+        write_sidecars(&inv, &gdb_entries, &insns_bytes(2, 0xcd), &[100, 99]);
+
+        let err = sidecar_err(&inv, &regular_regs, &regular_insns, 2);
+
+        assert!(err.contains("gdb sidecar instruction bytes differ"));
+    }
+
+    #[test]
+    fn gdb_sidecars_reject_register_mismatch() {
+        let dir = tempdir().unwrap();
+        let inv = invocation(dir.path());
+        let regular_entries = regs_entries(&[0]);
+        let regular_regs = regs_bytes(&regular_entries);
+        let regular_insns = insns_bytes(1, 0xab);
+        let mut gdb_entries = gdb_entries_for_regular(&regular_entries, 0x1000);
+        gdb_entries[0][0] = 0x66;
+        write_sidecars(&inv, &gdb_entries, &regular_insns, &[100]);
+
+        let err = sidecar_err(&inv, &regular_regs, &regular_insns, 1);
+
+        assert!(err.contains("gdb register r0 mismatch"));
+    }
+
+    #[test]
+    fn gdb_sidecars_reject_inconsistent_text_address() {
+        let dir = tempdir().unwrap();
+        let inv = invocation(dir.path());
+        let regular_entries = regs_entries(&[0, 1]);
+        let regular_regs = regs_bytes(&regular_entries);
+        let regular_insns = insns_bytes(2, 0xab);
+        let mut gdb_entries = gdb_entries_for_regular(&regular_entries, 0x1000);
+        gdb_entries[1][11] = 0x2000 + INSN_ENTRY_SIZE as u64;
+        write_sidecars(&inv, &gdb_entries, &regular_insns, &[100, 99]);
+
+        let err = sidecar_err(&inv, &regular_regs, &regular_insns, 2);
+
+        assert!(err.contains("gdb PC/text address mismatch"));
     }
 }

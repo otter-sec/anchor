@@ -1,5 +1,5 @@
 use {
-    crate::{config::ConfigOverride, get_cluster_and_wallet, AbsolutePath},
+    crate::{compat::solana_pubkey, config::ConfigOverride, get_cluster_and_wallet, AbsolutePath},
     anyhow::{anyhow, Result},
     clap::Parser,
     solana_commitment_config::CommitmentConfig,
