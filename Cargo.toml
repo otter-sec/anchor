@@ -12,7 +12,7 @@ members = [
     "lang/syn",
     "spl",
 ]
-exclude = ["tests/cfo/deps/openbook-dex", "tests/swap/deps/openbook-dex"]
+exclude = ["bench", "tests/cfo/deps/openbook-dex", "tests/swap/deps/openbook-dex"]
 resolver = "2"
 
 [workspace.package]
