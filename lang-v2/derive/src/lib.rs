@@ -6043,8 +6043,13 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         // Custom 2-arg (r1, r2) entrypoint using SIMD-0321 convention.
         #[cfg(not(feature = "no-entrypoint"))]
         anchor_lang::pinocchio::default_allocator!();
-        #[cfg(not(feature = "no-entrypoint"))]
+        // SBF ships a std stub that owns `#[panic_handler]` and calls the
+        // `custom_panic` hook. Upstream BPF (`target_arch = "bpf"`) is
+        // `no_std`, so the program must provide the `#[panic_handler]` itself.
+        #[cfg(all(not(feature = "no-entrypoint"), not(target_arch = "bpf")))]
         anchor_lang::pinocchio::default_panic_handler!();
+        #[cfg(all(not(feature = "no-entrypoint"), target_arch = "bpf"))]
+        anchor_lang::pinocchio::nostd_panic_handler!();
 
         /// Matches Solana's transaction-wide account cap (u8 index space).
         /// The lookup array holds `[AccountView; 256]` = ~2 KiB of frame

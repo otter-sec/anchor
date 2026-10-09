@@ -6,6 +6,10 @@
 extern crate alloc;
 extern crate self as anchor_lang;
 
+// Links the SVM libcall implementations into upstream BPF programs.
+#[cfg(target_arch = "bpf")]
+use solana_compiler_builtins as _;
+
 pub mod accounts;
 pub mod context;
 mod context_cpi;
@@ -243,7 +247,7 @@ pub mod solana_program {
     }
 
     pub mod rent {
-        pub use solana_sysvar::rent::*;
+        pub use solana_rent::{sysvar::*, *};
     }
 
     pub mod sysvar {

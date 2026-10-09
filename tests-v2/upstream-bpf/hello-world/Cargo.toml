@@ -1,0 +1,33 @@
+[package]
+name = "hello-world"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "hello_world"
+
+[features]
+no-entrypoint = []
+
+[dependencies]
+anchor-lang = { path = "../../../lang-v2", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+litesvm = "0.18"
+solana-keypair = "3.1"
+solana-message = "4"
+solana-signer = "3.0.0"
+solana-transaction = "4"
+
+[profile.release]
+overflow-checks = true
+codegen-units = 1
+
+# Standalone workspace: this crate needs the upstream-BPF `.cargo/config.toml`
+# (build-std, sbpf-linker) which must not leak into the main workspace.
+[workspace]
+
+[lints.rust.unexpected_cfgs]
+level = "allow"

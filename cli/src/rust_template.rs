@@ -18,7 +18,18 @@ use {
     },
 };
 
+/// `rust-version` of generated crates. `cargo build-sbf` enforces it against
+/// the platform-tools rustc (1.89.0-dev in v1.52), so it must not exceed that.
 const ANCHOR_MSRV: &str = "1.89.0";
+
+/// Host toolchain pinned in the generated `rust-toolchain.toml` (`cargo test`,
+/// IDL build). Higher than [`ANCHOR_MSRV`] because the test harnesses
+/// (litesvm 0.18 / mollusk-svm 0.16 → agave 4.3) require rustc 1.97.1.
+const ANCHOR_HOST_TOOLCHAIN: &str = "1.97.1";
+
+/// Nightly for the upstream BPF build (`cargo +<nightly> build-bpf`). Must ship
+/// the LLVM that `sbpf-linker` dlopens (LLVM 23, nightly >= 2026-08-05).
+const UPSTREAM_BPF_NIGHTLY: &str = "nightly-2026-10-08";
 
 /// Program initialization template
 #[derive(Clone, Debug, Default, Eq, PartialEq, Parser, ValueEnum, AbsolutePath)]
@@ -41,6 +52,7 @@ pub fn create_program(
     let common_files = vec![
         ("Cargo.toml".into(), workspace_manifest()),
         ("rust-toolchain.toml".into(), rust_toolchain_toml()),
+        (Path::new(".cargo").join("config.toml"), cargo_config_toml()),
         (
             program_path.join("Cargo.toml"),
             cargo_toml(name, test_template),
@@ -79,9 +91,49 @@ pub fn create_program(
 fn rust_toolchain_toml() -> String {
     format!(
         r#"[toolchain]
-channel = "{ANCHOR_MSRV}"
+channel = "{ANCHOR_HOST_TOOLCHAIN}"
 components = ["rustfmt","clippy"]
 profile = "minimal"
+"#
+    )
+}
+
+/// Helper to create a `.cargo/config.toml` at the workspace root with the
+/// opt-in upstream BPF build (`bpfel-unknown-none` + `sbpf-linker`). Every
+/// setting is scoped to that target or to the `build-bpf` alias, so
+/// `anchor build` / `cargo build-sbf` are unaffected.
+fn cargo_config_toml() -> String {
+    format!(
+        r#"# Opt-in upstream BPF build: rustc's `bpfel-unknown-none` target + sbpf-linker
+# (https://github.com/blueshift-gg/sbpf-linker), producing sBPF v3 programs.
+#
+#   rustup toolchain install {UPSTREAM_BPF_NIGHTLY} --profile minimal -c rust-src
+#   cargo install sbpf-linker
+#   cargo +{UPSTREAM_BPF_NIGHTLY} build-bpf    # -> target/deploy/<program>.so
+#
+# `anchor build` (cargo build-sbf) ignores this file.
+
+[target.bpfel-unknown-none]
+rustflags = [
+    "-C", "linker=sbpf-linker",
+    "-C", "panic=abort",
+    "-C", "relocation-model=static",
+    "-C", "target-cpu=v4",
+    "-C", "target-feature=+allows-misaligned-mem-access",
+    "-C", "link-arg=--llvm-args=--bpf-stack-size=4096",
+    "-C", "link-arg=--llvm-args=--bpf-max-stores-per-memfunc=5",
+    "-C", "link-arg=--llvm-args=--disable-gotox",
+    "-C", "link-arg=--llvm-args=--disable-ldsx",
+    "-C", "link-arg=--llvm-args=--disable-movsx",
+    "--cfg=target_os=\"solana\"",
+    "--cfg=target_feature=\"static-syscalls\"",
+    "-A", "explicit_builtin_cfgs_in_flags",
+]
+
+[alias]
+# `-Zbuild-std` lives here rather than in `[unstable]` so host builds
+# (`cargo test`) keep using the prebuilt std.
+build-bpf = "build --release --target bpfel-unknown-none -Zbuild-std=core,alloc"
 "#
     )
 }
@@ -91,7 +143,9 @@ fn create_program_template_single(name: &str, program_path: &Path, target_path: 
     vec![(
         program_path.join("src").join("lib.rs"),
         format!(
-            r#"use anchor_lang::prelude::*;
+            r#"#![cfg_attr(target_arch = "bpf", no_std)]
+
+use anchor_lang::prelude::*;
 
 declare_id!("{}");
 
@@ -141,7 +195,9 @@ fn create_program_template_multiple(name: &str, program_path: &Path, target_path
         (
             src_path.join("lib.rs"),
             format!(
-                r#"pub mod constants;
+                r#"#![cfg_attr(target_arch = "bpf", no_std)]
+
+pub mod constants;
 pub mod error;
 pub mod instructions;
 pub mod state;
@@ -271,8 +327,8 @@ fn cargo_toml(name: &str, test_template: Option<&TestTemplate>) -> String {
         Some(TestTemplate::Mollusk) => {
             r#"
 [dev-dependencies]
-mollusk-svm = "0.13"
-solana-account = "3"
+mollusk-svm = "0.16"
+solana-account = "4"
 solana-pubkey = "4"
 solana-sdk-ids = "3"
 bytemuck = "1"
