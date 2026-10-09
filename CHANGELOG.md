@@ -26,6 +26,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - Block mutable aliasing between accounts marked `zero` and `init` ([#4871](https://github.com/otter-sec/anchor/pull/4871)).
 - lang: Support fully qualified account types in `Context` ([#4836](https://github.com/otter-sec/anchor/pull/4836)).
 - ts: Support `delegatedAmount` in accounts resolver ([#4957](https://github.com/otter-sec/anchor/pull/4957)).
+- ts: Encode negative signed integer PDA seeds as two's complement, matching Rust's `to_le_bytes` ([#5153](https://github.com/otter-sec/anchor/pull/5153)).
 - lang: Improve macro hygiene to address potential issues with key validation ([#5105](https://github.com/otter-sec/anchor/pull/5105)).
 - client: Ignore logs from failed transactions in event subscriptions so reverted executions do not emit events ([#4884](https://github.com/otter-sec/anchor/pull/4884)).
 - lang: Accept arbitrary expressions in `declare_id!`. ([#5010](https://github.com/otter-sec/anchor/pull/5010)).
