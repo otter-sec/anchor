@@ -1,28 +1,19 @@
 //! Platform-tools version resolution and installation.
 //!
-//! Resolution: given a Solana version a project targets, return the
-//! `platform-tools` version that ships with that Solana release. The map is
-//! embedded at compile time from `../platform-tools-map.toml` and ordered by
-//! ascending Solana version, so resolution is a linear floor lookup: pick the
-//! entry with the largest `solana` key that is `<= requested`. Project Solana
-//! requirements are resolved against the hosted Solana CLI candidate set, and
-//! AVM picks the newest compatible candidate. When the project pins no Solana
-//! version at all, fall back to the map's `fallback` field (kept equal to the
-//! newest entry's `platform_tools`).
+//! Resolution: always select the latest published platform-tools release,
+//! independently of the project's Anchor or Solana version. This experiment
+//! retains the static map for historical lookups but bypasses it for selection.
 //!
 //! Installation: download the matching tarball from `anza-xyz/platform-tools`
 //! GitHub releases and extract into `$AVM_HOME/platform-tools/<version>/`.
 //! Asset naming follows what `cargo-build-sbf` looks for upstream:
 //! `platform-tools-{linux|osx|windows}-{x86_64|aarch64}.tar.bz2`.
+#[cfg(test)]
+use crate::{resolve::SolanaResolution, solana::installable_solana_cli_versions_for_req};
 use {
     crate::{
-        resolve::{
-            find_ancestor_file, resolve_solana_version, ResolutionSource, SolanaResolution,
-            SolanaResolutionSource,
-        },
-        solana::{
-            installable_solana_cli_versions_for_req, SolanaCliResolution, SolanaCliResolutionSource,
-        },
+        resolve::{find_ancestor_file, ResolutionSource, SolanaResolutionSource},
+        solana::SolanaCliResolution,
         AVM_HOME, DOWNLOAD_CLIENT,
     },
     anyhow::{anyhow, bail, Context, Result},
@@ -35,6 +26,45 @@ use {
         sync::LazyLock,
     },
 };
+
+/// Resolve the published release tag and read the compiler version from its
+/// corresponding Rust branch, rather than guessing from an older map entry.
+fn resolve_latest_platform_tools() -> Result<PlatformToolsResolution> {
+    let version = crate::latest_platform_tools_version()?;
+    let version = normalize_platform_tools_version(&version)?;
+    if let Some(entry) = MAP
+        .entries
+        .iter()
+        .find(|entry| entry.platform_tools == version)
+    {
+        return Ok(PlatformToolsResolution {
+            version,
+            rustc: entry.rustc.clone(),
+            cargo_lock_v4: entry.cargo_lock_v4,
+            source: PlatformToolsSource::Latest,
+        });
+    }
+    let url = format!(
+        "https://raw.githubusercontent.com/anza-xyz/rust/solana-tools-{version}/src/version"
+    );
+    let rustc = crate::fetch_raw(&crate::HTTP_CLIENT, &url)?
+        .ok_or_else(|| anyhow!("No Rust compiler version found for platform-tools {version}"))?;
+    latest_platform_tools_resolution(&version, rustc.trim())
+}
+
+fn latest_platform_tools_resolution(version: &str, rustc: &str) -> Result<PlatformToolsResolution> {
+    let rustc = Version::parse(rustc).context("Parsing latest platform-tools Rust version")?;
+    // This experiment requires native lockfile-v4 support (stable since Rust 1.83).
+    if rustc < Version::new(1, 83, 0) {
+        bail!("Latest platform-tools compiler {rustc} does not support lockfile v4 natively");
+    }
+    Ok(PlatformToolsResolution {
+        version: normalize_platform_tools_version(version)?,
+        rustc,
+        cargo_lock_v4: CargoLockV4Support::Native,
+        source: PlatformToolsSource::Latest,
+    })
+}
 
 const PLATFORM_TOOLS_MAP_TOML: &str = include_str!("../platform-tools-map.toml");
 
@@ -141,6 +171,8 @@ pub enum PlatformToolsSource {
     },
     /// Project did not pin Solana → use the map's hardcoded fallback.
     Fallback,
+    /// Latest published release, independent of project toolchain pins.
+    Latest,
     /// Directly requested with `avm platform-tools resolve --solana-version`.
     ExplicitSolana { solana: Version, below_map: bool },
 }
@@ -167,6 +199,7 @@ impl PlatformToolsSource {
                 "solana {solana} recommended for anchor {anchor} ({})",
                 anchor_source.describe()
             ),
+            Self::Latest => "latest published platform-tools release".to_string(),
             Self::Fallback => "fallback (no Solana version pinned)".to_string(),
             Self::ExplicitSolana {
                 solana,
@@ -194,19 +227,22 @@ pub struct PlatformToolsResolution {
 
 /// Resolve the platform-tools version for the project rooted at `start`.
 ///
-/// Walks the same project-detection logic as [`resolve_solana_version`], then
-/// performs a floor lookup in the embedded map.
-pub fn resolve_platform_tools(start: &Path) -> Result<PlatformToolsResolution> {
-    match resolve_solana_version(start)? {
-        Some(solana_res) => resolve_for_project_solana(&solana_res),
-        None => Ok(resolve_fallback()),
-    }
+/// Uses the latest published release regardless of project metadata.
+pub fn resolve_platform_tools(_start: &Path) -> Result<PlatformToolsResolution> {
+    resolve_latest_platform_tools()
 }
 
 /// Resolve platform-tools for an explicit Solana CLI version.
 ///
 /// Unlike [`resolve_platform_tools`], this does not inspect the project.
-pub fn resolve_platform_tools_for_solana_version(solana: &Version) -> PlatformToolsResolution {
+pub fn resolve_platform_tools_for_solana_version(
+    _solana: &Version,
+) -> Result<PlatformToolsResolution> {
+    resolve_latest_platform_tools()
+}
+
+#[cfg(test)]
+fn resolve_mapped_platform_tools_for_solana_version(solana: &Version) -> PlatformToolsResolution {
     let entries = &MAP.entries;
     match entries.iter().rposition(|entry| entry.solana <= *solana) {
         Some(idx) => {
@@ -242,40 +278,9 @@ pub fn resolve_platform_tools_for_solana_version(solana: &Version) -> PlatformTo
 /// proxy.
 pub fn resolve_platform_tools_for_solana_cli(
     _start: &Path,
-    solana_res: &SolanaCliResolution,
+    _solana_res: &SolanaCliResolution,
 ) -> Result<PlatformToolsResolution> {
-    let resolution = match &solana_res.source {
-        SolanaCliResolutionSource::Project(source) => {
-            resolve_for_solana_version(&solana_res.version, source.clone())
-        }
-        SolanaCliResolutionSource::AnchorMap {
-            anchor,
-            anchor_source,
-        } => {
-            let entry = MAP
-                .entries
-                .iter()
-                .rev()
-                .find(|entry| entry.solana <= solana_res.version)
-                .unwrap_or_else(|| {
-                    MAP.entries
-                        .first()
-                        .expect("platform-tools map must have at least one entry")
-                });
-            PlatformToolsResolution {
-                version: entry.platform_tools.clone(),
-                rustc: entry.rustc.clone(),
-                cargo_lock_v4: entry.cargo_lock_v4,
-                source: PlatformToolsSource::AnchorMap {
-                    solana: solana_res.version.clone(),
-                    anchor: anchor.clone(),
-                    anchor_source: anchor_source.clone(),
-                },
-            }
-        }
-    };
-
-    Ok(resolution)
+    resolve_latest_platform_tools()
 }
 
 #[cfg(test)]
@@ -283,6 +288,7 @@ fn resolve_for_solana(solana_res: &SolanaResolution) -> PlatformToolsResolution 
     resolve_for_solana_version(&solana_res.version, solana_res.source.clone())
 }
 
+#[cfg(test)]
 fn resolve_for_project_solana(solana_res: &SolanaResolution) -> Result<PlatformToolsResolution> {
     let candidates = solana_candidates(solana_res)?;
     let Some(newest) = candidates.last() else {
@@ -298,19 +304,7 @@ fn resolve_for_project_solana(solana_res: &SolanaResolution) -> Result<PlatformT
     ))
 }
 
-fn resolve_fallback() -> PlatformToolsResolution {
-    let entry = MAP
-        .entries
-        .last()
-        .expect("platform-tools map must have at least one entry");
-    PlatformToolsResolution {
-        version: entry.platform_tools.clone(),
-        rustc: entry.rustc.clone(),
-        cargo_lock_v4: entry.cargo_lock_v4,
-        source: PlatformToolsSource::Fallback,
-    }
-}
-
+#[cfg(test)]
 fn solana_candidates(solana_res: &SolanaResolution) -> Result<Vec<Version>> {
     match solana_res.version_req.as_deref() {
         Some(req) => installable_solana_cli_versions_for_req(req, &solana_res.source),
@@ -318,6 +312,7 @@ fn solana_candidates(solana_res: &SolanaResolution) -> Result<Vec<Version>> {
     }
 }
 
+#[cfg(test)]
 fn resolve_for_solana_version(
     solana: &Version,
     solana_source: SolanaResolutionSource,
@@ -733,6 +728,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn latest_release_metadata_does_not_use_a_historical_compiler() {
+        let resolution = latest_platform_tools_resolution("v1.58", "1.96.0").unwrap();
+        assert_eq!(resolution.version, "v1.58");
+        assert_eq!(resolution.rustc, v("1.96.0"));
+        assert_eq!(resolution.cargo_lock_v4, CargoLockV4Support::Native);
+        assert!(matches!(resolution.source, PlatformToolsSource::Latest));
+        assert!(latest_platform_tools_resolution("v1.58", "invalid").is_err());
+        assert!(latest_platform_tools_resolution("../v1.58", "1.96.0").is_err());
+    }
+
     // ── Embedded map ─────────────────────────────────────────────────────────
 
     #[test]
@@ -824,7 +830,7 @@ mod tests {
 
     #[test]
     fn explicit_solana_resolution_uses_the_map_without_project_metadata() {
-        let mapped = resolve_platform_tools_for_solana_version(&v("3.1.10"));
+        let mapped = resolve_mapped_platform_tools_for_solana_version(&v("3.1.10"));
         assert_eq!(mapped.version, "v1.57");
         assert!(matches!(
             mapped.source,
@@ -834,7 +840,7 @@ mod tests {
             } if solana == v("3.1.10")
         ));
 
-        let below_map = resolve_platform_tools_for_solana_version(&v("1.0.0"));
+        let below_map = resolve_mapped_platform_tools_for_solana_version(&v("1.0.0"));
         assert_eq!(
             below_map.version,
             MAP.entries.first().unwrap().platform_tools

@@ -160,9 +160,9 @@ jobs:
           path: |
             ~/.cache/solana/
             ~/.local/share/solana/
-          key: downstream-solana-${{ runner.os }}-v0002-${{ matrix.directory }}-${{ steps.solana.outputs.version }}
+          key: downstream-solana-${{ runner.os }}-latest-build-tool-v0003-${{ matrix.directory }}-${{ steps.solana.outputs.version }}
           restore-keys: |
-            downstream-solana-${{ runner.os }}-v0002-${{ matrix.directory }}-
+            downstream-solana-${{ runner.os }}-latest-build-tool-v0003-${{ matrix.directory }}-
 
       - name: Install project Solana CLI
         working-directory: ${{ steps.project.outputs.path }}
@@ -174,6 +174,28 @@ jobs:
           avm solana install "${{ steps.solana.outputs.version }}"
           echo "$solana_bin" >> "$GITHUB_PATH"
           "$solana_bin/solana" --version
+        shell: bash
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        name: Cache latest SBF build tool
+        with:
+          path: ~/.local/share/avm-experiment-build-tools/
+          key: downstream-build-tool-${{ runner.os }}-4.4.0
+
+      - name: Install latest SBF build tool
+        run: |
+          set -euo pipefail
+
+          build_tools="$HOME/.local/share/avm-experiment-build-tools"
+          if [[ ! -x "$build_tools/bin/cargo-build-sbf" ]]; then
+            cargo install cargo-build-sbf --version 4.4.0 --locked --root "$build_tools"
+          fi
+          # AVM prepends the selected Solana suite to PATH. Replace its build
+          # executable so legacy cargo-build-bpf shims also reach the new tool.
+          solana_bin="$HOME/.local/share/solana/install/active_release/bin"
+          ln -sf "$build_tools/bin/cargo-build-sbf" "$solana_bin/cargo-build-sbf"
+          "$solana_bin/cargo-build-sbf" --version
+          test "$(readlink -f "$solana_bin/cargo-build-sbf")" = "$build_tools/bin/cargo-build-sbf"
         shell: bash
 
       - run: solana-keygen new --no-bip39-passphrase
@@ -193,6 +215,8 @@ jobs:
         env:
           BUILD_COMMAND: ${{ matrix.build_command }}
           BUILD_NAME: ${{ matrix.name }}
+          AVM_TRACE_TOOLCHAIN: "1"
+          AVM_DEFAULT_SBF_ARCH: v0
           NO_COLOR: "1"
           TERM: dumb
         run: |

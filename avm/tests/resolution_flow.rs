@@ -3,7 +3,9 @@
 use {
     sha2::{Digest, Sha256},
     std::{
-        env, fs,
+        env,
+        ffi::OsStr,
+        fs,
         os::unix::fs::PermissionsExt,
         path::{Path, PathBuf},
         process::{Command, Output},
@@ -28,6 +30,12 @@ impl Fixture {
         let avm_home = temp.path().join("avm-home");
         let avm_bin = avm_home.join("bin");
         fs::create_dir_all(&avm_bin).expect("avm bin");
+        // Fix the latest-release cache so these launcher tests stay offline.
+        fs::write(
+            avm_home.join(".cargo-build-sbf-check"),
+            format!("{}\nv1.57", chrono::Utc::now().timestamp()),
+        )
+        .expect("latest platform-tools cache");
 
         let path_bin = temp.path().join("path-bin");
         fs::create_dir_all(&path_bin).expect("path bin");
@@ -133,6 +141,9 @@ echo "next_lockfile_bump=${{CARGO_UNSTABLE_NEXT_LOCKFILE_BUMP:-}}" >> "$AVM_TEST
             &self.avm_home_bin().join(format!("anchor-{version}")),
             r#"#!/bin/sh
 cargo build-sbf
+cargo build-bpf --tools-version=v1.41
+cargo build-sbf --tools-version v1.42 -- --features mainnet
+cargo build-sbf --tools-version=v1.46 -- --features testnet
 cargo +nightly test idl
 cargo +nightly-2026-07-01 test already-pinned
 "#,
@@ -549,9 +560,7 @@ fn anchor_stub_prefers_anchor_toml_and_sets_launcher_env() {
 fn anchor_stub_falls_back_to_anchorversion_cargo_and_global_sources() {
     let fixture = Fixture::new();
     fixture.install_legacy_build_sbf();
-    fixture.cache_platform_tools("v1.51.1");
-    fixture.cache_platform_tools("v1.46.1");
-    fixture.cache_platform_tools("v1.42.1");
+    fixture.cache_platform_tools("v1.57");
     fixture.install_anchor("0.32.1");
     fixture.install_anchor("0.31.1");
     fixture.install_anchor("0.30.1");
@@ -604,8 +613,10 @@ fn anchor_stub_pins_only_unversioned_nightly_cargo_invocations() {
 
     assert_eq!(
         fs::read_to_string(&fixture.cargo_log_path).unwrap(),
-        "--help\nbuild-sbf --install-only --tools-version v1.57\nbuild-sbf\n+nightly-2026-06-10 \
-         test idl\n+nightly-2026-07-01 test already-pinned\n"
+        "--help\nbuild-sbf --install-only --tools-version v1.57\nbuild-sbf --tools-version \
+         v1.57\nbuild-bpf --tools-version v1.57\nbuild-sbf --tools-version v1.57 -- --features \
+         mainnet\nbuild-sbf --tools-version v1.57 -- --features testnet\n+nightly-2026-06-10 test \
+         idl\n+nightly-2026-07-01 test already-pinned\n"
     );
     let rustup_log = fs::read_to_string(&fixture.rustup_log_path).unwrap();
     assert!(
@@ -618,7 +629,7 @@ fn anchor_stub_pins_only_unversioned_nightly_cargo_invocations() {
 fn anchor_stub_uses_legacy_idl_nightly_for_locked_proc_macro2() {
     let fixture = Fixture::new();
     fixture.install_legacy_build_sbf();
-    fixture.cache_platform_tools("v1.42.1");
+    fixture.cache_platform_tools("v1.57");
     let project = fixture.project("legacy-cargo-proxy");
     fixture.install_anchor_with_cargo_calls("0.30.1");
     fixture.install_fake_solana("1.18.17");
@@ -637,7 +648,10 @@ fn anchor_stub_uses_legacy_idl_nightly_for_locked_proc_macro2() {
 
     assert_eq!(
         fs::read_to_string(&fixture.cargo_log_path).unwrap(),
-        "build-sbf\n+nightly-2025-04-15 test idl\n+nightly-2026-07-01 test already-pinned\n"
+        "build-sbf --tools-version v1.57\nbuild-bpf --tools-version v1.57\nbuild-sbf \
+         --tools-version v1.57 -- --features mainnet\nbuild-sbf --tools-version v1.57 -- \
+         --features testnet\n+nightly-2025-04-15 test idl\n+nightly-2026-07-01 test \
+         already-pinned\n"
     );
     let rustup_log = fs::read_to_string(&fixture.rustup_log_path).unwrap();
     assert!(
@@ -647,10 +661,10 @@ fn anchor_stub_uses_legacy_idl_nightly_for_locked_proc_macro2() {
 }
 
 #[test]
-fn anchor_stub_enables_v4_lockfile_for_compatible_legacy_cargo() {
+fn anchor_stub_uses_latest_native_v4_cargo_for_legacy_solana() {
     let fixture = Fixture::new();
     fixture.install_legacy_build_sbf();
-    fixture.cache_platform_tools("v1.42.1");
+    fixture.cache_platform_tools("v1.57");
     fixture.install_anchor("0.30.1");
     fixture.install_fake_solana("1.18.17");
     let project = fixture.project("legacy-v4-lockfile");
@@ -664,14 +678,14 @@ fn anchor_stub_enables_v4_lockfile_for_compatible_legacy_cargo() {
     assert_success(&fixture.run_anchor(&project, ["build"]));
 
     let log = fixture.anchor_log();
-    assert!(log.contains("next_lockfile_bump=true"), "{log}");
+    assert!(log.contains("next_lockfile_bump=\n"), "{log}");
 }
 
 #[test]
 fn anchor_stub_does_not_enable_v4_opt_in_for_native_cargo() {
     let fixture = Fixture::new();
     fixture.install_legacy_build_sbf();
-    fixture.cache_platform_tools("v1.46.1");
+    fixture.cache_platform_tools("v1.57");
     fixture.install_anchor("0.31.1");
     fixture.install_fake_solana("2.1.0");
     let project = fixture.project("native-v4-lockfile");
@@ -692,7 +706,7 @@ fn anchor_stub_does_not_enable_v4_opt_in_for_native_cargo() {
 fn anchor_stub_uses_versioned_link_for_early_agave_three() {
     let fixture = Fixture::new();
     fixture.install_legacy_build_sbf();
-    fixture.cache_platform_tools("v1.51.1");
+    fixture.cache_platform_tools("v1.57");
     fixture.install_anchor("1.0.2");
     fixture.install_fake_solana("3.0.0");
     let project = fixture.project("early-agave-three");
@@ -706,7 +720,7 @@ fn anchor_stub_uses_versioned_link_for_early_agave_three() {
 
     let rustup_log = fs::read_to_string(&fixture.rustup_log_path).unwrap();
     assert!(
-        rustup_log.contains("toolchain link 1.84.1-sbpf-solana-v1.51.1"),
+        rustup_log.contains("toolchain link 1.95.0-sbpf-solana-v1.57"),
         "{rustup_log}"
     );
     assert!(
@@ -719,7 +733,7 @@ fn anchor_stub_uses_versioned_link_for_early_agave_three() {
 fn anchor_stub_supports_oldest_anchor_solana_mapping() {
     let fixture = Fixture::new();
     fixture.install_legacy_build_sbf();
-    fixture.cache_platform_tools("v1.42.1");
+    fixture.cache_platform_tools("v1.57");
     fixture.install_anchor("0.29.0");
     fixture.install_fake_solana("1.17.25");
     let project = fixture.project("anchor-029");
@@ -736,7 +750,7 @@ fn anchor_stub_supports_oldest_anchor_solana_mapping() {
         rustup_log.contains("toolchain link solana "),
         "{rustup_log}"
     );
-    assert!(rustup_log.contains("/v1.42.1/platform-tools/rust"));
+    assert!(rustup_log.contains("/v1.57/platform-tools/rust"));
     assert!(
         !fixture.cargo_log_path.exists(),
         "Solana 1.17 must not invoke unsupported --install-only"
@@ -790,11 +804,11 @@ fn avm_subcommands_resolve_solana_and_platform_tools_from_project() {
     assert_success(&platform_tools);
     let platform_tools_stdout = command_stdout(platform_tools);
     assert!(
-        platform_tools_stdout.contains("platform-tools v1.51.1"),
+        platform_tools_stdout.contains("platform-tools v1.57"),
         "{platform_tools_stdout}"
     );
     assert!(
-        platform_tools_stdout.contains("solana 2.3.0"),
+        platform_tools_stdout.contains("latest published platform-tools release"),
         "{platform_tools_stdout}"
     );
 }
@@ -829,7 +843,9 @@ fn avm_platform_tools_resolve_accepts_explicit_solana_or_anchor_versions() {
         "{anchor_stdout}"
     );
     assert!(
-        anchor_stdout.contains("explicit Anchor 1.0.2 → Solana 3.1.10 → map"),
+        anchor_stdout.contains(
+            "explicit Anchor 1.0.2 → Solana 3.1.10; latest published platform-tools release"
+        ),
         "{anchor_stdout}"
     );
 
@@ -854,14 +870,14 @@ fn avm_platform_tools_resolve_accepts_explicit_solana_or_anchor_versions() {
 }
 
 #[test]
-fn avm_platform_tools_resolution_keeps_legacy_anchor_rust_minors() {
+fn avm_platform_tools_resolution_uses_latest_for_every_anchor_version() {
     let fixture = Fixture::new();
     let project = fixture.project("legacy-anchor-versions");
 
     for (anchor, platform_tools, rustc) in [
-        ("0.30.1", "v1.42.1", "1.75.0"),
-        ("0.31.1", "v1.46.1", "1.79.0"),
-        ("0.32.1", "v1.51.1", "1.84.1"),
+        ("0.30.1", "v1.57", "1.95.0"),
+        ("0.31.1", "v1.57", "1.95.0"),
+        ("0.32.1", "v1.57", "1.95.0"),
     ] {
         let resolution = fixture.run_avm(
             &project,
@@ -875,6 +891,64 @@ fn avm_platform_tools_resolution_keeps_legacy_anchor_rust_minors() {
         );
         assert!(stdout.contains(&format!("rustc {rustc}")), "{stdout}");
     }
+}
+
+#[test]
+fn compiler_trace_rejects_fallback_sysroots_only_for_sbf_targets() {
+    let fixture = Fixture::new();
+    let wrapper = fixture.path_bin.join("rustc-wrapper");
+    fs::copy(env!("CARGO_BIN_EXE_avm"), &wrapper).unwrap();
+    make_executable(&wrapper);
+    let compiler = fixture.path_bin.join("fake-rustc");
+    write_executable(
+        &compiler,
+        r#"#!/bin/sh
+if [ "$1" = "--print" ]; then
+    echo "$AVM_TEST_ACTUAL_SYSROOT"
+elif [ "$1" = "-vV" ]; then
+    echo "rustc 1.95.0-dev"
+fi
+"#,
+    );
+    let selected = fixture.cache_platform_tools("v1.57").join("rust");
+    let old = fixture.cache_platform_tools("v1.44").join("rust");
+    let run = |actual: &Path, target: &str| {
+        Command::new(&wrapper)
+            .args([
+                compiler.as_os_str(),
+                OsStr::new("--target"),
+                OsStr::new(target),
+                OsStr::new("--emit=metadata"),
+            ])
+            .env("AVM_TEST_ACTUAL_SYSROOT", actual)
+            .env("AVM_PLATFORM_TOOLS_SYSROOT", &selected)
+            .env(
+                "AVM_COMPILER_TRACE_FILE",
+                fixture.path_bin.join("trace-marker"),
+            )
+            .env_remove("AVM_REAL_RUSTC_WRAPPER")
+            .output()
+            .unwrap()
+    };
+    let correct = run(&selected, "sbpf-solana-solana");
+    assert_success(&correct);
+    assert!(String::from_utf8_lossy(&correct.stderr).contains("AVM actual SBF compiler"));
+    let fallback = run(&old, "sbf-solana-solana");
+    assert!(!fallback.status.success());
+    assert!(String::from_utf8_lossy(&fallback.stderr).contains("SBF compiler used sysroot"));
+    assert_success(&run(&old, "x86_64-unknown-linux-gnu"));
+    let probe = Command::new(&wrapper)
+        .args([
+            compiler.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new("sbf-solana-solana"),
+            OsStr::new("--print=cfg"),
+        ])
+        .env("AVM_TEST_ACTUAL_SYSROOT", &old)
+        .env_remove("AVM_REAL_RUSTC_WRAPPER")
+        .output()
+        .unwrap();
+    assert_success(&probe);
 }
 
 #[test]

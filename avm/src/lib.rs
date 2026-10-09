@@ -1548,6 +1548,21 @@ fn get_latest_platform_tools_version_with_client(
     parse_platform_tools_release_tag(&release.tag_name)
 }
 
+/// Reuse the latest-release check cache for at most 24 hours. A failed lookup
+/// is propagated instead of silently selecting a historical toolchain.
+fn latest_platform_tools_version() -> Result<String> {
+    if let CargoBuildSbfCheckCacheState::Success(timestamp, version) =
+        read_cargo_build_sbf_check_cache()
+    {
+        if Utc::now().timestamp() - timestamp < CARGO_BUILD_SBF_CHECK_INTERVAL_SECS {
+            return parse_platform_tools_release_tag(&version);
+        }
+    }
+    let version = get_latest_platform_tools_version_with_client(&HTTP_CLIENT)?;
+    write_cargo_build_sbf_check_cache(&version);
+    Ok(version)
+}
+
 fn warn_if_cargo_build_sbf_platform_tools_are_missing(version: &str) {
     if let Ok(false) = platform_tools::cargo_build_sbf_platform_tools_installed(version) {
         eprintln!(

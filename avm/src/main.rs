@@ -15,6 +15,11 @@ use {
 };
 
 const REAL_CARGO_ENV: &str = "AVM_REAL_CARGO";
+const PLATFORM_TOOLS_VERSION_ENV: &str = "AVM_PLATFORM_TOOLS_VERSION";
+const TRACE_TOOLCHAIN_ENV: &str = "AVM_TRACE_TOOLCHAIN";
+const PLATFORM_TOOLS_SYSROOT_ENV: &str = "AVM_PLATFORM_TOOLS_SYSROOT";
+const COMPILER_TRACE_FILE_ENV: &str = "AVM_COMPILER_TRACE_FILE";
+const REAL_RUSTC_WRAPPER_ENV: &str = "AVM_REAL_RUSTC_WRAPPER";
 const CARGO_NEXT_LOCKFILE_BUMP_ENV: &str = "CARGO_UNSTABLE_NEXT_LOCKFILE_BUMP";
 
 #[derive(Parser)]
@@ -318,7 +323,7 @@ pub fn entry(opts: Cli) -> Result<()> {
                 output,
             } => {
                 let (res, source) = if let Some(solana) = solana_version {
-                    let res = avm::resolve_platform_tools_for_solana_version(&solana);
+                    let res = avm::resolve_platform_tools_for_solana_version(&solana)?;
                     let source = res.source.describe();
                     (res, source)
                 } else if let Some(anchor) = anchor_version {
@@ -329,10 +334,11 @@ pub fn entry(opts: Cli) -> Result<()> {
                                  --solana-version to choose one explicitly."
                             )
                         })?;
-                    let res = avm::resolve_platform_tools_for_solana_version(&solana);
+                    let res = avm::resolve_platform_tools_for_solana_version(&solana)?;
+                    let source = res.source.describe();
                     (
                         res,
-                        format!("explicit Anchor {anchor} → Solana {solana} → map"),
+                        format!("explicit Anchor {anchor} → Solana {solana}; {source}"),
                     )
                 } else {
                     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -398,9 +404,7 @@ fn anchor_proxy() -> Result<()> {
         return spawn_anchor(
             avm::nightly_anchor_binary_path(),
             args,
-            platform_tools_guard
-                .as_ref()
-                .is_some_and(|guard| guard.enable_next_lockfile_bump),
+            platform_tools_guard.as_ref(),
         );
     }
 
@@ -417,13 +421,7 @@ fn anchor_proxy() -> Result<()> {
         .map(|solana| ensure_resolved_platform_tools(&cwd, &solana))
         .transpose()?;
 
-    spawn_anchor(
-        binary_path,
-        args,
-        platform_tools_guard
-            .as_ref()
-            .is_some_and(|guard| guard.enable_next_lockfile_bump),
-    )
+    spawn_anchor(binary_path, args, platform_tools_guard.as_ref())
 }
 
 /// Spawn the resolved Anchor CLI with a temporary Cargo proxy first on `PATH`.
@@ -434,7 +432,7 @@ fn anchor_proxy() -> Result<()> {
 fn spawn_anchor(
     binary_path: PathBuf,
     args: Vec<String>,
-    enable_next_lockfile_bump: bool,
+    platform_tools: Option<&PlatformToolsGuard>,
 ) -> Result<()> {
     let cargo_proxy = CargoProxy::new()?;
     let path = env::join_paths(
@@ -455,8 +453,28 @@ fn spawn_anchor(
         // toolchain version, so it must not re-exec via `[toolchain] anchor_version`.
         .env("AVM_ACTIVE", "1")
         .env("CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS", "fallback");
-    if enable_next_lockfile_bump {
-        command.env(CARGO_NEXT_LOCKFILE_BUMP_ENV, "true");
+    if let Some(platform_tools) = platform_tools {
+        command.env(PLATFORM_TOOLS_VERSION_ENV, &platform_tools.version);
+        if env::var_os(TRACE_TOOLCHAIN_ENV).is_some() {
+            command
+                .env(
+                    "RUSTC_WRAPPER",
+                    cargo_proxy.dir.path().join("rustc-wrapper"),
+                )
+                .env(PLATFORM_TOOLS_SYSROOT_ENV, &platform_tools.sysroot)
+                .env(
+                    COMPILER_TRACE_FILE_ENV,
+                    cargo_proxy.dir.path().join("compiler-traced"),
+                );
+            if let Some(wrapper) =
+                env::var_os("RUSTC_WRAPPER").filter(|wrapper| !wrapper.is_empty())
+            {
+                command.env(REAL_RUSTC_WRAPPER_ENV, wrapper);
+            }
+        }
+        if platform_tools.enable_next_lockfile_bump {
+            command.env(CARGO_NEXT_LOCKFILE_BUMP_ENV, "true");
+        }
     }
 
     let exit = command
@@ -495,6 +513,13 @@ impl CargoProxy {
         #[cfg(windows)]
         fs::copy(&current_exe, &proxy).context("creating temporary Cargo proxy")?;
 
+        let rustc_wrapper = dir.path().join("rustc-wrapper");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&current_exe, &rustc_wrapper)
+            .context("creating temporary Rust compiler wrapper")?;
+        #[cfg(windows)]
+        fs::copy(&current_exe, &rustc_wrapper)
+            .context("creating temporary Rust compiler wrapper")?;
         Ok(Self { dir, real_cargo })
     }
 }
@@ -517,9 +542,8 @@ fn find_real_cargo(current_exe: &Path) -> Result<PathBuf> {
 
 /// Handle an AVM invocation whose executable name is `cargo`.
 ///
-/// Only an unversioned `+nightly` selector is pinned. Every other invocation,
-/// including `cargo build-sbf` and explicitly dated toolchains, is forwarded
-/// unchanged to the real Cargo executable.
+/// Pin an unversioned `+nightly` selector and enforce the selected platform-tools
+/// on actual `build-sbf` and legacy `build-bpf` invocations, including existing flags.
 fn cargo_proxy() -> Result<()> {
     let real_cargo =
         env::var_os(REAL_CARGO_ENV).ok_or_else(|| anyhow!("{REAL_CARGO_ENV} is not set"))?;
@@ -535,6 +559,19 @@ fn cargo_proxy() -> Result<()> {
         ensure_idl_nightly_installed(&resolution.version)?;
     }
 
+    let enforced = match env::var(PLATFORM_TOOLS_VERSION_ENV) {
+        Ok(version) => pin_build_sbf_tools(&mut args, &version)?,
+        Err(_) => false,
+    };
+    if enforced {
+        if let Ok(arch) = env::var("AVM_DEFAULT_SBF_ARCH") {
+            default_build_sbf_arch(&mut args, &arch);
+        }
+    }
+    let trace = enforced && env::var_os(TRACE_TOOLCHAIN_ENV).is_some();
+    if trace {
+        eprintln!("AVM build command: cargo {args:?}");
+    }
     let status = Command::new(real_cargo)
         .args(args)
         .status()
@@ -543,6 +580,138 @@ fn cargo_proxy() -> Result<()> {
         std::process::exit(status.code().unwrap_or(1));
     }
 
+    Ok(())
+}
+
+/// Replace tools flags before the Cargo argument separator; leave Cargo's own
+/// arguments untouched. A Rustup selector may precede the subcommand.
+fn pin_build_sbf_tools(args: &mut Vec<OsString>, version: &str) -> Result<bool> {
+    let command_index = usize::from(
+        args.first()
+            .is_some_and(|arg| arg.to_string_lossy().starts_with('+')),
+    );
+    if args
+        .get(command_index)
+        .is_none_or(|arg| arg != "build-sbf" && arg != "build-bpf")
+    {
+        return Ok(false);
+    }
+    let mut index = command_index + 1;
+    while index < args.len() && args[index] != "--" {
+        if args[index] == "--tools-version" {
+            if args
+                .get(index + 1)
+                .is_none_or(|arg| arg == "--" || arg.to_string_lossy().starts_with('-'))
+            {
+                anyhow::bail!("--tools-version requires a value");
+            }
+            args.drain(index..index + 2);
+        } else if args[index]
+            .to_string_lossy()
+            .starts_with("--tools-version=")
+        {
+            args.remove(index);
+        } else {
+            index += 1;
+        }
+    }
+    args.splice(
+        command_index + 1..command_index + 1,
+        ["--tools-version".into(), version.into()],
+    );
+    Ok(true)
+}
+
+/// Keep the experiment's default bytecode architecture consistent with its
+/// baseline while retaining explicit project architecture choices.
+fn default_build_sbf_arch(args: &mut Vec<OsString>, arch: &str) {
+    let end = args
+        .iter()
+        .position(|arg| arg == "--")
+        .unwrap_or(args.len());
+    if args[..end]
+        .iter()
+        .any(|arg| arg == "--arch" || arg.to_string_lossy().starts_with("--arch="))
+    {
+        return;
+    }
+    args.splice(end..end, ["--arch".into(), arch.into()]);
+}
+
+/// In CI, verify the compiler's sysroot at the moment Cargo invokes it for an
+/// SBF target. Host builds and IDL generation pass through without this check.
+fn rustc_wrapper() -> Result<()> {
+    let mut arguments = env::args_os().skip(1);
+    let rustc = arguments
+        .next()
+        .ok_or_else(|| anyhow!("missing Rust compiler"))?;
+    let args = arguments.collect::<Vec<_>>();
+    let target = args
+        .windows(2)
+        .find_map(|pair| (pair[0] == "--target").then(|| pair[1].to_string_lossy().into_owned()))
+        .or_else(|| {
+            args.iter().find_map(|arg| {
+                arg.to_string_lossy()
+                    .strip_prefix("--target=")
+                    .map(str::to_owned)
+            })
+        });
+    let compiling = args
+        .iter()
+        .any(|arg| arg.to_string_lossy().starts_with("--emit"));
+    if compiling
+        && target
+            .as_deref()
+            .is_some_and(|target| target.starts_with("sbf-") || target.starts_with("sbpf"))
+    {
+        let expected = env::var_os(PLATFORM_TOOLS_SYSROOT_ENV)
+            .ok_or_else(|| anyhow!("missing selected platform-tools sysroot"))?;
+        let output = Command::new(&rustc).args(["--print", "sysroot"]).output()?;
+        if !output.status.success() {
+            anyhow::bail!("Could not inspect the actual SBF compiler sysroot");
+        }
+        let actual = String::from_utf8(output.stdout)?;
+        if !paths_refer_to_same_directory(Path::new(actual.trim()), Path::new(&expected)) {
+            anyhow::bail!(
+                "SBF compiler used sysroot {}, expected {}",
+                actual.trim(),
+                Path::new(&expected).display()
+            );
+        }
+        let marker = env::var_os(COMPILER_TRACE_FILE_ENV)
+            .ok_or_else(|| anyhow!("missing compiler trace marker"))?;
+        if fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(marker)
+            .is_ok()
+        {
+            eprintln!(
+                "AVM actual SBF compiler: {rustc:?}; target {}; sysroot {}",
+                target.unwrap(),
+                actual.trim()
+            );
+            let output = Command::new(&rustc).arg("-vV").output()?;
+            eprint!("{}", String::from_utf8_lossy(&output.stdout));
+            if !output.status.success() {
+                anyhow::bail!("Could not print the actual SBF compiler version");
+            }
+        }
+    }
+    let mut command = if let Some(wrapper) = env::var_os(REAL_RUSTC_WRAPPER_ENV) {
+        let mut command = Command::new(wrapper);
+        command.arg(&rustc);
+        command
+    } else {
+        Command::new(&rustc)
+    };
+    let status = command
+        .args(args)
+        .status()
+        .context("running the actual Rust compiler")?;
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
     Ok(())
 }
 
@@ -621,6 +790,8 @@ fn ensure_resolved_solana(
 /// aliases for the duration of the Anchor invocation.
 struct PlatformToolsGuard {
     _lock: fs::File,
+    version: String,
+    sysroot: PathBuf,
     enable_next_lockfile_bump: bool,
 }
 
@@ -684,6 +855,8 @@ fn ensure_resolved_platform_tools(
 
     Ok(PlatformToolsGuard {
         _lock: lock,
+        version: resolution.version,
+        sysroot: platform_tools_path.join("rust"),
         enable_next_lockfile_bump,
     })
 }
@@ -849,6 +1022,9 @@ fn main() -> Result<()> {
         if stem == "cargo" {
             return cargo_proxy();
         }
+        if stem == "rustc-wrapper" {
+            return rustc_wrapper();
+        }
     }
 
     // Make sure the user's home directory is setup with the paths required by AVM.
@@ -875,6 +1051,81 @@ mod tests {
         let mut dated = vec![OsString::from("+nightly-2026-07-01")];
         assert!(!pin_idl_nightly(&mut dated, "nightly-2025-04-15"));
         assert_eq!(dated[0], "+nightly-2026-07-01");
+    }
+
+    #[test]
+    fn default_arch_preserves_explicit_choices_and_cargo_arguments() {
+        let mut args = ["build-sbf", "--", "--features", "mainnet"]
+            .map(OsString::from)
+            .to_vec();
+        default_build_sbf_arch(&mut args, "v0");
+        assert_eq!(
+            args,
+            ["build-sbf", "--arch", "v0", "--", "--features", "mainnet"].map(OsString::from)
+        );
+        for choice in [
+            vec!["build-bpf", "--arch", "v2"],
+            vec!["build-sbf", "--arch=v3"],
+        ] {
+            let mut args = choice.into_iter().map(OsString::from).collect::<Vec<_>>();
+            let original = args.clone();
+            default_build_sbf_arch(&mut args, "v0");
+            assert_eq!(args, original);
+        }
+    }
+
+    #[test]
+    fn build_sbf_tools_override_handles_selectors_and_preserves_cargo_arguments() {
+        let mut args = [
+            "+stable",
+            "build-sbf",
+            "--tools-version=v1.42",
+            "--arch",
+            "v0",
+            "--tools-version",
+            "v1.46",
+            "--",
+            "--features",
+            "--tools-version=v1.51",
+        ]
+        .map(OsString::from)
+        .to_vec();
+        assert!(pin_build_sbf_tools(&mut args, "v1.57").unwrap());
+        assert_eq!(
+            args,
+            [
+                "+stable",
+                "build-sbf",
+                "--tools-version",
+                "v1.57",
+                "--arch",
+                "v0",
+                "--",
+                "--features",
+                "--tools-version=v1.51",
+            ]
+            .map(OsString::from)
+        );
+        let mut legacy = ["build-bpf", "--tools-version=v1.41"]
+            .map(OsString::from)
+            .to_vec();
+        assert!(pin_build_sbf_tools(&mut legacy, "v1.57").unwrap());
+        assert_eq!(
+            legacy,
+            ["build-bpf", "--tools-version", "v1.57"].map(OsString::from)
+        );
+        let mut unrelated = ["test", "--tools-version=v1.42"]
+            .map(OsString::from)
+            .to_vec();
+        assert!(!pin_build_sbf_tools(&mut unrelated, "v1.57").unwrap());
+        assert_eq!(
+            unrelated,
+            ["test", "--tools-version=v1.42"].map(OsString::from)
+        );
+        let mut missing = ["build-sbf", "--tools-version", "--"]
+            .map(OsString::from)
+            .to_vec();
+        assert!(pin_build_sbf_tools(&mut missing, "v1.57").is_err());
     }
 
     // --- is_pre_release ---
