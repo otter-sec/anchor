@@ -1172,7 +1172,14 @@ fn get_cluster_and_wallet(cfg_override: &ConfigOverride) -> Result<(String, Stri
         cluster_url
     };
 
-    Ok((final_cluster, wallet_path))
+    // Apply wallet override if provided.
+    let final_wallet = if let Some(wallet) = &cfg_override.wallet {
+        wallet.to_string()
+    } else {
+        wallet_path
+    };
+
+    Ok((final_cluster, final_wallet))
 }
 
 /// Get the recommended priority fee from the RPC client, falling back to 0 if unavailable.
