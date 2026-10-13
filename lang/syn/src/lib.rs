@@ -389,10 +389,8 @@ impl Field {
                     SysvarTy::EpochSchedule => quote! {EpochSchedule},
                     SysvarTy::Fees => quote! {Fees},
                     SysvarTy::RecentBlockhashes => quote! {RecentBlockhashes},
-                    SysvarTy::SlotHashes => quote! {SlotHashes},
                     SysvarTy::SlotHistory => quote! {SlotHistory},
                     SysvarTy::StakeHistory => quote! {StakeHistory},
-                    SysvarTy::Instructions => quote! {Instructions},
                     SysvarTy::Rewards => quote! {Rewards},
                 };
                 quote! {
@@ -622,10 +620,8 @@ impl Field {
                 SysvarTy::EpochSchedule => quote! {EpochSchedule},
                 SysvarTy::Fees => quote! {Fees},
                 SysvarTy::RecentBlockhashes => quote! {RecentBlockhashes},
-                SysvarTy::SlotHashes => quote! {SlotHashes},
                 SysvarTy::SlotHistory => quote! {SlotHistory},
                 SysvarTy::StakeHistory => quote! {StakeHistory},
-                SysvarTy::Instructions => quote! {Instructions},
                 SysvarTy::Rewards => quote! {Rewards},
             },
             Ty::Program(ty) => {
@@ -685,10 +681,8 @@ pub enum SysvarTy {
     EpochSchedule,
     Fees,
     RecentBlockhashes,
-    SlotHashes,
     SlotHistory,
     StakeHistory,
-    Instructions,
     Rewards,
 }
 
