@@ -297,6 +297,7 @@ pub struct InterfaceMintInitParams<'a> {
     pub transfer_hook_authority: Option<Address>,
     pub transfer_hook_program_id: Option<Address>,
     pub permanent_delegate_delegate: Option<Address>,
+    pub pausable_authority: Option<Address>,
 }
 
 impl InterfaceMintInitParams<'_> {
@@ -311,10 +312,11 @@ impl InterfaceMintInitParams<'_> {
             || self.transfer_hook_authority.is_some()
             || self.transfer_hook_program_id.is_some()
             || self.permanent_delegate_delegate.is_some()
+            || self.pausable_authority.is_some()
     }
 
-    fn extension_types(&self) -> ([Token2022ExtensionType; 6], usize) {
-        let mut types = [Token2022ExtensionType::Uninitialized; 6];
+    fn extension_types(&self) -> ([Token2022ExtensionType; 7], usize) {
+        let mut types = [Token2022ExtensionType::Uninitialized; 7];
         let mut n = 0usize;
         let mut push = |ext: Token2022ExtensionType| {
             types[n] = ext;
@@ -341,6 +343,9 @@ impl InterfaceMintInitParams<'_> {
         }
         if self.permanent_delegate_delegate.is_some() {
             push(Token2022ExtensionType::PermanentDelegate);
+        }
+        if self.pausable_authority.is_some() {
+            push(Token2022ExtensionType::Pausable);
         }
         (types, n)
     }
@@ -463,6 +468,14 @@ fn initialize_mint_extensions(
         pinocchio_token_2022::instructions::permanent_delegate::InitializePermanentDelegate {
             mint,
             delegate,
+            token_program,
+        }
+        .invoke()?;
+    }
+    if let Some(authority) = params.pausable_authority.as_ref() {
+        pinocchio_token_2022::instructions::pausable::Initialize {
+            mint,
+            authority,
             token_program,
         }
         .invoke()?;
@@ -644,4 +657,9 @@ impl_mint_extension_constraint!(
     crate::extensions::PermanentDelegateDelegateConstraint,
     crate::extensions::PermanentDelegate,
     delegate
+);
+impl_mint_extension_constraint!(
+    crate::extensions::PausableAuthorityConstraint,
+    crate::extensions::PausableConfig,
+    authority
 );

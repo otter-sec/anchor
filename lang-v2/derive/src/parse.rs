@@ -734,6 +734,7 @@ fn flatten_extension_init_key(extension: &str, field: &str) -> Option<&'static s
         ("transfer_hook", "authority") => Some("transfer_hook_authority"),
         ("transfer_hook", "program_id") => Some("transfer_hook_program_id"),
         ("permanent_delegate", "delegate") => Some("permanent_delegate_delegate"),
+        ("pausable", "authority") => Some("pausable_authority"),
         _ => None,
     }
 }
@@ -3815,6 +3816,7 @@ mod tests {
                 extensions::metadata_pointer::authority = authority,
                 extensions::metadata_pointer::metadata_address = authority,
                 extensions::transfer_hook::program_id = crate::ID,
+                extensions::pausable::authority = authority,
             )]
         )];
         let parsed = parse_account_attrs(&attrs).expect("extensions::* should parse");
@@ -3827,6 +3829,7 @@ mod tests {
         assert!(keys.contains(&("extensions", "metadata_pointer_authority")));
         assert!(keys.contains(&("extensions", "metadata_pointer_metadata_address")));
         assert!(keys.contains(&("extensions", "transfer_hook_program_id")));
+        assert!(keys.contains(&("extensions", "pausable_authority")));
         assert!(
             !is_runtime_only_constraint_ns("extensions"),
             "extensions::* must thread through init Params, not AccountConstraint::init"
@@ -3836,15 +3839,16 @@ mod tests {
     #[test]
     fn unknown_extension_init_attr_is_rejected() {
         let attrs: Vec<Attribute> = vec![syn::parse_quote!(
-            #[account(init, payer = payer, extensions::pausable::authority = authority)]
+            #[account(init, payer = payer, extensions::unknown_extension::authority = authority)]
         )];
         let err = match parse_account_attrs(&attrs) {
             Ok(_) => panic!("unknown extensions::* must be rejected"),
             Err(err) => err,
         };
         assert!(
-            err.to_string()
-                .contains("unknown token extension constraint `extensions::pausable::authority`"),
+            err.to_string().contains(
+                "unknown token extension constraint `extensions::unknown_extension::authority`"
+            ),
             "unexpected error: {err}"
         );
     }
@@ -3890,10 +3894,16 @@ mod tests {
                 mint::decimals = 0,
                 mint::authority = authority,
                 extensions::metadata_pointer::authority = authority,
+                extensions::pausable::authority = authority,
             )]
         )];
         let parsed = parse_account_attrs(&attrs).expect("init_if_needed + extensions::*");
         assert!(parsed.is_init_if_needed);
+        assert!(parsed.namespaced.iter().any(|nc| {
+            nc.namespace == "extensions"
+                && nc.raw_key == "pausable_authority"
+                && nc.key == "PausableAuthorityConstraint"
+        }));
         assert!(parsed.namespaced.iter().any(|nc| {
             nc.namespace == "extensions" && nc.raw_key == "metadata_pointer_authority"
         }));
@@ -3907,6 +3917,10 @@ mod tests {
         ));
         assert!(matches!(
             builtin_constraint_value_kind("extensions", "permanent_delegate_delegate"),
+            Some(BuiltinConstraintValueKind::Address)
+        ));
+        assert!(matches!(
+            builtin_constraint_value_kind("extensions", "pausable_authority"),
             Some(BuiltinConstraintValueKind::Address)
         ));
     }
