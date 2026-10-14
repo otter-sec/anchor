@@ -327,7 +327,7 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
     let idl = get_idl_module_path();
     let args = accounts.instruction_args().unwrap_or_default();
     match seed {
-        syn::Expr::MethodCall(_) => {
+        syn::Expr::MethodCall(call) => {
             let seed_path = SeedPath::new(seed)?;
 
             if args.contains_key(&seed_path.name) {
@@ -366,6 +366,17 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
                     #idl::IdlSeed::Const(
                         #idl::IdlSeedConst {
                             value: vec![#(#value),*],
+                        }
+                    )
+                })
+            } else if call.method == "as_ref" && call.args.is_empty() {
+                // On e.g. a `&str` const, `.as_ref()` alone is ambiguous
+                // (E0282), so pick `AsRef<[u8]>` like the seeds slice does
+                let receiver = &call.receiver;
+                Ok(quote! {
+                    #idl::IdlSeed::Const(
+                        #idl::IdlSeedConst {
+                            value: AsRef::<[u8]>::as_ref(&#receiver).into(),
                         }
                     )
                 })
@@ -555,9 +566,8 @@ fn get_relations(acc: &Field, accounts: &AccountsStruct) -> TokenStream {
 mod tests {
     use {super::*, syn::parse_quote};
 
-    /// Get the const seed value that `parse_seed` generates for `seed`, for
-    /// both the `vec![..]` and the `"..".into()` forms.
-    fn const_seed_value(seed: &syn::Expr) -> String {
+    /// Get the `value` expression that `parse_seed` generates for a const seed.
+    fn const_seed_expr(seed: &syn::Expr) -> syn::Expr {
         let accounts: AccountsStruct = parse_quote! {
             pub struct Seeds<'info> {
                 pub payer: Signer<'info>,
@@ -567,14 +577,20 @@ mod tests {
         let Some(syn::Expr::Struct(seed_const)) = call.args.first() else {
             unreachable!("Expected a const seed, got: {}", call.to_token_stream());
         };
-        let value = &seed_const
+        seed_const
             .fields
             .iter()
             .find(|field| matches!(&field.member, syn::Member::Named(name) if name == "value"))
             .unwrap()
-            .expr;
+            .expr
+            .clone()
+    }
 
-        let bytes = match value {
+    /// Get the const seed value that `parse_seed` generates for `seed`, for
+    /// both the `vec![..]` and the `"..".into()` forms.
+    fn const_seed_value(seed: &syn::Expr) -> String {
+        let value = const_seed_expr(seed);
+        let bytes = match &value {
             syn::Expr::Macro(mac) => mac
                 .mac
                 .parse_body_with(
@@ -625,5 +641,29 @@ mod tests {
             (parse_quote!(b"plain".as_ref()), "plain"),
             (parse_quote!("abc".as_ref()), "abc"),
         ]);
+    }
+
+    #[test]
+    fn const_seeds_with_as_ref_use_the_slice_impl() {
+        let cases: [(syn::Expr, syn::Expr); 3] = [
+            (
+                parse_quote!(MY_SEED_STR.as_ref()),
+                parse_quote!(AsRef::<[u8]>::as_ref(&MY_SEED_STR).into()),
+            ),
+            (
+                parse_quote!(crate::MY_SEED_STR.as_ref()),
+                parse_quote!(AsRef::<[u8]>::as_ref(&crate::MY_SEED_STR).into()),
+            ),
+            (
+                parse_quote!(MY_SEED_U8.to_le_bytes().as_ref()),
+                parse_quote!(AsRef::<[u8]>::as_ref(&MY_SEED_U8.to_le_bytes()).into()),
+            ),
+        ];
+        for (seed, expected) in cases {
+            assert_eq!(
+                const_seed_expr(&seed).to_token_stream().to_string(),
+                expected.to_token_stream().to_string(),
+            );
+        }
     }
 }
