@@ -23,6 +23,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- ts: Honor non-empty Buffer filters in `SystemAccountsCoder.memcmp()` for nonce accounts ([#5165](https://github.com/otter-sec/anchor/pull/5165)).
 - Block mutable aliasing between accounts marked `zero` and `init` ([#4871](https://github.com/otter-sec/anchor/pull/4871)).
 - lang: Support fully qualified account types in `Context` ([#4836](https://github.com/otter-sec/anchor/pull/4836)).
 - ts: Support `delegatedAmount` in accounts resolver ([#4957](https://github.com/otter-sec/anchor/pull/4957)).
