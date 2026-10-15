@@ -20,7 +20,9 @@ jobs:
     uses: ./.github/workflows/reusable-tests.yaml
     with:
       cache: true
-      solana_cli_version: 2.3.0
+      # Older Agave releases reject the ELF layout emitted by the SBPF v3 backport.
+      # The CLI still selects platform-tools v1.51.1 for program compilation.
+      solana_cli_version: 4.1.2
       node_version: 20.18.0
       cargo_profile: debug
       anchor_binary_name: anchor-binary

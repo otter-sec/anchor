@@ -26,7 +26,7 @@ runs:
       shell: bash
     - run: solana config set --url localhost
       shell: bash
-    # Solana 2.3's bundled SBF Cargo cannot parse current Edition 2024 crates.
+    # The CLI's pinned platform-tools v1.51.1 cannot parse Edition 2024 crates.
     # Preserve this release's dependency resolution for each independent test workspace.
     - run: find . -name Anchor.toml -exec sh -c 'dir="$(dirname "$1")"; [ "$(git -C "$dir" rev-parse --show-toplevel)" = "$GITHUB_WORKSPACE" ] && [ ! -e "$dir/Cargo.lock" ] && cp "$GITHUB_WORKSPACE/Cargo.lock" "$dir/Cargo.lock"' _ {} \;
       shell: bash

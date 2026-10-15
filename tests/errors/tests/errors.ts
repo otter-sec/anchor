@@ -34,7 +34,11 @@ const withLogTest = async (callback, expectedLogs) => {
     anchor.getProvider().connection.removeOnLogsListener(listener);
     throw err;
   }
-  anchor.getProvider().connection.removeOnLogsListener(listener);
+  // Confirmation can arrive before the websocket log notification.
+  for (let i = 0; i < 50 && !logTestOk; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  await anchor.getProvider().connection.removeOnLogsListener(listener);
   assert.isTrue(logTestOk);
 };
 
@@ -45,6 +49,7 @@ describe("errors", () => {
   // processed failed tx do not result in AnchorErrors in the client
   // because we cannot get logs for them (only through overkill `onLogs`)
   provider.opts.commitment = "confirmed";
+  provider.opts.preflightCommitment = "confirmed";
   anchor.setProvider(provider);
 
   const program = anchor.workspace.Errors as Program<Errors>;
