@@ -22,11 +22,28 @@ runs:
         command: sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_CLI_VERSION }}/install)"
     - run: echo "/home/runner/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
       shell: bash
+    - uses: actions/cache@v3
+      name: Cache standalone SBF builder
+      id: cache-build-sbf
+      with:
+        path: ~/.local/share/cargo-build-sbf
+        key: cargo-build-sbf-${{ runner.os }}-${{ runner.arch }}-4.4.0
+    - name: Install standalone SBF builder
+      if: steps.cache-build-sbf.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        rustup toolchain install stable --profile minimal --no-self-update
+        cargo +stable install cargo-build-sbf --version 4.4.0 --locked --root "$HOME/.local/share/cargo-build-sbf"
+    - name: Prefer standalone SBF builder
+      shell: bash
+      run: echo "$HOME/.local/share/cargo-build-sbf/bin" >> "$GITHUB_PATH"
+    - run: cargo-build-sbf --version
+      shell: bash
     - run: solana-keygen new --no-bip39-passphrase
       shell: bash
     - run: solana config set --url localhost
       shell: bash
-    # The SBF toolchain bundled with Solana 2.1 uses Cargo 1.79. Pin each
+    # The CLI pins the Rust 1.79 SBPF v3 backport. Pin each
     # independent test workspace to this release's compatible resolution.
     - run: find . -name Anchor.toml -exec sh -c 'dir="$(dirname "$1")"; [ "$(git -C "$dir" rev-parse --show-toplevel)" = "$GITHUB_WORKSPACE" ] && cp "$GITHUB_WORKSPACE/Cargo.lock" "$dir/Cargo.lock"' _ {} \;
       shell: bash

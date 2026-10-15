@@ -80,6 +80,17 @@ anchor build
 Builds programs in the workspace targeting Solana's BPF runtime and emitting
 IDLs in the `target/idl` directory.
 
+Builds default to SBPF architecture `v3` and platform-tools `v1.46.1`, the
+v3 backport selected by AVM's map for Anchor 0.31. Override either explicitly:
+
+```shell
+anchor build --tools-version v1.46.1 --arch v3
+```
+
+These options also apply to verifiable builds. `anchor build --arch` selects
+the SBPF version (`v0`, `v1`, `v2`, or `v3`), replacing the old
+`bpf`/`sbf` backend selector. Use a `cargo-build-sbf` version that supports v3.
+
 ```shell
 anchor build --verifiable
 ```

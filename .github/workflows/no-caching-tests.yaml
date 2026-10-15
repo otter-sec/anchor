@@ -11,7 +11,9 @@ jobs:
     uses: ./.github/workflows/reusable-tests.yaml
     with:
       cache: false
-      solana_cli_version: 2.1.0
+      # The SBPF v3 backport requires the newer ELF loader.
+      # Program compilation still uses platform-tools v1.46.1.
+      solana_cli_version: 4.1.2
       node_version: 20.18.0
       cargo_profile: release
       anchor_binary_name: anchor-binary-no-caching

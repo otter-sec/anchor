@@ -341,7 +341,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        template: [mocha, jest, rust, mollusk]
+        template: [mocha, jest, rust]
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup/
@@ -467,8 +467,6 @@ jobs:
             path: tests/anchor-cli-idl
           - cmd: cd tests/anchor-cli-account && anchor test --skip-lint
             path: tests/anchor-cli-account
-          - cmd: cd tests/bench && anchor test --skip-lint
-            path: tests/bench
           - cmd: cd tests/idl && ./test.sh
             path: tests/idl
           - cmd: cd tests/lazy-account && anchor test

@@ -170,7 +170,7 @@ export class AnchorProvider implements Provider {
     } catch (err) {
       // thrown if the underlying 'confirmTransaction' encounters a failed tx
       // the 'confirmTransaction' error does not return logs so we make another rpc call to get them
-      if (err instanceof ConfirmError) {
+      if (isConfirmationError(err)) {
         // choose the shortest available commitment for 'getTransaction'
         // (the json RPC does not support any shorter than "confirmed" for 'getTransaction')
         // because that will see the tx sent with `sendAndConfirmRawTransaction` no matter which
@@ -180,17 +180,21 @@ export class AnchorProvider implements Provider {
             ? tx.signatures?.[0] || new Uint8Array()
             : tx.signature ?? new Uint8Array()
         );
-        const failedTx = await this.connection.getTransaction(txSig, {
-          commitment: "confirmed",
-          maxSupportedTransactionVersion: 1,
-        });
+        const failedTx = await fetchConfirmedTransaction(
+          this.connection,
+          txSig
+        );
         if (!failedTx) {
           throw err;
         } else {
           const logs = failedTx.meta?.logMessages;
           throw !logs
             ? err
-            : createSendTransactionError(txSig, err.message, logs);
+            : createSendTransactionError(
+                txSig,
+                err.message ?? JSON.stringify(err),
+                logs
+              );
         }
       } else {
         throw err;
@@ -257,7 +261,7 @@ export class AnchorProvider implements Provider {
       } catch (err) {
         // thrown if the underlying 'confirmTransaction' encounters a failed tx
         // the 'confirmTransaction' error does not return logs so we make another rpc call to get them
-        if (err instanceof ConfirmError) {
+        if (isConfirmationError(err)) {
           // choose the shortest available commitment for 'getTransaction'
           // (the json RPC does not support any shorter than "confirmed" for 'getTransaction')
           // because that will see the tx sent with `sendAndConfirmRawTransaction` no matter which
@@ -267,17 +271,21 @@ export class AnchorProvider implements Provider {
               ? tx.signatures?.[0] || new Uint8Array()
               : tx.signature ?? new Uint8Array()
           );
-          const failedTx = await this.connection.getTransaction(txSig, {
-            commitment: "confirmed",
-            maxSupportedTransactionVersion: 1,
-          });
+          const failedTx = await fetchConfirmedTransaction(
+            this.connection,
+            txSig
+          );
           if (!failedTx) {
             throw err;
           } else {
             const logs = failedTx.meta?.logMessages;
             throw !logs
               ? err
-              : createSendTransactionError(txSig, err.message, logs);
+              : createSendTransactionError(
+                  txSig,
+                  err.message ?? JSON.stringify(err),
+                  logs
+                );
           }
         } else {
           throw err;
@@ -446,6 +454,31 @@ async function sendAndConfirmRawTransaction(
   }
 
   throw Error("Transaction failed to confirm in 60s");
+}
+
+// web3.js can reject confirmation with a raw TransactionError when its HTTP
+// status check wins the race with the websocket notification.
+function isConfirmationError(error: unknown): boolean {
+  return (
+    error instanceof ConfirmError ||
+    (typeof error === "object" && error !== null && "InstructionError" in error)
+  );
+}
+
+async function fetchConfirmedTransaction(
+  connection: Connection,
+  signature: TransactionSignature
+) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const transaction = await connection.getTransaction(signature, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 1,
+    });
+    if (transaction) return transaction;
+    // Confirmation status can become available before confirmed history.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return null;
 }
 
 class ConfirmError extends Error {

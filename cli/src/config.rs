@@ -486,6 +486,7 @@ pub struct BuildConfig {
     pub solana_version: Option<String>,
     pub docker_image: String,
     pub bootstrap: BootstrapMode,
+    pub build_sbf_options: crate::BuildSbfOptions,
 }
 
 impl Config {
@@ -803,7 +804,7 @@ pub struct _TestValidator {
     pub upgradeable: Option<bool>,
 }
 
-pub const STARTUP_WAIT: i32 = 15000;
+pub const STARTUP_WAIT: i32 = 30000;
 pub const SHUTDOWN_WAIT: i32 = 2000;
 
 impl From<_TestValidator> for TestValidator {
@@ -1066,7 +1067,7 @@ pub struct _Validator {
     // Load all the accounts from the JSON files found in the specified DIRECTORY
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_dir: Option<Vec<AccountDirEntry>>,
-    // IP address to bind the validator ports. [default: 0.0.0.0]
+    // IP address to bind the validator ports. [default: 127.0.0.1]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bind_address: Option<String>,
     // Copy an account from the cluster referenced by the url argument.
@@ -1213,7 +1214,7 @@ pub fn get_default_ledger_path() -> PathBuf {
     Path::new(".anchor").join("test-ledger")
 }
 
-const DEFAULT_BIND_ADDRESS: &str = "0.0.0.0";
+const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1";
 
 impl Merge for _Validator {
     fn merge(&mut self, other: Self) {
