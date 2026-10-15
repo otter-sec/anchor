@@ -1,6 +1,6 @@
 use {
     super::common::validate_token_2022_program,
-    crate::{token_2022::spl_token_2022, token_shared::multisig_signer_addresses},
+    crate::{token_2022::spl_token_2022, token_shared::add_signers},
     anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
@@ -14,8 +14,10 @@ pub struct InterestBearingMintInitialize<'a> {
 #[derive(ToCpiAccounts)]
 pub struct InterestBearingMintUpdateRate<'a> {
     pub mint: CpiHandleMut<'a>,
-    #[signer]
+    #[signer(self.signers.is_empty())]
     pub rate_authority: CpiHandle<'a>,
+    #[signer]
+    pub signers: &'a [CpiHandle<'a>],
 }
 
 pub fn interest_bearing_mint_initialize<'a>(
@@ -40,13 +42,13 @@ pub fn interest_bearing_mint_update_rate<'a>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
-    let ix = spl_token_2022::extension::interest_bearing_mint::instruction::update_rate(
+    let mut ix = spl_token_2022::extension::interest_bearing_mint::instruction::update_rate(
         &program,
         ctx.accounts.mint.address(),
         ctx.accounts.rate_authority.address(),
-        &signer_addresses,
+        &[],
         rate,
     )?;
+    add_signers(&mut ix, 1, ctx.accounts.signers);
     ctx.invoke_ix(ix)
 }

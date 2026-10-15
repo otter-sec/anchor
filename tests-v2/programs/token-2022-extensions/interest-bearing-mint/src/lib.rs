@@ -24,6 +24,7 @@ pub mod token_2022_ext_interest_bearing_mint {
         let accs = token_2022_ext::InterestBearingMintUpdateRate {
             mint: ctx.accounts.mint.cpi_handle_mut(),
             rate_authority: ctx.accounts.authority.cpi_handle(),
+            signers: &[],
         };
         token_2022_ext::interest_bearing_mint_update_rate(
             CpiContext::new(ctx.accounts.token_program.address(), accs),

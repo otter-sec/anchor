@@ -97,6 +97,7 @@ pub fn derive_to_cpi_accounts(input: TokenStream) -> TokenStream {
 enum CpiFieldKind {
     Readonly,
     Writable,
+    SignerSlice,
     OptionalReadonly,
     OptionalWritable,
     Nested,
@@ -359,6 +360,13 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
             Ok(kind) => kind,
             Err(err) => return err.to_compile_error(),
         };
+        if matches!(kind, CpiFieldKind::SignerSlice) && !signer.present {
+            return syn::Error::new_spanned(
+                field,
+                "CpiHandle slices must be marked with #[signer]",
+            )
+            .to_compile_error();
+        }
         if matches!(kind, CpiFieldKind::Phantom) && signer.present {
             return syn::Error::new_spanned(
                 field,
@@ -423,6 +431,17 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
                     ),
                 );
             },
+            CpiFieldKind::SignerSlice => quote! {
+                for __handle in self.#ident {
+                    __accounts.push(
+                        anchor_lang::pinocchio::instruction::InstructionAccount::new(
+                            __handle.address(),
+                            __handle.is_writable(),
+                            #signer,
+                        ),
+                    );
+                }
+            },
             CpiFieldKind::OptionalReadonly | CpiFieldKind::OptionalWritable => quote! {
                 match self.#ident {
                     ::core::option::Option::Some(__account) => {
@@ -457,6 +476,9 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         CpiFieldKind::Writable => quote! {
             __handles.push(self.#ident.into());
         },
+        CpiFieldKind::SignerSlice => quote! {
+            __handles.extend(self.#ident.iter().copied());
+        },
         CpiFieldKind::OptionalReadonly => quote! {
             if let ::core::option::Option::Some(__account) = self.#ident {
                 __handles.push(__account.into_readonly());
@@ -478,6 +500,9 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         },
         CpiFieldKind::Readonly | CpiFieldKind::Writable => quote! {
             __flags.push(false);
+        },
+        CpiFieldKind::SignerSlice => quote! {
+            __flags.extend(self.#ident.iter().map(|_| false));
         },
         CpiFieldKind::OptionalReadonly | CpiFieldKind::OptionalWritable => quote! {
             __flags.push(self.#ident.is_none());
@@ -663,6 +688,9 @@ fn cpi_field_kind(ty: &Type, nested: bool) -> syn::Result<(CpiFieldKind, syn::Li
     if let Some(lifetime) = phantom_data_lifetime(ty) {
         return Ok((CpiFieldKind::Phantom, lifetime));
     }
+    if let Some(lifetime) = signer_slice_lifetime(ty) {
+        return Ok((CpiFieldKind::SignerSlice, lifetime));
+    }
     if let Some((inner, _)) = option_inner(ty) {
         let (kind, lifetime) = direct_cpi_field_kind(inner)?;
         return match kind {
@@ -704,8 +732,8 @@ fn direct_cpi_field_kind(ty: &Type) -> syn::Result<(CpiFieldKind, syn::Lifetime)
     let Some((ident, lifetime)) = path_type_ident_and_lifetime(ty) else {
         return Err(syn::Error::new_spanned(
             ty,
-            "expected CpiHandle<'a>, CpiHandleMut<'a>, Option<CpiHandle<'a>>, or \
-             Option<CpiHandleMut<'a>>",
+            "expected CpiHandle<'a>, CpiHandleMut<'a>, &[CpiHandle<'a>], \
+             Option<CpiHandle<'a>>, or Option<CpiHandleMut<'a>>",
         ));
     };
     match ident.to_string().as_str() {
@@ -716,6 +744,17 @@ fn direct_cpi_field_kind(ty: &Type) -> syn::Result<(CpiFieldKind, syn::Lifetime)
             "expected CpiHandle<'a> or CpiHandleMut<'a>",
         )),
     }
+}
+
+fn signer_slice_lifetime(ty: &Type) -> Option<syn::Lifetime> {
+    let Type::Reference(reference) = ty else {
+        return None;
+    };
+    let Type::Slice(slice) = reference.elem.as_ref() else {
+        return None;
+    };
+    path_type_ident_and_lifetime(slice.elem.as_ref())
+        .and_then(|(ident, lifetime)| (ident == "CpiHandle").then_some(lifetime))
 }
 
 fn option_inner(ty: &Type) -> Option<(&Type, &syn::Path)> {
@@ -2724,10 +2763,7 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
                     &input.generics,
                 ),
                 cfg_variant_dep_walkers(&data.variants),
-                wincode_idl_override_tokens_for_variants(
-                    "`#[derive(IdlType)]`",
-                    &data.variants,
-                ),
+                wincode_idl_override_tokens_for_variants("`#[derive(IdlType)]`", &data.variants),
             )
         }
         Data::Union(_) => {

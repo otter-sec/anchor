@@ -713,6 +713,54 @@ fn invoke_ix_accepts_readonly_slab_handle_from_mutable_wrapper() {
 }
 
 #[test]
+fn invoke_ix_validates_generic_remaining_accounts() {
+    let program = ID;
+    let typed_buffer = account_view([1; 32], false);
+    let generic_buffer = account_view([2; 32], true);
+    let typed_view = unsafe { typed_buffer.view() };
+    let mut generic_view = unsafe { generic_buffer.view() };
+    let generic_borrow_view = generic_view;
+    let _borrow = generic_borrow_view.try_borrow().unwrap();
+    let accounts = ReadonlyCpi {
+        account: typed_view.to_cpi_handle(),
+    };
+    let ix = Instruction {
+        program_id: program,
+        accounts: vec![AccountMeta::new_readonly(*typed_view.address(), false)],
+        data: vec![],
+    };
+
+    let err = CpiContext::new(&program, accounts)
+        .with_remaining_accounts(vec![CpiHandle::writable(&mut generic_view)])
+        .invoke_ix(ix)
+        .unwrap_err();
+
+    assert_eq!(err, ProgramError::AccountBorrowFailed);
+}
+
+#[test]
+fn invoke_ix_accepts_generic_remaining_accounts() {
+    let program = ID;
+    let typed_buffer = account_view([1; 32], false);
+    let generic_buffer = account_view([2; 32], true);
+    let typed_view = unsafe { typed_buffer.view() };
+    let generic_view = unsafe { generic_buffer.view() };
+    let accounts = ReadonlyCpi {
+        account: typed_view.to_cpi_handle(),
+    };
+    let ix = Instruction {
+        program_id: program,
+        accounts: vec![AccountMeta::new_readonly(*typed_view.address(), false)],
+        data: vec![],
+    };
+
+    CpiContext::new(&program, accounts)
+        .with_remaining_accounts(vec![generic_view.to_cpi_handle()])
+        .invoke_ix(ix)
+        .unwrap();
+}
+
+#[test]
 fn cpi_context_invoke_accepts_mutable_borsh_handle() {
     let program = ID;
     let buffer = borsh_account_view([1; 32], true, 9);
