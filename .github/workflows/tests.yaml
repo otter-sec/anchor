@@ -71,33 +71,17 @@ jobs:
       - run: cargo test -p anchor-client --features async
       # using singlethreaded testing for avm so that tests that change files do not conflict with each other
       - run: cargo test --package avm -- --test-threads=1
+      - uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4 # v2
+        with:
+          retry_wait_seconds: 60
+          timeout_minutes: 5
+          max_attempts: 5
+          retry_on: error
+          shell: bash
+          command: cd ts && yarn --frozen-lockfile
       # Init local borsh package
-      - uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4 # v2
-        with:
-          retry_wait_seconds: 60
-          timeout_minutes: 5
-          max_attempts: 5
-          retry_on: error
-          shell: bash
-          command: cd ts/packages/borsh && yarn --frozen-lockfile
       - run: cd ts/packages/borsh && yarn build
-      - uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4 # v2
-        with:
-          retry_wait_seconds: 60
-          timeout_minutes: 5
-          max_attempts: 5
-          retry_on: error
-          shell: bash
-          command: cd ts/packages/anchor-errors && yarn --frozen-lockfile
       - run: cd ts/packages/anchor-errors && yarn build
-      - uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4 # v2
-        with:
-          retry_wait_seconds: 60
-          timeout_minutes: 5
-          max_attempts: 5
-          retry_on: error
-          shell: bash
-          command: cd ts/packages/anchor && yarn --frozen-lockfile
       - run: cd ts/packages/anchor && yarn test
       - run: cd ts/packages/anchor && yarn lint
       - uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4 # v2
