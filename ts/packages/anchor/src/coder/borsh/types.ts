@@ -1,5 +1,6 @@
 import { Buffer } from "buffer";
 import { Layout } from "buffer-layout";
+import * as borsh from "@anchor-lang/borsh";
 import { Idl } from "../../idl.js";
 import { IdlCoder } from "./idl.js";
 import { TypesCoder } from "../index.js";
@@ -30,14 +31,12 @@ export class BorshTypesCoder<N extends string = string> implements TypesCoder {
   }
 
   public encode<T = any>(name: N, type: T): Buffer {
-    const buffer = Buffer.alloc(1000); // TODO: use a tighter buffer.
     const layout = this.typeLayouts.get(name);
     if (!layout) {
       throw new Error(`Unknown type: ${name}`);
     }
-    const len = layout.encode(type, buffer);
 
-    return buffer.slice(0, len);
+    return borsh.encodeLayout(layout, type);
   }
 
   public decode<T = any>(name: N, data: Buffer): T {
