@@ -39,6 +39,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - idl: Fail with an error when a type alias name is defined differently in more than one module, instead of silently using the first definition ([#5131](https://github.com/otter-sec/anchor/pull/5131)).
 - avm: Validate and normalize `platform-tools` versions before building install and uninstall paths, so a version like `v1.54/../../../victim` cannot delete outside `$AVM_HOME/platform-tools` ([#4806](https://github.com/otter-sec/anchor/pull/4806)).
 - ts: Stop the accounts resolver from failing with a max depth error when every account resolves on the last allowed pass ([#5155](https://github.com/otter-sec/anchor/pull/5155)).
+- ts: Resolve the generic arguments of generic types nested in a generic type, so IDLs such as the generics test program can be decoded ([#5158](https://github.com/otter-sec/anchor/pull/5158)).
 
 ### Breaking
 
