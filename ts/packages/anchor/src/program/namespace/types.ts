@@ -103,6 +103,17 @@ export type InstructionAccountAddresses<
   I extends AllInstructions<IDL>
 > = InstructionAccountsAddresses<I["accounts"][number]>;
 
+/**
+ * Account public keys returned by a method's `rpcAndKeys()` call.
+ *
+ * @example
+ * let pubkeys: MethodPubkeys<MyIdl, "myMethod">;
+ */
+export type MethodPubkeys<
+  IDL extends Idl,
+  M extends AllInstructions<IDL>["name"]
+> = InstructionAccountAddresses<IDL, AllInstructionsMap<IDL>[M]>;
+
 type InstructionAccountsAddresses<
   A extends IdlInstructionAccountItem = IdlInstructionAccountItem
 > = {
