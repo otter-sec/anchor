@@ -56,6 +56,53 @@ pub mod config;
 pub mod rust_template;
 pub mod solidity_template;
 
+const DEFAULT_TOOLS_VERSION: &str = "v1.42.1";
+const DEFAULT_BUILD_ARCH: &str = "v3";
+
+/// Platform-tools and SBPF architecture passed to cargo-build-sbf.
+#[derive(Debug, Clone)]
+pub struct BuildSbfOptions {
+    tools_version: String,
+    arch: String,
+}
+
+impl BuildSbfOptions {
+    pub fn new(tools_version: String, arch: String) -> Self {
+        Self {
+            tools_version,
+            arch,
+        }
+    }
+
+    fn args(&self, backend: &ProgramArch) -> Vec<String> {
+        if matches!(backend, ProgramArch::Bpf) {
+            return Vec::new();
+        }
+        fn prefixed(value: &str) -> String {
+            if value.starts_with('v') {
+                value.to_owned()
+            } else {
+                format!("v{value}")
+            }
+        }
+        vec![
+            "--tools-version".to_owned(),
+            prefixed(&self.tools_version),
+            "--arch".to_owned(),
+            prefixed(&self.arch),
+        ]
+    }
+}
+
+impl Default for BuildSbfOptions {
+    fn default() -> Self {
+        Self::new(
+            DEFAULT_TOOLS_VERSION.to_owned(),
+            DEFAULT_BUILD_ARCH.to_owned(),
+        )
+    }
+}
+
 // Version of the docker image.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DOCKER_BUILDER_VERSION: &str = VERSION;
@@ -138,9 +185,12 @@ pub enum Command {
         /// Suppress doc strings in IDL output
         #[clap(long)]
         no_docs: bool,
-        /// Architecture to use when building the program
-        #[clap(value_enum, long, default_value = "sbf")]
-        arch: ProgramArch,
+        /// Platform tools version to pass to cargo build-sbf.
+        #[clap(long, default_value = DEFAULT_TOOLS_VERSION)]
+        tools_version: String,
+        /// SBPF architecture to pass to cargo build-sbf.
+        #[clap(long, default_value = DEFAULT_BUILD_ARCH)]
+        arch: String,
     },
     /// Expands macros (wrapper around cargo expand)
     ///
@@ -740,6 +790,7 @@ fn process_command(opts: Opts) -> Result<()> {
             env,
             skip_lint,
             no_docs,
+            tools_version,
             arch,
         } => build(
             &opts.cfg_override,
@@ -752,12 +803,13 @@ fn process_command(opts: Opts) -> Result<()> {
             solana_version,
             docker_image,
             bootstrap,
+            BuildSbfOptions::new(tools_version, arch),
             None,
             None,
             env,
             cargo_args,
             no_docs,
-            arch,
+            ProgramArch::Sbf,
         ),
         Command::Verify {
             program_id,
@@ -1263,6 +1315,7 @@ pub fn build(
     solana_version: Option<String>,
     docker_image: Option<String>,
     bootstrap: BootstrapMode,
+    build_sbf_options: BuildSbfOptions,
     stdout: Option<File>, // Used for the package registry server.
     stderr: Option<File>, // Used for the package registry server.
     env_vars: Vec<String>,
@@ -1309,6 +1362,7 @@ pub fn build(
         solana_version: solana_version.or_else(|| cfg.toolchain.solana_version.clone()),
         docker_image: docker_image.unwrap_or_else(|| cfg.docker()),
         bootstrap,
+        build_sbf_options,
     };
     match cargo {
         // No Cargo.toml so build the entire workspace.
@@ -1446,7 +1500,15 @@ fn build_rust_cwd(
     };
     match build_config.verifiable {
         false => _build_rust_cwd(
-            cfg, no_idl, idl_out, idl_ts_out, skip_lint, no_docs, arch, cargo_args,
+            cfg,
+            no_idl,
+            idl_out,
+            idl_ts_out,
+            skip_lint,
+            no_docs,
+            arch,
+            &build_config.build_sbf_options,
+            cargo_args,
         ),
         true => build_cwd_verifiable(
             cfg,
@@ -1629,6 +1691,7 @@ fn docker_build(
             env_vars,
             cargo_args,
             arch,
+            &build_config.build_sbf_options,
         )
     });
 
@@ -1694,6 +1757,7 @@ fn docker_build_bpf(
     env_vars: Vec<String>,
     cargo_args: Vec<String>,
     arch: &ProgramArch,
+    build_sbf_options: &BuildSbfOptions,
 ) -> Result<()> {
     let manifest_path =
         pathdiff::diff_paths(cargo_toml.canonicalize()?, cfg_parent.canonicalize()?)
@@ -1725,6 +1789,7 @@ fn docker_build_bpf(
             "--manifest-path",
             &manifest_path.display().to_string(),
         ])
+        .args(build_sbf_options.args(arch))
         .args(cargo_args)
         .stdout(match stdout {
             None => Stdio::inherit(),
@@ -1815,11 +1880,13 @@ fn _build_rust_cwd(
     skip_lint: bool,
     no_docs: bool,
     arch: &ProgramArch,
+    build_sbf_options: &BuildSbfOptions,
     cargo_args: Vec<String>,
 ) -> Result<()> {
     let subcommand = arch.build_subcommand();
     let exit = std::process::Command::new("cargo")
         .arg(subcommand)
+        .args(build_sbf_options.args(arch))
         .args(cargo_args)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -1981,6 +2048,7 @@ fn verify(
             solana_version.or_else(|| cfg.toolchain.solana_version.clone()),
             docker_image,
             bootstrap,
+            BuildSbfOptions::default(),
             None,
             None,
             env_vars,
@@ -3129,6 +3197,7 @@ fn test(
                 None,
                 None,
                 BootstrapMode::None,
+                BuildSbfOptions::default(),
                 None,
                 None,
                 env_vars,
@@ -3534,6 +3603,11 @@ fn stream_logs(config: &WithPath<Config>, rpc_url: &str) -> Result<Vec<std::proc
     Ok(handles)
 }
 
+// A validator can answer `getLatestBlockhash` before its forwarding stage is
+// ready to accept transactions. Starting test scripts at that point can drop
+// their first transaction, particularly with Solana 2.x validators.
+const MINIMUM_TEST_VALIDATOR_BLOCK_HEIGHT: u64 = 25;
+
 fn start_test_validator(
     cfg: &Config,
     test_validator: &Option<TestValidator>,
@@ -3598,8 +3672,11 @@ fn start_test_validator(
         .map(|test| test.startup_wait)
         .unwrap_or(STARTUP_WAIT);
     while count < ms_wait {
-        let r = client.get_latest_blockhash();
-        if r.is_ok() {
+        let latest_blockhash = client.get_latest_blockhash();
+        let block_height = client.get_block_height();
+        if latest_blockhash.is_ok()
+            && matches!(block_height, Ok(height) if height >= MINIMUM_TEST_VALIDATOR_BLOCK_HEIGHT)
+        {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -4349,6 +4426,7 @@ fn publish(
             None,
             None,
             BootstrapMode::None,
+            BuildSbfOptions::default(),
             None,
             None,
             env_vars,
@@ -4520,6 +4598,7 @@ fn localnet(
                 None,
                 None,
                 BootstrapMode::None,
+                BuildSbfOptions::default(),
                 None,
                 None,
                 env_vars,

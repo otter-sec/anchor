@@ -32,7 +32,7 @@ const withLogTest = async (callback, expectedLogs) => {
         logTestOk = true;
       }
     },
-    "recent"
+    "confirmed"
   );
   try {
     await callback();
@@ -40,7 +40,11 @@ const withLogTest = async (callback, expectedLogs) => {
     anchor.getProvider().connection.removeOnLogsListener(listener);
     throw err;
   }
-  anchor.getProvider().connection.removeOnLogsListener(listener);
+  // Confirmation can arrive before the websocket log notification.
+  for (let i = 0; i < 50 && !logTestOk; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  await anchor.getProvider().connection.removeOnLogsListener(listener);
   assert.isTrue(logTestOk);
 };
 
@@ -51,6 +55,7 @@ describe("errors", () => {
   // processed failed tx do not result in AnchorErrors in the client
   // because we cannot get logs for them (only through overkill `onLogs`)
   provider.opts.commitment = "confirmed";
+  provider.opts.preflightCommitment = "confirmed";
   anchor.setProvider(provider);
 
   const program = anchor.workspace.Errors as Program<Errors>;
@@ -61,7 +66,7 @@ describe("errors", () => {
         const tx = await program.methods.hello().rpc();
         assert.ok(false);
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         const errMsg =
           "This is an error message clients will automatically display";
@@ -89,7 +94,7 @@ describe("errors", () => {
       const tx = await program.methods.testRequire().rpc();
       assert.ok(false);
     } catch (_err) {
-      assert.isTrue(_err instanceof AnchorError);
+      assert.isTrue(_err instanceof AnchorError, String(_err));
       const err: AnchorError = _err;
       const errMsg =
         "This is an error message clients will automatically display";
@@ -104,7 +109,7 @@ describe("errors", () => {
       const tx = await program.methods.testErr().rpc();
       assert.ok(false);
     } catch (_err) {
-      assert.isTrue(_err instanceof AnchorError);
+      assert.isTrue(_err instanceof AnchorError, String(_err));
       const err: AnchorError = _err;
       const errMsg =
         "This is an error message clients will automatically display";
@@ -149,7 +154,7 @@ describe("errors", () => {
       const tx = await program.methods.helloNoMsg().rpc();
       assert.ok(false);
     } catch (_err) {
-      assert.isTrue(_err instanceof AnchorError);
+      assert.isTrue(_err instanceof AnchorError, String(_err));
       const err: AnchorError = _err;
       assert.strictEqual(err.error.errorMessage, "HelloNoMsg");
       assert.strictEqual(err.error.errorCode.number, 6123);
@@ -161,7 +166,7 @@ describe("errors", () => {
       const tx = await program.methods.helloNext().rpc();
       assert.ok(false);
     } catch (_err) {
-      assert.isTrue(_err instanceof AnchorError);
+      assert.isTrue(_err instanceof AnchorError, String(_err));
       const err: AnchorError = _err;
       assert.strictEqual(err.error.errorMessage, "HelloNext");
       assert.strictEqual(err.error.errorCode.number, 6124);
@@ -178,7 +183,7 @@ describe("errors", () => {
         });
         assert.ok(false);
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(
           err.error.errorMessage,
@@ -209,7 +214,7 @@ describe("errors", () => {
         });
         assert.ok(false);
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(
           err.error.errorMessage,
@@ -281,7 +286,7 @@ describe("errors", () => {
       });
       assert.ok(false);
     } catch (_err) {
-      assert.isTrue(_err instanceof AnchorError);
+      assert.isTrue(_err instanceof AnchorError, String(_err));
       const err: AnchorError = _err;
       const errMsg = "HelloCustom";
       assert.strictEqual(err.error.errorMessage, errMsg);
@@ -301,7 +306,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have fail with `AccountNotInitialized` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         const errMsg =
           "The program expected this account to be already initialized";
@@ -333,7 +338,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `AccountOwnedByWrongProgram` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         const errMsg =
           "The given account is owned by a different program than expected";
@@ -356,7 +361,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `ValueMismatch` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(err.error.errorCode.number, 6126);
         expect(err.error.comparedValues).to.deep.equal(["5241", "124124124"]);
@@ -376,7 +381,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `ValueMismatch` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(err.error.errorCode.number, 2501);
       }
@@ -395,7 +400,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `ValueMatch` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(err.error.errorCode.number, 6127);
       }
@@ -414,7 +419,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `RequireNeqViolated` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(err.error.errorCode.number, 2503);
       }
@@ -438,7 +443,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `ValueMismatch` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(err.error.errorCode.number, 6126);
       }
@@ -464,7 +469,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `ValueMismatch` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(err.error.errorCode.number, 2502);
       }
@@ -490,7 +495,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `ValueMatch` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(err.error.errorCode.number, 6127);
       }
@@ -516,7 +521,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `RequireKeysNeqViolated` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(err.error.errorCode.number, 2504);
       }
@@ -537,7 +542,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `ValueLessOrEqual` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(err.error.errorCode.number, 6129);
       }
@@ -556,7 +561,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `RequireGtViolated` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(err.error.errorCode.number, 2505);
       }
@@ -575,7 +580,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `ValueLess` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(err.error.errorCode.number, 6128);
       }
@@ -594,7 +599,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `RequireGteViolated` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(err.error.errorCode.number, 2506);
       }
@@ -613,7 +618,7 @@ describe("errors", () => {
           "Unexpected success in creating a transaction that should have failed with `InvalidNumericConversion` error"
         );
       } catch (_err) {
-        assert.isTrue(_err instanceof AnchorError);
+        assert.isTrue(_err instanceof AnchorError, String(_err));
         const err: AnchorError = _err;
         assert.strictEqual(err.error.errorCode.number, 4102);
       }

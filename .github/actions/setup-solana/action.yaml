@@ -20,10 +20,15 @@ runs:
         retry_on: error
         shell: bash
         command: |
-          curl -sSfL -o "$RUNNER_TEMP/solana-install-init" \
-            "https://github.com/solana-labs/solana/releases/download/v${{ env.SOLANA_CLI_VERSION }}/solana-install-init-x86_64-unknown-linux-gnu"
-          chmod +x "$RUNNER_TEMP/solana-install-init"
-          "$RUNNER_TEMP/solana-install-init" "${{ env.SOLANA_CLI_VERSION }}"
+          if [[ "$SOLANA_CLI_VERSION" == 1.* ]]; then
+            curl -sSfL -o "$RUNNER_TEMP/solana-install-init" \
+              "https://github.com/solana-labs/solana/releases/download/v${{ env.SOLANA_CLI_VERSION }}/solana-install-init-x86_64-unknown-linux-gnu"
+            chmod +x "$RUNNER_TEMP/solana-install-init"
+            "$RUNNER_TEMP/solana-install-init" "${{ env.SOLANA_CLI_VERSION }}"
+          else
+            set -o pipefail
+            curl -sSfL "https://release.anza.xyz/v${{ env.SOLANA_CLI_VERSION }}/install" | sh
+          fi
     - uses: nick-fields/retry@v2
       if: steps.cache-solana.outputs.cache-hit != 'true'
       with:
@@ -38,11 +43,28 @@ runs:
           chmod 755 /home/runner/.local/share/solana/install/active_release/bin/solang
     - run: echo "/home/runner/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
       shell: bash
+    - uses: actions/cache@v3
+      name: Cache standalone SBF builder
+      id: cache-build-sbf
+      with:
+        path: ~/.local/share/cargo-build-sbf
+        key: cargo-build-sbf-${{ runner.os }}-${{ runner.arch }}-4.4.0
+    - name: Install standalone SBF builder
+      if: steps.cache-build-sbf.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        rustup toolchain install stable --profile minimal --no-self-update
+        cargo +stable install cargo-build-sbf --version 4.4.0 --locked --root "$HOME/.local/share/cargo-build-sbf"
+    - name: Prefer standalone SBF builder
+      shell: bash
+      run: echo "$HOME/.local/share/cargo-build-sbf/bin" >> "$GITHUB_PATH"
+    - run: cargo-build-sbf --version
+      shell: bash
     - run: solana-keygen new --no-bip39-passphrase
       shell: bash
     - run: solana config set --url localhost
       shell: bash
-    # Solana 1.18's SBF toolchain bundles Cargo 1.79. Seed independent
+    # The CLI pins the Rust 1.75 SBPF v3 backport. Seed independent
     # release-owned test workspaces with this release's compatible resolution.
     - run: find . -name Anchor.toml -exec sh -c 'dir="$(dirname "$1")"; [ "$(git -C "$dir" rev-parse --show-toplevel)" = "$GITHUB_WORKSPACE" ] && [ ! -e "$dir/Cargo.lock" ] && cp "$GITHUB_WORKSPACE/Cargo.lock" "$dir/Cargo.lock"' _ {} \;
       shell: bash

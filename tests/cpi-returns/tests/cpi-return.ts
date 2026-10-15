@@ -9,7 +9,12 @@ import { ConfirmOptions } from "@solana/web3.js";
 const { SystemProgram } = anchor.web3;
 
 describe("CPI return", () => {
-  const provider = anchor.AnchorProvider.env();
+  const envProvider = anchor.AnchorProvider.env();
+  const provider = new anchor.AnchorProvider(
+    envProvider.connection,
+    envProvider.wallet,
+    { commitment: "confirmed", preflightCommitment: "confirmed" }
+  );
   anchor.setProvider(provider);
 
   const callerProgram = anchor.workspace.Caller as Program<Caller>;
@@ -28,7 +33,10 @@ describe("CPI return", () => {
 
   const cpiReturn = anchor.web3.Keypair.generate();
 
-  const confirmOptions: ConfirmOptions = { commitment: "confirmed" };
+  const confirmOptions: ConfirmOptions = {
+    commitment: "confirmed",
+    preflightCommitment: "confirmed",
+  };
 
   it("can initialize", async () => {
     await calleeProgram.methods

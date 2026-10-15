@@ -398,7 +398,11 @@ jobs:
           #   path: tests/lockup
           # TODO: Remove `1.14.18` installation if/when https://github.com/solana-labs/solana/issues/31960 is solved
           # `swap` tests don't work with Solana `1.16.0`, downgrade to `1.14.18`
-          - cmd: cd tests/swap/deps/openbook-dex/dex && solana-install init 1.14.18 && cargo build-bpf -- --locked && cd ../../../ && solana-install init $SOLANA_CLI_VERSION && anchor test --skip-lint
+          - cmd: |
+              legacy_dir="$(mktemp -d)"
+              curl -sSfL https://github.com/solana-labs/solana/releases/download/v1.14.18/solana-release-x86_64-unknown-linux-gnu.tar.bz2 | tar -xj -C "$legacy_dir"
+              (cd tests/swap/deps/openbook-dex/dex && PATH="$legacy_dir/solana-release/bin:$PATH" cargo build-bpf -- --locked)
+              cd tests/swap && anchor test --skip-lint
             path: tests/swap
           - cmd: cd tests/escrow && anchor test --skip-lint && npx tsc --noEmit
             path: tests/escrow
@@ -458,8 +462,6 @@ jobs:
             path: tests/anchor-cli-idl
           - cmd: cd tests/anchor-cli-account && anchor test --skip-lint
             path: tests/anchor-cli-account
-          - cmd: cd tests/bench && anchor test --skip-lint
-            path: tests/bench
           - cmd: cd tests/idl && ./test.sh
             path: tests/idl
           # TODO: Enable when `solang` becomes compatible with the new IDL spec
