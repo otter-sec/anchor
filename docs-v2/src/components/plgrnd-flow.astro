@@ -1,0 +1,19 @@
+---
+interface Props {
+  flow: string
+}
+
+const { flow } = Astro.props
+const src = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/plgrnd/plgrnd-flow-1.0.1.js`
+---
+
+<script
+  is:inline
+  defer
+  src={src}
+  integrity="sha384-Y2BkqcJKLd+pVOsJ4EU/v0QoThcL8XpjFHeKoy7sLj24U73lzYK2VnShhVe7qv3B"></script>
+<plgrnd-flow
+  flow={flow}
+  theme="auto"
+  link-ref="anchor-docs"
+  style="display: block; height: 480px; border-radius: 8px"></plgrnd-flow>
