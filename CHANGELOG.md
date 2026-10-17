@@ -39,6 +39,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 - idl: Fail with an error when a type alias name is defined differently in more than one module, instead of silently using the first definition ([#5131](https://github.com/otter-sec/anchor/pull/5131)).
 - avm: Validate and normalize `platform-tools` versions before building install and uninstall paths, so a version like `v1.54/../../../victim` cannot delete outside `$AVM_HOME/platform-tools` ([#4806](https://github.com/otter-sec/anchor/pull/4806)).
 - ts: Stop the accounts resolver from failing with a max depth error when every account resolves on the last allowed pass ([#5155](https://github.com/otter-sec/anchor/pull/5155)).
+- cli: Fix `anchor init` and `anchor new` with `--anchor-version v2` depending on the `anchor-lang-v2` crate, which was renamed to `anchor-lang` on `anchor-next` ([#5187](https://github.com/otter-sec/anchor/pull/5187)).
+- cli: Pin Rust 1.97.1 in the `rust-toolchain.toml` generated for `--anchor-version v2`, required by the anchor-next host test dependencies ([#5187](https://github.com/otter-sec/anchor/pull/5187)).
 
 ### Breaking
 

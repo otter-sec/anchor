@@ -1839,6 +1839,12 @@ fn init(
         cfg.toolchain.package_manager = package_manager.clone();
     }
 
+    // anchor_version for [toolchain] in Anchor.toml
+    // v2 depends on `anchor-lang` from git, which has no version AVM can read, so use the CLI version.
+    if anchor_version == AnchorVersion::V2 {
+        cfg.toolchain.anchor_version = Some(VERSION.to_string());
+    }
+
     // Initialize .gitignore file
     fs::write(".gitignore", template::git_ignore())?;
 
@@ -2116,6 +2122,12 @@ fn new(
                         idl: None,
                     },
                 );
+
+                // anchor_version for [toolchain] in Anchor.toml
+                // v2 depends on `anchor-lang` from git, which has no version AVM can read, so use the CLI version.
+                if anchor_version == AnchorVersion::V2 && cfg.toolchain.anchor_version.is_none() {
+                    cfg.toolchain.anchor_version = Some(VERSION.to_string());
+                }
 
                 let toml = cfg.to_string();
                 fs::write("Anchor.toml", toml)?;
