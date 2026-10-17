@@ -24,6 +24,10 @@ declare_id!("SpL1111111111111111111111111111111111111111");
 
 const TOKEN_CPI_EXT_AUTHORITY_SEED: &[u8] = b"token-cpi-ext-authority";
 
+// Token-2022 account size for the ImmutableOwner extension: the 165-byte
+// base account plus one four-byte TLV header and its one-byte payload.
+const TOKEN_2022_IMMUTABLE_OWNER_ACCOUNT_SIZE: u64 = 170;
+
 #[program]
 pub mod spl_test {
     use super::*;
@@ -289,7 +293,7 @@ pub mod spl_test {
             &mut ctx.accounts.account_or_mint,
             &ctx.accounts.current_authority,
             &[],
-            token::spl_token::instruction::AuthorityType::CloseAccount,
+            token::AuthorityType::CloseAccount,
             Some(new_authority),
         )?;
         Ok(())
@@ -346,7 +350,7 @@ pub mod spl_test {
             &mut ctx.accounts.account_or_mint,
             &ctx.accounts.authority,
             signer_seeds,
-            token::spl_token::instruction::AuthorityType::CloseAccount,
+            token::AuthorityType::CloseAccount,
             Some(new_authority),
         )?;
         Ok(())
@@ -1225,10 +1229,7 @@ pub mod spl_test {
         )?;
         require_eq!(
             size,
-            token_2022_cpi::ExtensionType::try_calculate_account_len::<
-                token_2022_cpi::spl_token_2022::state::Account,
-            >(&[token_2022_cpi::ExtensionType::ImmutableOwner])
-            .map_err(|_| ProgramError::InvalidInstructionData)? as u64,
+            TOKEN_2022_IMMUTABLE_OWNER_ACCOUNT_SIZE,
             ProgramError::InvalidInstructionData
         );
         Ok(())
@@ -1330,7 +1331,7 @@ pub mod spl_test {
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
         token_2022_ext_cpi::default_account_state_initialize(
             cpi_ctx,
-            &token_2022_cpi::spl_token_2022::state::AccountState::Frozen,
+            &token_2022_cpi::AccountState::Frozen,
         )?;
         Ok(())
     }

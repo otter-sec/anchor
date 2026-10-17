@@ -311,7 +311,10 @@ fn declare_program_cpi_return_none_rejects_missing_return_data() {
         &authority,
         callee_data,
         result,
-        instruction::ProxyNoReturn { base: 33 }.data(),
+        instruction::ProxyNoReturn { base: 33 }
+            .data()
+            .as_slice()
+            .to_vec(),
         vec![
             AccountMeta::new(result, false),
             AccountMeta::new(callee_data, false),
@@ -334,7 +337,10 @@ fn declare_program_cpi_return_rejects_truncated_scalar_return_data() {
         &authority,
         callee_data,
         result,
-        instruction::ProxyShortReturn { base: 33 }.data(),
+        instruction::ProxyShortReturn { base: 33 }
+            .data()
+            .as_slice()
+            .to_vec(),
         vec![
             AccountMeta::new(result, false),
             AccountMeta::new(callee_data, false),
@@ -357,7 +363,10 @@ fn declare_program_cpi_return_rejects_wrong_return_program() {
         &authority,
         callee_data,
         result,
-        instruction::ProxySpoofedReturn { base: 33 }.data(),
+        instruction::ProxySpoofedReturn { base: 33 }
+            .data()
+            .as_slice()
+            .to_vec(),
         vec![
             AccountMeta::new(result, false),
             AccountMeta::new(callee_data, false),
@@ -381,7 +390,10 @@ fn declare_program_cpi_return_rejects_malformed_defined_return_data() {
         &authority,
         callee_data,
         result,
-        instruction::ProxyMalformedPayload { base: 33 }.data(),
+        instruction::ProxyMalformedPayload { base: 33 }
+            .data()
+            .as_slice()
+            .to_vec(),
         vec![
             AccountMeta::new(result, false),
             AccountMeta::new(callee_data, false),

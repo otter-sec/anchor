@@ -40,6 +40,13 @@ fn byte_discriminator_accepts_exact_wincode_payload_length() {
 
     assert_eq!(data.len(), 10, "1-byte discriminator + 9-byte payload");
 
-    send_instruction(&mut svm, program_id(), data, vec![], &payer, &[])
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data,
+        Vec::<anchor_lang::solana_program::instruction::AccountMeta>::new(),
+        &payer,
+        &[],
+    )
         .expect("exact wire-length args should dispatch successfully");
 }

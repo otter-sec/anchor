@@ -6,7 +6,6 @@ use {
     pinocchio::{
         account::{AccountView, NOT_BORROWED},
         address::Address,
-        instruction::InstructionAccount,
     },
     solana_program_error::{ProgramError, ProgramResult},
 };
@@ -257,8 +256,10 @@ impl Drop for CpiBorrowGuard {
     }
 }
 
-pub(crate) fn enter_cpi<'a>(handles: &[CpiHandle<'a>]) -> alloc::vec::Vec<CpiBorrowGuard> {
-    let mut guards = alloc::vec::Vec::new();
+pub(crate) fn enter_cpi<'a>(
+    handles: &[CpiHandle<'a>],
+) -> crate::FixedVec<CpiBorrowGuard, { crate::MAX_ACCOUNT_METAS }> {
+    let mut guards = crate::FixedVec::new();
     for handle in handles {
         if let Some(guard) = handle.enter_cpi() {
             guards.push(guard);
@@ -274,10 +275,10 @@ pub(crate) fn enter_cpi<'a>(handles: &[CpiHandle<'a>]) -> alloc::vec::Vec<CpiBor
 /// [`CpiHandle`] for the actual invocation.
 pub trait ToCpiAccounts<'a> {
     /// Produce instruction account metadata for the CPI instruction.
-    fn to_instruction_accounts(&self) -> alloc::vec::Vec<InstructionAccount<'a>>;
+    fn to_instruction_accounts(&self) -> crate::InstructionAccountBuffer<'a>;
 
     /// Collect all CPI handles for the invocation.
-    fn to_cpi_handles(&self) -> alloc::vec::Vec<CpiHandle<'a>>;
+    fn to_cpi_handles(&self) -> crate::CpiHandleBuffer<'a>;
 
     /// Parallel to [`to_instruction_accounts`]: `true` at each index where an
     /// optional field was `None` and a program-id sentinel meta was emitted.
@@ -285,7 +286,7 @@ pub trait ToCpiAccounts<'a> {
     /// The CPI invoker may skip a matching handle only for these indices.
     /// Required accounts whose address equals the callee program id must be
     /// `false` here so they still require a handle.
-    fn optional_account_sentinel_flags(&self) -> alloc::vec::Vec<bool>;
+    fn optional_account_sentinel_flags(&self) -> crate::BoolBuffer;
 }
 
 pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
@@ -880,8 +881,8 @@ impl<T: crate::IdlAccountType> crate::IdlAccountType for Nested<T> {
         T::__idl_type_def()
     }
     fn __register_idl_deps(
-        accounts: &mut ::alloc::vec::Vec<&'static str>,
-        types: &mut ::alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::IdlEntries,
+        types: &mut crate::IdlEntries,
     ) {
         T::__register_idl_deps(accounts, types);
     }

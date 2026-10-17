@@ -20,7 +20,7 @@ edition = "2021"
 publish = false
 
 [features]
-idl-build = []
+idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
 anchor-lang = {{ path = "{}" }}

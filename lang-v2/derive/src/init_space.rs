@@ -279,6 +279,10 @@ fn builtin_type_name(ty_path: &syn::TypePath) -> Option<&'static str> {
         ("String", &["String"]),
         ("String", &["alloc", "string", "String"]),
         ("String", &["std", "string", "String"]),
+        (
+            "String",
+            &["anchor_lang", "__idl", "string", "String"],
+        ),
         ("Pubkey", &["Pubkey"]),
         ("Address", &["Address"]),
         ("Option", &["Option"]),
@@ -287,6 +291,7 @@ fn builtin_type_name(ty_path: &syn::TypePath) -> Option<&'static str> {
         ("Vec", &["Vec"]),
         ("Vec", &["alloc", "vec", "Vec"]),
         ("Vec", &["std", "vec", "Vec"]),
+        ("Vec", &["anchor_lang", "__idl", "vec", "Vec"]),
     ];
 
     PRIMITIVES_AND_ALIASES

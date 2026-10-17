@@ -455,7 +455,7 @@ pub mod program_interface_matching_program_id {
     }
 }
 
-pub fn none_sentinel(required: Address) -> Vec<anchor_lang::AccountMeta> {
+pub fn none_sentinel(required: Address) -> anchor_lang::AccountMetaBuffer {
     crate::accounts::Maybe {
         required,
         optional: None,

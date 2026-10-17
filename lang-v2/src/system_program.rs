@@ -7,7 +7,7 @@ extern crate alloc;
 
 use {
     crate::{require, CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts},
-    alloc::{string::String, vec::Vec},
+    alloc::vec::Vec,
     pinocchio::address::MAX_SEED_LEN,
     solana_address::Address,
     solana_program_error::{ProgramError, ProgramResult},
@@ -304,7 +304,7 @@ pub struct Transfer<'a> {
 
 pub fn transfer_with_seed<'a>(
     ctx: CpiContext<'a, TransferWithSeed<'a>>,
-    from_seed: String,
+    from_seed: &str,
     from_owner: &Address,
     lamports: u64,
 ) -> ProgramResult {

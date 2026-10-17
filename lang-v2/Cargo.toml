@@ -152,6 +152,9 @@ name = "program_invoke"
 required-features = ["testing"]
 
 [[test]]
+name = "public_api"
+
+[[test]]
 name = "to_cpi_accounts_derive"
 required-features = ["testing"]
 

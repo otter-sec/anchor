@@ -1,16 +1,18 @@
 extern crate alloc;
 
 use {
-    crate::{address_eq, require, Address, CpiHandle},
+    crate::{address_eq, require, Address, CpiHandle, CpiInstruction},
     alloc::vec::Vec,
     core::{mem::MaybeUninit, slice::from_raw_parts},
     pinocchio::{
         cpi::{CpiAccount, Seed, Signer},
         instruction::{InstructionAccount, InstructionView},
     },
-    solana_instruction::Instruction,
     solana_program_error::{ProgramError, ProgramResult},
 };
+
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+use crate::InstructionAccountBuffer;
 
 pub use pinocchio::cpi::{set_return_data, MAX_RETURN_DATA};
 
@@ -18,8 +20,8 @@ pub use pinocchio::cpi::{set_return_data, MAX_RETURN_DATA};
 ///
 /// This preserves the v1-shaped `program::get_return_data()` return value while
 /// sourcing the data from Pinocchio's `AccountView`-native CPI module.
-pub fn get_return_data() -> Option<(crate::Address, Vec<u8>)> {
-    pinocchio::cpi::get_return_data().map(|data| (*data.program_id(), data.as_slice().to_vec()))
+pub fn get_return_data() -> Option<(crate::Address, pinocchio::cpi::ReturnData)> {
+    pinocchio::cpi::get_return_data().map(|data| (*data.program_id(), data))
 }
 
 /// Invoke a cross-program instruction using Anchor v2 CPI handles.
@@ -33,15 +35,18 @@ pub fn get_return_data() -> Option<(crate::Address, Vec<u8>)> {
 /// [`invoke_with_optional_sentinels`] / [`invoke_signed_with_optional_sentinels`]
 /// (or [`crate::CpiContext`]) so required readonly program-id accounts still
 /// require matching handles.
-pub fn invoke<'a>(instruction: &Instruction, account_handles: &[CpiHandle<'a>]) -> ProgramResult {
+pub fn invoke<'a, I: CpiInstruction + ?Sized>(
+    instruction: &I,
+    account_handles: &[CpiHandle<'a>],
+) -> ProgramResult {
     invoke_signed(instruction, account_handles, &[])
 }
 
 /// Like [`invoke`], but marks instruction-account indices that are intentional
 /// optional `None` program-id sentinels (parallel to
 /// [`crate::ToCpiAccounts::optional_account_sentinel_flags`]).
-pub fn invoke_with_optional_sentinels<'a>(
-    instruction: &Instruction,
+pub fn invoke_with_optional_sentinels<'a, I: CpiInstruction + ?Sized>(
+    instruction: &I,
     account_handles: &[CpiHandle<'a>],
     optional_sentinel_flags: &[bool],
 ) -> ProgramResult {
@@ -50,8 +55,8 @@ pub fn invoke_with_optional_sentinels<'a>(
 
 /// Invoke a cross-program instruction with PDA signer seeds using Anchor v2
 /// CPI handles.
-pub fn invoke_signed<'a, 'seeds>(
-    instruction: &Instruction,
+pub fn invoke_signed<'a, 'seeds, I: CpiInstruction + ?Sized>(
+    instruction: &I,
     account_handles: &[CpiHandle<'a>],
     signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
 ) -> ProgramResult {
@@ -59,16 +64,16 @@ pub fn invoke_signed<'a, 'seeds>(
 }
 
 /// Like [`invoke_signed`], with an explicit optional-sentinel mask.
-pub fn invoke_signed_with_optional_sentinels<'a, 'seeds>(
-    instruction: &Instruction,
+pub fn invoke_signed_with_optional_sentinels<'a, 'seeds, I: CpiInstruction + ?Sized>(
+    instruction: &I,
     account_handles: &[CpiHandle<'a>],
     signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
     optional_sentinel_flags: &[bool],
 ) -> ProgramResult {
-    let instruction_accounts = instruction_accounts(instruction);
+    let instruction_accounts = instruction_accounts(instruction)?;
     validate_instruction_accounts(
         &instruction_accounts,
-        &instruction.program_id,
+        instruction.program_id(),
         account_handles,
         optional_sentinel_flags,
         signer_seeds.is_empty(),
@@ -94,8 +99,8 @@ pub fn invoke_signed_with_optional_sentinels<'a, 'seeds>(
 /// The caller must ensure no live Rust references or stale `AccountView` data
 /// borrows can be invalidated by the callee. Prefer [`invoke`] unless this is
 /// being used through a higher-level API that already enforces those lifetimes.
-pub unsafe fn invoke_unchecked<'a>(
-    instruction: &Instruction,
+pub unsafe fn invoke_unchecked<'a, I: CpiInstruction + ?Sized>(
+    instruction: &I,
     account_handles: &[CpiHandle<'a>],
 ) -> ProgramResult {
     unsafe { invoke_signed_unchecked(instruction, account_handles, &[]) }
@@ -110,8 +115,8 @@ pub unsafe fn invoke_unchecked<'a>(
 /// borrows can be invalidated by the callee. Prefer [`invoke_signed`] unless
 /// this is being used through a higher-level API that already enforces those
 /// lifetimes.
-pub unsafe fn invoke_signed_unchecked<'a, 'seeds>(
-    instruction: &Instruction,
+pub unsafe fn invoke_signed_unchecked<'a, 'seeds, I: CpiInstruction + ?Sized>(
+    instruction: &I,
     account_handles: &[CpiHandle<'a>],
     signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
 ) -> ProgramResult {
@@ -123,23 +128,23 @@ pub unsafe fn invoke_signed_unchecked<'a, 'seeds>(
 /// # Safety
 ///
 /// Same as [`invoke_signed_unchecked`].
-pub unsafe fn invoke_signed_unchecked_with_optional_sentinels<'a, 'seeds>(
-    instruction: &Instruction,
+pub unsafe fn invoke_signed_unchecked_with_optional_sentinels<'a, 'seeds, I: CpiInstruction + ?Sized>(
+    instruction: &I,
     account_handles: &[CpiHandle<'a>],
     signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
     optional_sentinel_flags: &[bool],
 ) -> ProgramResult {
-    let instruction_accounts = instruction_accounts(instruction);
+    let instruction_accounts = instruction_accounts(instruction)?;
     let cpi_account_count = required_cpi_account_count(
         &instruction_accounts,
-        &instruction.program_id,
+        instruction.program_id(),
         account_handles,
         optional_sentinel_flags,
     )?;
     let instruction_view = InstructionView {
-        program_id: &instruction.program_id,
+        program_id: instruction.program_id(),
         accounts: &instruction_accounts,
-        data: &instruction.data,
+        data: instruction.data(),
     };
     let signers = signers(signer_seeds);
     let _borrow_guards = crate::enter_cpi(account_handles);
@@ -372,12 +377,45 @@ fn instruction_account_matches_handle(
         && (!account.is_writable || handle.is_writable())
 }
 
-fn instruction_accounts(instruction: &Instruction) -> Vec<InstructionAccount<'_>> {
-    instruction
-        .accounts
-        .iter()
-        .map(|meta| InstructionAccount::new(&meta.pubkey, meta.is_writable, meta.is_signer))
-        .collect()
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+type InstructionAccountStorage<'a> = InstructionAccountBuffer<'a>;
+
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+type InstructionAccountStorage<'a> = Vec<InstructionAccount<'a>>;
+
+pub(crate) fn instruction_accounts<'a, I: CpiInstruction + ?Sized>(
+    instruction: &'a I,
+) -> Result<InstructionAccountStorage<'a>, ProgramError> {
+    let mut accounts = InstructionAccountStorage::new();
+    #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+    let mut result = Ok(());
+    instruction.for_each_account(&mut |address, is_writable, is_signer| {
+        let account = InstructionAccount::new(address, is_writable, is_signer);
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        {
+            if result.is_err() {
+                return;
+            }
+            result = accounts
+                .try_push(account)
+                .map_err(|_| ProgramError::InvalidArgument);
+        }
+        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+        {
+            accounts.push(account);
+        }
+    });
+    #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+    return result.map(|()| accounts);
+
+    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+    Ok(accounts)
+}
+
+pub(crate) fn instruction_account_count<I: CpiInstruction + ?Sized>(instruction: &I) -> usize {
+    let mut count = 0;
+    instruction.for_each_account(&mut |_, _, _| count += 1);
+    count
 }
 
 fn signers<'seeds>(signer_seeds: &'seeds [&'seeds [&'seeds [u8]]]) -> Vec<Signer<'seeds, 'seeds>> {

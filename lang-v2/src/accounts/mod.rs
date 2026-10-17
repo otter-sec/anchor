@@ -1,5 +1,13 @@
-mod borsh_account;
+// Keep the compatibility `Box<T>` surface for host builds and alloc-enabled
+// Solana builds, but do not expose it to the `bpfel-unknown-none` API check.
+// That target is used to prove the allocator-free surface without changing
+// the existing alloc-enabled SBF fixtures in this API-focused PR.
+#[cfg(all(
+    feature = "alloc",
+    any(target_os = "solana", not(target_arch = "bpf"))
+))]
 mod boxed;
+mod borsh_account;
 mod interface;
 mod program;
 mod serialized_account;

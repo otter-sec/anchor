@@ -87,7 +87,7 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
         let variant_name = variant.ident.to_string();
         let msg_field = match message {
             Some(message) => quote! {
-                anchor_lang::__alloc::format!(
+                anchor_lang::__idl::format!(
                     ",\"msg\":{}",
                     anchor_lang::idl_build::__idl_json_string(#message),
                 )
@@ -100,7 +100,7 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
                 let __code = (#name::#variant_ident as u32)
                     .checked_add(#offset)
                     .expect("error code overflowed");
-                __parts.push(anchor_lang::__alloc::format!(
+                __parts.push(anchor_lang::__idl::format!(
                     "{{\"code\":{},\"name\":{}{}}}",
                     __code,
                     anchor_lang::idl_build::__idl_json_string(#variant_name),
@@ -134,12 +134,12 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
         #[cfg(feature = "idl-build")]
         impl #name {
             #[doc(hidden)]
-            pub fn __idl_errors() -> anchor_lang::__alloc::string::String {
-                let mut __parts: anchor_lang::__alloc::vec::Vec<
-                    anchor_lang::__alloc::string::String
-                > = anchor_lang::__alloc::vec::Vec::new();
+            pub fn __idl_errors() -> anchor_lang::__idl::string::String {
+                let mut __parts: anchor_lang::__idl::vec::Vec<
+                    anchor_lang::__idl::string::String
+                > = anchor_lang::__idl::vec::Vec::new();
                 #(#idl_entry_pushes)*
-                let mut __payload = anchor_lang::__alloc::string::String::from("[");
+                let mut __payload = anchor_lang::__idl::string::String::from("[");
                 let mut __first = true;
                 for __part in &__parts {
                     if !__first {

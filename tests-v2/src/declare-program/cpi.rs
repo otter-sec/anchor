@@ -1,7 +1,6 @@
 use {
     anchor_lang::{
-        solana_program::instruction::AccountMeta, Discriminator, Id, InstructionData,
-        ToAccountMetas,
+        AccountMeta, Discriminator, Id, InstructionData, ToAccountMetas,
     },
     anchor_v2_testing::litesvm::LiteSVM,
     declare_program_cpi::{

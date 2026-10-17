@@ -1,6 +1,6 @@
 use {
     anchor_lang::prelude::*,
-    anchor_spl::{token_2022::spl_token_2022, token_2022_extensions as token_2022_ext},
+    anchor_spl::{token_2022::AccountState, token_2022_extensions as token_2022_ext},
 };
 
 declare_id!("Fetkn8caf7wN24u751NWUYhtXXGuCPrqTLyDtqU25EY8");
@@ -16,7 +16,7 @@ pub mod token_2022_ext_default_account_state {
         };
         token_2022_ext::default_account_state_initialize(
             CpiContext::new(ctx.accounts.token_program.address(), accs),
-            &spl_token_2022::state::AccountState::Frozen,
+            &AccountState::Frozen,
         )?;
         Ok(())
     }
@@ -29,7 +29,7 @@ pub mod token_2022_ext_default_account_state {
         };
         token_2022_ext::default_account_state_update(
             CpiContext::new(ctx.accounts.token_program.address(), accs),
-            &spl_token_2022::state::AccountState::Initialized,
+            &AccountState::Initialized,
         )?;
         Ok(())
     }

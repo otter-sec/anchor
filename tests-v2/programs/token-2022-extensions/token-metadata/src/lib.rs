@@ -47,7 +47,7 @@ pub mod token_2022_ext_token_metadata {
         };
         token_2022_ext::token_metadata_update_field(
             CpiContext::new(ctx.accounts.token_program.address(), accs),
-            token_2022_ext::token_metadata::Field::Key("field".into()),
+            token_2022_ext::token_metadata::Field::Key("field"),
             "value".into(),
         )?;
         Ok(())

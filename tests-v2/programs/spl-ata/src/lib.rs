@@ -108,7 +108,7 @@ pub mod spl_ata_test {
         );
         token::set_authority(
             cpi_ctx,
-            token::spl_token::instruction::AuthorityType::AccountOwner,
+            token::AuthorityType::AccountOwner,
             Some(*ctx.accounts.new_authority.address()),
         )?;
         Ok(())

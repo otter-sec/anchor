@@ -13,8 +13,8 @@ use {
         },
         testing::{AccountBuffer, MIN_ACCOUNT_BUF},
         unchecked_invoke_signed_fixed, Address, AnchorAccount, AnchorDeserialize, AnchorSerialize,
-        CpiContext, CpiHandle, CpiHandleMut, Discriminator, Owner, ToCpiAccounts, ToCpiHandle,
-        ToCpiHandleMut,
+        CpiContext, CpiHandle, CpiHandleBuffer, CpiHandleMut, Discriminator, Owner,
+        ToCpiAccounts, ToCpiHandle, ToCpiHandleMut,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::instruction::InstructionAccount,
@@ -482,8 +482,13 @@ fn invoke_remaining_pda_as_signer_with_seeds() {
         account: typed_view.to_cpi_handle(),
     };
 
+    let mut remaining_accounts = CpiHandleBuffer::new();
+    assert!(remaining_accounts
+        .try_push(CpiHandle::readonly(&remaining_view).as_signer())
+        .is_ok());
+
     CpiContext::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
-        .with_remaining_accounts(vec![CpiHandle::readonly(&remaining_view).as_signer()])
+        .with_remaining_accounts(remaining_accounts)
         .invoke(&[])
         .unwrap();
 }

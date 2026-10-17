@@ -39,7 +39,7 @@ pub fn group_pointer_update<'a>(
     group_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
+    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts)?;
     let ix = group_pointer_update_ix(
         ctx.program,
         ctx.accounts.mint.address(),

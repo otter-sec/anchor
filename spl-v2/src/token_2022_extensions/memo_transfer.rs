@@ -17,7 +17,7 @@ pub fn memo_transfer_initialize<'a>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
+    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts)?;
     let ix = spl_token_2022::extension::memo_transfer::instruction::enable_required_transfer_memos(
         &program,
         ctx.accounts.account.address(),
@@ -32,7 +32,7 @@ pub fn memo_transfer_disable<'a>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
+    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts)?;
     let ix =
         spl_token_2022::extension::memo_transfer::instruction::disable_required_transfer_memos(
             &program,

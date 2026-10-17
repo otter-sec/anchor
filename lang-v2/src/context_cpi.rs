@@ -1,14 +1,10 @@
-extern crate alloc;
-
 use {
-    crate::{address_eq, require, CpiHandle, ToCpiAccounts},
-    alloc::vec::Vec,
+    crate::{address_eq, require, CpiHandle, CpiInstruction, ToCpiAccounts},
     core::mem::MaybeUninit,
     pinocchio::{
         address::Address,
         instruction::{InstructionAccount, InstructionView},
     },
-    solana_instruction::Instruction,
     solana_program_error::{ProgramError, ProgramResult},
 };
 
@@ -29,7 +25,7 @@ use {
 /// ```
 pub struct CpiContext<'a, T: ToCpiAccounts<'a>> {
     pub accounts: T,
-    pub remaining_accounts: Vec<CpiHandle<'a>>,
+    pub remaining_accounts: crate::CpiHandleBuffer<'a>,
     pub program: &'a Address,
     pub signer_seeds: &'a [&'a [&'a [u8]]],
 }
@@ -40,7 +36,7 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
         Self {
             accounts,
             program,
-            remaining_accounts: Vec::new(),
+            remaining_accounts: crate::CpiHandleBuffer::new(),
             signer_seeds: &[],
         }
     }
@@ -54,7 +50,7 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
         Self {
             accounts,
             program,
-            remaining_accounts: Vec::new(),
+            remaining_accounts: crate::CpiHandleBuffer::new(),
             signer_seeds,
         }
     }
@@ -66,7 +62,7 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
     }
 
     #[must_use]
-    pub fn with_remaining_accounts(mut self, ra: Vec<CpiHandle<'a>>) -> Self {
+    pub fn with_remaining_accounts(mut self, ra: crate::CpiHandleBuffer<'a>) -> Self {
         self.remaining_accounts = ra;
         self
     }
@@ -111,31 +107,26 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
         // SAFETY: pinocchio::cpi::Seed is repr(C) { *const u8, u64, PhantomData }
         // which has the same layout as &[u8] on SBF. This is verified by the
         // static assertion in cpi.rs.
-        let signers: Vec<pinocchio::cpi::Signer> = self
-            .signer_seeds
-            .iter()
-            .map(|seeds| {
-                let cpi_seeds: &[pinocchio::cpi::Seed] = unsafe {
-                    core::slice::from_raw_parts(
-                        seeds.as_ptr() as *const pinocchio::cpi::Seed,
-                        seeds.len(),
-                    )
-                };
-                pinocchio::cpi::Signer::from(cpi_seeds)
-            })
-            .collect();
+        let mut signers: crate::SignerBuffer<'a> = crate::SignerBuffer::new();
+        for seeds in self.signer_seeds {
+            let cpi_seeds: &[pinocchio::cpi::Seed] = unsafe {
+                core::slice::from_raw_parts(
+                    seeds.as_ptr() as *const pinocchio::cpi::Seed,
+                    seeds.len(),
+                )
+            };
+            signers.push(pinocchio::cpi::Signer::from(cpi_seeds));
+        }
 
         // Build CpiAccounts and invoke. Account count matches handles (optional
         // None sentinels have metas but no handles); pinocchio skips program-id
         // placeholder metas that lack a paired CpiAccount.
         let n = handles.len();
-        let mut cpi_accounts: Vec<core::mem::MaybeUninit<pinocchio::cpi::CpiAccount>> =
-            Vec::with_capacity(n);
-        // SAFETY: MaybeUninit does not require initialization.
-        unsafe { cpi_accounts.set_len(n) };
-
-        for (handle, slot) in handles.iter().zip(cpi_accounts.iter_mut()) {
-            pinocchio::cpi::CpiAccount::init_from_account_view(handle.account_view(), slot);
+        let mut cpi_accounts: crate::CpiAccountBuffer<'a> = crate::CpiAccountBuffer::new();
+        for handle in &handles {
+            let mut slot = MaybeUninit::uninit();
+            pinocchio::cpi::CpiAccount::init_from_account_view(handle.account_view(), &mut slot);
+            cpi_accounts.push(slot);
         }
 
         // SAFETY:
@@ -167,9 +158,9 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
     /// Optional `None` sentinel slots must appear in the same positions as in
     /// [`ToCpiAccounts::to_instruction_accounts`]; only those indices may omit
     /// handles for readonly program-id metas.
-    pub fn invoke_ix(&self, ix: Instruction) -> ProgramResult {
+    pub fn invoke_ix<I: CpiInstruction>(&self, ix: I) -> ProgramResult {
         require!(
-            address_eq(self.program, &ix.program_id),
+            address_eq(self.program, ix.program_id()),
             ProgramError::IncorrectProgramId
         );
 
@@ -177,13 +168,14 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
         handles.extend(self.remaining_accounts.iter().copied());
 
         let mut optional_sentinel_flags = self.accounts.optional_account_sentinel_flags();
+        let instruction_account_count = crate::program::instruction_account_count(&ix);
         require!(
-            optional_sentinel_flags.len() <= ix.accounts.len(),
+            optional_sentinel_flags.len() <= instruction_account_count,
             ProgramError::InvalidArgument
         );
         // Trailing metas (e.g. remaining accounts already baked into `ix`) are
         // never treated as optional sentinels from this accounts struct.
-        optional_sentinel_flags.resize(ix.accounts.len(), false);
+        optional_sentinel_flags.resize(instruction_account_count, false);
 
         crate::program::invoke_signed_with_optional_sentinels(
             &ix,
@@ -255,10 +247,10 @@ pub fn unchecked_invoke_signed_fixed<'a, const N: usize>(
             }
         }
         _ => {
-            let signers: Vec<pinocchio::cpi::Signer<'a, 'a>> = signer_seeds
-                .iter()
-                .map(|seeds| signer_from_seeds(seeds))
-                .collect();
+            let mut signers: crate::SignerBuffer<'a> = crate::SignerBuffer::new();
+            for seeds in signer_seeds {
+                signers.push(signer_from_seeds(seeds));
+            }
             unsafe {
                 pinocchio::cpi::invoke_signed_unchecked(&instruction, cpi_accounts, &signers);
             }

@@ -40,7 +40,7 @@ pub fn metadata_pointer_update<'a>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
+    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts)?;
     let ix = spl_token_2022::extension::metadata_pointer::instruction::update(
         &program,
         ctx.accounts.mint.address(),

@@ -1,4 +1,4 @@
-use {crate::Discriminator, alloc::vec::Vec};
+use crate::{Discriminator, InstructionDataBuffer};
 
 // Sha256(anchor:event)[..8], matching Anchor v1's self-CPI event instruction tag.
 pub const EVENT_IX_TAG: u64 = 0x1d9acb512ea545e4;
@@ -24,7 +24,12 @@ pub const EVENT_IX_TAG_LE: &[u8] = &EVENT_IX_TAG.to_le_bytes();
 ///   only fixed-size, non-fat-pointer fields.
 pub trait Event: Discriminator {
     /// Serialize the event: discriminator bytes followed by event data.
-    fn data(&self) -> Vec<u8>;
+    fn data(&self) -> InstructionDataBuffer;
+
+    /// Fallible event serialization for bounded API buffers.
+    fn try_data(&self) -> Result<InstructionDataBuffer, solana_program_error::ProgramError> {
+        Ok(self.data())
+    }
 }
 
 /// Log event data via the `sol_log_data` syscall.

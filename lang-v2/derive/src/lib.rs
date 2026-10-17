@@ -412,7 +412,9 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         match kind {
             CpiFieldKind::Phantom => quote! {},
             CpiFieldKind::Nested => quote! {
-                __accounts.extend(anchor_lang::ToCpiAccounts::to_instruction_accounts(&self.#ident));
+                __accounts.extend(
+                    anchor_lang::ToCpiAccounts::to_instruction_accounts(&self.#ident).iter().cloned(),
+                );
             },
             CpiFieldKind::Readonly | CpiFieldKind::Writable => quote! {
                 __accounts.push(
@@ -449,7 +451,9 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
     let handle_steps = cpi_fields.iter().map(|(ident, kind, _)| match kind {
         CpiFieldKind::Phantom => quote! {},
         CpiFieldKind::Nested => quote! {
-            __handles.extend(anchor_lang::ToCpiAccounts::to_cpi_handles(&self.#ident));
+            __handles.extend(
+                anchor_lang::ToCpiAccounts::to_cpi_handles(&self.#ident).iter().cloned(),
+            );
         },
         CpiFieldKind::Readonly => quote! {
             __handles.push(self.#ident.into_readonly());
@@ -473,7 +477,9 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         CpiFieldKind::Phantom => quote! {},
         CpiFieldKind::Nested => quote! {
             __flags.extend(
-                anchor_lang::ToCpiAccounts::optional_account_sentinel_flags(&self.#ident),
+                anchor_lang::ToCpiAccounts::optional_account_sentinel_flags(&self.#ident)
+                    .iter()
+                    .copied(),
             );
         },
         CpiFieldKind::Readonly | CpiFieldKind::Writable => quote! {
@@ -490,24 +496,22 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         {
             fn to_instruction_accounts(
                 &self,
-            ) -> anchor_lang::__alloc::vec::Vec<
-                anchor_lang::pinocchio::instruction::InstructionAccount<#cpi_lifetime>,
-            > {
-                let mut __accounts = anchor_lang::__alloc::vec::Vec::new();
+            ) -> anchor_lang::InstructionAccountBuffer<#cpi_lifetime> {
+                let mut __accounts = anchor_lang::InstructionAccountBuffer::new();
                 #(#meta_steps)*
                 __accounts
             }
 
             fn to_cpi_handles(
                 &self,
-            ) -> anchor_lang::__alloc::vec::Vec<anchor_lang::CpiHandle<#cpi_lifetime>> {
-                let mut __handles = anchor_lang::__alloc::vec::Vec::new();
+            ) -> anchor_lang::CpiHandleBuffer<#cpi_lifetime> {
+                let mut __handles = anchor_lang::CpiHandleBuffer::new();
                 #(#handle_steps)*
                 __handles
             }
 
-            fn optional_account_sentinel_flags(&self) -> anchor_lang::__alloc::vec::Vec<bool> {
-                let mut __flags = anchor_lang::__alloc::vec::Vec::new();
+            fn optional_account_sentinel_flags(&self) -> anchor_lang::BoolBuffer {
+                let mut __flags = anchor_lang::BoolBuffer::new();
                 #(#flag_steps)*
                 __flags
             }
@@ -1834,10 +1838,11 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             let field_ident = &field.name;
             if nested_client_accounts_type(&field.ty).is_some() {
                 quote! {
-                    __metas.extend(anchor_lang::ToAccountMetas::to_account_metas(
-                        #field_ident,
-                        _is_signer,
-                    ));
+                    __metas.extend(
+                        anchor_lang::ToAccountMetas::to_account_metas(#field_ident, _is_signer)
+                            .iter()
+                            .cloned(),
+                    );
                 }
             } else if field.is_optional {
                 quote! {
@@ -1991,10 +1996,14 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             let field_ident = &field.name;
             if nested_client_accounts_type(&field.ty).is_some() {
                 quote! {
-                    __metas.extend(anchor_lang::ToAccountMetas::to_account_metas(
-                        &self.#field_ident,
-                        _is_signer,
-                    ));
+                    __metas.extend(
+                        anchor_lang::ToAccountMetas::to_account_metas(
+                            &self.#field_ident,
+                            _is_signer,
+                        )
+                        .iter()
+                            .cloned(),
+                    );
                 }
             } else if field.is_optional {
                 quote! {
@@ -2116,7 +2125,6 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         };
         quote! {
             pub mod #cpi_mod_name {
-                extern crate alloc;
                 use super::*;
                 #[doc(hidden)]
                 pub const __ANCHOR_ACCOUNTS_PROGRAM_ID: anchor_lang::Address = #accounts_program_id;
@@ -2136,10 +2144,10 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             #(#client_fields,)*
         }
         impl anchor_lang::ToAccountMetas for #resolved_name {
-            fn to_account_metas(&self, _is_signer: Option<bool>) -> alloc::vec::Vec<anchor_lang::AccountMeta> {
+            fn to_account_metas(&self, _is_signer: Option<bool>) -> anchor_lang::AccountMetaBuffer {
                 #(#required_locals)*
                 #(#derive_stmts)*
-                let mut __metas = alloc::vec::Vec::new();
+                let mut __metas = anchor_lang::AccountMetaBuffer::new();
                 #(#client_meta_steps)*
                 __metas
             }
@@ -2148,14 +2156,13 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
 
     quote! {
         pub mod #client_mod_name {
-            extern crate alloc;
             use super::*;
             pub struct #name {
                 #(#all_client_fields,)*
             }
             impl anchor_lang::ToAccountMetas for #name {
-                fn to_account_metas(&self, _is_signer: Option<bool>) -> alloc::vec::Vec<anchor_lang::AccountMeta> {
-                    let mut __metas = alloc::vec::Vec::new();
+                fn to_account_metas(&self, _is_signer: Option<bool>) -> anchor_lang::AccountMetaBuffer {
+                    let mut __metas = anchor_lang::AccountMetaBuffer::new();
                     #(#full_meta_steps)*
                     __metas
                 }
@@ -2261,8 +2268,8 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             /// `accounts[]` and `types[]` arrays.
             #[doc(hidden)]
             pub fn __idl_register_deps(
-                accounts: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
-                types: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
+                accounts: &mut anchor_lang::IdlEntries,
+                types: &mut anchor_lang::IdlEntries,
             ) {
                 #(#idl_dep_walkers)*
             }
@@ -2334,19 +2341,19 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
     let idl_account_entry_fn = quote! {
         fn __idl_account_entry() -> Option<&'static str> {
             let __disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
-            let mut __s = anchor_lang::__alloc::string::String::from(
+            let mut __s = anchor_lang::__idl::string::String::from(
                 concat!("{\"name\":\"", #name_str, "\",\"discriminator\":[")
             );
             for (index, byte) in __disc.iter().enumerate() {
                 if index != 0 {
                     __s.push(',');
                 }
-                __s.push_str(&anchor_lang::__alloc::string::ToString::to_string(byte));
+                __s.push_str(&anchor_lang::__idl::string::ToString::to_string(byte));
             }
             // Retain the defining type only while collecting entries. This
             // prevents same-named types in different modules being deduped.
             __s.push_str(concat!("],\"__anchor_type\":\"", module_path!(), "::", #name_str, "\"}"));
-            Some(anchor_lang::__alloc::boxed::Box::leak(__s.into_boxed_str()))
+            Some(anchor_lang::__idl::boxed::Box::leak(__s.into_boxed_str()))
         }
     };
     let idl_type_def = idl::build_struct_type_def_emission(
@@ -2566,8 +2573,8 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #idl_type_def
             }
             fn __register_idl_deps(
-                accounts: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
-                types: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
+                accounts: &mut ::anchor_lang::IdlEntries,
+                types: &mut ::anchor_lang::IdlEntries,
             ) {
                 if let Some(a) = <Self as anchor_lang::IdlAccountType>::__idl_account_entry() {
                     accounts.push(a);
@@ -2773,8 +2780,8 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
                 #idl_type_def
             }
             fn __register_idl_deps(
-                accounts: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
-                types: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
+                accounts: &mut ::anchor_lang::IdlEntries,
+                types: &mut ::anchor_lang::IdlEntries,
             ) {
                 if let Some(t) = <Self as anchor_lang::IdlAccountType>::__idl_type_def() {
                     types.push(t);
@@ -4166,32 +4173,40 @@ fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStrea
         let event_impl = if serialization.is_bytemuck() {
             quote! {
                 impl anchor_lang::Event for #ident {
-                    fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
+                    fn try_data(&self) -> anchor_lang::Result<anchor_lang::InstructionDataBuffer> {
                         let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
                         let payload = anchor_lang::bytemuck::bytes_of(self);
                         let mut data =
-                            anchor_lang::__alloc::vec::Vec::with_capacity(disc.len() + payload.len());
-                        data.extend_from_slice(disc);
-                        data.extend_from_slice(payload);
-                        data
+                            anchor_lang::InstructionDataBuffer::new();
+                        anchor_lang::try_extend_instruction_data(&mut data, disc)?;
+                        anchor_lang::try_extend_instruction_data(&mut data, payload)?;
+                        Ok(data)
+                    }
+
+                    fn data(&self) -> anchor_lang::InstructionDataBuffer {
+                        self.try_data().expect("event serialization exceeded the fixed buffer")
                     }
                 }
             }
         } else {
             quote! {
                 impl anchor_lang::Event for #ident {
-                    fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
+                    fn try_data(&self) -> anchor_lang::Result<anchor_lang::InstructionDataBuffer> {
                         let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
                         let mut data =
-                            anchor_lang::__alloc::vec::Vec::with_capacity(disc.len() + 256);
-                        data.extend_from_slice(disc);
+                            anchor_lang::InstructionDataBuffer::new();
+                        anchor_lang::try_extend_instruction_data(&mut data, disc)?;
                         anchor_lang::wincode::config::serialize_into(
                             &mut data,
                             self,
                             anchor_lang::BORSH_CONFIG,
                         )
-                        .expect("declared event serialization cannot fail for derived AnchorSerialize types");
-                        data
+                        .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
+                        Ok(data)
+                    }
+
+                    fn data(&self) -> anchor_lang::InstructionDataBuffer {
+                        self.try_data().expect("event serialization exceeded the fixed buffer")
                     }
                 }
             }
@@ -4555,8 +4570,8 @@ fn gen_declare_program_idl_account_type_impl(
             const __IDL_TYPE_DEF: Option<&'static str> = Some(#type_def);
 
             fn __register_idl_deps(
-                accounts: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
-                types: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
+                accounts: &mut anchor_lang::IdlEntries,
+                types: &mut anchor_lang::IdlEntries,
             ) {
                 if let Some(a) = <Self as anchor_lang::IdlAccountType>::__IDL_ACCOUNT_ENTRY {
                     accounts.push(a);
@@ -4826,8 +4841,8 @@ fn declare_idl_type_to_tokens_with_generics(
             "f64" => quote! { f64 },
             "u128" => quote! { u128 },
             "i128" => quote! { i128 },
-            "bytes" => quote! { anchor_lang::__alloc::vec::Vec<u8> },
-            "string" => quote! { anchor_lang::__alloc::string::String },
+            "bytes" => quote! { anchor_lang::__idl::vec::Vec<u8> },
+            "string" => quote! { anchor_lang::__idl::string::String },
             "pubkey" => quote! { anchor_lang::Address },
             other => {
                 return Err(syn::Error::new(
@@ -4871,8 +4886,8 @@ fn declare_idl_type_to_tokens_with_generics(
         return Ok(quote! { #ident });
     }
     if let Some(inner) = value.get("vec") {
-        let inner = declare_idl_type_to_tokens_with_generics(inner, span, const_generic_names)?;
-        return Ok(quote! { anchor_lang::__alloc::vec::Vec<#inner> });
+        let inner = declare_idl_type_to_tokens(inner, span)?;
+        return Ok(quote! { anchor_lang::__idl::vec::Vec<#inner> });
     }
     if let Some(inner) = value.get("option") {
         let inner = declare_idl_type_to_tokens_with_generics(inner, span, const_generic_names)?;
@@ -4898,8 +4913,8 @@ fn declare_idl_type_to_tokens_with_generics(
 
 fn declare_idl_defined_builtin(name: &str) -> Option<TokenStream2> {
     match name {
-        "BTreeMap" => Some(quote! { anchor_lang::__alloc::collections::BTreeMap }),
-        "BTreeSet" => Some(quote! { anchor_lang::__alloc::collections::BTreeSet }),
+        "BTreeMap" => Some(quote! { anchor_lang::__idl::collections::BTreeMap }),
+        "BTreeSet" => Some(quote! { anchor_lang::__idl::collections::BTreeSet }),
         "PodBool" => Some(quote! { anchor_lang::pod::PodBool }),
         "PodU16" => Some(quote! { anchor_lang::pod::PodU16 }),
         "PodU32" => Some(quote! { anchor_lang::pod::PodU32 }),
@@ -5345,7 +5360,7 @@ fn process_handler(
             let idl_type = idl::rust_type_to_idl(return_ty);
             quote! {
                 {
-                    let mut __s = anchor_lang::__alloc::string::String::from(",\"returns\":");
+                    let mut __s = anchor_lang::__idl::string::String::from(",\"returns\":");
                     __s.push_str(#idl_type);
                     __s
                 }
@@ -5354,7 +5369,7 @@ fn process_handler(
         .unwrap_or_else(|| quote! { "" });
     let set_return_data = returns_value.then(|| {
         quote! {
-            let mut __return_data = anchor_lang::__alloc::vec::Vec::with_capacity(256);
+            let mut __return_data = anchor_lang::InstructionDataBuffer::new();
             anchor_lang::wincode::config::serialize_into(
                 &mut __return_data,
                 &__result,
@@ -5568,28 +5583,42 @@ fn process_handler(
         }
         #(#handler_cfg_attrs)*
         impl #ix_lt_decl anchor_lang::InstructionData for #ix_struct_name #ix_lt_use {
-            fn data(&self) -> alloc::vec::Vec<u8> {
-                let mut data = alloc::vec::Vec::with_capacity(256);
-                data.extend_from_slice(Self::DISCRIMINATOR);
+            fn try_data(&self) -> anchor_lang::Result<anchor_lang::InstructionDataBuffer> {
+                let mut data = anchor_lang::InstructionDataBuffer::new();
+                anchor_lang::try_extend_instruction_data(&mut data, Self::DISCRIMINATOR)?;
                 anchor_lang::wincode::config::serialize_into(
                     &mut data,
                     self,
                     anchor_lang::BORSH_CONFIG,
                 )
-                    .expect("instruction serialization failed");
-                data
+                    .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
+                Ok(data)
+            }
+
+            fn data(&self) -> anchor_lang::InstructionDataBuffer {
+                self.try_data().expect("instruction serialization exceeded the fixed buffer")
             }
         }
         #(#handler_cfg_attrs)*
         impl #ix_lt_decl #ix_struct_name #ix_lt_use {
+            #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
             pub fn to_instruction(
                 self,
                 accounts: impl anchor_lang::ToAccountMetas,
             ) -> anchor_lang::solana_program::instruction::Instruction {
+                let account_metas = accounts
+                    .to_account_metas(None)
+                    .iter()
+                    .map(|meta| anchor_lang::solana_program::instruction::AccountMeta {
+                        pubkey: meta.pubkey,
+                        is_signer: meta.is_signer,
+                        is_writable: meta.is_writable,
+                    })
+                    .collect();
                 anchor_lang::solana_program::instruction::Instruction::new_with_bytes(
                     #program_id,
                     &<Self as anchor_lang::InstructionData>::data(&self),
-                    accounts.to_account_metas(None),
+                    account_metas,
                 )
             }
         }
@@ -5959,7 +5988,6 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
     let client_interface = quote! {
         /// Client-side instruction structs for off-chain use.
         pub mod instruction {
-            extern crate alloc;
             use super::*;
             use anchor_lang::Discriminator as _;
             #(#instruction_structs)*
@@ -5981,7 +6009,6 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         /// through `CpiContext::invoke`.
         #cpi_cfg
         pub mod cpi {
-            extern crate alloc;
             use super::*;
             use anchor_lang::InstructionData as _;
 
@@ -6042,7 +6069,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 
         // Custom 2-arg (r1, r2) entrypoint using SIMD-0321 convention.
         #[cfg(not(feature = "no-entrypoint"))]
-        anchor_lang::pinocchio::default_allocator!();
+        anchor_lang::__anchor_program_allocator!();
         #[cfg(not(feature = "no-entrypoint"))]
         anchor_lang::pinocchio::default_panic_handler!();
 
@@ -6170,8 +6197,8 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                 // `args: MixedArgs<'_>`) otherwise lands in
                 // `instructions[].args` as a bare `{defined:{name:...}}`
                 // reference with no matching `types[]` entry.
-                let mut accounts_entries: Vec<&'static str> = Vec::new();
-                let mut types_entries: Vec<&'static str> = Vec::new();
+                let mut accounts_entries = anchor_lang::IdlEntries::new();
+                let mut types_entries = anchor_lang::IdlEntries::new();
                 #(#idl_account_dep_walkers)*
                 #(#ix_arg_type_registers)*
                 accounts_entries.sort();
@@ -6196,18 +6223,18 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                     .filter(|s| !s.is_empty());
                 let repository = option_env!("CARGO_PKG_REPOSITORY")
                     .filter(|s| !s.is_empty());
-                let mut metadata_extras = anchor_lang::__alloc::string::String::new();
+                let mut metadata_extras = anchor_lang::__idl::string::String::new();
                 if let Some(d) = description {
                     // Escape embedded quotes/backslashes so the JSON stays valid.
                     let escaped = d.replace('\\', "\\\\").replace('"', "\\\"");
-                    metadata_extras.push_str(&anchor_lang::__alloc::format!(
+                    metadata_extras.push_str(&anchor_lang::__idl::format!(
                         ",\"description\":\"{}\"",
                         escaped,
                     ));
                 }
                 if let Some(r) = repository {
                     let escaped = r.replace('\\', "\\\\").replace('"', "\\\"");
-                    metadata_extras.push_str(&anchor_lang::__alloc::format!(
+                    metadata_extras.push_str(&anchor_lang::__idl::format!(
                         ",\"repository\":\"{}\"",
                         escaped,
                     ));
@@ -6370,17 +6397,15 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
             // serialized — we still pass it because `__register_idl_deps`
             // takes both buffers, and a nested `#[account]` data type
             // referenced from an event payload would push into it.
-            let mut __accounts: anchor_lang::__alloc::vec::Vec<&'static str> =
-                anchor_lang::__alloc::vec::Vec::new();
-            let mut __types: anchor_lang::__alloc::vec::Vec<&'static str> =
-                anchor_lang::__alloc::vec::Vec::new();
+            let mut __accounts = anchor_lang::IdlEntries::new();
+            let mut __types = anchor_lang::IdlEntries::new();
             <#name as anchor_lang::IdlAccountType>::__register_idl_deps(
                 &mut __accounts,
                 &mut __types,
             );
             __types.sort();
             __types.dedup();
-            let mut __payload = anchor_lang::__alloc::string::String::from(#event_header_json);
+            let mut __payload = anchor_lang::__idl::string::String::from(#event_header_json);
             let mut __first = true;
             for __t in &__types {
                 if !__first { __payload.push(','); }
@@ -6406,8 +6431,8 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #event_type_def
             }
             fn __register_idl_deps(
-                accounts: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
-                types: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
+                accounts: &mut ::anchor_lang::IdlEntries,
+                types: &mut ::anchor_lang::IdlEntries,
             ) {
                 if let Some(t) = <Self as anchor_lang::IdlAccountType>::__idl_type_def() {
                     types.push(t);
@@ -6436,24 +6461,25 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
             #discriminator_impl
 
             impl anchor_lang::Event for #name {
-                fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
+                fn try_data(&self) -> anchor_lang::Result<anchor_lang::InstructionDataBuffer> {
                     let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
                     // 256-byte preallocation matches instruction-data
                     // emission. Wincode has no `encoded_size()` yet, so this
                     // is a best-guess that avoids a reallocation for typical
                     // event shapes.
-                    let mut buf = anchor_lang::__alloc::vec::Vec::with_capacity(
-                        disc.len() + 256,
-                    );
-                    buf.extend_from_slice(disc);
+                    let mut buf = anchor_lang::InstructionDataBuffer::new();
+                    anchor_lang::try_extend_instruction_data(&mut buf, disc)?;
                     anchor_lang::wincode::config::serialize_into(
                         &mut buf,
                         self,
                         anchor_lang::BORSH_CONFIG,
                     )
-                        .expect("`#[event]` wincode serialization cannot fail for \
-                                 derived AnchorSerialize types");
-                    buf
+                        .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
+                    Ok(buf)
+                }
+
+                fn data(&self) -> anchor_lang::InstructionDataBuffer {
+                    self.try_data().expect("event serialization exceeded the fixed buffer")
                 }
             }
 
@@ -6599,15 +6625,13 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #discriminator_impl
 
                 impl anchor_lang::Event for #name {
-                    fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
+                    fn try_data(&self) -> anchor_lang::Result<anchor_lang::InstructionDataBuffer> {
                         const SIZE: usize = ::core::mem::size_of::<#name>();
                         let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
-                        let mut buf = anchor_lang::__alloc::vec::Vec::with_capacity(
-                            disc.len() + SIZE,
-                        );
-                        buf.extend_from_slice(disc);
+                        let mut buf = anchor_lang::InstructionDataBuffer::new();
+                        anchor_lang::try_extend_instruction_data(&mut buf, disc)?;
                         let start = buf.len();
-                        buf.resize(start + SIZE, 0);
+                        anchor_lang::try_extend_instruction_data(&mut buf, &[0u8; SIZE])?;
                         unsafe {
                             ::core::ptr::copy_nonoverlapping(
                                 self as *const Self as *const u8,
@@ -6615,7 +6639,11 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                                 SIZE,
                             );
                         }
-                        buf
+                        Ok(buf)
+                    }
+
+                    fn data(&self) -> anchor_lang::InstructionDataBuffer {
+                        self.try_data().expect("event serialization exceeded the fixed buffer")
                     }
                 }
 
@@ -6833,10 +6861,8 @@ pub fn emit_cpi(input: TokenStream) -> TokenStream {
             impl<'a> anchor_lang::ToCpiAccounts<'a> for __AnchorEventCpiAccounts<'a> {
                 fn to_instruction_accounts(
                     &self,
-                ) -> anchor_lang::__alloc::vec::Vec<
-                    anchor_lang::pinocchio::instruction::InstructionAccount<'a>
-                > {
-                    let mut __accounts = anchor_lang::__alloc::vec::Vec::with_capacity(1);
+                    ) -> anchor_lang::InstructionAccountBuffer<'a> {
+                    let mut __accounts = anchor_lang::InstructionAccountBuffer::new();
                     __accounts.push(
                         anchor_lang::pinocchio::instruction::InstructionAccount::readonly_signer(
                             self.event_authority.address(),
@@ -6847,16 +6873,16 @@ pub fn emit_cpi(input: TokenStream) -> TokenStream {
 
                 fn to_cpi_handles(
                     &self,
-                ) -> anchor_lang::__alloc::vec::Vec<anchor_lang::CpiHandle<'a>> {
-                    let mut __handles = anchor_lang::__alloc::vec::Vec::with_capacity(1);
+                ) -> anchor_lang::CpiHandleBuffer<'a> {
+                    let mut __handles = anchor_lang::CpiHandleBuffer::new();
                     __handles.push(self.event_authority);
                     __handles
                 }
 
                 fn optional_account_sentinel_flags(
                     &self,
-                ) -> anchor_lang::__alloc::vec::Vec<bool> {
-                    let mut __flags = anchor_lang::__alloc::vec::Vec::with_capacity(1);
+                ) -> anchor_lang::BoolBuffer {
+                    let mut __flags = anchor_lang::BoolBuffer::new();
                     __flags.push(false);
                     __flags
                 }
@@ -6865,9 +6891,7 @@ pub fn emit_cpi(input: TokenStream) -> TokenStream {
             let __event_authority =
                 anchor_lang::AnchorAccount::cpi_handle(&ctx.accounts.event_authority);
             let __event_data = anchor_lang::Event::data(&#event_struct);
-            let mut __ix_data = anchor_lang::__alloc::vec::Vec::with_capacity(
-                anchor_lang::event::EVENT_IX_TAG_LE.len() + __event_data.len(),
-            );
+            let mut __ix_data = anchor_lang::InstructionDataBuffer::new();
             __ix_data.extend_from_slice(anchor_lang::event::EVENT_IX_TAG_LE);
             __ix_data.extend_from_slice(&__event_data);
 

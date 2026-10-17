@@ -74,7 +74,7 @@ fn instruction_args_feed_account_constraints_and_handler() {
     send_instruction(
         &mut svm,
         program_id(),
-        data,
+        &data,
         vec![
             AccountMeta::new_readonly(marker, false),
             AccountMeta::new_readonly(seeded, false),
@@ -124,7 +124,7 @@ fn instruction_arg_address_constraint_rejects_wrong_account() {
     let err = send_instruction(
         &mut svm,
         program_id(),
-        data,
+        &data,
         vec![
             AccountMeta::new_readonly(actual_marker, false),
             AccountMeta::new_readonly(seeded, false),

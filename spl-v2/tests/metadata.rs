@@ -154,7 +154,22 @@ fn metadata_account_deserializes_raw_metaplex_bytes() {
     let data = to_vec(&expected).unwrap();
     let account = MetadataAccount::try_deserialize(&mut data.as_slice()).unwrap();
 
-    assert_eq!(&*account, &expected);
+    assert_eq!(account.key, metadata::Key::MetadataV1);
+    assert_eq!(account.update_authority, expected.update_authority);
+    assert_eq!(account.mint, expected.mint);
+    assert_eq!(account.name.as_str(), expected.name);
+    assert_eq!(account.symbol.as_str(), expected.symbol);
+    assert_eq!(account.uri.as_str(), expected.uri);
+    assert_eq!(
+        account.seller_fee_basis_points,
+        expected.seller_fee_basis_points
+    );
+    assert_eq!(
+        account.primary_sale_happened,
+        expected.primary_sale_happened
+    );
+    assert_eq!(account.is_mutable, expected.is_mutable);
+    assert_eq!(account.edition_nonce, expected.edition_nonce);
 }
 
 #[test]
@@ -163,7 +178,7 @@ fn metadata_account_deserialize_advances_cursor() {
     let mut cursor = data.as_slice();
     let account = MetadataAccount::try_deserialize(&mut cursor).unwrap();
 
-    assert_eq!(account.key, mpl_token_metadata::types::Key::MetadataV1);
+    assert_eq!(account.key, metadata::Key::MetadataV1);
     assert!(cursor.is_empty());
 }
 
@@ -186,21 +201,38 @@ fn metadata_account_preserves_v1_2_fields_when_uses_is_none() {
     let mut cursor = data.as_slice();
     let account = MetadataAccount::try_deserialize(&mut cursor).unwrap();
 
-    assert_eq!(account.token_standard, expected.token_standard);
-    assert_eq!(account.collection, expected.collection);
+    assert_eq!(
+        account.token_standard,
+        Some(metadata::TokenStandard::NonFungible)
+    );
+    assert_eq!(
+        account.collection,
+        Some(metadata::Collection {
+            verified: true,
+            key: Pubkey::from([11u8; 32]),
+        })
+    );
     assert_eq!(account.uses, None);
     assert!(cursor.is_empty());
 }
 
 #[test]
 fn metadata_account_preserves_v1_2_fields_when_uses_field_is_absent() {
-    let expected = sample_metadata_with_v1_2_fields();
     let data = sample_metadata_with_collection_without_uses_bytes();
     let mut cursor = data.as_slice();
     let account = MetadataAccount::try_deserialize(&mut cursor).unwrap();
 
-    assert_eq!(account.token_standard, expected.token_standard);
-    assert_eq!(account.collection, expected.collection);
+    assert_eq!(
+        account.token_standard,
+        Some(metadata::TokenStandard::NonFungible)
+    );
+    assert_eq!(
+        account.collection,
+        Some(metadata::Collection {
+            verified: true,
+            key: Pubkey::from([11u8; 32]),
+        })
+    );
     assert_eq!(account.uses, None);
     assert_eq!(account.collection_details, None);
     assert_eq!(account.programmable_config, None);
@@ -214,9 +246,23 @@ fn metadata_account_preserves_programmable_config_fields() {
     let mut cursor = data.as_slice();
     let account = MetadataAccount::try_deserialize(&mut cursor).unwrap();
 
-    assert_eq!(account.token_standard, expected.token_standard);
-    assert_eq!(account.collection, expected.collection);
-    assert_eq!(account.programmable_config, expected.programmable_config);
+    assert_eq!(
+        account.token_standard,
+        Some(metadata::TokenStandard::ProgrammableNonFungible)
+    );
+    assert_eq!(
+        account.collection,
+        Some(metadata::Collection {
+            verified: true,
+            key: Pubkey::from([11u8; 32]),
+        })
+    );
+    assert_eq!(
+        account.programmable_config,
+        Some(metadata::ProgrammableConfig::V1 {
+            rule_set: Some(Pubkey::from([12u8; 32])),
+        })
+    );
     assert!(cursor.is_empty());
 }
 
@@ -226,7 +272,7 @@ fn master_edition_account_deserialize_advances_cursor() {
     let mut cursor = data.as_slice();
     let account = MasterEditionAccount::try_deserialize(&mut cursor).unwrap();
 
-    assert_eq!(account.key, mpl_token_metadata::types::Key::MasterEditionV2);
+    assert_eq!(account.key, metadata::Key::MasterEditionV2);
     assert!(cursor.is_empty());
 }
 
@@ -245,7 +291,7 @@ fn master_edition_account_load_accepts_padded_accounts() {
     account.write_data(&data);
 
     let loaded = MasterEditionAccount::load(unsafe { account.view() }).unwrap();
-    assert_eq!(loaded.key, mpl_token_metadata::types::Key::MasterEditionV2);
+    assert_eq!(loaded.key, metadata::Key::MasterEditionV2);
     assert_eq!(loaded.supply, 42);
     assert_eq!(loaded.max_supply, Some(100));
 }
@@ -256,7 +302,7 @@ fn token_record_account_deserialize_advances_cursor() {
     let mut cursor = data.as_slice();
     let account = TokenRecordAccount::try_deserialize(&mut cursor).unwrap();
 
-    assert_eq!(account.key, mpl_token_metadata::types::Key::TokenRecord);
+    assert_eq!(account.key, metadata::Key::TokenRecord);
     assert!(cursor.is_empty());
 }
 
@@ -275,7 +321,7 @@ fn token_record_account_load_accepts_padded_accounts() {
     account.write_data(&data);
 
     let loaded = TokenRecordAccount::load(unsafe { account.view() }).unwrap();
-    assert_eq!(loaded.key, mpl_token_metadata::types::Key::TokenRecord);
+    assert_eq!(loaded.key, metadata::Key::TokenRecord);
     assert_eq!(loaded.bump, 7);
     assert_eq!(loaded.locked_transfer, Some(Pubkey::from([4u8; 32])));
 }
@@ -295,7 +341,7 @@ fn token_record_account_load_accepts_legacy_padded_accounts() {
     account.write_data(&data);
 
     let loaded = TokenRecordAccount::load(unsafe { account.view() }).unwrap();
-    assert_eq!(loaded.key, mpl_token_metadata::types::Key::TokenRecord);
+    assert_eq!(loaded.key, metadata::Key::TokenRecord);
     assert_eq!(loaded.bump, 7);
     assert_eq!(loaded.locked_transfer, None);
 }
@@ -336,9 +382,23 @@ fn metadata_account_load_accepts_padded_accounts() {
     account.write_data(&data);
 
     let loaded = MetadataAccount::load(unsafe { account.view() }).unwrap();
-    assert_eq!(loaded.token_standard, expected.token_standard);
-    assert_eq!(loaded.collection, expected.collection);
-    assert_eq!(loaded.programmable_config, expected.programmable_config);
+    assert_eq!(
+        loaded.token_standard,
+        Some(metadata::TokenStandard::ProgrammableNonFungible)
+    );
+    assert_eq!(
+        loaded.collection,
+        Some(metadata::Collection {
+            verified: true,
+            key: Pubkey::from([11u8; 32]),
+        })
+    );
+    assert_eq!(
+        loaded.programmable_config,
+        Some(metadata::ProgrammableConfig::V1 {
+            rule_set: Some(Pubkey::from([12u8; 32])),
+        })
+    );
 }
 
 #[test]
@@ -370,7 +430,7 @@ fn token_record_account_deserialize_consumes_full_prefix_with_trailing_bytes() {
     let mut cursor = data.as_slice();
     let account = TokenRecordAccount::try_deserialize(&mut cursor).unwrap();
 
-    assert_eq!(account.key, mpl_token_metadata::types::Key::TokenRecord);
+    assert_eq!(account.key, metadata::Key::TokenRecord);
     assert_eq!(account.bump, 7);
     assert_eq!(account.locked_transfer, Some(Pubkey::from([4u8; 32])));
     assert_eq!(cursor, trailing.as_slice());
@@ -385,7 +445,7 @@ fn token_record_account_deserialize_consumes_legacy_prefix_with_trailing_bytes()
     let mut cursor = data.as_slice();
     let account = TokenRecordAccount::try_deserialize(&mut cursor).unwrap();
 
-    assert_eq!(account.key, mpl_token_metadata::types::Key::TokenRecord);
+    assert_eq!(account.key, metadata::Key::TokenRecord);
     assert_eq!(account.bump, 7);
     assert_eq!(account.locked_transfer, None);
     assert_eq!(cursor, trailing.as_slice());

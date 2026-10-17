@@ -40,7 +40,7 @@ pub fn interest_bearing_mint_update_rate<'a>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
+    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts)?;
     let ix = spl_token_2022::extension::interest_bearing_mint::instruction::update_rate(
         &program,
         ctx.accounts.mint.address(),

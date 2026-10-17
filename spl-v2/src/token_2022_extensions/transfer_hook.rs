@@ -40,7 +40,7 @@ pub fn transfer_hook_update<'a>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
+    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts)?;
     let ix = spl_token_2022::extension::transfer_hook::instruction::update(
         &program,
         ctx.accounts.mint.address(),

@@ -38,7 +38,7 @@ pub fn group_member_pointer_update<'a>(
     member_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
+    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts)?;
     let ix = spl_token_2022::extension::group_member_pointer::instruction::update(
         ctx.program,
         ctx.accounts.mint.address(),

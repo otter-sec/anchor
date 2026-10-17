@@ -128,8 +128,8 @@ fn derive_to_cpi_accounts_emits_metas_and_erased_handles() {
 
     let flags = accounts.optional_account_sentinel_flags();
     assert_eq!(
-        flags,
-        vec![false, false, false, false, false, false, false, true]
+        flags.as_slice(),
+        &[false, false, false, false, false, false, false, true]
     );
 }
 

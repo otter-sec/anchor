@@ -33,7 +33,7 @@ pub fn pausable_initialize<'a>(
 
 pub fn pausable_pause<'a>(ctx: CpiContext<'a, PausableToggle<'a>>) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
+    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts)?;
     let ix = spl_token_2022::extension::pausable::instruction::pause(
         ctx.program,
         ctx.accounts.mint.address(),
@@ -45,7 +45,7 @@ pub fn pausable_pause<'a>(ctx: CpiContext<'a, PausableToggle<'a>>) -> Result<(),
 
 pub fn pausable_resume<'a>(ctx: CpiContext<'a, PausableToggle<'a>>) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
+    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts)?;
     let ix = spl_token_2022::extension::pausable::instruction::resume(
         ctx.program,
         ctx.accounts.mint.address(),

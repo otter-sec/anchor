@@ -27,7 +27,7 @@ publish = false
 anchor-lang = {{ path = "{}" }}
 
 [features]
-idl-build = []
+idl-build = ["anchor-lang/idl-build"]
 extra = []
 live = []
 

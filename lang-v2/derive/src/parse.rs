@@ -1634,17 +1634,6 @@ pub fn bump_cache_ident(field_name: &Ident) -> Ident {
     )
 }
 
-/// Turn the RHS of `#[account(address = <expr>)]` into the string form the
-/// IDL emits. Whitespace from `quote!`'s token reassembly is stripped so
-/// `crate :: ID` → `crate::ID`, `data . authority` → `data.authority`, and
-/// `crate :: id ()` → `crate::id()` — matching what a user would hand-write
-/// and what downstream tooling (the Anchor CLI resolver, TS client path
-/// walkers) expect to parse.
-fn stringify_address_expr(expr: &Expr) -> String {
-    let s = quote!(#expr).to_string();
-    s.split_whitespace().collect()
-}
-
 /// If `expr` is the v1-encodable shape `<sibling>.<field>` where both:
 ///   - `<sibling>` is a sibling field name, and
 ///   - `<field>` matches `self_name` (the field carrying this constraint),

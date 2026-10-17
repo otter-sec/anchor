@@ -19,7 +19,7 @@ pub struct DefaultAccountStateUpdate<'a> {
 
 pub fn default_account_state_initialize<'a>(
     ctx: CpiContext<'a, DefaultAccountStateInitialize<'a>>,
-    state: &spl_token_2022::state::AccountState,
+    state: &crate::token_2022::AccountState,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
@@ -27,25 +27,25 @@ pub fn default_account_state_initialize<'a>(
         spl_token_2022::extension::default_account_state::instruction::initialize_default_account_state(
             &program,
             ctx.accounts.mint.address(),
-            state,
+            &(*state).into(),
         )?;
     ctx.invoke_ix(ix)
 }
 
 pub fn default_account_state_update<'a>(
     ctx: CpiContext<'a, DefaultAccountStateUpdate<'a>>,
-    state: &spl_token_2022::state::AccountState,
+    state: &crate::token_2022::AccountState,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
+    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts)?;
     let ix =
         spl_token_2022::extension::default_account_state::instruction::update_default_account_state(
             &program,
             ctx.accounts.mint.address(),
             ctx.accounts.freeze_authority.address(),
             &signer_addresses,
-            state,
+            &(*state).into(),
         )?;
     ctx.invoke_ix(ix)
 }

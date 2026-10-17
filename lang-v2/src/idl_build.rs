@@ -18,72 +18,7 @@
 //! This module is exposed only for IDL generation; it is NOT part of the
 //! stable API and is subject to change.
 
-extern crate alloc;
-
-/// Contributes (or elides) a user-defined type to the generated IDL.
-///
-/// **Opaque / unstable.** Do not access these consts or call
-/// `__register_idl_deps` directly — they are implementation details of the
-/// `anchor idl build` pipeline and will change without notice.
-///
-/// `__IDL_ACCOUNT_ENTRY` populates the IDL's program-level `accounts[]`
-/// array (spec:137-140). `__IDL_TYPE_DEF` populates `types[]` (spec:176-188).
-/// Plain `#[derive(IdlType)]` types set only the latter — they don't appear
-/// in `accounts[]`. View wrappers (`Signer`, `Program<T>`, `Sysvar<T>`,
-/// `UncheckedAccount`, …) leave both at `None` and surface per-wrapper
-/// metadata via `__IDL_IS_SIGNER` / `__IDL_ADDRESS`.
-///
-/// `__register_idl_deps` handles transitive type registration: a user struct
-/// pushes its own pair of strings, then recurses into field types so a
-/// nested `#[derive(IdlType)] struct Inner` referenced from an `#[account]`
-/// data type lands in `types[]` too.
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` has no IDL type information",
-    note = "plain structs used as instruction arguments or nested fields need \
-            `#[derive(IdlType)]`; account and event types get this automatically from \
-            `#[account]` / `#[event]`"
-)]
-pub trait IdlAccountType {
-    /// `{"name":"X","discriminator":[…]}` for the program-level `accounts[]`.
-    /// `None` for types that don't appear there (`IdlType` plain types,
-    /// view wrappers, primitives, collections).
-    const __IDL_ACCOUNT_ENTRY: Option<&'static str> = None;
-    /// `IdlTypeDef` JSON for the program-level `types[]`. `None` for
-    /// view wrappers, primitives, and collection forwarders.
-    const __IDL_TYPE_DEF: Option<&'static str> = None;
-    const __IDL_IS_SIGNER: bool = false;
-    const __IDL_ADDRESS: Option<&'static str> = None;
-
-    /// Dynamic accessor for the `accounts[]` entry. Defaults to the trait
-    /// const, but derive-generated impls can override it when the final IDL
-    /// string depends on cfg-pruned items.
-    fn __idl_account_entry() -> Option<&'static str> {
-        Self::__IDL_ACCOUNT_ENTRY
-    }
-
-    /// Dynamic accessor for the `types[]` entry. Defaults to the trait const,
-    /// but derive-generated impls can override it when the final IDL string
-    /// depends on cfg-pruned fields or variants.
-    fn __idl_type_def() -> Option<&'static str> {
-        Self::__IDL_TYPE_DEF
-    }
-
-    /// Push this type's accounts/types entries (if any) and recursively
-    /// register every user-defined type its fields reference. Default: no-op.
-    ///
-    /// Wrappers (`Box<T>`, `BorshAccount<T>`, `Nested<T>`) forward to the
-    /// inner type. `Slab<H, T>` currently forwards only the header `H`;
-    /// see [`crate::accounts::Slab`] for the limitation. Collection impls
-    /// (`Vec<T>`, `BTreeMap<K, V>`, `BTreeSet<T>`, `Option<T>`, `[T; N]`,
-    /// `[T]`, `&T`, tuples, `PodVec<T, N>`) forward to their element types.
-    /// Primitive impls (bool, u*, i*, f*, String,
-    /// Address, etc.) use the default no-op — they never appear in `types[]`.
-    fn __register_idl_deps(
-        _accounts: &mut alloc::vec::Vec<&'static str>,
-        _types: &mut alloc::vec::Vec<&'static str>,
-    ) {
-    }
-}
+use crate::IdlAccountType;
 
 /// Reject account discriminator collisions while building a v2 IDL.
 ///
@@ -134,10 +69,10 @@ pub fn validate_account_discriminator_entries(entries: &[&str]) {
 
 /// Remove the private defining-type suffix from a collected account entry.
 #[doc(hidden)]
-pub fn strip_account_entry_identity(entry: &str) -> alloc::string::String {
+pub fn strip_account_entry_identity(entry: &str) -> std::string::String {
     const TYPE_MARKER: &str = ",\"__anchor_type\":\"";
     match entry.find(TYPE_MARKER) {
-        Some(index) => alloc::string::String::from(&entry[..index]) + "}",
+        Some(index) => std::string::String::from(&entry[..index]) + "}",
         None => entry.into(),
     }
 }
@@ -161,21 +96,9 @@ macro_rules! impl_idl_account_type_noop {
 }
 
 impl_idl_account_type_noop!(
-    bool,
-    u8,
-    u16,
-    u32,
-    u64,
-    u128,
-    i8,
-    i16,
-    i32,
-    i64,
-    i128,
     f32,
     f64,
-    alloc::string::String,
-    pinocchio::address::Address,
+    std::string::String,
 );
 
 // Pod scalar wrappers are referenced by name (`{"defined":{"name":"PodU64"}}`),
@@ -196,8 +119,8 @@ macro_rules! impl_idl_account_type_pod_alias {
                 ));
 
                 fn __register_idl_deps(
-                    _accounts: &mut alloc::vec::Vec<&'static str>,
-                    types: &mut alloc::vec::Vec<&'static str>,
+                    _accounts: &mut crate::IdlEntries,
+                    types: &mut crate::IdlEntries,
                 ) {
                     if let Some(t) = <Self as IdlAccountType>::__IDL_TYPE_DEF {
                         types.push(t);
@@ -221,20 +144,20 @@ impl_idl_account_type_pod_alias!(
 );
 
 #[doc(hidden)]
-impl<T: IdlAccountType> IdlAccountType for alloc::vec::Vec<T> {
+impl<T: IdlAccountType> IdlAccountType for std::vec::Vec<T> {
     fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::IdlEntries,
+        types: &mut crate::IdlEntries,
     ) {
         T::__register_idl_deps(accounts, types);
     }
 }
 
 #[doc(hidden)]
-impl<K: IdlAccountType, V: IdlAccountType> IdlAccountType for alloc::collections::BTreeMap<K, V> {
+impl<K: IdlAccountType, V: IdlAccountType> IdlAccountType for std::collections::BTreeMap<K, V> {
     fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::IdlEntries,
+        types: &mut crate::IdlEntries,
     ) {
         K::__register_idl_deps(accounts, types);
         V::__register_idl_deps(accounts, types);
@@ -242,10 +165,10 @@ impl<K: IdlAccountType, V: IdlAccountType> IdlAccountType for alloc::collections
 }
 
 #[doc(hidden)]
-impl<T: IdlAccountType> IdlAccountType for alloc::collections::BTreeSet<T> {
+impl<T: IdlAccountType> IdlAccountType for std::collections::BTreeSet<T> {
     fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::IdlEntries,
+        types: &mut crate::IdlEntries,
     ) {
         T::__register_idl_deps(accounts, types);
     }
@@ -256,17 +179,14 @@ macro_rules! impl_idl_account_type_tuple {
         #[doc(hidden)]
         impl<$($ty: IdlAccountType),+> IdlAccountType for ($($ty,)+) {
             fn __register_idl_deps(
-                accounts: &mut alloc::vec::Vec<&'static str>,
-                types: &mut alloc::vec::Vec<&'static str>,
+                accounts: &mut crate::IdlEntries,
+                types: &mut crate::IdlEntries,
             ) {
                 $( $ty::__register_idl_deps(accounts, types); )+
             }
         }
     };
 }
-
-#[doc(hidden)]
-impl IdlAccountType for () {}
 
 impl_idl_account_type_tuple!(A, B);
 impl_idl_account_type_tuple!(A, B, C);
@@ -283,51 +203,6 @@ impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M);
 impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
 impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
 impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
-
-// Borrowed slice `&[T]` — surfaces on `#[derive(IdlType)]` structs that
-// carry borrowed slice fields (e.g. `MixedArgs<'a> { values: &'a [u64] }`),
-// which wincode supports as a zero-copy ix arg.
-#[doc(hidden)]
-impl<T: IdlAccountType> IdlAccountType for [T] {
-    fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
-    ) {
-        T::__register_idl_deps(accounts, types);
-    }
-}
-
-// `&T` — forward to `T` so a field typed as `&'a Inner` pulls `Inner`'s
-// type def into the IDL's `types[]`.
-#[doc(hidden)]
-impl<T: IdlAccountType + ?Sized> IdlAccountType for &T {
-    fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
-    ) {
-        T::__register_idl_deps(accounts, types);
-    }
-}
-
-#[doc(hidden)]
-impl<T: IdlAccountType> IdlAccountType for Option<T> {
-    fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
-    ) {
-        T::__register_idl_deps(accounts, types);
-    }
-}
-
-#[doc(hidden)]
-impl<T: IdlAccountType, const N: usize> IdlAccountType for [T; N] {
-    fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
-    ) {
-        T::__register_idl_deps(accounts, types);
-    }
-}
 
 // `PodVec<T, MAX>` — the zero-copy bounded-capacity analog of `Vec<T>`.
 // It contributes a generic type definition so downstream `declare_program!`
@@ -349,8 +224,8 @@ where
     );
 
     fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::IdlEntries,
+        types: &mut crate::IdlEntries,
     ) {
         if let Some(t) = <Self as IdlAccountType>::__IDL_TYPE_DEF {
             types.push(t);
@@ -366,8 +241,8 @@ mod tests {
 
     #[test]
     fn pod_vec_registers_length_wrapper_for_native_elements() {
-        let mut accounts = alloc::vec::Vec::new();
-        let mut types = alloc::vec::Vec::new();
+        let mut accounts = crate::IdlEntries::new();
+        let mut types = crate::IdlEntries::new();
 
         <crate::pod::PodVec<u8, 4> as IdlAccountType>::__register_idl_deps(
             &mut accounts,
@@ -388,8 +263,8 @@ mod tests {
 
     #[test]
     fn pod_vec_registers_defined_element_wrappers() {
-        let mut accounts = alloc::vec::Vec::new();
-        let mut types = alloc::vec::Vec::new();
+        let mut accounts = crate::IdlEntries::new();
+        let mut types = crate::IdlEntries::new();
 
         <crate::pod::PodVec<crate::pod::PodU64, 4> as IdlAccountType>::__register_idl_deps(
             &mut accounts,
@@ -418,27 +293,27 @@ mod tests {
 // Used by the `Accounts` derive for opaque `seeds::program = ...`
 // expressions. The expression is evaluated inside `__idl_accounts()` and
 // emitted as the IDL's `{"kind":"const","value":[...]}` shape.
-pub fn __idl_const_seed_json(value: impl AsRef<[u8]>) -> alloc::string::String {
+pub fn __idl_const_seed_json(value: impl AsRef<[u8]>) -> std::string::String {
     let bytes = value.as_ref();
-    let mut s = alloc::string::String::from(r#"{"kind":"const","value":["#);
+    let mut s = std::string::String::from(r#"{"kind":"const","value":["#);
     let mut first = true;
     for b in bytes {
         if !first {
             s.push(',');
         }
         first = false;
-        s.push_str(&alloc::format!("{b}"));
+        s.push_str(&std::format!("{b}"));
     }
     s.push_str("]}");
     s
 }
 
-pub fn __idl_const_seeds_json<I, B>(values: I) -> alloc::string::String
+pub fn __idl_const_seeds_json<I, B>(values: I) -> std::string::String
 where
     I: IntoIterator<Item = B>,
     B: AsRef<[u8]>,
 {
-    let mut s = alloc::string::String::from("[");
+    let mut s = std::string::String::from("[");
     let mut first = true;
     for value in values {
         if !first {
@@ -453,8 +328,8 @@ where
 
 /// Quote and escape an arbitrary string as a JSON string literal.
 #[doc(hidden)]
-pub fn __idl_json_string(value: &str) -> alloc::string::String {
-    let mut out = alloc::string::String::with_capacity(value.len() + 2);
+pub fn __idl_json_string(value: &str) -> std::string::String {
+    let mut out = std::string::String::with_capacity(value.len() + 2);
     out.push('"');
     for ch in value.chars() {
         match ch {
@@ -465,7 +340,7 @@ pub fn __idl_json_string(value: &str) -> alloc::string::String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            ch if ch <= '\u{1F}' => out.push_str(&alloc::format!("\\u{:04x}", ch as u32)),
+            ch if ch <= '\u{1F}' => out.push_str(&std::format!("\\u{:04x}", ch as u32)),
             ch => out.push(ch),
         }
     }
