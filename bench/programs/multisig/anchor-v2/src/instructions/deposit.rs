@@ -16,8 +16,8 @@ impl Deposit {
     #[inline(always)]
     pub fn deposit(&self, amount: u64) -> Result<()> {
         pinocchio_system::instructions::Transfer {
-            from: self.depositor.account(),
-            to: self.vault.account(),
+            from: &self.depositor.account(),
+            to: &self.vault.account(),
             lamports: amount,
         }
         .invoke()?;

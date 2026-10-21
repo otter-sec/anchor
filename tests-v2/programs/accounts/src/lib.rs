@@ -130,7 +130,7 @@ pub mod accounts_test {
     pub fn manual_close_boxed(ctx: &mut Context<CloseBoxed>) -> Result<()> {
         ctx.accounts
             .counter
-            .close(*ctx.accounts.receiver.account())?;
+            .close(ctx.accounts.receiver.account())?;
         Ok(())
     }
 
@@ -671,7 +671,7 @@ pub mod accounts_test {
     pub fn manual_close_borsh_counter(ctx: &mut Context<CloseBorshCounter>) -> Result<()> {
         ctx.accounts
             .counter
-            .close(*ctx.accounts.receiver.account())?;
+            .close(ctx.accounts.receiver.account())?;
         Ok(())
     }
 
@@ -698,7 +698,7 @@ pub mod accounts_test {
     /// slab-backed account is already borrowed.
     #[discrim = 34]
     pub fn top_up_counter(ctx: &mut Context<TopUpCounter>) -> Result<()> {
-        ctx.accounts.counter.top_up(ctx.accounts.payer.as_ref())?;
+        ctx.accounts.counter.top_up(ctx.accounts.payer.account())?;
         Ok(())
     }
 
@@ -811,7 +811,7 @@ pub mod accounts_test {
         );
 
         ledger.resize_to_capacity(8)?;
-        ledger.top_up(ctx.accounts.payer.as_ref())?;
+        ledger.top_up(ctx.accounts.payer.account())?;
         require_eq!(ledger.capacity(), 8, ProgramError::InvalidAccountData);
         require_eq!(
             ledger.current_space(),
@@ -825,8 +825,8 @@ pub mod accounts_test {
         require_eq!(ledger.len(), 2, ProgramError::InvalidAccountData);
         ledger[1].amount += 7;
         require_eq!(ledger[1].amount, 8, ProgramError::InvalidAccountData);
-        let mut payer_view = *ctx.accounts.payer.as_ref();
-        ledger.refund(&mut payer_view)?;
+        let payer_view = ctx.accounts.payer.account();
+        ledger.refund(payer_view)?;
 
         ledger.checksum = ledger.as_slice().iter().map(|entry| entry.amount).sum();
         ledger.last_space = ledger.current_space() as u64;
@@ -847,9 +847,7 @@ pub mod accounts_test {
     /// again after `is_mutable` was flipped by the first close.
     #[discrim = 38]
     pub fn manual_close_ledger(ctx: &mut Context<CloseLedger>) -> Result<()> {
-        ctx.accounts
-            .ledger
-            .close(*ctx.accounts.receiver.account())?;
+        ctx.accounts.ledger.close(ctx.accounts.receiver.account())?;
         Ok(())
     }
 }

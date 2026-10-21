@@ -196,7 +196,7 @@ pub struct InitInterfaceTokenAccountPda {
         payer = payer,
         seeds = [
             b"interface-token-account",
-            mint.account().address().as_ref(),
+            mint.address().as_ref(),
             authority.address().as_ref()
         ],
         bump,

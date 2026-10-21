@@ -2167,7 +2167,7 @@ fn emit_init_body(
             __p
         };
         <#field_ty as anchor_lang::AccountInitialize>::create_and_initialize(
-            __payer, &__target, #space, &__owner, &__init_params, __seeds, __payer_signer_seeds,
+            __payer, __target, #space, &__owner, &__init_params, __seeds, __payer_signer_seeds,
         )?
     })
 }
@@ -2206,22 +2206,22 @@ fn emit_associated_token_init_body(
     let authority_handle = field_readonly_cpi_handle_expr(
         field_summaries,
         &associated_token.authority,
-        quote! { __authority.account() },
+        quote! { __authority.as_ref() },
     )?;
     let mint_handle = field_readonly_cpi_handle_expr(
         field_summaries,
         &associated_token.mint,
-        quote! { __mint.account() },
+        quote! { __mint.as_ref() },
     )?;
     let token_program_handle = field_readonly_cpi_handle_expr(
         field_summaries,
         &associated_token.token_program,
-        quote! { __token_program.account() },
+        quote! { __token_program.as_ref() },
     )?;
     let system_program_handle = field_readonly_cpi_handle_expr(
         field_summaries,
         &system_program,
-        quote! { __system_program.account() },
+        quote! { __system_program.as_ref() },
     )?;
     let payer_signer_seeds = emit_payer_signer_seeds_binding(payer, field_names, field_summaries)?;
 
@@ -3204,7 +3204,7 @@ pub fn parse_field(
         constraints.push(quote! {
             {
                 let __new_space = #new_space;
-                let __payer_view = *#realloc_payer.account();
+                let __payer_view = #realloc_payer.account();
                 anchor_lang::AccountRealloc::realloc_account(
                     #realloc_target,
                     __new_space,
@@ -3257,7 +3257,7 @@ pub fn parse_field(
             #(#constraint_exits)*
             anchor_lang::AccountClose::close(
                 &mut self.#field_name,
-                *self.#close_target.account(),
+                self.#close_target.account(),
             )?;
         })
     } else if attrs.is_mut {
@@ -3364,7 +3364,7 @@ pub fn parse_field(
                         #(#inner_constraint_exits)*
                         anchor_lang::AccountClose::close(
                             __inner,
-                            *self.#close_target.account(),
+                            self.#close_target.account(),
                         )?;
                     }
                 }

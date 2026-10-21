@@ -23,7 +23,7 @@ impl<T: AnchorAccount> AnchorAccount for Box<T> {
         T::load_mut(view).map(Box::new)
     }
 
-    fn account(&self) -> &AccountView {
+    fn account(&self) -> AccountView {
         (**self).account()
     }
 
@@ -112,8 +112,8 @@ impl<T: AccountInitialize> AccountInitialize for Box<T> {
     type Params<'a> = T::Params<'a>;
 
     fn create_and_initialize<'a>(
-        payer: &AccountView,
-        account: &AccountView,
+        payer: AccountView,
+        account: AccountView,
         space: usize,
         owner: &Address,
         params: &Self::Params<'a>,

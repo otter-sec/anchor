@@ -27,7 +27,7 @@ pub trait SlabSchema {
     /// Minimum account data length that can contain `Self` at `DATA_OFFSET`.
     const MIN_DATA_LEN: usize;
 
-    fn validate(view: &AccountView, data: &[u8]) -> Result<(), ProgramError>;
+    fn validate(view: AccountView, data: &[u8]) -> Result<(), ProgramError>;
 }
 
 impl<T: Owner + Discriminator> SlabSchema for T {
@@ -38,7 +38,7 @@ impl<T: Owner + Discriminator> SlabSchema for T {
     };
 
     #[inline(always)]
-    fn validate(view: &AccountView, data: &[u8]) -> Result<(), ProgramError> {
+    fn validate(view: AccountView, data: &[u8]) -> Result<(), ProgramError> {
         require!(
             view.owned_by(&T::OWNER),
             super::slab::cold_owner_error(view)
@@ -62,8 +62,8 @@ pub trait SlabInit {
     type Params<'a>: Default;
 
     fn create_and_initialize<'a>(
-        payer: &AccountView,
-        account: &AccountView,
+        payer: AccountView,
+        account: AccountView,
         space: usize,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
@@ -76,8 +76,8 @@ impl<T: Owner + Discriminator> SlabInit for T {
 
     #[inline(always)]
     fn create_and_initialize<'a>(
-        payer: &AccountView,
-        account: &AccountView,
+        payer: AccountView,
+        account: AccountView,
         space: usize,
         _params: &(),
         signer_seeds: Option<&[&[u8]]>,
@@ -92,7 +92,7 @@ impl<T: Owner + Discriminator> SlabInit for T {
             signer_seeds,
             payer_signer_seeds,
         )?;
-        let mut account_view = *account;
+        let mut account_view = account;
         let data = unsafe { account_view.borrow_unchecked_mut() };
         if data.len() < disc.len() {
             return Err(ProgramError::AccountDataTooSmall);

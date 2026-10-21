@@ -151,6 +151,25 @@ fn checked_invoke_accepts_matching_handles() {
 }
 
 #[test]
+fn cpi_metadata_outlives_the_handle_value() {
+    let buffer = slab_account_view([1; 32], true, 9);
+    let view = unsafe { buffer.view() };
+    let mut account = unsafe { Account::<PodCounter>::load_mut(view) }.unwrap();
+
+    let readonly = {
+        let handle = account.cpi_handle();
+        InstructionAccount::readonly(handle.address())
+    };
+    assert_eq!(readonly.address, view.address());
+
+    let writable = {
+        let handle = account.cpi_handle_mut();
+        InstructionAccount::writable(handle.address())
+    };
+    assert_eq!(writable.address, view.address());
+}
+
+#[test]
 fn account_view_converts_to_cpi_handles() {
     let buffer = account_view([1; 32], true);
     let mut view = unsafe { buffer.view() };

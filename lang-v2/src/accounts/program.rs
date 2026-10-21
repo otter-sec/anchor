@@ -45,8 +45,8 @@ impl<T: Id> AnchorAccount for Program<T> {
         })
     }
     #[inline(always)]
-    fn account(&self) -> &AccountView {
-        &self.view
+    fn account(&self) -> AccountView {
+        self.view
     }
 }
 

@@ -39,8 +39,8 @@ impl<T: Ids> AnchorAccount for Interface<T> {
     }
 
     #[inline(always)]
-    fn account(&self) -> &AccountView {
-        &self.view
+    fn account(&self) -> AccountView {
+        self.view
     }
 }
 

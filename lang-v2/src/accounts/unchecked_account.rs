@@ -29,8 +29,8 @@ impl AnchorAccount for UncheckedAccount {
         Ok(Self { view })
     }
     #[inline(always)]
-    fn account(&self) -> &AccountView {
-        &self.view
+    fn account(&self) -> AccountView {
+        self.view
     }
 }
 
@@ -39,8 +39,8 @@ impl AccountInitialize for UncheckedAccount {
 
     #[inline(always)]
     fn create_and_initialize<'a>(
-        payer: &AccountView,
-        account: &AccountView,
+        payer: AccountView,
+        account: AccountView,
         space: usize,
         owner: &Address,
         _params: &(),
@@ -55,7 +55,7 @@ impl AccountInitialize for UncheckedAccount {
             signer_seeds,
             payer_signer_seeds,
         )?;
-        Self::load(*account)
+        Self::load(account)
     }
 }
 

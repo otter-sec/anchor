@@ -60,8 +60,8 @@ impl ExecuteTransfer {
         let signer = pinocchio::cpi::Signer::from(&seeds);
 
         pinocchio_system::instructions::Transfer {
-            from: self.vault.account(),
-            to: self.recipient.account(),
+            from: &self.vault.account(),
+            to: &self.recipient.account(),
             lamports: amount,
         }
         .invoke_signed(&[signer])?;
