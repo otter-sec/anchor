@@ -24,7 +24,7 @@ impl SlabSchema for CustomHeader {
     const DATA_OFFSET: usize = DATA_OFFSET;
     const MIN_DATA_LEN: usize = DECLARED_MIN_DATA_LEN;
 
-    fn validate(_view: &AccountView, data: &[u8]) -> Result<(), ProgramError> {
+    fn validate(_view: AccountView, data: &[u8]) -> Result<(), ProgramError> {
         if data.len() < Self::MIN_DATA_LEN {
             return Err(ProgramError::AccountDataTooSmall);
         }

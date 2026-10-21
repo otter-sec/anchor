@@ -328,7 +328,7 @@ pub mod __private {
         needs_relax: bool,
     ) -> CpiHandle<'a> {
         if needs_relax {
-            CpiHandle::readonly_with_flags(view, false, true)
+            CpiHandle::readonly_with_flags(*view, false, true)
         } else {
             CpiHandle::readonly(view)
         }

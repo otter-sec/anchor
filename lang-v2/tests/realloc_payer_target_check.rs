@@ -14,12 +14,12 @@ fn realloc_rejects_underfunded_growth_with_target_as_payer() {
     buf.init([0xAB; 32], PROGRAM_ID, 24, false, true, false);
     buf.set_lamports(rent_exempt_lamports(24).unwrap());
 
-    let mut account = unsafe { buf.view() };
+    let account = unsafe { buf.view() };
     let payer = account;
     let old_space = account.data_len();
     let old_lamports = account.lamports();
 
-    let err = realloc_account(&mut account, 64, &payer, false)
+    let err = realloc_account(account, 64, payer, false)
         .expect_err("realloc must reject using the target account as the payer");
 
     assert_eq!(err, ProgramError::InvalidArgument);
@@ -35,10 +35,10 @@ fn realloc_allows_funded_growth_with_target_as_payer() {
     let funded_lamports = rent_exempt_lamports(new_space).unwrap();
     buf.set_lamports(funded_lamports);
 
-    let mut account = unsafe { buf.view() };
+    let account = unsafe { buf.view() };
     let payer = account;
 
-    realloc_account(&mut account, new_space, &payer, false).unwrap();
+    realloc_account(account, new_space, payer, false).unwrap();
 
     assert_eq!(account.data_len(), new_space);
     assert_eq!(account.lamports(), funded_lamports);

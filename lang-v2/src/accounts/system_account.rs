@@ -24,8 +24,8 @@ impl AnchorAccount for SystemAccount {
         Ok(Self { view })
     }
     #[inline(always)]
-    fn account(&self) -> &AccountView {
-        &self.view
+    fn account(&self) -> AccountView {
+        self.view
     }
 }
 

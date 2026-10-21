@@ -12,8 +12,8 @@ pub mod vault_v2 {
     #[inline(always)]
     pub fn deposit(ctx: &mut Context<Deposit>, amount: u64) -> Result<()> {
         pinocchio_system::instructions::Transfer {
-            from: ctx.accounts.user.account(),
-            to: ctx.accounts.vault.account(),
+            from: &ctx.accounts.user.account(),
+            to: &ctx.accounts.vault.account(),
             lamports: amount,
         }
         .invoke()?;
@@ -26,8 +26,8 @@ pub mod vault_v2 {
         // `AccountView: Copy` — copies still point at the same backing
         // buffer, so `set_lamports(&mut self)` mutates the underlying
         // account through the raw pointer.
-        let mut vault = *ctx.accounts.vault.account();
-        let mut user = *ctx.accounts.user.account();
+        let mut vault = ctx.accounts.vault.account();
+        let mut user = ctx.accounts.user.account();
         vault.set_lamports(vault.lamports() - amount);
         user.set_lamports(user.lamports() + amount);
         Ok(())

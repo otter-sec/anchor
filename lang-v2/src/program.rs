@@ -473,7 +473,7 @@ fn signers<'seeds>(signer_seeds: &'seeds [&'seeds [&'seeds [u8]]]) -> Vec<Signer
 }
 
 pub(crate) fn cpi_accounts<'a>(
-    account_handles: &[CpiHandle<'a>],
+    account_handles: &'a [CpiHandle<'a>],
 ) -> Vec<MaybeUninit<CpiAccount<'a>>> {
     account_handles
         .iter()

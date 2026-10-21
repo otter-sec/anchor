@@ -55,7 +55,7 @@ pub trait SysvarLoad: SysvarId + Sized {
     ///   none. [`SysvarInstructions`] reads it and documents its requirements.
     ///
     /// [`Sysvar<T>::load`]: AnchorAccount::load
-    unsafe fn read(view: &AccountView) -> Result<Self, ProgramError>;
+    unsafe fn read(view: AccountView) -> Result<Self, ProgramError>;
 }
 
 /// Registers a sysvar that the runtime exposes through `sol_get_sysvar`.
@@ -76,7 +76,7 @@ macro_rules! impl_syscall_sysvar {
             /// the value comes from the `sol_get_sysvar` syscall. Off-chain
             /// builds have no syscall and return `UnsupportedSysvar`.
             #[inline(always)]
-            unsafe fn read(_view: &AccountView) -> Result<Self, ProgramError> {
+            unsafe fn read(_view: AccountView) -> Result<Self, ProgramError> {
                 <$ty as PinocchioSysvar>::get().map_err(|_| ProgramError::UnsupportedSysvar)
             }
         }
@@ -148,7 +148,7 @@ impl SysvarLoad for SysvarInstructions {
     /// outlive the current instruction, and nothing may mutate `view`'s data
     /// while it is alive, including through unchecked borrows.
     #[inline(always)]
-    unsafe fn read(view: &AccountView) -> Result<Self, ProgramError> {
+    unsafe fn read(view: AccountView) -> Result<Self, ProgramError> {
         // Fallback for callers that break the `# Safety` contract: rejects data too
         // short for the count and current index. Longer malformed data is still
         // unsafe.
@@ -204,12 +204,12 @@ impl<T: SysvarLoad> AnchorAccount for Sysvar<T> {
         );
         // SAFETY: the address was checked against `T::SYSVAR_ID` above. At that
         // address the runtime supplies the sysvar's own data.
-        let data = unsafe { T::read(&view) }?;
+        let data = unsafe { T::read(view) }?;
         Ok(Self { view, data })
     }
 
-    fn account(&self) -> &AccountView {
-        &self.view
+    fn account(&self) -> AccountView {
+        self.view
     }
 }
 
