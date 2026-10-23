@@ -4,13 +4,19 @@
 
 #![cfg_attr(any(target_os = "solana", target_arch = "bpf"), no_std)]
 
-#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+#[cfg(any(
+    feature = "alloc",
+    not(any(target_os = "solana", target_arch = "bpf"))
+))]
 extern crate alloc;
 extern crate self as anchor_lang;
 
 /// Hidden compatibility re-export used by generated V2 host and IDL code.
 #[doc(hidden)]
-#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+#[cfg(any(
+    feature = "alloc",
+    not(any(target_os = "solana", target_arch = "bpf"))
+))]
 pub extern crate alloc as __alloc;
 
 mod account_meta;
@@ -157,11 +163,22 @@ pub(crate) fn try_extend_instruction_data(
 }
 
 #[doc(hidden)]
+#[cfg(not(feature = "alloc"))]
 #[macro_export]
 macro_rules! __anchor_program_allocator {
     () => {
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
         $crate::pinocchio::no_allocator!();
+    };
+}
+
+#[doc(hidden)]
+#[cfg(feature = "alloc")]
+#[macro_export]
+macro_rules! __anchor_program_allocator {
+    () => {
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        $crate::pinocchio::default_allocator!();
     };
 }
 

@@ -1,10 +1,18 @@
 //! Allocator-neutral instruction views used by the public CPI API.
 
-use {
-    crate::{Address, Discriminator, FixedVec},
-    alloc::vec::Vec,
-    pinocchio::instruction::InstructionAccount,
-};
+#[cfg(any(
+    feature = "alloc",
+    not(any(target_os = "solana", target_arch = "bpf"))
+))]
+extern crate alloc;
+
+use {crate::{Address, Discriminator, FixedVec}, pinocchio::instruction::InstructionAccount};
+
+#[cfg(any(
+    feature = "alloc",
+    not(any(target_os = "solana", target_arch = "bpf"))
+))]
+use alloc::vec::Vec;
 
 /// Serializes instruction data: discriminator prefix plus the encoded
 /// arguments. The caller owns the output storage so dynamic payloads do not
@@ -63,6 +71,10 @@ where
     }
 }
 
+#[cfg(any(
+    feature = "alloc",
+    not(any(target_os = "solana", target_arch = "bpf"))
+))]
 impl CpiInstruction for solana_instruction::Instruction {
     #[inline]
     fn program_id(&self) -> &Address {

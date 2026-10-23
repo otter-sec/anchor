@@ -9,7 +9,12 @@ license = "Apache-2.0"
 
 [features]
 default = ["guardrails"]
-alloc = ["pinocchio/alloc", "wincode/alloc"]
+alloc = [
+    "pinocchio/alloc",
+    "solana-msg/alloc",
+    "wincode/alloc",
+    "dep:solana-instruction",
+]
 idl-build = []
 # Opt-in v1-compat shims for users porting anchor-lang code. Currently
 # exposes v1-style shims such as `debug!`, `error!`, `err!`, and `pubkey!`.
@@ -65,6 +70,9 @@ solana-instruction = { version = "3", default-features = false, features = ["std
 solana-system-interface = { version = "2.0", features = ["bincode"] }
 solana-sysvar = "3.1.1"
 wincode = { version = "0.6", default-features = false, features = ["derive", "std"] }
+
+[target.'cfg(any(target_os = "solana", target_arch = "bpf"))'.dependencies]
+solana-instruction = { workspace = true, default-features = false, optional = true }
 
 [lints.rust.unexpected_cfgs]
 level = "warn"
