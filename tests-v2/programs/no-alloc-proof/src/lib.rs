@@ -18,7 +18,7 @@ pub mod no_alloc_proof {
     use super::*;
 
     pub fn exercise(ctx: &mut Context<Exercise>) -> Result<()> {
-        let _remaining = ctx.remaining_accounts()?;
+        let _remaining = ctx.remaining_accounts();
         msg!("no-alloc proof");
 
         let sequence = BoundedSequence {
@@ -31,10 +31,6 @@ pub mod no_alloc_proof {
         let _event_data = event.try_data()?;
         emit_cpi!(ProofEvent { marker: 7 });
 
-        let mut remaining = anchor_lang::CpiHandleBuffer::new();
-        remaining
-            .try_push(ctx.accounts.spectator.cpi_handle())
-            .map_err(|_| Error::InvalidArgument)?;
         let signer_seed_group: &[&[u8]] = &[b"proof"];
         let signer_seeds: &[&[&[u8]]] = &[signer_seed_group];
 
@@ -42,13 +38,17 @@ pub mod no_alloc_proof {
             from: ctx.accounts.payer.cpi_handle_mut(),
             to: ctx.accounts.destination.cpi_handle_mut(),
         };
-        let cpi_context = CpiContext::new(
+        let mut remaining = anchor_lang::CpiHandleBuffer::new();
+        remaining
+            .try_push(ctx.accounts.spectator.cpi_handle())
+            .map_err(|_| Error::InvalidArgument)?;
+        let cpi_context = CpiContext::<_, 3>::new_with_signer_capacity(
             ctx.accounts.system_program.address(),
             cpi_accounts,
+            signer_seeds,
         )
-        .with_signer(signer_seeds);
-        let cpi_context = cpi_context.with_remaining_accounts(remaining);
-        let _ = system_program::transfer(cpi_context, 0);
+        .with_remaining_accounts(remaining);
+        let _ = cpi_context.invoke(&[]);
 
         Ok(())
     }

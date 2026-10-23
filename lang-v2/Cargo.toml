@@ -46,7 +46,6 @@ anchor-derive-accounts = { workspace = true }
 pinocchio = { workspace = true, features = ["copy", "account-resize"] }
 pinocchio-system = "0.6.1"
 solana-address = { workspace = true, features = ["bytemuck", "syscalls", "curve25519", "wincode"] }
-solana-instruction = { workspace = true, default-features = false }
 solana-program-error.workspace = true
 solana-msg = { workspace = true, default-features = false }
 solana-program-memory.workspace = true

@@ -1,10 +1,5 @@
 use anchor_lang::prelude::*;
 
-// The SBF fixture cannot expose the heap-backed wrapper; host builds still use
-// the standard Box implementation for compatibility coverage.
-#[cfg(any(target_os = "solana", target_arch = "bpf"))]
-type Box<T> = T;
-
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 
 #[account]
@@ -30,12 +25,6 @@ pub mod pda_payer_test {
     #[discrim = 1]
     pub fn init_with_pda_target(ctx: &mut Context<InitWithPdaTarget>) -> Result<()> {
         ctx.accounts.new_account.value = 7;
-        Ok(())
-    }
-
-    #[discrim = 2]
-    pub fn init_boxed_with_fresh_target(ctx: &mut Context<InitBoxedWithFreshTarget>) -> Result<()> {
-        ctx.accounts.new_account.value = 99;
         Ok(())
     }
 
@@ -75,15 +64,6 @@ pub struct InitWithPdaTarget {
         bump
     )]
     pub new_account: Account<MyData>,
-    pub system_program: Program<System>,
-}
-
-#[derive(Accounts)]
-pub struct InitBoxedWithFreshTarget {
-    #[account(mut, seeds = [b"payer"], bump)]
-    pub pda_payer: SystemAccount,
-    #[account(init, payer = pda_payer, space = 8 + core::mem::size_of::<MyData>())]
-    pub new_account: Box<Account<MyData>>,
     pub system_program: Program<System>,
 }
 

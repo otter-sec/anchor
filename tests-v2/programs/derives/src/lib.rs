@@ -50,7 +50,7 @@ pub struct Profile {
     pub owner: Address,
     pub tier: u8,
     #[max_len(4)]
-    pub scores: anchor_lang::__idl::vec::Vec<u64>,
+    pub scores: anchor_lang::FixedVec<u64, 4>,
 }
 
 pub mod qualified {
@@ -271,14 +271,8 @@ pub mod derives_test {
     }
 }
 
-#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-fn runtime_scores() -> Result<anchor_lang::__idl::vec::Vec<u64>> {
-    Ok(vec![10, 20, 30, 40])
-}
-
-#[cfg(any(target_os = "solana", target_arch = "bpf"))]
-fn runtime_scores() -> Result<anchor_lang::__idl::vec::Vec<u64>> {
-    let mut scores = anchor_lang::__idl::vec::Vec::new();
+fn runtime_scores() -> Result<anchor_lang::FixedVec<u64, 4>> {
+    let mut scores = anchor_lang::FixedVec::new();
     scores
         .try_extend_from_slice(&[10, 20, 30, 40])
         .map_err(|_| Error::InvalidInstructionData)?;
@@ -392,7 +386,9 @@ mod idl_tests {
             .find(|entry| entry.contains("\"name\":\"PodWrapperOnly\""))
             .expect("PodWrapperOnly should emit its IDL type");
         assert!(wrapper_account.contains("\"defined\":{\"name\":\"PodMode\"}"));
-        assert!(types.iter().any(|entry| entry.contains("\"name\":\"PodMode\"")));
+        assert!(types
+            .iter()
+            .any(|entry| entry.contains("\"name\":\"PodMode\"")));
     }
 
     #[test]
@@ -404,13 +400,21 @@ mod idl_tests {
             .iter()
             .find(|entry| entry.contains("\"name\":\"Counter\""))
             .expect("Counter should emit its IDL type");
-        assert!(counter.contains("{\"name\":\"value\",\"type\":{\"defined\":{\"name\":\"PodU64\"}}}"));
-        assert!(counter.contains("{\"name\":\"delta\",\"type\":{\"defined\":{\"name\":\"PodI32\"}}}"));
-        assert!(counter.contains("{\"name\":\"active\",\"type\":{\"defined\":{\"name\":\"PodBool\"}}}"));
+        assert!(
+            counter.contains("{\"name\":\"value\",\"type\":{\"defined\":{\"name\":\"PodU64\"}}}")
+        );
+        assert!(
+            counter.contains("{\"name\":\"delta\",\"type\":{\"defined\":{\"name\":\"PodI32\"}}}")
+        );
+        assert!(
+            counter.contains("{\"name\":\"active\",\"type\":{\"defined\":{\"name\":\"PodBool\"}}}")
+        );
         for name in ["PodU64", "PodI32", "PodBool"] {
             assert!(
-                types.iter().any(|entry| entry.contains(&format!("\"name\":\"{name}\""))
-                    && entry.contains("\"alias\"")),
+                types
+                    .iter()
+                    .any(|entry| entry.contains(&format!("\"name\":\"{name}\""))
+                        && entry.contains("\"alias\"")),
                 "{name} alias def should be registered"
             );
         }
@@ -425,7 +429,9 @@ mod idl_tests {
             .iter()
             .find(|entry| entry.contains("\"name\":\"PodNestedHolder\",\"repr\""))
             .expect("PodNestedHolder should emit its IDL type");
-        assert!(holder.contains("{\"name\":\"flag\",\"type\":{\"defined\":{\"name\":\"PodBool\"}}}"));
+        assert!(
+            holder.contains("{\"name\":\"flag\",\"type\":{\"defined\":{\"name\":\"PodBool\"}}}")
+        );
         assert!(holder.contains("{\"name\":\"len\",\"type\":{\"defined\":{\"name\":\"PodU16\"}}}"));
 
         let nested = types
@@ -449,7 +455,8 @@ mod idl_tests {
             .expect("PodVecOnly should emit its IDL type");
         assert!(pod_vec_account.contains("\"defined\":{"));
         assert!(pod_vec_account.contains("\"name\":\"PodVec\""));
-        assert!(pod_vec_account.contains("\"kind\":\"type\",\"type\":{\"defined\":{\"name\":\"PodU64\"}}"));
+        assert!(pod_vec_account
+            .contains("\"kind\":\"type\",\"type\":{\"defined\":{\"name\":\"PodU64\"}}"));
         assert!(pod_vec_account.contains("\"kind\":\"const\",\"value\":\"4\""));
 
         let pod_vec_type = types
@@ -459,10 +466,16 @@ mod idl_tests {
                     && entry.contains("\"kind\":\"const\",\"name\":\"MAX\",\"type\":\"usize\"")
             })
             .expect("PodVec generic layout should be registered");
-        assert!(pod_vec_type.contains("\"generics\":[{\"kind\":\"type\",\"name\":\"T\"},{\"kind\":\"const\",\"name\":\"MAX\",\"type\":\"usize\"}]"));
+        assert!(pod_vec_type.contains(
+            "\"generics\":[{\"kind\":\"type\",\"name\":\"T\"},{\"kind\":\"const\",\"name\":\"MAX\"\
+             ,\"type\":\"usize\"}]"
+        ));
         assert!(pod_vec_type.contains("\"serialization\":\"bytemuckunsafe\""));
         assert!(pod_vec_type.contains("\"repr\":{\"kind\":\"c\"}"));
-        assert!(pod_vec_type.contains("\"fields\":[{\"name\":\"len\",\"type\":{\"defined\":{\"name\":\"PodU16\"}}},{\"name\":\"data\",\"type\":{\"array\":[{\"generic\":\"T\"},{\"generic\":\"MAX\"}]}}]"));
+        assert!(pod_vec_type.contains(
+            "\"fields\":[{\"name\":\"len\",\"type\":{\"defined\":{\"name\":\"PodU16\"}}},{\"name\"\
+             :\"data\",\"type\":{\"array\":[{\"generic\":\"T\"},{\"generic\":\"MAX\"}]}}]"
+        ));
     }
 
     #[test]

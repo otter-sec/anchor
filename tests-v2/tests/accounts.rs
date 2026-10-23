@@ -1,5 +1,5 @@
-//! Integration tests for account-wrapper coverage — Sysvar, Box<Account>,
-//! SystemAccount, UncheckedAccount.
+//! Integration tests for account-wrapper coverage — Sysvar, SystemAccount,
+//! UncheckedAccount.
 
 use {
     anchor_lang::{
@@ -49,10 +49,6 @@ fn recent_blockhashes_sysvar_id() -> Pubkey {
 
 fn counter_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"counter"], &program_id()).0
-}
-
-fn boxed_counter_pda() -> Pubkey {
-    Pubkey::find_program_address(&[b"boxed-counter"], &program_id()).0
 }
 
 fn later_seed_counter_pda(payer: &Pubkey) -> Pubkey {
@@ -172,18 +168,6 @@ fn add_account_lamports(svm: &mut LiteSVM, address: Pubkey, lamports: u64) {
 
 fn seeded_address(base: &Pubkey, seed: &str, owner: &Pubkey) -> Pubkey {
     Pubkey::create_with_seed(base, seed, owner).expect("valid seeded address")
-}
-
-fn do_initialize_boxed(svm: &mut LiteSVM, payer: &Keypair) -> Pubkey {
-    let counter = boxed_counter_pda();
-    let metas = vec![
-        AccountMeta::new(payer.pubkey(), true),
-        AccountMeta::new(counter, false),
-        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
-    ];
-    send_instruction(svm, program_id(), vec![3], metas, payer, &[])
-        .expect("initialize_boxed should succeed");
-    counter
 }
 
 fn do_initialize_borsh_counter(svm: &mut LiteSVM, payer: &Keypair) -> Pubkey {
@@ -540,21 +524,6 @@ fn foreign_borsh_account_mutation_is_rejected_on_exit() {
 }
 
 #[test]
-fn bump_boxed_mutates_through_box_deref() {
-    let (mut svm, payer) = setup();
-    let counter = do_initialize(&mut svm, &payer);
-
-    // bump_boxed (discrim = 1) — value = 1 + 1 = 2
-    let metas = vec![AccountMeta::new(counter, false)];
-    send_instruction(&mut svm, program_id(), vec![1], metas, &payer, &[])
-        .expect("bump_boxed should succeed");
-
-    let account = svm.get_account(&counter).expect("counter exists");
-    let value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
-    assert_eq!(value, 2);
-}
-
-#[test]
 fn read_clock_succeeds_and_sysvar_is_well_formed() {
     let (mut svm, payer) = setup();
     let metas = vec![AccountMeta::new_readonly(clock_sysvar_id(), false)];
@@ -836,210 +805,6 @@ fn read_rent_rejects_wrong_sysvar() {
         6,
         clock_sysvar_id(),
         "wrong sysvar should be rejected for rent",
-    );
-}
-
-// ---- Box<Account<T>> -------------------------------------------------------
-
-#[test]
-fn bump_boxed_accumulates_across_calls() {
-    let (mut svm, payer) = setup();
-    let counter = do_initialize(&mut svm, &payer);
-
-    // Call bump_boxed 3 times, verify value increments each time
-    for expected in 2..=4u64 {
-        let metas = vec![AccountMeta::new(counter, false)];
-        send_instruction(&mut svm, program_id(), vec![1], metas, &payer, &[])
-            .expect("bump_boxed should succeed");
-
-        let account = svm.get_account(&counter).unwrap();
-        let value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
-        assert_eq!(
-            value,
-            expected,
-            "counter should be {expected} after bump #{}",
-            expected - 1
-        );
-
-        svm.expire_blockhash();
-    }
-}
-
-#[test]
-fn bump_boxed_by_applies_amount_from_arg_struct() {
-    let (mut svm, payer) = setup();
-    let counter = do_initialize(&mut svm, &payer);
-
-    // bump_boxed_by (discrim = 37) — BumpArgs { amount, tag } serializes as
-    // amount (u64 LE) followed by the raw 4-byte tag.
-    let mut data = vec![37];
-    data.extend_from_slice(&5u64.to_le_bytes());
-    data.extend_from_slice(b"idl!");
-    let metas = vec![AccountMeta::new(counter, false)];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("bump_boxed_by should succeed");
-
-    let account = svm.get_account(&counter).expect("counter exists");
-    let value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
-    assert_eq!(value, 6, "counter starts at 1 and bumps by the arg amount");
-
-    // A second bump with u64::MAX must wrap, not panic — the handler uses
-    // wrapping_add.
-    let mut data = vec![37];
-    data.extend_from_slice(&u64::MAX.to_le_bytes());
-    data.extend_from_slice(b"idl!");
-    let metas = vec![AccountMeta::new(counter, false)];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("bump_boxed_by with u64::MAX should succeed");
-
-    let account = svm.get_account(&counter).expect("counter exists");
-    let value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
-    assert_eq!(value, 5, "6 + u64::MAX wraps to 5");
-}
-
-#[test]
-fn bump_boxed_rejects_wrong_owner() {
-    let (mut svm, payer) = setup();
-
-    // Create an account owned by system program, not our program
-    let fake = Pubkey::new_unique();
-    let account = solana_account::Account {
-        lamports: 1_000_000,
-        data: vec![0u8; 16], // disc(8) + value(8)
-        owner: solana_sdk_ids::system_program::ID,
-        executable: false,
-        rent_epoch: 0,
-    };
-    svm.set_account(fake, account).unwrap();
-
-    let metas = vec![AccountMeta::new(fake, false)];
-    let result = call_raw(&mut svm, &payer, 1, metas);
-    assert!(
-        result.is_err(),
-        "system-owned account should fail Box<Account<Counter>> load"
-    );
-}
-
-#[test]
-fn read_boxed_accepts_immutable_box() {
-    let (mut svm, payer) = setup();
-    let counter = do_initialize_boxed(&mut svm, &payer);
-
-    let metas = vec![AccountMeta::new_readonly(counter, false)];
-    send_instruction(
-        &mut svm,
-        program_id(),
-        data_with_u64s(2, &[7]),
-        metas,
-        &payer,
-        &[],
-    )
-    .expect("read_boxed should succeed");
-
-    let account = svm.get_account(&counter).expect("counter exists");
-    let value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
-    assert_eq!(value, 7, "immutable boxed read must not mutate state");
-}
-
-#[test]
-fn initialize_boxed_uses_box_init_path() {
-    let (mut svm, payer) = setup();
-    let counter = do_initialize_boxed(&mut svm, &payer);
-    let account = svm.get_account(&counter).expect("boxed counter exists");
-
-    assert_eq!(
-        account.owner,
-        program_id(),
-        "boxed init should assign program owner"
-    );
-    assert_eq!(account.data.len(), 16, "boxed counter should be disc + u64");
-
-    let value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
-    assert_eq!(
-        value, 7,
-        "initialize_boxed should set the boxed counter value"
-    );
-}
-
-#[test]
-fn close_boxed_transfers_lamports_and_clears_account() {
-    let (mut svm, payer) = setup();
-    let counter = do_initialize_boxed(&mut svm, &payer);
-    let receiver = keypair_for("boxed-close-receiver");
-    svm.airdrop(&receiver.pubkey(), 10_000_000).unwrap();
-
-    let receiver_before = svm.get_account(&receiver.pubkey()).unwrap().lamports;
-    let counter_before = svm.get_account(&counter).unwrap().lamports;
-    assert!(
-        counter_before > 0,
-        "boxed counter must hold lamports before close"
-    );
-
-    let metas = vec![
-        AccountMeta::new(counter, false),
-        AccountMeta::new(receiver.pubkey(), false),
-    ];
-    send_instruction(&mut svm, program_id(), vec![4], metas, &payer, &[])
-        .expect("close_boxed should succeed");
-
-    let receiver_after = svm.get_account(&receiver.pubkey()).unwrap().lamports;
-    assert_eq!(
-        receiver_after,
-        receiver_before + counter_before,
-        "close_boxed should transfer all lamports to the receiver",
-    );
-
-    match svm.get_account(&counter) {
-        None => {}
-        Some(account) => assert_eq!(account.lamports, 0, "closed boxed account should be empty"),
-    }
-}
-
-#[test]
-fn manual_close_boxed_then_derive_close_fails_and_rolls_back() {
-    let (mut svm, payer) = setup();
-    let counter = do_initialize_boxed(&mut svm, &payer);
-    let receiver = keypair_for("boxed-manual-close-receiver");
-    svm.airdrop(&receiver.pubkey(), 10_000_000).unwrap();
-
-    let receiver_before = svm.get_account(&receiver.pubkey()).unwrap().lamports;
-    let counter_before = svm.get_account(&counter).unwrap().lamports;
-    let counter_data_before = svm.get_account(&counter).unwrap().data;
-
-    let metas = vec![
-        AccountMeta::new(counter, false),
-        AccountMeta::new(receiver.pubkey(), false),
-    ];
-    let result = send_instruction(&mut svm, program_id(), vec![40], metas, &payer, &[]);
-    let err = format!(
-        "{:?}",
-        result
-            .as_ref()
-            .err()
-            .expect("manual_close_boxed should fail")
-    );
-    assert!(
-        err.contains("Program failed to complete")
-            || err.contains("panic")
-            || err.contains("Tried to mutate `Slab<H, T>` through a read-only load"),
-        "expected the second derive close to trip the Slab mutability guard, got: {err}"
-    );
-
-    let receiver_after = svm.get_account(&receiver.pubkey()).unwrap().lamports;
-    let counter_after = svm
-        .get_account(&counter)
-        .expect("failed transaction should roll back");
-    assert_eq!(
-        receiver_after, receiver_before,
-        "the failed transaction should not leave lamports with the receiver",
-    );
-    assert_eq!(
-        counter_after.lamports, counter_before,
-        "the failed transaction should roll back the first manual close",
-    );
-    assert_eq!(
-        counter_after.data, counter_data_before,
-        "the failed transaction should preserve the boxed account contents",
     );
 }
 
@@ -1626,104 +1391,5 @@ fn initialize_rejects_wrong_system_program_pubkey() {
     assert!(
         svm.get_account(&counter).is_none(),
         "failed init must not create the PDA"
-    );
-}
-
-#[test]
-fn initialize_boxed_rejects_wrong_system_program_pubkey() {
-    let (mut svm, payer) = setup();
-    let counter = boxed_counter_pda();
-
-    let metas = vec![
-        AccountMeta::new(payer.pubkey(), true),
-        AccountMeta::new(counter, false),
-        AccountMeta::new_readonly(Token::id(), false),
-    ];
-    let result = call_raw(&mut svm, &payer, 3, metas);
-    assert!(
-        result.is_err(),
-        "boxed init must reject a non-System program pubkey"
-    );
-    assert!(
-        svm.get_account(&counter).is_none(),
-        "failed boxed init must not create the PDA"
-    );
-}
-
-#[test]
-fn read_boxed_rejects_wrong_seed_pda() {
-    let (mut svm, payer) = setup();
-    let counter = do_initialize(&mut svm, &payer);
-
-    // `read_boxed` expects the boxed-counter PDA, not the regular counter PDA.
-    let metas = vec![AccountMeta::new_readonly(counter, false)];
-    let result = send_instruction(
-        &mut svm,
-        program_id(),
-        data_with_u64s(2, &[1]),
-        metas,
-        &payer,
-        &[],
-    );
-    assert!(
-        result.is_err(),
-        "Box<Account<Counter>> with seeds must reject the wrong PDA"
-    );
-}
-
-#[test]
-fn read_boxed_rejects_wrong_discriminator() {
-    let (mut svm, payer) = setup();
-    let counter = do_initialize_boxed(&mut svm, &payer);
-    let mut account = svm.get_account(&counter).expect("boxed counter exists");
-    account.data[0] ^= 0xff;
-    svm.set_account(counter, account).unwrap();
-
-    let metas = vec![AccountMeta::new_readonly(counter, false)];
-    let result = send_instruction(
-        &mut svm,
-        program_id(),
-        data_with_u64s(2, &[7]),
-        metas,
-        &payer,
-        &[],
-    );
-    assert!(
-        result.is_err(),
-        "Box<Account<Counter>> load must reject discriminator mismatch"
-    );
-}
-
-#[test]
-fn close_boxed_rejects_non_system_receiver_and_preserves_accounts() {
-    let (mut svm, payer) = setup();
-    let boxed = do_initialize_boxed(&mut svm, &payer);
-    let receiver = do_initialize(&mut svm, &payer);
-    let boxed_before = svm.get_account(&boxed).expect("boxed counter exists");
-    let receiver_before = svm.get_account(&receiver).expect("receiver counter exists");
-
-    let metas = vec![
-        AccountMeta::new(boxed, false),
-        AccountMeta::new(receiver, false),
-    ];
-    let result = call_raw(&mut svm, &payer, 4, metas);
-    assert!(
-        result.is_err(),
-        "close receiver is SystemAccount and must reject program-owned accounts"
-    );
-
-    let boxed_after = svm
-        .get_account(&boxed)
-        .expect("boxed counter should remain");
-    let receiver_after = svm
-        .get_account(&receiver)
-        .expect("receiver counter should remain");
-    assert_eq!(
-        boxed_after.lamports, boxed_before.lamports,
-        "failed close must preserve boxed counter lamports"
-    );
-    assert_eq!(
-        receiver_after.lamports, receiver_before.lamports,
-        "failed close must not credit the invalid receiver"
     );
 }

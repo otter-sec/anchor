@@ -14,8 +14,8 @@ pub type Scalar = f32;
 pub type Coordinate = i32;
 pub type Owner = Address;
 
-type RuntimeString = anchor_lang::__idl::string::String;
-type RuntimeTags = anchor_lang::__idl::vec::Vec<RuntimeString>;
+type BoundedString = anchor_lang::FixedVec<u8, { limits::NAME }>;
+type BoundedTags = anchor_lang::FixedVec<BoundedString, { limits::ITEMS }>;
 
 #[derive(InitSpace)]
 pub struct Vector2 {
@@ -27,15 +27,13 @@ pub struct Vector2 {
 #[derive(InitSpace)]
 pub struct Profile {
     pub owner: Owner,
-    #[max_len(limits::NAME)]
-    pub name: anchor_lang::__idl::string::String,
+    pub name: BoundedString,
 }
 
 #[account(borsh)]
 #[derive(InitSpace)]
 pub struct Nested {
-    #[max_len(limits::ITEMS, limits::NAME)]
-    pub tags: anchor_lang::__idl::vec::Vec<anchor_lang::__idl::string::String>,
+    pub tags: BoundedTags,
 }
 
 #[account(borsh)]
@@ -75,13 +73,13 @@ pub mod init_space_usability {
     #[discrim = 1]
     pub fn init_profile(ctx: &mut Context<InitProfile>) -> Result<()> {
         ctx.accounts.profile.owner = *ctx.accounts.payer.account().address();
-        ctx.accounts.profile.name = runtime_string("init-space")?;
+        ctx.accounts.profile.name = bounded_string("init-space")?;
         Ok(())
     }
 
     #[discrim = 2]
     pub fn init_nested(ctx: &mut Context<InitNested>) -> Result<()> {
-        ctx.accounts.nested.tags = runtime_tags(&["zero", "one", "two", "three"])?;
+        ctx.accounts.nested.tags = bounded_tags(&["zero", "one", "two", "three"])?;
         Ok(())
     }
 
@@ -94,31 +92,22 @@ pub mod init_space_usability {
     }
 }
 
-#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-fn runtime_string(value: &str) -> Result<RuntimeString> {
-    Ok(RuntimeString::from(value))
-}
-
-#[cfg(any(target_os = "solana", target_arch = "bpf"))]
-fn runtime_string(value: &str) -> Result<RuntimeString> {
-    let mut result = RuntimeString::new();
+fn bounded_string(value: &str) -> Result<BoundedString> {
+    let mut result = BoundedString::new();
     result
         .try_extend_from_slice(value.as_bytes())
         .map_err(|_| Error::InvalidInstructionData)?;
     Ok(result)
 }
 
-#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-fn runtime_tags(values: &[&str]) -> Result<RuntimeTags> {
-    values.iter().map(|value| runtime_string(value)).collect()
-}
-
-#[cfg(any(target_os = "solana", target_arch = "bpf"))]
-fn runtime_tags(values: &[&str]) -> Result<RuntimeTags> {
-    let mut result = RuntimeTags::new();
+fn bounded_tags(values: &[&str]) -> Result<BoundedTags> {
+    let mut result = BoundedTags::new();
     for value in values {
+        let mut item = BoundedString::new();
+        item.try_extend_from_slice(value.as_bytes())
+            .map_err(|_| Error::InvalidInstructionData)?;
         result
-            .try_push(runtime_string(value)?)
+            .try_push(item)
             .map_err(|_| Error::InvalidInstructionData)?;
     }
     Ok(result)

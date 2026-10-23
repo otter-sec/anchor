@@ -111,8 +111,9 @@ pub fn rent_exempt_lamports(space: usize) -> Result<u64, ProgramError> {
 #[cfg(any(target_os = "solana", target_arch = "bpf"))]
 macro_rules! pda_find_loop {
     ($seeds:expr, $program_id:expr, |$h:ident, $b:ident| $on_found:expr) => {{
-        use solana_address::syscalls::sol_curve_validate_point;
-        use solana_sha256_hasher::sol_sha256;
+        use {
+            solana_address::syscalls::sol_curve_validate_point, solana_sha256_hasher::sol_sha256,
+        };
         const CURVE25519_EDWARDS: u64 = 0;
         const PDA_MARKER: &[u8; 21] = b"ProgramDerivedAddress";
 
@@ -349,8 +350,7 @@ fn hash_pda_seeds(seeds: &[&[u8]], program_id: &Address) -> Result<Address, Prog
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::vec;
+    use {super::*, std::vec};
 
     fn program_id() -> Address {
         Address::new_from_array([7; 32])
@@ -429,9 +429,9 @@ mod tests {
     }
 }
 
-/// Create a new account via system program CPI (no PDA signing).
+/// Borrow the seed descriptors using Pinocchio's signer representation.
 #[inline(always)]
-fn signer_from_seeds<'a>(seeds: &'a [&'a [u8]]) -> pinocchio::cpi::Signer<'a, 'a> {
+pub(crate) fn signer_from_seeds<'a>(seeds: &'a [&'a [u8]]) -> pinocchio::cpi::Signer<'a, 'a> {
     // SAFETY: Seed is repr(C) { *const u8, u64, PhantomData } = 16 bytes,
     // identical to &[u8] on SBF (*const u8, u64) = 16 bytes.
     // PhantomData is zero-sized. Static assertions verify at compile time.
@@ -572,8 +572,7 @@ pub(crate) unsafe fn realloc_account_unchecked(
         let reclaimable_rent = old_rent_minimum.saturating_sub(new_rent_minimum);
         // Cap the refund by the lamports actually available above the new rent
         // floor so underfunded oversized accounts cannot underflow here.
-        let lamports_above_new_minimum =
-            current_lamports.saturating_sub(new_rent_minimum);
+        let lamports_above_new_minimum = current_lamports.saturating_sub(new_rent_minimum);
         let refund = reclaimable_rent.min(lamports_above_new_minimum);
         if refund > 0 {
             // When the payer aliases the resized account, the refund is a

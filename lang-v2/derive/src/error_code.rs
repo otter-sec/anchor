@@ -10,9 +10,7 @@ use {
     proc_macro::TokenStream,
     proc_macro2::TokenStream as TokenStream2,
     quote::{quote, ToTokens},
-    syn::{
-        parse_macro_input, Attribute, Expr, ItemEnum, Lit, Meta, MetaNameValue,
-    },
+    syn::{parse_macro_input, Attribute, Expr, ItemEnum, Lit, Meta, MetaNameValue},
 };
 
 /// Default first error code. Matches v1's `ERROR_CODE_OFFSET`.
@@ -66,8 +64,8 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
                 syn::Error::new_spanned(
                     &variant.ident,
                     format!(
-                        "error code for variant `{variant_ident}` overflows u32: \
-                         discriminant {discrim} + offset {offset} > u32::MAX"
+                        "error code for variant `{variant_ident}` overflows u32: discriminant \
+                         {discrim} + offset {offset} > u32::MAX"
                     ),
                 )
                 .to_compile_error(),
@@ -225,8 +223,8 @@ fn resolve_variant_discrim(
             syn::Error::new_spanned(
                 &variant.ident,
                 format!(
-                    "implicit discriminant for variant `{}` overflows u32 \
-                     (previous discriminant was u32::MAX)",
+                    "implicit discriminant for variant `{}` overflows u32 (previous discriminant \
+                     was u32::MAX)",
                     variant.ident
                 ),
             )
@@ -244,23 +242,19 @@ fn extract_msg(attrs: &[Attribute]) -> syn::Result<Option<String>> {
         let list = match &attr.meta {
             Meta::List(list) => list,
             _ => {
-                return Err(syn::Error::new_spanned(
-                    attr,
-                    r#"expected `#[msg("...")]`"#,
-                ));
+                return Err(syn::Error::new_spanned(attr, r#"expected `#[msg("...")]`"#));
             }
         };
-        let lit: Lit = syn::parse2(list.tokens.clone()).map_err(|_| {
-            syn::Error::new_spanned(attr, r#"expected `#[msg("...")]`"#)
-        })?;
+        let lit: Lit = syn::parse2(list.tokens.clone())
+            .map_err(|_| syn::Error::new_spanned(attr, r#"expected `#[msg("...")]`"#))?;
         let Lit::Str(s) = lit else {
-            return Err(syn::Error::new_spanned(
-                attr,
-                r#"expected `#[msg("...")]`"#,
-            ));
+            return Err(syn::Error::new_spanned(attr, r#"expected `#[msg("...")]`"#));
         };
         if message.is_some() {
-            return Err(syn::Error::new_spanned(attr, "duplicate `#[msg]` attribute"));
+            return Err(syn::Error::new_spanned(
+                attr,
+                "duplicate `#[msg]` attribute",
+            ));
         }
         message = Some(s.value());
     }
@@ -431,8 +425,8 @@ mod tests {
                 syn::Error::new_spanned(
                     variant,
                     format!(
-                        "error code for variant `{ident}` overflows u32: \
-                         discriminant {discrim} + offset {offset} > u32::MAX"
+                        "error code for variant `{ident}` overflows u32: discriminant {discrim} + \
+                         offset {offset} > u32::MAX"
                     ),
                 )
             })?;

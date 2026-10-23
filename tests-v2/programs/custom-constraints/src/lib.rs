@@ -9,11 +9,6 @@
 
 use anchor_lang::prelude::*;
 
-// Keep the host Box forwarding tests while compiling the SBF fixture with the
-// allocator-free account type directly.
-#[cfg(any(target_os = "solana", target_arch = "bpf"))]
-type Box<T> = T;
-
 declare_id!("CC111111111111111111111111111111111111111111");
 
 #[program]
@@ -57,31 +52,9 @@ pub mod custom_constraints {
         Ok(())
     }
 
-    /// Boxed variant of `handle_init`, proving `AccountConstraint::init`
-    /// forwards through `Box<T>` on an `init` field.
-    pub fn handle_boxed_init(_ctx: &mut Context<HandleBoxedInit>) -> Result<()> {
-        Ok(())
-    }
-
-    /// Boxed variant of `handle_exit_bump`, proving `AccountConstraint::exit`
-    /// forwards through `Box<T>`.
-    pub fn handle_boxed_exit_bump(_ctx: &mut Context<HandleBoxedExitBump>) -> Result<()> {
-        Ok(())
-    }
-
-    /// Close a boxed counter to exercise `AccountClose::close` forwarding.
-    pub fn handle_boxed_close(_ctx: &mut Context<HandleBoxedClose>) -> Result<()> {
-        Ok(())
-    }
-
     /// Optional variant of `handle_init`, proving `AccountConstraint::init`
     /// fires when `Option<T>` creates `Some(T)`.
     pub fn handle_optional_init(_ctx: &mut Context<HandleOptionalInit>) -> Result<()> {
-        Ok(())
-    }
-
-    /// Optional boxed variant of `handle_init`.
-    pub fn handle_optional_boxed_init(_ctx: &mut Context<HandleOptionalBoxedInit>) -> Result<()> {
         Ok(())
     }
 
@@ -250,41 +223,6 @@ pub struct HandleInitIfNeeded {
 }
 
 #[derive(Accounts)]
-pub struct HandleBoxedInit {
-    #[account(mut)]
-    pub payer: Signer,
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + 8,
-        seeds = [b"boxed-counter"],
-        bump,
-        counter_ns::init_value = 9u64,
-    )]
-    pub counter: Box<BorshAccount<Counter>>,
-    pub system_program: Program<System>,
-}
-
-#[derive(Accounts)]
-pub struct HandleBoxedExitBump {
-    #[account(
-        mut,
-        seeds = [b"boxed-counter"],
-        bump,
-        counter_ns::bump_on_exit = 2u64,
-    )]
-    pub counter: Box<BorshAccount<Counter>>,
-}
-
-#[derive(Accounts)]
-pub struct HandleBoxedClose {
-    #[account(mut, close = receiver, seeds = [b"boxed-counter"], bump)]
-    pub counter: Box<BorshAccount<Counter>>,
-    #[account(mut)]
-    pub receiver: SystemAccount,
-}
-
-#[derive(Accounts)]
 pub struct HandleOptionalInit {
     #[account(mut)]
     pub payer: Signer,
@@ -297,22 +235,6 @@ pub struct HandleOptionalInit {
         counter_ns::init_value = 7u64,
     )]
     pub counter: Option<BorshAccount<Counter>>,
-    pub system_program: Program<System>,
-}
-
-#[derive(Accounts)]
-pub struct HandleOptionalBoxedInit {
-    #[account(mut)]
-    pub payer: Signer,
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + 8,
-        seeds = [b"optional-boxed-counter"],
-        bump,
-        counter_ns::init_value = 11u64,
-    )]
-    pub counter: Option<Box<BorshAccount<Counter>>>,
     pub system_program: Program<System>,
 }
 

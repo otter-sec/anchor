@@ -1,7 +1,5 @@
 use {
     crate::{address_eq, require, CpiHandle, CpiInstruction, ToCpiAccountsWithCapacity},
-    alloc::vec::Vec,
-    core::mem::MaybeUninit,
     pinocchio::{
         address::Address,
         instruction::{InstructionAccount, InstructionView},
@@ -21,7 +19,7 @@ use {
 ///     data_acc: ctx.accounts.data_acc.cpi_handle_mut(),
 ///     authority: ctx.accounts.authority.cpi_handle(),
 /// };
-/// let cpi_ctx = CpiContext::<_, 2>::new(
+/// let cpi_ctx = CpiContext::<_, 2>::new_with_capacity(
 ///     ctx.accounts.callee.address(),
 ///     cpi_accounts,
 /// );
@@ -43,7 +41,7 @@ where
 {
     /// Construct a CPI context with an explicitly selected inline capacity.
     #[must_use]
-    pub fn new(program: &'a Address, accounts: T) -> Self {
+    pub fn new_with_capacity(program: &'a Address, accounts: T) -> Self {
         Self {
             accounts,
             program,
@@ -53,7 +51,7 @@ where
     }
 
     #[must_use]
-    pub fn new_with_signer(
+    pub fn new_with_signer_capacity(
         program: &'a Address,
         accounts: T,
         signer_seeds: &'a [&'a [&'a [u8]]],
@@ -90,7 +88,7 @@ where
 
         // Append remaining accounts using the handle's writable/signer flags
         // so PDA remaining accounts marked with `as_signer()` emit signer metas.
-        for handle in &self.remaining_accounts {
+        for handle in self.remaining_accounts.iter() {
             instruction_accounts
                 .try_push(InstructionAccount::new(
                     handle.address(),
@@ -106,7 +104,7 @@ where
                 .map_err(|_| ProgramError::InvalidArgument)?;
         }
 
-        crate::program::validate_instruction_accounts(
+        crate::program::validate_instruction_accounts::<N, _>(
             &instruction_accounts,
             self.program,
             &handles,
@@ -120,38 +118,24 @@ where
             accounts: &instruction_accounts,
         };
 
-        let _borrow_guards = crate::enter_cpi(&handles);
+        let _borrow_guards = crate::enter_cpi::<N>(&handles)?;
 
         // Convert signer seeds to pinocchio Signers.
         // SAFETY: pinocchio::cpi::Seed is repr(C) { *const u8, u64, PhantomData }
         // which has the same layout as &[u8] on SBF. This is verified by the
         // static assertion in cpi.rs.
-        let signers: Vec<pinocchio::cpi::Signer> = self
-            .signer_seeds
-            .iter()
-            .map(|seeds| {
-                let cpi_seeds: &[pinocchio::cpi::Seed] = unsafe {
-                    core::slice::from_raw_parts(
-                        seeds.as_ptr() as *const pinocchio::cpi::Seed,
-                        seeds.len(),
-                    )
-                };
-                pinocchio::cpi::Signer::from(cpi_seeds)
-            })
-            .collect();
+        let mut signers = crate::SignerBuffer::<N>::new();
+        for seeds in self.signer_seeds {
+            signers
+                .try_push(crate::cpi::signer_from_seeds(seeds))
+                .map_err(|_| ProgramError::InvalidArgument)?;
+        }
 
         // Build CpiAccounts and invoke. Account count matches handles (optional
         // None sentinels have metas but no handles); pinocchio skips program-id
         // placeholder metas that lack a paired CpiAccount.
-        let n = handles.len();
-        let mut cpi_accounts: Vec<core::mem::MaybeUninit<pinocchio::cpi::CpiAccount>> =
-            Vec::with_capacity(n);
-        // SAFETY: MaybeUninit does not require initialization.
-        unsafe { cpi_accounts.set_len(n) };
-
-        for (handle, slot) in handles.iter().zip(cpi_accounts.iter_mut()) {
-            pinocchio::cpi::CpiAccount::init_from_account_view(handle.account_view(), slot);
-        }
+        let cpi_accounts = crate::program::cpi_accounts::<N>(&handles)?;
+        let n = cpi_accounts.len();
 
         // SAFETY:
         // - All CpiAccounts initialized by init_from_account_view above.
@@ -190,7 +174,7 @@ where
         );
 
         let mut handles = self.accounts.to_cpi_handles_with_capacity()?;
-        for handle in &self.remaining_accounts {
+        for handle in self.remaining_accounts.iter() {
             handles
                 .try_push(*handle)
                 .map_err(|_| ProgramError::InvalidArgument)?;
@@ -207,26 +191,17 @@ where
         );
         // Trailing metas (e.g. remaining accounts already baked into `ix`) are
         // never treated as optional sentinels from this accounts struct.
-        optional_sentinel_flags.resize(instruction_account_count, false);
+        optional_sentinel_flags
+            .try_resize(instruction_account_count, false)
+            .map_err(|_| ProgramError::InvalidArgument)?;
 
-        crate::program::invoke_signed_with_optional_sentinels(
+        crate::program::invoke_signed_with_capacity::<N, I, _>(
             &ix,
             &handles,
             self.signer_seeds,
             &optional_sentinel_flags,
         )
     }
-}
-
-#[inline(always)]
-fn signer_from_seeds<'a>(seeds: &'a [&'a [u8]]) -> pinocchio::cpi::Signer<'a, 'a> {
-    // SAFETY: pinocchio::cpi::Seed is repr(C) { *const u8, u64, PhantomData }
-    // which has the same layout as &[u8] on SBF. This is verified by the
-    // static assertion in cpi.rs.
-    let cpi_seeds: &[pinocchio::cpi::Seed] = unsafe {
-        core::slice::from_raw_parts(seeds.as_ptr() as *const pinocchio::cpi::Seed, seeds.len())
-    };
-    pinocchio::cpi::Signer::from(cpi_seeds)
 }
 
 /// Stack-backed fixed-account CPI path.
@@ -236,10 +211,9 @@ fn signer_from_seeds<'a>(seeds: &'a [&'a [u8]]) -> pinocchio::cpi::Signer<'a, 'a
 /// for compatibility because the underlying Pinocchio syscall is unchecked;
 /// callers must propagate the validation and invocation result.
 ///
-/// `N` must not exceed [`crate::MAX_ACCOUNT_METAS`]. Larger calls return
-/// [`ProgramError::InvalidArgument`] before any CPI state is entered. The
-/// callee-side account array is stored in the same bounded buffer used by the
-/// borrowed CPI path, so this API does not create an `N`-sized SBF stack frame.
+/// `N` selects the inline account storage for this call. Signer storage also
+/// uses `N` for multiple signer groups; exceeding that capacity returns
+/// [`ProgramError::InvalidArgument`] before invocation.
 #[inline(always)]
 pub fn unchecked_invoke_signed_fixed<'a, const N: usize>(
     program: &'a Address,
@@ -260,14 +234,10 @@ pub fn unchecked_invoke_signed_fixed<'a, const N: usize>(
         accounts: instruction_accounts,
     };
 
-    let _borrow_guards = crate::enter_cpi(handles);
+    let _borrow_guards = crate::enter_cpi::<N>(handles)?;
 
-    // Keep the callee-side account storage bounded independently of `N`.
-    // `validate_fixed_instruction_accounts` rejects values above
-    // `MAX_ACCOUNT_METAS`; using the shared buffer here also prevents a
-    // monomorphized `[CpiAccount; N]` from reserving an unbounded SBF stack
-    // frame before that check can return.
-    let cpi_accounts = crate::program::cpi_accounts(handles)?;
+    // The caller-selected capacity matches the fixed handle array.
+    let cpi_accounts = crate::program::cpi_accounts::<N>(handles)?;
     let cpi_accounts = unsafe {
         core::slice::from_raw_parts(
             cpi_accounts.as_ptr() as *const pinocchio::cpi::CpiAccount,
@@ -280,16 +250,18 @@ pub fn unchecked_invoke_signed_fixed<'a, const N: usize>(
             pinocchio::cpi::invoke_signed_unchecked(&instruction, cpi_accounts, &[]);
         },
         [seeds] => {
-            let signer = signer_from_seeds(seeds);
+            let signer = crate::cpi::signer_from_seeds(seeds);
             unsafe {
                 pinocchio::cpi::invoke_signed_unchecked(&instruction, cpi_accounts, &[signer]);
             }
         }
         _ => {
-            let signers: Vec<pinocchio::cpi::Signer<'a, 'a>> = signer_seeds
-                .iter()
-                .map(|seeds| signer_from_seeds(seeds))
-                .collect();
+            let mut signers = crate::SignerBuffer::<N>::new();
+            for seeds in signer_seeds {
+                signers
+                    .try_push(crate::cpi::signer_from_seeds(seeds))
+                    .map_err(|_| ProgramError::InvalidArgument)?;
+            }
             unsafe {
                 pinocchio::cpi::invoke_signed_unchecked(&instruction, cpi_accounts, &signers);
             }

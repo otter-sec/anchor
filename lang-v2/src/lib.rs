@@ -4,15 +4,17 @@
 
 #![cfg_attr(any(target_os = "solana", target_arch = "bpf"), no_std)]
 
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 extern crate alloc;
 extern crate self as anchor_lang;
 
 /// Hidden compatibility re-export used by generated V2 host and IDL code.
 #[doc(hidden)]
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 pub extern crate alloc as __alloc;
 
-pub mod accounts;
 mod account_meta;
+pub mod accounts;
 mod buffers;
 pub mod context;
 mod context_cpi;
@@ -23,23 +25,24 @@ pub mod event;
 mod fixed_vec;
 pub mod hash;
 mod idl;
-mod instruction;
 #[doc(hidden)]
 #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 pub mod idl_build;
+mod instruction;
 pub mod loader;
 pub mod pod;
 pub mod prelude;
 mod program;
 pub mod programs;
 pub mod system_program;
-#[cfg(feature = "testing")]
+#[cfg(all(
+    feature = "testing",
+    not(any(target_os = "solana", target_arch = "bpf"))
+))]
 pub mod testing;
 mod traits;
 
 // Re-export derive macros and bytemuck for generated code
-pub use cpi::realloc_account;
-pub use account_meta::AccountMeta;
 #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 pub use account_meta::ToAccountMetas;
 /// Chunked 4×u64 equality compare for `Address`. Preferred over `==`
@@ -52,11 +55,73 @@ pub use solana_address::{address, declare_id};
 /// Implementation detail of [`solana_msg`] - re-exported for macro access only.
 #[doc(hidden)]
 pub use solana_msg;
+pub use {account_meta::AccountMeta, cpi::realloc_account};
 #[macro_export]
 macro_rules! msg {
+    ($message:expr) => {{
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        {
+            let message: &str = $message;
+            // SAFETY: the syscall reads the string bytes during this call.
+            unsafe {
+                $crate::pinocchio::syscalls::sol_log_(message.as_ptr(), message.len() as u64);
+            }
+        }
+        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+        $crate::solana_msg::msg!($message);
+    }};
     ($($arg:tt)*) => {{
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-        $crate::sol_log_fmt(core::format_args!($($arg)*));
+        {
+            #[inline(never)]
+            fn __anchor_log_fmt(args: core::fmt::Arguments<'_>) {
+                struct LogBuffer {
+                    bytes: [u8; 1024],
+                    len: usize,
+                }
+
+                impl core::fmt::Write for LogBuffer {
+                    fn write_str(&mut self, text: &str) -> core::fmt::Result {
+                        let remaining = self.bytes.len() - self.len;
+                        let bytes = text.as_bytes();
+                        let copied = if bytes.len() <= remaining {
+                            bytes.len()
+                        } else {
+                            let mut boundary = 0;
+                            for (index, character) in text.char_indices() {
+                                let end = index + character.len_utf8();
+                                if end > remaining {
+                                    break;
+                                }
+                                boundary = end;
+                            }
+                            boundary
+                        };
+                        self.bytes[self.len..self.len + copied].copy_from_slice(&bytes[..copied]);
+                        self.len += copied;
+                        if copied == bytes.len() {
+                            Ok(())
+                        } else {
+                            Err(core::fmt::Error)
+                        }
+                    }
+                }
+
+                let mut buffer = LogBuffer {
+                    bytes: [0; 1024],
+                    len: 0,
+                };
+                let _ = core::fmt::write(&mut buffer, args);
+                unsafe {
+                    $crate::pinocchio::syscalls::sol_log_(
+                        buffer.bytes.as_ptr(),
+                        buffer.len as u64,
+                    );
+                }
+            }
+
+            __anchor_log_fmt(core::format_args!($($arg)*));
+        }
         #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
         $crate::solana_msg::msg!($($arg)*);
     }};
@@ -75,17 +140,28 @@ macro_rules! debug {
     ($($arg:tt)*) => {{ $crate::msg!($($arg)*) }};
 }
 // Re-export wincode for instruction data serialization
-pub use wincode;
+pub use {
+    buffers::*,
+    fixed_vec::FixedVec,
+    idl::{__idl, IdlAccountType, IdlEntries, MAX_IDL_SEQUENCE},
+    wincode,
+};
 
-pub use buffers::*;
-pub use fixed_vec::FixedVec;
-pub use idl::{__idl, IdlAccountType, IdlEntries, MAX_IDL_SEQUENCE};
+#[inline]
+pub(crate) fn try_extend_instruction_data(
+    data: &mut InstructionDataBuffer,
+    bytes: &[u8],
+) -> Result<()> {
+    data.try_extend_from_slice(bytes)
+        .map_err(|_| solana_program_error::ProgramError::InvalidInstructionData)
+}
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __anchor_program_allocator {
     () => {
-        $crate::pinocchio::default_allocator!();
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        $crate::pinocchio::no_allocator!();
     };
 }
 
@@ -228,11 +304,10 @@ pub mod solana_program {
     }
 
     pub mod instruction {
-        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-        pub use solana_instruction::{AccountMeta, Instruction};
-
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
         pub use crate::AccountMeta;
+        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+        pub use solana_instruction::{AccountMeta, Instruction};
     }
 
     #[cfg(feature = "compat")]
@@ -262,7 +337,9 @@ pub mod solana_program {
 /// Serializes instruction data: discriminator prefix + LE-encoded args.
 pub trait InstructionData: Discriminator {
     #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-    fn try_data(&self) -> core::result::Result<InstructionDataBuffer, solana_program_error::ProgramError>;
+    fn try_data(
+        &self,
+    ) -> core::result::Result<InstructionDataBuffer, solana_program_error::ProgramError>;
     #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
     fn data(&self) -> InstructionDataBuffer;
 
@@ -272,7 +349,9 @@ pub trait InstructionData: Discriminator {
     /// compatible. Generated V2 instruction types override this method so a
     /// full buffer reports `InvalidInstructionData` instead of panicking.
     #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-    fn try_data(&self) -> core::result::Result<InstructionDataBuffer, solana_program_error::ProgramError> {
+    fn try_data(
+        &self,
+    ) -> core::result::Result<InstructionDataBuffer, solana_program_error::ProgramError> {
         Ok(self.data())
     }
 }
@@ -324,8 +403,7 @@ impl<T: Space, const N: usize> Space for FixedVec<T, N> {
 
 #[doc(hidden)]
 pub mod __private {
-    use crate::CpiHandle;
-    use pinocchio::account::AccountView;
+    use {crate::CpiHandle, pinocchio::account::AccountView};
 
     /// Used by `#[derive(InitSpace)]` on enums to pick the largest variant size.
     pub const fn max(a: usize, b: usize) -> usize {
