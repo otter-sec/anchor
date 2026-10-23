@@ -60,7 +60,7 @@ Most v1 programs port with the below.
 | v1 | v2 |
 |---|---|
 | `solana_program` | `pinocchio` |
-| `std` required | `#![no_std]` (`alloc` is a default feature) |
+| `std` required | `#![no_std]`; the on-chain runtime has no allocator |
 | `<'info>` everywhere | removed — pinocchio's account model is static-scoped |
 | `Context<T>` in handlers | `&mut Context<T>` (constraints + exit hooks mutate context state) |
 | `Pubkey` | `Address` (drop-in replacement — same 32-byte type) |
@@ -72,6 +72,22 @@ Most v1 programs port with the below.
 v1 `#[account(mut, dup)]` let mutable serializing accounts (`Account<T>`, `LazyAccount<T>`, `InterfaceAccount<T>`, `Migration`) share an address. v2 rejects `#[account(dup)]`. `BorshAccount<T>` borrows on load: a mutable alias fails with `AccountBorrowFailed` (v1: `ConstraintDuplicateMutableAccount`), and two read-only fields may still share. Zero-copy `Account<T>` follows the same rule, unlike v1 `AccountLoader<T>`, which allowed mutable duplicates. Unlike v1, a `mut` field and a read-only field of the same account also fail. `Signer`, `SystemAccount`, `UncheckedAccount`, and `Program<T>` still alias.
 
 To keep that `dup` pattern, declare the second field as `#[account(mut)] UncheckedAccount`. If the addresses match, mutate the first `BorshAccount` only. If they differ, call `BorshAccount::<T>::load_mut` on the second field's `AccountView` and call `exit()` on the result before drop. The derive writes back declared fields only. A manual `load_mut` does not run the v1 field's constraints, so re-check them (`has_one`, `seeds`, `address`, `constraint`).
+
+### No-allocator feasibility
+
+The on-chain `anchor-lang` runtime is now `#![no_std]` without `alloc`. CPI
+metas, remaining accounts, signer lists, account views, IDL dependency lists,
+and instruction/event data use bounded inline buffers on Solana. Host builds
+keep `Vec` aliases for client ergonomics; the host-only `Box<T>` forwarding
+implementation is excluded from Solana builds.
+
+This intentionally changes a few V2 surfaces: `transfer_with_seed` borrows a
+`&str`, Token-2022 UI amount return data is a bounded byte buffer, and
+`CpiContext::with_remaining_accounts` accepts a bounded account buffer. A
+program that needs unbounded `Vec`/`String` account data must use an inline
+fixed-capacity type such as `PodVec<T, MAX>` or provide its own allocator-backed
+wrapper. IDL emission and generated client JSON remain host-only and may use
+`std`; they are kept separate from the deployed runtime.
 
 ### `compat` feature
 
@@ -118,7 +134,7 @@ Here are some examples of optimizations present in Anchor v2.
 - **Typed `CpiHandle` lets us use pinocchio's unchecked CPI.** The unchecked path would be UB under stale-borrow aliasing, but the Rust borrow checker rules that out at compile time — so `CpiContext::invoke()` takes it. Turns UB into a compile error and drops one runtime check per CPI.
 - **`const-rent` feature** bakes the rent formula into the binary so `create_account` skips the `Rent::get()` sysvar. Saves ~85 CU per `create_account`.
 - **Guardrails compile away** when you drop the feature. `check_program_id` / the `is_writable` check in `load_mut` just aren't emitted. Smaller binary in prod.
-- **`remaining_accounts()` is lazy-cached.** First call walks the account cursor; subsequent calls return a clone of the cached vec. Zero overhead for instructions that don't touch it.
+- **`remaining_accounts()` is lazy-cached.** First call walks the account cursor; subsequent calls return a clone of the cached fixed-capacity buffer. Zero overhead for instructions that don't touch it.
 
 ## Account types
 

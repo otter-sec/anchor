@@ -1245,7 +1245,7 @@ pub mod spl_test {
         let cpi_ctx = CpiContext::<_, 1>::new(ctx.accounts.token_program.address(), accs);
         let ui_amount = token_2022_cpi::amount_to_ui_amount(cpi_ctx, 123456789)?;
         require!(
-            ui_amount.as_bytes() == b"123.456789",
+            ui_amount.as_slice() == b"123.456789",
             ProgramError::InvalidInstructionData
         );
         Ok(())

@@ -1,3 +1,9 @@
+//! Legacy allocator-backed Borsh `Vec` realloc fixture.
+//!
+//! This remains available for host-side compatibility work, but is excluded
+//! from the allocator-free V2 SBF runtime coverage matrix. On-chain V2
+//! programs must use a bounded representation such as `PodVec` instead.
+
 extern crate alloc;
 
 use anchor_lang::prelude::*;

@@ -26,7 +26,7 @@ profile = ["anchor-v2-testing/profile"]
 # `guardrails` feature so per-Deref borrow-state checks vanish; rely on
 # the entrypoint to set up borrow state and the compiler for `&/&mut`
 # exclusivity.
-anchor-lang = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
+anchor-lang = { path = "../../../../lang-v2", default-features = false }
 anchor-asm-v2-runtime = { path = "../../../../asm-v2/runtime" }
 borsh = { version = "1", optional = true }
 bytemuck = { version = "1", features = ["derive"] }

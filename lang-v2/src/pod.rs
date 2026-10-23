@@ -992,8 +992,7 @@ impl From<CapacityError> for solana_program_error::ProgramError {
 
 #[cfg(test)]
 mod tests {
-    extern crate alloc;
-    use {super::*, alloc::format};
+    use {super::*, std::format};
     use core::mem::{align_of, offset_of, size_of};
 
     #[repr(C)]
@@ -1244,15 +1243,15 @@ mod tests {
         v.push(PodU16::from(20u16));
         v.push(PodU16::from(30u16));
 
-        let collected: alloc::vec::Vec<u16> = v.iter().map(|p| p.get()).collect();
-        assert_eq!(collected, alloc::vec![10, 20, 30]);
+        let collected: std::vec::Vec<u16> = v.iter().map(|p| p.get()).collect();
+        assert_eq!(collected, std::vec![10, 20, 30]);
 
         // Mutating iteration.
         for item in v.iter_mut() {
             *item = PodU16::from(item.get() * 2);
         }
-        let doubled: alloc::vec::Vec<u16> = (&v).into_iter().map(|p| p.get()).collect();
-        assert_eq!(doubled, alloc::vec![20, 40, 60]);
+        let doubled: std::vec::Vec<u16> = (&v).into_iter().map(|p| p.get()).collect();
+        assert_eq!(doubled, std::vec![20, 40, 60]);
     }
 
     #[test]

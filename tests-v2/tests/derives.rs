@@ -244,7 +244,7 @@ fn access_control_rejects_amount_above_cap() {
 fn init_profile_allocates_init_space_bytes() {
     let (mut svm, payer) = setup();
 
-    // Profile layout (borsh): owner(32) + tier(1) + scores(4 + 4*8 = 36) = 69.
+    // Profile layout (borsh): owner(32) + tier(1) + scores(4*8 = 32) = 65.
     // The init handler uses `8 + Profile::INIT_SPACE` — if the derive computed
     // a wrong value, allocation and/or borsh serialize would fail at runtime.
     let profile_pda = Pubkey::find_program_address(&[b"profile"], &program_id()).0;
@@ -259,16 +259,14 @@ fn init_profile_allocates_init_space_bytes() {
         .expect("init_profile should succeed");
 
     let account = svm.get_account(&profile_pda).expect("profile exists");
-    assert_eq!(account.data.len(), 8 + 69);
+    assert_eq!(account.data.len(), 8 + 65);
 
     // Verify the borsh payload round-trips: discriminator + owner + tier=3
     // + scores=[10,20,30,40].
     let tier = account.data[8 + 32];
     assert_eq!(tier, 3);
-    // Vec length at offset 8 + 32 + 1.
-    let vec_len = u32::from_le_bytes(account.data[8 + 33..8 + 37].try_into().unwrap());
-    assert_eq!(vec_len, 4);
-    let first_score = u64::from_le_bytes(account.data[8 + 37..8 + 45].try_into().unwrap());
+    // The fixed array starts at offset 8 + 32 + 1.
+    let first_score = u64::from_le_bytes(account.data[8 + 33..8 + 41].try_into().unwrap());
     assert_eq!(first_score, 10);
 }
 

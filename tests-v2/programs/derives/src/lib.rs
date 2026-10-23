@@ -9,8 +9,6 @@
 //!   - `PodU64` / `PodI32` / `PodBool` arithmetic + comparisons inside a
 //!     zero-copy account (verifies pod.rs code paths run on SBF too).
 
-extern crate alloc;
-
 use anchor_lang::prelude::*;
 
 declare_id!("Der1111111111111111111111111111111111111111");
@@ -44,15 +42,14 @@ pub enum Mode {
 // ---- #[derive(InitSpace)] ------------------------------------------------
 
 /// Borsh-encoded account. `InitSpace` computes `INIT_SPACE = 8 + 32 + 1 +
-/// (4 + 4 * 8)` at compile time so `#[account(init, space = 8 + Profile::INIT_SPACE)]`
+/// (4 * 8)` at compile time so `#[account(init, space = 8 + Profile::INIT_SPACE)]`
 /// works without hardcoding a byte count.
 #[account(borsh)]
 #[derive(InitSpace)]
 pub struct Profile {
     pub owner: Address,
     pub tier: u8,
-    #[max_len(4)]
-    pub scores: alloc::vec::Vec<u64>,
+    pub scores: [u64; 4],
 }
 
 pub mod qualified {
@@ -260,7 +257,7 @@ pub mod derives_test {
         let p = &mut ctx.accounts.profile;
         p.owner = *ctx.accounts.payer.account().address();
         p.tier = tier;
-        p.scores = alloc::vec![10, 20, 30, 40];
+        p.scores = [10, 20, 30, 40];
         Ok(())
     }
 
@@ -347,8 +344,8 @@ mod idl_tests {
             .contains("\"generics\":[{\"kind\":\"const\",\"name\":\"N\",\"type\":\"usize\"}]"));
         assert!(type_def.contains("\"array\":[\"u8\",{\"generic\":\"N\"}]"));
 
-        let mut accounts = alloc::vec::Vec::new();
-        let mut types = alloc::vec::Vec::new();
+        let mut accounts = std::vec::Vec::new();
+        let mut types = std::vec::Vec::new();
         <QualifiedUserTypeHolder<4> as IdlAccountType>::__register_idl_deps(
             &mut accounts,
             &mut types,

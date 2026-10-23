@@ -25,7 +25,7 @@ impl IdlAccountType for Header {
     const __IDL_ACCOUNT_ENTRY: Option<&'static str> = Some("header-account");
     const __IDL_TYPE_DEF: Option<&'static str> = Some("header-type");
 
-    fn __register_idl_deps(accounts: &mut Vec<&'static str>, types: &mut Vec<&'static str>) {
+    fn __register_idl_deps(accounts: &mut anchor_lang::IdlEntries, types: &mut anchor_lang::IdlEntries) {
         accounts.push("header-account");
         types.push("header-type");
     }
@@ -40,7 +40,7 @@ struct Item {
 impl IdlAccountType for Item {
     const __IDL_TYPE_DEF: Option<&'static str> = Some("item-type");
 
-    fn __register_idl_deps(_accounts: &mut Vec<&'static str>, types: &mut Vec<&'static str>) {
+    fn __register_idl_deps(_accounts: &mut anchor_lang::IdlEntries, types: &mut anchor_lang::IdlEntries) {
         types.push("item-type");
     }
 }
@@ -59,8 +59,8 @@ fn slab_idl_surface_forwards_header_metadata() {
 
 #[test]
 fn slab_idl_surface_remains_header_only() {
-    let mut accounts = Vec::new();
-    let mut types = Vec::new();
+    let mut accounts = anchor_lang::IdlEntries::new();
+    let mut types = anchor_lang::IdlEntries::new();
     <Slab<Header, Item> as IdlAccountType>::__register_idl_deps(&mut accounts, &mut types);
 
     assert_eq!(accounts, vec!["header-account"]);

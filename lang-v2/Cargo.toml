@@ -8,13 +8,13 @@ description = "Anchor v2: trait-based account system for Solana (no_std)"
 license = "Apache-2.0"
 
 [features]
-default = ["alloc", "guardrails"]
+default = ["guardrails"]
 alloc = ["pinocchio/alloc", "wincode/alloc"]
 idl-build = []
 # Opt-in v1-compat shims for users porting anchor-lang code. Currently
 # exposes v1-style shims such as `debug!`, `error!`, `err!`, and `pubkey!`.
 # Default-off because some shims preserve syntax while keeping v2's cheaper
-# runtime model, and `debug!` still heap-allocates through `alloc::format!`.
+# runtime model.
 compat = ["dep:solana-program-log", "solana-address/decode"]
 # Runtime safety nets that catch caller bugs the Rust borrow checker
 # can't see statically. Default-on. Disabling saves CU at the cost of
@@ -48,7 +48,7 @@ pinocchio-system = "0.6.1"
 solana-address = { workspace = true, features = ["bytemuck", "syscalls", "curve25519", "wincode"] }
 solana-instruction = { workspace = true, default-features = false }
 solana-program-error.workspace = true
-solana-msg = { workspace = true, default-features = false, features = ["alloc"] }
+solana-msg = { workspace = true, default-features = false }
 solana-program-memory.workspace = true
 solana-program-log = { workspace = true, features = ["macro"], optional = true }
 solana-sha256-hasher = { workspace = true, features = ["sha2"] }

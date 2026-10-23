@@ -19,7 +19,7 @@ idl-build = []
 profile = ["anchor-v2-testing/profile"]
 
 [dependencies]
-anchor-lang = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
+anchor-lang = { path = "../../../../lang-v2", default-features = false }
 borsh = { version = "1", optional = true }
 bytemuck = { version = "1", features = ["derive"] }
 pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
