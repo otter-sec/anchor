@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - anchor-next
+      - v2/no-alloc-api
+      - v2/no-alloc-runtime
+      - v2/no-alloc-stack
     paths-ignore:
       - "docs/**"
   pull_request:
