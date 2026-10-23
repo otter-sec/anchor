@@ -15,7 +15,7 @@ no-entrypoint = []
 cpi = ["no-entrypoint", "dep:borsh"]
 no-idl = []
 no-log-ix-name = []
-idl-build = ["anchor-lang/idl-build"]
+idl-build = []
 profile = ["anchor-v2-testing/profile"]
 
 [dependencies]
@@ -23,7 +23,7 @@ profile = ["anchor-v2-testing/profile"]
 # on `Account<Counter>` skips the ~20-CU runtime borrow-state check. This is
 # the "production" v2 profile — still safe because the entrypoint sets up
 # the borrow, and the compiler enforces `&mut`/`&` exclusivity.
-anchor-lang = { path = "../../../../lang-v2", default-features = false }
+anchor-lang = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
 borsh = { version = "1", optional = true }
 bytemuck = { version = "1", features = ["derive"] }
 pinocchio = { version = "0.11", default-features = false, features = ["copy"] }

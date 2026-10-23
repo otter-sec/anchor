@@ -35,6 +35,7 @@ members = [
     "tests-v2/programs/event-cpi",
     "tests-v2/programs/init-space-usability",
     "tests-v2/programs/ix-macro",
+    "tests-v2/programs/no-alloc-proof",
     "tests-v2/programs/optional-accounts",
     "tests-v2/programs/pda-payer",
     "tests-v2/programs/program-interface",

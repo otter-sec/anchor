@@ -83,7 +83,7 @@ pub struct InitBoxedWithFreshTarget {
     #[account(mut, seeds = [b"payer"], bump)]
     pub pda_payer: SystemAccount,
     #[account(init, payer = pda_payer, space = 8 + core::mem::size_of::<MyData>())]
-    pub new_account: Account<MyData>,
+    pub new_account: Box<Account<MyData>>,
     pub system_program: Program<System>,
 }
 

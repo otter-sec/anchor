@@ -42,14 +42,15 @@ pub enum Mode {
 // ---- #[derive(InitSpace)] ------------------------------------------------
 
 /// Borsh-encoded account. `InitSpace` computes `INIT_SPACE = 8 + 32 + 1 +
-/// (4 * 8)` at compile time so `#[account(init, space = 8 + Profile::INIT_SPACE)]`
+/// (4 + 4 * 8)` at compile time so `#[account(init, space = 8 + Profile::INIT_SPACE)]`
 /// works without hardcoding a byte count.
 #[account(borsh)]
 #[derive(InitSpace)]
 pub struct Profile {
     pub owner: Address,
     pub tier: u8,
-    pub scores: [u64; 4],
+    #[max_len(4)]
+    pub scores: anchor_lang::__idl::vec::Vec<u64>,
 }
 
 pub mod qualified {
@@ -257,7 +258,7 @@ pub mod derives_test {
         let p = &mut ctx.accounts.profile;
         p.owner = *ctx.accounts.payer.account().address();
         p.tier = tier;
-        p.scores = [10, 20, 30, 40];
+        p.scores = runtime_scores()?;
         Ok(())
     }
 
@@ -268,6 +269,20 @@ pub mod derives_test {
     ) -> Result<[u8; limits::ITEMS]> {
         Ok(bytes)
     }
+}
+
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+fn runtime_scores() -> Result<anchor_lang::__idl::vec::Vec<u64>> {
+    Ok(vec![10, 20, 30, 40])
+}
+
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+fn runtime_scores() -> Result<anchor_lang::__idl::vec::Vec<u64>> {
+    let mut scores = anchor_lang::__idl::vec::Vec::new();
+    scores
+        .try_extend_from_slice(&[10, 20, 30, 40])
+        .map_err(|_| Error::InvalidInstructionData)?;
+    Ok(scores)
 }
 
 fn require_authority(ctx: &Context<Privileged>) -> Result<()> {

@@ -1,30 +1,28 @@
-//! Legacy allocator-backed Borsh `Vec` realloc fixture.
-//!
-//! This remains available for host-side compatibility work, but is excluded
-//! from the allocator-free V2 SBF runtime coverage matrix. On-chain V2
-//! programs must use a bounded representation such as `PodVec` instead.
-
-extern crate alloc;
-
 use anchor_lang::prelude::*;
 
 declare_id!("D51usz545PmMTSqE18F1YSj1RXqvpPhKUUxB6wHPNewT");
+
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+pub type Items = std::vec::Vec<u8>;
+
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+pub type Items = anchor_lang::FixedVec<u8, 256>;
 
 #[program]
 pub mod borsh_realloc {
     use super::*;
 
     pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {
-        ctx.accounts.data.items = alloc::vec![1, 2, 3];
+        ctx.accounts.data.items = items_from_slice(&[1, 2, 3])?;
         Ok(())
     }
 
-    pub fn grow(ctx: &mut Context<Grow>, new_items: alloc::vec::Vec<u8>) -> Result<()> {
+    pub fn grow(ctx: &mut Context<Grow>, new_items: Items) -> Result<()> {
         ctx.accounts.data.items = new_items;
         Ok(())
     }
 
-    pub fn shrink(ctx: &mut Context<Shrink>, new_items: alloc::vec::Vec<u8>) -> Result<()> {
+    pub fn shrink(ctx: &mut Context<Shrink>, new_items: Items) -> Result<()> {
         ctx.accounts.data.items = new_items;
         Ok(())
     }
@@ -51,7 +49,7 @@ pub struct Initialize {
 }
 
 #[derive(Accounts)]
-#[instruction(new_items: alloc::vec::Vec<u8>)]
+#[instruction(new_items: Items)]
 pub struct Grow {
     #[account(mut)]
     pub payer: Signer,
@@ -69,7 +67,7 @@ pub struct Grow {
 }
 
 #[derive(Accounts)]
-#[instruction(new_items: alloc::vec::Vec<u8>)]
+#[instruction(new_items: Items)]
 pub struct Shrink {
     #[account(mut)]
     pub payer: Signer,
@@ -103,5 +101,19 @@ pub struct ShrinkBelowDiscriminator {
 
 #[account(borsh)]
 pub struct DynData {
-    pub items: alloc::vec::Vec<u8>,
+    pub items: Items,
+}
+
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+fn items_from_slice(bytes: &[u8]) -> Result<Items> {
+    Ok(bytes.to_vec())
+}
+
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+fn items_from_slice(bytes: &[u8]) -> Result<Items> {
+    let mut items = Items::new();
+    items
+        .try_extend_from_slice(bytes)
+        .map_err(|_| Error::InvalidInstructionData)?;
+    Ok(items)
 }

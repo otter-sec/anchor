@@ -276,7 +276,7 @@ pub(crate) fn enter_cpi<'a>(
 #[cfg(any(target_os = "solana", target_arch = "bpf"))]
 pub(crate) fn enter_cpi<'a>(
     handles: &[CpiHandle<'a>],
-) -> Result<crate::FixedVec<CpiBorrowGuard, { crate::MAX_ACCOUNT_METAS }>, ProgramError> {
+) -> Result<crate::FixedVec<CpiBorrowGuard, { crate::MAX_RUNTIME_ACCOUNT_METAS }>, ProgramError> {
     let mut guards = crate::FixedVec::new();
     for handle in handles {
         if let Some(guard) = handle.enter_cpi() {

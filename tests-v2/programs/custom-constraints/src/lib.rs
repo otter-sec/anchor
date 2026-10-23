@@ -57,19 +57,19 @@ pub mod custom_constraints {
         Ok(())
     }
 
-    /// Account variant of `handle_init`, exercising `AccountConstraint::init`
-    /// on an `init` field.
+    /// Boxed variant of `handle_init`, proving `AccountConstraint::init`
+    /// forwards through `Box<T>` on an `init` field.
     pub fn handle_boxed_init(_ctx: &mut Context<HandleBoxedInit>) -> Result<()> {
         Ok(())
     }
 
-    /// Account variant of `handle_exit_bump`, exercising
-    /// `AccountConstraint::exit`.
+    /// Boxed variant of `handle_exit_bump`, proving `AccountConstraint::exit`
+    /// forwards through `Box<T>`.
     pub fn handle_boxed_exit_bump(_ctx: &mut Context<HandleBoxedExitBump>) -> Result<()> {
         Ok(())
     }
 
-    /// Close a counter to exercise `AccountClose::close`.
+    /// Close a boxed counter to exercise `AccountClose::close` forwarding.
     pub fn handle_boxed_close(_ctx: &mut Context<HandleBoxedClose>) -> Result<()> {
         Ok(())
     }
@@ -80,7 +80,7 @@ pub mod custom_constraints {
         Ok(())
     }
 
-    /// Optional account variant of `handle_init`.
+    /// Optional boxed variant of `handle_init`.
     pub fn handle_optional_boxed_init(_ctx: &mut Context<HandleOptionalBoxedInit>) -> Result<()> {
         Ok(())
     }
@@ -261,7 +261,7 @@ pub struct HandleBoxedInit {
         bump,
         counter_ns::init_value = 9u64,
     )]
-    pub counter: BorshAccount<Counter>,
+    pub counter: Box<BorshAccount<Counter>>,
     pub system_program: Program<System>,
 }
 
@@ -273,13 +273,13 @@ pub struct HandleBoxedExitBump {
         bump,
         counter_ns::bump_on_exit = 2u64,
     )]
-    pub counter: BorshAccount<Counter>,
+    pub counter: Box<BorshAccount<Counter>>,
 }
 
 #[derive(Accounts)]
 pub struct HandleBoxedClose {
     #[account(mut, close = receiver, seeds = [b"boxed-counter"], bump)]
-    pub counter: BorshAccount<Counter>,
+    pub counter: Box<BorshAccount<Counter>>,
     #[account(mut)]
     pub receiver: SystemAccount,
 }
@@ -312,7 +312,7 @@ pub struct HandleOptionalBoxedInit {
         bump,
         counter_ns::init_value = 11u64,
     )]
-    pub counter: Option<BorshAccount<Counter>>,
+    pub counter: Option<Box<BorshAccount<Counter>>>,
     pub system_program: Program<System>,
 }
 

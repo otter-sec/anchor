@@ -1,5 +1,3 @@
-extern crate alloc;
-
 use anchor_lang::prelude::*;
 
 declare_id!("9AbShpmjP5WcQLSBW1NQmczpYVmT2CR2FLFoQdxxk47d");
@@ -16,6 +14,9 @@ pub type Scalar = f32;
 pub type Coordinate = i32;
 pub type Owner = Address;
 
+type RuntimeString = anchor_lang::__idl::string::String;
+type RuntimeTags = anchor_lang::__idl::vec::Vec<RuntimeString>;
+
 #[derive(InitSpace)]
 pub struct Vector2 {
     pub x: Scalar,
@@ -27,14 +28,14 @@ pub struct Vector2 {
 pub struct Profile {
     pub owner: Owner,
     #[max_len(limits::NAME)]
-    pub name: alloc::string::String,
+    pub name: anchor_lang::__idl::string::String,
 }
 
 #[account(borsh)]
 #[derive(InitSpace)]
 pub struct Nested {
     #[max_len(limits::ITEMS, limits::NAME)]
-    pub tags: alloc::vec::Vec<alloc::string::String>,
+    pub tags: anchor_lang::__idl::vec::Vec<anchor_lang::__idl::string::String>,
 }
 
 #[account(borsh)]
@@ -74,18 +75,13 @@ pub mod init_space_usability {
     #[discrim = 1]
     pub fn init_profile(ctx: &mut Context<InitProfile>) -> Result<()> {
         ctx.accounts.profile.owner = *ctx.accounts.payer.account().address();
-        ctx.accounts.profile.name = alloc::string::String::from("init-space");
+        ctx.accounts.profile.name = runtime_string("init-space")?;
         Ok(())
     }
 
     #[discrim = 2]
     pub fn init_nested(ctx: &mut Context<InitNested>) -> Result<()> {
-        ctx.accounts.nested.tags = alloc::vec![
-            alloc::string::String::from("zero"),
-            alloc::string::String::from("one"),
-            alloc::string::String::from("two"),
-            alloc::string::String::from("three"),
-        ];
+        ctx.accounts.nested.tags = runtime_tags(&["zero", "one", "two", "three"])?;
         Ok(())
     }
 
@@ -96,6 +92,36 @@ pub mod init_space_usability {
         ctx.accounts.image.pixels = [1, 2, 3, 4];
         Ok(())
     }
+}
+
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+fn runtime_string(value: &str) -> Result<RuntimeString> {
+    Ok(RuntimeString::from(value))
+}
+
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+fn runtime_string(value: &str) -> Result<RuntimeString> {
+    let mut result = RuntimeString::new();
+    result
+        .try_extend_from_slice(value.as_bytes())
+        .map_err(|_| Error::InvalidInstructionData)?;
+    Ok(result)
+}
+
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+fn runtime_tags(values: &[&str]) -> Result<RuntimeTags> {
+    values.iter().map(|value| runtime_string(value)).collect()
+}
+
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+fn runtime_tags(values: &[&str]) -> Result<RuntimeTags> {
+    let mut result = RuntimeTags::new();
+    for value in values {
+        result
+            .try_push(runtime_string(value)?)
+            .map_err(|_| Error::InvalidInstructionData)?;
+    }
+    Ok(result)
 }
 
 fn require_space<T: Space>(expected: usize) -> Result<()> {

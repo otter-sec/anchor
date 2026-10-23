@@ -6200,14 +6200,17 @@ fn process_handler(
         .unwrap_or_else(|| quote! { "" });
     let set_return_data = returns_value.then(|| {
         quote! {
-            let mut __return_data = anchor_lang::__alloc::vec::Vec::new();
-            anchor_lang::wincode::config::serialize_into(
+            let mut __return_data = anchor_lang::InstructionDataBuffer::new();
+            if anchor_lang::wincode::config::serialize_into(
                 &mut __return_data,
                 &__result,
                 anchor_lang::BORSH_CONFIG,
             )
-                .expect("return data serialization failed");
-            anchor_lang::pinocchio::cpi::set_return_data(__return_data.as_slice());
+            .is_err()
+            {
+                return anchor_lang::Error::InvalidInstructionData.into();
+            }
+            anchor_lang::pinocchio::cpi::set_return_data(&__return_data);
         }
     });
 

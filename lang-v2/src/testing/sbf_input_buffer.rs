@@ -18,7 +18,6 @@
 //!       padding (7 bytes) to round to 8-byte alignment
 
 use {
-    crate::{FixedVec, MAX_IDL_SEQUENCE},
     std::{vec, vec::Vec},
     pinocchio::account::MAX_PERMITTED_DATA_INCREASE,
 };
@@ -41,7 +40,7 @@ pub struct SbfInputBuffer {
     len: usize,
     /// Byte offset where each account record starts. Useful for
     /// cursor-walk tests that need to reason about positions.
-    pub record_offsets: FixedVec<usize, MAX_IDL_SEQUENCE>,
+    pub record_offsets: Vec<usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -68,7 +67,7 @@ impl SbfInputBuffer {
         // Compute total byte length first; collect bytes into a temp
         // Vec<u8>, then move into a 8-aligned Vec<u64> backing.
         let mut bytes: Vec<u8> = Vec::new();
-        let mut record_offsets = FixedVec::new();
+        let mut record_offsets = Vec::with_capacity(records.len());
 
         bytes.extend_from_slice(&(records.len() as u64).to_le_bytes());
 
@@ -76,9 +75,7 @@ impl SbfInputBuffer {
             while bytes.len() % 8 != 0 {
                 bytes.push(0);
             }
-            record_offsets
-                .try_push(bytes.len())
-                .expect("too many records for the test input buffer");
+            record_offsets.push(bytes.len());
 
             match *record {
                 AccountRecord::NonDup {

@@ -22,6 +22,7 @@ TESTS_V2_COVERAGE_TESTS := \
 	account_meta_signer_overrides \
 	accounts \
 	borsh_borrow_alignment \
+	borsh_realloc \
 	cfg_semantics \
 	client_builders \
 	constraint_values \
@@ -57,9 +58,7 @@ TESTS_V2_COVERAGE_TESTS := \
 	token_2022_extensions \
 	token_interface
 TESTS_V2_COVERAGE_ARGS := $(foreach test,$(TESTS_V2_COVERAGE_TESTS),--test $(test))
-# These tests exercise legacy allocator-backed account/serialization fixtures
-# and are intentionally outside the no-alloc SBF runtime coverage matrix.
-TESTS_V2_NON_COVERAGE_TESTS := compile_fail borsh_realloc
+TESTS_V2_NON_COVERAGE_TESTS := compile_fail
 TESTS_V2_NON_COVERAGE_ARGS := $(foreach test,$(TESTS_V2_NON_COVERAGE_TESTS),--test $(test))
 
 .PHONY: coverage-v2

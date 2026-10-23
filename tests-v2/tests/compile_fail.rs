@@ -94,7 +94,7 @@ anchor-lang = {{ path = "{}" }}
 
 [features]
 cpi = []
-idl-build = ["anchor-lang/idl-build"]
+idl-build = []
 
 [workspace]
 "#,
@@ -1871,7 +1871,7 @@ declare_program!(bad);
 pub fn use_declared_types(
     value: bad::ObjectTuple,
     variant: bad::ObjectEnum,
-) -> anchor_lang::InstructionDataBuffer {
+) -> anchor_lang::__alloc::vec::Vec<u8> {
     let bad::ObjectTuple(bytes, maybe) = value;
     let _ = maybe;
     match variant {

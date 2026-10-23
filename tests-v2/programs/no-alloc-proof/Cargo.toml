@@ -1,0 +1,22 @@
+[package]
+name = "no-alloc-proof"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = ["no-log-ix-name"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+
+[dependencies]
+anchor-lang = { path = "../../../lang-v2", default-features = false }
+pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
+pinocchio-system = "0.6"
+
+[lints.rust.unexpected_cfgs]
+level = "allow"

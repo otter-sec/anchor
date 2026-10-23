@@ -15,13 +15,13 @@ no-entrypoint = []
 cpi = ["no-entrypoint", "dep:borsh"]
 no-idl = []
 no-log-ix-name = []
-idl-build = ["anchor-lang/idl-build"]
+idl-build = []
 profile = ["anchor-v2-testing/profile"]
 
 [dependencies]
 # Drop `guardrails` to strip ~20-CU-per-Deref runtime borrow-state checks.
 # Same "production" v2 profile as hello-world-v2.
-anchor-lang = { path = "../../../../lang-v2", default-features = false }
+anchor-lang = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
 borsh = { version = "1", optional = true }
 bytemuck = { version = "1", features = ["derive"] }
 pinocchio = { version = "0.11", default-features = false, features = ["copy"] }

@@ -311,6 +311,37 @@ fn checked_invoke_optional_none_before_required_program_id_uses_mask() {
 }
 
 #[test]
+fn checked_invoke_preserves_real_program_id_account_before_duplicate_address() {
+    // The first slot is marked as an optional sentinel, but it is also a real
+    // account whose address equals the callee program id. A greedy matcher can
+    // skip it, bind the second slot to the first handle, and then reject the
+    // valid third account. The allocator-backed matcher selected the complete
+    // valid binding, so the bounded matcher must do the same.
+    let first_buffer = account_view([7; 32], false);
+    let second_buffer = account_view([7; 32], false);
+    let third_buffer = account_view([8; 32], false);
+    let first = unsafe { first_buffer.view() };
+    let second = unsafe { second_buffer.view() };
+    let third = unsafe { third_buffer.view() };
+    let ix = Instruction {
+        program_id: ID,
+        accounts: vec![
+            AccountMeta::new_readonly(ID, false),
+            AccountMeta::new_readonly(ID, false),
+            AccountMeta::new_readonly(*third.address(), false),
+        ],
+        data: vec![],
+    };
+    let handles = [
+        first.to_cpi_handle(),
+        second.to_cpi_handle(),
+        third.to_cpi_handle(),
+    ];
+
+    program::invoke_with_optional_sentinels(&ix, &handles, &[true, false, false]).unwrap();
+}
+
+#[test]
 fn checked_invoke_accepts_real_program_id_account_before_later_accounts() {
     let first_buffer = account_view([1; 32], false);
     let middle_buffer = account_view([7; 32], false);

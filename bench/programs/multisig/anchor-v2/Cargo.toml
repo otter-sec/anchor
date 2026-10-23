@@ -15,14 +15,14 @@ no-entrypoint = []
 cpi = ["no-entrypoint", "dep:borsh"]
 no-idl = []
 no-log-ix-name = []
-idl-build = ["anchor-lang/idl-build"]
+idl-build = []
 profile = ["anchor-v2-testing/profile"]
 
 [dependencies]
 # Opt out of `guardrails` (the executable check on Program<T> and Slab
 # borrow-state assertions are development aids — the runtime already rejects
 # CPI to non-executable accounts, and borrow violations are caught by the VM).
-anchor-lang = { path = "../../../../lang-v2", default-features = false }
+anchor-lang = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
 borsh = { version = "1", optional = true }
 pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
 pinocchio-system = "0.6"

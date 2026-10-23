@@ -4178,6 +4178,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "no-alloc-proof"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "pinocchio",
+ "pinocchio-system",
+]
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

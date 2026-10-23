@@ -6,7 +6,7 @@ publish = false
 
 [features]
 default = []
-idl-build = ["anchor-lang/idl-build"]
+idl-build = []
 
 [dependencies]
 anchor-lang = { path = "../../../lang-v2", default-features = false }
