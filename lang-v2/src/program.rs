@@ -438,14 +438,28 @@ fn signers<'seeds>(signer_seeds: &'seeds [&'seeds [&'seeds [u8]]]) -> Vec<Signer
         .collect()
 }
 
-fn cpi_accounts<'a>(account_handles: &[CpiHandle<'a>]) -> Vec<MaybeUninit<CpiAccount<'a>>> {
-    let mut accounts = Vec::with_capacity(account_handles.len());
-    // SAFETY: `MaybeUninit<CpiAccount>` does not require initialization.
-    unsafe { accounts.set_len(account_handles.len()) };
+#[inline(always)]
+fn signer_from_seeds<'seeds>(seeds: &'seeds [&'seeds [u8]]) -> Signer<'seeds, 'seeds> {
+    // SAFETY: `Seed` has the same in-memory representation as `&[u8]`.
+    let cpi_seeds: &[Seed] =
+        unsafe { from_raw_parts(seeds.as_ptr() as *const Seed, seeds.len()) };
+    Signer::from(cpi_seeds)
+}
 
-    for (handle, slot) in account_handles.iter().zip(accounts.iter_mut()) {
-        CpiAccount::init_from_account_view(handle.account_view(), slot);
+pub(crate) fn cpi_accounts<'a>(
+    account_handles: &[CpiHandle<'a>],
+) -> Result<crate::CpiAccountBuffer<'a>, ProgramError> {
+    let mut accounts = crate::CpiAccountBuffer::new();
+    for handle in account_handles {
+        let mut slot = MaybeUninit::uninit();
+        CpiAccount::init_from_account_view(handle.account_view(), &mut slot);
+        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+        accounts.push(slot);
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        accounts
+            .try_push(slot)
+            .map_err(|_| ProgramError::InvalidArgument)?;
     }
 
-    accounts
+    Ok(accounts)
 }

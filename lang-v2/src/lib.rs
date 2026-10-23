@@ -263,7 +263,6 @@ pub mod solana_program {
 pub trait InstructionData: Discriminator {
     #[cfg(any(target_os = "solana", target_arch = "bpf"))]
     fn try_data(&self) -> core::result::Result<InstructionDataBuffer, solana_program_error::ProgramError>;
-
     #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
     fn data(&self) -> InstructionDataBuffer;
 

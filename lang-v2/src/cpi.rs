@@ -108,7 +108,7 @@ pub fn rent_exempt_lamports(space: usize) -> Result<u64, ProgramError> {
 
 /// PDA bump-search loop. `$on_found` receives the hash bytes and bump
 /// when a valid off-curve PDA is found.
-#[cfg(target_os = "solana")]
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
 macro_rules! pda_find_loop {
     ($seeds:expr, $program_id:expr, |$h:ident, $b:ident| $on_found:expr) => {{
         use solana_address::syscalls::sol_curve_validate_point;
@@ -175,22 +175,21 @@ pub fn find_program_address(seeds: &[&[u8]], program_id: &Address) -> (Address, 
 }
 
 /// Find a PDA, returning an error if none exists.
-// The PDA search builds a `[&[u8]; 19]` seed array on the stack, so this stays `#[inline(never)]`.
-#[inline(never)]
+#[inline(always)]
 pub fn try_find_program_address(
     seeds: &[&[u8]],
     program_id: &Address,
 ) -> Result<(Address, u8), ProgramError> {
     validate_pda_seeds(seeds, MAX_PDA_SEEDS_WITHOUT_BUMP)?;
 
-    #[cfg(target_os = "solana")]
+    #[cfg(any(target_os = "solana", target_arch = "bpf"))]
     {
         pda_find_loop!(seeds, program_id, |hash_bytes, bump| {
             Ok((Address::new_from_array(hash_bytes), bump))
         })
     }
 
-    #[cfg(not(target_os = "solana"))]
+    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
     {
         Ok(Address::find_program_address(seeds, program_id))
     }
@@ -198,8 +197,7 @@ pub fn try_find_program_address(
 
 /// Find the canonical bump for `seeds` + `program_id` and verify that the
 /// derived PDA equals `expected`. Returns just the bump on success.
-// The PDA search builds a `[&[u8]; 19]` seed array on the stack, so this stays `#[inline(never)]`.
-#[inline(never)]
+#[inline(always)]
 pub fn find_and_verify_program_address(
     seeds: &[&[u8]],
     program_id: &Address,
@@ -207,7 +205,7 @@ pub fn find_and_verify_program_address(
 ) -> Result<u8, ProgramError> {
     validate_pda_seeds(seeds, MAX_PDA_SEEDS_WITHOUT_BUMP)?;
 
-    #[cfg(target_os = "solana")]
+    #[cfg(any(target_os = "solana", target_arch = "bpf"))]
     {
         pda_find_loop!(seeds, program_id, |hash_bytes, bump| {
             let derived = Address::new_from_array(hash_bytes);
@@ -219,7 +217,7 @@ pub fn find_and_verify_program_address(
         })
     }
 
-    #[cfg(not(target_os = "solana"))]
+    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
     {
         let (pda, bump) = Address::find_program_address(seeds, program_id);
         if pinocchio::address::address_eq(&pda, expected) {
@@ -242,14 +240,14 @@ pub fn create_program_address(
 ) -> Result<Address, ProgramError> {
     validate_pda_seeds(seeds, MAX_PDA_SEEDS_TOTAL)?;
 
-    #[cfg(target_os = "solana")]
+    #[cfg(any(target_os = "solana", target_arch = "bpf"))]
     {
         let computed = hash_pda_seeds(seeds, program_id)?;
         check_off_curve(&computed)?;
         Ok(computed)
     }
 
-    #[cfg(not(target_os = "solana"))]
+    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
     {
         Address::create_program_address(seeds, program_id).map_err(Into::into)
     }
@@ -293,7 +291,7 @@ pub fn find_and_verify_program_address_skip_curve(
 
 /// Verify that `addr` is off the Ed25519 curve (i.e. a valid PDA).
 /// Returns `InvalidSeeds` if the point is on-curve.
-#[cfg(target_os = "solana")]
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
 #[inline(always)]
 fn check_off_curve(addr: &Address) -> Result<(), ProgramError> {
     use solana_address::syscalls::sol_curve_validate_point;
@@ -313,9 +311,8 @@ fn check_off_curve(addr: &Address) -> Result<(), ProgramError> {
 }
 
 /// Hash seeds into a PDA address (sha256 only, no curve check).
-#[cfg(target_os = "solana")]
-// Keeps a `[&[u8]; 19]` seed array on the stack, so this stays `#[inline(never)]`.
-#[inline(never)]
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+#[inline(always)]
 fn hash_pda_seeds(seeds: &[&[u8]], program_id: &Address) -> Result<Address, ProgramError> {
     use solana_sha256_hasher::sol_sha256;
     const PDA_MARKER: &[u8; 21] = b"ProgramDerivedAddress";

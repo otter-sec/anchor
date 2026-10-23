@@ -258,8 +258,11 @@ impl Drop for CpiBorrowGuard {
     }
 }
 
-pub(crate) fn enter_cpi<'a>(handles: &[CpiHandle<'a>]) -> alloc::vec::Vec<CpiBorrowGuard> {
-    let mut guards = alloc::vec::Vec::new();
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+pub(crate) fn enter_cpi<'a>(
+    handles: &[CpiHandle<'a>],
+) -> Result<std::vec::Vec<CpiBorrowGuard>, ProgramError> {
+    let mut guards = std::vec::Vec::new();
     for handle in handles {
         if let Some(guard) = handle.enter_cpi() {
             guards.push(guard);
@@ -267,7 +270,22 @@ pub(crate) fn enter_cpi<'a>(handles: &[CpiHandle<'a>]) -> alloc::vec::Vec<CpiBor
     }
     // Guards for the same account must restore LIFO, and a Vec drops front to back
     guards.reverse();
-    guards
+    Ok(guards)
+}
+
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+pub(crate) fn enter_cpi<'a>(
+    handles: &[CpiHandle<'a>],
+) -> Result<crate::FixedVec<CpiBorrowGuard, { crate::MAX_ACCOUNT_METAS }>, ProgramError> {
+    let mut guards = crate::FixedVec::new();
+    for handle in handles {
+        if let Some(guard) = handle.enter_cpi() {
+            guards
+                .try_push(guard)
+                .map_err(|_| ProgramError::InvalidArgument)?;
+        }
+    }
+    Ok(guards)
 }
 
 /// Capacity-aware CPI account conversion used by [`crate::CpiContext`].

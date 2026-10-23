@@ -7255,7 +7255,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                 // View wrappers (Signer, Program<T>, Sysvar<T>, …) use
                 // the trait's default no-op `__register_idl_deps`, so they
                 // contribute nothing. Primitive / collection / `&T`
-                // blanket impls are no-op forwarders (`idl_build.rs`),
+                // blanket impls are no-op forwarders,
                 // so only user-derived `#[account]` / `#[event]` /
                 // `IdlType` structs contribute.
                 //

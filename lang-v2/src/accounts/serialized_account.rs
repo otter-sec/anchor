@@ -137,16 +137,16 @@ where
                 // copy. Never write foreign-owned data, even if the bytes
                 // would match. Host clients retain an unbounded Vec copy;
                 // SBF uses a bounded stack scratch buffer instead.
-                #[cfg(not(target_os = "solana"))]
+                #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
                 let mut candidate = payload.to_vec();
 
-                #[cfg(target_os = "solana")]
+                #[cfg(any(target_os = "solana", target_arch = "bpf"))]
                 let mut candidate_storage = [0u8; crate::MAX_INSTRUCTION_DATA];
-                #[cfg(target_os = "solana")]
+                #[cfg(any(target_os = "solana", target_arch = "bpf"))]
                 if payload.len() > candidate_storage.len() {
                     return Err(ProgramError::InvalidAccountData);
                 }
-                #[cfg(target_os = "solana")]
+                #[cfg(any(target_os = "solana", target_arch = "bpf"))]
                 let mut candidate = &mut candidate_storage[..payload.len()];
 
                 let len = Self::serialize_payload(&self.data, &mut candidate, self.serialized_len)?;

@@ -57,7 +57,7 @@ solana-sysvar.workspace = true
 bytemuck = { version = "1", features = ["derive"] }
 wincode = { version = "0.6", default-features = false, features = ["derive"] }
 
-[target.'cfg(not(target_os = "solana"))'.dependencies]
+[target.'cfg(not(any(target_os = "solana", target_arch = "bpf")))'.dependencies]
 sha2 = "0.10"
 # Owned instruction builders, system-instruction compatibility, rent helpers,
 # and collection-backed serialization are host/client APIs. Keeping these
@@ -75,6 +75,7 @@ level = "warn"
 # local `idl-build` through `anchor-lang/idl-build`.
 check-cfg = [
     'cfg(target_os, values("solana"))',
+    'cfg(target_arch, values("bpf"))',
     'cfg(feature, values("idl-build"))',
     'cfg(kani)',
     'cfg(miri)',

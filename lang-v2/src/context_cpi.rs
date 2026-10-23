@@ -235,6 +235,11 @@ fn signer_from_seeds<'a>(seeds: &'a [&'a [u8]]) -> pinocchio::cpi::Signer<'a, 'a
 /// [`CpiHandle`] before the callee is invoked. The `unchecked` name is retained
 /// for compatibility because the underlying Pinocchio syscall is unchecked;
 /// callers must propagate the validation and invocation result.
+///
+/// `N` must not exceed [`crate::MAX_ACCOUNT_METAS`]. Larger calls return
+/// [`ProgramError::InvalidArgument`] before any CPI state is entered. The
+/// callee-side account array is stored in the same bounded buffer used by the
+/// borrowed CPI path, so this API does not create an `N`-sized SBF stack frame.
 #[inline(always)]
 pub fn unchecked_invoke_signed_fixed<'a, const N: usize>(
     program: &'a Address,
@@ -257,10 +262,12 @@ pub fn unchecked_invoke_signed_fixed<'a, const N: usize>(
 
     let _borrow_guards = crate::enter_cpi(handles);
 
-    let mut cpi_accounts = [const { MaybeUninit::<pinocchio::cpi::CpiAccount>::uninit() }; N];
-    for (handle, slot) in handles.iter().zip(cpi_accounts.iter_mut()) {
-        pinocchio::cpi::CpiAccount::init_from_account_view(handle.account_view(), slot);
-    }
+    // Keep the callee-side account storage bounded independently of `N`.
+    // `validate_fixed_instruction_accounts` rejects values above
+    // `MAX_ACCOUNT_METAS`; using the shared buffer here also prevents a
+    // monomorphized `[CpiAccount; N]` from reserving an unbounded SBF stack
+    // frame before that check can return.
+    let cpi_accounts = crate::program::cpi_accounts(handles)?;
     let cpi_accounts = unsafe {
         core::slice::from_raw_parts(
             cpi_accounts.as_ptr() as *const pinocchio::cpi::CpiAccount,
