@@ -1871,7 +1871,7 @@ declare_program!(bad);
 pub fn use_declared_types(
     value: bad::ObjectTuple,
     variant: bad::ObjectEnum,
-) -> anchor_lang::__alloc::vec::Vec<u8> {
+) -> std::vec::Vec<u8> {
     let bad::ObjectTuple(bytes, maybe) = value;
     let _ = maybe;
     match variant {

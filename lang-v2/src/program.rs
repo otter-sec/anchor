@@ -448,7 +448,7 @@ fn signer_from_seeds<'seeds>(seeds: &'seeds [&'seeds [u8]]) -> Signer<'seeds, 's
 
 pub(crate) fn cpi_accounts<'a>(
     account_handles: &[CpiHandle<'a>],
-) -> Result<crate::CpiAccountBuffer<'a>, ProgramError> {
+) -> Result<crate::CpiAccountBuffer<'a, { pinocchio::MAX_TX_ACCOUNTS }>, ProgramError> {
     let mut accounts = crate::CpiAccountBuffer::new();
     for handle in account_handles {
         let mut slot = MaybeUninit::uninit();
