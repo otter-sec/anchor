@@ -94,7 +94,7 @@ anchor-lang = {{ path = "{}" }}
 
 [features]
 cpi = []
-idl-build = []
+idl-build = ["anchor-lang/idl-build"]
 
 [workspace]
 "#,

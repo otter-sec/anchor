@@ -15,7 +15,7 @@ no-entrypoint = []
 cpi = ["no-entrypoint", "dep:borsh"]
 no-idl = []
 no-log-ix-name = []
-idl-build = []
+idl-build = ["anchor-lang/idl-build"]
 profile = ["anchor-v2-testing/profile"]
 
 [dependencies]

@@ -36,10 +36,11 @@ pub trait AnchorAccountSerialize<T> {
 /// Validates owner, checks discriminator, deserializes via `S`. Holds a
 /// pinocchio borrow guard (`Ref` for `load`, `RefMut` for `load_mut`);
 /// `exit()` serializes through the held `RefMut`.
-/// If ownership changes after loading, commits compare the serialized payload
-/// (including stale-byte cleanup) against the live data without writing to it.
-/// Unchanged bytes succeed; changed bytes return `ProgramError::IllegalOwner`.
-/// This comparison allocates a temporary payload buffer only on owner changes.
+/// If ownership changes after loading, host commits compare the serialized
+/// payload (including stale-byte cleanup) against the live data without
+/// writing to it. The allocator-free SBF path performs that comparison in a
+/// bounded stack buffer and rejects payloads larger than
+/// [`crate::MAX_INSTRUCTION_DATA`], preserving the no-`alloc` runtime graph.
 ///
 /// The wincode-backed instantiation is exposed as [`super::BorshAccount<T>`].
 ///
@@ -132,11 +133,25 @@ where
             let new_serialized_len = if self.view.owned_by(&T::OWNER) {
                 Self::serialize_payload(&self.data, payload, self.serialized_len)?
             } else {
-                // Codecs accept a mutable slice cursor, so serialize into a copy.
-                // Never write foreign-owned data, even if the bytes would match.
+                // Codecs accept a mutable slice cursor, so serialize into a
+                // copy. Never write foreign-owned data, even if the bytes
+                // would match. Host clients retain an unbounded Vec copy;
+                // SBF uses a bounded stack scratch buffer instead.
+                #[cfg(not(target_os = "solana"))]
                 let mut candidate = payload.to_vec();
+
+                #[cfg(target_os = "solana")]
+                let mut candidate_storage = [0u8; crate::MAX_INSTRUCTION_DATA];
+                #[cfg(target_os = "solana")]
+                if payload.len() > candidate_storage.len() {
+                    return Err(ProgramError::InvalidAccountData);
+                }
+                #[cfg(target_os = "solana")]
+                let mut candidate = &mut candidate_storage[..payload.len()];
+
                 let len = Self::serialize_payload(&self.data, &mut candidate, self.serialized_len)?;
-                require!(candidate.as_slice() == payload, ProgramError::IllegalOwner);
+                let candidate_slice: &[u8] = &candidate[..];
+                require!(candidate_slice == payload, ProgramError::IllegalOwner);
                 len
             };
             self.serialized_len = new_serialized_len;

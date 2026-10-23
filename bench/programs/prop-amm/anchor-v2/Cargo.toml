@@ -15,7 +15,7 @@ no-entrypoint = []
 cpi = ["no-entrypoint", "dep:borsh"]
 no-idl = []
 no-log-ix-name = []
-idl-build = []
+idl-build = ["anchor-lang/idl-build"]
 # Switch tests to `anchor_v2_testing::svm()` so the SBF register-trace
 # callback fires. `anchor debugger` (loose mode) auto-detects this
 # feature and passes `--features profile` to cargo test.

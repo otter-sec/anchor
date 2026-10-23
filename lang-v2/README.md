@@ -89,6 +89,24 @@ fixed-capacity type such as `PodVec<T, MAX>` or provide its own allocator-backed
 wrapper. IDL emission and generated client JSON remain host-only and may use
 `std`; they are kept separate from the deployed runtime.
 
+The boundary is split deliberately:
+
+- Handwritten runtime code uses borrowed `InstructionView`/`CpiHandle` values,
+  fixed-capacity account/meta buffers, stack-backed serialization scratch space,
+  and local SPL wire types. The SBF dependency gate audits this closure for
+  `std`, `alloc`, owned Solana instruction types, Borsh, and canonical
+  allocation-heavy SPL interfaces.
+- Generated code keeps the existing IDL shape. Its `to_instruction()` and
+  owned client conversions are host-only; on-chain instruction/event types get
+  a fallible `try_data()` path backed by `InstructionDataBuffer`. This keeps
+  IDL generation and runtime entrypoints stable while removing their client
+  dependencies from SBF.
+- Host-only owned `Instruction`, `Vec`, `String`, `Box`, Metaplex metadata, and
+  canonical SPL constructors remain available behind target-local dependencies.
+  Removing those from the public host facade would be an API redesign, not a
+  no-allocator runtime change. The local SPL encoders are checked by runtime
+  coverage and host-side layout/equivalence tests against canonical types.
+
 ### `compat` feature
 
 To help improve the migration for users, we've added an additional `compat` flag to more easily bridge the gap between v1 and v2 programs.

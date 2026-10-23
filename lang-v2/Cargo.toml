@@ -59,6 +59,13 @@ wincode = { version = "0.6", default-features = false, features = ["derive"] }
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
 sha2 = "0.10"
+# Owned instruction builders, system-instruction compatibility, rent helpers,
+# and collection-backed serialization are host/client APIs. Keeping these
+# features target-local prevents them from entering an SBF dependency graph.
+solana-instruction = { version = "3", default-features = false, features = ["std"] }
+solana-system-interface = { version = "2.0", features = ["bincode"] }
+solana-sysvar = "3.1.1"
+wincode = { version = "0.6", default-features = false, features = ["derive", "std"] }
 
 [lints.rust.unexpected_cfgs]
 level = "warn"
