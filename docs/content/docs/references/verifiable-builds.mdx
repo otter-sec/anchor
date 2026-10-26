@@ -22,6 +22,13 @@ To produce a verifiable build, run
 anchor build --verifiable
 ```
 
+The binary is written to `target/verifiable`. To deploy it instead of the
+regular build in `target/deploy`, run
+
+```shell
+anchor program deploy --verifiable
+```
+
 ## Verifying
 
 To verify a build against a program deployed on mainnet, run
