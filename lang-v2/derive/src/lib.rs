@@ -2105,6 +2105,10 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 __views: &[anchor_lang::AccountView],
                 __ix_data: &'ix [u8],
             ) -> anchor_lang::Result<(Self, #bumps_name, Self::IxArgs<'ix>)> {
+                // Check that the number of views is at least the header size.
+                if __views.len() < <Self as anchor_lang::TryAccounts>::HEADER_SIZE {
+                    return Err(anchor_lang::ErrorCode::AccountNotEnoughKeys.into());
+                }
                 #ix_deser
                 #(#bump_cache_locals)*
                 #(#loads)*
