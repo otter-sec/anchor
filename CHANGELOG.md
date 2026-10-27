@@ -23,7 +23,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
-- ts: Preserve landed confirmation errors and redact diagnostics without resending transactions.
+- ts: Preserve landed confirmation errors and redact diagnostics without resending transactions ([#5218](https://github.com/otter-sec/anchor/pull/5218)).
 - Block mutable aliasing between accounts marked `zero` and `init` ([#4871](https://github.com/otter-sec/anchor/pull/4871)).
 - lang: Support fully qualified account types in `Context` ([#4836](https://github.com/otter-sec/anchor/pull/4836)).
 - ts: Support `delegatedAmount` in accounts resolver ([#4957](https://github.com/otter-sec/anchor/pull/4957)).
