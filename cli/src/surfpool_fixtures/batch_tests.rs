@@ -42,6 +42,7 @@ fn review_verification_batches_accounts_with_bounded_requests() {
                 }
                 Err(error) => panic!("accept RPC request: {error}"),
             };
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(3)))
                 .unwrap();

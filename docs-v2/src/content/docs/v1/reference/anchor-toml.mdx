@@ -199,67 +199,54 @@ address = "Ev8WSPQsGb4wfjybqff5eZNcS3n6HaMsBkMk9suAiuM"
 filename = "some_other_account.json"
 ```
 
-## surfpool
+## `[surfpool]`
 
-Configuration for the [Surfpool](https://github.com/solana-foundation/surfpool) validator,
-which is the default local validator used by `anchor test`. Surfpool provides a
-lightweight Solana simulator with features like automatic account cloning and
-runbook execution. All fields are optional and have sensible defaults.
-
-Example:
+Configures the [Surfpool](https://github.com/solana-foundation/surfpool) validator, used when `$ <blue>anchor</blue> test <dim>--validator</dim> <dim>surfpool</dim>` selects Surfpool as the local network backend. Surfpool is a lightweight Solana simulator with features like automatic account cloning and runbook execution. All fields are optional and have sensible defaults:
 
 ```toml
 [surfpool]
-startup_wait = 30000                                       # Time (ms) to wait for Surfpool to start. Default: 30000.
-shutdown_wait = 2000                                      # Time (ms) to wait for Surfpool to shut down. Default: 2000.
-rpc_port = 8899                                           # JSON RPC port. Default: 8899.
-ws_port = 8900                                            # WebSocket port. If not set, derived automatically.
-host = "127.0.0.1"                                        # IP address to bind to. Default: "127.0.0.1".
-online = true                                             # Enable online mode (clone accounts from a remote cluster).
-datasource_rpc_url = "https://api.mainnet.solana.com" # RPC URL to use as the data source when online mode is enabled.
-airdrop_addresses = ["addr1...", "addr2..."]               # Addresses to airdrop SOL to at startup.
-manifest_file_path = "./Cargo.toml"                       # Path to the Cargo.toml manifest file.
-runbooks = ["./runbooks/setup.json"]                       # Paths to runbook files to execute on startup.
-slot_time = 400                                            # Simulated slot time in milliseconds.
-log_level = "info"                                         # Log level for Surfpool. Default: "none".
-block_production_mode = "clock"                            # Block production mode. Default: "transaction".
+startup_wait = 30000                               # Time (ms) to wait for Surfpool to start. Default: 30000.
+shutdown_wait = 2000                               # Time (ms) to wait for Surfpool to shut down. Default: 2000.
+rpc_port = 8899                                    # JSON RPC port. Default: 8899.
+ws_port = 8900                                     # WebSocket port. If not set, derived automatically.
+host = "127.0.0.1"                                 # IP address to bind to. Default: "127.0.0.1".
+online = true                                      # Enable online mode (clone accounts from a remote cluster).
+datasource_rpc_url = "https://api.mainnet.solana.com"
+airdrop_addresses = ["addr1...", "addr2..."]       # Addresses to airdrop SOL to at startup.
+manifest_file_path = "./Cargo.toml"                # Path to the Cargo.toml manifest file.
+runbooks = ["./runbooks/setup.json"]               # Paths to runbook files to execute on startup.
+slot_time = 400                                    # Simulated slot time in milliseconds.
+log_level = "info"                                 # Log level for Surfpool. Default: "none".
+block_production_mode = "clock"                    # Block production mode. Default: "transaction".
 ```
 
-### startup_wait
+### `startup_wait`
 
-Time in milliseconds to wait for Surfpool to start up. This is useful when
-loading many accounts or running runbooks at startup. Default: `30000`.
+Time in milliseconds to wait for Surfpool to start up. Useful when loading many accounts or running runbooks at startup. Default: `30000`.
 
-### shutdown_wait
+### `shutdown_wait`
 
-Time in milliseconds to wait for Surfpool to shut down gracefully.
-Default: `2000`.
+Time in milliseconds to wait for Surfpool to shut down gracefully. Default: `2000`.
 
-### rpc_port
+### `rpc_port`
 
 The port on which Surfpool exposes its JSON RPC endpoint. Default: `8899`.
 
-### ws_port
+### `ws_port`
 
-The port for the WebSocket endpoint. If not specified, it is derived
-automatically.
+The port for the WebSocket endpoint. If not specified, it is derived automatically.
 
-### host
+### `host`
 
 The IP address to bind the Surfpool validator ports to. Default: `"127.0.0.1"`.
 
-### online
+### `online`
 
-When set to `true`, Surfpool operates in online mode, allowing it to clone
-accounts from a remote cluster specified by `datasource_rpc_url`. Default:
-`false` (offline mode).
+When set to `true`, Surfpool operates in online mode, cloning accounts from the remote cluster specified by `datasource_rpc_url`. Default: `false`.
 
-### datasource_rpc_url
+### `datasource_rpc_url`
 
-The RPC URL of the remote cluster used as a data source when `online` is
-enabled.
-
-Example:
+The RPC URL of the remote cluster used as a data source when `online` is enabled:
 
 ```toml
 [surfpool]
@@ -267,96 +254,69 @@ online = true
 datasource_rpc_url = "https://api.mainnet.solana.com"
 ```
 
-### airdrop_addresses
+### `airdrop_addresses`
 
-A list of base58-encoded addresses that will receive an airdrop of SOL when
-Surfpool starts.
-
-Example:
+A list of base58-encoded addresses that will receive an airdrop of SOL when Surfpool starts:
 
 ```toml
 [surfpool]
 airdrop_addresses = [
     "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
-    "7NL2qWArf2BbEBBH1vTRZCsoNqFATTddH6h8GkVvrLpG"
+    "7NL2qWArf2BbEBBH1vTRZCsoNqFATTddH6h8GkVvrLpG",
 ]
 ```
 
-### manifest_file_path
+### `manifest_file_path`
 
-Path to the `Cargo.toml` manifest file for the workspace. Typically not needed
-since Anchor resolves this automatically.
+Path to the `Cargo.toml{:file}` manifest file for the workspace. Typically not needed because Anchor resolves it automatically.
 
-### runbooks
+### `runbooks`
 
-A list of file paths to runbooks that Surfpool will execute on startup. Runbooks
-allow you to set up initial state (deploy programs, create accounts, etc.)
-before tests run.
-
-Example:
+A list of file paths to runbooks that Surfpool will execute on startup. Runbooks allow setting up initial state (deploy programs, create accounts, etc.) before tests run:
 
 ```toml
 [surfpool]
-runbooks = [
-    "./runbooks/setup.json"
-]
+runbooks = ["./runbooks/setup.json"]
 ```
 
-### slot_time
+### `slot_time`
 
-The simulated slot time in milliseconds. Controls how fast slots advance in the
-Surfpool simulator.
+The simulated slot time in milliseconds. Controls how fast slots advance in the Surfpool simulator.
 
-### log_level
+### `log_level`
 
-Sets the log verbosity level for the Surfpool process. Common values include
-`"none"`, `"info"`, `"debug"`, `"warn"`, and `"error"`. Default: `"none"`.
+Log verbosity for the Surfpool process. Common values include `"none"`, `"info"`, `"debug"`, `"warn"`, and `"error"`. Default: `"none"`.
 
-### block_production_mode
+### `block_production_mode`
 
-Controls how Surfpool produces blocks. Default: `"transaction"`. Known values
-include:
+Controls how Surfpool produces blocks. Default: `"transaction"`. Known values:
 
-- `"clock"` -- Produces blocks at regular time intervals based on `slot_time`.
-- `"transaction"` -- Produces a new block for each incoming transaction.
-
-Example:
+- `"clock"` produces blocks at regular intervals based on `slot_time`.
+- `"transaction"` produces a new block for each incoming transaction.
 
 ```toml
 [surfpool]
 block_production_mode = "clock"
 ```
 
-### extra_args
+### `extra_args`
 
-Append individual arguments for Surfpool options without a dedicated setting.
-Each array entry is one argument. For example, to disable a runtime feature:
+Append individual arguments for Surfpool options without a dedicated setting. Each array entry is one argument. For example, to disable a runtime feature:
 
 ```toml
 [surfpool]
 extra_args = ["--disable-feature", "ptokFjwyJtrwCa9Kgo9xoDS59V4QccBGEaRFnRPnSdP"]
 ```
 
-Do not repeat options already supplied by Anchor, including `--no-studio`.
-The flags `--no-deploy`, `--legacy-anchor-compatibility` and
-`--anchor-test-config-path` are rejected in `extra_args`: Anchor sets them
-according to `anchor test --skip-deploy` and the selected test suite.
+Do not repeat options already supplied by Anchor, including `--no-studio`. The flags `--no-deploy`, `--legacy-anchor-compatibility` and `--anchor-test-config-path` are rejected in `extra_args`: Anchor sets them according to `$ <blue>anchor</blue> test <dim>--skip-deploy</dim>` and the selected test suite.
 
 ### Account and genesis fixtures on Surfpool
 
-With `--skip-deploy`, account JSON files, account directories and genesis
-programs load through the initial snapshot. Without it, Surfpool's existing
-automatic deployment runbooks load those fixtures.
+With `--skip-deploy`, account JSON files, account directories and genesis programs load through the initial snapshot. Without it, Surfpool's existing automatic deployment runbooks load those fixtures; Anchor does not install or compare them twice.
 
-An explicit account address overrides the file's pubkey; `address = "-"`
-uses the file's pubkey. Directory JSON files must contain a valid pubkey.
-The snapshot loader accepts base64, base58 and base64+zstd account data;
-decoded data must fit Solana's 10 MiB account limit.
+An explicit account address overrides the file's pubkey; `address = "-"` uses the file's pubkey. Directory JSON files must contain a valid pubkey. The snapshot loader accepts base64, base58 and base64+zstd account data; decoded data must fit Solana's 10 MiB account limit.
 
-Invalid or duplicate images fail before tests run. Anchor checks installed
-account bytes, balances, owners and executable flags against its snapshot.
-For genesis programs, `upgradeable = true` uses the workspace wallet as the
-upgrade authority; otherwise the validator-compatible default authority is used.
+Invalid or duplicate snapshot images fail before tests run. For declared fixtures loaded with `--skip-deploy`, Anchor verifies installed account bytes, balances, owners and executable flags. For genesis programs in that snapshot, `upgradeable = true` uses the workspace wallet as the upgrade authority; otherwise the validator-compatible default authority is used.
 
 ## `[toolchain]`
 
