@@ -405,17 +405,19 @@ according to `anchor test --skip-deploy` and the selected test suite.
 
 With `--skip-deploy`, account JSON files, account directories and genesis
 programs load through the initial snapshot. Without it, Surfpool's existing
-automatic deployment runbooks load those fixtures.
+automatic deployment runbooks load those fixtures; Anchor does not install or
+compare them twice.
 
 An explicit account address overrides the file's pubkey; `address = "-"`
 uses the file's pubkey. Directory JSON files must contain a valid pubkey.
 The snapshot loader accepts base64, base58 and base64+zstd account data;
 decoded data must fit Solana's 10 MiB account limit.
 
-Invalid or duplicate images fail before tests run. Anchor checks installed
-account bytes, balances, owners and executable flags against its snapshot.
-For genesis programs, `upgradeable = true` uses the workspace wallet as the
-upgrade authority; otherwise the validator-compatible default authority is used.
+Invalid or duplicate snapshot images fail before tests run. For declared
+fixtures loaded with `--skip-deploy`, Anchor verifies installed account bytes,
+balances, owners and executable flags. For genesis programs in that snapshot,
+`upgradeable = true` uses the workspace wallet as the upgrade authority;
+otherwise the validator-compatible default authority is used.
 
 ## toolchain
 
