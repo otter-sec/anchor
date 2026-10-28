@@ -21,7 +21,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Implement `Space` for `NonZero*` integers so `#[derive(InitSpace)]` supports them ([#5132](https://github.com/otter-sec/anchor/pull/5132)).
 - idl: Support `NonZero*` integer types in IDL generation ([#5130](https://github.com/otter-sec/anchor/pull/5130)).
 - cli: Add `extra_args` to `[surfpool]` in `Anchor.toml` to pass additional flags to `surfpool start` ([#5221](https://github.com/otter-sec/anchor/pull/5221)).
-- cli: Add opt-in historical RPC suites and Mocha, Jest and Rust scaffolds with per-test Surfpool forks.
+- cli: Add opt-in historical RPC suites and Mocha, Jest and Rust scaffolds with per-test Surfpool forks ([#5222](https://github.com/otter-sec/anchor/pull/5222)).
 
 ### Fixes
 

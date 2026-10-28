@@ -318,6 +318,23 @@ An explicit account address overrides the file's pubkey; `address = "-"` uses th
 
 Invalid or duplicate snapshot images fail before tests run. For declared fixtures loaded with `--skip-deploy`, Anchor verifies installed account bytes, balances, owners and executable flags. For genesis programs in that snapshot, `upgradeable = true` uses the workspace wallet as the upgrade authority; otherwise the validator-compatible default authority is used.
 
+## `[historical]`
+
+Opt into [historical tests](/docs/v1/testing/historical/) using Surfpool and SVM Replay. This requires historical-capable builds, not only the configuration below. Each test chooses its transaction or slot boundary in code:
+
+```toml
+[historical]
+provider = "alchemy"
+
+[historical.providers.alchemy]
+adapter = "alchemy"
+key_env = "API_ALCHEMY"
+```
+
+`key_env` names an environment variable; do not put its value in `Anchor.toml{:file}`. An ordinary RPC URL is not a historical account provider. Only `$ <blue>anchor</blue> test` uses this suite plan automatically; `$ <blue>anchor</blue> localnet` and other commands need an explicit fork endpoint where applicable.
+
+Historical plans refuse arguments that override their own boundary, endpoints, provider, storage namespace, runtime rules or frozen clock. See the [fixture and configuration limits](/docs/v1/testing/historical/#fixtures-and-limits) before reusing ordinary validator settings.
+
 ## `[toolchain]`
 
 Overrides toolchain versions for the workspace, similar to [`rust-toolchain.toml{:file}`](https://rust-lang.github.io/rustup/overrides.html#the-toolchain-file):
