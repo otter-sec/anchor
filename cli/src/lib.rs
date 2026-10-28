@@ -5174,27 +5174,8 @@ fn account_dir_pubkeys(cfg: &WithPath<Config>, validator: &Validator) -> Result<
     let mut pubkeys = HashSet::new();
     for account_dir in validator.account_dir.iter().flatten() {
         let directory = resolve_workspace_path(cfg, &account_dir.directory)?;
-        for entry in fs::read_dir(&directory)
-            .with_context(|| format!("Failed to read account directory: {}", directory.display()))?
-        {
-            let path = entry?.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                continue;
-            }
-
-            let fixture: JsonValue =
-                serde_json::from_reader(File::open(&path).with_context(|| {
-                    format!("Failed to open account fixture: {}", path.display())
-                })?)
-                .with_context(|| format!("Failed to parse account fixture: {}", path.display()))?;
-
-            let Some(pubkey) = fixture.get("pubkey").and_then(JsonValue::as_str) else {
-                continue;
-            };
-            pubkeys.insert(
-                Pubkey::try_from(pubkey)
-                    .map_err(|_| anyhow!("Invalid pubkey {} in {}", pubkey, path.display()))?,
-            );
+        for path in surfpool_fixtures::reader::directory(&directory)? {
+            pubkeys.insert(surfpool_fixtures::reader::account(&path, None)?.0);
         }
     }
     Ok(pubkeys)
@@ -5210,20 +5191,8 @@ fn validator_supplied_account_pubkeys(
 
     if let Some(accounts) = &validator.account {
         for account in accounts {
-            let address = if account.address == "-" {
-                let path = resolve_workspace_path(cfg, &account.filename)?;
-                let image: JsonValue = serde_json::from_reader(File::open(&path)?)?;
-                image["pubkey"]
-                    .as_str()
-                    .ok_or_else(|| anyhow!("Account fixture {} has no pubkey", path.display()))?
-                    .to_string()
-            } else {
-                account.address.clone()
-            };
-            pubkeys.insert(
-                Pubkey::try_from(address.as_str())
-                    .map_err(|_| anyhow!("Invalid account pubkey: {}", account.address))?,
-            );
+            let path = resolve_workspace_path(cfg, &account.filename)?;
+            pubkeys.insert(surfpool_fixtures::reader::account(&path, Some(&account.address))?.0);
         }
     }
 
@@ -5729,6 +5698,23 @@ fn surfpool_flags(
     test_suite_path: Option<&Path>,
     generated_accounts: &[GeneratedAccount],
 ) -> Result<Vec<String>> {
+    if let Some(extra_args) = surfpool_config
+        .as_ref()
+        .and_then(|config| config.extra_args.as_ref())
+    {
+        for arg in extra_args {
+            let flag = arg.split_once('=').map_or(arg.as_str(), |(flag, _)| flag);
+            if matches!(
+                flag,
+                "--no-deploy" | "--legacy-anchor-compatibility" | "--anchor-test-config-path"
+            ) {
+                bail!(
+                    "[surfpool].extra_args cannot set {flag}; Anchor manages deployment through \
+                     --skip-deploy"
+                );
+            }
+        }
+    }
     let programs = cfg.programs.get(&Cluster::Localnet);
     let mut flags = Vec::new();
 

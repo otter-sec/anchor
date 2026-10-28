@@ -1,5 +1,5 @@
 use {
-    super::insert,
+    super::{insert, reader},
     crate::{
         config::{Config, Validator, WithPath},
         resolve_workspace_path, Pubkey,
@@ -7,15 +7,10 @@ use {
     anyhow::{anyhow, bail, Context, Result},
     base64::{engine::general_purpose::STANDARD, Engine},
     serde_json::{json, Map, Value},
-    std::{fs, path::Path},
+    std::io::Read,
 };
 
-fn read(path: &Path) -> Result<Value> {
-    let file =
-        fs::File::open(path).with_context(|| format!("Open account fixture {}", path.display()))?;
-    serde_json::from_reader(file)
-        .with_context(|| format!("Parse account fixture {}", path.display()))
-}
+const MAX_ACCOUNT_DATA_LEN: usize = 10 * 1024 * 1024;
 
 pub(super) fn image(value: &Value) -> Result<Value> {
     let account = value.get("account").unwrap_or(value);
@@ -44,12 +39,24 @@ pub(super) fn image(value: &Value) -> Result<Value> {
                 Some("base58") => bs58::decode(text)
                     .into_vec()
                     .context("invalid base58 data")?,
-                _ => bail!("account fixture data must use base64 or base58 encoding"),
+                Some("base64+zstd") => {
+                    let compressed = STANDARD.decode(text).context("invalid base64 data")?;
+                    let mut decoder = zstd::stream::read::Decoder::new(compressed.as_slice())
+                        .context("invalid zstd data")?;
+                    decoder.window_log_max(24).context("invalid zstd window")?;
+                    let mut bytes = Vec::new();
+                    decoder
+                        .take((MAX_ACCOUNT_DATA_LEN + 1) as u64)
+                        .read_to_end(&mut bytes)
+                        .context("invalid zstd data")?;
+                    bytes
+                }
+                _ => bail!("account fixture data must use base64, base58 or base64+zstd encoding"),
             }
         }
         _ => bail!("account fixture needs binary data, not jsonParsed data"),
     };
-    if bytes.len() > 10 * 1024 * 1024 {
+    if bytes.len() > MAX_ACCOUNT_DATA_LEN {
         bail!("account fixture data exceeds Solana's 10 MiB account limit");
     }
     Ok(
@@ -65,17 +72,7 @@ pub(super) fn load(
 ) -> Result<()> {
     for account in validator.account.iter().flatten() {
         let path = resolve_workspace_path(cfg, &account.filename)?;
-        let value = read(&path)?;
-        let address = if account.address == "-" {
-            value["pubkey"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Account fixture {} has no pubkey", path.display()))?
-        } else {
-            &account.address
-        };
-        let address: Pubkey = address
-            .parse()
-            .context("invalid configured account address")?;
+        let (address, value) = reader::account(&path, Some(&account.address))?;
         let loaded =
             image(&value).with_context(|| format!("Account fixture {}", path.display()))?;
         // As with --account ADDRESS FILE, the explicit address is authoritative.
@@ -83,23 +80,8 @@ pub(super) fn load(
     }
     for entry in validator.account_dir.iter().flatten() {
         let path = resolve_workspace_path(cfg, &entry.directory)?;
-        let mut files = fs::read_dir(&path)
-            .with_context(|| format!("Read account directory {}", path.display()))?
-            .map(|entry| entry.map(|entry| entry.path()))
-            .collect::<std::io::Result<Vec<_>>>()?;
-        files.sort();
-        for file in files {
-            if file.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                continue;
-            }
-            let value = read(&file)?;
-            let address: Pubkey = value["pubkey"]
-                .as_str()
-                .ok_or_else(|| {
-                    anyhow!("Account directory fixture {} has no pubkey", file.display())
-                })?
-                .parse()
-                .with_context(|| format!("Invalid pubkey in {}", file.display()))?;
+        for file in reader::directory(&path)? {
+            let (address, value) = reader::account(&file, None)?;
             let loaded =
                 image(&value).with_context(|| format!("Account fixture {}", file.display()))?;
             insert(images, address, loaded)?;
