@@ -225,6 +225,7 @@ fn skipped_or_changed_snapshot_accounts_fail_verification() {
         Some("data"),
         Some("executable"),
         Some("missing"),
+        Some("short-response"),
     ] {
         let mut actual = expected["account"].clone();
         match field {
@@ -233,12 +234,13 @@ fn skipped_or_changed_snapshot_accounts_fail_verification() {
             Some("data") => actual["data"] = json!(["BAUG", "base64"]),
             Some("executable") => actual["executable"] = json!(true),
             Some("missing") => actual = Value::Null,
+            Some("short-response") => {}
             None => {}
             other => panic!("unexpected field {other:?}"),
         }
         let mocks = HashMap::from([(
-            RpcRequest::GetAccountInfo,
-            json!({"context":{"slot":1},"value":actual}),
+            RpcRequest::GetMultipleAccounts,
+            json!({"context":{"slot":1},"value":if field == Some("short-response") { vec![] } else { vec![actual] }}),
         )]);
         let client = RpcClient::new_mock_with_mocks("succeeds", mocks);
         let result = verify(&client, &flags);
