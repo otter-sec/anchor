@@ -90,12 +90,13 @@ pub(super) fn fetch_pmp_idl_signatures(
     )
 }
 
-// Paginates signatures for any account address without applying IDL-account-specific derivation.
-//
-// `max_signatures` is a hard cap on collected results. Pagination stops once the cap is reached
-// and a warning is printed so the caller knows older history may have been truncated. The cap
-// must be greater than zero; passing `0` returns an empty result rather than meaning
-// "unbounded".
+/// Paginates signatures for any account address without applying
+/// IDL-account-specific derivation.
+///
+/// `max_signatures` is a hard cap on collected results. Pagination stops once
+/// the cap is reached and a warning is printed so the caller knows older
+/// history may have been truncated. If `0` is passed as the cap, no fetch will
+/// be done and an empty vector will be immediately returned.
 pub(super) fn fetch_signatures_for_address(
     client: &RpcClient,
     address: &Pubkey,
