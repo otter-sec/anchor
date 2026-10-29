@@ -2099,6 +2099,8 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 Ok((__accounts, __bumps, __ix_args))
             }
 
+            // `run_handler` is `#[inline(always)]`, so `#[inline(never)]` keeps the load
+            // and constraint locals off the instruction stack while the handler runs.
             #[inline(never)]
             fn validate_accounts<'ix>(
                 __program_id: &anchor_lang::Address,
