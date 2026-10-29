@@ -73,12 +73,15 @@ pub mod debugger;
 pub mod fetch;
 #[cfg(not(windows))]
 mod flamegraph;
+mod historical;
+mod historical_templates;
 mod keygen;
 mod legacy_idl;
 mod metadata;
 #[cfg(not(windows))]
 mod profile;
 mod program;
+mod surfpool_fixtures;
 pub mod template;
 
 // Version of the docker image.
@@ -271,6 +274,10 @@ pub enum Command {
         /// Test template to use
         #[clap(value_enum, long, default_value = "litesvm")]
         test_template: TestTemplate,
+        /// Generate historical SVM Replay setup for Mocha, Jest or RPC-based
+        /// Rust tests.
+        #[clap(long)]
+        historical: bool,
         /// Initialize even if there are files
         #[clap(long, action)]
         force: bool,
@@ -1504,6 +1511,7 @@ fn process_command(opts: Opts) -> Result<()> {
             template,
             anchor_version,
             test_template,
+            historical,
             force,
             install_agent_skills,
             no_security_metadata,
@@ -1517,6 +1525,7 @@ fn process_command(opts: Opts) -> Result<()> {
             template,
             anchor_version,
             test_template,
+            historical,
             force,
             install_agent_skills,
             no_security_metadata,
@@ -1778,10 +1787,14 @@ fn init(
     template: ProgramTemplate,
     anchor_version: AnchorVersion,
     test_template: TestTemplate,
+    historical: bool,
     force: bool,
     install_agent_skills: bool,
     no_security_metadata: bool,
 ) -> Result<()> {
+    if historical {
+        historical_templates::validate(&test_template)?;
+    }
     if !force {
         if Config::discover(cfg_override)?.is_some() {
             return Err(anyhow!("Workspace already initialized"));
@@ -1818,6 +1831,12 @@ fn init(
     fs::create_dir_all("app")?;
 
     let mut cfg = Config::default();
+    if historical {
+        cfg.historical = Some(toml::from_str(
+            "provider = 'alchemy'\n[providers.alchemy]\nadapter = 'alchemy'\nkey_env = \
+             'API_ALCHEMY'\n",
+        )?);
+    }
 
     let uses_node = test_template.uses_node();
     let package_manager = if uses_node {
@@ -1919,6 +1938,9 @@ fn init(
         &program_id.to_string(),
         anchor_version,
     )?;
+    if historical {
+        historical_templates::write(&project_name, javascript, &test_template, anchor_version)?;
+    }
 
     if !no_install && uses_node {
         let package_manager_cmd =
@@ -4430,6 +4452,7 @@ fn test(
             cli_skip_local_validator,
             config_skip_local_validator,
         );
+        historical::guard_predeploy(cfg, validator_plan.predeploy)?;
         if validator_plan.predeploy {
             deploy(cfg_override, None, None, false, true, false, vec![])?;
         }
@@ -4927,14 +4950,24 @@ fn run_test_suite(
     surfpool_config: &Option<SurfpoolConfig>,
 ) -> Result<()> {
     println!("\nRunning test suite: {:#?}\n", test_suite_path.as_ref());
+    let historical_plan = historical::prepare_suite(
+        cfg,
+        test_suite_path.as_ref(),
+        test_validator,
+        surfpool_config,
+        validator_type,
+        skip_deploy,
+        detach,
+    )?;
     let mut validator_handle = None;
-    if is_localnet && !skip_local_validator {
+    if historical_plan.is_none() && is_localnet && !skip_local_validator {
         let generated_accounts = generated_validator_accounts(cfg, test_validator)?;
         match validator_type {
             ValidatorType::Surfpool => {
                 let full_simnet_mode = false;
                 let flags = Some(surfpool_flags(
                     cfg,
+                    test_validator,
                     surfpool_config,
                     full_simnet_mode,
                     skip_deploy,
@@ -4982,7 +5015,7 @@ fn run_test_suite(
         .join(" ");
 
     // Setup log reader - kept alive until end of scope
-    let log_streams = if stream_program_logs {
+    let log_streams = if stream_program_logs && historical_plan.is_none() {
         match stream_logs(cfg, &url) {
             Ok(streams) => Some(streams),
             Err(e) => {
@@ -5006,9 +5039,24 @@ fn run_test_suite(
         std::process::Command::new("bash")
             .arg("-c")
             .arg(script_args)
-            .env("ANCHOR_PROVIDER_URL", url)
+            // A historical suite has no suite-wide endpoint: each test starts
+            // its own fork.
+            .env_remove("ANCHOR_PROVIDER_URL")
+            .envs(
+                historical_plan
+                    .is_none()
+                    .then_some(("ANCHOR_PROVIDER_URL", url)),
+            )
             .env("ANCHOR_WALLET", cfg.provider.wallet.to_string())
             .env("NODE_OPTIONS", node_options)
+            // Only this suite's own plan, never one inherited from a parent
+            // environment.
+            .env_remove(historical::PLAN_ENV)
+            .envs(
+                historical_plan
+                    .as_ref()
+                    .map(|plan| (historical::PLAN_ENV, plan.path.as_os_str())),
+            )
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .output()
@@ -5043,6 +5091,10 @@ fn run_test_suite(
             println!("Failed to kill subprocess {}: {}", child.id(), err);
         }
     }
+    let reaped = historical::reap(historical_plan.as_ref());
+    if let Err(err) = &reaped {
+        eprintln!("{err:#}");
+    }
 
     // Explicitly shutdown log streams - closes WebSocket subscriptions
     if let Some(log_streams) = log_streams {
@@ -5064,7 +5116,7 @@ fn run_test_suite(
         }
     }
 
-    Ok(())
+    reaped
 }
 
 // Returns the solana-test-validator flags. When `skip_deploy` is false, this
@@ -5172,27 +5224,8 @@ fn account_dir_pubkeys(cfg: &WithPath<Config>, validator: &Validator) -> Result<
     let mut pubkeys = HashSet::new();
     for account_dir in validator.account_dir.iter().flatten() {
         let directory = resolve_workspace_path(cfg, &account_dir.directory)?;
-        for entry in fs::read_dir(&directory)
-            .with_context(|| format!("Failed to read account directory: {}", directory.display()))?
-        {
-            let path = entry?.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                continue;
-            }
-
-            let fixture: JsonValue =
-                serde_json::from_reader(File::open(&path).with_context(|| {
-                    format!("Failed to open account fixture: {}", path.display())
-                })?)
-                .with_context(|| format!("Failed to parse account fixture: {}", path.display()))?;
-
-            let Some(pubkey) = fixture.get("pubkey").and_then(JsonValue::as_str) else {
-                continue;
-            };
-            pubkeys.insert(
-                Pubkey::try_from(pubkey)
-                    .map_err(|_| anyhow!("Invalid pubkey {} in {}", pubkey, path.display()))?,
-            );
+        for path in surfpool_fixtures::reader::directory(&directory)? {
+            pubkeys.insert(surfpool_fixtures::reader::account(&path, None)?.0);
         }
     }
     Ok(pubkeys)
@@ -5208,10 +5241,8 @@ fn validator_supplied_account_pubkeys(
 
     if let Some(accounts) = &validator.account {
         for account in accounts {
-            pubkeys.insert(
-                Pubkey::try_from(account.address.as_str())
-                    .map_err(|_| anyhow!("Invalid account pubkey: {}", account.address))?,
-            );
+            let path = resolve_workspace_path(cfg, &account.filename)?;
+            pubkeys.insert(surfpool_fixtures::reader::account(&path, Some(&account.address))?.0);
         }
     }
 
@@ -5487,9 +5518,11 @@ fn generated_validator_accounts(
 /// Writes a Surfpool snapshot file for generated validator accounts and returns its path.
 fn write_surfpool_snapshot(
     cfg: &WithPath<Config>,
+    test_validator: &Option<TestValidator>,
     generated_accounts: &[GeneratedAccount],
 ) -> Result<Option<PathBuf>> {
-    if generated_accounts.is_empty() {
+    let snapshot = surfpool_fixtures::compile(cfg, test_validator, generated_accounts)?;
+    if snapshot.is_empty() {
         return Ok(None);
     }
 
@@ -5502,14 +5535,6 @@ fn write_surfpool_snapshot(
     })?;
 
     let snapshot_path = accounts_dir.join("surfpool.snapshot.json");
-    let mut snapshot = Map::new();
-    for account in generated_accounts {
-        snapshot.insert(
-            account.pubkey.to_string(),
-            account.surfpool_snapshot_value.clone(),
-        );
-    }
-
     let mut file = File::create(&snapshot_path).with_context(|| {
         format!(
             "Failed to create Surfpool snapshot file: {}",
@@ -5716,12 +5741,30 @@ fn validator_config_flags(test_validator: &Option<TestValidator>) -> Result<Vec<
 // This flags will be passed to the Surfpool, it allows to configure the validator.
 fn surfpool_flags(
     cfg: &WithPath<Config>,
+    test_validator: &Option<TestValidator>,
     surfpool_config: &Option<SurfpoolConfig>,
     full_simnet_mode: bool,
     skip_deploy: bool,
     test_suite_path: Option<&Path>,
     generated_accounts: &[GeneratedAccount],
 ) -> Result<Vec<String>> {
+    if let Some(extra_args) = surfpool_config
+        .as_ref()
+        .and_then(|config| config.extra_args.as_ref())
+    {
+        for arg in extra_args {
+            let flag = arg.split_once('=').map_or(arg.as_str(), |(flag, _)| flag);
+            if matches!(
+                flag,
+                "--no-deploy" | "--legacy-anchor-compatibility" | "--anchor-test-config-path"
+            ) {
+                bail!(
+                    "[surfpool].extra_args cannot set {flag}; Anchor manages deployment through \
+                     --skip-deploy"
+                );
+            }
+        }
+    }
     let programs = cfg.programs.get(&Cluster::Localnet);
     let mut flags = Vec::new();
 
@@ -5741,7 +5784,12 @@ fn surfpool_flags(
         }
     }
 
-    if let Some(snapshot_path) = write_surfpool_snapshot(cfg, generated_accounts)? {
+    // Automatic deployment already installs declared fixtures through Surfpool's
+    // runbook. Do not install them twice; the snapshot fills the --skip-deploy gap.
+    let snapshot_fixtures = if skip_deploy { test_validator } else { &None };
+    if let Some(snapshot_path) =
+        write_surfpool_snapshot(cfg, snapshot_fixtures, generated_accounts)?
+    {
         flags.push("--snapshot".to_string());
         flags.push(snapshot_path.display().to_string());
     }
@@ -5818,6 +5866,10 @@ fn surfpool_flags(
         flags.push("--max-profiles".to_string());
         flags.push("1".to_string());
         flags.push("--no-studio".to_string());
+    }
+
+    if let Some(extra_args) = surfpool_config.as_ref().and_then(|c| c.extra_args.as_ref()) {
+        flags.extend(extra_args.iter().cloned());
     }
 
     match skip_deploy {
@@ -6053,9 +6105,10 @@ fn start_surfpool_validator(
         false => Stdio::null(),
     };
 
+    let flags = flags.unwrap_or_default();
     let mut validator_handle = std::process::Command::new("surfpool")
         .arg("start")
-        .args(flags.unwrap_or_default())
+        .args(&flags)
         .stdout(test_validator_stdout)
         .stderr(Stdio::inherit())
         .spawn()
@@ -6115,6 +6168,20 @@ fn start_surfpool_validator(
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    if let Err(error) = if flags.iter().any(|flag| flag == "--no-deploy") {
+        surfpool_fixtures::verify(&client, &flags)
+    } else {
+        // Runbooks can legitimately change fixture balances and program data.
+        Ok(())
+    } {
+        validator_handle
+            .kill()
+            .context("stop Surfpool after fixture verification failure")?;
+        validator_handle
+            .wait()
+            .context("reap Surfpool after fixture verification failure")?;
+        return Err(error);
     }
     Ok(validator_handle)
 }
@@ -7081,6 +7148,7 @@ fn localnet(
                 let full_simnet_mode = true;
                 let flags = Some(surfpool_flags(
                     cfg,
+                    &cfg.test_validator,
                     &cfg.surfpool_config,
                     full_simnet_mode,
                     skip_deploy,
@@ -7880,6 +7948,7 @@ mod tests {
             ProgramTemplate::default(),
             AnchorVersion::default(),
             TestTemplate::default(),
+            false,
             true,
             true,
             true,
@@ -7904,6 +7973,7 @@ mod tests {
             ProgramTemplate::default(),
             AnchorVersion::default(),
             TestTemplate::default(),
+            false,
             true,
             true,
             true,
@@ -7928,6 +7998,7 @@ mod tests {
             ProgramTemplate::default(),
             AnchorVersion::default(),
             TestTemplate::default(),
+            false,
             true,
             true,
             true,
@@ -8045,12 +8116,231 @@ mod tests {
     }
 
     #[test]
+    fn surfpool_flags_emits_extra_args() {
+        let workspace = tempdir().unwrap();
+        let cfg = WithPath::new(Config::default(), workspace.path().join("Anchor.toml"));
+        let expected = vec![
+            "--match-datasource".to_string(),
+            "--disable-feature".to_string(),
+            "ptokFjwyJtrwCa9Kgo9xoDS59V4QccBGEaRFnRPnSdP".to_string(),
+        ];
+        let surfpool_config = Some(SurfpoolConfig {
+            extra_args: Some(expected.clone()),
+            ..Default::default()
+        });
+
+        let flags = surfpool_flags(
+            &cfg,
+            &cfg.test_validator,
+            &surfpool_config,
+            false,
+            true,
+            None,
+            &[],
+        )
+        .unwrap();
+
+        assert!(flags
+            .windows(expected.len())
+            .any(|args| args == expected.as_slice()));
+    }
+
+    #[test]
+    fn surfpool_flags_normal_arguments_are_exactly_unchanged() {
+        let workspace = tempdir().unwrap();
+        let cfg = WithPath::new(Config::default(), workspace.path().join("Anchor.toml"));
+        let strings = |values: &[&str]| values.iter().map(|v| v.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            surfpool_flags(&cfg, &cfg.test_validator, &None, false, false, None, &[]).unwrap(),
+            strings(&[
+                "--offline",
+                "--block-production-mode",
+                "transaction",
+                "--log-level",
+                "none",
+                "--no-tui",
+                "--disable-instruction-profiling",
+                "--max-profiles",
+                "1",
+                "--no-studio",
+                "--legacy-anchor-compatibility",
+            ])
+        );
+        let surfpool_config = Some(SurfpoolConfig::from(crate::config::_SurfpoolConfig {
+            airdrop_addresses: Some(strings(&["Air1", "Air2"])),
+            ws_port: Some(9900),
+            manifest_file_path: Some("./txtx.yml".into()),
+            runbooks: Some(strings(&["deployment"])),
+            slot_time: Some(50),
+            log_level: Some("info".into()),
+            block_production_mode: Some("clock".into()),
+            extra_args: Some(strings(&["--studio-port", "18488"])),
+            ..Default::default()
+        }));
+        let suite = workspace.path().join("tests");
+        assert_eq!(
+            surfpool_flags(
+                &cfg,
+                &cfg.test_validator,
+                &surfpool_config,
+                false,
+                false,
+                Some(&suite),
+                &[]
+            )
+            .unwrap(),
+            strings(&[
+                "--airdrop",
+                "Air1",
+                "--airdrop",
+                "Air2",
+                "--host",
+                SURFPOOL_HOST,
+                "--port",
+                "8899",
+                "--ws-port",
+                "9900",
+                "--manifest-file-path",
+                "./txtx.yml",
+                "--runbook",
+                "deployment",
+                "--slot-time",
+                "50",
+                "--offline",
+                "--block-production-mode",
+                "clock",
+                "--log-level",
+                "info",
+                "--no-tui",
+                "--disable-instruction-profiling",
+                "--max-profiles",
+                "1",
+                "--no-studio",
+                "--studio-port",
+                "18488",
+                "--legacy-anchor-compatibility",
+                "--anchor-test-config-path",
+                &suite.display().to_string(),
+            ])
+        );
+        assert_eq!(
+            surfpool_flags(
+                &cfg,
+                &cfg.test_validator,
+                &surfpool_config,
+                true,
+                true,
+                None,
+                &[]
+            )
+            .unwrap()[16..],
+            strings(&[
+                "--offline",
+                "--block-production-mode",
+                "clock",
+                "--log-level",
+                "info",
+                "--studio-port",
+                "18488",
+                "--no-deploy"
+            ])
+        );
+    }
+
+    #[test]
     fn surfpool_flags_do_not_force_runtime_features() {
         let dir = tempdir().unwrap();
         let cfg = WithPath::new(Config::default(), dir.path().join("Anchor.toml"));
-        let flags = surfpool_flags(&cfg, &None, false, false, None, &[]).unwrap();
+        let flags =
+            surfpool_flags(&cfg, &cfg.test_validator, &None, false, false, None, &[]).unwrap();
 
         assert!(!flags.iter().any(|flag| flag == "--feature"));
+    }
+
+    #[test]
+    fn surfpool_legacy_fixtures_are_in_the_initial_snapshot() {
+        use crate::config::{AccountDirEntry, AccountEntry, GenesisEntry, Validator};
+        for kind in ["account", "account_dir", "genesis"] {
+            let root = tempdir().unwrap();
+            let address = Pubkey::new_unique();
+            let image = json!({"pubkey": address.to_string(), "account": {
+                "lamports": 1234, "owner": "11111111111111111111111111111111",
+                "executable": false, "rentEpoch": 0, "data": ["AQID", "base64"]
+            }});
+            let accounts = root.path().join("accounts");
+            fs::create_dir(&accounts).unwrap();
+            fs::write(accounts.join("fixture.json"), image.to_string()).unwrap();
+            fs::write(root.path().join("fixture.so"), b"\x7fELFfixture").unwrap();
+            let test = match kind {
+                "account" => TestValidator {
+                    validator: Some(Validator {
+                        account: Some(vec![AccountEntry {
+                            address: address.to_string(),
+                            filename: "accounts/fixture.json".into(),
+                        }]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                "account_dir" => TestValidator {
+                    validator: Some(Validator {
+                        account_dir: Some(vec![AccountDirEntry {
+                            directory: "accounts".into(),
+                        }]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                _ => TestValidator {
+                    genesis: Some(vec![GenesisEntry {
+                        address: address.to_string(),
+                        program: "fixture.so".into(),
+                        upgradeable: Some(false),
+                    }]),
+                    ..Default::default()
+                },
+            };
+            let cfg = WithPath::new(
+                Config {
+                    test_validator: Some(test),
+                    ..Config::default()
+                },
+                root.path().join("Anchor.toml"),
+            );
+            let flags =
+                surfpool_flags(&cfg, &cfg.test_validator, &None, false, true, None, &[]).unwrap();
+            let index = flags
+                .iter()
+                .position(|arg| arg == "--snapshot")
+                .unwrap_or_else(|| panic!("{kind} was silently omitted"));
+            let snapshot: JsonValue =
+                serde_json::from_reader(File::open(&flags[index + 1]).unwrap()).unwrap();
+            let account = &snapshot[address.to_string()];
+            assert!(account.is_object(), "{kind}: {snapshot}");
+            if kind == "genesis" {
+                assert_eq!(account["executable"], true);
+                let loader = bpf_loader_upgradeable::id();
+                assert_eq!(account["owner"], loader.to_string());
+                let (data_address, _) = Pubkey::find_program_address(&[address.as_ref()], &loader);
+                let bytes = STANDARD
+                    .decode(snapshot[data_address.to_string()]["data"].as_str().unwrap())
+                    .unwrap();
+                assert_eq!(
+                    &bytes[UpgradeableLoaderState::size_of_programdata_metadata()..],
+                    b"\x7fELFfixture"
+                );
+            } else {
+                assert_eq!(account["lamports"], 1234);
+                assert_eq!(account["data"], "AQID");
+            }
+            // Ordinary auto-deploy is already responsible for these fixtures.
+            let automatic =
+                surfpool_flags(&cfg, &cfg.test_validator, &None, false, false, None, &[]).unwrap();
+            assert!(!automatic.iter().any(|flag| flag == "--snapshot"));
+            assert!(automatic
+                .iter()
+                .any(|flag| flag == "--legacy-anchor-compatibility"));
+        }
     }
 
     #[test]
@@ -8072,7 +8362,16 @@ mod tests {
         });
 
         let generated_accounts = generated_validator_accounts(&cfg, &test_validator).unwrap();
-        let flags = surfpool_flags(&cfg, &None, false, false, None, &generated_accounts).unwrap();
+        let flags = surfpool_flags(
+            &cfg,
+            &test_validator,
+            &None,
+            false,
+            false,
+            None,
+            &generated_accounts,
+        )
+        .unwrap();
 
         let snapshot_index = flags.iter().position(|flag| flag == "--snapshot").unwrap();
         let snapshot_path = PathBuf::from(&flags[snapshot_index + 1]);

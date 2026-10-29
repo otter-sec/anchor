@@ -1,0 +1,468 @@
+//! Test-owned historical Surfpool fork, started from the launch plan `anchor
+//! test` prepared for
+//! this suite (ANCHOR_HISTORICAL_PLAN). The boundary is chosen in test code.
+//! Anchor compiled the
+//! fixtures; Surfpool applies them; SVM Replay executes historical state. The
+//! clock stays frozen
+//! until a test advances it explicitly. `close` stops only this fork's own
+//! child process.
+use anchor_client::Cluster;
+use serde_json::{json, Value};
+use solana_keypair::Keypair;
+use solana_pubkey::Pubkey;
+use solana_signer::Signer;
+use std::{
+    fmt,
+    fs::{self, File},
+    io::Write,
+    net::TcpListener,
+    path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
+    sync::Mutex,
+    thread,
+    time::{Duration, Instant},
+};
+
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+
+fn private_file(path: &Path) -> std::io::Result<File> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    options.open(path)
+}
+
+const PLAN_SCHEMA: &str = "anchor-historical-plan/v1";
+const SYSTEM_PROGRAM: &str = "11111111111111111111111111111111";
+
+#[derive(Debug)]
+pub struct HistoricalForkError {
+    pub code: String,
+    pub message: String,
+}
+
+impl fmt::Display for HistoricalForkError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for HistoricalForkError {}
+
+fn error(code: &str, message: impl Into<String>) -> HistoricalForkError {
+    HistoricalForkError { code: code.into(), message: message.into() }
+}
+
+type Result<T> = std::result::Result<T, HistoricalForkError>;
+
+/// The fields of the suite plan a fork needs, all required.
+struct Plan {
+    program: String,
+    cwd: PathBuf,
+    host: String,
+    args: Vec<String>,
+    registry: PathBuf,
+    wallet: PathBuf,
+    rent_checks: Vec<(String, u64, u64)>,
+    startup_wait: Duration,
+    shutdown_wait: Duration,
+}
+
+impl Plan {
+    fn load() -> Result<Self> {
+        let path = std::env::var("ANCHOR_HISTORICAL_PLAN").map_err(|_| {
+            error("NO_PLAN", "run these tests with `anchor test` in a workspace with a [historical] section")
+        })?;
+        let plan: Value = serde_json::from_slice(&fs::read(&path).map_err(|e| error("NO_PLAN", format!("{path}: {e}")))?)
+            .map_err(|e| error("PLAN_SCHEMA", format!("{path}: {e}")))?;
+        if plan["schema"] != PLAN_SCHEMA {
+            return Err(error("PLAN_SCHEMA", format!("{path} is {}, expected {PLAN_SCHEMA}", plan["schema"])));
+        }
+        let missing = |field: &str| error("PLAN_SCHEMA", format!("{path} has no valid {field}"));
+        let text = |value: &Value, field: &str| value.as_str().map(str::to_owned).ok_or_else(|| missing(field));
+        let number = |value: &Value, field: &str| value.as_u64().ok_or_else(|| missing(field));
+        let args = plan["surfpool"]["args"].as_array().ok_or_else(|| missing("surfpool.args"))?
+            .iter().map(|arg| text(arg, "surfpool.args")).collect::<Result<Vec<_>>>()?;
+        let rent_checks = plan["rentChecks"].as_array().ok_or_else(|| missing("rentChecks"))?
+            .iter()
+            .map(|check| Ok((text(&check["pubkey"], "rentChecks.pubkey")?, number(&check["dataLength"], "rentChecks.dataLength")?, number(&check["lamports"], "rentChecks.lamports")?)))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Plan {
+            program: text(&plan["surfpool"]["program"], "surfpool.program")?,
+            cwd: PathBuf::from(text(&plan["surfpool"]["cwd"], "surfpool.cwd")?),
+            host: text(&plan["surfpool"]["host"], "surfpool.host")?,
+            args,
+            registry: PathBuf::from(text(&plan["registry"], "registry")?),
+            wallet: PathBuf::from(text(&plan["wallet"], "wallet")?),
+            rent_checks,
+            startup_wait: Duration::from_millis(number(&plan["startupWaitMs"], "startupWaitMs")?),
+            shutdown_wait: Duration::from_millis(number(&plan["shutdownWaitMs"], "shutdownWaitMs")?),
+        })
+    }
+}
+
+pub struct HistoricalFork {
+    child: Mutex<Child>,
+    pid: u32,
+    http: reqwest::blocking::Client,
+    plan: Plan,
+    record: PathBuf,
+    log: PathBuf,
+    closed: bool,
+    pub url: String,
+    pub ws_url: String,
+    pub surfnet_id: String,
+    pub after: String,
+}
+
+fn free_port(host: &str) -> Result<u16> {
+    TcpListener::bind((host, 0))
+        .and_then(|listener| listener.local_addr())
+        .map(|address| address.port())
+        .map_err(|e| error("PORTS", format!("no free port on {host}: {e}")))
+}
+
+fn free_port_pair(host: &str) -> Result<u16> {
+    for _ in 0..20 {
+        let port = free_port(host)?;
+        if port < u16::MAX && TcpListener::bind((host, port + 1)).is_ok() {
+            return Ok(port);
+        }
+    }
+    Err(error("PORTS", format!("no free RPC/WebSocket port pair on {host}")))
+}
+
+/// A fresh startup sentinel address, not endpoint authentication.
+fn random_key() -> String {
+    Keypair::new().pubkey().to_string()
+}
+
+impl HistoricalFork {
+    /// Starts a historical Surfpool fork after `after` (a transaction signature
+    /// or slot);
+    /// `data_dir` optionally selects Surfpool's historical cache directory.
+    pub fn start(after: &str, data_dir: Option<&Path>) -> Result<Self> {
+        if after.is_empty() {
+            return Err(error("BOUNDARY", "choose `after` (a transaction signature or slot) in test code"));
+        }
+        let plan = Plan::load()?;
+        let surfnet_id = format!("anchor-{}-{}", std::process::id(), &random_key()[..16]);
+        let directory = plan.registry.join("..").join("forks-data").join(&surfnet_id);
+        let mut builder = fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        builder.mode(0o700);
+        builder.create(directory.parent().expect("fork directory has a parent"))
+            .map_err(|e| error("RECORD", e.to_string()))?;
+        builder.recursive(false);
+        builder.create(&directory).map_err(|e| error("RECORD", format!("{}: {e}", directory.display())))?;
+        // A private image installed by this fork's launch arguments checks
+        // startup readiness, not transport authentication for later requests.
+        let sentinel = random_key();
+        let lamports = 2_000_000 + u64::from(u16::from_le_bytes([sentinel.as_bytes()[0], sentinel.as_bytes()[1]]));
+        let sentinel_file = directory.join("sentinel.snapshot.json");
+        private_file(&sentinel_file).and_then(|mut file| file.write_all(format!("{{\"{sentinel}\":{{\"lamports\":{lamports},\"owner\":\"{SYSTEM_PROGRAM}\",\"executable\":false,\"rentEpoch\":18446744073709551615,\"data\":\"\",\"parsedData\":null}}}}\n").as_bytes()))
+            .map_err(|e| error("RECORD", e.to_string()))?;
+        let host = plan.host.clone();
+        let port = free_port_pair(&host)?;
+        // Surfpool always serves its Studio/scenario endpoint, even with
+        // --no-studio: a private port.
+        let mut studio = free_port(&host)?;
+        while studio == port || studio == port + 1 {
+            studio = free_port(&host)?;
+        }
+        let mut args = plan.args.clone();
+        args.extend(["--after", after, "--host", &host].map(str::to_owned));
+        args.extend(["--port".into(), port.to_string(), "--ws-port".into(), (port + 1).to_string(), "--studio-port".into(), studio.to_string()]);
+        args.extend(["--surfnet-id".into(), surfnet_id.clone(), "--snapshot".into(), sentinel_file.display().to_string()]);
+        if let Some(dir) = data_dir {
+            args.extend(["--historical-data-dir".into(), dir.display().to_string()]);
+        }
+        let log = directory.join("surfpool.log");
+        let output = private_file(&log).map_err(|e| error("RECORD", e.to_string()))?;
+        let errors = output.try_clone().map_err(|e| error("RECORD", e.to_string()))?;
+        let mut child = Command::new(&plan.program)
+            .args(&args)
+            .current_dir(&plan.cwd)
+            .stdin(Stdio::null())
+            .stdout(output)
+            .stderr(errors)
+            .spawn()
+            .map_err(|e| error("SPAWN", format!("cannot start {}: {e}", plan.program)))?;
+        let record = plan.registry.join(format!("{surfnet_id}.json"));
+        let entry = json!({"pid": child.id(), "surfnetId": surfnet_id, "port": port, "studioPort": studio, "after": after});
+        if let Err(e) = private_file(&record).and_then(|mut file| file.write_all((entry.to_string() + "\n").as_bytes())) {
+            let stopped = child.kill().and_then(|()| child.wait()).map(|_| "stopped".to_owned()).unwrap_or_else(|kill| format!("could not be stopped ({kill})"));
+            return Err(error("RECORD", format!("cannot record fork {surfnet_id} for cleanup ({e}); its child {stopped}")));
+        }
+        let http = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|e| error("RPC", e.to_string()))?;
+        let mut fork = HistoricalFork {
+            pid: child.id(),
+            child: Mutex::new(child),
+            http,
+            plan,
+            record,
+            log,
+            closed: false,
+            url: format!("http://{host}:{port}"),
+            ws_url: format!("ws://{host}:{}", port + 1),
+            surfnet_id,
+            after: after.into(),
+        };
+        let wait = fork.plan.startup_wait;
+        if let Err(startup) = fork.ready(&sentinel, lamports, wait) {
+            return Err(match fork.close() {
+                Ok(()) => startup,
+                Err(cleanup) => error(&startup.code, format!("{}; cleanup also failed: {cleanup}", startup.message)),
+            });
+        }
+        Ok(fork)
+    }
+
+    /// The cluster to pass to `anchor_client::Client`. This returns raw URLs:
+    /// external clients do not inherit this helper's child-lifetime guards.
+    pub fn cluster(&self) -> Cluster {
+        Cluster::Custom(self.url.clone(), self.ws_url.clone())
+    }
+
+    fn call(&self, method: &str, params: Value) -> std::result::Result<Value, String> {
+        let response: Value = self
+            .http
+            .post(&self.url)
+            .json(&json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}))
+            .send()
+            .and_then(|response| response.json())
+            .map_err(|e| e.to_string())?;
+        match response.get("error") {
+            Some(error) => Err(error.to_string()),
+            None => Ok(response["result"].clone()),
+        }
+    }
+
+    /// Surfpool's own typed startup failure (`Error: CODE: message`), or a
+    /// generic exit.
+    fn exit_error(&self, status: std::process::ExitStatus) -> HistoricalForkError {
+        let (text, unreadable) = match fs::read_to_string(&self.log) {
+            Ok(text) => (text, String::new()),
+            Err(e) => (String::new(), format!("; its log is unreadable: {e}")),
+        };
+        let typed = text.lines().rev().find_map(|line| {
+            let rest = line.strip_prefix("Error: ")?;
+            let (code, message) = rest.split_once(": ")?;
+            code.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_').then(|| (code.to_owned(), message.to_owned()))
+        });
+        match typed {
+            Some((code, message)) => error(&code, format!("{message} (see {})", self.log.display())),
+            None => error("EXITED", format!("surfpool exited during startup ({status}); see {}{unreadable}", self.log.display())),
+        }
+    }
+
+    fn ready(&mut self, sentinel: &str, lamports: u64, timeout: Duration) -> Result<()> {
+        let deadline = Instant::now() + timeout;
+        let mut identified = false;
+        let mut last = String::from("no response");
+        while Instant::now() < deadline {
+            match self.child.get_mut().map_err(|e| error("CHILD", e.to_string()))?.try_wait() {
+                Ok(Some(status)) => return Err(self.exit_error(status)),
+                Ok(None) => {}
+                Err(e) => return Err(error("CHILD", format!("cannot inspect the surfpool child: {e}"))),
+            }
+            if !identified {
+                match self.call("getAccountInfo", json!([sentinel, {"encoding": "base64"}])) {
+                    Ok(result) => {
+                        let account = &result["value"];
+                        if !account.is_null() {
+                            identified = account["lamports"] == lamports && account["owner"] == SYSTEM_PROGRAM
+                                && account["executable"] == false && account["data"] == json!(["", "base64"]);
+                            if !identified {
+                                return Err(error("IDENTITY", "the listener on this port is not this fork"));
+                            }
+                        }
+                        last = if identified { "identified".into() } else { "sentinel not visible yet".into() };
+                    }
+                    Err(e) => last = e,
+                }
+            }
+            if identified {
+                match self.call("surfnet_getSurfnetInfo", json!([])) {
+                    Ok(result) => {
+                        let info = &result["value"];
+                        let (Some(phase), Some(runs)) = (info["startup"]["phase"].as_str(), info["runbookExecutions"].as_array()) else {
+                            return Err(error("PROTOCOL", "surfnet_getSurfnetInfo reports no startup phase or runbooks; this Surfpool cannot prove the fork is ready"));
+                        };
+                        if !info["startup"]["error"].is_null() {
+                            return Err(error("STARTUP", info["startup"]["error"].to_string()));
+                        }
+                        if let Some(failed) = runs.iter().find(|run| run["errors"].as_array().is_some_and(|e| !e.is_empty())) {
+                            return Err(error("FIXTURES", failed.to_string()));
+                        }
+                        last = format!("startup {phase}");
+                        if phase == "ready" && runs.iter().all(|run| !run["completedAt"].is_null()) {
+                            self.check_fixtures()?;
+                            return self.check_rent();
+                        }
+                    }
+                    Err(e) => last = e,
+                }
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        Err(error("STARTUP_TIMEOUT", format!("not ready within {timeout:?} (last: {last}); raise [surfpool] startup_wait or see {}", self.log.display())))
+    }
+
+    fn check_fixtures(&self) -> Result<()> {
+        // Only Anchor's leading compiled snapshot; extra_args may contain
+        // unrelated snapshots with remote/null entries.
+        if self.plan.args.get(1).map(String::as_str) != Some("--snapshot") {
+            return Ok(());
+        }
+        {
+            let path = self.plan.args.get(2).ok_or_else(|| error("PLAN_SCHEMA", "compiled snapshot path missing"))?;
+            let images: Value = serde_json::from_slice(&fs::read(path)
+                .map_err(|e| error("FIXTURES", e.to_string()))?)
+                .map_err(|e| error("FIXTURES", e.to_string()))?;
+            let images = images.as_object().ok_or_else(|| error("FIXTURES", "invalid snapshot"))?;
+            for (pubkey, image) in images {
+                let result = self.call("getAccountInfo", json!([pubkey, {"encoding":"base64", "commitment":"processed"}]))
+                    .map_err(|e| error("FIXTURES", e))?;
+                let actual = &result["value"];
+                if actual.is_null() || actual["lamports"] != image["lamports"]
+                    || actual["owner"] != image["owner"] || actual["executable"] != image["executable"]
+                    || actual["data"][0] != image["data"] {
+                    return Err(error("FIXTURE_MISMATCH", format!("{pubkey} differs from its declared image after startup")));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Anchor funded generated mint/token images with its default rent; the
+    /// boundary decides.
+    fn check_rent(&self) -> Result<()> {
+        for (pubkey, length, lamports) in &self.plan.rent_checks {
+            let minimum = self
+                .call("getMinimumBalanceForRentExemption", json!([length]))
+                .map_err(|e| error("RPC", e))?;
+            let minimum = minimum.as_u64().ok_or_else(|| error("PROTOCOL", format!("invalid rent minimum {minimum}")))?;
+            if *lamports < minimum {
+                return Err(error("FIXTURE_RENT_MISMATCH", format!("{pubkey} has {lamports} lamports; this boundary requires {minimum}")));
+            }
+        }
+        Ok(())
+    }
+
+    /// An RPC call to this verified fork, including Surfpool's explicit
+    /// `surfnet_*` controls.
+    pub fn rpc(&self, method: &str, params: Value) -> Result<Value> {
+        self.ensure_running()?;
+        let result = self.call(method, params).map_err(|e| error("RPC", format!("{method}: {e}")))?;
+        self.ensure_running()?;
+        Ok(result)
+    }
+
+    fn ensure_running(&self) -> Result<()> {
+        if self.closed {
+            return Err(error("NOT_READY", "this fork is closed"));
+        }
+        let status = self.child.lock().map_err(|e| error("CHILD", e.to_string()))?
+            .try_wait().map_err(|e| error("CHILD", format!("cannot inspect the surfpool child: {e}")))?;
+        if let Some(status) = status {
+            return Err(error("EXITED", format!("this fork's surfpool child has exited ({status})")));
+        }
+        Ok(())
+    }
+
+    /// Defines an account in this fork only, such as a fresh test account or
+    /// wallet funding.
+    pub fn set_account(&self, pubkey: &str, lamports: u64) -> Result<Value> {
+        self.rpc("surfnet_setAccount", json!([pubkey, {"lamports": lamports, "owner": SYSTEM_PROGRAM, "data": "", "executable": false, "rentEpoch": 0}]))
+    }
+
+    /// Fast ELF setup through Surfpool's program-writing helper: installs an
+    /// upgradeable program
+    /// at `program_id` in this fork. It is not a loader deployment; use a real
+    /// deployment to test
+    /// the loader. The program becomes callable after the next explicit
+    /// `advance`.
+    pub fn install_program(&self, program_id: &str, so_path: &Path, authority: &str) -> Result<()> {
+        use std::str::FromStr;
+        let elf = fs::read(so_path).map_err(|e| error("PROGRAM", format!("{}: {e}", so_path.display())))?;
+        let id = Pubkey::from_str(program_id).map_err(|e| error("PROGRAM", format!("{program_id}: {e}")))?;
+        let loader = Pubkey::from_str("BPFLoaderUpgradeab1e11111111111111111111111").expect("loader id");
+        let (program_data, _) = Pubkey::find_program_address(&[id.as_ref()], &loader);
+        self.set_account(program_id, 0)?;
+        self.set_account(&program_data.to_string(), 0)?;
+        for (index, chunk) in elf.chunks(4096).enumerate() {
+            let hex: String = chunk.iter().map(|byte| format!("{byte:02x}")).collect();
+            self.rpc("surfnet_writeProgram", json!([program_id, hex, index * 4096, authority]))?;
+        }
+        Ok(())
+    }
+
+    /// Explicit local slots; the historical clock never advances on its own.
+    pub fn advance(&self, slots: u64) -> Result<Value> {
+        if slots == 0 {
+            return Err(error("ADVANCE", "slots must be positive"));
+        }
+        let slot = self.rpc("getSlot", json!([{"commitment": "processed"}]))?;
+        let slot = slot.as_u64().ok_or_else(|| error("PROTOCOL", format!("invalid slot {slot}")))?;
+        let target = slot.checked_add(slots).ok_or_else(|| error("ADVANCE", "slot overflow"))?;
+        self.rpc("surfnet_timeTravel", json!([{"absoluteSlot": target}]))
+    }
+
+    /// The plan's workspace wallet path.
+    pub fn wallet(&self) -> &Path {
+        &self.plan.wallet
+    }
+
+    pub fn pid(&self) -> u32 {
+        self.pid
+    }
+
+    /// Stops this fork's own child: SIGTERM, then SIGKILL after the shutdown
+    /// wait. The cleanup
+    /// record is removed only once the child is proven gone, so Anchor can
+    /// still reap it.
+    pub fn close(&mut self) -> Result<()> {
+        if self.closed {
+            return Ok(());
+        }
+        let (id, pid) = (self.surfnet_id.clone(), self.pid);
+        let cleanup = |e: std::io::Error| error("CLEANUP", format!("fork {id} (pid {pid}): {e}"));
+        let child = self.child.get_mut().map_err(|e| error("CHILD", e.to_string()))?;
+        if child.try_wait().map_err(cleanup)?.is_none() {
+            let status = Command::new("kill").args(["-TERM", &pid.to_string()]).status().map_err(cleanup)?;
+            if !status.success() && child.try_wait().map_err(cleanup)?.is_none() {
+                return Err(error("CLEANUP", format!("SIGTERM to fork {id} failed: {status}")));
+            }
+            let deadline = Instant::now() + self.plan.shutdown_wait.max(Duration::from_secs(5));
+            while child.try_wait().map_err(cleanup)?.is_none() && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(25));
+            }
+            if child.try_wait().map_err(cleanup)?.is_none() {
+                child.kill().map_err(cleanup)?;
+            }
+        }
+        child.wait().map_err(cleanup)?;
+        fs::remove_file(&self.record).map_err(cleanup)?;
+        self.closed = true;
+        Ok(())
+    }
+}
+
+impl Drop for HistoricalFork {
+    /// A fork that was not closed explicitly is closed here; a failure is
+    /// reported, and its
+    /// record stays for Anchor's post-suite cleanup.
+    fn drop(&mut self) {
+        if let Err(e) = self.close() {
+            eprintln!("historical fork cleanup failed: {e}; record kept at {}", self.record.display());
+        }
+    }
+}

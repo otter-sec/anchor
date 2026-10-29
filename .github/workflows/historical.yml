@@ -1,0 +1,108 @@
+name: Historical template
+
+# Manual until the compatible tools and redistribution-cleared fixture are public.
+# Ordinary template coverage remains in template-tests.yaml.
+on: workflow_dispatch
+permissions:
+  contents: read
+
+jobs:
+  historical:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      SOLANA_VERSION: "4.1.2"
+      CARGO_BUILD_JOBS: "4"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      RUSTUP_TOOLCHAIN: "1.98.0"
+      SVM_REPLAY_URL: ${{ vars.SVM_REPLAY_LINUX_X64_URL }}
+      SVM_REPLAY_SHA256: ${{ vars.SVM_REPLAY_LINUX_X64_SHA256 }}
+      SURFPOOL_URL: ${{ vars.HISTORICAL_SURFPOOL_LINUX_X64_URL }}
+      SURFPOOL_SHA256: ${{ vars.HISTORICAL_SURFPOOL_LINUX_X64_SHA256 }}
+      FIXTURE_URL: ${{ vars.HISTORICAL_FIXTURE_URL }}
+      FIXTURE_SHA256: ${{ vars.HISTORICAL_FIXTURE_SHA256 }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup/
+      - uses: ./.github/actions/setup-solana/
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.22.0"
+      - name: Fetch reviewed tools and raw fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SVM_REPLAY SURFPOOL FIXTURE; do
+            url="${name}_URL"; digest="${name}_SHA256"
+            : "${!url:?Set the reviewed public artifact URL}"
+            : "${!digest:?Set its SHA256}"
+            curl --fail --location --proto '=https' --proto-redir '=https' \
+              --max-time 180 "${!url}" -o "$RUNNER_TEMP/$name.tar.gz"
+            printf '%s  %s\n' "${!digest}" "$RUNNER_TEMP/$name.tar.gz" | sha256sum --check -
+          done
+          python3 - <<'PY'
+          import os, pathlib, tarfile
+          root = pathlib.Path(os.environ["RUNNER_TEMP"])
+          for name in ("SVM_REPLAY", "SURFPOOL", "FIXTURE"):
+              with tarfile.open(root / f"{name}.tar.gz") as archive:
+                  if any(not (m.isfile() or m.isdir()) for m in archive.getmembers()):
+                      raise ValueError(f"Non-file archive member in {name}")
+                  archive.extractall(root / name, filter="data")
+          PY
+          bundle="$RUNNER_TEMP/SVM_REPLAY/bundle"
+          "$bundle/bin/svm-replay" bundle install --bundle "$bundle/bundle.json" \
+            --bundle-sha256 "$(sha256sum "$bundle/bundle.json" | cut -d' ' -f1)" \
+            --output "$RUNNER_TEMP/installed"
+          "$RUNNER_TEMP/installed/bin/svm-replay" doctor
+          test -x "$RUNNER_TEMP/SURFPOOL/surfpool"
+          printf '%s\n' "$RUNNER_TEMP/SURFPOOL" >> "$GITHUB_PATH"
+          printf 'SVM_REPLAY_BIN=%s\n' "$RUNNER_TEMP/installed/bin/svm-replay" >> "$GITHUB_ENV"
+      - name: Build the CLI and client from this checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+          cargo install --path cli --locked --debug --force --target-dir ./target
+          ( cd ts
+            corepack yarn install --frozen-lockfile --ignore-scripts
+            corepack yarn --cwd packages/anchor build:node )
+          cargo build-sbf --tools-version v1.57 --install-only
+      - name: Generate and build a historical application
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          anchor init demo --historical --test-template mocha --anchor-version v1 \
+            --package-manager npm --no-install --no-git
+          cd demo
+          printf '\n[patch.crates-io]\nanchor-lang = { path = "%s/lang" }\nanchor-client = { path = "%s/client" }\n' \
+            "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE" >> Cargo.toml
+          npm pkg set "dependencies.@anchor-lang/core=file:$GITHUB_WORKSPACE/ts/packages/anchor"
+          npm install --ignore-scripts --install-links=false
+          node -e 'const fs=require("node:fs");const p=require.resolve("@anchor-lang/core");if(!fs.realpathSync(p).startsWith(process.env.GITHUB_WORKSPACE+"/ts/packages/anchor/"))throw new Error("Not the PR client: "+p)'
+          anchor build --arch v0
+          cp "$GITHUB_WORKSPACE/.github/scripts/historical-smoke.ts" tests/ci.ts
+          mkdir -p .surfpool/history
+          cp -R "$RUNNER_TEMP/FIXTURE/svm-replay-smoke-413023260/data/cache" .surfpool/history/cache
+      - name: Test with provider networking disabled
+        shell: bash
+        env:
+          API_ALCHEMY: offline-fixture-not-a-key
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/demo"
+          # Root creates the namespace only; the runner user executes the tests.
+          export HISTORICAL_TEST_PATH="$PATH"
+          sudo --preserve-env unshare --net bash -euc '
+            ip link set lo up
+            exec setpriv --reuid="$SUDO_UID" --regid="$SUDO_GID" --init-groups \
+              env PATH="$HISTORICAL_TEST_PATH" anchor test --skip-build --skip-deploy'
+      - name: Show fork logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          if test -d "$RUNNER_TEMP/demo/.anchor/historical"; then
+            find "$RUNNER_TEMP/demo/.anchor/historical" -name surfpool.log -type f -print -exec tail -n 60 {} \;
+          fi

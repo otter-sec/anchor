@@ -1,0 +1,130 @@
+---
+title: Historical tests
+description: Run RPC-based tests against a chosen historical Solana state.
+---
+
+Historical tests use Surfpool's public RPC, backed by SVM Replay's historical
+accounts and runtime. Each test chooses its own transaction or slot boundary;
+Anchor does not start a shared historical validator or replace its clients.
+
+## Requirements
+
+- A Surfpool build supporting `start --after`, and an installed compatible SVM
+  Replay runtime bundle. Ordinary Anchor tests do not require SVM Replay.
+- Historical account access configured through a supported provider. Alchemy is
+  the currently qualified adapter; an ordinary mainnet RPC key is not enough
+  unless it also enables the required archive endpoints.
+- A supported host. The complete preview is qualified on Linux x64 with GLIBC
+  2.35+, Ubuntu 24.04 in WSL2, and macOS 15 on Intel and Apple Silicon.
+  Native Windows historical forks are refused; use WSL2. SVM Replay's native
+  replay targets have separate qualification from these tool integrations.
+
+## Create a workspace
+
+```sh
+anchor init demo --test-template mocha --historical
+cd demo
+export API_ALCHEMY="your-account-archive-key"
+anchor build --arch v0
+anchor test --skip-build --skip-deploy
+```
+
+Mocha and Jest support TypeScript or JavaScript. RPC-based Rust tests also support
+`--historical`; LiteSVM and Mollusk run in-process and explicitly refuse it.
+Both supported program template versions, including single-file variants, use
+the same per-test fork model.
+
+The scaffold adds provider settings to `Anchor.toml`:
+
+```toml
+[historical]
+provider = "alchemy"
+
+[historical.providers.alchemy]
+adapter = "alchemy"
+key_env = "API_ALCHEMY"
+```
+
+The provider name selects an adapter configuration; it is not a key or RPC URL.
+`key_env` names an environment variable. Do not commit a literal API key.
+Provider-specific endpoints are handled by the adapter, not by Anchor tests.
+
+## Choose the state in test code
+
+The generated test calls `HistoricalFork.start({ after: "413023260" })`. A numeric
+boundary means after that slot; a transaction signature means immediately after
+that transaction. The helper accepts either without a `slot:` or `tx:` prefix.
+
+The generated test then funds its local wallet, installs the compiled program,
+declares the account it will create, and advances one slot before calling the
+program. `installProgram` is Surfpool's fast ELF setup, not a loader deployment.
+Use an SBPF format supported by the boundary runtime (`v0` for this example).
+
+| Helper | Purpose |
+|---|---|
+| `provider()` | Explicit Anchor provider for this fork; no global rebinding |
+| `setAccount(address, values)` | Fork-local account setup |
+| `installProgram(programId, soPath)` | Fork-local program setup |
+| `advance(slots)` | Explicit local clock advance; frozen by default |
+| `rpc(method, params)` | Ordinary RPC and supported Surfpool controls |
+| `close()` | Stop this fork; remove listeners before closing |
+
+Use `try/finally` or test teardown to close each fork. Anchor also reaps recorded
+forks left by a crashed test process. No operation is sent to mainnet.
+
+`provider()` uses one disposable signing key per fork, not the workspace wallet;
+fund it explicitly with `setAccount`. Rust templates also use fresh keys. Never
+pass a real funded wallet at a recent boundary: historical blockhashes are real,
+so leaked signed transaction bytes may remain valid on mainnet until they expire.
+Durable-nonce transactions may remain valid until the on-chain nonce advances.
+Suite/fork identity directories and files are private (0700/0600 on Unix).
+
+Helper RPC calls and Node providers' HTTP requests refuse after the owned child
+exits or the fork closes; provider WebSockets close with automatic reconnect disabled.
+New WebSocket connection attempts on a retained provider are refused with a diagnostic.
+Subscription registration may still return an id rather than a synchronous error.
+Process notifications and startup sentinel checks are not cryptographic endpoint
+authentication. Raw HTTP/WebSocket URLs and Rust `Cluster` values do not guard
+independently created clients. Do not reuse them after the fork stops.
+
+## Fixtures and limits
+
+Every fork loads `fund_accounts`, `mints`, `token_accounts`,
+`[[test.validator.account]]`, `[[test.validator.account_dir]]`, and
+`[[test.genesis]]`. Account files contain Solana CLI account JSON; directory
+entries need a `pubkey`. An explicit account `address` overrides the file's
+pubkey (`address = "-"` uses the file's pubkey). Paths in Test.toml are relative
+to that suite. Malformed files, duplicate addresses and installation mismatches
+fail visibly. Account bytes, owner, balance and executable flag are checked
+before the test runs.
+Verification is after explicit startup runbooks: change declared fixture state
+in test code instead, or it fails with `FIXTURE_MISMATCH`. Snapshots supplied
+through `extra_args` remain Surfpool-owned and are not compared by Anchor.
+
+Fixtures replace boundary state at their addresses. Genesis programs are
+callable at the frozen boundary without `advance()`; `upgradeable = true`
+sets the workspace wallet as authority. A raw `surfnet_resetNetwork` discards
+local overrides; start a new fork to reinstall fixtures. Known clone addresses
+are loaded lazily from the chosen boundary, not copied from current state.
+Fork startup disables automatic deployment runbooks even without `--skip-deploy`:
+install or deploy workspace programs in test code after selecting the boundary.
+
+Historical suites still refuse `[test.validator] url`, chain/runtime overrides
+(`warp_slot`, `slots_per_epoch`, `ticks_per_slot`, `deactivate_feature`,
+`geyser_plugin_config`), datasource URLs, automatic block production and
+fork-owned endpoint/provider options in `extra_args`. Configure archive access
+through `[historical]`, and advance time explicitly in the test.
+
+Missing provider data returns an explicit error; it never falls back to the tip.
+Some historical queries require indexes the provider does not supply. Durable
+nonce execution additionally needs the historical RecentBlockhashes sysvar,
+which the qualified Alchemy archive does not currently provide.
+
+Only `anchor test` opts into the suite plan. Other commands, including
+`anchor localnet`, do not automatically use `[historical]`; give their clients an
+explicit fork endpoint when applicable. Existing tests without `[historical]`
+keep the ordinary validator path.
+
+An incompatible Surfpool is refused with `SURFPOOL_INCOMPATIBLE`; inspect the
+selected `surfpool` on PATH and install a historical-capable build. The local
+launch-capability check does not download tools or contact a provider.

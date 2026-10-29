@@ -8,5 +8,6 @@ export default {
     litesvm: { label: 'LiteSVM', order: 1 },
     'profiling-and-debugger': { order: 2 },
     coverage: { order: 3 },
+    historical: { order: 4 },
   },
 } satisfies MetaFile

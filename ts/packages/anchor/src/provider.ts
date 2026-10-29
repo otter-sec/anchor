@@ -517,8 +517,9 @@ async function sendAndConfirmRawTransaction(
 
   const startTime = Date.now();
   while (Date.now() - startTime < 60_000) {
+    let signature: TransactionSignature | undefined;
     try {
-      const signature = await connection.sendRawTransaction(
+      signature = await connection.sendRawTransaction(
         rawTransaction,
         sendOptions
       );
@@ -559,6 +560,28 @@ async function sendAndConfirmRawTransaction(
     } catch (err) {
       if (err.name === "TimeoutError") {
         continue;
+      }
+      // Recover a bare confirmation rejection only when this signature's
+      // status proves the same failure; otherwise retain the original error.
+      const bare =
+        typeof err === "string" ||
+        (err !== null && typeof err === "object" && !(err instanceof Error));
+      if (signature !== undefined && bare) {
+        const { value } = await connection
+          .getSignatureStatus(signature)
+          .catch(() => {
+            // Remote errors and even signature text can contain credentials.
+            // Report the failure without logging arbitrary transport content.
+            console.error(
+              "RPC_STATUS_UNAVAILABLE: could not read transaction status after a confirmation rejection; original error preserved."
+            );
+            throw err;
+          });
+        if (value?.err && JSON.stringify(value.err) === JSON.stringify(err)) {
+          throw new ConfirmError(
+            `Raw transaction ${signature} failed (${JSON.stringify({ err })})`
+          );
+        }
       }
       throw err;
     }

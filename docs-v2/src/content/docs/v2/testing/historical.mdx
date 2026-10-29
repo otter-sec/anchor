@@ -1,0 +1,14 @@
+---
+title: Historical RPC tests
+description: Opt into isolated historical Surfpool forks from RPC-based tests.
+---
+
+Historical RPC tests are an opt-in alternative to v2's default in-process LiteSVM
+tests. Use `anchor init demo --test-template mocha --historical`, Jest, or the
+RPC-based Rust template; each test explicitly selects its own fork provider.
+LiteSVM/Mollusk do not become historical RPC clients.
+
+See the [historical test guide](/docs/v1/testing/historical/) for installation
+requirements, `[historical]` provider configuration, supported fixtures, frozen
+time and explicit limitations. The generated v2 test installs and executes its
+own program against the selected state, without rebinding global providers.

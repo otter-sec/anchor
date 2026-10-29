@@ -8,5 +8,6 @@ export default {
     litesvm: { order: 1 },
     mollusk: { order: 2 },
     fuzzing: { order: 3 },
+    historical: { order: 4 },
   },
 } satisfies MetaFile

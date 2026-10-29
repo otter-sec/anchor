@@ -339,6 +339,12 @@ Pass `--non-canonical` to read a third-party metadata account.
 anchor init <project-name>
 ```
 
+Use `anchor init demo --test-template mocha --historical` to generate RPC-based
+historical tests. This requires an Anchor build with `--historical` support; see
+[Historical tests](/docs/testing/historical) for the runtime, provider and
+platform requirements. LiteSVM and Mollusk templates refuse this option because
+they run in-process.
+
 Initializes a project workspace with the following structure.
 
 - `Anchor.toml`: Anchor configuration file.
@@ -477,6 +483,13 @@ If you'd prefer to run the program against your local validator use
 
 When running tests we stream program logs to
 `.anchor/program-logs/<address>.<program-name>.log`
+
+With a `[historical]` section, tests select their boundary in code and own
+isolated Surfpool forks backed by SVM Replay. The clock starts paused, fixtures
+are loaded per fork, and automatic deployment runbooks are disabled. See
+[Historical tests](/docs/testing/historical) for setup and cleanup. Without
+`[historical]`, the ordinary validator path is unchanged. Other commands,
+including `anchor localnet`, do not automatically use this setting.
 
 Use `--profile` with Rust/LiteSVM-style tests that enable the generated
 `profile` feature to collect SBF register traces and render flamegraph SVGs
