@@ -116,9 +116,9 @@ pub use wincode;
 ///
 /// # Borrowed zero-copy caveat
 ///
-/// Borsh's u32 length prefix means borrowed wide slices like `&[u64]` start
-/// four bytes into the buffer and therefore fail wincode's zero-copy
-/// alignment guard. `BORSH_CONFIG` keeps that guard enabled so safe
+/// Borsh's u32 length prefix shifts borrowed slice elements by four bytes, so
+/// whether a wide slice like `&[u64]` is aligned depends on the args before
+/// it. `BORSH_CONFIG` keeps wincode's zero-copy alignment guard enabled so safe
 /// deserialization cannot form a misaligned Rust reference; use owned
 /// arguments (`Vec<u64>`) or align-1 borrowed data (`&[u8]`, `&str`) instead.
 pub const BORSH_CONFIG: BorshConfig = wincode::config::Configuration::new();

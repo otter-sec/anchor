@@ -111,6 +111,30 @@ Here are some examples of optimizations present in Anchor v2.
 - **Typed `CpiHandle` lets us use pinocchio's unchecked CPI.** The unchecked path would be UB under stale-borrow aliasing, but the Rust borrow checker rules that out at compile time — so `CpiContext::invoke()` takes it. Turns UB into a compile error and drops one runtime check per CPI.
 - **`const-rent` feature** bakes the rent formula into the binary so `create_account` skips the `Rent::get()` sysvar. Saves ~85 CU per `create_account`.
 - **Guardrails compile away** when you drop the feature. `check_program_id` / the `is_writable` check in `load_mut` just aren't emitted. Smaller binary in prod.
+- **Borrowed instruction args.** Handler args (and `#[instruction(...)]` args) can borrow from the instruction data instead of copying it onto the heap: `&[u8]`, `&str`, `&[T]` of zero-copy structs, or a struct with a lifetime holding any of those. The borrowed slice points straight into the entrypoint's input buffer, so it's valid for the whole handler:
+
+  ```rust
+  #[repr(C)]
+  #[derive(AnchorSerialize, AnchorDeserialize, IdlType)]
+  pub struct Entry {
+      pub owner: Address,
+      pub amount: [u8; 8],
+  }
+
+  #[derive(AnchorSerialize, AnchorDeserialize, IdlType)]
+  pub struct MyInstructionArgs<'a> {
+      pub a: u32,
+      pub some_data: &'a [u8],
+      pub entries: &'a [Entry],
+  }
+
+  pub fn my_ix(ctx: &mut Context<MyAccounts>, args: MyInstructionArgs<'_>) -> Result<()> { /* ... */ }
+  // or flat: pub fn my_ix(ctx: &mut Context<MyAccounts>, a: u32, some_data: &[u8], entries: &[Entry])
+  ```
+
+  The `<'_>` is required: `#[program]` copies arg types into generated structs, so a bare `MyInstructionArgs` fails with E0106 (missing lifetime specifier).
+
+  The wire format is the same as the owned `Vec<_>` / `String` forms (`&[u8]` shows up as `bytes` in the IDL, `&[Entry]` as `vec<Entry>`). `&[T]` elements are cast in place, so `T` must be `#[repr(C)]` with no padding, built from zero-copy fields (`u8`, `[u8; N]`, `Address`, other such structs). Instruction data has no alignment guarantee at a given arg offset, so keep element fields alignment-1: a slice of `u64` (or of a struct holding one) is rejected with `InstructionDidNotDeserialize` when it lands misaligned. Use `[u8; 8]` or an owned `Vec` instead.
 - **`remaining_accounts()` is lazy-cached.** First call walks the account cursor; subsequent calls return a clone of the cached vec. Zero overhead for instructions that don't touch it.
 
 ## Account types

@@ -175,6 +175,7 @@ impl_idl_account_type_noop!(
     f32,
     f64,
     alloc::string::String,
+    str,
     pinocchio::address::Address,
 );
 
@@ -285,8 +286,8 @@ impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
 impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 
 // Borrowed slice `&[T]` — surfaces on `#[derive(IdlType)]` structs that
-// carry borrowed slice fields (e.g. `MixedArgs<'a> { values: &'a [u64] }`),
-// which wincode supports as a zero-copy ix arg.
+// carry borrowed slice fields (e.g. `MyArgs<'a> { entries: &'a [Entry] }`),
+// which wincode decodes in place for zero-copy, alignment-1 `T`.
 #[doc(hidden)]
 impl<T: IdlAccountType> IdlAccountType for [T] {
     fn __register_idl_deps(

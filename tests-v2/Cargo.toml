@@ -24,6 +24,7 @@ anchor-v2-testing = { path = "../v2-testing", features = ["register-tracing"] }
 anchor-lang = { path = "../lang-v2" }
 account-address-constraints = { path = "programs/account-address-constraints" }
 account-meta-signer-overrides = { path = "programs/account-meta-signer-overrides" }
+borrowed-ix-args = { path = "programs/borrowed-ix-args" }
 borsh-realloc = { path = "programs/borsh-realloc", features = ["cpi"] }
 callee = { path = "programs/callee", features = ["cpi"] }
 caller = { path = "programs/caller", features = ["cpi"] }

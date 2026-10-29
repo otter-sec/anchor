@@ -1341,6 +1341,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "borrowed-ix-args"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+]
+
+[[package]]
 name = "borsh"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9901,6 +9908,7 @@ dependencies = [
  "anchor-v2-testing",
  "anyhow",
  "base64 0.22.1",
+ "borrowed-ix-args",
  "borsh-realloc",
  "bytemuck",
  "callee",

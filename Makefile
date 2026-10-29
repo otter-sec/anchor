@@ -21,6 +21,7 @@ TESTS_V2_COVERAGE_TESTS := \
 	account_address_constraints \
 	account_meta_signer_overrides \
 	accounts \
+	borrowed_ix_args \
 	borsh_borrow_alignment \
 	borsh_realloc \
 	cfg_semantics \

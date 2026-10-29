@@ -152,6 +152,11 @@ impl<'a> TypeLowerer<'a> {
                             "kind": "const",
                             "value": quote!(#expr).to_string().replace(' ', ""),
                         })),
+                        // Lifetimes (`Args<'_>` borrowing from instruction
+                        // data) have no wire representation, and
+                        // `generic_definitions` omits lifetime params from
+                        // the type def, so drop them here too.
+                        syn::GenericArgument::Lifetime(_) => {}
                         unsupported => panic!(
                             "unsupported generic argument in IDL type `{}`: {}",
                             segment.ident,
@@ -1653,6 +1658,38 @@ mod tests {
         assert_eq!(
             rust_type_to_idl_value(&plain),
             json!({ "defined": { "name": "Wrapper" } })
+        );
+    }
+
+    #[test]
+    fn defined_references_drop_lifetime_generics() {
+        let elided: Type = syn::parse_quote!(MyInstruction<'_>);
+        assert_eq!(
+            rust_type_to_idl_value(&elided),
+            json!({ "defined": { "name": "MyInstruction" } })
+        );
+
+        let named: Type = syn::parse_quote!(MyInstruction<'ix>);
+        assert_eq!(
+            rust_type_to_idl_value(&named),
+            json!({ "defined": { "name": "MyInstruction" } })
+        );
+
+        let mixed: Type = syn::parse_quote!(Wrapper<'ix, u64>);
+        assert_eq!(
+            rust_type_to_idl_value(&mixed),
+            json!({
+                "defined": {
+                    "name": "Wrapper",
+                    "generics": [{ "kind": "type", "type": "u64" }],
+                }
+            })
+        );
+
+        let optional: Type = syn::parse_quote!(Option<MyInstruction<'_>>);
+        assert_eq!(
+            rust_type_to_idl_value(&optional),
+            json!({ "option": { "defined": { "name": "MyInstruction" } } })
         );
     }
 

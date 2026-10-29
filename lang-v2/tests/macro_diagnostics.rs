@@ -187,6 +187,76 @@ fn nested_dependencies_are_forwarded() {
     );
 }
 
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn borrowed_struct_instruction_arguments_build_idl() {
+    cargo_test_pass_case(
+        "borrowed_struct_instruction_arguments",
+        r#"
+extern crate alloc;
+
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[repr(C)]
+#[derive(AnchorDeserialize, AnchorSerialize, IdlType)]
+pub struct Entry {
+    pub owner: Address,
+    pub amount: [u8; 8],
+}
+
+#[derive(AnchorDeserialize, AnchorSerialize, IdlType)]
+pub struct MyInstruction<'a> {
+    pub a: u32,
+    pub some_data: &'a [u8],
+    pub entries: &'a [Entry],
+    pub label: &'a str,
+}
+
+#[derive(Accounts)]
+pub struct Noop {}
+
+#[program]
+pub mod borrowed_struct_instruction_args {
+    use super::*;
+
+    pub fn run(_ctx: &mut Context<Noop>, ix: MyInstruction<'_>) -> Result<()> {
+        let _ = (ix.a, ix.some_data, ix.entries, ix.label);
+        Ok(())
+    }
+
+    pub fn run_flat(_ctx: &mut Context<Noop>, label: &str, some_data: &[u8]) -> Result<()> {
+        let _ = (label, some_data);
+        Ok(())
+    }
+}
+
+#[cfg(feature = "idl-build")]
+#[test]
+fn borrowed_fields_lower_to_owned_idl_types() {
+    let type_def = <MyInstruction<'static> as IdlAccountType>::__idl_type_def().unwrap();
+    assert!(type_def.contains("\"name\":\"MyInstruction\""));
+    assert!(type_def.contains("{\"name\":\"some_data\",\"type\":\"bytes\"}"));
+    assert!(type_def.contains(
+        "{\"name\":\"entries\",\"type\":{\"vec\":{\"defined\":{\"name\":\"Entry\"}}}}"
+    ));
+    assert!(type_def.contains("{\"name\":\"label\",\"type\":\"string\"}"));
+    assert!(!type_def.contains("generics"));
+
+    let mut accounts = alloc::vec::Vec::new();
+    let mut types = alloc::vec::Vec::new();
+    <MyInstruction<'static> as IdlAccountType>::__register_idl_deps(&mut accounts, &mut types);
+    assert!(types.iter().any(|ty| ty.contains("\"name\":\"Entry\"")));
+}
+"#,
+        &["idl-build"],
+    );
+}
+
 fn cargo_test_pass_case(name: &str, source: &str, features: &[&str]) {
     let mut args = Vec::new();
     if !features.is_empty() {

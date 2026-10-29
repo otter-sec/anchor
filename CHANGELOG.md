@@ -16,6 +16,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang-v2: Fix `#[program]` panicking on handler args with lifetime generics such as `MyArgs<'_>`, a regression from [#5073](https://github.com/otter-sec/anchor/pull/5073) ([#5227](https://github.com/otter-sec/anchor/pull/5227)).
+- lang-v2: Fix `idl-build` failing on borrowed `&str` instruction args and `#[derive(IdlType)]` fields (`str` has no IDL type information) ([#5227](https://github.com/otter-sec/anchor/pull/5227)).
 - ts: Reject a JS number that is not a safe integer when encoding `u64`, `i64`, `u128`, `i128`, `u256`, and `i256`. Pass a bigint for values outside ±(2^53 - 1) ([#5203](https://github.com/otter-sec/anchor/pull/5203)).
 - lang-v2: Keep Pod wrapper types (`PodU64`, `PodBool`, ..) in the IDL instead of lowering them to native types, so `declare_program!` generates zero-copy structs with correct program's layout ([#5170](https://github.com/otter-sec/anchor/pull/5170))
 - lang-v2: Restore `AnchorSerialize` and `AnchorDeserialize` as traits for generic bounds alongside the derive macros ([#5078](https://github.com/otter-sec/anchor/pull/5078)).

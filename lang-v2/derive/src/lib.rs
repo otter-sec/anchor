@@ -2635,7 +2635,7 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
     // Thread any generic / lifetime params from the input type through
     // the impl so `#[derive(IdlType)] struct Foo<'a>` lowers to
     // `impl<'a> IdlAccountType for Foo<'a>`. Without this, borrowed ix-arg
-    // structs (e.g. `MixedArgs<'a> { values: &'a [u64] }`) wouldn't compile
+    // structs (e.g. `MyArgs<'a> { some_data: &'a [u8] }`) wouldn't compile
     // with the derive.
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
