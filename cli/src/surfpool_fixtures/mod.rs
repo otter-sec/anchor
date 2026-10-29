@@ -1,11 +1,7 @@
 //! Compile declared fixtures into one snapshot before either Surfpool mode starts.
 mod accounts;
-#[cfg(test)]
-mod batch_tests;
 mod programs;
 pub(super) mod reader;
-#[cfg(test)]
-mod review_tests;
 #[cfg(test)]
 mod tests;
 mod verify;

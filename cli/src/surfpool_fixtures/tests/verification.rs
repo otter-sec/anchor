@@ -1,5 +1,5 @@
 use {
-    super::verify,
+    super::*,
     crate::{Pubkey, RpcClient},
     serde_json::{json, Map, Value},
     std::{
@@ -15,7 +15,71 @@ use {
 };
 
 #[test]
-fn review_verification_batches_accounts_with_bounded_requests() {
+fn skipped_or_changed_snapshot_accounts_fail_verification() {
+    use {
+        crate::{RpcClient, RpcRequest},
+        std::collections::HashMap,
+    };
+    let root = tempfile::tempdir().unwrap();
+    let address = Pubkey::new_unique();
+    let expected = account(address, "base64");
+    let image = super::super::accounts::image(&expected).unwrap();
+    let path = root.path().join("snapshot.json");
+    fs::write(&path, json!({address.to_string():image}).to_string()).unwrap();
+    let external = root.path().join("external.json");
+    fs::write(
+        &external,
+        json!({Pubkey::new_unique().to_string():null}).to_string(),
+    )
+    .unwrap();
+    let external_flags = vec![
+        "--no-deploy".into(),
+        "--snapshot".into(),
+        external.display().to_string(),
+    ];
+    verify(&RpcClient::new_mock("succeeds"), &external_flags).unwrap();
+    let flags = vec![
+        "--snapshot".into(),
+        path.display().to_string(),
+        "--snapshot".into(),
+        external.display().to_string(),
+    ];
+    for field in [
+        None,
+        Some("owner"),
+        Some("lamports"),
+        Some("data"),
+        Some("executable"),
+        Some("missing"),
+        Some("short-response"),
+    ] {
+        let mut actual = expected["account"].clone();
+        match field {
+            Some("owner") => actual["owner"] = json!(Pubkey::new_unique().to_string()),
+            Some("lamports") => actual["lamports"] = json!(43),
+            Some("data") => actual["data"] = json!(["BAUG", "base64"]),
+            Some("executable") => actual["executable"] = json!(true),
+            Some("missing") => actual = Value::Null,
+            Some("short-response") => {}
+            None => {}
+            other => panic!("unexpected field {other:?}"),
+        }
+        let mocks = HashMap::from([(
+            RpcRequest::GetMultipleAccounts,
+            json!({"context":{"slot":1},"value":if field == Some("short-response") { vec![] } else { vec![actual] }}),
+        )]);
+        let client = RpcClient::new_mock_with_mocks("succeeds", mocks);
+        let result = verify(&client, &flags);
+        if field.is_none() {
+            result.unwrap();
+        } else {
+            assert!(result.unwrap_err().to_string().contains("FIXTURE_MISMATCH"));
+        }
+    }
+}
+
+#[test]
+fn verification_batches_accounts_with_bounded_requests() {
     let root = tempfile::tempdir().unwrap();
     let image = json!({"owner":"11111111111111111111111111111111", "lamports":1,
         "executable":false,"rentEpoch":0,"data":"","parsedData":null});
