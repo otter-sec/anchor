@@ -877,15 +877,15 @@ pub enum ProgramCommand {
         bypass_warning: bool,
     },
     /// Extend the length of an upgradeable program
+    // Allows Clap to accept the missing `program_id` arg.
     #[clap(allow_missing_positional = true)]
     Extend {
-        /// Program id to extend.
-        /// If not provided, discovers program from workspace using program_name
+        /// Program ID to extend.
         program_id: Option<Pubkey>,
-        /// Program name to extend (from workspace). Used when program_id is not provided
+        /// Workspace program name to extend when program_id is not provided.
         #[clap(short, long)]
         program_name: Option<String>,
-        /// Additional bytes to allocate
+        /// Additional bytes to allocate.
         additional_bytes: usize,
     },
 }
