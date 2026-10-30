@@ -2099,12 +2099,19 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 Ok((__accounts, __bumps, __ix_args))
             }
 
-            #[inline]
+            // `run_handler` is `#[inline(always)]`, so `#[inline(never)]` keeps the load
+            // and constraint locals off the instruction stack while the handler runs.
+            #[inline(never)]
             fn validate_accounts<'ix>(
                 __program_id: &anchor_lang::Address,
                 __views: &[anchor_lang::AccountView],
                 __ix_data: &'ix [u8],
             ) -> anchor_lang::Result<(Self, #bumps_name, Self::IxArgs<'ix>)> {
+                // Upfront length check allows the compiler to elide bounds checks;
+                // this saves a lot of binary size.
+                if __views.len() < <Self as anchor_lang::TryAccounts>::HEADER_SIZE {
+                    return Err(anchor_lang::ErrorCode::AccountNotEnoughKeys.into());
+                }
                 #ix_deser
                 #(#bump_cache_locals)*
                 #(#loads)*
