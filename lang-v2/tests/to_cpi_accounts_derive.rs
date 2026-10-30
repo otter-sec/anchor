@@ -32,6 +32,14 @@ struct OptionalReadonlyCpi<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+struct SignerSliceCpi<'a> {
+    #[signer(self.signers.is_empty())]
+    authority: CpiHandle<'a>,
+    #[signer]
+    signers: &'a [CpiHandle<'a>],
+}
+
+#[derive(ToCpiAccounts)]
 struct ManualCpi<'a> {
     readonly: CpiHandle<'a>,
     writable: CpiHandleMut<'a>,
@@ -176,6 +184,55 @@ fn derive_to_cpi_accounts_duplicate_readonly_erases_handle_mut() {
     assert_eq!(*handles[0].address(), Address::new_from_array([1; 32]));
     assert_eq!(*handles[2].address(), Address::new_from_array([2; 32]));
     assert_eq!(*handles[3].address(), Address::new_from_array([2; 32]));
+}
+
+#[test]
+fn derive_to_cpi_accounts_expands_signer_handle_slices() {
+    const AUTHORITY_ADDRESS: [u8; 32] = [8; 32];
+    const SIGNER_ONE_ADDRESS: [u8; 32] = [9; 32];
+    const SIGNER_TWO_ADDRESS: [u8; 32] = [10; 32];
+
+    let authority_buffer = account(AUTHORITY_ADDRESS, true, false);
+    let signer_one_buffer = account(SIGNER_ONE_ADDRESS, true, false);
+    let signer_two_buffer = account(SIGNER_TWO_ADDRESS, true, false);
+    let authority_view = unsafe { authority_buffer.view() };
+    let signer_one_view = unsafe { signer_one_buffer.view() };
+    let signer_two_view = unsafe { signer_two_buffer.view() };
+    let signers = [
+        signer_one_view.to_cpi_handle(),
+        signer_two_view.to_cpi_handle(),
+    ];
+
+    let accounts = SignerSliceCpi {
+        authority: authority_view.to_cpi_handle(),
+        signers: &signers,
+    };
+
+    let metas = accounts.to_instruction_accounts();
+    assert_eq!(metas.len(), 3);
+    assert!(!metas[0].is_signer);
+    assert!(metas[1].is_signer);
+    assert!(metas[2].is_signer);
+
+    let handles = accounts.to_cpi_handles();
+    assert_eq!(handles.len(), 3);
+    assert_eq!(
+        *handles[1].address(),
+        Address::new_from_array(SIGNER_ONE_ADDRESS)
+    );
+    assert_eq!(
+        *handles[2].address(),
+        Address::new_from_array(SIGNER_TWO_ADDRESS)
+    );
+    assert_eq!(accounts.optional_account_sentinel_flags(), vec![false; 3]);
+
+    let single = SignerSliceCpi {
+        authority: authority_view.to_cpi_handle(),
+        signers: &[],
+    };
+    let single_metas = single.to_instruction_accounts();
+    assert_eq!(single_metas.len(), 1);
+    assert!(single_metas[0].is_signer);
 }
 
 #[test]

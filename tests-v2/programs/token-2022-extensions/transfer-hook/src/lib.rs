@@ -28,6 +28,7 @@ pub mod token_2022_ext_transfer_hook {
         let accs = token_2022_ext::TransferHookUpdate {
             mint: ctx.accounts.mint.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
+            signers: &[],
         };
         token_2022_ext::transfer_hook_update(
             CpiContext::new(ctx.accounts.token_program.address(), accs),
