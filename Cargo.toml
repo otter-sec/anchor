@@ -70,7 +70,7 @@ exclude = [
 resolver = "3"
 
 [workspace.package]
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.3"
 readme = "README.md"
 repository = "https://github.com/otter-sec/anchor"
 
@@ -132,11 +132,11 @@ cargo_toml = "0.22.3"
 litesvm = "0.18.0"
 
 # Internal anchor crates
-anchor-lang = { path = "lang-v2", version = "=2.0.0-rc.2" }
-anchor-derive-accounts = { path = "lang-v2/derive", version = "=2.0.0-rc.2" }
-anchor-spl = { path = "spl-v2", version = "=2.0.0-rc.2" }
-anchor-client = { path = "client", version = "=2.0.0-rc.2" }
-anchor-cli-macros = { path = "cli/cli-macros", version = "=2.0.0-rc.2" }
+anchor-lang = { path = "lang-v2", version = "=2.0.0-rc.3" }
+anchor-derive-accounts = { path = "lang-v2/derive", version = "=2.0.0-rc.3" }
+anchor-spl = { path = "spl-v2", version = "=2.0.0-rc.3" }
+anchor-client = { path = "client", version = "=2.0.0-rc.3" }
+anchor-cli-macros = { path = "cli/cli-macros", version = "=2.0.0-rc.3" }
 anchor-lang-idl = { path = "idl", version = "=0.2.0" }
 anchor-lang-idl-spec = { path = "idl/spec", version = "=0.1.0" }
 

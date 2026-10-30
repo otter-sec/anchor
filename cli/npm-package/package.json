@@ -1,6 +1,6 @@
 {
   "name": "@anchor-lang/cli",
-  "version": "2.0.0-rc.2",
+  "version": "2.0.0-rc.3",
   "description": "Anchor CLI tool",
   "homepage": "https://github.com/otter-sec/anchor#readme",
   "bugs": {

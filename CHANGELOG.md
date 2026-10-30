@@ -12,6 +12,14 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+### Fixes
+
+### Breaking
+
+## [2.0.0-rc.3] - 2026-10-30
+
+### Features
+
 - client: Expose `parse_logs` to decode events from transaction logs while tracking the CPI stack ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
 
 ### Fixes
