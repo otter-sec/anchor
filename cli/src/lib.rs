@@ -944,6 +944,9 @@ pub enum IdlCommand {
     /// Generates the IDL for the program using the compilation method.
     #[clap(alias = "b")]
     Build {
+        /// Build the IDL for all programs in the workspace
+        #[clap(short = 'w', long, conflicts_with = "program_name")]
+        workspace: bool,
         // Program name to build the IDL of(current dir's program if not specified)
         #[clap(short, long)]
         program_name: Option<String>,
@@ -3361,6 +3364,7 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             )
         }
         IdlCommand::Build {
+            workspace,
             program_name,
             out,
             out_ts,
@@ -3369,6 +3373,7 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             cargo_args,
         } => idl_build(
             cfg_override,
+            workspace,
             program_name,
             out,
             out_ts,
@@ -3552,8 +3557,10 @@ fn idl_upgrade(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn idl_build(
     cfg_override: &ConfigOverride,
+    workspace: bool,
     program_name: Option<String>,
     out: Option<String>,
     out_ts: Option<String>,
@@ -3563,6 +3570,62 @@ fn idl_build(
 ) -> Result<()> {
     let cfg = Config::discover(cfg_override)?
         .ok_or_else(|| anyhow!("The 'anchor idl build' command requires an Anchor workspace."))?;
+    let cfg_parent = cfg.path().parent().expect("Invalid Anchor.toml");
+
+    if workspace {
+        let programs = get_metadata_ordered_program_list(&cfg)?;
+        let cur_dir = std::env::current_dir()?;
+
+        let idl_out_dir = out.map(PathBuf::from);
+        let ts_out_dir = out_ts.map(PathBuf::from);
+
+        for program_path in programs {
+            std::env::set_current_dir(&program_path)?;
+            let idl = generate_idl(&cfg, skip_lint, no_docs, &cargo_args)?;
+            std::env::set_current_dir(&cur_dir)?;
+
+            // JSON out path
+            let json_path = match &idl_out_dir {
+                Some(dir) => {
+                    fs::create_dir_all(dir)?;
+                    dir.join(&idl.metadata.name).with_extension("json")
+                }
+                None => {
+                    let dir = cfg_parent.join(&cfg.workspace.idls);
+                    fs::create_dir_all(&dir)?;
+                    dir.join(&idl.metadata.name).with_extension("json")
+                }
+            };
+            write_idl(&idl, OutFile::File(json_path))?;
+
+            // TS out path
+            let ts_path = match &ts_out_dir {
+                Some(dir) => {
+                    fs::create_dir_all(dir)?;
+                    dir.join(&idl.metadata.name).with_extension("ts")
+                }
+                None => {
+                    let dir = cfg_parent.join(&cfg.workspace.types);
+                    fs::create_dir_all(&dir)?;
+                    dir.join(&idl.metadata.name).with_extension("ts")
+                }
+            };
+            fs::write(&ts_path, idl_ts(&idl)?)?;
+
+            // Generate error constants file if errors exist
+            let types_dir = if cfg.workspace.types.is_empty() {
+                None
+            } else {
+                Some(cfg_parent.join(&cfg.workspace.types))
+            };
+            if let Some(ts_out_parent) = ts_path.parent() {
+                write_error_constants_file(&idl, ts_out_parent, types_dir)?;
+            }
+        }
+
+        return Ok(());
+    }
+
     let current_dir = std::env::current_dir()?;
     let program_path = match program_name {
         Some(name) => cfg.get_program(&name)?.path,
