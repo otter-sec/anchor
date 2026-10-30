@@ -1,5 +1,5 @@
 import { bs58, utf8 } from "./utils/bytes/index.js";
-import { inflate, ungzip } from "pako";
+import { Inflate } from "pako";
 import { toCamelCase } from "./utils/case.js";
 import { Buffer } from "buffer";
 import { PublicKey } from "@solana/web3.js";
@@ -327,6 +327,27 @@ export type MetadataAccount = {
   data: Buffer;
 };
 
+/**
+ * Default maximum size, in bytes, of decompressed IDL data (16 MiB).
+ *
+ * Real IDLs are far smaller than this. The limit exists because the IDL account
+ * is controlled by the program's metadata authority, and a small compressed
+ * payload can otherwise expand to gigabytes and crash the client process.
+ *
+ * Matches `MAX_IDL_BUFFER_BYTES` in the CLI's historical IDL fetcher.
+ */
+export const DEFAULT_MAX_IDL_DATA_SIZE = 16 * 1024 * 1024;
+
+export type DecodeIdlOptions = {
+  /**
+   * Maximum size, in bytes, of the decompressed IDL data. Decoding throws once
+   * the data grows past this size.
+   *
+   * Defaults to {@link DEFAULT_MAX_IDL_DATA_SIZE}.
+   */
+  maxDataSize?: number;
+};
+
 function encodeMetadataSeed(seed: string): Buffer {
   const encodedSeed = Buffer.from(utf8.encode(seed));
   if (encodedSeed.length > SEED_SIZE) {
@@ -362,12 +383,24 @@ export function seed(): string {
  * @see {@link decodeIdlAccountRaw} to get the raw IDL account.
  *
  * @param data IDL account data
+ * @param options decoding options
  * @returns the parsed IDL
  */
-export function decodeIdlAccount<IDL extends Idl = Idl>(data: Buffer): IDL {
+export function decodeIdlAccount<IDL extends Idl = Idl>(
+  data: Buffer,
+  options?: DecodeIdlOptions
+): IDL {
   const { data: rawData, compression, encoding } = decodeIdlAccountRaw(data);
+  // Any other encoding turns the bytes into hex/base58/base64 text, which is
+  // never valid JSON. Rejecting it up front also avoids base58 encoding, whose
+  // cost grows quadratically with the data size.
+  if (encoding !== MetadataEncoding.Utf8) {
+    throw new Error(
+      `IDL has encoding '${encoding}', only UTF-8 JSON IDLs (${MetadataEncoding.Utf8}) are supported`
+    );
+  }
   const decoded = decodeMetadataData(
-    uncompressMetadataData(rawData, compression),
+    uncompressMetadataData(rawData, compression, options?.maxDataSize),
     encoding
   );
   return JSON.parse(decoded);
@@ -466,20 +499,72 @@ export function decodeIdlAccountRaw(data: Buffer) {
 
 export function uncompressMetadataData(
   data: Buffer,
-  compression: MetadataCompression
+  compression: MetadataCompression,
+  maxDataSize: number = DEFAULT_MAX_IDL_DATA_SIZE
 ): Buffer {
+  // Also rejects NaN, which would otherwise disable the limit.
+  if (!(maxDataSize >= 0)) {
+    throw new Error(`Invalid maximum IDL data size: ${maxDataSize}`);
+  }
+
   switch (compression) {
     case MetadataCompression.None:
+      // Can't trigger with the default limit since accounts are at most
+      // 10 MiB, but keeps a lower custom limit consistent across compressions.
+      if (data.length > maxDataSize) {
+        throw new Error(
+          `IDL data size exceeds the maximum of ${maxDataSize} bytes`
+        );
+      }
       return data;
     case MetadataCompression.Gzip:
-      return Buffer.from(ungzip(data));
     case MetadataCompression.Zlib:
-      return Buffer.from(inflate(data));
+      return inflateWithLimit(data, maxDataSize);
     default:
       throw new Error(
         `Unsupported metadata compression: ${String(compression as number)}`
       );
   }
+}
+
+/**
+ * Inflate gzip or zlib data, failing as soon as the output grows past
+ * `maxDataSize` bytes.
+ *
+ * Pako's one-shot `inflate`/`ungzip` only return after the whole output has
+ * been built, so a size check on the result comes too late. Streaming lets us
+ * stop after at most `maxDataSize` plus one output chunk.
+ */
+function inflateWithLimit(data: Buffer, maxDataSize: number): Buffer {
+  // Like `inflate`/`ungzip`, this detects the gzip or zlib header on its own.
+  const inflator = new Inflate();
+  let size = 0;
+  inflator.onData = (chunk) => {
+    size += chunk.length;
+    if (size > maxDataSize) {
+      throw new Error(
+        `Decompressed IDL data exceeds the maximum of ${maxDataSize} bytes`
+      );
+    }
+    Inflate.prototype.onData.call(inflator, chunk);
+  };
+
+  // Same flush mode as the one-shot `inflate`.
+  inflator.push(data);
+  if (inflator.err) {
+    throw new Error(
+      `Failed to decompress IDL data: ${
+        inflator.msg || `zlib error ${inflator.err}`
+      }`
+    );
+  }
+  if (!inflator.result) {
+    throw new Error("Failed to decompress IDL data: unexpected end of data");
+  }
+
+  // Wrap pako's output instead of copying it.
+  const result = inflator.result as Uint8Array;
+  return Buffer.from(result.buffer, result.byteOffset, result.byteLength);
 }
 
 export function decodeMetadataData(
