@@ -18,7 +18,7 @@ use {
 /// Type validating that the account is the given Program
 ///
 /// The type has a `programdata_address` function that will return `Option::Some`
-/// if the program is owned by the [`BPFUpgradeableLoader`](https://docs.rs/solana-program/latest/solana_program/bpf_loader_upgradeable/index.html)
+/// if the program is owned by the [`BPFUpgradeableLoader`](https://docs.rs/solana-sdk-ids/latest/solana_sdk_ids/bpf_loader_upgradeable/index.html)
 /// which will contain the `programdata_address` property of the `Program` variant of the [`UpgradeableLoaderState`](https://docs.rs/solana-loader-v3-interface/6.1.0/solana_loader_v3_interface/state/enum.UpgradeableLoaderState.html) enum.
 ///
 /// # Table of Contents
@@ -91,7 +91,7 @@ use {
 /// Between the [`anchor_lang`](https://docs.rs/anchor-lang/latest/anchor_lang) and [`anchor_spl`](https://docs.rs/anchor_spl/latest/anchor_spl) crates,
 /// the following `Program` types are provided out of the box:
 ///
-/// - [`System`](https://docs.rs/anchor-lang/latest/anchor_lang/struct.System.html)
+/// - [`System`](crate::system_program::System)
 /// - [`AssociatedToken`](https://docs.rs/anchor-spl/latest/anchor_spl/associated_token/struct.AssociatedToken.html)
 /// - [`Token`](https://docs.rs/anchor-spl/latest/anchor_spl/token/struct.Token.html)
 ///
@@ -148,7 +148,7 @@ impl<'a, T> Program<'a, T> {
 impl<'a, T: Id> TryFrom<&'a AccountInfo<'a>> for Program<'a, T> {
     type Error = Error;
     /// Deserializes the given `info` into a `Program`, checking the pubkey matches
-    /// [`T::id`];
+    /// [`T::id()`](crate::Id::id);
     fn try_from(info: &'a AccountInfo<'a>) -> Result<Self> {
         if info.key != &T::id() {
             return Err(Error::from(ErrorCode::InvalidProgramId).with_pubkeys((*info.key, T::id())));

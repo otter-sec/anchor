@@ -10,7 +10,7 @@ use {
 
 /// Check whether `overflow-checks` codegen option is enabled.
 ///
-/// https://doc.rust-lang.org/rustc/codegen-options/index.html#overflow-checks
+/// <https://doc.rust-lang.org/rustc/codegen-options/index.html#overflow-checks>
 pub fn check_overflow(cargo_toml_path: impl AsRef<Path>) -> Result<bool> {
     Manifest::from_path(cargo_toml_path)?
         .profile

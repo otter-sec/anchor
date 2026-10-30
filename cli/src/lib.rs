@@ -403,6 +403,7 @@ pub enum Command {
         /// Run the test suites under the specified path
         #[clap(long)]
         run: Vec<String>,
+        #[allow(rustdoc::broken_intra_doc_links)]
         /// Name of the script to run from [scripts] section (defaults to "test")
         #[clap(long)]
         script: Option<String>,
@@ -595,6 +596,7 @@ pub enum Command {
     },
     /// Fetch and deserialize an account using the IDL provided.
     Account {
+        #[allow(rustdoc::invalid_html_tags)]
         /// Account struct to deserialize (format: <program_name>.<Account>)
         account_type: String,
         /// Address of the account to deserialize
@@ -652,6 +654,7 @@ pub enum Command {
         #[clap(subcommand)]
         subcmd: codama::CodamaCommand,
     },
+    #[allow(rustdoc::broken_intra_doc_links)]
     /// [DEPRECATED] Manage legacy on-chain IDL accounts.
     /// These commands interact with the old Anchor IDL instruction protocol and will be removed
     /// in a future release. Migrate to Program Metadata-based IDL management (`anchor idl`).

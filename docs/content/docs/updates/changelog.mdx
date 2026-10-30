@@ -804,7 +804,7 @@ passing ([#3768](https://github.com/solana-foundation/anchor/pull/3768)).
 
 - idl: Allow overriding the idl build toolchain with the `RUSTUP_TOOLCHAIN`
   environment variable
-  ([#2941](https://github.com/solana-foundation/anchor/pull/2941])).
+  ([#2941](https://github.com/solana-foundation/anchor/pull/2941)).
 - avm: Support customizing the installation location using `AVM_HOME`
   environment variable ([#2917](https://github.com/solana-foundation/anchor/pull/2917)).
 - avm: Optimize `avm list` when GitHub API rate limits are reached
@@ -1836,7 +1836,7 @@ passing ([#3768](https://github.com/solana-foundation/anchor/pull/3768)).
   ([#1057](https://github.com/solana-foundation/anchor/pull/1057)).
 - lang: `ProgramData` and `UpgradableLoaderState` can now be passed into
   `Account` as generics. see
-  [UpgradeableLoaderState](https://docs.rs/solana-program/latest/solana_program/bpf_loader_upgradeable/enum.UpgradeableLoaderState.html).
+  [UpgradeableLoaderState](https://docs.rs/solana-loader-v3-interface/latest/solana_loader_v3_interface/state/enum.UpgradeableLoaderState.html).
   `UpgradableLoaderState` can also be matched on to get `ProgramData`, but when
   `ProgramData` is used instead, anchor does the serialization and checking that
   it is actually program data for you

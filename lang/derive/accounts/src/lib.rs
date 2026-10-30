@@ -444,7 +444,7 @@ use {proc_macro::TokenStream, quote::ToTokens, syn::parse_macro_input};
 ///                 <code>#[account(realloc = &lt;space&gt;, realloc::payer = &lt;target&gt;, realloc::zero = &lt;bool&gt;)]</code>
 ///             </td>
 ///             <td>
-///                 Used to <a href="https://docs.rs/solana-program/latest/solana_program/account_info/struct.AccountInfo.html#method.realloc" target = "_blank" rel = "noopener noreferrer">realloc</a>
+///                 Used to <a href="https://docs.rs/solana-account-info/latest/solana_account_info/struct.AccountInfo.html#method.resize" target = "_blank" rel = "noopener noreferrer">realloc</a>
 ///                 program account space at the beginning of an instruction.
 ///                 <br><br>
 ///                 The account must be marked as <code>mut</code> and applied to either <code>Account</code> or <code>AccountLoader</code> types.
