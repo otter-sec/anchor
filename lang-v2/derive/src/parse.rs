@@ -57,6 +57,9 @@ pub struct AccountAttrs {
     pub init_if_needed_span: Option<proc_macro2::Span>,
     /// None = no bump attr, Some(None) = `bump` without value, Some(Some(expr)) = `bump = expr`
     pub bump: Option<Option<Expr>>,
+    /// `bump(canonical) = <expr>`: the expression is still the on-chain bump,
+    /// and the IDL keeps PDA seeds because the author asserts it is canonical.
+    pub bump_canonical: bool,
     pub payer: Option<Ident>,
     pub space: Option<Expr>,
     pub seeds: Option<Expr>,
@@ -114,6 +117,7 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
         init_span: None,
         init_if_needed_span: None,
         bump: None,
+        bump_canonical: false,
         payer: None,
         space: None,
         seeds: None,
@@ -196,7 +200,38 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
                         if result.bump.is_some() {
                             return Err(duplicate_singleton(ident.span(), "bump"));
                         }
-                        if input.peek(Token![=]) {
+                        if input.peek(syn::token::Paren) {
+                            let content;
+                            syn::parenthesized!(content in input);
+                            let flag: Ident = content.parse().map_err(|_| {
+                                syn::Error::new(
+                                    ident.span(),
+                                    "`bump(...)` expects the `canonical` modifier",
+                                )
+                            })?;
+                            if flag != "canonical" {
+                                return Err(syn::Error::new(
+                                    flag.span(),
+                                    "unknown bump modifier; the only supported modifier is \
+                                     `canonical`",
+                                ));
+                            }
+                            if !content.is_empty() {
+                                return Err(content.error(
+                                    "`bump(canonical)` takes no further arguments",
+                                ));
+                            }
+                            if !input.peek(Token![=]) {
+                                return Err(syn::Error::new(
+                                    ident.span(),
+                                    "`bump(canonical)` requires `= <expr>`; a bare `bump` already \
+                                     marks the canonical bump",
+                                ));
+                            }
+                            input.parse::<Token![=]>()?;
+                            result.bump = Some(Some(input.parse()?));
+                            result.bump_canonical = true;
+                        } else if input.peek(Token![=]) {
                             input.parse::<Token![=]>()?;
                             result.bump = Some(Some(input.parse()?));
                         } else {
@@ -1598,6 +1633,16 @@ pub fn bump_cache_ident(field_name: &Ident) -> Ident {
     )
 }
 
+/// Expansion-time note. `bump = <expr>` stays valid this is not a deprecation.
+fn explicit_bump_idl_note(bump_expr: &Expr) -> TokenStream2 {
+    let rendered = stringify_address_expr(bump_expr);
+    eprintln!(
+        "info: `bump = {rendered}` omits PDA seeds from the IDL, \
+         write `bump(canonical) = {rendered}` when that value is the canonical bump"
+    );
+    TokenStream2::new()
+}
+
 /// Turn the RHS of `#[account(address = <expr>)]` into the string form the
 /// IDL emits. Whitespace from `quote!`'s token reassembly is stripped so
 /// `crate :: ID` → `crate::ID`, `data . authority` → `data.authority`, and
@@ -2434,8 +2479,9 @@ pub fn parse_field(
         None => (None, None, None),
     };
     let idl_docs = crate::idl::extract_doc_lines(&field.attrs);
-    let idl_pda = if matches!(attrs.bump.as_ref(), Some(Some(_))) {
+    let idl_pda = if matches!(attrs.bump.as_ref(), Some(Some(_))) && !attrs.bump_canonical {
         // Explicit bumps may be non-canonical, so clients need the address.
+        // `bump(canonical) = <expr>` opts back into seed metadata.
         None
     } else {
         attrs.seeds.as_ref().and_then(|seeds_expr| {
@@ -2835,10 +2881,12 @@ pub fn parse_field(
                     } else {
                         quote! { __bump_val }
                     };
+                    let idl_note = (!attrs.bump_canonical).then(|| explicit_bump_idl_note(bump_expr));
                     let (seed_bindings, seed_refs) =
                         materialize_seed_refs(&seed_elems, field_names);
                     quote! {
                         {
+                            #idl_note
                             #(#seed_bindings)*
                             let __bump_val: u8 = #bump_expr;
                             anchor_lang::verify_program_address(
@@ -2880,9 +2928,11 @@ pub fn parse_field(
                 };
                 let seed_constraint = if let Some(Some(ref bump_expr)) = attrs.bump {
                     let bump_cache = bump_cache_ident(field_name);
+                    let idl_note = (!attrs.bump_canonical).then(|| explicit_bump_idl_note(bump_expr));
                     // Explicit bump + expression seeds: verify with appended bump
                     quote! {
                         {
+                            #idl_note
                             let __seed_val = #seeds_expr;
                             let __seed_ref: &[&[u8]] = __seed_val.as_ref();
                             if __seed_ref.len() > 16 {
@@ -3490,6 +3540,47 @@ mod tests {
         let parsed = parse_account_attrs(&attrs).expect("empty seeds with bump must parse");
         assert!(parsed.seeds.is_some());
         assert!(matches!(parsed.bump, Some(Some(_))));
+        assert!(!parsed.bump_canonical);
+    }
+
+    #[test]
+    fn bump_canonical_keeps_the_explicit_expression() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(seeds = [b"vault"], bump(canonical) = vault.bump)]
+        )];
+        let parsed = parse_account_attrs(&attrs).expect("canonical explicit bump must parse");
+        assert!(parsed.bump_canonical);
+        assert!(matches!(parsed.bump, Some(Some(_))));
+    }
+
+    #[test]
+    fn bump_canonical_without_expression_is_rejected() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(seeds = [b"vault"], bump(canonical))]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("bare canonical modifier must fail"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string().contains("requires `= <expr>`"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn unknown_bump_modifier_is_rejected() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(seeds = [b"vault"], bump(stored) = vault.bump)]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("unknown bump modifier must fail"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string().contains("unknown bump modifier"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
