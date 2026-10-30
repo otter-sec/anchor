@@ -945,7 +945,7 @@ pub enum IdlCommand {
     #[clap(alias = "b")]
     Build {
         /// Build the IDL for all programs in the workspace
-        #[clap(short = 'w', long, conflicts_with = "program_name")]
+        #[clap(long, conflicts_with = "program_name")]
         workspace: bool,
         // Program name to build the IDL of(current dir's program if not specified)
         #[clap(short, long)]
