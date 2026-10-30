@@ -109,6 +109,12 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
         proc_macro2::Span::call_site(),
     );
 
+    // Deserialize declared instruction args from a private cursor rather
+    // than from `__ix_data` itself. Composite fields receive `__ix_data`
+    // and must see the instruction data from the start, so that a nested
+    // `#[derive(Accounts)]` struct declaring the same `#[instruction(..)]`
+    // args deserializes them from the same offset as its parent.
+    let ix_cursor = private_ident("__ix_data_cursor");
     let ix_de = match &accs.instruction_api {
         None => quote! {},
         Some(ix_api) => {
@@ -119,7 +125,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                         let field = &arg.pat;
                         let ty = &arg.ty;
                         quote! {
-                            let #field: #ty = <#ty as anchor_lang::AnchorDeserialize>::deserialize(&mut #ix_data)
+                            let #field: #ty = <#ty as anchor_lang::AnchorDeserialize>::deserialize(&mut #ix_cursor)
                                 .map_err(|_| anchor_lang::error::ErrorCode::InstructionDidNotDeserialize)?;
                         }
                     }
@@ -132,7 +138,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                 })
                 .collect();
             quote! {
-                let mut #ix_data = #ix_data;
+                let mut #ix_cursor: &[u8] = #ix_data;
                 #(#field_deserializers)*
             }
         }

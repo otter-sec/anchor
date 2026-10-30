@@ -23,6 +23,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 - cli: Accept an explicit program id or workspace program when parsing `program extend` ([#5220](https://github.com/otter-sec/anchor/pull/5220)).
 - Block mutable aliasing between accounts marked `zero` and `init` ([#4871](https://github.com/otter-sec/anchor/pull/4871)).
+- lang: Deserialize `#[instruction(..)]` args from a private cursor so composite `Accounts` structs that declare the same args read them from the start of the instruction data instead of failing with `InstructionDidNotDeserialize` ([#2942](https://github.com/otter-sec/anchor/issues/2942)).
 - lang: Support fully qualified account types in `Context` ([#4836](https://github.com/otter-sec/anchor/pull/4836)).
 - ts: Support `delegatedAmount` in accounts resolver ([#4957](https://github.com/otter-sec/anchor/pull/4957)).
 - cli: Reject `anchor program deploy` when `--program-id` does not match the program keypair pubkey ([#5129](https://github.com/otter-sec/anchor/pull/5129)).
@@ -61,6 +62,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 ### Breaking
 
 - lang: Require comma-separated expressions in `#[access_control(...)]`; the previously accepted undocumented whitespace-separated form, such as `#[access_control(a() b())]`, is no longer supported ([#4980](https://github.com/otter-sec/anchor/pull/4980)).
+- lang: Nested `Accounts` structs now read `#[instruction(..)]` args from the start of the instruction data, like top-level structs. A nested struct that declared only the trailing args and relied on the parent having consumed the leading ones must now declare the full prefix ([#5214](https://github.com/otter-sec/anchor/pull/5214)).
 
 ## [1.2.1] - 2026-10-05
 
