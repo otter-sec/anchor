@@ -5,7 +5,7 @@
 //!
 //! 1. The caller invokes the existing `anchor test --profile` pipeline,
 //!    which leaves traces under `target/anchor-v2-profile/<test>/`.
-//! 2. [`run`] walks that directory, materializes a [`DebugSession`], and
+//! 2. [`run`] walks that directory, materializes a [`DebugSession`](model::DebugSession), and
 //!    launches the TUI.
 //!
 //! Keeping the trace-producing half identical to `--profile` means the

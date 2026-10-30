@@ -1,0 +1,40 @@
+verbose = "error"
+no_progress = true
+
+max_retries = 5
+retry_wait_time = 2
+timeout = 20
+max_concurrency = 32
+# A slow site is not a dead link.
+accept_timeouts = true
+
+# 200 and 206 are success. 429 is GitHub rate limiting, not a dead link.
+# 401, 403, and 5xx are blocked or inconclusive, so they do not fail the run.
+accept = ["200", "206", "401", "403", "429", "500..=599"]
+
+scheme = ["http", "https"]
+include_fragments = "anchor-only"
+include_verbatim = false
+exclude_loopback = true
+
+exclude = [
+  '^https?://(www\.)?example\.(com|org|net)(/|$)',
+  '^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|/|$)',
+]
+
+remap = [
+  '^(file://.*)/docs/content/(.+\.[A-Za-z0-9]+)$ $1/docs/public/$2',
+  '^(file://.*)/docs-v2/src/content/docs/(.+\.[A-Za-z0-9]+)$ $1/docs-v2/public/$2',
+  # The repo moved from coral-xyz to solana-foundation to otter-sec. GitHub
+  # redirects old pull and commit links but returns 404 for old issue links,
+  # so check every old link against the current repo instead.
+  '^https://github\.com/(coral-xyz|solana-foundation)/anchor/(.*)$ https://github.com/otter-sec/anchor/$2',
+]
+
+[hosts."github.com"]
+concurrency = 4
+request_interval = "200ms"
+
+[hosts."docs.rs"]
+concurrency = 8
+request_interval = "100ms"

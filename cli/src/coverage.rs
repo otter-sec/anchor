@@ -188,7 +188,7 @@ fn resolve_source_path(file: &Path, workspace_root: Option<&Path>) -> Option<Pat
     candidate.exists().then_some(candidate)
 }
 
-/// Walk trace directory recursively, collecting all unique PCs (reg[11])
+/// Walk trace directory recursively, collecting all unique PCs (`reg[11]`)
 /// per program_id from `.regs` files.
 ///
 /// Handles both trace-dir layouts:

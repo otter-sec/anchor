@@ -18,7 +18,7 @@
 //! preserving absolute paths in the debug info.
 //!
 //! The sentinel env var is necessary because `RUSTC_WRAPPER` mode passes
-//! a path as argv[1] (the real rustc binary), which clap would reject as
+//! a path as `argv[1]` (the real rustc binary), which clap would reject as
 //! an unknown subcommand. The check in `main.rs` runs before clap
 //! parsing so the process never hits the normal CLI dispatch.
 //!

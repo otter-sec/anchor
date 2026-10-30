@@ -64,6 +64,11 @@ jobs:
       - run: cargo build
       - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu rustfmt && cargo +nightly fmt -- --check
       - run: cargo clippy --all-targets -- -D warnings
+      # Broken intra-doc links and other rustdoc warnings. Private items are
+      # documented so their links are checked too.
+      - run: cargo doc --no-deps --document-private-items
+        env:
+          RUSTDOCFLAGS: -D warnings -A rustdoc::private_intra_doc_links
       - run: ./.github/scripts/check-solana-program-version.sh
       # FIXME: Enable `idl-build`
       - run: cargo test --workspace --exclude avm --features allow-missing-optionals,anchor-debug,derive,event-cpi,init-if-needed,lazy-account
@@ -416,8 +421,10 @@ jobs:
         working-directory: /tmp/hello-anchor-${{ matrix.template }}
         run: |
           sed -i 's/^litesvm = "0.15.0"$/litesvm = "0.17.0"/' programs/hello-anchor-${{ matrix.template }}/Cargo.toml
-          rm -f Cargo.lock
           sed -i 's/^channel = ".*"$/channel = "1.97.1"/' rust-toolchain.toml
+          cargo add --dev 'solana-program-runtime@~4.3.0' 'solana-fee@~4.3.0' --manifest-path programs/hello-anchor-${{ matrix.template }}/Cargo.toml
+          # Replace the locked loader interface's wincode 0.5 implementation.
+          cargo update -p solana-loader-v3-interface@8
 
       - name: Point anchor-lang to workspace
         if: ${{ matrix.template != 'litesvm-solana-v4' }}

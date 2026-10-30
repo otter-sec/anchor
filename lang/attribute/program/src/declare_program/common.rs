@@ -96,8 +96,8 @@ pub fn convert_idl_type_to_str(ty: &IdlType, is_const: bool) -> Result<String, s
         IdlType::F64 => "f64".into(),
         IdlType::U128 => "u128".into(),
         IdlType::I128 => "i128".into(),
-        IdlType::U256 => "u256".into(),
-        IdlType::I256 => "i256".into(),
+        // No 256-bit integers in Rust: the TS coder's 32 little-endian bytes
+        IdlType::U256 | IdlType::I256 => "[u8; 32]".into(),
         IdlType::Bytes => if is_const {
             "&[u8]"
         } else {
@@ -868,6 +868,8 @@ mod tests {
         assert_eq!(s(&IdlType::Bool), "bool");
         assert_eq!(s(&IdlType::U8), "u8");
         assert_eq!(s(&IdlType::U64), "u64");
+        assert_eq!(s(&IdlType::U256), "[u8; 32]");
+        assert_eq!(s(&IdlType::I256), "[u8; 32]");
         assert_eq!(s(&IdlType::String), "::std::string::String");
         assert_eq!(s(&IdlType::Pubkey), "anchor_lang::prelude::Pubkey");
 
