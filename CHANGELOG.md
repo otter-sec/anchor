@@ -57,6 +57,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - deps: Bump `heck` to 0.5 to avoid incompatible dependencies ([#4960](https://github.com/otter-sec/anchor/pull/4960)).
 - lang: Read the `#[account]` namespace from the string value ([#5200](https://github.com/otter-sec/anchor/pull/5200)).
 - lang: Reject closing an account into itself from `close()` ([#5202](https://github.com/otter-sec/anchor/pull/5202)).
+- cli: Restore `--verifiable` for deploys, now on `anchor program deploy`, so the `target/verifiable` build can be deployed again without the deprecated `anchor deploy` ([#5223](https://github.com/otter-sec/anchor/pull/5223)).
 
 ### Breaking
 

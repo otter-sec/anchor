@@ -750,6 +750,9 @@ pub enum ProgramCommand {
         /// Send write transactions through RPC instead of TPU.
         #[clap(long)]
         use_rpc: bool,
+        /// If true, deploy from path target/verifiable
+        #[clap(short, long, conflicts_with = "program_filepath")]
+        verifiable: bool,
         /// Don't upload IDL during deployment (IDL is uploaded by default)
         #[clap(long)]
         no_idl: bool,
@@ -6438,6 +6441,7 @@ fn deploy(
                 None,  // buffer
                 None,  // max_len
                 false, // use_rpc
+                verifiable,
                 no_idl,
                 security_metadata,
                 false, // make_final
@@ -7866,6 +7870,51 @@ mod tests {
             panic!("expected localnet command");
         };
         assert_eq!(validator, ValidatorType::Surfpool);
+    }
+
+    fn parse_program_deploy_verifiable(args: &[&str]) -> bool {
+        let opts = Opts::try_parse_from(args).unwrap();
+        let Command::Program {
+            subcmd: ProgramCommand::Deploy { verifiable, .. },
+        } = opts.command
+        else {
+            panic!("expected program deploy command");
+        };
+        verifiable
+    }
+
+    #[test]
+    fn test_program_deploy_verifiable_flag() {
+        assert!(!parse_program_deploy_verifiable(&[
+            "anchor", "program", "deploy"
+        ]));
+        assert!(parse_program_deploy_verifiable(&[
+            "anchor",
+            "program",
+            "deploy",
+            "--verifiable",
+        ]));
+        assert!(parse_program_deploy_verifiable(&[
+            "anchor",
+            "program",
+            "deploy",
+            "--program-name",
+            "foo",
+            "-v",
+        ]));
+    }
+
+    #[test]
+    fn test_program_deploy_verifiable_conflicts_with_filepath() {
+        let err = Opts::try_parse_from([
+            "anchor",
+            "program",
+            "deploy",
+            "target/deploy/foo.so",
+            "--verifiable",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     #[test]
