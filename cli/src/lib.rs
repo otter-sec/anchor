@@ -2754,7 +2754,8 @@ fn build_cwd_verifiable(
         Ok(_) => {
             // Build the idl.
             println!("Extracting the IDL");
-            let idl = generate_idl(cfg, skip_lint, no_docs, &cargo_args)?;
+            let idl_cargo_args = filter_cargo_args_for_idl(&cargo_args);
+            let idl = generate_idl(cfg, skip_lint, no_docs, &idl_cargo_args)?;
             // Write out the JSON file.
             println!("Writing the IDL file");
             let out_file = target_dir
@@ -3073,7 +3074,8 @@ fn _build_cwd(
 
     // Generate IDL
     if !no_idl {
-        let idl = generate_idl(cfg, skip_lint, no_docs, &cargo_args)?;
+        let idl_cargo_args = filter_cargo_args_for_idl(&cargo_args);
+        let idl = generate_idl(cfg, skip_lint, no_docs, &idl_cargo_args)?;
         let cfg_parent = cfg.path().parent().expect("Invalid Anchor.toml");
 
         // JSON out path.
@@ -3596,6 +3598,48 @@ fn idl_build(
     }
 
     Ok(())
+}
+
+/// Filters out `cargo build-sbf` specific arguments that are not accepted by `cargo test` when generating IDLs.
+fn filter_cargo_args_for_idl(args: &[String]) -> Vec<String> {
+    let build_sbf_flags_with_val = ["--arch", "--tools-version", "--sbf-out-dir", "--sbf-sdk"];
+    let build_sbf_flags = [
+        "--debug",
+        "--dump",
+        "--force-tools-install",
+        "--generate-child-script-on-failure",
+        "--disable-remap-cwd",
+    ];
+
+    let mut filtered = Vec::new();
+    let mut skip_next = false;
+
+    for arg in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+
+        if build_sbf_flags.iter().any(|&f| f == arg) {
+            continue;
+        }
+
+        if build_sbf_flags_with_val.iter().any(|&f| f == arg) {
+            skip_next = true;
+            continue;
+        }
+
+        if build_sbf_flags_with_val
+            .iter()
+            .any(|&f| arg.starts_with(&format!("{f}=")))
+        {
+            continue;
+        }
+
+        filtered.push(arg.clone());
+    }
+
+    filtered
 }
 
 /// Generate IDL with method decided by whether manifest file has `idl-build` feature or not.
@@ -8655,5 +8699,34 @@ mod tests {
         assert!(result.contains("  JsonError: 6003"));
         assert!(result
             .contains("export type TestProgramErrorName = keyof typeof TestProgramErrorCode;"));
+    }
+
+    #[test]
+    fn test_filter_cargo_args_for_idl() {
+        let args = vec![
+            "--debug".to_string(),
+            "--features".to_string(),
+            "my-feature".to_string(),
+            "--arch".to_string(),
+            "v2".to_string(),
+            "--no-default-features".to_string(),
+            "--tools-version".to_string(),
+            "v1.57".to_string(),
+            "--dump".to_string(),
+            "--sbf-out-dir=/tmp/sbf".to_string(),
+            "--features=other-feature".to_string(),
+        ];
+
+        let filtered = filter_cargo_args_for_idl(&args);
+
+        assert_eq!(
+            filtered,
+            vec![
+                "--features".to_string(),
+                "my-feature".to_string(),
+                "--no-default-features".to_string(),
+                "--features=other-feature".to_string(),
+            ]
+        );
     }
 }
