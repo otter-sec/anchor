@@ -57,6 +57,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - deps: Bump `heck` to 0.5 to avoid incompatible dependencies ([#4960](https://github.com/otter-sec/anchor/pull/4960)).
 - lang: Read the `#[account]` namespace from the string value ([#5200](https://github.com/otter-sec/anchor/pull/5200)).
 - lang: Reject closing an account into itself from `close()` ([#5202](https://github.com/otter-sec/anchor/pull/5202)).
+- cli: Merge `shutdown_wait` and `upgradeable` from `Test.toml` files that use `extends` ([#5188](https://github.com/otter-sec/anchor/issues/5188)).
 
 ### Breaking
 
