@@ -2757,8 +2757,7 @@ fn build_cwd_verifiable(
         Ok(_) => {
             // Build the idl.
             println!("Extracting the IDL");
-            let idl_cargo_args = filter_cargo_args_for_idl(&cargo_args);
-            let idl = generate_idl(cfg, skip_lint, no_docs, &idl_cargo_args)?;
+            let idl = generate_idl(cfg, skip_lint, no_docs, &cargo_args)?;
             // Write out the JSON file.
             println!("Writing the IDL file");
             let out_file = target_dir
@@ -3077,8 +3076,7 @@ fn _build_cwd(
 
     // Generate IDL
     if !no_idl {
-        let idl_cargo_args = filter_cargo_args_for_idl(&cargo_args);
-        let idl = generate_idl(cfg, skip_lint, no_docs, &idl_cargo_args)?;
+        let idl = generate_idl(cfg, skip_lint, no_docs, &cargo_args)?;
         let cfg_parent = cfg.path().parent().expect("Invalid Anchor.toml");
 
         // JSON out path.
@@ -3692,10 +3690,10 @@ fn filter_cargo_args_for_idl(args: &[String]) -> Vec<String> {
             continue;
         }
 
-        if build_sbf_flags_with_val
-            .iter()
-            .any(|&f| arg.starts_with(&format!("{f}=")))
-        {
+        if build_sbf_flags_with_val.iter().any(|&f| {
+            arg.strip_prefix(f)
+                .is_some_and(|rest| rest.starts_with('='))
+        }) {
             continue;
         }
 
@@ -3714,11 +3712,13 @@ fn generate_idl(
 ) -> Result<Idl> {
     check_idl_build_feature()?;
 
+    let cargo_args = filter_cargo_args_for_idl(cargo_args);
+
     let idl = anchor_lang_idl::build::IdlBuilder::new()
         .resolution(cfg.features.resolution)
         .skip_lint(cfg.features.skip_lint || skip_lint)
         .no_docs(no_docs)
-        .cargo_args(cargo_args.into())
+        .cargo_args(cargo_args)
         .build()?;
 
     // Warn users if there is a potential for a conflict between user-defined discriminators and
