@@ -18,10 +18,12 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Allow `None` in `mint::authority` and `mint::freeze_authority` constraints ([#5007](https://github.com/otter-sec/anchor/pull/5007)).
 - lang: Implement `Space` for `NonZero*` integers so `#[derive(InitSpace)]` supports them ([#5132](https://github.com/otter-sec/anchor/pull/5132)).
 - idl: Support `NonZero*` integer types in IDL generation ([#5130](https://github.com/otter-sec/anchor/pull/5130)).
+- cli: Add `extra_args` to `[surfpool]` in `Anchor.toml` to pass additional flags to `surfpool start` ([#5221](https://github.com/otter-sec/anchor/pull/5221)).
 
 ### Fixes
 
 - cli: Accept an explicit program id or workspace program when parsing `program extend` ([#5220](https://github.com/otter-sec/anchor/pull/5220)).
+- cli: Honor account-file, directory and genesis fixtures with `--skip-deploy` on the Surfpool test backend ([#5221](https://github.com/otter-sec/anchor/pull/5221)).
 - Block mutable aliasing between accounts marked `zero` and `init` ([#4871](https://github.com/otter-sec/anchor/pull/4871)).
 - lang: Support fully qualified account types in `Context` ([#4836](https://github.com/otter-sec/anchor/pull/4836)).
 - ts: Support `delegatedAmount` in accounts resolver ([#4957](https://github.com/otter-sec/anchor/pull/4957)).

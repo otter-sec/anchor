@@ -1058,6 +1058,7 @@ pub struct SurfpoolConfig {
     pub slot_time: Option<u16>,
     pub log_level: Option<String>,
     pub block_production_mode: Option<String>,
+    pub extra_args: Option<Vec<String>>,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -1102,6 +1103,9 @@ pub struct _SurfpoolConfig {
     pub log_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub block_production_mode: Option<String>,
+    // Extra arguments to pass through to `surfpool start`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_args: Option<Vec<String>>,
 }
 
 impl From<_SurfpoolConfig> for SurfpoolConfig {
@@ -1120,6 +1124,7 @@ impl From<_SurfpoolConfig> for SurfpoolConfig {
             slot_time: _surfpool_config.slot_time,
             log_level: _surfpool_config.log_level,
             block_production_mode: _surfpool_config.block_production_mode,
+            extra_args: _surfpool_config.extra_args,
         }
     }
 }
@@ -1140,6 +1145,7 @@ impl From<SurfpoolConfig> for _SurfpoolConfig {
             slot_time: surfpool_config.slot_time,
             log_level: surfpool_config.log_level,
             block_production_mode: surfpool_config.block_production_mode,
+            extra_args: surfpool_config.extra_args,
         }
     }
 }
@@ -1966,6 +1972,7 @@ home_path!(WalletPath, ".config/solana/id.json");
 
 #[cfg(test)]
 mod tests {
+    mod surfpool;
     use super::*;
 
     const BASE_CONFIG: &str = "
