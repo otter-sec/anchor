@@ -175,7 +175,7 @@ pub fn find_program_address(seeds: &[&[u8]], program_id: &Address) -> (Address, 
 }
 
 /// Find a PDA, returning an error if none exists.
-// The loop keeps a `[&[u8]; 19]` seed array on the stack, so this stays `#[inline(never)]`.
+// The PDA search builds a `[&[u8]; 19]` seed array on the stack, so this stays `#[inline(never)]`.
 #[inline(never)]
 pub fn try_find_program_address(
     seeds: &[&[u8]],
@@ -198,7 +198,7 @@ pub fn try_find_program_address(
 
 /// Find the canonical bump for `seeds` + `program_id` and verify that the
 /// derived PDA equals `expected`. Returns just the bump on success.
-// The loop keeps a `[&[u8]; 19]` seed array on the stack, so this stays `#[inline(never)]`.
+// The PDA search builds a `[&[u8]; 19]` seed array on the stack, so this stays `#[inline(never)]`.
 #[inline(never)]
 pub fn find_and_verify_program_address(
     seeds: &[&[u8]],
