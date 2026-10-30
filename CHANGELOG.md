@@ -25,6 +25,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Support fully qualified account types in `Context` ([#4836](https://github.com/otter-sec/anchor/pull/4836)).
 - ts: Support `delegatedAmount` in accounts resolver ([#4957](https://github.com/otter-sec/anchor/pull/4957)).
 - cli: Reject `anchor program deploy` when `--program-id` does not match the program keypair pubkey ([#5129](https://github.com/otter-sec/anchor/pull/5129)).
+- ts: Encode negative signed integer PDA seeds as two's complement, matching Rust's `to_le_bytes` ([#5153](https://github.com/otter-sec/anchor/pull/5153)).
 - idl: Fail with an error when a type alias name is defined differently in more than one module, instead of silently using the first definition ([#5131](https://github.com/otter-sec/anchor/pull/5131)).
 - avm: Validate and normalize `platform-tools` versions before building install and uninstall paths, so a version like `v1.54/../../../victim` cannot delete outside `$AVM_HOME/platform-tools` ([#4806](https://github.com/otter-sec/anchor/pull/4806)).
 - ts: Stop the accounts resolver from failing with a max depth error when every account resolves on the last allowed pass ([#5155](https://github.com/otter-sec/anchor/pull/5155)).
