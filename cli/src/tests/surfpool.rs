@@ -188,3 +188,88 @@ fn reserved_deployment_args_are_rejected_before_launch() {
         }
     }
 }
+
+#[test]
+fn duplicate_runtime_args_are_rejected_before_launch() {
+    let root = tempdir().unwrap();
+    let cfg = WithPath::new(Config::default(), root.path().join("Anchor.toml"));
+    for arg in [
+        "--no-studio",
+        "--port=8999",
+        "-p8999",
+        "--log-level=debug",
+        "--offline",
+        "--no-tui",
+        "--max-profiles=2",
+        "--host=localhost",
+        "-o127.0.0.1",
+        "-ldebug",
+        "-c2",
+        "--block-production-mode=clock",
+        "-bclock",
+    ] {
+        let config = Some(SurfpoolConfig {
+            extra_args: Some(vec![arg.into()]),
+            ..Default::default()
+        });
+        let error = surfpool_flags(&cfg, &None, &config, false, true, None, &[])
+            .expect_err("Anchor already supplies this option");
+        assert!(error.to_string().contains("extra_args"), "{error:#}");
+        assert!(error.to_string().contains("already"), "{error:#}");
+    }
+}
+
+#[test]
+fn repeatable_and_unmanaged_runtime_args_remain_available() {
+    let root = tempdir().unwrap();
+    let cfg = WithPath::new(Config::default(), root.path().join("Anchor.toml"));
+    let extra_args = vec![
+        "--airdrop-amount".into(),
+        "1".into(),
+        "--log-bytes-limit".into(),
+        "1".into(),
+        "--airdrop".into(),
+        Pubkey::new_unique().to_string(),
+        "--airdrop".into(),
+        Pubkey::new_unique().to_string(),
+        "--runbook".into(),
+        "custom".into(),
+        "--no-studio".into(),
+        "--slot-time".into(),
+        "400".into(),
+    ];
+    let config = Some(SurfpoolConfig {
+        extra_args: Some(extra_args.clone()),
+        ..Default::default()
+    });
+    let flags = surfpool_flags(&cfg, &None, &config, true, true, None, &[]).unwrap();
+    assert!(flags
+        .windows(extra_args.len())
+        .any(|args| args == extra_args));
+    assert_eq!(flags.iter().filter(|arg| *arg == "--no-studio").count(), 1);
+    let config = Some(SurfpoolConfig {
+        extra_args: Some(vec!["--airdrop-amount".into(), "1".into()]),
+        ..Default::default()
+    });
+    surfpool_flags(&cfg, &None, &config, false, true, None, &[]).unwrap();
+}
+
+#[test]
+fn configured_runtime_aliases_are_rejected() {
+    let root = tempdir().unwrap();
+    let cfg = WithPath::new(Config::default(), root.path().join("Anchor.toml"));
+    for (flag, value) in [
+        ("-p", "8999"),
+        ("-l", "debug"),
+        ("-b", "clock"),
+        ("-t", "400"),
+    ] {
+        let config = Some(SurfpoolConfig {
+            slot_time: Some(400),
+            extra_args: Some(vec![flag.into(), value.into()]),
+            ..Default::default()
+        });
+        let error = surfpool_flags(&cfg, &None, &config, false, true, None, &[]).unwrap_err();
+        assert!(error.to_string().contains("already supplied"), "{error:#}");
+    }
+}

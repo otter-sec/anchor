@@ -426,7 +426,7 @@ impl std::fmt::Display for PackageManager {
 pub struct FeaturesConfig {
     /// Enable account resolution.
     ///
-    /// Not able to specify default bool value: https://github.com/serde-rs/serde/issues/368
+    /// Not able to specify default bool value: <https://github.com/serde-rs/serde/issues/368>
     #[serde(default = "FeaturesConfig::get_default_resolution")]
     pub resolution: bool,
     /// Disable safety comment checks

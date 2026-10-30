@@ -396,7 +396,8 @@ Each array entry is one argument. For example, to disable a runtime feature:
 extra_args = ["--disable-feature", "ptokFjwyJtrwCa9Kgo9xoDS59V4QccBGEaRFnRPnSdP"]
 ```
 
-Do not repeat options already supplied by Anchor, including `--no-studio`.
+Options already supplied by Anchor, including `--no-studio` and `--port`, are
+rejected.
 The flags `--no-deploy`, `--legacy-anchor-compatibility` and
 `--anchor-test-config-path` are rejected in `extra_args`: Anchor sets them
 according to `anchor test --skip-deploy` and the selected test suite.
@@ -426,7 +427,7 @@ Override toolchain data in the workspace similar to
 
 ```toml
 [toolchain]
-anchor_version = "1.2.1"    # `anchor-cli` version to use(requires `avm`)
+anchor_version = "1.2.2"    # `anchor-cli` version to use(requires `avm`)
 solana_version = "4.1.2"    # Solana version requirement to use(applies to all Solana tools)
 package_manager = "yarn"     # JS package manager to use
 ```

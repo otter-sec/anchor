@@ -8,6 +8,12 @@ Version 0 of Semantic Versioning is handled differently from version 1 and above
 
 <Accordion>
 
+<AccordionItem title="1.2.2">
+
+See the [release notes](/docs/updates/release-notes/1-2-2/) for account safety, Borsh support, CLI automation, and project toolchain improvements.
+
+</AccordionItem>
+
 <AccordionItem title="2.0.0-rc.2">
 
 See the [release notes](/docs/updates/release-notes/2-0-0-rc-2/) for the Kit client migration, Agave 4.3 dependency update, and Rust account and serialization fixes.
@@ -481,7 +487,7 @@ See the [release notes](/docs/updates/release-notes/2-0-0-rc-2/) for the Kit cli
 
 #### Features
 
-- idl: Allow overriding the idl build toolchain with the `RUSTUP_TOOLCHAIN` environment variable ([#2941](https://github.com/otter-sec/anchor/pull/2941])).
+- idl: Allow overriding the idl build toolchain with the `RUSTUP_TOOLCHAIN` environment variable ([#2941](https://github.com/otter-sec/anchor/pull/2941)).
 - avm: Support customizing the installation location using `AVM_HOME` environment variable ([#2917](https://github.com/otter-sec/anchor/pull/2917)).
 - avm: Optimize `$ <blue>avm</blue> list` when GitHub API rate limits are reached ([#2962](https://github.com/otter-sec/anchor/pull/2962))
 - idl, ts: Add accounts resolution for associated token accounts ([#2927](https://github.com/otter-sec/anchor/pull/2927)).
@@ -1042,7 +1048,7 @@ See the [release notes](/docs/updates/release-notes/2-0-0-rc-2/) for the Kit cli
 
 - lang: Add `ErrorCode::AccountNotInitialized{:rs}` error to separate the situation when the account has the wrong owner from when it does not exist (#[1024](https://github.com/otter-sec/anchor/pull/1024)).
 - lang: Called instructions now log their name by default. This can be turned off with the `no-log-ix-name` flag ([#1057](https://github.com/otter-sec/anchor/pull/1057)).
-- lang: `ProgramData{:rs}` and `UpgradableLoaderState{:rs}` can now be passed into `Account{:rs}` as generics. see [UpgradeableLoaderState](https://docs.rs/solana-program/latest/solana_program/bpf_loader_upgradeable/enum.UpgradeableLoaderState.html). `UpgradableLoaderState{:rs}` can also be matched on to get `ProgramData{:rs}`, but when `ProgramData{:rs}` is used instead, anchor does the serialization and checking that it is actually program data for you ([#1095](https://github.com/otter-sec/anchor/pull/1095)).
+- lang: `ProgramData{:rs}` and `UpgradableLoaderState{:rs}` can now be passed into `Account{:rs}` as generics. see [UpgradeableLoaderState](https://docs.rs/solana-loader-v3-interface/latest/solana_loader_v3_interface/state/enum.UpgradeableLoaderState.html). `UpgradableLoaderState{:rs}` can also be matched on to get `ProgramData{:rs}`, but when `ProgramData{:rs}` is used instead, anchor does the serialization and checking that it is actually program data for you ([#1095](https://github.com/otter-sec/anchor/pull/1095)).
 - ts: Add better error msgs in the ts client if something wrong (i.e. not a pubkey or a string) is passed in as an account in an instruction accounts object ([#1098](https://github.com/otter-sec/anchor/pull/1098)).
 - ts: Add inputs `postInstructions{:ts}` and `preInstructions{:ts}` as a replacement for (the now deprecated) `instructions{:ts}` ([#1007](https://github.com/otter-sec/anchor/pull/1007)).
 - ts: Add `getAccountInfo{:ts}` helper method to account namespace/client ([#1084](https://github.com/otter-sec/anchor/pull/1084)).

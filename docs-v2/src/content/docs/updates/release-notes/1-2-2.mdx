@@ -1,0 +1,89 @@
+---
+title: 1.2.2
+description: Anchor release notes for 1.2.2.
+---
+
+`1.2.2` improves account safety, Borsh support, CLI automation, and project toolchain resolution. These notes cover the major changes since `1.2.1`.
+
+---
+
+## How to upgrade
+
+Install and select the CLI with AVM:
+
+```console
+$ <blue>avm</blue> install 1.2.2
+$ <blue>avm</blue> use 1.2.2
+```
+
+Or install it directly from the repository:
+
+```console
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor <dim>--tag</dim> v1.2.2 anchor-cli <dim>--locked</dim>
+```
+
+Update Anchor crate(s) and TypeScript package(s) to `1.2.2`. Update AVM itself with `$ <blue>avm</blue> self-update` to use its toolchain-resolution improvements.
+
+## Recommended Solana version
+
+The recommended Solana version is `4.1.2`, with platform-tools `v1.57` and SBPF architecture `v3`.
+
+---
+
+## Lang
+
+### Account safety and mint validation
+
+Closing an account into itself now returns `ConstraintClose{:rs}`, including manual `.close(){:rs}` calls. Account exit also rejects data modifications after an account has changed ownership; unchanged data remains allowed.
+
+When `init_if_needed{:rs}` reuses a Token-2022 mint, Anchor validates its requested extension constraints as well as its base mint properties. Generated account validation uses more hygienic bindings to avoid collisions with user account names.
+
+### Initialize prefunded accounts
+
+Account initialization uses `CreateAccountAllowPrefund{:rs}` for accounts that already hold lamports, replacing the separate transfer, allocate, and assign CPIs.
+
+### Borsh attributes and account space
+
+`InitSpace{:rs}` excludes fields marked `#[borsh(skip)]{:rs}` in structs, tuples, and enums, matching their serialized size. IDL generation accepts field-level Borsh bounds and enum `#[borsh(init = ...)]{:rs}` attributes. Custom `serialize_with{:rs}` and `deserialize_with{:rs}` attributes are rejected by IDL generation and `InitSpace{:rs}` because their encoded size and layout cannot be inferred.
+
+### `access_control` syntax change
+
+`#[access_control(...)]{:rs}` accepts comma-separated Rust expressions. Replace the previously accepted, undocumented whitespace-separated form with commas:
+
+```rust
+// Before
+#[access_control(check_authority(&ctx) check_state(&ctx))]
+
+// After
+#[access_control(check_authority(&ctx), check_state(&ctx))]
+```
+
+## CLI and AVM
+
+### Non-interactive commands with `NO_DNA`
+
+Set `NO_DNA=1` to skip supported interactive waits and confirmation prompts in CI, scripts, and agent workflows:
+
+```console
+$ NO_DNA=1 <blue>anchor</blue> test <dim>--detach</dim>
+```
+
+Destructive operations still require their explicit bypass flags. See the [NO_DNA reference](/docs/v1/reference/no-dna/).
+
+### Project toolchains and LiteSVM
+
+When invoking `$ <blue>anchor</blue>` through AVM, AVM resolves the project's Anchor version and installs the corresponding Solana CLI and platform-tools when needed. It also selects a pinned Rust nightly for IDL builds and handles older Cargo versions that need an opt-in to read version 4 lockfiles.
+
+New Rust LiteSVM projects use LiteSVM `0.15.0` and include a dependency lockfile compatible with Rust `1.89`.
+
+### Safer CLI output and refreshed certificate roots
+
+The CLI redacts credentials and secrets from cluster/RPC URLs in deployment and key-sync output. `$ <blue>anchor</blue> keygen new <dim>--silent</dim>` withholds the seed phrase. The repository lockfile also refreshes TLS certificate-validation and root-certificate dependencies used by Anchor tooling.
+
+## Rust Client
+
+Event subscriptions ignore logs from failed transactions, so reverted executions do not produce application events.
+
+---
+
+See the full list of notable changes in the [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.2.2/CHANGELOG.md).

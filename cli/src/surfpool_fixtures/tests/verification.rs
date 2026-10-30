@@ -50,6 +50,7 @@ fn skipped_or_changed_snapshot_accounts_fail_verification() {
         Some("lamports"),
         Some("data"),
         Some("executable"),
+        Some("rentEpoch"),
         Some("missing"),
         Some("short-response"),
     ] {
@@ -59,6 +60,7 @@ fn skipped_or_changed_snapshot_accounts_fail_verification() {
             Some("lamports") => actual["lamports"] = json!(43),
             Some("data") => actual["data"] = json!(["BAUG", "base64"]),
             Some("executable") => actual["executable"] = json!(true),
+            Some("rentEpoch") => actual["rentEpoch"] = json!(8),
             Some("missing") => actual = Value::Null,
             Some("short-response") => {}
             None => {}
@@ -161,4 +163,33 @@ fn verification_batches_accounts_with_bounded_requests() {
     let requests = server.join().unwrap();
     result.unwrap();
     assert_eq!(requests, vec![100, 1]);
+}
+
+#[test]
+fn rent_exempt_genesis_epoch_is_verified_exactly() {
+    use {crate::RpcRequest, std::collections::HashMap};
+    let root = tempfile::tempdir().unwrap();
+    let address = Pubkey::new_unique();
+    let mut expected = account(address, "base64");
+    expected["account"]["rentEpoch"] = json!(crate::RENT_EPOCH_NEVER);
+    let image = super::super::accounts::image(&expected).unwrap();
+    let path = root.path().join("genesis.json");
+    fs::write(&path, json!({address.to_string():image}).to_string()).unwrap();
+    for rent_epoch in [crate::RENT_EPOCH_NEVER, 0] {
+        let mut actual = expected["account"].clone();
+        actual["rentEpoch"] = json!(rent_epoch);
+        let client = RpcClient::new_mock_with_mocks(
+            "succeeds",
+            HashMap::from([(
+                RpcRequest::GetMultipleAccounts,
+                json!({"context":{"slot":1},"value":[actual]}),
+            )]),
+        );
+        let result = verify(&client, &["--snapshot".into(), path.display().to_string()]);
+        if rent_epoch == crate::RENT_EPOCH_NEVER {
+            result.unwrap();
+        } else {
+            assert!(result.unwrap_err().to_string().contains("FIXTURE_MISMATCH"));
+        }
+    }
 }

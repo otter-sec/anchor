@@ -39,6 +39,7 @@ pub(crate) fn verify(client: &RpcClient, flags: &[String]) -> Result<()> {
                 image["lamports"].as_u64() == Some(account.lamports)
                     && image["owner"].as_str() == Some(account.owner.to_string().as_str())
                     && image["executable"].as_bool() == Some(account.executable)
+                    && image["rentEpoch"].as_u64() == Some(account.rent_epoch)
                     && account.data == expected
             });
             if !matches {

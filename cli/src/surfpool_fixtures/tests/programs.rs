@@ -48,6 +48,8 @@ fn upgradeable_genesis_has_exact_linkage_authority_and_rent() {
     );
     assert_eq!(program["owner"], loader.to_string());
     assert_eq!(program["executable"], true);
+    assert_eq!(program["rentEpoch"], crate::RENT_EPOCH_NEVER);
+    assert_eq!(program_data["rentEpoch"], crate::RENT_EPOCH_NEVER);
     assert_eq!(program_data["executable"], false);
     assert_eq!(
         program_data["lamports"],

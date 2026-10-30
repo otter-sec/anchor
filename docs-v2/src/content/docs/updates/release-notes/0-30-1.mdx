@@ -98,7 +98,7 @@ Recursive external type resolution during IDL generation no longer produces a co
 
 ### New spec crate
 
-Adding features to the IDL crate (such as the [`convert{:rs}`](https://github.com/otter-sec/anchor/pull/2986) feature) previously forced a version bump even when the spec itself was unchanged. The IDL spec now lives in its own [crate](https://docs.rs/anchor-lang-idl-spec), whose version is recorded in the `idl.metadata.spec{:rs}` field. The new spec crate is also re-exported through [`anchor_lang_idl::types{:rs}`](https://docs.rs/anchor-lang-idl/0.1.1/anchor_lang_idl/types/index.html) for convenience.
+Adding features to the IDL crate (such as the [`convert{:rs}`](https://github.com/otter-sec/anchor/pull/2986) feature) previously forced a version bump even when the spec itself was unchanged. The IDL spec now lives in its own [crate](https://docs.rs/anchor-lang-idl-spec), whose version is recorded in the `idl.metadata.spec{:rs}` field. The new spec crate is also re-exported through [`anchor_lang_idl::types{:rs}`](https://docs.rs/anchor-lang-idl/0.1.1/anchor_lang_idl/#reexport.types) for convenience.
 
 ## CLI
 

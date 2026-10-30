@@ -404,6 +404,7 @@ pub enum Command {
         /// Run the test suites under the specified path
         #[clap(long)]
         run: Vec<String>,
+        #[allow(rustdoc::broken_intra_doc_links)]
         /// Name of the script to run from [scripts] section (defaults to "test")
         #[clap(long)]
         script: Option<String>,
@@ -596,6 +597,7 @@ pub enum Command {
     },
     /// Fetch and deserialize an account using the IDL provided.
     Account {
+        #[allow(rustdoc::invalid_html_tags)]
         /// Account struct to deserialize (format: <program_name>.<Account>)
         account_type: String,
         /// Address of the account to deserialize
@@ -653,6 +655,7 @@ pub enum Command {
         #[clap(subcommand)]
         subcmd: codama::CodamaCommand,
     },
+    #[allow(rustdoc::broken_intra_doc_links)]
     /// [DEPRECATED] Manage legacy on-chain IDL accounts.
     /// These commands interact with the old Anchor IDL instruction protocol and will be removed
     /// in a future release. Migrate to Program Metadata-based IDL management (`anchor idl`).
@@ -878,14 +881,15 @@ pub enum ProgramCommand {
         bypass_warning: bool,
     },
     /// Extend the length of an upgradeable program
+    // Allows Clap to accept the missing `program_id` arg.
+    #[clap(allow_missing_positional = true)]
     Extend {
-        /// Program id to extend.
-        /// If not provided, discovers program from workspace using program_name
+        /// Program ID to extend.
         program_id: Option<Pubkey>,
-        /// Program name to extend (from workspace). Used when program_id is not provided
+        /// Workspace program name to extend when program_id is not provided.
         #[clap(short, long)]
         program_name: Option<String>,
-        /// Additional bytes to allocate
+        /// Additional bytes to allocate.
         additional_bytes: usize,
     },
 }
@@ -5819,6 +5823,34 @@ fn surfpool_flags(
     }
 
     if let Some(extra_args) = surfpool_config.as_ref().and_then(|c| c.extra_args.as_ref()) {
+        for arg in extra_args {
+            if !arg.starts_with('-') {
+                continue;
+            }
+            let flag = arg.split_once('=').map_or(arg.as_str(), |(flag, _)| flag);
+            let flag = if flag.starts_with("--") {
+                flag
+            } else {
+                // Short aliases from Surfpool's StartSimnet options.
+                match flag.strip_prefix('-').and_then(|arg| arg.chars().next()) {
+                    Some('p') => "--port",
+                    Some('w') => "--ws-port",
+                    Some('o') => "--host",
+                    Some('u') => "--rpc-url",
+                    Some('m') => "--manifest-file-path",
+                    Some('l') => "--log-level",
+                    Some('c') => "--max-profiles",
+                    Some('b') => "--block-production-mode",
+                    Some('t') => "--slot-time",
+                    _ => flag,
+                }
+            };
+            if !matches!(flag, "--airdrop" | "--runbook" | "--snapshot")
+                && flags.iter().any(|existing| existing == flag)
+            {
+                bail!("[surfpool].extra_args cannot set {flag}; already supplied by Anchor");
+            }
+        }
         flags.extend(extra_args.iter().cloned());
     }
 
@@ -7708,6 +7740,39 @@ mod tests {
         };
 
         assert_eq!(anchor_version, AnchorVersion::V2);
+    }
+
+    #[test]
+    fn test_program_extend_accepts_explicit_id_or_workspace_program() {
+        for args in [
+            vec![
+                "anchor",
+                "program",
+                "extend",
+                "11111111111111111111111111111111",
+                "1024",
+            ],
+            vec![
+                "anchor",
+                "program",
+                "extend",
+                "--program-name",
+                "demo",
+                "1024",
+            ],
+        ] {
+            let opts = Opts::try_parse_from(args).unwrap();
+            let Command::Program {
+                subcmd:
+                    ProgramCommand::Extend {
+                        additional_bytes, ..
+                    },
+            } = opts.command
+            else {
+                panic!("expected program extend");
+            };
+            assert_eq!(additional_bytes, 1024);
+        }
     }
 
     #[test]
