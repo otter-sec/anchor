@@ -1,11 +1,25 @@
 name: "Setup Surfpool"
 description: "Installs and caches the Surfpool CLI"
+inputs:
+  cache-save:
+    description: "Allow this job to save the cache"
+    default: "true"
 runs:
   using: "composite"
   steps:
-    - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      if: inputs.cache-save == 'true'
       name: Cache Surfpool Binary
       id: cache-surfpool
+      with:
+        path: ~/.local/bin/surfpool
+        key: surfpool-${{ runner.os }}-v${{ env.SURFPOOL_CLI_VERSION }}
+
+    # zizmor: literal hardcoded path, no user input — safe to write to GITHUB_PATH
+    - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      if: inputs.cache-save != 'true'
+      name: Restore Surfpool Binary
+      id: restore-surfpool
       with:
         path: ~/.local/bin/surfpool
         key: surfpool-${{ runner.os }}-v${{ env.SURFPOOL_CLI_VERSION }}
@@ -15,7 +29,7 @@ runs:
       run: echo "$HOME/.local/bin" >> $GITHUB_PATH # zizmor: ignore[github-env]
 
     - uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4 # v2
-      if: steps.cache-surfpool.outputs.cache-hit != 'true'
+      if: steps.cache-surfpool.outputs.cache-hit != 'true' && steps.restore-surfpool.outputs.cache-hit != 'true'
       with:
         retry_wait_seconds: 60
         timeout_minutes: 2

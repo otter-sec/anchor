@@ -24,12 +24,6 @@ env:
   SOLANA_VERSION: 3.1.10
   NODE_VERSION: 22.22.3
   SURFPOOL_CLI_VERSION: 1.5.0
-  CARGO_CACHE_PATH: |
-    ~/.cargo/bin/
-    ~/.cargo/registry/index/
-    ~/.cargo/registry/cache/
-    ~/.cargo/git/db/
-    ./target/
 
 jobs:
   benchmark-sync:
@@ -45,11 +39,7 @@ jobs:
       - uses: ./.github/actions/setup-solana/
       - uses: ./.github/actions/setup-surfpool/
 
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        name: Cache Cargo registry + index
-        with:
-          path: ${{ env.CARGO_CACHE_PATH }}
-          key: cargo-${{ runner.os }}-debug-bench-sync-${{ hashFiles('**/Cargo.lock') }}
+      - uses: ./.github/actions/setup-cargo-cache/
 
       - run: cargo install --path cli anchor-cli --locked --force --debug --features idl-localnet-testing
       - run: cargo install --path avm --locked --force

@@ -29,6 +29,7 @@ permissions:
 
 env:
   SOLANA_VERSION: "4.1.2"
+  SBF_TOOLS_VERSION: "v1.57"
   NODE_VERSION: "20"
   SURFPOOL_CLI_VERSION: "1.5.0"
 
@@ -39,30 +40,49 @@ jobs:
     if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release-bump/')
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      rust-version: ${{ steps.rustc.outputs.version }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup/
-
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        name: Cache Cargo home
+      - uses: ./.github/actions/setup-solana/
+        if: github.event_name != 'pull_request'
+      - uses: ./.github/actions/setup-surfpool/
+        if: github.event_name != 'pull_request'
+      - uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4 # v2
+        name: Warm SBF platform tools
+        if: github.event_name != 'pull_request'
         with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: cargo-home-${{ runner.os }}-template-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-home-${{ runner.os }}-template-
+          retry_wait_seconds: 60
+          timeout_minutes: 5
+          max_attempts: 5
+          retry_on: error
+          shell: bash
+          command: cargo build-sbf --tools-version "${{ env.SBF_TOOLS_VERSION }}" --install-only
+      - name: Identify Rust compiler
+        id: rustc
+        run: echo "version=$(rustc --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        name: Cache cargo target
+      - uses: ./.github/actions/setup-cargo-cache/
+
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        name: Restore CLI target
+        id: cli-target
         with:
           path: ./target/
-          key: cargo-target-template-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-target-template-${{ runner.os }}-
+          key: cargo-target-template-${{ runner.os }}-${{ runner.arch }}-${{ steps.rustc.outputs.version }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-target-template-${{ runner.os }}-${{ runner.arch }}-${{ steps.rustc.outputs.version }}-
 
       - run: cargo install --path cli --locked --debug --force --target-dir ./target
+
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        name: Save CLI target
+        if: github.event_name != 'pull_request' && steps.cli-target.outputs.cache-hit != 'true'
+        with:
+          path: ./target/
+          key: ${{ steps.cli-target.outputs.cache-primary-key }}
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -89,8 +109,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup/
+      - uses: ./.github/actions/setup-cargo-cache/
       - uses: ./.github/actions/setup-solana/
+        with:
+          cache-save: false
       - uses: ./.github/actions/setup-surfpool/
+        with:
+          cache-save: false
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -108,19 +133,15 @@ jobs:
           max_attempts: 5
           retry_on: error
           shell: bash
-          command: cargo build-sbf --tools-version v1.57 --install-only
+          command: cargo build-sbf --tools-version "${{ env.SBF_TOOLS_VERSION }}" --install-only
 
-      # Cache the generated project's `target/` so subsequent runs reuse
-      # compiled deps. Restored before `anchor init` (which is invoked with
-      # `--force`, leaving `target/` intact); the deps don't depend on the
-      # template-files diff, so a partial restore from a prior commit is
-      # always a hit. Per-cell key avoids cross-pollination; different
-      # test templates pull different dev-deps.
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      # Reuse dependencies across commits; Cargo rebuilds changed checkout sources.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: template-target
         with:
           path: /tmp/my_program/target/
-          key: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-${{ github.sha }}
-          restore-keys: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-
+          key: template-target-${{ runner.os }}-${{ runner.arch }}-${{ needs.build-cli.outputs.rust-version }}-${{ env.SOLANA_VERSION }}-${{ env.SBF_TOOLS_VERSION }}-${{ matrix.template }}-${{ matrix.test_template }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'VERSION', 'cli/src/template.rs', 'cli/templates/**') }}
+          restore-keys: template-target-${{ runner.os }}-${{ runner.arch }}-${{ needs.build-cli.outputs.rust-version }}-${{ env.SOLANA_VERSION }}-${{ env.SBF_TOOLS_VERSION }}-${{ matrix.template }}-${{ matrix.test_template }}-
 
       - name: anchor init
         working-directory: /tmp
@@ -151,6 +172,13 @@ jobs:
         working-directory: /tmp/my_program
         run: anchor test
 
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        name: Save template target
+        if: github.event_name != 'pull_request' && steps.template-target.outputs.cache-hit != 'true'
+        with:
+          path: /tmp/my_program/target/
+          key: ${{ steps.template-target.outputs.cache-primary-key }}
+
   # JS-based test templates: cross-product over template x language x
   # package manager (2 x 2 x 2 x 4 = 32 cells).
   template-js-tests:
@@ -171,8 +199,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup/
+      - uses: ./.github/actions/setup-cargo-cache/
       - uses: ./.github/actions/setup-solana/
+        with:
+          cache-save: false
       - uses: ./.github/actions/setup-surfpool/
+        with:
+          cache-save: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -207,23 +240,21 @@ jobs:
           max_attempts: 5
           retry_on: error
           shell: bash
-          command: cargo build-sbf --tools-version v1.57 --install-only
+          command: cargo build-sbf --tools-version "${{ env.SBF_TOOLS_VERSION }}" --install-only
 
-      # Cache cargo `target/` and `node_modules/` for the generated project.
-      # `anchor init --force` leaves both alone, so the dirs survive a fresh
-      # init. Caching keys are per-cell so e.g. `mocha+ts+npm` doesn't pull
-      # `jest+js+pnpm`'s lockfile artifacts. `restore-keys` lets a stale
-      # commit's cache hit when the SHA-suffixed primary key misses.
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      # Dependency inputs, rather than the commit SHA, determine cache generations.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: template-target
         with:
           path: /tmp/my_program/target/
-          key: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-${{ github.sha }}
-          restore-keys: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+          key: template-target-${{ runner.os }}-${{ runner.arch }}-${{ needs.build-cli.outputs.rust-version }}-${{ env.SOLANA_VERSION }}-${{ env.SBF_TOOLS_VERSION }}-${{ matrix.template }}-${{ matrix.test_template }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'VERSION', 'cli/src/template.rs', 'cli/templates/**') }}
+          restore-keys: template-target-${{ runner.os }}-${{ runner.arch }}-${{ needs.build-cli.outputs.rust-version }}-${{ env.SOLANA_VERSION }}-${{ env.SBF_TOOLS_VERSION }}-${{ matrix.template }}-${{ matrix.test_template }}-
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: template-nm
         with:
           path: /tmp/my_program/node_modules/
-          key: template-nm-${{ runner.os }}-${{ matrix.test_template }}-${{ matrix.language }}-${{ matrix.package_manager }}-${{ github.sha }}
-          restore-keys: template-nm-${{ runner.os }}-${{ matrix.test_template }}-${{ matrix.language }}-${{ matrix.package_manager }}-
+          key: template-nm-${{ runner.os }}-${{ runner.arch }}-${{ env.NODE_VERSION }}-${{ matrix.test_template }}-${{ matrix.language }}-${{ matrix.package_manager }}-${{ hashFiles('VERSION', 'cli/src/template.rs') }}
+          restore-keys: template-nm-${{ runner.os }}-${{ runner.arch }}-${{ env.NODE_VERSION }}-${{ matrix.test_template }}-${{ matrix.language }}-${{ matrix.package_manager }}-
 
       - name: anchor init
         working-directory: /tmp
@@ -254,3 +285,19 @@ jobs:
       - name: anchor test
         working-directory: /tmp/my_program
         run: anchor test
+
+      # One writer per target key shared by the eight JS combinations.
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        name: Save template target
+        if: github.event_name != 'pull_request' && matrix.language == 'typescript' && matrix.package_manager == 'npm' && steps.template-target.outputs.cache-hit != 'true'
+        with:
+          path: /tmp/my_program/target/
+          key: ${{ steps.template-target.outputs.cache-primary-key }}
+
+      # Both layouts use the same Node dependencies.
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        name: Save template node_modules
+        if: github.event_name != 'pull_request' && matrix.template == 'single' && steps.template-nm.outputs.cache-hit != 'true'
+        with:
+          path: /tmp/my_program/node_modules/
+          key: ${{ steps.template-nm.outputs.cache-primary-key }}
