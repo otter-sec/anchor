@@ -59,7 +59,7 @@ fn realloc_rejects_shrink_below_custom_schema_minimum() {
     payer.init([0x99; 32], [0x11; 32], 0, true, true, false);
 
     let view = unsafe { buf.view() };
-    let mut account = unsafe { CustomAccount::load_mut(view) }.unwrap();
+    let mut account = CustomAccount::load_mut(view).unwrap();
     let payer_view = unsafe { payer.view() };
 
     let err = account
@@ -126,7 +126,7 @@ fn tail_slab_resize_to_zero_capacity_keeps_account_loadable() {
     let buf = setup_ledger(start_len, 0);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CustomLedger::load_mut(view) }.unwrap();
+    let mut slab = CustomLedger::load_mut(view).unwrap();
 
     slab.resize_to_capacity(0)
         .expect("resize to 0 must succeed");
@@ -146,7 +146,7 @@ fn tail_slab_realloc_rejects_shrink_below_schema_minimum() {
     payer.init([0x99; 32], [0x11; 32], 0, true, true, false);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CustomLedger::load_mut(view) }.unwrap();
+    let mut slab = CustomLedger::load_mut(view).unwrap();
     let payer_view = unsafe { payer.view() };
 
     // ITEMS_OFFSET is a valid physical layout but under the schema floor.

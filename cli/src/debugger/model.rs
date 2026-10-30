@@ -3,8 +3,7 @@
 //! A [`DebugSession`] is the output of a single `anchor debugger` run,
 //! holding every `(test, tx)` pair the profile callback captured. Each
 //! [`DebugTx`] contains one [`DebugNode`] per program invocation (top-level
-//! + CPIs) in that tx; each node owns the stream of [`DebugStep`]s it
-//! executed.
+//! + CPIs) in that tx; each node owns the stream of [`DebugStep`]s it executed.
 
 use {
     ratatui::text::Span,

@@ -109,6 +109,8 @@ jobs:
 
   publish-crates:
     name: Publish crates
+    env:
+      RUSTUP_TOOLCHAIN: nightly
     runs-on: ubuntu-latest
     needs: verify-tag
     if: ${{ needs.verify-tag.outputs.verification_passed == 'true' }}

@@ -27,6 +27,11 @@ struct DuplicateReadonlyCpi<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+struct OptionalReadonlyCpi<'a> {
+    optional_readonly: Option<CpiHandle<'a>>,
+}
+
+#[derive(ToCpiAccounts)]
 struct ManualCpi<'a> {
     readonly: CpiHandle<'a>,
     writable: CpiHandleMut<'a>,
@@ -122,7 +127,10 @@ fn derive_to_cpi_accounts_emits_metas_and_erased_handles() {
     assert!(handles[6].is_writable());
 
     let flags = accounts.optional_account_sentinel_flags();
-    assert_eq!(flags, vec![false, false, false, false, false, false, false, true]);
+    assert_eq!(
+        flags,
+        vec![false, false, false, false, false, false, false, true]
+    );
 }
 
 #[test]
@@ -168,4 +176,30 @@ fn derive_to_cpi_accounts_duplicate_readonly_erases_handle_mut() {
     assert_eq!(*handles[0].address(), Address::new_from_array([1; 32]));
     assert_eq!(*handles[2].address(), Address::new_from_array([2; 32]));
     assert_eq!(*handles[3].address(), Address::new_from_array([2; 32]));
+}
+
+#[test]
+fn derive_to_cpi_accounts_optional_readonly_normalizes_writable_handles() {
+    let writable_buffer = account([1; 32], false, true);
+    let mut writable_view = unsafe { writable_buffer.view() };
+    let from_writable = OptionalReadonlyCpi {
+        optional_readonly: Some(CpiHandle::writable(&mut writable_view)),
+    };
+    assert_optional_readonly_is_readonly(&from_writable);
+
+    let mut_buffer = account([2; 32], false, true);
+    let mut mut_view = unsafe { mut_buffer.view() };
+    let from_handle_mut = OptionalReadonlyCpi {
+        optional_readonly: Some(CpiHandleMut::writable(&mut mut_view).into()),
+    };
+    assert_optional_readonly_is_readonly(&from_handle_mut);
+}
+
+fn assert_optional_readonly_is_readonly(accounts: &OptionalReadonlyCpi<'_>) {
+    let metas = accounts.to_instruction_accounts();
+    let handles = accounts.to_cpi_handles();
+    assert_eq!(metas.len(), 1);
+    assert!(!metas[0].is_writable);
+    assert_eq!(handles.len(), 1);
+    assert!(!handles[0].is_writable());
 }

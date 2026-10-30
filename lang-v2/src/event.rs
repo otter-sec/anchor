@@ -6,13 +6,18 @@ pub const EVENT_IX_TAG_LE: &[u8] = &EVENT_IX_TAG.to_le_bytes();
 
 /// Trait for event structs. Implemented by the `#[event]` attribute macro.
 ///
+/// The optional `#[event(name = "...")]` argument overrides the event's
+/// wire and IDL name, which can be used to disambiguate same-named events in
+/// different modules.
+///
 /// Two serialization modes are emitted by the macro, both exposed via the
 /// single `data()` entry point:
 /// - default (`#[event]`) — wincode with a borsh-compatible wire format
 ///   (`BORSH_CONFIG`: u8 enum tags + fixed `u32` LE length prefixes), so
 ///   off-chain consumers decoding as borsh see the same bytes. Supports
 ///   `Vec`/`String`/`Option`/enums and is materially cheaper than borsh on
-///   SBF (3–10× fewer CUs).
+///   SBF (3–10× fewer CUs). The macro also derives `AnchorSerialize` and
+///   `AnchorDeserialize`.
 /// - opt-in (`#[event(bytemuck)]`) — zero-copy `copy_nonoverlapping` of a
 ///   `repr(C)` struct with a compile-time no-padding assertion on every
 ///   target. Cheapest on fixed-size shapes, but the struct must contain

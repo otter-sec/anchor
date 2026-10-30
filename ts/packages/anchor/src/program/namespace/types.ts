@@ -139,6 +139,8 @@ type DecodedTypeMap = {
  * JS representations accepted when encoding IDL values, e.g. as instruction
  * arguments. These mirror Kit's `TFrom` codec inputs: slightly looser than
  * {@link DecodedTypeMap}, plus objects exposing `toBase58()` for public keys.
+ * A `number` for a 64-bit or wider integer must be a safe integer
+ * (`Number.isSafeInteger`). Pass a `bigint` past `2^53 - 1`.
  */
 type EncodedTypeMap = {
   pubkey: AddressInput;

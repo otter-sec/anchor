@@ -85,6 +85,63 @@ pub trait IdlAccountType {
     }
 }
 
+/// Reject account discriminator collisions while building a v2 IDL.
+///
+/// Account entries carry a private defining-type suffix during collection so
+/// repeated references to one type can be deduplicated without collapsing two
+/// same-named types from different modules. The suffix is removed before the
+/// public IDL is printed.
+#[doc(hidden)]
+pub fn validate_account_discriminator_entries(entries: &[&str]) {
+    const DISC_MARKER: &str = ",\"discriminator\":[";
+    const TYPE_MARKER: &str = ",\"__anchor_type\":\"";
+
+    fn field<'a>(entry: &'a str, marker: &str, terminator: char) -> Option<&'a str> {
+        let start = entry.find(marker)? + marker.len();
+        let end = start + entry[start..].find(terminator)?;
+        Some(&entry[start..end])
+    }
+
+    fn is_prefix(short: &str, long: &str) -> bool {
+        long == short
+            || long
+                .strip_prefix(short)
+                .is_some_and(|remainder| remainder.starts_with(','))
+    }
+
+    for (index, outer) in entries.iter().enumerate() {
+        let Some(outer_disc) = field(outer, DISC_MARKER, ']') else {
+            continue;
+        };
+        let Some(outer_type) = field(outer, TYPE_MARKER, '"') else {
+            continue;
+        };
+        for inner in entries.iter().skip(index + 1) {
+            let Some(inner_disc) = field(inner, DISC_MARKER, ']') else {
+                continue;
+            };
+            let Some(inner_type) = field(inner, TYPE_MARKER, '"') else {
+                continue;
+            };
+            if outer_type != inner_type
+                && (is_prefix(outer_disc, inner_disc) || is_prefix(inner_disc, outer_disc))
+            {
+                panic!("Ambiguous discriminators for accounts `{outer_type}` and `{inner_type}`");
+            }
+        }
+    }
+}
+
+/// Remove the private defining-type suffix from a collected account entry.
+#[doc(hidden)]
+pub fn strip_account_entry_identity(entry: &str) -> alloc::string::String {
+    const TYPE_MARKER: &str = ",\"__anchor_type\":\"";
+    match entry.find(TYPE_MARKER) {
+        Some(index) => alloc::string::String::from(&entry[..index]) + "}",
+        None => entry.into(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Primitive + collection blanket impls
 // ---------------------------------------------------------------------------
@@ -121,9 +178,9 @@ impl_idl_account_type_noop!(
     pinocchio::address::Address,
 );
 
-// Pod scalar wrappers still lower like their native counterparts when they
-// appear directly in a field type, but generic bytemuck helpers like `PodVec`
-// can reference them by name. Register them as alias defs so those named
+// Pod scalar wrappers are referenced by name (`{"defined":{"name":"PodU64"}}`),
+// both as direct field types and as `PodVec` elements, so their align-1 layout
+// survives in bytemuck types. Register them as alias defs so those named
 // references resolve in the final IDL.
 macro_rules! impl_idl_account_type_pod_alias {
     ($(($t:path, $name:literal, $alias:literal)),* $(,)?) => {

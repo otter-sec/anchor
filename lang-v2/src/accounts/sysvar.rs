@@ -43,12 +43,19 @@ pub trait SysvarId {
 pub trait SysvarLoad: SysvarId + Sized {
     /// Read the sysvar's value.
     ///
-    /// [`Sysvar<T>::load`] has already verified that
-    /// `view.address() == Self::SYSVAR_ID` before this runs, so implementors
-    /// may skip any address check of their own.
+    /// [`Sysvar<T>::load`] meets the requirements below before calling this.
+    /// Any other caller must meet them itself. Implementors may skip their
+    /// own address check.
+    ///
+    /// # Safety
+    ///
+    /// * `view.address()` must equal [`SysvarId::SYSVAR_ID`].
+    /// * `view`'s data must meet any requirements the implementation documents.
+    ///   Syscall-backed sysvars (`Clock`, `Rent`) never read it, so they add
+    ///   none. [`SysvarInstructions`] reads it and documents its requirements.
     ///
     /// [`Sysvar<T>::load`]: AnchorAccount::load
-    fn read(view: &AccountView) -> Result<Self, ProgramError>;
+    unsafe fn read(view: &AccountView) -> Result<Self, ProgramError>;
 }
 
 /// Registers a sysvar that the runtime exposes through `sol_get_sysvar`.
@@ -63,8 +70,13 @@ macro_rules! impl_syscall_sysvar {
         }
 
         impl SysvarLoad for $ty {
+            /// # Safety
+            ///
+            /// See [`SysvarLoad::read`]. This body never uses `view`. On-chain,
+            /// the value comes from the `sol_get_sysvar` syscall. Off-chain
+            /// builds have no syscall and return `UnsupportedSysvar`.
             #[inline(always)]
-            fn read(_view: &AccountView) -> Result<Self, ProgramError> {
+            unsafe fn read(_view: &AccountView) -> Result<Self, ProgramError> {
                 <$ty as PinocchioSysvar>::get().map_err(|_| ProgramError::UnsupportedSysvar)
             }
         }
@@ -123,13 +135,23 @@ impl<T: Deref<Target = [u8]>> SysvarId for pinocchio::sysvars::instructions::Ins
 pub type SysvarInstructions = pinocchio::sysvars::instructions::Instructions<Ref<'static, [u8]>>;
 
 impl SysvarLoad for SysvarInstructions {
+    /// # Safety
+    ///
+    /// See [`SysvarLoad::read`]. `view`'s data must be a well-formed
+    /// instructions sysvar as the runtime writes it: a `u16` instruction count,
+    /// an offset table, the serialized instructions and a trailing `u16`
+    /// current index. An account the runtime passes at `INSTRUCTIONS_ID` always
+    /// has this layout. The accessors trust these offsets, so malformed data of
+    /// any length leads to out-of-bounds reads.
+    ///
+    /// The returned [`Ref`] is transmuted to `'static`: the result must not
+    /// outlive the current instruction, and nothing may mutate `view`'s data
+    /// while it is alive, including through unchecked borrows.
     #[inline(always)]
-    fn read(view: &AccountView) -> Result<Self, ProgramError> {
-        // A well-formed instructions sysvar is at minimum `[u16 num = 0]` +
-        // `[u16 current_index]`. The address check in `Sysvar::load` already
-        // guarantees this is the genuine runtime-populated sysvar; the guard
-        // only stops a hand-rolled mock view from underflowing the pointer
-        // arithmetic in `load_current_index`.
+    unsafe fn read(view: &AccountView) -> Result<Self, ProgramError> {
+        // Fallback for callers that break the `# Safety` contract: rejects data too
+        // short for the count and current index. Longer malformed data is still
+        // unsafe.
         #[cfg(feature = "guardrails")]
         require!(view.data_len() >= 4, ProgramError::AccountDataTooSmall);
 
@@ -180,7 +202,9 @@ impl<T: SysvarLoad> AnchorAccount for Sysvar<T> {
             crate::address_eq(view.address(), &id),
             ProgramError::InvalidArgument
         );
-        let data = T::read(&view)?;
+        // SAFETY: the address was checked against `T::SYSVAR_ID` above. At that
+        // address the runtime supplies the sysvar's own data.
+        let data = unsafe { T::read(&view) }?;
         Ok(Self { view, data })
     }
 
@@ -201,6 +225,8 @@ impl<T: SysvarLoad> AsRef<AccountView> for Sysvar<T> {
         &self.view
     }
 }
+
+impl<T: SysvarLoad> crate::LamportsMutable for Sysvar<T> {}
 
 impl<T: SysvarLoad> crate::ToCpiHandle for Sysvar<T> {
     #[inline(always)]

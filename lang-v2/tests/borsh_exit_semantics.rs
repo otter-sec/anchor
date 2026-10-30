@@ -146,7 +146,7 @@ fn exit_writes_modified_in_memory_state_to_guard() {
 
     {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+        let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
         assert_eq!(acct.value, 42);
         acct.value = 999;
         acct.exit().unwrap();
@@ -164,7 +164,7 @@ fn exit_serializes_mutably_loaded_foreign_owned_account() {
 
     {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { BorshAccount::<ForeignCounter>::load_mut(view) }.unwrap();
+        let mut acct = BorshAccount::<ForeignCounter>::load_mut(view).unwrap();
         assert_eq!(acct.value, 42);
         acct.value = 999;
         acct.exit().unwrap();
@@ -181,7 +181,7 @@ fn release_borrow_serializes_mutably_loaded_foreign_owned_account() {
 
     {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { BorshAccount::<ForeignCounter>::load_mut(view) }.unwrap();
+        let mut acct = BorshAccount::<ForeignCounter>::load_mut(view).unwrap();
         assert_eq!(acct.value, 42);
         acct.value = 999;
         acct.release_borrow().unwrap();
@@ -214,7 +214,7 @@ fn stale_detection_misses_content_only_out_of_band_mutation() {
     setup_counter_buf(&mut buf, 42);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
     assert_eq!(acct.value, 42);
 
     // Out-of-band: somehow the bytes at data[8..16] get mutated while
@@ -252,7 +252,7 @@ fn reacquire_refreshes_self_data_from_cpi_changes() {
     setup_counter_buf(&mut buf, 42);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
 
     // Step 1: user modifies self.data.
     acct.value = 100;
@@ -302,7 +302,7 @@ fn reacquire_rejects_when_discriminator_changes_during_release() {
     setup_counter_buf(&mut buf, 42);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
 
     acct.release_borrow().unwrap();
 
@@ -335,7 +335,7 @@ fn reacquire_rejects_when_owner_changes_during_release() {
     setup_counter_buf(&mut buf, 42);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
 
     acct.release_borrow().unwrap();
 
@@ -361,7 +361,7 @@ fn exit_on_transient_zero_lamport_account_serializes() {
     setup_counter_buf(&mut buf, 42);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
 
     // Modify self.data.
     acct.value = 999;
@@ -386,7 +386,7 @@ fn exit_on_closed_account_is_noop() {
     setup_counter_buf(&mut buf, 42);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
     acct.value = 999;
 
     // pinocchio's close() clears these runtime header fields.
@@ -416,7 +416,7 @@ fn release_borrow_commits_in_memory_changes_to_buffer() {
     setup_counter_buf(&mut buf, 42);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
 
     acct.value = 100;
     acct.release_borrow().unwrap();
@@ -435,7 +435,7 @@ fn cpi_handle_mut_releases_wrapper_and_preserves_callee_writes() {
     setup_counter_buf(&mut buf, 42);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
 
     acct.value = 100;
 
@@ -483,7 +483,7 @@ fn exit_zeroes_bytes_between_new_and_old_serialized_lengths() {
 
     {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { BorshAccount::<ShrinkableBytes>::load_mut(view) }.unwrap();
+        let mut acct = BorshAccount::<ShrinkableBytes>::load_mut(view).unwrap();
         acct.items = vec![1, 2];
         acct.exit().unwrap();
     }
@@ -505,7 +505,7 @@ fn release_borrow_zeroes_bytes_between_new_and_old_serialized_lengths() {
     setup_shrinkable_bytes_buf(&mut buf, &[1, 2, 3], &[0xAA, 0xBB]);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<ShrinkableBytes>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<ShrinkableBytes>::load_mut(view).unwrap();
     acct.items.clear();
     acct.release_borrow().unwrap();
 
@@ -527,7 +527,7 @@ fn deref_mut_panics_after_release_borrow() {
     setup_counter_buf(&mut buf, 42);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
 
     acct.release_borrow().unwrap();
     acct.value = 100;
@@ -545,7 +545,7 @@ fn stale_detection_fires_on_data_len_change() {
     setup_counter_buf(&mut buf, 42);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
 
     acct.value = 100;
 
@@ -616,7 +616,7 @@ fn reacquire_guard_only_rejects_buffer_shorter_than_discriminator() {
     setup_counter_buf(&mut buf, 42);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
 
     // Simulate `realloc_account(new_space = 4)`: shrink below the disc.
     acct.release_borrow().unwrap();
@@ -640,7 +640,7 @@ fn exit_rejects_external_shrink_below_discriminator() {
     setup_counter_buf(&mut buf, 42);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
     acct.value = 100;
 
     // Simulate an external resize to 4 bytes (below an 8-byte disc).
@@ -650,4 +650,110 @@ fn exit_rejects_external_shrink_below_discriminator() {
         .exit()
         .expect_err("exit must surface the undersized buffer as an error, not panic");
     assert!(matches!(err, ProgramError::AccountDataTooSmall));
+}
+
+// Ownership changes must not cause a write to foreign-owned account data.
+#[test]
+fn exit_after_owner_change_accepts_unchanged_payload_and_reserved_tail() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_shrinkable_bytes_buf(&mut buf, &[1, 2, 3], &[0xAA, 0xBB]);
+    let before = read_data_bytes(&buf, 0, 17);
+    let mut acct = unsafe { BorshAccount::<ShrinkableBytes>::load_mut(buf.view()) }.unwrap();
+    buf.set_owner(FOREIGN_PROGRAM_ID);
+
+    acct.exit().unwrap();
+    assert_eq!(read_data_bytes(&buf, 0, 17), before);
+}
+
+#[test]
+fn exit_after_owner_change_rejects_changed_payload_without_writing() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf, 42);
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(buf.view()) }.unwrap();
+    acct.value = 999;
+    buf.set_owner(FOREIGN_PROGRAM_ID);
+
+    assert_eq!(acct.exit(), Err(ProgramError::IllegalOwner));
+    assert_eq!(read_data_bytes(&buf, 8, 8), 42u64.to_le_bytes());
+}
+
+#[test]
+fn release_after_owner_change_rejects_changed_payload_without_writing() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf, 42);
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(buf.view()) }.unwrap();
+    acct.value = 999;
+    buf.set_owner(FOREIGN_PROGRAM_ID);
+
+    assert_eq!(acct.release_borrow(), Err(ProgramError::IllegalOwner));
+    assert_eq!(acct.value, 999, "failed commit must retain the borrow");
+    assert_eq!(read_data_bytes(&buf, 8, 8), 42u64.to_le_bytes());
+}
+
+#[test]
+fn exit_after_released_owner_change_preserves_cpi_data() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf, 42);
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(buf.view()) }.unwrap();
+    acct.release_borrow().unwrap();
+    buf.set_owner(FOREIGN_PROGRAM_ID);
+    set_data_bytes(&mut buf, 8, &777u64.to_le_bytes());
+
+    acct.exit().unwrap();
+    assert_eq!(read_data_bytes(&buf, 8, 8), 777u64.to_le_bytes());
+}
+
+#[test]
+fn exit_after_owner_change_compares_stale_byte_cleanup() {
+    for tail in [[1, 2], [0, 0]] {
+        let mut buf = AccountBuffer::<256>::new();
+        setup_shrinkable_bytes_buf(&mut buf, &tail, &[0xAA, 0xBB]);
+        let mut acct = unsafe { BorshAccount::<ShrinkableBytes>::load_mut(buf.view()) }.unwrap();
+        // Release the live data guard before changing bytes through the fixture.
+        // Retain the snapshot and original serialized length for the comparison.
+        acct.release_borrow().unwrap();
+        // Match the shorter value's length prefix in the live buffer. The
+        // old serialized tail still needs cleanup, independently of that prefix.
+        set_data_bytes(&mut buf, 8, &0u32.to_le_bytes());
+        acct.reacquire_guard_only().unwrap();
+        acct.items.clear();
+        buf.set_owner(FOREIGN_PROGRAM_ID);
+        let before = read_data_bytes(&buf, 0, 16);
+
+        let expected = if tail == [0, 0] {
+            Ok(())
+        } else {
+            Err(ProgramError::IllegalOwner)
+        };
+        assert_eq!(acct.exit(), expected);
+        assert_eq!(read_data_bytes(&buf, 0, 16), before);
+    }
+}
+
+#[test]
+fn release_after_owner_change_accepts_unchanged_payload() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf, 42);
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(buf.view()) }.unwrap();
+    buf.set_owner(FOREIGN_PROGRAM_ID);
+
+    acct.release_borrow().unwrap();
+    assert!(unsafe { buf.view() }.check_borrow_mut().is_ok());
+    assert_eq!(read_data_bytes(&buf, 8, 8), 42u64.to_le_bytes());
+}
+
+#[test]
+fn exit_after_owner_change_rejects_stale_snapshot() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf, 42);
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(buf.view()) }.unwrap();
+    // The typed snapshot is untouched, but the live payload differs.
+    // Fixture writes must happen without a live mutable data guard.
+    acct.release_borrow().unwrap();
+    set_data_bytes(&mut buf, 8, &777u64.to_le_bytes());
+    acct.reacquire_guard_only().unwrap();
+    buf.set_owner(FOREIGN_PROGRAM_ID);
+
+    assert_eq!(acct.exit(), Err(ProgramError::IllegalOwner));
+    assert_eq!(read_data_bytes(&buf, 8, 8), 777u64.to_le_bytes());
 }

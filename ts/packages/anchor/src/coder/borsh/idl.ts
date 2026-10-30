@@ -25,6 +25,7 @@ import {
   getCOptionCodec,
   getAnchorAddressCodec,
   getRustEnumCodec,
+  getSafeIntegerCodec,
   IdlCodec,
 } from "./codecs.js";
 import {
@@ -75,25 +76,25 @@ export class IdlCoder {
         return getF32Codec();
       }
       case "u64": {
-        return getU64Codec();
+        return getSafeIntegerCodec(getU64Codec());
       }
       case "i64": {
-        return getI64Codec();
+        return getSafeIntegerCodec(getI64Codec());
       }
       case "f64": {
         return getF64Codec();
       }
       case "u128": {
-        return getU128Codec();
+        return getSafeIntegerCodec(getU128Codec());
       }
       case "i128": {
-        return getI128Codec();
+        return getSafeIntegerCodec(getI128Codec());
       }
       case "u256": {
-        return getU256Codec();
+        return getSafeIntegerCodec(getU256Codec());
       }
       case "i256": {
-        return getI256Codec();
+        return getSafeIntegerCodec(getI256Codec());
       }
       case "bytes": {
         return addCodecSizePrefix(getBytesCodec(), getU32Codec());

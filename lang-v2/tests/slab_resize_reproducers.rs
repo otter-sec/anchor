@@ -113,7 +113,7 @@ fn slab_realloc_rejects_shrink_below_typed_header_layout() {
     payer.init([0xCC; 32], PROGRAM_ID, 0, true, true, false);
 
     let view = unsafe { buf.view() };
-    let mut account = unsafe { CounterAccount::load_mut(view) }.unwrap();
+    let mut account = CounterAccount::load_mut(view).unwrap();
     let payer_view = unsafe { payer.view() };
 
     let err = account
@@ -134,7 +134,7 @@ fn slab_realloc_clamps_tail_len_to_resized_capacity() {
     payer.init([0xCC; 32], PROGRAM_ID, 0, true, true, false);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
     let payer_view = unsafe { payer.view() };
 
     slab.realloc_account(ITEMS_OFFSET + ITEM_SIZE, payer_view, false)
@@ -165,7 +165,7 @@ fn slab_realloc_shrink_refunds_only_rent_delta_not_vault_balance() {
     buf.set_lamports(old_required + vault_balance);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
     let payer_view = unsafe { payer.view() };
 
     slab.realloc_account(new_space, payer_view, false).unwrap();
@@ -198,7 +198,7 @@ fn slab_realloc_shrink_refund_is_capped_by_available_lamports_above_new_floor() 
     buf.set_lamports(new_required + 7);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
     let payer_view = unsafe { payer.view() };
 
     slab.realloc_account(new_space, payer_view, false).unwrap();
@@ -228,7 +228,7 @@ fn slab_realloc_shrink_with_self_payer_is_allowed() {
 
     let payer_view = unsafe { buf.view() };
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
 
     slab.realloc_account(new_space, payer_view, false).unwrap();
     assert_eq!(
@@ -251,7 +251,7 @@ fn load_mut_rejects_data_len_below_items_offset() {
 
     // Load succeeds — data_len (60) > ITEMS_OFFSET (28).
     let view = unsafe { buf.view() };
-    let slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let slab = CounterLedger::load_mut(view).unwrap();
     assert_eq!(slab.capacity(), 4);
     assert_eq!(slab.len(), 0);
     drop(slab);
@@ -265,7 +265,7 @@ fn load_mut_rejects_data_len_below_items_offset() {
     // this? `slab.rs:596` checks `data.len() < Self::ITEMS_OFFSET` —
     // returns AccountDataTooSmall. Good — `load_mut` catches it.
     let view2 = unsafe { buf.view() };
-    let reload = unsafe { CounterLedger::load_mut(view2) };
+    let reload = CounterLedger::load_mut(view2);
     assert!(
         reload.is_err(),
         "load_mut should reject data_len < ITEMS_OFFSET — if it doesn't, the subsequent \
@@ -287,8 +287,33 @@ fn load_mut_rejects_len_greater_than_capacity_via_validate_tail() {
     let buf = setup_ledger(/*capacity*/ 1, /*len*/ 2);
 
     let view = unsafe { buf.view() };
-    let result = unsafe { CounterLedger::load_mut(view) };
+    let result = CounterLedger::load_mut(view);
     assert_eq!(result.err(), Some(ProgramError::InvalidAccountData));
+}
+
+#[test]
+fn failed_load_mut_leaves_data_unchanged() {
+    // Correct type with `len > capacity`, and another type whose bytes at
+    // `LEN_OFFSET` read as an oversized `len`.
+    let over_capacity = setup_ledger(/*capacity*/ 1, /*len*/ 2);
+    let other_type = setup_ledger(/*capacity*/ 1, /*len*/ 2);
+    let mut data = other_type.read_data().to_vec();
+    data[..8].copy_from_slice(&[0x11; 8]);
+    other_type.write_data(&data);
+
+    for buf in [over_capacity, other_type] {
+        let before = buf.read_data().to_vec();
+        let view = unsafe { buf.view() };
+        assert_eq!(
+            CounterLedger::load_mut(view).err(),
+            Some(ProgramError::InvalidAccountData)
+        );
+        assert_eq!(
+            buf.read_data(),
+            &before[..],
+            "a rejected load_mut must not write"
+        );
+    }
 }
 
 // Regression: after the guard lands, `capacity()` returns 0 (no panic,
@@ -299,7 +324,7 @@ fn capacity_returns_zero_when_data_len_below_items_offset() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 0);
 
     let view = unsafe { buf.view() };
-    let slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let slab = CounterLedger::load_mut(view).unwrap();
     assert_eq!(slab.capacity(), 4);
 
     // External resize shrinks buffer while we still hold `slab`.
@@ -315,7 +340,7 @@ fn len_and_slices_degrade_to_empty_when_len_field_is_missing() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
     assert_eq!(slab.len(), 3);
     assert_eq!(slab.capacity(), 4);
 
@@ -334,7 +359,7 @@ fn tail_mutations_noop_or_error_when_len_field_is_missing() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
 
     // External resize removes the tail `len` field itself while the slab is
     // still retained.
@@ -358,7 +383,7 @@ fn as_slice_clamps_len_to_capacity_after_external_shrink() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
 
     let view = unsafe { buf.view() };
-    let slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let slab = CounterLedger::load_mut(view).unwrap();
     assert_eq!(slab.len(), 3);
     assert_eq!(slab.capacity(), 4);
 
@@ -385,7 +410,7 @@ fn pop_after_external_shrink_uses_effective_len() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
     assert_eq!(slab.len(), 3);
     assert_eq!(slab.capacity(), 4);
 
@@ -401,6 +426,74 @@ fn pop_after_external_shrink_uses_effective_len() {
     assert_eq!(slab.len(), 0);
 }
 
+#[test]
+fn drop_repairs_stale_len_after_external_shrink_without_tail_mutation() {
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
+
+    let view = unsafe { buf.view() };
+    let slab = CounterLedger::load_mut(view).unwrap();
+    assert_eq!(slab.len(), 3);
+    assert_eq!(slab.capacity(), 4);
+
+    // External resize: capacity drops to 1 while the slab stays in scope.
+    buf.set_data_len((ITEMS_OFFSET + ITEM_SIZE) as u64);
+    assert_eq!(slab.capacity(), 1);
+
+    // Dropping without any tail mutation should still persist a repaired
+    // len so future loads do not reject `len > capacity`.
+    drop(slab);
+
+    let reloaded = CounterLedger::load(view).unwrap();
+    assert_eq!(reloaded.capacity(), 1);
+    assert_eq!(reloaded.len(), 1);
+}
+
+#[test]
+fn predicates_use_effective_len_after_external_shrink() {
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
+
+    let view = unsafe { buf.view() };
+    let slab = CounterLedger::load_mut(view).unwrap();
+
+    // Shrink below stored len while the wrapper is retained.
+    buf.set_data_len((ITEMS_OFFSET + ITEM_SIZE) as u64);
+    assert_eq!(slab.len(), 3);
+    assert_eq!(slab.capacity(), 1);
+
+    // Pre-fix: is_empty/is_full used raw len and reported neither empty nor
+    // full. Post-fix they track the live tail (min(len, capacity) == 1).
+    assert!(!slab.is_empty());
+    assert!(slab.is_full());
+}
+
+#[test]
+fn pop_repairs_stale_len_when_capacity_is_zero() {
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
+
+    let view = unsafe { buf.view() };
+    let mut slab = CounterLedger::load_mut(view).unwrap();
+
+    // Shrink to the structural minimum: zero item capacity, but the stored
+    // len field is still present and still holds 3.
+    buf.set_data_len(ITEMS_OFFSET as u64);
+    assert_eq!(slab.capacity(), 0);
+    assert_eq!(slab.len(), 3);
+    assert!(slab.is_empty());
+    assert!(slab.is_full());
+
+    // Pre-fix: pop returned None without write_len, leaving len=3 so a
+    // later load rejected len > capacity. Post-fix: repair first.
+    assert_eq!(slab.pop(), None);
+    assert_eq!(slab.len(), 0);
+
+    // Drop the retained wrapper and reload — validation must succeed.
+    drop(slab);
+    let view = unsafe { buf.view() };
+    let reloaded = CounterLedger::load_mut(view).unwrap();
+    assert!(reloaded.is_empty());
+    assert_eq!(reloaded.len(), 0);
+}
+
 // -- Regression: swap_remove respects effective_len after shrink ------
 
 #[test]
@@ -408,7 +501,7 @@ fn swap_remove_after_external_shrink_uses_effective_len() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
 
     // Shrink: capacity drops to 2 with the slab still in scope.
     buf.set_data_len((ITEMS_OFFSET + 2 * ITEM_SIZE) as u64);
@@ -426,7 +519,7 @@ fn swap_remove_panics_when_index_geq_effective_len() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
 
     // Shrink: capacity drops to 1 with the slab still in scope.
     buf.set_data_len((ITEMS_OFFSET + ITEM_SIZE) as u64);
@@ -461,7 +554,7 @@ fn truncate_clamps_to_effective_len_after_shrink() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
 
     // Shrink while slab is in scope.
     buf.set_data_len((ITEMS_OFFSET + ITEM_SIZE) as u64);
@@ -486,7 +579,7 @@ fn slab_resize_to_capacity_clamps_len() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
 
     let view = unsafe { buf.view() };
-    let slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let slab = CounterLedger::load_mut(view).unwrap();
     assert_eq!(slab.len(), 3);
 
     // This is a smoke test for the defensive pattern. It also documents
@@ -506,7 +599,7 @@ fn slab_resize_to_capacity_updates_live_capacity_and_supports_push() {
     let buf = setup_ledger(/*capacity*/ 1, /*len*/ 1);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
 
     slab.resize_to_capacity(3).unwrap();
 
@@ -534,7 +627,7 @@ fn slab_realloc_growth_updates_live_capacity_and_supports_push() {
     payer.set_lamports(1_000_000_000);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
     let payer_view = unsafe { payer.view() };
 
     slab.realloc_account(ITEMS_OFFSET + 3 * ITEM_SIZE, payer_view, false)
@@ -563,7 +656,7 @@ fn min_lamports_matches_rent_helper_for_current_space() {
     let buf = setup_ledger(/*capacity*/ 4, /*len*/ 1);
 
     let view = unsafe { buf.view() };
-    let slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let slab = CounterLedger::load_mut(view).unwrap();
 
     assert_eq!(slab.current_space(), ITEMS_OFFSET + 4 * ITEM_SIZE);
     assert_eq!(
@@ -584,7 +677,7 @@ fn refund_moves_excess_lamports_to_recipient() {
     recipient.set_lamports(25);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
     let mut recipient_view = unsafe { recipient.view() };
 
     slab.refund(&mut recipient_view).unwrap();
@@ -624,7 +717,7 @@ fn refund_is_noop_when_account_is_at_rent_floor() {
     recipient.set_lamports(25);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
     let mut recipient_view = unsafe { recipient.view() };
 
     slab.refund(&mut recipient_view).unwrap();
@@ -642,7 +735,7 @@ fn refund_with_self_recipient_is_noop() {
     buf.set_lamports(original);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
     // `AccountView` is `Copy`, so a program can pass an alias of the slab as
     // the refund recipient. That must not burn the excess via credit-then-
     // overwrite on the shared lamport slot.
@@ -688,7 +781,7 @@ fn top_up_is_noop_when_account_already_has_enough_lamports() {
     payer.set_lamports(999);
 
     let view = unsafe { buf.view() };
-    let mut slab = unsafe { CounterLedger::load_mut(view) }.unwrap();
+    let mut slab = CounterLedger::load_mut(view).unwrap();
     let payer_view = unsafe { payer.view() };
 
     slab.top_up(&payer_view).unwrap();

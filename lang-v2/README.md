@@ -88,6 +88,9 @@ with every v1 Borsh encoding:
 - Borsh rejects NaN during float serialization, while Wincode accepts it. Code
   migrating from v1 should validate float values explicitly when NaN is not a
   valid application value.
+- Borsh rejects a dynamically sized collection of zero-sized elements, such as
+  `Vec<()>`. Wincode accepts a `u32` length prefix and writes no element
+  bytes. Ordinary account types do not use this shape.
 
 These are intentional serialization differences in the Wincode path, not
 reasons to reject otherwise valid values with the former compatibility guard.
@@ -101,7 +104,7 @@ Here are some examples of optimizations present in Anchor v2.
 
 - **PDA bumps precomputed at macro time.** If your seeds are all literals, the derive runs the PDA search during compilation and bakes the canonical bump in as a `const`. This lets us skip the runtime PDA search entirely.
 - **Skip the on-curve check for program-owned PDAs.** If the program already owns the account, it had to be created via signed CPI — which did the curve check at the time. Verification can just hash-and-compare. Saves ~1,000 CU per verify.
-- **Wincode events by default.** `#[event]` automatically derives Anchor's Wincode-backed serialization, so programs do not need a direct Wincode dependency. It still handles `Vec` / `String` / `Option` / enums and is 3–10× cheaper than borsh on SBF.
+- **Wincode events by default.** `#[event]` automatically derives `AnchorSerialize` and `AnchorDeserialize`, so programs do not need a direct Wincode dependency. It still handles `Vec` / `String` / `Option` / enums and is 3–10× cheaper than borsh on SBF.
 - **`#[event(bytemuck)]` for fixed-size events.** The struct's `repr(C)` Pod layout already matches the wire format, so emitting is just disc + one memcpy of the body. No per-field encoding, with compile-time rejection of padded layouts.
 - **Alignment-1 Pod wrappers** (`PodU64`, `PodI128`, `PodBool`, ...). Integers stored as `[u8; N]` so the whole `#[account]` struct casts directly from the account's raw bytes. Zero deserialization.
 - **`PodVec<T, MAX>`**: fixed-capacity vec with a `u16` length, stored inline in the account. Variable-length data without heap allocation.
@@ -130,6 +133,8 @@ None of these carry an `'info` lifetime — pinocchio's account model is static-
 | `Sysvar<T>` | `Sysvar<Clock>`, `Sysvar<Rent>`. Prefer `Clock::get()` / `Rent::get()` syscalls where possible. (v1 compat) |
 | `Sysvar<SysvarInstructions>` | Instruction introspection. No syscall exists for this sysvar, so the account must be passed in the transaction; the wrapper reads its data and derefs to pinocchio's `Instructions`. |
 
+**Aliased accounts.** A transaction can pass one account in more than one slot, and every slot shares that account's runtime borrow state. Wrappers with typed data (`Account<T>`, `BorshAccount<T>`, `Slab<H, T>`, `Sysvar<SysvarInstructions>`) hold a borrow while they are alive: a mutable load needs no other borrow, and a read-only load needs no mutable borrow. A conflicting alias fails with `AccountBorrowFailed`. `Signer`, `SystemAccount`, `UncheckedAccount`, and `Program<T>` expose no typed data and hold no borrow, so one wallet can be both payer and authority. Raw data borrows and CPI handles through those wrappers still fail while a typed wrapper holds a conflicting borrow.
+
 ## CPI Semantics
 
 Same `CpiContext` shape as v1. The big caller-side win is the generated **`Resolved`** struct: alongside the full accounts struct for each handler, the derive emits a variant with only the fields a caller actually has to provide. The standard system and token programs auto-fill when you build the instruction metas, and PDAs derive in topological order so dependent seeds still work.
@@ -145,6 +150,28 @@ let metas = multisig_v2::accounts::CreateResolved { creator: creator.pubkey() }
 ```
 
 In v1, the caller built the `AccountMeta` vector by hand on every call — deriving the PDA, wiring up `system_program`, and keeping the order in sync with the handler's `#[derive(Accounts)]`.
+
+## Interface programs
+
+`#[program(interface, program_id = X)]` generates client and CPI bindings for someone else's program. `#[derive(Accounts)]` still defaults optional-account `None` sentinels and PDA derivation to `crate::ID`. If `X` is not this crate's ID, stamp the Accounts structs so those values match the callee:
+
+```rust
+#[derive(Accounts)]
+#[accounts_program_id(declared::ID)]
+pub struct Foo {
+    pub optional: Option<UncheckedAccount>,
+}
+
+#[program(interface, program_id = declared::ID)]
+pub mod foo_interface {
+    use super::*;
+    pub fn ix(_ctx: &mut Context<Foo>) -> Result<()> {
+        unreachable!()
+    }
+}
+```
+
+v2 emits a compile error when the two IDs disagree.
 
 ## `declare_program!`
 
@@ -181,7 +208,7 @@ impl AnchorAccount for DynamicAccount<Post> {
     type Data = PostFixed;
     fn load(view, pid)   -> Result<Self>     { /* parse disc + tail */ }
     fn exit(&mut self)   -> ProgramResult    { /* realloc to fit, persist */ }
-    // load_mut, load_mut_after_init, account
+    // load_mut, account
 }
 ```
 

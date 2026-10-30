@@ -162,6 +162,37 @@ pub unsafe fn invoke_signed_unchecked_with_optional_sentinels<'a, 'seeds>(
     Ok(())
 }
 
+pub(crate) fn validate_fixed_instruction_accounts<'a, const N: usize>(
+    instruction_accounts: &[InstructionAccount<'a>; N],
+    handles: &[CpiHandle<'a>; N],
+    enforce_signers: bool,
+) -> ProgramResult {
+    for (account, handle) in instruction_accounts.iter().zip(handles) {
+        require!(
+            address_eq(account.address, handle.address())
+                && (!account.is_writable || handle.is_writable()),
+            ProgramError::InvalidArgument
+        );
+
+        if handle.requires_borrow_check() {
+            if account.is_writable {
+                handle.account_view().check_borrow_mut()?;
+            } else {
+                handle.account_view().check_borrow()?;
+            }
+        }
+
+        if enforce_signers && account.is_signer {
+            require!(
+                handle.account_view().is_signer(),
+                ProgramError::MissingRequiredSignature
+            );
+        }
+    }
+
+    Ok(())
+}
+
 pub(crate) fn validate_instruction_accounts<'a>(
     instruction_accounts: &[InstructionAccount<'a>],
     program_id: &Address,

@@ -161,6 +161,44 @@ describe("AccountsResolver", () => {
     }
   });
 
+  it("rejects 2^53 passed as the u64 PDA seed", async () => {
+    const { provider } = mockProvider({});
+    const program = new Program<ResolverIdl>(idl, provider);
+    // JS can store 2^53, but it is not a safe integer.
+    const id = 2 ** 53;
+
+    await expect(
+      program.methods
+        .open(id, { tag: 3 })
+        .accounts({ vaultProgram: randomAddress() })
+        .addresses()
+    ).rejects.toThrow(/Pass a bigint/);
+  });
+
+  it("derives the same PDA from a safe u64 number and from that value as a bigint", async () => {
+    const { provider, wallet } = mockProvider({});
+    const program = new Program<ResolverIdl>(idl, provider);
+    const vaultProgram = randomAddress();
+    // 2^53 - 1, the largest integer a JS number can hold exactly.
+    const id = Number.MAX_SAFE_INTEGER;
+
+    const keys = await program.methods
+      .open(id, { tag: 3 })
+      .accounts({ vaultProgram })
+      .addresses();
+    const [vault] = await getProgramDerivedAddress({
+      programAddress: PROGRAM_ADDRESS,
+      seeds: [
+        getUtf8Encoder().encode("vault"),
+        getAddressEncoder().encode(wallet.address),
+        getU64Encoder().encode(BigInt(id)),
+        getU8Encoder().encode(3),
+      ],
+    });
+
+    expect(keys.vault).toBe(vault);
+  });
+
   it("accepts legacy public keys as inputs", async () => {
     const { provider } = mockProvider({});
     const program = new Program<ResolverIdl>(idl, provider);

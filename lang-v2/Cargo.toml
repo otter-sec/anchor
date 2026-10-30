@@ -1,6 +1,7 @@
 [package]
 name = "anchor-lang"
 version.workspace = true
+rust-version = "1.95.0"
 edition = "2021"
 repository = "https://github.com/otter-sec/anchor"
 description = "Anchor v2: trait-based account system for Solana (no_std)"
@@ -104,10 +105,6 @@ name = "account_wrapper_checks"
 required-features = ["testing"]
 
 [[test]]
-name = "optional_mut_duplicate_check"
-required-features = ["testing"]
-
-[[test]]
 name = "init_if_needed_space_check"
 required-features = ["testing"]
 
@@ -144,10 +141,6 @@ name = "miri_wrapper_accounts"
 required-features = ["testing"]
 
 [[test]]
-name = "remaining_accounts_mut_check"
-required-features = ["testing"]
-
-[[test]]
 name = "program_invoke"
 required-features = ["testing"]
 
@@ -165,6 +158,12 @@ required-features = ["testing"]
 
 [[test]]
 name = "address_idl_surface"
+
+[[test]]
+name = "constant_idl_escape"
+
+[[test]]
+name = "error_code_idl_escape"
 
 [[test]]
 name = "init_space"

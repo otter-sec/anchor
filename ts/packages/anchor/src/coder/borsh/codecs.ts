@@ -33,6 +33,29 @@ import type { AddressInput } from "../../program/common.js";
 export type IdlCodec = Codec<unknown, unknown>;
 
 /**
+ * JS numbers are only exact through `2^53 - 1`.
+ */
+export function assertSafeInteger(value: unknown): void {
+  if (typeof value === "number" && !Number.isSafeInteger(value)) {
+    throw new Error(
+      `Cannot encode ${value} as an integer: JS numbers are only exact through 2^53 - 1. Pass a bigint.`
+    );
+  }
+}
+
+/**
+ * The given wide integer codec, rejecting a JS number that is not a safe integer.
+ */
+export function getSafeIntegerCodec<TSize extends number>(
+  codec: FixedSizeCodec<bigint | number, bigint, TSize>
+): FixedSizeCodec<bigint | number, bigint, TSize> {
+  return transformCodec(codec, (value: bigint | number) => {
+    assertSafeInteger(value);
+    return value;
+  });
+}
+
+/**
  * Address codec. Decodes to a Kit `Address`; encodes from an `Address` or any
  * object exposing one through `toBase58()`, e.g. a web3.js public key.
  */

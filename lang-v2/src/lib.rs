@@ -106,6 +106,11 @@ pub use wincode;
 ///   intentionally follows wincode here, so floating-point values (including
 ///   NaN) are supported. Programs migrating from v1 should account for this
 ///   serialization difference when validating or comparing float values.
+/// - **Dynamic collections of zero-sized elements** (`Vec<()>`, and the same
+///   shape for any other zero-sized `T`): borsh rejects them. Wincode writes a
+///   `u32` length prefix and no element bytes, then reads that length back.
+///   This does not show up in ordinary account data. Wincode still bounds the
+///   length through its preallocation limit.
 ///
 /// Programs that don't use these types are unaffected.
 ///
@@ -123,10 +128,10 @@ pub const MAX_PAYER_SEEDS: usize = 16;
 /// PDA payers append the canonical bump as a final signer seed.
 pub const MAX_PAYER_SEEDS_WITH_BUMP: usize = MAX_PAYER_SEEDS + 1;
 
-/// Concrete type of [`BORSH_CONFIG`]. Spelled out so downstream callers can
-/// name it in manual trait bounds (e.g.
-/// `T: anchor_lang::wincode::SchemaRead<'de, BorshConfig>`). Most programs
-/// should derive [`AnchorDeserialize`] and [`AnchorSerialize`] instead.
+/// Concrete type of [`BORSH_CONFIG`]. Spelled out so a raw wincode bound can
+/// name it (e.g. `T: wincode::SchemaRead<'de, BorshConfig>`). Most programs
+/// should derive [`AnchorDeserialize`] / [`AnchorSerialize`] and bound on
+/// those traits instead.
 pub type BorshConfig = wincode::config::Configuration<
     true,
     { wincode::config::DEFAULT_PREALLOCATION_SIZE_LIMIT },
@@ -136,8 +141,30 @@ pub type BorshConfig = wincode::config::Configuration<
     u8,
 >;
 
+/// Types Anchor can decode from borsh-shaped bytes with [`BORSH_CONFIG`].
+///
+/// This is the trait behind `#[derive(AnchorDeserialize)]`. The derive macro
+/// and the trait share one name on purpose, like `borsh::BorshDeserialize`:
+/// write `#[derive(AnchorDeserialize)]` on the type and `T: AnchorDeserialize`
+/// in a bound.
+///
+/// `#[event]` derives it, so a client can decode an event with
+/// `fn decode<T: Event + AnchorDeserialize>(..)` and never mention wincode.
+pub trait AnchorDeserialize: for<'de> wincode::SchemaRead<'de, BorshConfig, Dst = Self> {}
+
+impl<T> AnchorDeserialize for T where T: for<'de> wincode::SchemaRead<'de, BorshConfig, Dst = T> {}
+
+/// Types Anchor can encode to borsh-shaped bytes with [`BORSH_CONFIG`].
+///
+/// Trait twin of `#[derive(AnchorSerialize)]`, with the same rules as
+/// [`AnchorDeserialize`]: derive it, bound on it, never implement it by hand.
+pub trait AnchorSerialize: wincode::SchemaWrite<BorshConfig, Src = Self> {}
+
+impl<T> AnchorSerialize for T where T: wincode::SchemaWrite<BorshConfig, Src = T> {}
+
 /// `#[derive(IdlType)]` — register a plain struct in the IDL's `types[]`
-/// array.
+/// array. Add `#[idl(bytemuck)]` to an explicitly `#[repr(C)]`, Pod-safe
+/// nested type when it is stored in a zero-copy account or bytemuck event.
 ///
 /// **Opaque / unstable.** Apply this derive on user types you want to
 /// surface in the generated IDL; do not call any of the emitted associated
@@ -177,14 +204,14 @@ pub use {
         program, Accounts, AnchorDeserialize, AnchorSerialize, InitSpace, ToCpiAccounts, __erase,
     },
     bytemuck,
-    context::{Bumps, Context, MutMask},
+    context::{Bumps, Context},
     context_cpi::{unchecked_invoke_signed_fixed, CpiContext},
     cpi::{
         create_account, create_account_signed, create_program_address,
         find_and_verify_program_address, find_and_verify_program_address_skip_curve,
         find_program_address, verify_program_address,
     },
-    cursor::{mut_mask_or_shifted, mut_mask_set_bit, AccountBitvec, AccountCursor},
+    cursor::AccountCursor,
     dispatch::{run_handler, TryAccounts},
     event::{sol_log_data, Event},
     hash::sha256,
@@ -340,7 +367,6 @@ pub enum ErrorCode {
     RequireKeysNeqViolated,
     RequireGtViolated,
     RequireGteViolated,
-    ConstraintDuplicateMutableAccount,
 }
 
 impl From<ErrorCode> for solana_program_error::ProgramError {
@@ -382,9 +408,6 @@ impl From<ErrorCode> for solana_program_error::ProgramError {
             ErrorCode::RequireKeysNeqViolated => solana_program_error::ProgramError::Custom(2504),
             ErrorCode::RequireGtViolated => solana_program_error::ProgramError::Custom(2505),
             ErrorCode::RequireGteViolated => solana_program_error::ProgramError::Custom(2506),
-            ErrorCode::ConstraintDuplicateMutableAccount => {
-                solana_program_error::ProgramError::Custom(2040)
-            }
         }
     }
 }
@@ -449,20 +472,20 @@ macro_rules! err {
 /// ```
 #[macro_export]
 macro_rules! require {
-    ($invariant:expr, $error:tt $(,)?) => {
+    ($invariant:expr, $error:tt $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if !($invariant) {
             return Err($crate::ErrorCode::$error.into());
         }
-    };
-    ($invariant:expr, $error:expr $(,)?) => {
+    }};
+    ($invariant:expr, $error:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if !($invariant) {
             return Err(core::convert::Into::into($error));
         }
-    };
+    }};
 }
 
 /// Ensures two NON-PUBKEY values are equal.
@@ -481,20 +504,17 @@ macro_rules! require {
 /// ```
 #[macro_export]
 macro_rules! require_eq {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 != $value2 {
             $crate::msg!("require_eq violation");
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
-        if $value1 != $value2 {
-            $crate::msg!("require_eq violation");
-            return Err($crate::ErrorCode::RequireEqViolated.into());
-        }
-    };
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
+        $crate::require_eq!($value1, $value2, $crate::ErrorCode::RequireEqViolated);
+    }};
 }
 
 /// Ensures two NON-PUBKEY values are not equal.
@@ -513,28 +533,19 @@ macro_rules! require_eq {
 /// ```
 #[macro_export]
 macro_rules! require_neq {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
-        if $value1 == $value2 {
-            $crate::msg!(
-                "require_neq violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
+        let __lhs = $value1;
+        let __rhs = $value2;
+        if __lhs == __rhs {
+            $crate::msg!("require_neq violation: left = {}, right = {}", __lhs, __rhs);
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
-        if $value1 == $value2 {
-            $crate::msg!(
-                "require_neq violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
-            return Err($crate::ErrorCode::RequireNeqViolated.into());
-        }
-    };
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
+        $crate::require_neq!($value1, $value2, $crate::ErrorCode::RequireNeqViolated)
+    }};
 }
 
 /// Ensures two pubkey/address values are equal.
@@ -552,20 +563,17 @@ macro_rules! require_neq {
 /// ```
 #[macro_export]
 macro_rules! require_keys_eq {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 != $value2 {
             $crate::msg!("require_keys_eq violation");
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
-        if $value1 != $value2 {
-            $crate::msg!("require_keys_eq violation");
-            return Err($crate::ErrorCode::RequireKeysEqViolated.into());
-        }
-    };
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
+        $crate::require_keys_eq!($value1, $value2, $crate::ErrorCode::RequireKeysEqViolated);
+    }};
 }
 
 /// Ensures two pubkey/address values are not equal.
@@ -583,20 +591,17 @@ macro_rules! require_keys_eq {
 /// ```
 #[macro_export]
 macro_rules! require_keys_neq {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 == $value2 {
             $crate::msg!("require_keys_neq violation");
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
-        if $value1 == $value2 {
-            $crate::msg!("require_keys_neq violation");
-            return Err($crate::ErrorCode::RequireKeysNeqViolated.into());
-        }
-    };
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
+        $crate::require_keys_neq!($value1, $value2, $crate::ErrorCode::RequireKeysNeqViolated);
+    }};
 }
 
 /// Ensures the first value is greater than the second.
@@ -613,28 +618,19 @@ macro_rules! require_keys_neq {
 /// ```
 #[macro_export]
 macro_rules! require_gt {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
-        if $value1 <= $value2 {
-            $crate::msg!(
-                "require_gt violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
+        let __lhs = $value1;
+        let __rhs = $value2;
+        if __lhs <= __rhs {
+            $crate::msg!("require_gt violation: left = {}, right = {}", __lhs, __rhs);
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
-        if $value1 <= $value2 {
-            $crate::msg!(
-                "require_gt violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
-            return Err($crate::ErrorCode::RequireGtViolated.into());
-        }
-    };
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
+        $crate::require_gt!($value1, $value2, $crate::ErrorCode::RequireGtViolated)
+    }};
 }
 
 /// Ensures the first value is greater than or equal to the second.
@@ -651,26 +647,17 @@ macro_rules! require_gt {
 /// ```
 #[macro_export]
 macro_rules! require_gte {
-    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+    ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {{
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
-        if $value1 < $value2 {
-            $crate::msg!(
-                "require_gte violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
+        let __lhs = $value1;
+        let __rhs = $value2;
+        if __lhs < __rhs {
+            $crate::msg!("require_gte violation: left = {}, right = {}", __lhs, __rhs);
             return Err(core::convert::Into::into($error_code));
         }
-    };
-    ($value1:expr, $value2:expr $(,)?) => {
-        if $value1 < $value2 {
-            $crate::msg!(
-                "require_gte violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
-            return Err($crate::ErrorCode::RequireGteViolated.into());
-        }
-    };
+    }};
+    ($value1:expr, $value2:expr $(,)?) => {{
+        $crate::require_gte!($value1, $value2, $crate::ErrorCode::RequireGteViolated)
+    }};
 }

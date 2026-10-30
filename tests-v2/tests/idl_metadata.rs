@@ -60,6 +60,16 @@ fn fn_seed_expression_emits_const_seed_bytes() {
 }
 
 #[test]
+fn explicit_bump_omits_pda_metadata() {
+    let items = parse_accounts(&seeds::CheckLiteralUntrustedBump::__idl_accounts());
+    let account = single_account(&items, 1);
+    assert!(
+        account.pda.is_none(),
+        "explicit-bump account should require a caller-supplied address"
+    );
+}
+
+#[test]
 fn mixed_supported_seeds_preserve_const_and_account_metadata() {
     let items = parse_accounts(&seeds::CheckMixed::__idl_accounts());
     let account = single_account(&items, 1);

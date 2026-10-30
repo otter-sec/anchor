@@ -53,7 +53,6 @@ pub struct AccountAttrs {
     pub is_init_if_needed: bool,
     pub is_zeroed: bool,
     pub is_executable: bool,
-    pub is_dup: bool,
     pub init_span: Option<proc_macro2::Span>,
     pub init_if_needed_span: Option<proc_macro2::Span>,
     /// None = no bump attr, Some(None) = `bump` without value, Some(Some(expr)) = `bump = expr`
@@ -112,7 +111,6 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
         is_init_if_needed: false,
         is_zeroed: false,
         is_executable: false,
-        is_dup: false,
         init_span: None,
         init_if_needed_span: None,
         bump: None,
@@ -220,29 +218,11 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
                     "dup" => {
                         return Err(syn::Error::new(
                             ident.span(),
-                            "`dup` bypasses duplicate-account safety checks and must be \
-                             explicitly marked unsafe: use `unsafe(dup)`",
+                            "`dup` is not supported: `Signer`, `SystemAccount`, \
+                             `UncheckedAccount`, and `Program` accounts may alias without \
+                             it, and data accounts reject conflicting borrows of an alias \
+                             at load time",
                         ));
-                    }
-                    "unsafe" => {
-                        let content;
-                        syn::parenthesized!(content in input);
-                        let inner: Ident = content.parse()?;
-                        match inner.to_string().as_str() {
-                            "dup" => {
-                                if result.is_dup {
-                                    return Err(duplicate_singleton(inner.span(), "unsafe(dup)"));
-                                }
-                                result.is_dup = true;
-                                result.is_mut = true;
-                            }
-                            _ => {
-                                return Err(syn::Error::new(
-                                    inner.span(),
-                                    format!("unknown unsafe constraint `{inner}`"),
-                                ));
-                            }
-                        }
                     }
                     "update" => {
                         // `update(ns::key = val, ns2::key2 = val2, ...)` —
@@ -447,10 +427,38 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
                                 }
                                 continue;
                             }
+                            // Token-2022 mint init is three-segment:
+                            // `extensions::metadata_pointer::authority = …`.
+                            // Flatten the last two segments so they fill
+                            // `InterfaceMintInitParams` field names.
+                            let (namespace, raw_key) = if ident == "extensions" {
+                                if !input.peek(Token![::]) {
+                                    return Err(syn::Error::new(
+                                        key_ident.span(),
+                                        "token extension constraints must be \
+                                         `extensions::<extension>::<field>`",
+                                    ));
+                                }
+                                input.parse::<Token![::]>()?;
+                                let field_ident = Ident::parse_any(input)?;
+                                let Some(raw_key) = flatten_extension_init_key(
+                                    &key_ident.to_string(),
+                                    &field_ident.to_string(),
+                                ) else {
+                                    return Err(syn::Error::new(
+                                        key_ident.span(),
+                                        format!(
+                                            "unknown token extension constraint \
+                                             `extensions::{key_ident}::{field_ident}`"
+                                        ),
+                                    ));
+                                };
+                                ("extensions".to_string(), raw_key.to_string())
+                            } else {
+                                (ident.to_string(), key_ident.to_string())
+                            };
                             input.parse::<Token![=]>()?;
                             let value: Expr = input.parse()?;
-                            let namespace = ident.to_string();
-                            let raw_key = key_ident.to_string();
                             if result.namespaced.iter().any(|nc| {
                                 !nc.is_update && nc.namespace == namespace && nc.raw_key == raw_key
                             }) {
@@ -555,6 +563,19 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
             result.space.as_ref().unwrap().span(),
             "`space` requires `init` or `init_if_needed`",
         ));
+    }
+
+    if let Some(nc) = result
+        .namespaced
+        .iter()
+        .find(|nc| nc.namespace == "extensions")
+    {
+        if !(result.is_init || result.is_init_if_needed) {
+            return Err(syn::Error::new(
+                nc.value.span(),
+                "`extensions::*` requires `init` or `init_if_needed`",
+            ));
+        }
     }
 
     if result.bump.is_some() && result.seeds.is_none() {
@@ -676,7 +697,25 @@ pub fn field_ty_str(ty: &Type) -> String {
 /// (including all third-party constraints) is runtime-only and dispatches
 /// through the `AccountConstraint` trait.
 fn has_init_params(ns: &str) -> bool {
-    matches!(ns, "token" | "mint" | "associated_token")
+    matches!(ns, "token" | "mint" | "associated_token" | "extensions")
+}
+
+/// Map `extensions::<name>::<field>` onto `InterfaceMintInitParams` fields.
+/// Returns `None` for extension attrs that are not supported on `#[account(init)]`.
+fn flatten_extension_init_key(extension: &str, field: &str) -> Option<&'static str> {
+    match (extension, field) {
+        ("metadata_pointer", "authority") => Some("metadata_pointer_authority"),
+        ("metadata_pointer", "metadata_address") => Some("metadata_pointer_metadata_address"),
+        ("group_pointer", "authority") => Some("group_pointer_authority"),
+        ("group_pointer", "group_address") => Some("group_pointer_group_address"),
+        ("group_member_pointer", "authority") => Some("group_member_pointer_authority"),
+        ("group_member_pointer", "member_address") => Some("group_member_pointer_member_address"),
+        ("close_authority", "authority") => Some("close_authority_authority"),
+        ("transfer_hook", "authority") => Some("transfer_hook_authority"),
+        ("transfer_hook", "program_id") => Some("transfer_hook_program_id"),
+        ("permanent_delegate", "delegate") => Some("permanent_delegate_delegate"),
+        _ => None,
+    }
 }
 
 /// Returns `true` when the namespace is runtime-only: its values are
@@ -743,6 +782,7 @@ enum BuiltinConstraintValueKind {
 enum BuiltinInitParamValueKind {
     AccountView,
     Direct,
+    Address,
 }
 
 fn builtin_constraint_value_kind(
@@ -752,9 +792,8 @@ fn builtin_constraint_value_kind(
     match (namespace, raw_key) {
         ("mint", "authority" | "freeze_authority" | "token_program")
         | ("token", "mint" | "authority" | "token_program")
-        | ("associated_token", "mint" | "authority" | "token_program") => {
-            Some(BuiltinConstraintValueKind::Address)
-        }
+        | ("associated_token", "mint" | "authority" | "token_program")
+        | ("extensions", _) => Some(BuiltinConstraintValueKind::Address),
         ("mint", "decimals") => Some(BuiltinConstraintValueKind::Direct),
         _ => None,
     }
@@ -770,6 +809,7 @@ fn builtin_init_param_value_kind(
         | ("token", "mint" | "authority" | "token_program") => {
             Some(BuiltinInitParamValueKind::AccountView)
         }
+        ("extensions", _) => Some(BuiltinInitParamValueKind::Address),
         _ => None,
     }
 }
@@ -916,6 +956,33 @@ fn validate_init_constraint_refs(
 
     Ok(())
 }
+
+/// `close = dest` must name a sibling account field marked `mut`, matching the
+/// init-payer mutability check.
+fn validate_close_destination(
+    attrs: &AccountAttrs,
+    field_summaries: &[FieldSummary],
+) -> syn::Result<()> {
+    let Some(ref destination) = attrs.close else {
+        return Ok(());
+    };
+
+    match field_summaries
+        .iter()
+        .find(|summary| summary.name == *destination)
+    {
+        Some(dest) if dest.attrs.is_mut => Ok(()),
+        Some(_) => Err(syn::Error::new(
+            destination.span(),
+            "the destination specified for a close constraint must be mutable",
+        )),
+        None => Err(syn::Error::new(
+            destination.span(),
+            "the destination specified for a close constraint does not exist",
+        )),
+    }
+}
+
 fn field_offset_expr(
     field_offsets: &[(String, TokenStream2)],
     ident: &Ident,
@@ -1194,22 +1261,6 @@ pub struct AccountField {
     pub has_bump: bool,
     /// True when the field type is `Option<T>` (optional account).
     pub is_optional: bool,
-    /// Offset expression for this field within the enclosing struct's
-    /// views slice (a compile-time usize). Retained so the trait-impl
-    /// emitter can fold direct-mut fields into `MUT_MASK` at the right
-    /// bit position and shift each `Nested<U>` child's `MUT_MASK` by
-    /// this offset.
-    pub offset_expr: TokenStream2,
-    /// `true` iff this field contributes a `1` to the enclosing struct's
-    /// `MUT_MASK`: a non-`Option<_>` mut field without `unsafe(dup)`.
-    /// `Option<T>` mut fields are excluded because a `None` slot (the
-    /// client sends `program_id` as the address) should still silence the
-    /// dup check; the derive keeps an inline per-field `get()` inside the
-    /// `Some(...)` branch for those.
-    pub contributes_mut_bit: bool,
-    /// `true` iff this optional field contributes to the runtime active
-    /// mutable mask when it loads as `Some`.
-    pub contributes_active_mut_bit: bool,
     // IDL metadata
     pub idl_writable: bool,
     /// True when this is a fresh-keypair init site (attrs: `init` or
@@ -1819,7 +1870,7 @@ fn emit_seeds_check(
 
 /// Emit the shared init body used by both `#[account(init)]` and
 /// `#[account(init_if_needed)]`: seeds check, param assignments,
-/// `create_and_initialize`, and `load_mut_after_init`.
+/// and `create_and_initialize`.
 fn emit_payer_signer_seeds_binding(
     payer: &Ident,
     field_names: &[String],
@@ -2016,6 +2067,37 @@ fn emit_init_body(
                         }
                     }
                 }
+                Some(BuiltinInitParamValueKind::Address) => {
+                    if let Some(field_ident) = expr_as_known_field_ident(value, field_names) {
+                        if field_is_optional(field_summaries, &field_ident) {
+                            quote! {
+                                __p.#key = Some(match (#value).as_ref() {
+                                    Some(__anchor_account) => {
+                                        *__anchor_account.account().address()
+                                    }
+                                    None => {
+                                        return Err(
+                                            anchor_lang::ErrorCode::ConstraintAccountIsNone
+                                                .into(),
+                                        );
+                                    }
+                                });
+                            }
+                        } else {
+                            quote! {
+                                __p.#key = Some(
+                                    *anchor_lang::AccountAddress::account_address(&(#value)),
+                                );
+                            }
+                        }
+                    } else {
+                        quote! {
+                            __p.#key = Some(
+                                core::convert::Into::<anchor_lang::Address>::into(#value),
+                            );
+                        }
+                    }
+                }
                 Some(BuiltinInitParamValueKind::Direct) | None => {
                     quote! { __p.#key = Some(#value); }
                 }
@@ -2207,12 +2289,9 @@ fn emit_associated_token_init_body(
                 }
             }
 
-            // SAFETY: this field has just been initialized by the associated
-            // token program, and duplicate mutable accounts are rejected by
-            // the generated account bitvec check. ATA init is performed by
-            // external programs selected at runtime, so run the field type's
-            // full validation after the CPI.
-            unsafe { <#field_ty as anchor_lang::AnchorAccount>::load_mut(__target)? }
+            // ATA init is performed by external programs selected at
+            // runtime, so run the field type's full validation after the CPI.
+            <#field_ty as anchor_lang::AnchorAccount>::load_mut(__target)?
         }
     })
 }
@@ -2297,6 +2376,7 @@ pub fn parse_field(
             "mut must be provided when using close",
         ));
     }
+    validate_close_destination(&attrs, field_summaries)?;
     let option_inner = extract_option_inner(field_ty);
     let associated_token = parse_associated_token_init(&attrs, field_names)?;
     validate_associated_token_init_refs(&attrs, associated_token.as_ref(), field_summaries)?;
@@ -2354,18 +2434,23 @@ pub fn parse_field(
         None => (None, None, None),
     };
     let idl_docs = crate::idl::extract_doc_lines(&field.attrs);
-    let idl_pda = attrs.seeds.as_ref().and_then(|seeds_expr| {
-        let seeds = crate::idl::classify_seed_list(seeds_expr, field_names, ix_arg_names)?;
-        let program = match attrs.seeds_program.as_ref() {
-            Some(program_expr) => Some(crate::idl::classify_program_seed(
-                program_expr,
-                field_names,
-                ix_arg_names,
-            )?),
-            None => None,
-        };
-        Some(IdlPdaMeta { seeds, program })
-    });
+    let idl_pda = if matches!(attrs.bump.as_ref(), Some(Some(_))) {
+        // Explicit bumps may be non-canonical, so clients need the address.
+        None
+    } else {
+        attrs.seeds.as_ref().and_then(|seeds_expr| {
+            let seeds = crate::idl::classify_seed_list(seeds_expr, field_names, ix_arg_names)?;
+            let program = match attrs.seeds_program.as_ref() {
+                Some(program_expr) => Some(crate::idl::classify_program_seed(
+                    program_expr,
+                    field_names,
+                    ix_arg_names,
+                )?),
+                None => None,
+            };
+            Some(IdlPdaMeta { seeds, program })
+        })
+    };
     let idl_field_ty: Option<syn::Type> = {
         let base_ty = option_inner.unwrap_or(field_ty);
         if let Type::Path(_) = base_ty {
@@ -2414,18 +2499,11 @@ pub fn parse_field(
         // Constraint processing and exit are handled by the inner struct's own
         // validate_accounts / exit_accounts — the outer derives don't need to
         // re-check them.
-        // TODO: passing `__base_offset + #offset_expr` means the nested
-        // struct's bitvec lookups hit the correct global indices. This is
-        // correct but adds a runtime addition per dup-check inside the
-        // nested struct. A future optimization could pre-shift the bitvec
-        // or use a wrapper that offsets transparently.
         let load = quote! {
             let (__nested_inner, #nested_bumps, __nested_ix_args) =
                 <#inner_ty as anchor_lang::TryAccounts>::validate_accounts(
                     __program_id,
                     &__views[#offset_expr .. #offset_expr + <#inner_ty as anchor_lang::TryAccounts>::HEADER_SIZE],
-                    __duplicates,
-                    __base_offset + #offset_expr,
                     __ix_data,
                 )?;
             // A nested Accounts type currently has no way to return its
@@ -2452,12 +2530,6 @@ pub fn parse_field(
             exit,
             has_bump: false,
             is_optional: false,
-            offset_expr,
-            // Nested children contribute via their own `MUT_MASK` shifted
-            // into the parent's; they don't set a bit at the nested field's
-            // own offset.
-            contributes_mut_bit: false,
-            contributes_active_mut_bit: false,
             idl_writable: false,
             idl_init_signer: false,
             idl_has_one: vec![],
@@ -2528,12 +2600,8 @@ pub fn parse_field(
                 wrap_init_body_with_constraints(inner_ty, &attrs, field_names, &init_body);
             quote! {
                 if !__target.owned_by(&anchor_lang::programs::System::id()) {
-                        #init_if_needed_reuse_validation
-                    // SAFETY: the bitvec duplicate-account check below ensures
-                    // no other mutable reference to this account's data exists.
-                    Some(unsafe {
-                        <#inner_ty as anchor_lang::AnchorAccount>::load_mut(__target)?
-                    })
+                    #init_if_needed_reuse_validation
+                    Some(<#inner_ty as anchor_lang::AnchorAccount>::load_mut(__target)?)
                 } else {
                     Some({ #init_body_with_constraints })
                 }
@@ -2543,32 +2611,21 @@ pub fn parse_field(
                 {
                     let __disc = <#inner_ty as anchor_lang::Discriminator>::DISCRIMINATOR;
                     {
-                        let __data = __target.try_borrow()?;
+                        let mut __view = __target;
+                        let mut __data = __view.try_borrow_mut()?;
                         if __data.len() < __disc.len()
                             || __data[..__disc.len()].iter().any(|b| *b != 0)
                         {
                             return Err(anchor_lang::ErrorCode::ConstraintZero.into());
                         }
-                    }
-                    unsafe {
-                        let mut __view = __target;
-                        let __data = __view.borrow_unchecked_mut();
                         __data[..__disc.len()].copy_from_slice(__disc);
                     }
-                    // SAFETY: the bitvec duplicate-account check below ensures
-                    // no other mutable reference to this account's data exists.
-                    Some(unsafe {
-                        <#inner_ty as anchor_lang::AnchorAccount>::load_mut(__target)?
-                    })
+                    Some(<#inner_ty as anchor_lang::AnchorAccount>::load_mut(__target)?)
                 }
             }
         } else if attrs.is_mut {
             quote! {
-                // SAFETY: the bitvec duplicate-account check below ensures
-                // no other mutable reference to this account's data exists.
-                Some(unsafe {
-                    <#inner_ty as anchor_lang::AnchorAccount>::load_mut(__target)?
-                })
+                Some(<#inner_ty as anchor_lang::AnchorAccount>::load_mut(__target)?)
             }
         } else {
             quote! {
@@ -2584,20 +2641,6 @@ pub fn parse_field(
                 };
             }
         });
-        let optional_dup_precheck =
-            if !attrs.is_dup && (attrs.is_mut || attrs.is_zeroed || attrs.is_init_if_needed) {
-                Some(quote! {
-                    if let Some(__dups) = __duplicates {
-                        if __dups.get((__base_offset + #offset_expr) as u8) {
-                            return Err(
-                                anchor_lang::ErrorCode::ConstraintDuplicateMutableAccount.into(),
-                            );
-                        }
-                    }
-                })
-            } else {
-                None
-            };
         let load = quote! {
             #init_if_needed_existed_binding
             let mut #field_name: #field_ty = {
@@ -2605,7 +2648,6 @@ pub fn parse_field(
                 if anchor_lang::address_eq(__target.address(), __program_id) {
                     None
                 } else {
-                    #optional_dup_precheck
                     #inner_action
                 }
             };
@@ -2679,9 +2721,7 @@ pub fn parse_field(
                 let __target = __views[#offset_expr];
                 if #existed {
                     #init_if_needed_reuse_validation
-                    // SAFETY: the bitvec duplicate-account check below ensures
-                    // no other mutable reference to this account's data exists.
-                    unsafe { <#field_ty as anchor_lang::AnchorAccount>::load_mut(__target)? }
+                    <#field_ty as anchor_lang::AnchorAccount>::load_mut(__target)?
                 } else {
                     // Create branch: run `AccountConstraint::init` for every
                     // runtime-only constraint AFTER the account's typed
@@ -2700,26 +2740,19 @@ pub fn parse_field(
                 let __target = __views[#offset_expr];
                 let __disc = <#field_ty as anchor_lang::Discriminator>::DISCRIMINATOR;
                 {
-                    let __data = __target.try_borrow()?;
+                    let mut __view = __target;
+                    let mut __data = __view.try_borrow_mut()?;
                     if __data.len() < __disc.len() || __data[..__disc.len()].iter().any(|b| *b != 0) {
                         return Err(anchor_lang::ErrorCode::ConstraintZero.into());
                     }
-                }
-                unsafe {
-                    let mut __view = __target;
-                    let __data = __view.borrow_unchecked_mut();
                     __data[..__disc.len()].copy_from_slice(__disc);
                 }
-                // SAFETY: the bitvec duplicate-account check below ensures
-                // no other mutable reference to this account's data exists.
-                unsafe { <#field_ty as anchor_lang::AnchorAccount>::load_mut(__target)? }
+                <#field_ty as anchor_lang::AnchorAccount>::load_mut(__target)?
             };
         }
     } else if attrs.is_mut {
         quote! {
-            // SAFETY: the bitvec duplicate-account check below ensures no
-            // other mutable reference to this account's data exists.
-            let mut #field_name = unsafe { <#field_ty as anchor_lang::AnchorAccount>::load_mut(__views[#offset_expr])? };
+            let mut #field_name = <#field_ty as anchor_lang::AnchorAccount>::load_mut(__views[#offset_expr])?;
         }
     } else {
         quote! {
@@ -3192,7 +3225,7 @@ pub fn parse_field(
     let constraint_exits: Vec<TokenStream2> = attrs
         .namespaced
         .iter()
-        .filter(|nc| nc.namespace != "associated_token")
+        .filter(|nc| nc.namespace != "associated_token" && nc.namespace != "extensions")
         .map(|nc| {
             let ns = syn::Ident::new(&nc.namespace, proc_macro2::Span::call_site());
             let key = syn::Ident::new(&nc.key, proc_macro2::Span::call_site());
@@ -3268,11 +3301,9 @@ pub fn parse_field(
                     quote! {
                         if let Some(ref #field_name) = #field_name {
                             // `#c` may not textually name `#field_name` (e.g. a
-                            // literal `constraint = false`, or the derive-
-                            // generated duplicate-mut guard that only touches
-                            // `__duplicates[..]`). Without this no-op reference
-                            // rustc flags the original field as unused. Narrow
-                            // silencer rather than a blanket
+                            // literal `constraint = false`). Without this no-op
+                            // reference rustc flags the original field as unused.
+                            // Narrow silencer rather than a blanket
                             // `#[allow(unused_variables)]` so real typos in
                             // `#c` still surface.
                             let _ = &#field_name;
@@ -3304,7 +3335,7 @@ pub fn parse_field(
             let inner_constraint_exits: Vec<TokenStream2> = attrs
                 .namespaced
                 .iter()
-                .filter(|nc| nc.namespace != "associated_token")
+                .filter(|nc| nc.namespace != "associated_token" && nc.namespace != "extensions")
                 .map(|nc| {
                     let ns = syn::Ident::new(&nc.namespace, proc_macro2::Span::call_site());
                     let key = syn::Ident::new(&nc.key, proc_macro2::Span::call_site());
@@ -3362,8 +3393,6 @@ pub fn parse_field(
         (constraints, update, exit)
     };
 
-    let contributes_mut_bit = attrs.is_mut && !attrs.is_dup && !is_optional;
-    let contributes_active_mut_bit = attrs.is_mut && !attrs.is_dup && is_optional;
     Ok(AccountField {
         name: field_name.clone(),
         ty: field.ty.clone(),
@@ -3374,9 +3403,6 @@ pub fn parse_field(
         exit,
         has_bump,
         is_optional,
-        offset_expr,
-        contributes_mut_bit,
-        contributes_active_mut_bit,
         idl_writable,
         idl_init_signer,
         idl_has_one,
@@ -3474,6 +3500,53 @@ mod tests {
         let parsed_attrs = parse_account_attrs(&attrs).unwrap();
         assert!(!parsed_attrs.is_mut);
         assert_eq!(parsed_attrs.close.unwrap().to_string(), "receiver");
+    }
+
+    #[test]
+    fn close_destination_must_be_mutable() {
+        use syn::parse::Parser;
+
+        let closed: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                #[account(mut, close = receiver)]
+                pub data: Account<Data>
+            })
+            .unwrap();
+        let receiver: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                pub receiver: SystemAccount
+            })
+            .unwrap();
+        let summaries = vec![
+            FieldSummary {
+                name: syn::parse_quote!(data),
+                ty: syn::parse_quote!(Account<Data>),
+                attrs: parse_account_attrs(&closed.attrs).unwrap(),
+            },
+            FieldSummary {
+                name: syn::parse_quote!(receiver),
+                ty: syn::parse_quote!(SystemAccount),
+                attrs: parse_account_attrs(&receiver.attrs).unwrap(),
+            },
+        ];
+        let closed_attrs = parse_account_attrs(&closed.attrs).unwrap();
+        let err = match parse_field(
+            &closed,
+            &closed_attrs,
+            &["data".into(), "receiver".into()],
+            &[],
+            quote::quote!(0usize),
+            &[],
+            &summaries,
+        ) {
+            Ok(_) => panic!("non-mut close destination must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("the destination specified for a close constraint must be mutable"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
@@ -3631,6 +3704,235 @@ mod tests {
         );
 
         assert_eq!(wrapped.to_string(), init_body.to_string());
+    }
+
+    #[test]
+    fn extensions_init_attrs_flatten_to_params_fields() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(
+                init,
+                payer = payer,
+                mint::decimals = 0,
+                mint::authority = authority,
+                extensions::metadata_pointer::authority = authority,
+                extensions::metadata_pointer::metadata_address = authority,
+                extensions::transfer_hook::program_id = crate::ID,
+            )]
+        )];
+        let parsed = parse_account_attrs(&attrs).expect("extensions::* should parse");
+        let keys: Vec<(&str, &str)> = parsed
+            .namespaced
+            .iter()
+            .map(|nc| (nc.namespace.as_str(), nc.raw_key.as_str()))
+            .collect();
+        assert!(keys.contains(&("mint", "decimals")));
+        assert!(keys.contains(&("extensions", "metadata_pointer_authority")));
+        assert!(keys.contains(&("extensions", "metadata_pointer_metadata_address")));
+        assert!(keys.contains(&("extensions", "transfer_hook_program_id")));
+        assert!(
+            !is_runtime_only_constraint_ns("extensions"),
+            "extensions::* must thread through init Params, not AccountConstraint::init"
+        );
+    }
+
+    #[test]
+    fn unknown_extension_init_attr_is_rejected() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(init, payer = payer, extensions::pausable::authority = authority)]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("unknown extensions::* must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("unknown token extension constraint `extensions::pausable::authority`"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn two_segment_extensions_attr_is_rejected() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(init, payer = payer, extensions::metadata_pointer = authority)]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("two-segment extensions::* must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("token extension constraints must be `extensions::<extension>::<field>`"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn extensions_without_init_are_rejected() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(extensions::metadata_pointer::authority = expected)]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("extensions::* without init must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("`extensions::*` requires `init` or `init_if_needed`"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn extensions_with_init_if_needed_are_accepted() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(
+                init_if_needed,
+                payer = payer,
+                mint::decimals = 0,
+                mint::authority = authority,
+                extensions::metadata_pointer::authority = authority,
+            )]
+        )];
+        let parsed = parse_account_attrs(&attrs).expect("init_if_needed + extensions::*");
+        assert!(parsed.is_init_if_needed);
+        assert!(parsed.namespaced.iter().any(|nc| {
+            nc.namespace == "extensions" && nc.raw_key == "metadata_pointer_authority"
+        }));
+    }
+
+    #[test]
+    fn extensions_constraint_values_use_address_kind() {
+        assert!(matches!(
+            builtin_constraint_value_kind("extensions", "metadata_pointer_authority"),
+            Some(BuiltinConstraintValueKind::Address)
+        ));
+        assert!(matches!(
+            builtin_constraint_value_kind("extensions", "permanent_delegate_delegate"),
+            Some(BuiltinConstraintValueKind::Address)
+        ));
+    }
+
+    #[test]
+    fn extension_pointer_may_not_reference_the_mint_being_initialized() {
+        use syn::parse::Parser;
+
+        let mint: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                #[account(
+                    init,
+                    payer = payer,
+                    mint::decimals = 0,
+                    mint::authority = authority,
+                    extensions::metadata_pointer::authority = authority,
+                    extensions::metadata_pointer::metadata_address = mint,
+                )]
+                pub mint: InterfaceAccount<Mint>
+            })
+            .unwrap();
+        let payer: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! { pub payer: Signer })
+            .unwrap();
+        let authority: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! { pub authority: UncheckedAccount })
+            .unwrap();
+        let summaries = vec![
+            FieldSummary {
+                name: syn::parse_quote!(payer),
+                ty: syn::parse_quote!(Signer),
+                attrs: parse_account_attrs(&payer.attrs).unwrap(),
+            },
+            FieldSummary {
+                name: syn::parse_quote!(authority),
+                ty: syn::parse_quote!(UncheckedAccount),
+                attrs: parse_account_attrs(&authority.attrs).unwrap(),
+            },
+            FieldSummary {
+                name: syn::parse_quote!(mint),
+                ty: syn::parse_quote!(InterfaceAccount<Mint>),
+                attrs: parse_account_attrs(&mint.attrs).unwrap(),
+            },
+        ];
+        let mint_attrs = parse_account_attrs(&mint.attrs).unwrap();
+        let err = match parse_field(
+            &mint,
+            &mint_attrs,
+            &["payer".into(), "authority".into(), "mint".into()],
+            &[],
+            quote::quote!(0usize),
+            &[],
+            &summaries,
+        ) {
+            Ok(_) => panic!("metadata_address = mint must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string().contains(
+                "`extensions::metadata_pointer_metadata_address` cannot reference `mint` while that account is still being initialized"
+            ),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn extension_authority_may_not_reference_the_mint_being_initialized() {
+        use syn::parse::Parser;
+
+        let mint: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                #[account(
+                    init,
+                    payer = payer,
+                    mint::decimals = 0,
+                    mint::authority = authority,
+                    extensions::metadata_pointer::authority = mint,
+                    extensions::metadata_pointer::metadata_address = authority,
+                )]
+                pub mint: InterfaceAccount<Mint>
+            })
+            .unwrap();
+        let payer: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! { pub payer: Signer })
+            .unwrap();
+        let authority: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! { pub authority: UncheckedAccount })
+            .unwrap();
+        let summaries = vec![
+            FieldSummary {
+                name: syn::parse_quote!(payer),
+                ty: syn::parse_quote!(Signer),
+                attrs: parse_account_attrs(&payer.attrs).unwrap(),
+            },
+            FieldSummary {
+                name: syn::parse_quote!(authority),
+                ty: syn::parse_quote!(UncheckedAccount),
+                attrs: parse_account_attrs(&authority.attrs).unwrap(),
+            },
+            FieldSummary {
+                name: syn::parse_quote!(mint),
+                ty: syn::parse_quote!(InterfaceAccount<Mint>),
+                attrs: parse_account_attrs(&mint.attrs).unwrap(),
+            },
+        ];
+        let mint_attrs = parse_account_attrs(&mint.attrs).unwrap();
+        let err = match parse_field(
+            &mint,
+            &mint_attrs,
+            &["payer".into(), "authority".into(), "mint".into()],
+            &[],
+            quote::quote!(0usize),
+            &[],
+            &summaries,
+        ) {
+            Ok(_) => panic!("metadata_pointer::authority = mint must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string().contains(
+                "`extensions::metadata_pointer_authority` cannot reference `mint` while that account is still being initialized"
+            ),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

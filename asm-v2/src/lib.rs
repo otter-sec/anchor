@@ -12,6 +12,9 @@
 //! # Cargo.toml
 //! [build-dependencies]
 //! anchor-asm-v2 = { path = "..." }
+//!
+//! [dependencies]
+//! anchor-asm-v2-runtime = { path = "..." }
 //! ```
 //!
 //! ```rust,ignore
@@ -27,15 +30,17 @@
 //! #![no_main]
 //! #![feature(asm_experimental_arch)]
 //!
-//! anchor_asm_v2::include_asm!();
+//! anchor_asm_v2_runtime::include_asm!();
 //!
 //! #[panic_handler]
 //! fn panic(_: &core::panic::PanicInfo) -> ! { loop {} }
 //! ```
 //!
 //! `build()` walks the assembly directory, expands `.include` directives,
-//! and writes a single `$OUT_DIR/combined.s`. `include_asm!()` wraps it
-//! in `global_asm!`.
+//! and writes `$OUT_DIR/combined.s` plus a Rust wrapper containing
+//! `global_asm!` const operands. `anchor_asm_v2_runtime::include_asm!()`
+//! includes that wrapper. Depend on `anchor-asm-v2-runtime` from the program
+//! so this build helper stays out of the program.
 //!
 //! ## Full mode — new programs with compile-time constants
 //!
@@ -56,46 +61,36 @@
 //! }
 //! ```
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
-// Simple mode: build() + include_asm!()
+// Simple mode: build()
 // ---------------------------------------------------------------------------
-
-/// Emit `global_asm!` linking the combined assembly from `build()`.
-///
-/// Call at crate root scope. Requires `#![feature(asm_experimental_arch)]`.
-#[macro_export]
-macro_rules! include_asm {
-    () => {
-        core::arch::global_asm!(include_str!(concat!(env!("OUT_DIR"), "/combined.s")));
-    };
-}
 
 /// Build-time entry point. Call from `build.rs` with the path to the
 /// assembly source directory (relative to the crate root).
 ///
 /// Walks the directory for `.s` files, expands `.include` directives,
-/// and writes the concatenated result to `$OUT_DIR/combined.s`.
+/// and writes the concatenated result to `$OUT_DIR/combined.s` plus a Rust
+/// wrapper at `$OUT_DIR/combined.rs`.
 ///
 /// If `src/lib.rs` contains `#[repr(C)]` or `#[account]` structs,
-/// `.equ` constants for field offsets are prepended automatically. Any Rust
-/// modules parsed while generating that preamble are also registered as
-/// `cargo:rerun-if-changed` inputs.
+/// `.equiv` constants for field offsets are prepended automatically. Any Rust
+/// modules parsed while generating that preamble, and any assembly files
+/// reached through `.include`, are registered as `cargo:rerun-if-changed`
+/// inputs.
 pub fn build(asm_dir: &str) {
-    let manifest_dir = PathBuf::from(
-        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"),
-    );
-    let out_dir = PathBuf::from(
-        std::env::var("OUT_DIR").expect("OUT_DIR not set"),
-    );
+    let manifest_dir =
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"));
     let asm_path = manifest_dir.join(asm_dir);
     let lib_rs = manifest_dir.join("src").join("lib.rs");
 
-    let (preamble, preamble_files) = preamble_for_build(&lib_rs);
+    let (preamble, operands, preamble_files) = preamble_for_build(&lib_rs);
 
-    let combined = collect_asm(&asm_path);
+    let (combined, asm_inputs) = collect_asm(&asm_path);
 
     let output = if preamble.is_empty() {
         combined
@@ -104,9 +99,11 @@ pub fn build(asm_dir: &str) {
     };
 
     std::fs::write(out_dir.join("combined.s"), output).expect("write combined.s");
+    std::fs::write(out_dir.join("combined.rs"), render_combined_rs(&operands))
+        .expect("write combined.rs");
 
     println!("cargo:rerun-if-changed={asm_dir}");
-    for path in preamble_files {
+    for path in preamble_files.into_iter().chain(asm_inputs) {
         println!("cargo:rerun-if-changed={}", path.display());
     }
 }
@@ -114,9 +111,12 @@ pub fn build(asm_dir: &str) {
 /// Like `build()` but takes absolute paths. Skips the preamble — the
 /// caller handles any preprocessing.
 pub fn build_to(asm_dir: &Path, output_path: &Path) {
-    let combined = collect_asm(asm_dir);
+    let (combined, asm_inputs) = collect_asm(asm_dir);
     std::fs::write(output_path, combined).expect("write combined assembly");
     println!("cargo:rerun-if-changed={}", asm_dir.display());
+    for path in asm_inputs {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -125,31 +125,63 @@ pub fn build_to(asm_dir: &Path, output_path: &Path) {
 
 mod preamble;
 
-fn preamble_for_build(lib_rs: &Path) -> (String, Vec<PathBuf>) {
+fn preamble_for_build(lib_rs: &Path) -> (String, Vec<preamble::RustConstOperand>, Vec<PathBuf>) {
     if lib_rs.exists() {
-        preamble::generate_tracked(lib_rs)
+        preamble::generate_with_operands(lib_rs)
     } else {
-        (String::new(), Vec::new())
+        (String::new(), Vec::new(), Vec::new())
     }
 }
 
-fn collect_asm(dir: &Path) -> String {
+fn render_combined_rs(operands: &[preamble::RustConstOperand]) -> String {
+    let mut output = String::from(
+        "core::arch::global_asm!(\n    include_str!(concat!(env!(\"OUT_DIR\"), \"/combined.s\")),\n",
+    );
+    for operand in operands {
+        output.push_str(&format!(
+            "    {} = const {},\n",
+            operand.name, operand.expression
+        ));
+    }
+    output.push_str(");\n");
+    output
+}
+
+fn collect_asm(dir: &Path) -> (String, Vec<PathBuf>) {
     collect_asm_inner(dir).unwrap_or_else(|err| panic!("{err}"))
 }
 
-fn collect_asm_inner(dir: &Path) -> Result<String> {
+fn collect_asm_inner(dir: &Path) -> Result<(String, Vec<PathBuf>)> {
+    let canonical_root = canonicalize_path(dir);
     let mut files: Vec<PathBuf> = Vec::new();
-    walk_dir(dir, &mut files);
+    let mut seen_dirs = HashSet::new();
+    walk_dir(dir, dir, &canonical_root, &mut seen_dirs, &mut files)?;
     files.sort();
 
     let root_file = find_root_file(dir, &files);
 
     if let Some(root) = root_file {
         let mut stack = Vec::new();
-        expand_includes(&root, dir, &mut stack)
+        let mut seen = HashSet::new();
+        let combined = expand_includes(&root, dir, &canonical_root, &mut stack, &mut seen)?;
+        let dropped: Vec<String> = files
+            .iter()
+            .filter(|file| !seen.contains(&canonicalize_path(file)))
+            .map(|file| display_path(file, dir))
+            .collect();
+        if !dropped.is_empty() {
+            println!(
+                "assembly files not reachable from root file {}: {} (add an `.include` from the root, or remove them)",
+                display_path(&root, dir),
+                dropped.join(", ")
+            );
+        }
+        Ok((combined, seen.into_iter().collect()))
     } else {
         let mut out = String::new();
+        let mut inputs = Vec::new();
         for file in &files {
+            let canonical = ensure_inside_assembly_dir(file, dir, &canonical_root)?;
             let content = std::fs::read_to_string(file)
                 .with_context(|| format!("read {}", file.display()))?;
             out.push_str(&format!(
@@ -158,8 +190,9 @@ fn collect_asm_inner(dir: &Path) -> Result<String> {
             ));
             out.push_str(&content);
             out.push('\n');
+            inputs.push(canonical);
         }
-        Ok(out)
+        Ok((out, inputs))
     }
 }
 
@@ -183,8 +216,18 @@ fn find_root_file(dir: &Path, files: &[PathBuf]) -> Option<PathBuf> {
     None
 }
 
-fn expand_includes(path: &Path, base_dir: &Path, stack: &mut Vec<PathBuf>) -> Result<String> {
-    let canonical = canonicalize_path(path);
+fn expand_includes(
+    path: &Path,
+    base_dir: &Path,
+    canonical_root: &Path,
+    stack: &mut Vec<PathBuf>,
+    seen: &mut HashSet<PathBuf>,
+) -> Result<String> {
+    let canonical = ensure_inside_assembly_dir(path, base_dir, canonical_root)?;
+    let rel = display_path(path, base_dir);
+    if seen.contains(&canonical) {
+        return Ok(format!("# --- {rel} (already included) ---\n"));
+    }
     if let Some(pos) = stack.iter().position(|seen_path| *seen_path == canonical) {
         let mut cycle_paths = stack[pos..].to_vec();
         cycle_paths.push(canonical.clone());
@@ -196,29 +239,39 @@ fn expand_includes(path: &Path, base_dir: &Path, stack: &mut Vec<PathBuf>) -> Re
         return Err(anyhow!("assembly include cycle detected: {cycle}"));
     }
 
-    stack.push(canonical);
+    stack.push(canonical.clone());
 
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let content =
+        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
 
     let mut out = String::new();
-    let rel = path.strip_prefix(base_dir).unwrap_or(path);
-    out.push_str(&format!("# --- {} ---\n", rel.display()));
+    out.push_str(&format!("# --- {rel} ---\n"));
 
     for line in content.lines() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix(".include") {
-            let file = rest.trim().trim_matches('"');
-            let include_path = path.parent().unwrap_or(base_dir).join(file);
-            if include_path.exists() {
-                out.push_str(&expand_includes(&include_path, base_dir, stack)?);
-            } else {
-                let from_base = base_dir.join(file);
-                if from_base.exists() {
-                    out.push_str(&expand_includes(&from_base, base_dir, stack)?);
-                } else {
-                    out.push_str(line);
-                    out.push('\n');
+            let file = parse_include_operand(rest).ok_or_else(|| {
+                anyhow!(
+                    "malformed .include directive in {}: expected a single quoted string, got `{}`",
+                    display_path(path, base_dir),
+                    rest.trim()
+                )
+            })?;
+            match resolve_include_path(path, base_dir, canonical_root, file)? {
+                Some(include_path) => {
+                    out.push_str(&expand_includes(
+                        &include_path,
+                        base_dir,
+                        canonical_root,
+                        stack,
+                        seen,
+                    )?);
+                }
+                None => {
+                    return Err(anyhow!(
+                        "unresolved .include directive in {}: `{file}` was not found",
+                        display_path(path, base_dir)
+                    ));
                 }
             }
         } else {
@@ -226,27 +279,89 @@ fn expand_includes(path: &Path, base_dir: &Path, stack: &mut Vec<PathBuf>) -> Re
             out.push('\n');
         }
     }
+    seen.insert(canonical);
     stack.pop();
     Ok(out)
 }
 
-fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) {
+/// Parse the operand of an `.include` directive: exactly one double-quoted
+/// string, optionally followed by whitespace and a `//` or `#` comment.
+fn parse_include_operand(rest: &str) -> Option<&str> {
+    let rest = rest.trim_start();
+    let after_open = rest.strip_prefix('"')?;
+    let close = after_open.find('"')?;
+    let file = &after_open[..close];
+    if file.is_empty() {
+        return None;
+    }
+    let trailer = after_open[close + 1..].trim();
+    if trailer.is_empty() || trailer.starts_with('#') || trailer.starts_with("//") {
+        Some(file)
+    } else {
+        None
+    }
+}
+
+fn resolve_include_path(
+    including_path: &Path,
+    base_dir: &Path,
+    canonical_root: &Path,
+    operand: &str,
+) -> Result<Option<PathBuf>> {
+    let parent = including_path.parent().unwrap_or(base_dir);
+    for candidate in [parent.join(operand), base_dir.join(operand)] {
+        if !candidate.is_file() {
+            continue;
+        }
+        ensure_inside_assembly_dir(&candidate, base_dir, canonical_root)?;
+        return Ok(Some(candidate));
+    }
+    Ok(None)
+}
+
+fn walk_dir(
+    dir: &Path,
+    base_dir: &Path,
+    canonical_root: &Path,
+    seen_dirs: &mut HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+) -> Result<()> {
+    let canonical = ensure_inside_assembly_dir(dir, base_dir, canonical_root)?;
+    if !seen_dirs.insert(canonical) {
+        return Ok(());
+    }
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
-        Err(_) => return,
+        Err(_) => return Ok(()),
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            walk_dir(&path, out);
+            walk_dir(&path, base_dir, canonical_root, seen_dirs, out)?;
         } else if path.extension().and_then(|e| e.to_str()) == Some("s") {
             out.push(path);
         }
     }
+    Ok(())
 }
 
 fn canonicalize_path(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn ensure_inside_assembly_dir(
+    path: &Path,
+    base_dir: &Path,
+    canonical_root: &Path,
+) -> Result<PathBuf> {
+    let canonical = canonicalize_path(path);
+    if !canonical.starts_with(canonical_root) {
+        return Err(anyhow!(
+            "assembly source `{}` resolves outside the assembly directory",
+            display_path(path, base_dir)
+        ));
+    }
+    Ok(canonical)
 }
 
 fn display_path(path: &Path, base_dir: &Path) -> String {
@@ -269,8 +384,10 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir =
-            std::env::temp_dir().join(format!("anchor-asm-v2-lib-{name}-{}-{unique}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "anchor-asm-v2-lib-{name}-{}-{unique}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -315,8 +432,12 @@ mod tests {
         )
         .unwrap();
 
-        let (preamble, tracked_files) = preamble_for_build(&lib_rs);
-        assert!(preamble.contains(".equ BuildTracked__value, 0"));
+        let (preamble, operands, tracked_files) = preamble_for_build(&lib_rs);
+        assert!(preamble
+            .contains(".equiv BuildTracked__value, {__anchor_asm_state_child_BuildTracked_value}"));
+        assert_eq!(operands.len(), 3);
+        let combined_rs = render_combined_rs(&operands);
+        assert!(combined_rs.contains("offset_of!(crate::state::child::BuildTracked, value)"));
 
         let canon = |path: &Path| std::fs::canonicalize(path).unwrap();
         assert!(tracked_files.contains(&canon(&lib_rs)));
@@ -365,6 +486,263 @@ mod tests {
         assert!(combined.contains("entry:"));
         assert!(combined.contains("a:"));
         assert!(combined.contains("b:"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_shared_include_is_expanded_once() {
+        let dir = temp_test_dir("shared-once");
+        let output = dir.join("combined.s");
+
+        std::fs::write(
+            dir.join("entrypoint.s"),
+            ".include \"a.s\"\n.include \"b.s\"\nentry:\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("a.s"), ".include \"shared.s\"\na:\n").unwrap();
+        std::fs::write(dir.join("b.s"), ".include \"shared.s\"\nb:\n").unwrap();
+        std::fs::write(dir.join("shared.s"), "shared:\n").unwrap();
+
+        build_to(&dir, &output);
+
+        let combined = std::fs::read_to_string(&output).unwrap();
+        assert_eq!(combined.matches("shared:").count(), 1);
+        assert!(combined.contains("# --- shared.s ---"));
+        assert!(combined.contains("# --- shared.s (already included) ---"));
+        assert!(combined.contains("a:"));
+        assert!(combined.contains("b:"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_parent_relative_include_inside_assembly_dir_is_expanded() {
+        let dir = temp_test_dir("in-root-dotdot");
+        let output = dir.join("combined.s");
+        let nested = dir.join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+
+        std::fs::write(dir.join("entrypoint.s"), ".include \"nested/child.s\"\nentry:\n")
+            .unwrap();
+        std::fs::write(nested.join("child.s"), ".include \"../shared.s\"\nchild:\n").unwrap();
+        std::fs::write(dir.join("shared.s"), "shared:\n").unwrap();
+
+        build_to(&dir, &output);
+
+        let combined = std::fs::read_to_string(&output).unwrap();
+        assert!(combined.contains("shared:"));
+        assert!(combined.contains("child:"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_include_outside_assembly_dir_is_rejected() {
+        let root = temp_test_dir("escape");
+        let dir = root.join("asm");
+        std::fs::create_dir_all(&dir).unwrap();
+        let output = dir.join("combined.s");
+
+        std::fs::write(root.join("secret.s"), "leaked:\n").unwrap();
+        std::fs::write(dir.join("entrypoint.s"), ".include \"../secret.s\"\n").unwrap();
+
+        let err = panic::catch_unwind(|| build_to(&dir, &output))
+            .err()
+            .expect("out-of-tree includes should panic");
+        let message = panic_message(err);
+        assert!(message.contains("resolves outside the assembly directory"));
+        assert!(message.contains("../secret.s"));
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn test_absolute_include_outside_assembly_dir_is_rejected() {
+        let root = temp_test_dir("absolute");
+        let dir = root.join("asm");
+        std::fs::create_dir_all(&dir).unwrap();
+        let output = dir.join("combined.s");
+        let secret = root.join("secret.s");
+
+        std::fs::write(&secret, "leaked:\n").unwrap();
+        std::fs::write(
+            dir.join("entrypoint.s"),
+            format!(".include \"{}\"\n", secret.display()),
+        )
+        .unwrap();
+
+        let err = panic::catch_unwind(|| build_to(&dir, &output))
+            .err()
+            .expect("absolute out-of-tree includes should panic");
+        let message = panic_message(err);
+        assert!(message.contains("resolves outside the assembly directory"));
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_root_file_symlink_outside_assembly_dir_is_rejected() {
+        let root = temp_test_dir("root-symlink");
+        let dir = root.join("asm");
+        std::fs::create_dir_all(&dir).unwrap();
+        let output = dir.join("combined.s");
+        let secret = root.join("secret.s");
+
+        std::fs::write(&secret, "leaked:\n").unwrap();
+        std::os::unix::fs::symlink(&secret, dir.join("entrypoint.s")).unwrap();
+
+        let err = panic::catch_unwind(|| build_to(&dir, &output))
+            .err()
+            .expect("symlinked root files outside the assembly dir should panic");
+        let message = panic_message(err);
+        assert!(message.contains("resolves outside the assembly directory"));
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_fallback_file_symlink_outside_assembly_dir_is_rejected() {
+        let root = temp_test_dir("fallback-symlink");
+        let dir = root.join("asm");
+        std::fs::create_dir_all(&dir).unwrap();
+        let output = dir.join("combined.s");
+        let secret = root.join("secret.s");
+
+        std::fs::write(&secret, "leaked:\n").unwrap();
+        std::os::unix::fs::symlink(&secret, dir.join("helpers.s")).unwrap();
+
+        let err = panic::catch_unwind(|| build_to(&dir, &output))
+            .err()
+            .expect("symlinked fallback files outside the assembly dir should panic");
+        let message = panic_message(err);
+        assert!(message.contains("resolves outside the assembly directory"));
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_walk_dir_symlink_outside_assembly_dir_is_rejected() {
+        let root = temp_test_dir("walk-dir-symlink");
+        let dir = root.join("asm");
+        std::fs::create_dir_all(&dir).unwrap();
+        let output = dir.join("combined.s");
+        let outside = root.join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+
+        std::fs::write(dir.join("entrypoint.s"), "entry:\n").unwrap();
+        std::fs::write(outside.join("leaked.s"), "leaked:\n").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("vendor")).unwrap();
+
+        let err = panic::catch_unwind(|| build_to(&dir, &output))
+            .err()
+            .expect("symlinked directories outside the assembly dir should panic");
+        let message = panic_message(err);
+        assert!(message.contains("resolves outside the assembly directory"));
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn test_unresolved_include_is_rejected() {
+        let dir = temp_test_dir("unresolved");
+        let output = dir.join("combined.s");
+
+        std::fs::write(dir.join("entrypoint.s"), ".include \"missing.s\"\nentry:\n").unwrap();
+
+        let err = panic::catch_unwind(|| build_to(&dir, &output))
+            .err()
+            .expect("missing include files should panic");
+        let message = panic_message(err);
+        assert!(message.contains("unresolved .include directive in entrypoint.s"));
+        assert!(message.contains("`missing.s` was not found"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_include_with_trailing_comment_is_expanded() {
+        let dir = temp_test_dir("include-comment");
+        let output = dir.join("combined.s");
+
+        std::fs::write(
+            dir.join("entrypoint.s"),
+            ".include \"shared.s\" # helpers\n.include \"more.s\" // more helpers\nentry:\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("shared.s"), "shared:\n").unwrap();
+        std::fs::write(dir.join("more.s"), "more:\n").unwrap();
+
+        build_to(&dir, &output);
+
+        let combined = std::fs::read_to_string(&output).unwrap();
+        assert!(combined.contains("shared:"));
+        assert!(combined.contains("more:"));
+        assert!(combined.contains("entry:"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_malformed_include_operand_is_rejected() {
+        let dir = temp_test_dir("malformed");
+        let output = dir.join("combined.s");
+
+        std::fs::write(dir.join("entrypoint.s"), ".include missing.s\nentry:\n").unwrap();
+
+        let err = panic::catch_unwind(|| build_to(&dir, &output))
+            .err()
+            .expect("unquoted include operands should panic");
+        let message = panic_message(err);
+        assert!(message.contains("malformed .include directive in entrypoint.s"));
+        assert!(message.contains("expected a single quoted string"));
+        assert!(message.contains("got `missing.s`"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_root_file_mode_warns_on_unreachable_sibling() {
+        let dir = temp_test_dir("unreachable");
+        let output = dir.join("combined.s");
+
+        std::fs::write(dir.join("main.s"), "nop\n").unwrap();
+        std::fs::write(dir.join("extra.s"), ".equ VALUE, 1\n").unwrap();
+
+        build_to(&dir, &output);
+
+        let combined = std::fs::read_to_string(&output).unwrap();
+        assert!(combined.contains("nop"));
+        assert!(!combined.contains(".equ VALUE"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    fn assert_tracks(inputs: &[PathBuf], path: &Path) {
+        let canon = std::fs::canonicalize(path).unwrap();
+        assert!(
+            inputs.iter().any(|entry| entry == &canon),
+            "missing {} in {inputs:?}",
+            canon.display()
+        );
+    }
+
+    #[test]
+    fn test_nested_include_is_rerun_if_changed_input() {
+        let dir = temp_test_dir("rerun-nested");
+        std::fs::create_dir_all(dir.join("nested")).unwrap();
+
+        std::fs::write(dir.join("entrypoint.s"), ".include \"a.s\"\nentry:\n").unwrap();
+        std::fs::write(dir.join("a.s"), ".include \"nested/b.s\"\na:\n").unwrap();
+        std::fs::write(dir.join("nested").join("b.s"), "b:\n").unwrap();
+
+        let (_combined, inputs) = collect_asm_inner(&dir).unwrap();
+        assert_tracks(&inputs, &dir.join("entrypoint.s"));
+        assert_tracks(&inputs, &dir.join("a.s"));
+        assert_tracks(&inputs, &dir.join("nested").join("b.s"));
 
         std::fs::remove_dir_all(dir).ok();
     }

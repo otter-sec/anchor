@@ -27,8 +27,8 @@ fn declared_program_type_serialization_controls_account_traits() {
             + anchor_lang::Discriminator
             + anchor_lang::AccountDeserialize
             + anchor_lang::IdlAccountType
-            + anchor_lang::wincode::SchemaWrite<anchor_lang::BorshConfig, Src = T>
-            + for<'de> anchor_lang::wincode::SchemaRead<'de, anchor_lang::BorshConfig, Dst = T>,
+            + anchor_lang::AnchorSerialize
+            + anchor_lang::AnchorDeserialize,
     {
     }
 
@@ -36,8 +36,8 @@ fn declared_program_type_serialization_controls_account_traits() {
     where
         T: anchor_lang::Owner
             + anchor_lang::Discriminator
-            + anchor_lang::wincode::SchemaWrite<anchor_lang::BorshConfig, Src = T>
-            + for<'de> anchor_lang::wincode::SchemaRead<'de, anchor_lang::BorshConfig, Dst = T>,
+            + anchor_lang::AnchorSerialize
+            + anchor_lang::AnchorDeserialize,
         anchor_lang::accounts::BorshAccount<T>: anchor_lang::IdlAccountType,
     {
     }

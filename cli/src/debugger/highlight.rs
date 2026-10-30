@@ -1,8 +1,7 @@
 //! Syntax highlighting for the source + instruction panes.
 //!
 //! Backed by [`syntect`] (Sublime-syntax engine, used by `bat`, `delta`,
-//! `gitui`) with [`two-face`] for grammar coverage and [`syntect_tui`] for
-//! the `syntect::highlighting::Style → ratatui::style::Style` conversion.
+//! `gitui`) with [`two-face`] for grammar coverage.
 //! No tokenizer or grammar is implemented here — we don't ship any custom
 //! parsing logic.
 //!
@@ -22,7 +21,6 @@ use {
         highlighting::{Theme, ThemeSet},
         parsing::{syntax_definition::SyntaxDefinition, SyntaxReference, SyntaxSet},
     },
-    syntect_tui::into_span,
     terminal_colorsaurus::{theme_mode, QueryOptions, ThemeMode},
 };
 
@@ -135,6 +133,55 @@ pub fn highlight_asm(line: &str) -> Line<'static> {
     highlight_with(&ctx().asm_syntax, line)
 }
 
+/// Convert a [`syntect::highlighting::Style`] and some text to a [`ratatui::style::style`].
+fn syntect_style_to_ratatui(style: syntect::highlighting::Style) -> ratatui::style::Style {
+    fn translate_colour(
+        syntect_color: syntect::highlighting::Color,
+    ) -> Option<ratatui::style::Color> {
+        match syntect_color {
+            syntect::highlighting::Color { r, g, b, a } if a > 0 => {
+                Some(ratatui::style::Color::Rgb(r, g, b))
+            }
+            _ => None,
+        }
+    }
+
+    fn translate_font_style(
+        syntect_font_style: syntect::highlighting::FontStyle,
+    ) -> ratatui::style::Modifier {
+        use {ratatui::style::Modifier, syntect::highlighting::FontStyle};
+        match syntect_font_style {
+            x if x == FontStyle::empty() => Modifier::empty(),
+            x if x == FontStyle::BOLD => Modifier::BOLD,
+            x if x == FontStyle::ITALIC => Modifier::ITALIC,
+            x if x == FontStyle::UNDERLINE => Modifier::UNDERLINED,
+            x if x == FontStyle::BOLD | FontStyle::ITALIC => Modifier::BOLD | Modifier::ITALIC,
+            x if x == FontStyle::BOLD | FontStyle::UNDERLINE => {
+                Modifier::BOLD | Modifier::UNDERLINED
+            }
+            x if x == FontStyle::ITALIC | FontStyle::UNDERLINE => {
+                Modifier::ITALIC | Modifier::UNDERLINED
+            }
+            x if x == FontStyle::BOLD | FontStyle::ITALIC | FontStyle::UNDERLINE => {
+                Modifier::BOLD | Modifier::ITALIC | Modifier::UNDERLINED
+            }
+            _ => Modifier::empty(),
+        }
+    }
+
+    ratatui::style::Style {
+        fg: translate_colour(style.foreground),
+        // Strip the syntect theme's bg color — letting it through
+        // paints a colored rectangle behind every token because the
+        // theme assumes its own background, not the user's
+        // terminal's.
+        bg: None,
+        underline_color: translate_colour(style.foreground),
+        add_modifier: translate_font_style(style.font_style),
+        sub_modifier: ratatui::style::Modifier::empty(),
+    }
+}
+
 fn highlight_with(syntax: &SyntaxReference, line: &str) -> Line<'static> {
     let c = ctx();
     let mut hl = HighlightLines::new(syntax, &c.theme);
@@ -158,16 +205,8 @@ fn highlight_with(syntax: &SyntaxReference, line: &str) -> Line<'static> {
             if trimmed.is_empty() {
                 return None;
             }
-            into_span((style, trimmed)).ok().map(|s| {
-                // Strip the syntect theme's bg color — letting it through
-                // paints a colored rectangle behind every token because the
-                // theme assumes its own background, not the user's
-                // terminal's. We keep the fg + modifiers so token coloring
-                // still reads, with the terminal background untouched.
-                let mut style = s.style;
-                style.bg = None;
-                Span::styled(trimmed.to_owned(), style)
-            })
+            let style = syntect_style_to_ratatui(style);
+            Some(Span::styled(trimmed.to_owned(), style))
         })
         .collect();
     if spans.is_empty() {

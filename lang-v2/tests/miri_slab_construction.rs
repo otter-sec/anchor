@@ -124,7 +124,7 @@ fn load_mut_deref_mut_writes_propagate_to_bytes() {
     let view = unsafe { buf.view() };
 
     {
-        let mut acct = unsafe { CounterAccount::load_mut(view) }.unwrap();
+        let mut acct = CounterAccount::load_mut(view).unwrap();
         acct.value = 0xDEADBEEF;
         acct.bump = 0xAB;
     } // acct drops here
@@ -147,7 +147,7 @@ fn drop_mut_then_load_immutable_sees_writes() {
 
     {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { CounterAccount::load_mut(view) }.unwrap();
+        let mut acct = CounterAccount::load_mut(view).unwrap();
         acct.value = 99;
     }
 
@@ -164,7 +164,7 @@ fn multiple_mut_load_cycles_preserve_state() {
 
     for i in 0u64..20 {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { CounterAccount::load_mut(view) }.unwrap();
+        let mut acct = CounterAccount::load_mut(view).unwrap();
         acct.value = i * 10;
         drop(acct);
 

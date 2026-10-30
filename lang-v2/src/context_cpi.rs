@@ -205,11 +205,12 @@ fn signer_from_seeds<'a>(seeds: &'a [&'a [u8]]) -> pinocchio::cpi::Signer<'a, 'a
     pinocchio::cpi::Signer::from(cpi_seeds)
 }
 
-/// Stack-backed fast path for fixed-account CPIs.
+/// Stack-backed fixed-account CPI path.
 ///
-/// This preserves the same [`CpiHandle`] safety model as [`CpiContext::invoke`]
-/// but avoids heap-allocating account metadata and `CpiAccount` buffers for
-/// common SPL instructions with a static account list.
+/// The fixed instruction metadata is validated against the corresponding
+/// [`CpiHandle`] before the callee is invoked. The `unchecked` name is retained
+/// for compatibility because the underlying Pinocchio syscall is unchecked;
+/// callers must propagate the validation and invocation result.
 #[inline(always)]
 pub fn unchecked_invoke_signed_fixed<'a, const N: usize>(
     program: &'a Address,
@@ -217,7 +218,13 @@ pub fn unchecked_invoke_signed_fixed<'a, const N: usize>(
     instruction_accounts: &[InstructionAccount<'a>; N],
     handles: &[CpiHandle<'a>; N],
     signer_seeds: &'a [&'a [&'a [u8]]],
-) {
+) -> ProgramResult {
+    crate::program::validate_fixed_instruction_accounts(
+        instruction_accounts,
+        handles,
+        signer_seeds.is_empty(),
+    )?;
+
     let instruction = InstructionView {
         program_id: program,
         data,
@@ -257,4 +264,6 @@ pub fn unchecked_invoke_signed_fixed<'a, const N: usize>(
             }
         }
     }
+
+    Ok(())
 }

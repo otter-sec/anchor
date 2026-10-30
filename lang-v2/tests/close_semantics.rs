@@ -51,7 +51,7 @@ use {
         prelude::BorshAccount,
         testing::AccountBuffer,
         AccountClose, AccountRealloc, AnchorAccount, AnchorDeserialize, AnchorSerialize,
-        Discriminator, Owner,
+        Discriminator, ErrorCode, Owner,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::{account::RuntimeAccount, address::Address},
@@ -121,7 +121,7 @@ fn close_zeros_the_48_byte_header() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+        let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
         vault.close(dest_view).unwrap();
     }
 
@@ -144,6 +144,36 @@ fn close_zeros_the_48_byte_header() {
     );
 }
 
+#[test]
+fn close_rejects_non_writable_destination() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_vault_buf(&mut buf);
+
+    let dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, false, false);
+    dest_buf.set_lamports(100);
+
+    let view = unsafe { buf.view() };
+    let dest_view = unsafe { dest_buf.view() };
+    let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
+
+    let err = vault.close(dest_view).unwrap_err();
+
+    assert_eq!(err, ErrorCode::ConstraintMut.into());
+
+    // Nothing should have moved: the account being closed is untouched.
+    let raw = unsafe { &*(buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        raw.lamports, 1_000_000_000,
+        "rejected close must not drain the account being closed"
+    );
+    let dest_raw = unsafe { &*(dest_buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        dest_raw.lamports, 100,
+        "rejected close must not credit the non-writable destination"
+    );
+}
+
 // -- Regression: close() scrubs the discriminator bytes in raw memory --
 
 #[test]
@@ -157,7 +187,7 @@ fn close_scrubs_discriminator_to_closed_sentinel() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+        let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
         vault.close(dest_view).unwrap();
     }
 
@@ -197,7 +227,7 @@ fn close_scrubs_discriminator_even_after_release_borrow() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+        let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
 
         // Simulate the handler committing state and dropping the guard
         // (e.g. pre-CPI) before close runs in exit_accounts.
@@ -215,6 +245,32 @@ fn close_scrubs_discriminator_even_after_release_borrow() {
 }
 
 #[test]
+fn close_after_release_borrow_rejects_live_alias_borrow() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_vault_buf(&mut buf);
+
+    let dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
+
+    let view = unsafe { buf.view() };
+    let dest_view = unsafe { dest_buf.view() };
+    let dest_lamports = dest_view.lamports();
+    let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
+    vault.release_borrow().unwrap();
+
+    let alias = view;
+    let alias_data = alias.try_borrow().unwrap();
+    assert_eq!(
+        vault.close(dest_view).err(),
+        Some(solana_program_error::ProgramError::AccountBorrowFailed),
+        "close must not write under a borrow held through an aliased view",
+    );
+    assert_eq!(&alias_data[..8], &vault_disc()[..]);
+    assert_eq!(view.lamports(), 1_000_000_000);
+    assert_eq!(dest_view.lamports(), dest_lamports);
+}
+
+#[test]
 fn second_borsh_close_after_manual_close_is_noop() {
     let mut buf = AccountBuffer::<256>::new();
     setup_vault_buf(&mut buf);
@@ -225,7 +281,7 @@ fn second_borsh_close_after_manual_close_is_noop() {
 
     let view = unsafe { buf.view() };
     let dest_view = unsafe { dest_buf.view() };
-    let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+    let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
 
     vault.close(dest_view).unwrap();
     vault.close(dest_view).unwrap();
@@ -251,7 +307,7 @@ fn load_after_close_rejects_with_data_too_small() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+        let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
         vault.close(dest_view).unwrap();
     }
 
@@ -284,7 +340,7 @@ fn resurrected_account_reload_rejects_after_disc_scrub() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view) }.unwrap();
+        let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
         vault.close(dest_view).unwrap();
     }
 
@@ -405,7 +461,7 @@ fn slab_close_scrubs_discriminator_to_closed_sentinel() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
+        let mut counter = Slab::<CounterHeader>::load_mut(view).unwrap();
         counter.close(dest_view).unwrap();
     }
 
@@ -417,6 +473,86 @@ fn slab_close_scrubs_discriminator_to_closed_sentinel() {
         &data[..8],
         &[u8::MAX; 8][..],
         "Slab::close must scrub the discriminator to the closed sentinel"
+    );
+}
+
+#[test]
+fn close_rejects_self_as_destination() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_vault_buf(&mut buf);
+
+    let view = unsafe { buf.view() };
+    // Same account handed in as the close destination.
+    let self_as_dest = unsafe { buf.view() };
+    let mut vault = BorshAccount::<Vault>::load_mut(view).unwrap();
+
+    let err = vault.close(self_as_dest).unwrap_err();
+
+    assert_eq!(err, ErrorCode::ConstraintClose.into());
+
+    // Without the guard, close credits the balance to self and then zeroes it,
+    // burning the lamports. Nothing should have moved.
+    let raw = unsafe { &*(buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        raw.lamports, 1_000_000_000,
+        "rejected self-close must not burn the account's lamports"
+    );
+    assert_ne!(
+        raw.data_len, 0,
+        "rejected self-close must not close the account"
+    );
+}
+
+#[test]
+fn slab_close_rejects_self_as_destination() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf);
+
+    let view = unsafe { buf.view() };
+    let self_as_dest = unsafe { buf.view() };
+    let mut counter = Slab::<CounterHeader>::load_mut(view).unwrap();
+
+    let err = counter.close(self_as_dest).unwrap_err();
+
+    assert_eq!(err, ErrorCode::ConstraintClose.into());
+
+    let raw = unsafe { &*(buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        raw.lamports, 1_000_000_000,
+        "rejected self-close must not burn the account's lamports"
+    );
+    assert_ne!(
+        raw.data_len, 0,
+        "rejected self-close must not close the account"
+    );
+}
+
+#[test]
+fn slab_close_rejects_non_writable_destination() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf);
+
+    let dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, false, false);
+    dest_buf.set_lamports(100);
+
+    let view = unsafe { buf.view() };
+    let dest_view = unsafe { dest_buf.view() };
+    let mut counter = Slab::<CounterHeader>::load_mut(view).unwrap();
+
+    let err = counter.close(dest_view).unwrap_err();
+
+    assert_eq!(err, ErrorCode::ConstraintMut.into());
+
+    let raw = unsafe { &*(buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        raw.lamports, 1_000_000_000,
+        "rejected close must not drain the account being closed"
+    );
+    let dest_raw = unsafe { &*(dest_buf.raw() as *const RuntimeAccount) };
+    assert_eq!(
+        dest_raw.lamports, 100,
+        "rejected close must not credit the non-writable destination"
     );
 }
 
@@ -460,7 +596,7 @@ fn slab_close_flips_is_mutable_so_deref_mut_panics() {
     dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
     let view = unsafe { buf.view() };
     let dest_view = unsafe { dest_buf.view() };
-    let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
+    let mut counter = Slab::<CounterHeader>::load_mut(view).unwrap();
     counter.close(dest_view).unwrap();
 
     // Post-close: is_mutable should be flipped to false. DerefMut must
@@ -480,7 +616,7 @@ fn second_slab_close_after_manual_close_panics() {
 
     let view = unsafe { buf.view() };
     let dest_view = unsafe { dest_buf.view() };
-    let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
+    let mut counter = Slab::<CounterHeader>::load_mut(view).unwrap();
 
     counter.close(dest_view).unwrap();
     counter.close(dest_view).unwrap();
@@ -497,7 +633,7 @@ fn slab_resurrected_account_reload_rejects_after_disc_scrub() {
     {
         let view = unsafe { buf.view() };
         let dest_view = unsafe { dest_buf.view() };
-        let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view) }.unwrap();
+        let mut counter = Slab::<CounterHeader>::load_mut(view).unwrap();
         counter.close(dest_view).unwrap();
     }
 

@@ -158,6 +158,116 @@ describe("coder.types", () => {
     assert.deepStrictEqual(coder.types.decode("IntegerTest", encoded), value);
   });
 
+  // 2^53 - 1 is the largest integer a JS number can hold exactly.
+  // 2^53 is the first integer past that, so JS has already rounded it.
+  const maxSafeInteger = Number.MAX_SAFE_INTEGER;
+  const firstUnsafeInteger = 2 ** 53;
+  const wideIntegerFields = [
+    "u64",
+    "i64",
+    "u128",
+    "i128",
+    "u256",
+    "i256",
+  ] as const;
+  const wideIntegerZeros = {
+    u64: 0n,
+    i64: 0n,
+    u128: 0n,
+    i128: 0n,
+    u256: 0n,
+    i256: 0n,
+  };
+
+  function wideIntegerCoder() {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "basic_0",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [],
+      types: [
+        {
+          name: "Wide",
+          type: {
+            kind: "struct",
+            fields: wideIntegerFields.map((name) => ({ name, type: name })),
+          },
+        },
+      ],
+    };
+    return new BorshCoder(idl);
+  }
+
+  test("encodes a safe JS number the same as the same bigint", () => {
+    const coder = wideIntegerCoder();
+    const fromNumber = coder.types.encode("Wide", {
+      u64: maxSafeInteger,
+      i64: -maxSafeInteger,
+      u128: maxSafeInteger,
+      i128: -maxSafeInteger,
+      u256: maxSafeInteger,
+      i256: -maxSafeInteger,
+    });
+    const fromBigint = coder.types.encode("Wide", {
+      u64: BigInt(maxSafeInteger),
+      i64: BigInt(-maxSafeInteger),
+      u128: BigInt(maxSafeInteger),
+      i128: BigInt(-maxSafeInteger),
+      u256: BigInt(maxSafeInteger),
+      i256: BigInt(-maxSafeInteger),
+    });
+
+    assert.deepStrictEqual([...fromNumber], [...fromBigint]);
+  });
+
+  test("encodes 2^53 when it is passed as a bigint", () => {
+    const coder = wideIntegerCoder();
+    const encoded = coder.types.encode("Wide", {
+      ...wideIntegerZeros,
+      u64: 2n ** 53n,
+    });
+
+    assert.deepStrictEqual(coder.types.decode("Wide", encoded), {
+      ...wideIntegerZeros,
+      u64: 2n ** 53n,
+    });
+  });
+
+  test.each(wideIntegerFields)(
+    "rejects a JS number of 2^53 for %s",
+    (field) => {
+      const coder = wideIntegerCoder();
+
+      assert.throws(
+        () =>
+          coder.types.encode("Wide", {
+            ...wideIntegerZeros,
+            [field]: firstUnsafeInteger,
+          }),
+        /Pass a bigint/
+      );
+    }
+  );
+
+  test.each(wideIntegerFields)(
+    "rejects a JS number of -2^53 for %s",
+    (field) => {
+      const coder = wideIntegerCoder();
+
+      assert.throws(
+        () =>
+          coder.types.encode("Wide", {
+            ...wideIntegerZeros,
+            [field]: -firstUnsafeInteger,
+          }),
+        /Pass a bigint/
+      );
+    }
+  );
+
   test("Decodes pubkeys as base58 addresses and accepts PublicKey inputs", () => {
     const idl: Idl = {
       address: "Test111111111111111111111111111111111111111",

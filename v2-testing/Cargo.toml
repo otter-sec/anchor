@@ -26,6 +26,8 @@ profile = [
 
 [dependencies]
 litesvm.workspace = true
+# Agave 4.4 requires Rust 1.98.1; constrain LiteSVM's independent fee dependency.
+solana-fee.workspace = true
 # Re-exported so scaffold tests import `Keypair` / `Signer` / `Message` / ...
 # via `anchor_v2_testing` and don't need direct deps on each.
 solana-keypair.workspace = true

@@ -67,10 +67,10 @@ exclude = [
     "tests/swap/deps/openbook-dex",
     "tests-v2/programs/declare-program",
 ]
-resolver = "2"
+resolver = "3"
 
 [workspace.package]
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.3"
 readme = "README.md"
 repository = "https://github.com/otter-sec/anchor"
 
@@ -94,6 +94,7 @@ solana-compute-budget-interface = "3.1.0"
 solana-cpi = "3.1.0"
 solana-define-syscall = "5.2.0"
 solana-feature-gate-interface = "4.0.0"
+solana-fee = "~4.3.0"
 solana-instruction = { version = "3.5.0", default-features = false }
 solana-instructions-sysvar = "4.0.0"
 solana-invoke = "0.5.0"
@@ -109,7 +110,7 @@ solana-program-log = "1.2.0"
 solana-program-memory = "3.1.0"
 solana-program-option = "3.1.0"
 solana-program-pack = "3.1.0"
-solana-program-runtime = "4.3.0"
+solana-program-runtime = "~4.3.0"
 solana-pubkey = "4.3.0"
 solana-pubsub-client = "4.3.0"
 solana-rpc-client = "4.3.0"
@@ -131,11 +132,11 @@ cargo_toml = "0.22.3"
 litesvm = "0.18.0"
 
 # Internal anchor crates
-anchor-lang = { path = "lang-v2", version = "=2.0.0-rc.2" }
-anchor-derive-accounts = { path = "lang-v2/derive", version = "=2.0.0-rc.2" }
-anchor-spl = { path = "spl-v2", version = "=2.0.0-rc.2" }
-anchor-client = { path = "client", version = "=2.0.0-rc.2" }
-anchor-cli-macros = { path = "cli/cli-macros", version = "=2.0.0-rc.2" }
+anchor-lang = { path = "lang-v2", version = "=2.0.0-rc.3" }
+anchor-derive-accounts = { path = "lang-v2/derive", version = "=2.0.0-rc.3" }
+anchor-spl = { path = "spl-v2", version = "=2.0.0-rc.3" }
+anchor-client = { path = "client", version = "=2.0.0-rc.3" }
+anchor-cli-macros = { path = "cli/cli-macros", version = "=2.0.0-rc.3" }
 anchor-lang-idl = { path = "idl", version = "=0.2.0" }
 anchor-lang-idl-spec = { path = "idl/spec", version = "=0.1.0" }
 

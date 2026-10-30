@@ -235,7 +235,7 @@ pub struct Bad {
 )]
 fn nested_accounts_flattened_header_size_must_fit_u8_domain() {
     // Top-level field count is only 2, but Nested expands to 128+128 = 256
-    // slots — past the 256-bit duplicate / u8 offset domain.
+    // slots — past the u8 account-index domain.
     let chunk_fields: String = (0..128)
         .map(|i| format!("    pub a{i}: UncheckedAccount,\n"))
         .collect();
@@ -289,9 +289,9 @@ pub struct Bad {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
-fn unsafe_dup_constraint_has_targeted_message() {
+fn dup_constraint_has_targeted_message() {
     compile_fail_case(
-        "unsafe_dup_required",
+        "dup_unsupported",
         r#"
 use anchor_lang::prelude::*;
 
@@ -301,10 +301,7 @@ pub struct Bad {
     pub data: UncheckedAccount,
 }
 "#,
-        &[
-            "`dup` bypasses duplicate-account safety checks",
-            "unsafe(dup)",
-        ],
+        &["`dup` is not supported", "reject conflicting borrows"],
     );
 }
 
@@ -497,6 +494,98 @@ mod shim {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn account_borsh_rejects_cfg_gated_wincode_skip() {
+    compile_fail_case(
+        "account_borsh_cfg_gated_wincode_skip",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account(borsh)]
+pub struct Bad {
+    #[cfg(feature = "extra")]
+    #[wincode(skip)]
+    pub skipped: u64,
+    pub kept: u8,
+}
+"#,
+        &[
+            "`#[account(borsh)]` does not support `#[wincode(skip)]` fields",
+            "generated IDL would not match the serialized wire layout",
+        ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn event_rejects_cfg_gated_wincode_skip() {
+    compile_fail_case(
+        "event_cfg_gated_wincode_skip",
+        r#"
+use anchor_lang::prelude::*;
+
+#[event]
+pub struct Bad {
+    #[cfg(feature = "extra")]
+    #[wincode(skip)]
+    pub skipped: u64,
+    pub kept: u8,
+}
+"#,
+        &[
+            "`#[event]` does not support `#[wincode(skip)]` fields",
+            "generated IDL would not match the serialized wire layout",
+        ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn idl_generation_rejects_wincode_enum_tag_override() {
+    compile_fail_case(
+        "idl_type_wincode_tag_encoding",
+        r#"
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, IdlType};
+
+#[derive(IdlType, AnchorDeserialize, AnchorSerialize)]
+#[wincode(tag_encoding = "u32")]
+pub enum Bad {
+    A,
+    B(u16),
+}
+"#,
+        &[
+            "`#[derive(IdlType)]` does not support `#[wincode(tag_encoding = ...)]`",
+            "1-byte enum discriminant",
+        ],
+    );
+
+    compile_pass_case(
+        "idl_type_default_enum",
+        r#"
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, IdlType};
+
+#[derive(IdlType, AnchorDeserialize, AnchorSerialize)]
+pub enum DefaultTag {
+    A,
+    B(u16),
+}
+"#,
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn idl_generation_rejects_lossy_packed_repr_modifiers() {
     compile_fail_case(
         "event_bytemuck_packed_two",
@@ -566,6 +655,41 @@ pub enum MyError {
         &[
             "unknown `#[error_code]` argument `unknown`",
             "expected `offset = N`",
+        ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn malformed_error_code_msg_is_rejected() {
+    compile_fail_case(
+        "malformed_error_code_msg",
+        r#"
+use anchor_lang::prelude::*;
+
+#[error_code]
+pub enum BadMsg {
+    #[msg = "oops"]
+    NameValue,
+    #[msg]
+    Path,
+    #[msg("a", "b")]
+    Multi,
+    #[msg(SOME_CONST)]
+    Ident,
+    #[msg(1)]
+    Int,
+    #[msg("a")]
+    #[msg("b")]
+    Duplicate,
+}
+"#,
+        &[
+            r#"expected `#[msg("...")]`"#,
+            "duplicate `#[msg]` attribute",
         ],
     );
 }
@@ -933,6 +1057,46 @@ pub mod gated_program {
 #[derive(Accounts)]
 pub struct Noop {}
 "#,
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn cfg_gated_discriminator_validation() {
+    compile_fail_case(
+        "cfg_gated_discriminator_collision",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+pub mod collision_program {
+    use super::*;
+
+    #[cfg(unix)]
+    pub fn protected(_ctx: &mut Context<Noop>) -> Result<()> {
+        Ok(())
+    }
+
+    #[discrim = 214]
+    pub fn decoy(_ctx: &mut Context<Noop>) -> Result<()> {
+        Ok(())
+    }
+
+    #[cfg(any())]
+    pub fn disabled(_ctx: &mut Context<Noop>) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Noop {}
+"#,
+        &["instruction `protected` is missing `#[discrim = N]`"],
     );
 }
 
@@ -1771,5 +1935,82 @@ pub struct Bad {
 }
 "#,
         &["optional account fields cannot be used as PDA seeds"],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn account_rejects_tuple_and_unit_structs() {
+    compile_fail_case(
+        "account_tuple_struct_rejected",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct TupleData(pub u64, pub u32);
+"#,
+        &["`#[account]` only supports structs with named fields"],
+    );
+
+    compile_fail_case(
+        "account_unit_struct_rejected",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct UnitData;
+"#,
+        &["`#[account]` only supports structs with named fields"],
+    );
+
+    compile_fail_case(
+        "account_borsh_tuple_struct_rejected",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account(borsh)]
+pub struct BorshTupleData(pub u64, pub u32);
+"#,
+        &["`#[account]` only supports structs with named fields"],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn event_name_override_binds_wire_and_idl_identity() {
+    cargo_test_pass_case(
+        "event_name_override",
+        r#"
+use anchor_lang::prelude::*;
+
+#[event(name = "ReceiptV1")]
+pub struct Receipt { pub amount: u64 }
+
+#[cfg(all(test, feature = "idl-build"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn override_changes_wire_and_idl_identity() {
+        assert_eq!(Receipt::DISCRIMINATOR, [40, 147, 163, 222, 187, 159, 205, 141]);
+        assert!(<Receipt as IdlAccountType>::__idl_type_def()
+            .unwrap()
+            .contains("ReceiptV1"));
+    }
+}
+"#,
+        &["idl-build"],
     );
 }

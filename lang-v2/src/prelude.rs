@@ -78,6 +78,7 @@ pub use crate::{
     InitSpace,
     InstructionData,
     Lamports,
+    LamportsMutable,
     // Nested
     Nested,
     // Marker traits

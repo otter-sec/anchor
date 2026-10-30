@@ -1,11 +1,15 @@
 [package]
 name = "anchor-cli-macros"
 version.workspace = true
+rust-version = "1.98.0"
 edition = "2024"
 publish = true
-repository = "https://github.com/otter-sec/anchor"
+repository =  "https://github.com/otter-sec/anchor"
 description = "Macros used internally by the Anchor CLI"
 license = "Apache-2.0"
+
+[package.metadata.docs.rs]
+workspace = true
 
 [lib]
 proc-macro = true

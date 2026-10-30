@@ -314,42 +314,32 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// compatibility without reopening writable aliasing.
     const RELAX_READONLY_CPI_BORROW_FROM_MUT: bool = false;
 
+    /// Load an account for read-only access.
+    ///
+    /// Wrappers that expose typed references into the account data must
+    /// hold a shared borrow on the account's runtime `borrow_state` for as
+    /// long as those references can exist, and fail if the account is
+    /// exclusively borrowed. Every view of an aliased account shares that
+    /// byte, so this is what rejects a conflicting alias.
     fn load(view: AccountView) -> core::result::Result<Self, ProgramError>;
 
     /// Load an account for mutable access.
     ///
-    /// # Safety
-    ///
-    /// No other live `&mut` to the same account data may exist while the
-    /// returned value is alive. In derive-generated code the bitvec
-    /// duplicate-account check enforces this; direct callers must uphold
-    /// it themselves.
+    /// Wrappers that expose typed references into the account data must
+    /// hold an exclusive borrow on the account's runtime `borrow_state`
+    /// for as long as those references can exist, and fail if any other
+    /// borrow is live.
     ///
     /// Default impl validates `is_writable` and delegates to `load()`.
     /// Data-carrying wrappers (`Account<T>`, `BorshAccount<T>`, `Slab<H, T>`)
-    /// override to use `borrow_unchecked_mut` for write provenance.
+    /// override to take the exclusive borrow and derive write provenance.
     /// `Signer` overrides with a fused `is_signer` + `is_writable` check.
     #[inline(always)]
-    unsafe fn load_mut(view: AccountView) -> core::result::Result<Self, ProgramError> {
+    fn load_mut(view: AccountView) -> core::result::Result<Self, ProgramError> {
         if !view.is_writable() {
             return Err(crate::ErrorCode::ConstraintMut.into());
         }
         Self::load(view)
-    }
-
-    /// Like [`load_mut`], but called right after
-    /// `AccountInitialize::create_and_initialize`. Owner, discriminator,
-    /// and min-length checks are tautologies on this path, so data-carrying
-    /// wrappers override to skip them. Default forwards to [`load_mut`].
-    ///
-    /// # Safety
-    ///
-    /// Same as [`load_mut`]: no other live `&mut` to the same account data.
-    ///
-    /// [`load_mut`]: Self::load_mut
-    #[inline(always)]
-    unsafe fn load_mut_after_init(view: AccountView) -> core::result::Result<Self, ProgramError> {
-        Self::load_mut(view)
     }
 
     fn account(&self) -> &AccountView;
@@ -575,8 +565,29 @@ impl AccountViewCompat for AccountView {
     }
 }
 
+/// Mutability guard for the [`Lamports`] mutators.
+///
+/// The default implementation requires only the transaction-level writable
+/// bit (`AccountView::is_writable`). Wrappers that record whether they were
+/// loaded through [`AnchorAccount::load_mut`] — `Account<T>` / `Slab<H, T>`
+/// and `BorshAccount<T>` / `SerializedAccount<T, S>` — override
+/// [`LamportsMutable::try_assert_lamports_mutable`] to enforce that
+/// provenance as well, so a read-only wrapper cannot be mutated even when
+/// the same account was supplied writable elsewhere in the instruction.
+pub trait LamportsMutable: AsRef<AccountView> {
+    #[inline(always)]
+    fn try_assert_lamports_mutable(&self) -> Result<(), ProgramError> {
+        if !self.as_ref().is_writable() {
+            return Err(crate::ErrorCode::ConstraintMut.into());
+        }
+        Ok(())
+    }
+}
+
+impl LamportsMutable for AccountView {}
+
 /// Lamports related utility methods for accounts.
-pub trait Lamports: AsRef<AccountView> {
+pub trait Lamports: LamportsMutable {
     /// Get the lamports of the account.
     #[inline(always)]
     fn get_lamports(&self) -> u64 {
@@ -595,7 +606,8 @@ pub trait Lamports: AsRef<AccountView> {
     ///
     /// See [`Lamports::sub_lamports`] for subtracting lamports.
     #[inline(always)]
-    fn add_lamports(&self, amount: u64) -> Result<&Self, ProgramError> {
+    fn add_lamports(&mut self, amount: u64) -> Result<&mut Self, ProgramError> {
+        self.try_assert_lamports_mutable()?;
         let mut view = *self.as_ref();
         view.set_lamports(
             self.get_lamports()
@@ -618,7 +630,8 @@ pub trait Lamports: AsRef<AccountView> {
     ///
     /// See [`Lamports::add_lamports`] for adding lamports.
     #[inline(always)]
-    fn sub_lamports(&self, amount: u64) -> Result<&Self, ProgramError> {
+    fn sub_lamports(&mut self, amount: u64) -> Result<&mut Self, ProgramError> {
+        self.try_assert_lamports_mutable()?;
         let mut view = *self.as_ref();
         view.set_lamports(
             self.get_lamports()
@@ -629,7 +642,7 @@ pub trait Lamports: AsRef<AccountView> {
     }
 }
 
-impl<T: AsRef<AccountView>> Lamports for T {}
+impl<T: LamportsMutable> Lamports for T {}
 
 /// Declares which program owns accounts of this data type.
 ///

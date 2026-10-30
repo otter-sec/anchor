@@ -181,6 +181,36 @@ fn init_data(svm: &mut LiteSVM, payer: &Keypair, authority_key: &Pubkey) -> Pubk
     data
 }
 
+#[test]
+fn init_creates_prefunded_pda() {
+    let (mut svm, payer, authority) = setup();
+    let data = data_pda();
+    let prefund_lamports = 1_000_000;
+    svm.airdrop(&data, prefund_lamports).expect("prefund PDA");
+
+    init_data(&mut svm, &payer, &authority.pubkey());
+
+    let account = svm.get_account(&data).expect("initialized account");
+    assert_eq!(account.owner, program_id());
+    assert!(account.lamports >= prefund_lamports);
+    assert_eq!(read_value(&svm, &data), Some(42));
+}
+
+#[test]
+fn init_creates_fully_prefunded_pda_without_top_up() {
+    let (mut svm, payer, authority) = setup();
+    let data = data_pda();
+    let prefund_lamports = 10_000_000;
+    svm.airdrop(&data, prefund_lamports).expect("prefund PDA");
+
+    init_data(&mut svm, &payer, &authority.pubkey());
+
+    let account = svm.get_account(&data).expect("initialized account");
+    assert_eq!(account.owner, program_id());
+    assert_eq!(account.lamports, prefund_lamports);
+    assert_eq!(read_value(&svm, &data), Some(42));
+}
+
 // ---- 1. address = expr -----------------------------------------------------
 
 #[test]
@@ -569,12 +599,8 @@ fn close_self_close_rejected() {
     let (mut svm, payer, authority) = setup();
     let data = init_data(&mut svm, &payer, &authority.pubkey());
 
-    // Pass `data` as both `data` and `receiver`. Both slots are `mut`
-    // in `DoClose`, so the duplicate-mutable-account guard fires first
-    // (`Custom(2040)`), before the derive's self-close check would run.
-    // Both are derive-level rejections of the same misuse — accept
-    // either. (The self-close check only becomes reachable if the
-    // receiver slot is read-only, which is not a legitimate close.)
+    // Pass `data` as both `data` and `receiver`. The `UncheckedAccount`
+    // receiver holds no borrow, so the derive's self-close check rejects it.
     let result = call_raw(
         &mut svm,
         &payer,
@@ -584,9 +610,8 @@ fn close_self_close_rejected() {
     );
     let rendered = format!("{:?}", result.as_ref().err().expect("should fail").err);
     assert!(
-        rendered.contains("Custom(2040)")
-            || rendered.contains(&format!("Custom({CONSTRAINT_CLOSE})")),
-        "expected dup-mut or ConstraintClose rejection, got: {rendered}",
+        rendered.contains(&format!("Custom({CONSTRAINT_CLOSE})")),
+        "expected ConstraintClose rejection, got: {rendered}",
     );
 }
 

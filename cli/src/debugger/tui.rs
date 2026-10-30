@@ -27,15 +27,18 @@ use {
         model::{DebugSession, DebugStep, DebugTx},
         path_label::{classify, PathLabel},
     },
-    crossterm::{
-        event::{
-            self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
-        },
-        execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    },
     ratatui::{
         backend::CrosstermBackend,
+        crossterm::{
+            event::{
+                self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent,
+                KeyModifiers,
+            },
+            execute,
+            terminal::{
+                disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+            },
+        },
         layout::{Alignment, Constraint, Direction, Layout, Rect},
         style::{Color, Modifier, Style},
         text::{Line, Span},
@@ -227,7 +230,7 @@ impl App {
                     // visually sits "above" them. Dim by default so the
                     // selected tx still pops.
                     ListItem::new(Line::from(vec![Span::styled(
-                        format!("{name}"),
+                        name.to_string(),
                         Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                     )]))
                     // Disable selection-highlight on header rows so j/k
@@ -653,7 +656,7 @@ impl App {
         let mut lines = Vec::with_capacity(12);
         for r in 0..11 {
             let val = step.regs[r];
-            let changed = prev.map_or(false, |p| p.regs[r] != val);
+            let changed = prev.is_some_and(|p| p.regs[r] != val);
             let style = if changed {
                 Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD)
             } else {
@@ -789,7 +792,7 @@ impl App {
             .file
             .extension()
             .and_then(|s| s.to_str())
-            .map_or(false, |e| e.eq_ignore_ascii_case("rs"));
+            .is_some_and(|e| e.eq_ignore_ascii_case("rs"));
         let text: Vec<Line> = lines
             .into_iter()
             .map(|(n, content, is_current)| {
@@ -1036,7 +1039,7 @@ fn resolve_src_path(
     // so relative paths like `src/lib.rs` are ambiguous across crates.
     // When multiple roots contain a matching file, prefer the one that
     // actually has enough lines for the DWARF-referenced line number.
-    // This correctly disambiguates e.g. anchor-lang's `src/cpi.rs`
+    // This correctly disambiguates e.g. anchor-lang-v2's `src/cpi.rs`
     // (538 lines) from pinocchio's `src/cpi.rs` (683 lines) when the
     // DWARF says line 668.
     let mut fallback: Option<std::path::PathBuf> = None;

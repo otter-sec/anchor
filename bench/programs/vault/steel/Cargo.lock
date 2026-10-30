@@ -106,6 +106,7 @@ name = "anchor-v2-testing"
 version = "0.1.0"
 dependencies = [
  "litesvm",
+ "solana-fee",
  "solana-keypair",
  "solana-message 4.6.0",
  "solana-program-runtime",
@@ -2354,8 +2355,6 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9cf16495d9eb53e3d04e72366a33bb1c20c24e78c171d8b8f5978357b63ae95"
 dependencies = [
- "bincode",
- "serde_core",
  "solana-address 2.7.0",
  "solana-program-error 3.0.1",
  "solana-program-memory 3.1.0",
@@ -2910,16 +2909,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "solana-epoch-stake"
-version = "3.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "027e6d0b9e7daac5b2ac7c3f9ca1b727861121d9ef05084cf435ff736051e7c2"
-dependencies = [
- "solana-define-syscall 5.2.0",
- "solana-pubkey 4.3.0",
-]
-
-[[package]]
 name = "solana-example-mocks"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2937,23 +2926,6 @@ dependencies = [
  "solana-pubkey 2.4.0",
  "solana-sdk-ids 2.2.1",
  "solana-system-interface 1.0.0",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "solana-example-mocks"
-version = "4.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0eb265ff95e28eceda117e2e3d2d2a611ecbbfe911dfeeeecd1521814540ffab"
-dependencies = [
- "serde",
- "serde_derive",
- "solana-hash 4.6.0",
- "solana-instruction 3.5.1",
- "solana-nonce 3.3.0",
- "solana-pubkey 4.3.0",
- "solana-sdk-ids 3.1.0",
- "solana-system-interface 3.3.0",
  "thiserror 2.0.21",
 ]
 
@@ -3069,7 +3041,6 @@ version = "4.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0df9b01495ed31100aca97a7f5862d5e19ab1636d60d1a9f02391408dd9dec84"
 dependencies = [
- "borsh 1.6.1",
  "bytemuck",
  "bytemuck_derive",
  "five8 1.0.0",
@@ -3121,9 +3092,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ea8442b67a58dd54d5497bfc6cd3106b00f9fe6f6877d33c271c3ec4672eedc"
 dependencies = [
  "bincode",
- "borsh 1.6.1",
  "serde",
- "serde_derive",
  "solana-define-syscall 5.2.0",
  "solana-pubkey 4.3.0",
  "wincode",
@@ -3510,7 +3479,7 @@ dependencies = [
  "solana-define-syscall 2.3.0",
  "solana-epoch-rewards 2.2.1",
  "solana-epoch-schedule 2.2.1",
- "solana-example-mocks 2.2.1",
+ "solana-example-mocks",
  "solana-feature-gate-interface 2.2.2",
  "solana-fee-calculator 2.2.1",
  "solana-hash 2.3.0",
@@ -3528,8 +3497,8 @@ dependencies = [
  "solana-program-entrypoint 2.3.0",
  "solana-program-error 2.2.2",
  "solana-program-memory 2.3.1",
- "solana-program-option 2.2.1",
- "solana-program-pack 2.2.1",
+ "solana-program-option",
+ "solana-program-pack",
  "solana-pubkey 2.4.0",
  "solana-rent 2.2.1",
  "solana-sanitize 2.2.1",
@@ -3550,52 +3519,6 @@ dependencies = [
  "solana-vote-interface 2.2.6",
  "thiserror 2.0.21",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "solana-program"
-version = "4.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c9f2e1b36b5f1c407cff098a383a45890268e848481af32540064986e7397a6"
-dependencies = [
- "solana-account-info 3.1.1",
- "solana-big-mod-exp 4.0.0",
- "solana-blake3-hasher 3.1.0",
- "solana-borsh 3.0.2",
- "solana-clock 3.2.1",
- "solana-cpi 3.1.0",
- "solana-define-syscall 5.2.0",
- "solana-epoch-rewards 3.2.0",
- "solana-epoch-schedule 3.3.0",
- "solana-epoch-stake",
- "solana-example-mocks 4.0.0",
- "solana-fee-calculator 3.3.0",
- "solana-hash 4.6.0",
- "solana-instruction 3.5.1",
- "solana-instruction-error",
- "solana-instructions-sysvar 4.0.0",
- "solana-keccak-hasher 3.1.0",
- "solana-last-restart-slot 3.2.0",
- "solana-msg 3.1.0",
- "solana-native-token 3.0.0",
- "solana-program-entrypoint 3.1.1",
- "solana-program-error 3.0.1",
- "solana-program-memory 3.1.0",
- "solana-program-option 3.1.0",
- "solana-program-pack 3.1.0",
- "solana-pubkey 4.3.0",
- "solana-rent 4.4.0",
- "solana-sdk-ids 3.1.0",
- "solana-secp256k1-recover 3.3.0",
- "solana-serde-varint 3.0.1",
- "solana-serialize-utils 3.1.2",
- "solana-sha256-hasher 3.1.0",
- "solana-short-vec 3.3.0",
- "solana-slot-hashes 3.2.0",
- "solana-slot-history 3.2.0",
- "solana-stable-layout 3.0.1",
- "solana-sysvar 4.2.0",
- "solana-sysvar-id 3.1.0",
 ]
 
 [[package]]
@@ -3643,11 +3566,6 @@ name = "solana-program-error"
 version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f04fa578707b3612b095f0c8e19b66a1233f7c42ca8082fcb3b745afcc0add6"
-dependencies = [
- "borsh 1.6.1",
- "serde",
- "serde_derive",
-]
 
 [[package]]
 name = "solana-program-memory"
@@ -3674,27 +3592,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc677a2e9bc616eda6dbdab834d463372b92848b2bfe4a1ed4e4b4adba3397d0"
 
 [[package]]
-name = "solana-program-option"
-version = "3.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a88006a9b8594088cec9027ab77caaaa258a2aaa2083d3f086c44b42e50aeab"
-
-[[package]]
 name = "solana-program-pack"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "319f0ef15e6e12dc37c597faccb7d62525a509fec5f6975ecb9419efddeb277b"
 dependencies = [
  "solana-program-error 2.2.2",
-]
-
-[[package]]
-name = "solana-program-pack"
-version = "3.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d7701cb15b90667ae1c89ef4ac35a59c61e66ce58ddee13d729472af7f41d59"
-dependencies = [
- "solana-program-error 3.0.1",
 ]
 
 [[package]]
@@ -4442,8 +4345,6 @@ checksum = "0214d668b0aab7a64b49e43b7947307985fca4e03d3ef880cd8ee43f52f13a34"
 dependencies = [
  "base64 0.22.1",
  "bincode",
- "bytemuck",
- "bytemuck_derive",
  "lazy_static",
  "serde",
  "serde_derive",
@@ -4777,7 +4678,7 @@ dependencies = [
  "borsh 1.6.1",
  "num-derive",
  "num-traits",
- "solana-program 2.3.0",
+ "solana-program",
  "spl-associated-token-account-client",
  "spl-token 7.0.0",
  "spl-token-2022 6.0.0",
@@ -4837,7 +4738,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce0f668975d2b0536e8a8fd60e56a05c467f06021dae037f1d0cfed0de2e231d"
 dependencies = [
  "bytemuck",
- "solana-program 2.3.0",
+ "solana-program",
  "solana-zk-sdk 2.3.13",
  "spl-pod",
  "spl-token-confidential-transfer-proof-extraction",
@@ -4871,7 +4772,7 @@ dependencies = [
  "solana-decode-error",
  "solana-msg 2.2.1",
  "solana-program-error 2.2.2",
- "solana-program-option 2.2.1",
+ "solana-program-option",
  "solana-pubkey 2.4.0",
  "solana-zk-sdk 2.3.13",
  "thiserror 2.0.21",
@@ -4885,7 +4786,7 @@ checksum = "9d39b5186f42b2b50168029d81e58e800b690877ef0b30580d107659250da1d1"
 dependencies = [
  "num-derive",
  "num-traits",
- "solana-program 2.3.0",
+ "solana-program",
  "spl-program-error-derive",
  "thiserror 1.0.69",
 ]
@@ -4935,7 +4836,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "num_enum",
- "solana-program 2.3.0",
+ "solana-program",
  "thiserror 1.0.69",
 ]
 
@@ -4950,7 +4851,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "num_enum",
- "solana-program 2.3.0",
+ "solana-program",
  "thiserror 1.0.69",
 ]
 
@@ -4965,7 +4866,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "num_enum",
- "solana-program 2.3.0",
+ "solana-program",
  "solana-security-txt",
  "solana-zk-sdk 2.3.13",
  "spl-elgamal-registry",
@@ -4993,7 +4894,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "num_enum",
- "solana-program 2.3.0",
+ "solana-program",
  "solana-security-txt",
  "solana-zk-sdk 2.3.13",
  "spl-elgamal-registry",
@@ -5030,7 +4931,7 @@ checksum = "eff2d6a445a147c9d6dd77b8301b1e116c8299601794b558eafa409b342faf96"
 dependencies = [
  "bytemuck",
  "solana-curve25519 2.3.13",
- "solana-program 2.3.0",
+ "solana-program",
  "solana-zk-sdk 2.3.13",
  "spl-pod",
  "thiserror 2.0.21",
@@ -5151,7 +5052,7 @@ dependencies = [
  "fixed",
  "num_enum",
  "serde",
- "solana-program 2.3.0",
+ "solana-program",
  "spl-associated-token-account",
  "spl-token 4.0.2",
  "spl-token-2022 7.0.0",
@@ -5362,7 +5263,7 @@ dependencies = [
  "five8 1.0.0",
  "solana-account 4.7.0",
  "solana-instruction 3.5.1",
- "solana-program 4.1.0",
+ "solana-program",
  "solana-pubkey 4.3.0",
  "steel",
 ]

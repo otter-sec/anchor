@@ -69,6 +69,9 @@ pub mod limits {
 #[derive(IdlType)]
 pub struct QualifiedUserTypeHolder<const N: usize> {
     pub authority: anchor_lang::prelude::Address,
+    pub root_authority: anchor_lang::Address,
+    #[cfg(feature = "compat")]
+    pub compat_authority: anchor_lang::solana_program::pubkey::Pubkey,
     pub pinocchio_authority: pinocchio::address::Address,
     pub inner: qualified::Inner,
     pub literal_expr: [u8; 1 + 1],
@@ -79,8 +82,8 @@ pub struct QualifiedUserTypeHolder<const N: usize> {
 // ---- #[event] -------------------------------------------------------------
 
 /// Default-mode event (Wincode with a borsh-compatible wire format).
-/// `#[event]` derives `AnchorSerialize` automatically; `emit!` serializes via
-/// `Event::data()` and calls `sol_log_data`, which
+/// `#[event]` derives `AnchorSerialize` and `AnchorDeserialize` automatically.
+/// `emit!` serializes via `Event::data()` and calls `sol_log_data`, which
 /// surfaces to clients as a `Program data: <base64>` log line.
 #[event]
 pub struct Bumped {
@@ -126,6 +129,25 @@ pub struct PodWrapperOnly {
 #[repr(C)]
 pub struct PodVecOnly {
     pub items: PodVec<PodU64, 4>,
+}
+
+/// Nested zero-copy type with Pod wrapper fields. Mixes an align-1 `u8`
+/// with wrappers so the IDL only stays padding-free if the wrappers keep
+/// their names instead of lowering to native types.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, IdlType)]
+#[idl(bytemuck)]
+pub struct PodNested {
+    pub bump: u8,
+    pub next: PodU32,
+}
+
+#[account]
+#[repr(C)]
+pub struct PodNestedHolder {
+    pub nested: PodNested,
+    pub flag: PodBool,
+    pub len: PodU16,
 }
 
 #[account]
@@ -305,6 +327,9 @@ mod idl_tests {
         let type_def = <QualifiedUserTypeHolder<4> as IdlAccountType>::__idl_type_def()
             .expect("QualifiedUserTypeHolder should emit an IDL type");
         assert!(type_def.contains("\"name\":\"authority\",\"type\":\"pubkey\""));
+        assert!(type_def.contains("\"name\":\"root_authority\",\"type\":\"pubkey\""));
+        #[cfg(feature = "compat")]
+        assert!(type_def.contains("\"name\":\"compat_authority\",\"type\":\"pubkey\""));
         assert!(type_def.contains("\"name\":\"pinocchio_authority\",\"type\":\"pubkey\""));
         assert!(type_def.contains("\"defined\":{\"name\":\"Inner\"}"));
         assert!(!type_def.contains("qualified::Inner"));
@@ -349,6 +374,48 @@ mod idl_tests {
             .expect("PodWrapperOnly should emit its IDL type");
         assert!(wrapper_account.contains("\"defined\":{\"name\":\"PodMode\"}"));
         assert!(types.iter().any(|entry| entry.contains("\"name\":\"PodMode\"")));
+    }
+
+    #[test]
+    fn pod_scalar_fields_keep_wrapper_names() {
+        let mut accounts = Vec::new();
+        let mut types = Vec::new();
+        <Counter as IdlAccountType>::__register_idl_deps(&mut accounts, &mut types);
+        let counter = types
+            .iter()
+            .find(|entry| entry.contains("\"name\":\"Counter\""))
+            .expect("Counter should emit its IDL type");
+        assert!(counter.contains("{\"name\":\"value\",\"type\":{\"defined\":{\"name\":\"PodU64\"}}}"));
+        assert!(counter.contains("{\"name\":\"delta\",\"type\":{\"defined\":{\"name\":\"PodI32\"}}}"));
+        assert!(counter.contains("{\"name\":\"active\",\"type\":{\"defined\":{\"name\":\"PodBool\"}}}"));
+        for name in ["PodU64", "PodI32", "PodBool"] {
+            assert!(
+                types.iter().any(|entry| entry.contains(&format!("\"name\":\"{name}\""))
+                    && entry.contains("\"alias\"")),
+                "{name} alias def should be registered"
+            );
+        }
+    }
+
+    #[test]
+    fn nested_bytemuck_type_keeps_pod_wrapper_names() {
+        let mut accounts = Vec::new();
+        let mut types = Vec::new();
+        <PodNestedHolder as IdlAccountType>::__register_idl_deps(&mut accounts, &mut types);
+        let holder = types
+            .iter()
+            .find(|entry| entry.contains("\"name\":\"PodNestedHolder\",\"repr\""))
+            .expect("PodNestedHolder should emit its IDL type");
+        assert!(holder.contains("{\"name\":\"flag\",\"type\":{\"defined\":{\"name\":\"PodBool\"}}}"));
+        assert!(holder.contains("{\"name\":\"len\",\"type\":{\"defined\":{\"name\":\"PodU16\"}}}"));
+
+        let nested = types
+            .iter()
+            .find(|entry| entry.contains("\"name\":\"PodNested\",\"repr\""))
+            .expect("PodNested should emit its IDL type");
+        assert!(nested.contains("\"serialization\":\"bytemuck\""));
+        assert!(nested.contains("\"repr\":{\"kind\":\"c\"}"));
+        assert!(nested.contains("{\"name\":\"next\",\"type\":{\"defined\":{\"name\":\"PodU32\"}}}"));
     }
 
     #[test]

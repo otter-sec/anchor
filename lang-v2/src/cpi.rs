@@ -175,7 +175,8 @@ pub fn find_program_address(seeds: &[&[u8]], program_id: &Address) -> (Address, 
 }
 
 /// Find a PDA, returning an error if none exists.
-#[inline(always)]
+// The PDA search builds a `[&[u8]; 19]` seed array on the stack, so this stays `#[inline(never)]`.
+#[inline(never)]
 pub fn try_find_program_address(
     seeds: &[&[u8]],
     program_id: &Address,
@@ -197,7 +198,8 @@ pub fn try_find_program_address(
 
 /// Find the canonical bump for `seeds` + `program_id` and verify that the
 /// derived PDA equals `expected`. Returns just the bump on success.
-#[inline(always)]
+// The PDA search builds a `[&[u8]; 19]` seed array on the stack, so this stays `#[inline(never)]`.
+#[inline(never)]
 pub fn find_and_verify_program_address(
     seeds: &[&[u8]],
     program_id: &Address,
@@ -312,7 +314,8 @@ fn check_off_curve(addr: &Address) -> Result<(), ProgramError> {
 
 /// Hash seeds into a PDA address (sha256 only, no curve check).
 #[cfg(target_os = "solana")]
-#[inline(always)]
+// Keeps a `[&[u8]; 19]` seed array on the stack, so this stays `#[inline(never)]`.
+#[inline(never)]
 fn hash_pda_seeds(seeds: &[&[u8]], program_id: &Address) -> Result<Address, ProgramError> {
     use solana_sha256_hasher::sol_sha256;
     const PDA_MARKER: &[u8; 21] = b"ProgramDerivedAddress";
@@ -461,42 +464,38 @@ pub fn create_account_with_signers(
 
     let required = rent_exempt_lamports(space)?;
     let current = target.lamports();
-
-    if current == 0 {
-        let create = pinocchio_system::instructions::CreateAccount {
-            from: payer,
-            to: target,
-            lamports: required,
-            space: space as u64,
-            owner,
-        };
-        match (payer_signer_seeds, target_signer_seeds) {
-            (None, None) => create.invoke()?,
-            (Some(payer_seeds), None) => {
-                let payer_signer = signer_from_seeds(payer_seeds);
-                create.invoke_signed(&[payer_signer])?;
-            }
-            (None, Some(target_seeds)) => {
-                let target_signer = signer_from_seeds(target_seeds);
-                create.invoke_signed(&[target_signer])?;
-            }
-            (Some(payer_seeds), Some(target_seeds)) => {
-                let payer_signer = signer_from_seeds(payer_seeds);
-                let target_signer = signer_from_seeds(target_seeds);
-                create.invoke_signed(&[payer_signer, target_signer])?;
-            }
-        }
-    } else {
-        create_prefunded(
-            payer,
-            target,
-            space,
-            owner,
-            required,
-            current,
-            target_signer_seeds,
+    let (funding, payer_signer_seeds) = if current < required {
+        (
+            Some(pinocchio_system::instructions::Funding {
+                from: payer,
+                lamports: required - current,
+            }),
             payer_signer_seeds,
-        )?;
+        )
+    } else {
+        (None, None)
+    };
+    let create = pinocchio_system::instructions::CreateAccountAllowPrefund {
+        to: target,
+        space: space as u64,
+        owner,
+        funding,
+    };
+    match (payer_signer_seeds, target_signer_seeds) {
+        (None, None) => create.invoke()?,
+        (Some(payer_seeds), None) => {
+            let payer_signer = signer_from_seeds(payer_seeds);
+            create.invoke_signed(&[payer_signer])?;
+        }
+        (None, Some(target_seeds)) => {
+            let target_signer = signer_from_seeds(target_seeds);
+            create.invoke_signed(&[target_signer])?;
+        }
+        (Some(payer_seeds), Some(target_seeds)) => {
+            let payer_signer = signer_from_seeds(payer_seeds);
+            let target_signer = signer_from_seeds(target_seeds);
+            create.invoke_signed(&[payer_signer, target_signer])?;
+        }
     }
     Ok(())
 }
@@ -526,63 +525,31 @@ pub fn create_account_signed(
     create_account_with_signers(payer, target, space, owner, Some(seeds), None)
 }
 
-/// Rare-path fallback for when the target account already holds lamports
-/// at creation time (e.g. airdropped PDAs or `init_if_needed`).
-#[cold]
-fn create_prefunded(
-    payer: &AccountView,
-    target: &AccountView,
-    space: usize,
-    owner: &Address,
-    required: u64,
-    current: u64,
-    target_signer_seeds: Option<&[&[u8]]>,
-    payer_signer_seeds: Option<&[&[u8]]>,
-) -> Result<(), ProgramError> {
-    let top_up = required.saturating_sub(current);
-    if top_up > 0 {
-        let transfer = pinocchio_system::instructions::Transfer {
-            from: payer,
-            to: target,
-            lamports: top_up,
-        };
-        match payer_signer_seeds {
-            Some(seeds) => {
-                let payer_signer = signer_from_seeds(seeds);
-                transfer.invoke_signed(&[payer_signer])?;
-            }
-            None => transfer.invoke()?,
-        }
-    }
-
-    let allocate = pinocchio_system::instructions::Allocate {
-        account: target,
-        space: space as u64,
-    };
-    let assign = pinocchio_system::instructions::Assign {
-        account: target,
-        owner,
-    };
-    match target_signer_seeds {
-        Some(seeds) => {
-            let target_signer = signer_from_seeds(seeds);
-            allocate.invoke_signed(&[target_signer])?;
-            let target_signer = signer_from_seeds(seeds);
-            assign.invoke_signed(&[target_signer])?;
-        }
-        None => {
-            allocate.invoke()?;
-            assign.invoke()?;
-        }
-    }
-    Ok(())
-}
-
 /// Realloc an account to a new size, adjusting rent as needed.
 ///
 /// Requires Pinocchio's account-resize entrypoint hook so
 /// `original_data_len` tracking is available in `RuntimeAccount.padding`.
+/// Fails with `AccountBorrowFailed` while any borrow of the account's data is
+/// live.
 pub fn realloc_account(
+    account: &mut AccountView,
+    new_space: usize,
+    payer: &AccountView,
+    zero: bool,
+) -> Result<(), ProgramError> {
+    account.check_borrow_mut()?;
+    // SAFETY: the check above rules out any live borrow of the account's data.
+    unsafe { realloc_account_unchecked(account, new_space, payer, zero) }
+}
+
+/// [`realloc_account`] without the borrow check, for wrappers that hold the
+/// account's exclusive borrow themselves.
+///
+/// # Safety
+///
+/// The caller must hold the only borrow of the account's data and have no
+/// live reference into it.
+pub(crate) unsafe fn realloc_account_unchecked(
     account: &mut AccountView,
     new_space: usize,
     payer: &AccountView,
@@ -635,12 +602,8 @@ pub fn realloc_account(
         }
     }
 
-    // SAFETY: resize_unchecked writes data_len (a fixed-offset field
-    // before the data region) — disjoint from BorshAccount's RefMut
-    // which guards data[..]. Slab's borrow_state == 0 also triggers
-    // the checked path's rejection. The derive's realloc constraint
-    // does release/reacquire around this call; exit() has a fallback
-    // stale-length detector for non-derive callers.
+    // SAFETY: the caller rules out any other borrow of, or reference into,
+    // the account's data.
     unsafe { account.resize_unchecked(new_space)? };
 
     if zero && new_space > old_space {

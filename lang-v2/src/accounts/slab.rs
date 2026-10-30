@@ -31,16 +31,22 @@ pub(super) fn cold_owner_error(view: &AccountView) -> ProgramError {
 /// Whether the runtime account header reflects a completed close.
 #[inline(always)]
 pub(super) fn is_closed(view: &AccountView) -> bool {
-    view.lamports() == 0
-        && view.data_len() == 0
-        && view.owned_by(&crate::programs::System::id())
+    view.lamports() == 0 && view.data_len() == 0 && view.owned_by(&crate::programs::System::id())
 }
 
-/// Error for read-only account passed to `load_mut`.
+/// Error for read-only account passed to `load_mut`, and for a non-writable
+/// `close` destination.
 #[cfg(feature = "guardrails")]
 #[inline(always)]
 pub(super) fn cold_not_writable() -> ProgramError {
     crate::ErrorCode::ConstraintMut.into()
+}
+
+/// Error for a `close` destination that aliases the account being closed.
+#[cfg(feature = "guardrails")]
+#[inline(always)]
+pub(super) fn cold_self_close() -> ProgramError {
+    crate::ErrorCode::ConstraintClose.into()
 }
 
 /// Capacity from live `data_len` / `items_offset` / `item_size`. Returns 0
@@ -88,9 +94,7 @@ where
             signer_seeds,
             payer_signer_seeds,
         )?;
-        // SAFETY: `create_and_initialize` just created this account; no other
-        // mutable reference to its data can exist yet.
-        unsafe { <Self as AnchorAccount>::load_mut_after_init(*account) }
+        Self::build_mutable(*account)
     }
 }
 
@@ -170,7 +174,13 @@ where
     H: Pod + Zeroable + SlabSchema,
 {
     fn drop(&mut self) {
-        let borrow_state = unsafe { &mut (*self.view.account_ptr().cast_mut()).borrow_state };
+        if self.is_mutable {
+            // If the account was externally shrunk while this wrapper was
+            // retained, persist a repaired tail length before we release the
+            // exclusive borrow so a later reload still validates.
+            self.repair_stale_len_after_external_shrink();
+        }
+        let borrow_state = unsafe { &mut (*self.view.account_mut_ptr()).borrow_state };
         if self.is_mutable {
             *borrow_state = NOT_BORROWED;
         } else if *borrow_state != 0 && *borrow_state != NOT_BORROWED {
@@ -252,6 +262,30 @@ where
         };
     }
 
+    /// Clamp a retained tail's stored `len` down to current capacity after an
+    /// external shrink. No-op for header-only slabs, read-only loads, or when
+    /// the shrink removed the `len` field entirely.
+    #[inline(always)]
+    fn repair_stale_len_after_external_shrink(&mut self) {
+        if !self.is_mutable || !Self::HAS_TAIL || self.view.data_len() < Self::LEN_OFFSET + 4 {
+            return;
+        }
+
+        let capacity = capacity_for(
+            self.view.data_len(),
+            Self::ITEMS_OFFSET,
+            core::mem::size_of::<T>(),
+        );
+        let bytes = unsafe { self.view.borrow_unchecked_mut() };
+        let mut len_bytes = [0u8; 4];
+        len_bytes.copy_from_slice(&bytes[Self::LEN_OFFSET..Self::LEN_OFFSET + 4]);
+        let len = u32::from_le_bytes(len_bytes) as usize;
+        if len > capacity {
+            bytes[Self::LEN_OFFSET..Self::LEN_OFFSET + 4]
+                .copy_from_slice(&(capacity as u32).to_le_bytes());
+        }
+    }
+
     /// Returns the account's address. Always safe regardless of borrow state.
     #[inline(always)]
     pub fn address(&self) -> &Address {
@@ -326,14 +360,9 @@ where
     }
 
     #[inline(always)]
-    fn from_ref(view: AccountView) -> Result<Self, ProgramError> {
+    fn from_ref(mut view: AccountView) -> Result<Self, ProgramError> {
         Self::assert_header_alignment();
-        let borrow_state = unsafe { (*view.account_ptr()).borrow_state };
-        // 0 is the mutable-borrow sentinel; 1 has no shared-borrow slot left
-        // for Slab to register below.
-        if borrow_state < 2 {
-            return Err(ProgramError::AccountBorrowFailed);
-        }
+        view.check_borrow()?;
         // SAFETY: AccountView's data pointer is valid for the instruction lifetime
         // (Solana runtime guarantee). The borrow-state check above rejects a live
         // mutable borrow before creating the shared view.
@@ -348,7 +377,7 @@ where
         // cannot obtain a mutable borrow via try_borrow_mut(). Additional
         // immutable borrows are still allowed (safe — they alias &H, not &mut H,
         // and DerefMut panics on a read-only Slab).
-        unsafe { (*view.account_ptr().cast_mut()).borrow_state = borrow_state - 1 };
+        unsafe { (*view.account_mut_ptr()).borrow_state -= 1 };
         Ok(Self {
             view,
             header_ptr,
@@ -358,12 +387,15 @@ where
     }
 
     /// Low-level constructor: set up `header_ptr` with write provenance,
-    /// no validation. Under `guardrails`, includes a minimum-length check.
+    /// no validation beyond the borrow state and minimum length.
     #[inline(always)]
     fn build_mutable(view: AccountView) -> Result<Self, ProgramError> {
         Self::assert_header_alignment();
-        // SAFETY: AccountView's data pointer is valid for the instruction lifetime.
-        // Duplicate mutable accounts are rejected at deserialization.
+        // Any live borrow, including one held by a wrapper over an aliased
+        // view of this account, rules out the exclusive borrow taken below.
+        view.check_borrow_mut()?;
+        // SAFETY: AccountView's data pointer is valid for the instruction
+        // lifetime, and the check above rules out any other live borrow.
         let data = unsafe { view.borrow_unchecked() };
         if data.len() < Self::MIN_DATA_LEN {
             return Err(ProgramError::AccountDataTooSmall);
@@ -483,7 +515,7 @@ where
     #[inline(always)]
     fn guard_bytes(&self) -> &[u8] {
         // SAFETY: AccountView data is valid for the instruction lifetime.
-        // Duplicate mutable accounts are rejected at deserialization.
+        // The borrow marker held by this slab rules out a mutable alias.
         unsafe { self.view.borrow_unchecked() }
     }
 
@@ -592,14 +624,23 @@ where
         self.len().min(self.capacity())
     }
 
+    /// Whether the live tail has no readable items.
+    ///
+    /// Uses [`effective_len`](Self::effective_len) so a retained slab whose
+    /// account was externally shrunk below the stored `len` still reports
+    /// empty when every live slot is gone (including zero-capacity shrinks).
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.effective_len() == 0
     }
 
+    /// Whether the live tail cannot accept another push without growing.
+    ///
+    /// Uses [`effective_len`](Self::effective_len) so a post-shrink state with
+    /// raw `len > capacity` reports full rather than neither-empty-nor-full.
     #[inline(always)]
     pub fn is_full(&self) -> bool {
-        self.len() == self.capacity()
+        self.effective_len() == self.capacity()
     }
 
     /// View the tail region as an immutable slice. Uses `effective_len` so
@@ -696,9 +737,17 @@ where
     /// `effective_len` so a post-shrink Slab (raw len > capacity) doesn't
     /// read past the live data buffer; the write-back also clamps the
     /// stored len to a value `<= capacity`.
+    ///
+    /// When an external shrink left `capacity == 0` but a nonzero stored
+    /// `len`, this still clears the stale length before returning `None`
+    /// so a later `load` does not reject `len > capacity`.
     pub fn pop(&mut self) -> Option<T> {
         let len = self.effective_len();
         if len == 0 {
+            // Repair a zero-capacity post-shrink that retained a stale len.
+            if self.len() != 0 {
+                self.write_len(0);
+            }
             return None;
         }
         let new_len = len - 1;
@@ -800,34 +849,8 @@ where
         Self::from_ref(view)
     }
 
-    /// # Safety
-    ///
-    /// See [`AnchorAccount::load_mut`] — caller must ensure no other live
-    /// `&mut` to the same account data exists.
     #[inline(always)]
-    unsafe fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
-        // Reuses the post-init primitive for construction, then layers full
-        // validation on top.
-        let slab = Self::load_mut_after_init(view)?;
-        // SAFETY: build_mutable succeeded, so the data pointer is valid.
-        let data: &[u8] = unsafe { slab.view.borrow_unchecked() };
-        H::validate(&slab.view, data)?;
-        if data.len() < Self::ITEMS_OFFSET {
-            return Err(ProgramError::AccountDataTooSmall);
-        }
-        Self::validate_tail(data)?;
-        Ok(slab)
-    }
-
-    /// Fast-path `load_mut` after `create_and_initialize`. Skips
-    /// `H::validate` and `validate_tail` (all tautologies post-init).
-    ///
-    /// # Safety
-    ///
-    /// See [`AnchorAccount::load_mut`] — no other live `&mut` to the
-    /// same account data.
-    #[inline(always)]
-    unsafe fn load_mut_after_init(view: AccountView) -> Result<Self, ProgramError> {
+    fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
         // Guardrail: catches "forgot `#[account(mut)]`" early with a clear
         // error. Under `default-features = false` the Solana runtime still
         // rejects the tx when we try to write, just with a less specific
@@ -836,6 +859,16 @@ where
         if !view.is_writable() {
             return Err(cold_not_writable());
         }
+        view.check_borrow_mut()?;
+        // SAFETY: the check above rules out any live borrow of the data.
+        let data = unsafe { view.borrow_unchecked() };
+        // Validate before `build_mutable`: dropping a mutable slab rewrites a
+        // stale tail `len`, which must never touch a rejected account.
+        H::validate(&view, data)?;
+        if data.len() < Self::ITEMS_OFFSET {
+            return Err(ProgramError::AccountDataTooSmall);
+        }
+        Self::validate_tail(data)?;
         Self::build_mutable(view)
     }
 
@@ -846,16 +879,15 @@ where
 
     #[inline(always)]
     fn cpi_handle(&self) -> crate::CpiHandle<'_> {
-        crate::CpiHandle::readonly_with_flags(
-            self.account(),
-            !self.is_mutable,
-            self.is_mutable,
-        )
+        crate::CpiHandle::readonly_with_flags(self.account(), !self.is_mutable, self.is_mutable)
     }
 
     #[inline(always)]
     fn try_cpi_handle_mut(&mut self) -> Result<crate::CpiHandleMut<'_>, ProgramError> {
         require!(self.account().is_writable(), ProgramError::InvalidArgument);
+        // `without_borrow_check` below is only sound while this slab holds the
+        // exclusive borrow; a read-only slab may share the account with live readers.
+        require!(self.is_mutable, ProgramError::AccountBorrowFailed);
         Ok(crate::CpiHandleMut::without_borrow_check(self.account()))
     }
 }
@@ -866,6 +898,18 @@ where
 {
     fn close(&mut self, mut destination: AccountView) -> pinocchio::ProgramResult {
         self.assert_mutable();
+        // Guardrail: catches "forgot `#[account(mut)]`" on the close
+        // destination early with a clear error.
+        #[cfg(feature = "guardrails")]
+        if !destination.is_writable() {
+            return Err(cold_not_writable());
+        }
+        // Guardrail: self-close would credit the lamports and then zero them on
+        // the same account, burning them.
+        #[cfg(feature = "guardrails")]
+        if pinocchio::address::address_eq(destination.address(), self.view.address()) {
+            return Err(cold_self_close());
+        }
         let mut self_view = self.view;
         let dest_lamports = destination
             .lamports()
@@ -925,9 +969,12 @@ where
             }
             // No `self.view = view` write-back is needed: `AccountView` is a
             // raw-pointer wrapper over the shared `RuntimeAccount` header, and
-            // `crate::realloc_account` updates that header's `data_len` in
-            // place. All `AccountView` copies therefore observe the new size.
-            crate::realloc_account(&mut view, new_space, &payer, zero)?;
+            // the realloc updates that header's `data_len` in place. All
+            // `AccountView` copies therefore observe the new size.
+            //
+            // SAFETY: `assert_mutable` above means this slab holds the
+            // exclusive borrow, and `&mut self` rules out references into it.
+            unsafe { crate::cpi::realloc_account_unchecked(&mut view, new_space, &payer, zero)? };
             self.header_ptr = unsafe { view.data_mut_ptr().add(Self::HEADER_OFFSET) } as *mut H;
             if Self::HAS_TAIL {
                 let new_cap =
@@ -958,8 +1005,8 @@ where
     #[inline(always)]
     fn deref(&self) -> &H {
         // SAFETY: header_ptr is valid for the instruction lifetime (Solana
-        // runtime guarantee). Duplicate mutable accounts are rejected at
-        // deserialization, so no aliasing can occur.
+        // runtime guarantee). The borrow marker held by this slab rules out
+        // a mutable alias.
         unsafe { &*self.header_ptr }
     }
 }
@@ -1036,6 +1083,19 @@ where
     #[inline(always)]
     fn as_ref(&self) -> &AccountView {
         &self.view
+    }
+}
+
+impl<H, T> crate::LamportsMutable for Slab<H, T>
+where
+    H: Pod + Zeroable + SlabSchema,
+{
+    #[inline(always)]
+    fn try_assert_lamports_mutable(&self) -> Result<(), ProgramError> {
+        if !self.is_mutable {
+            return Err(crate::ErrorCode::ConstraintMut.into());
+        }
+        Ok(())
     }
 }
 
@@ -1162,8 +1222,7 @@ mod tests {
         setup(&mut buf, true);
         let view = unsafe { buf.view() };
 
-        // SAFETY: this is the only live wrapper over `view`'s data.
-        let mut acct = unsafe { CounterAccount::load_mut(view).unwrap() };
+        let mut acct = CounterAccount::load_mut(view).unwrap();
         acct.value = 99;
 
         let mut view_copy = view;
@@ -1188,8 +1247,7 @@ mod tests {
         let view = unsafe { buf.view() };
 
         {
-            // SAFETY: this is the only live wrapper over `view`'s data.
-            let mut acct = unsafe { CounterAccount::load_mut(view).unwrap() };
+            let mut acct = CounterAccount::load_mut(view).unwrap();
             acct.value = 99;
         }
 
@@ -1206,8 +1264,7 @@ mod tests {
         setup(&mut buf, true);
         let view = unsafe { buf.view() };
 
-        // SAFETY: this is the only live wrapper over `view`'s data.
-        let mut acct = unsafe { CounterAccount::load_mut(view).unwrap() };
+        let mut acct = CounterAccount::load_mut(view).unwrap();
         acct.value = 99;
 
         let view_copy = view;
@@ -1217,6 +1274,108 @@ mod tests {
             "safe read-only Slab load must not alias a live mutable Slab"
         );
         assert_eq!(acct.value, 99);
+    }
+
+    #[test]
+    fn mut_load_rejects_live_read_only_slab_on_alias() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, true);
+        let view = unsafe { buf.view() };
+
+        let ro = CounterAccount::load(view).unwrap();
+        let alias = view;
+        assert_eq!(
+            CounterAccount::load_mut(alias).err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "mutable Slab load must not alias a live read-only Slab"
+        );
+        assert_eq!(ro.value, 42);
+
+        drop(ro);
+        assert!(CounterAccount::load_mut(alias).is_ok());
+    }
+
+    #[test]
+    fn mut_load_rejects_live_mut_slab_on_alias() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, true);
+        let view = unsafe { buf.view() };
+
+        let mut first = CounterAccount::load_mut(view).unwrap();
+        let alias = view;
+        assert_eq!(
+            CounterAccount::load_mut(alias).err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "mutable Slab load must not alias a live mutable Slab"
+        );
+        first.value = 7;
+        assert_eq!(first.value, 7);
+    }
+
+    #[test]
+    fn mut_load_rejects_live_raw_borrow_on_alias() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, true);
+        let view = unsafe { buf.view() };
+
+        let raw = view.try_borrow().unwrap();
+        assert_eq!(
+            CounterAccount::load_mut(view).err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "mutable Slab load must not alias a live raw data borrow"
+        );
+        drop(raw);
+        assert!(CounterAccount::load_mut(view).is_ok());
+    }
+
+    #[test]
+    fn failed_mut_load_leaves_existing_borrow_intact() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, true);
+        let view = unsafe { buf.view() };
+
+        let ro = CounterAccount::load(view).unwrap();
+        assert!(CounterAccount::load_mut(view).is_err());
+        let mut alias = view;
+        assert_eq!(
+            alias.try_borrow_mut().err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "a rejected mutable load must not clear the read-only borrow"
+        );
+        assert!(alias.try_borrow().is_ok());
+        drop(ro);
+    }
+
+    #[test]
+    fn realloc_through_alias_rejects_live_mut_slab() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, true);
+        let view = unsafe { buf.view() };
+        let old_len = view.data_len();
+
+        let acct = CounterAccount::load_mut(view).unwrap();
+        let mut alias = view;
+        assert_eq!(
+            crate::realloc_account(&mut alias, 8, &view, false).err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "realloc through an alias must not resize under a live Slab"
+        );
+        assert_eq!(view.data_len(), old_len);
+        drop(acct);
+    }
+
+    #[test]
+    fn read_only_slab_rejects_writable_cpi_handle() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, true);
+        let view = unsafe { buf.view() };
+
+        let mut acct = CounterAccount::load(view).unwrap();
+        assert_eq!(
+            acct.try_cpi_handle_mut().err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "a read-only Slab must not hand out a writable CPI handle"
+        );
     }
 
     #[test]

@@ -6,6 +6,7 @@ use {
     anyhow::Result,
     clap::{Parser, ValueEnum},
     heck::{ToLowerCamelCase, ToPascalCase, ToSnakeCase},
+    serde_json::{json, Value},
     solana_keypair::{read_keypair_file, write_keypair_file, Keypair},
     solana_pubkey::Pubkey,
     solana_signer::Signer,
@@ -19,9 +20,9 @@ use {
 };
 
 // SBF programs use the compiler bundled with platform-tools.
-const ANCHOR_MSRV: &str = "1.89.0";
+const ANCHOR_MSRV: &str = "1.95.0";
 // Host-side tests depend on Agave and LiteSVM, which require newer Rust.
-const HOST_RUST_VERSION: &str = "1.97.1";
+const HOST_RUST_VERSION: &str = "1.98.0";
 
 /// Program initialization template
 #[derive(Clone, Debug, Default, Eq, PartialEq, Parser, ValueEnum, AbsolutePath)]
@@ -242,7 +243,7 @@ fn workspace_manifest() -> String {
 members = [
     "programs/*"
 ]
-resolver = "2"
+resolver = "3"
 
 [workspace.package]
 edition = "2021"
@@ -275,6 +276,8 @@ fn cargo_toml(name: &str, test_template: Option<&TestTemplate>) -> String {
             r#"
 [dev-dependencies]
 mollusk-svm = "0.16"
+# Agave 4.4 requires Rust 1.98.1; keep the runtime on the supported cohort.
+solana-program-runtime = "~4.3.0"
 solana-account = "4.5.0"
 solana-pubkey = "4.3.0"
 solana-sdk-ids = "3.1.0"
@@ -425,6 +428,7 @@ module.exports = async function (provider: anchor.AnchorProvider) {
 pub fn mocha(name: &str) -> String {
     format!(
         r#"const anchor = require("@anchor-lang/core");
+const {{ generateKeyPairSigner }} = require("@solana/kit");
 
 describe("{}", () => {{
   // Configure the client to use the local cluster.
@@ -433,10 +437,10 @@ describe("{}", () => {{
   it("Is initialized!", async () => {{
     // Add your test here.
     const program = anchor.workspace.{};
-    const counter = anchor.web3.Keypair.generate();
+    const counter = await generateKeyPairSigner();
     const tx = await program.methods
       .initialize()
-      .accounts({{ counter: counter.publicKey }})
+      .accounts({{ counter: counter.address }})
       .signers([counter])
       .rpc();
     console.log("Your transaction signature", tx);
@@ -451,6 +455,7 @@ describe("{}", () => {{
 pub fn js_jest(name: &str) -> String {
     format!(
         r#"const anchor = require("@anchor-lang/core");
+const {{ generateKeyPairSigner }} = require("@solana/kit");
 
 describe("{}", () => {{
   // Configure the client to use the local cluster.
@@ -459,10 +464,10 @@ describe("{}", () => {{
   it("Is initialized!", async () => {{
     // Add your test here.
     const program = anchor.workspace.{};
-    const counter = anchor.web3.Keypair.generate();
+    const counter = await generateKeyPairSigner();
     const tx = await program.methods
       .initialize()
-      .accounts({{ counter: counter.publicKey }})
+      .accounts({{ counter: counter.address }})
       .signers([counter])
       .rpc();
     console.log("Your transaction signature", tx);
@@ -481,10 +486,12 @@ pub fn package_json(jest: bool, license: String) -> String {
   "license": "{license}",
   "scripts": {{
     "lint:fix": "prettier */*.js \"*/**/*{{.js,.ts}}\" -w",
-    "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check"
+    "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check",
+    "tsx": "tsx"
   }},
   "dependencies": {{
-    "@anchor-lang/core": "{VERSION}"
+    "@anchor-lang/core": "{VERSION}",
+    "@solana/kit": "^8.3.0"
   }},
   "devDependencies": {{
     "jest": "^30.3.0",
@@ -513,7 +520,8 @@ pub fn package_json(jest: bool, license: String) -> String {
     "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check"
   }},
   "dependencies": {{
-    "@anchor-lang/core": "{VERSION}"
+    "@anchor-lang/core": "{VERSION}",
+    "@solana/kit": "^8.3.0"
   }},
   "devDependencies": {{
     "chai": "^4.5.0",
@@ -536,7 +544,8 @@ pub fn ts_package_json(jest: bool, license: String) -> String {
     "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check"
   }},
   "dependencies": {{
-    "@anchor-lang/core": "{VERSION}"
+    "@anchor-lang/core": "{VERSION}",
+    "@solana/kit": "^8.3.0"
   }},
   "devDependencies": {{
     "@types/bn.js": "^5.2.0",
@@ -544,6 +553,7 @@ pub fn ts_package_json(jest: bool, license: String) -> String {
     "jest": "^30.3.0",
     "prettier": "^3.8.3",
     "ts-jest": "^29.4.9",
+    "tsx": "^4.19.0",
     "typescript": "^5.9.3"
   }},
   "overrides": {{
@@ -569,17 +579,17 @@ pub fn ts_package_json(jest: bool, license: String) -> String {
     "lint": "prettier */*.js \"*/**/*{{.js,.ts}}\" --check"
   }},
   "dependencies": {{
-    "@anchor-lang/core": "{VERSION}"
+    "@anchor-lang/core": "{VERSION}",
+    "@solana/kit": "^8.3.0"
   }},
   "devDependencies": {{
     "chai": "^4.5.0",
     "mocha": "^11.7.5",
-    "ts-mocha": "^11.1.0",
-    "ts-node": "^10.9.2",
     "@types/bn.js": "^5.2.0",
     "@types/chai": "^4.3.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.6.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.9.3",
     "prettier": "^3.8.3"
   }}
@@ -593,6 +603,7 @@ pub fn ts_mocha(name: &str) -> String {
     format!(
         r#"import * as anchor from "@anchor-lang/core";
 import {{ Program }} from "@anchor-lang/core";
+import {{ generateKeyPairSigner }} from "@solana/kit";
 import {{ {} }} from "../target/types/{}";
 
 describe("{}", () => {{
@@ -603,10 +614,10 @@ describe("{}", () => {{
 
   it("Is initialized!", async () => {{
     // Add your test here.
-    const counter = anchor.web3.Keypair.generate();
+    const counter = await generateKeyPairSigner();
     const tx = await program.methods
       .initialize()
-      .accounts({{ counter: counter.publicKey }})
+      .accounts({{ counter: counter.address }})
       .signers([counter])
       .rpc();
     console.log("Your transaction signature", tx);
@@ -625,6 +636,7 @@ pub fn ts_jest(name: &str) -> String {
     format!(
         r#"import * as anchor from "@anchor-lang/core";
 import {{ Program }} from "@anchor-lang/core";
+import {{ generateKeyPairSigner }} from "@solana/kit";
 import {{ {} }} from "../target/types/{}";
 
 describe("{}", () => {{
@@ -635,10 +647,10 @@ describe("{}", () => {{
 
   it("Is initialized!", async () => {{
     // Add your test here.
-    const counter = anchor.web3.Keypair.generate();
+    const counter = await generateKeyPairSigner();
     const tx = await program.methods
       .initialize()
-      .accounts({{ counter: counter.publicKey }})
+      .accounts({{ counter: counter.address }})
       .signers([counter])
       .rpc();
     console.log("Your transaction signature", tx);
@@ -770,12 +782,17 @@ pub enum TestTemplate {
 }
 
 impl TestTemplate {
-    pub fn get_test_script(&self, js: bool, pkg_manager: &PackageManager) -> String {
+    pub fn uses_node(&self) -> bool {
+        matches!(self, Self::Mocha | Self::Jest)
+    }
+
+    pub fn get_test_script(&self, js: bool, pkg_manager: Option<&PackageManager>) -> String {
         let pkg_manager_exec_cmd = match pkg_manager {
-            PackageManager::Yarn => "yarn run",
-            PackageManager::NPM => "npx",
-            PackageManager::PNPM => "pnpm exec",
-            PackageManager::Bun => "bunx",
+            Some(PackageManager::Yarn) => "yarn run",
+            Some(PackageManager::NPM) => "npx",
+            Some(PackageManager::PNPM) => "pnpm exec",
+            Some(PackageManager::Bun) => "bunx",
+            None => "",
         };
 
         match &self {
@@ -784,7 +801,7 @@ impl TestTemplate {
                     format!("{pkg_manager_exec_cmd} mocha -t 1000000 tests/")
                 } else {
                     format!(
-                        r#"{pkg_manager_exec_cmd} ts-mocha -p ./tsconfig.json -t 1000000 "tests/**/*.ts""#
+                        r#"{pkg_manager_exec_cmd} mocha --import=tsx -t 1000000 "tests/**/*.ts""#
                     )
                 }
             }
@@ -796,7 +813,10 @@ impl TestTemplate {
                 }
             }
             Self::Rust | Self::Litesvm => "cargo test".to_owned(),
-            Self::Mollusk => "cargo test-sbf".to_owned(),
+            Self::Mollusk => format!(
+                "cargo test-sbf --tools-version {}",
+                crate::DEFAULT_TOOLS_VERSION
+            ),
         }
     }
 
@@ -1099,4 +1119,62 @@ fn test_initialize() {{
             name.to_snake_case(),
         ),
     )]
+}
+
+pub fn get_security_metadata_content(project_name: &str) -> Value {
+    json!({
+        "name": project_name,
+        "logo": "https://solana.com/src/img/branding/solanaLogoMark.png",
+        "description": "A fresh Anchor program!",
+        "notification": "Remember to review and publish this metadata with `anchor program deploy --security-metadata` once the contents are accurate.",
+        "sdk": "https://github.com/your-sdk",
+        "project_url": "https://github.com/your-project/",
+        "contacts": [
+        "email:security@example.com",
+        "discord:MyProgram#1234",
+        "twitter:@MyProgram"
+        ],
+        "policy": "https://example.com/security-policy",
+        "preferred_languages": ["en", "de"],
+        "encryption": "https://example.com/pgp-key",
+        "source_code": "https://github.com/your-source-code/",
+        "source_release": "v0.1.0",
+        "source_revision": "abc123def456",
+        "auditors": ["Audit Firm A", "Security Researcher B"],
+        "acknowledgements": "https://example.com/security-acknowledgements",
+        "version": "0.1.0"
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scaffold_keeps_v2_runtime_and_master_typescript_runner() {
+        let manifest = cargo_toml("counter", Some(&TestTemplate::Litesvm));
+        assert!(manifest.contains("anchor-lang = { git = "));
+        assert!(manifest.contains("profile = [\"anchor-v2-testing/profile\"]"));
+        assert!(!manifest.contains("anchor-lang-v2"));
+        assert!(rust_toolchain_toml().contains(&format!("channel = \"{HOST_RUST_VERSION}\"")));
+        assert!(ts_mocha("counter").contains("counter: counter.address"));
+        for jest in [false, true] {
+            let package: Value =
+                serde_json::from_str(&ts_package_json(jest, "ISC".into())).unwrap();
+            assert_eq!(package["dependencies"]["@anchor-lang/core"], VERSION);
+            assert!(package["dependencies"]["@solana/kit"].is_string());
+            assert!(package["devDependencies"]["tsx"].is_string());
+            assert!(package["devDependencies"].get("ts-node").is_none());
+        }
+        let script = TestTemplate::Mocha.get_test_script(false, Some(&PackageManager::NPM));
+        assert!(script.contains("mocha --import=tsx"));
+        let script = TestTemplate::Mollusk.get_test_script(false, None);
+        assert_eq!(
+            script,
+            format!(
+                "cargo test-sbf --tools-version {}",
+                crate::DEFAULT_TOOLS_VERSION
+            )
+        );
+    }
 }

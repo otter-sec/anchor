@@ -31,6 +31,7 @@ TESTS_V2_COVERAGE_TESTS := \
 	custom_constraints \
 	declare_program \
 	declare_program_idl_deps \
+	declare_program_idl_errors \
 	derives \
 	dispatch_remaining \
 	dup_mut \

@@ -1,8 +1,5 @@
 use {
-    crate::{
-        cursor::{AccountBitvec, AccountCursor},
-        AnchorAccount,
-    },
+    crate::{cursor::AccountCursor, AnchorAccount},
     pinocchio::account::AccountView,
     solana_program_error::ProgramError,
 };
@@ -31,15 +28,14 @@ impl<'a> AccountLoader<'a> {
         self.cursor.consumed()
     }
 
-    /// Walk N accounts in bulk, returning a slice of raw `AccountView`s
-    /// and the duplicate tracking bitvec.
+    /// Walk N accounts in bulk, returning a slice of raw `AccountView`s.
     /// Cursor math runs in a tight loop before any validation happens.
     ///
     /// # Safety
     ///
     /// Caller must ensure N does not exceed the remaining accounts.
     #[inline(always)]
-    pub fn walk_n(&mut self, n: usize) -> (&[AccountView], Option<&AccountBitvec>) {
+    pub fn walk_n(&mut self, n: usize) -> &[AccountView] {
         unsafe { self.cursor.walk_n(n) }
     }
 
@@ -61,14 +57,9 @@ impl<'a> AccountLoader<'a> {
     }
 
     /// Walk + `T::load_mut()` the next account.
-    ///
-    /// # Safety
-    ///
-    /// Caller must ensure no other live `&mut` to the same account's data
-    /// exists — see [`AnchorAccount::load_mut`] for the full precondition.
     #[inline(always)]
-    pub unsafe fn next_mut<T: AnchorAccount>(&mut self) -> Result<T, ProgramError> {
-        let view = self.cursor.next();
+    pub fn next_mut<T: AnchorAccount>(&mut self) -> Result<T, ProgramError> {
+        let view = unsafe { self.cursor.next() };
         T::load_mut(view)
     }
 }

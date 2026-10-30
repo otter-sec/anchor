@@ -12,12 +12,13 @@
 /// fn main() { anchor_asm_v2::build("src/asm"); }
 ///
 /// // lib.rs
+/// #![no_std]
 /// #![feature(asm_experimental_arch)]
-/// anchor_asm_v2::include_asm!();
+/// anchor_asm_v2_runtime::include_asm!();
 /// ```
 #[macro_export]
 macro_rules! include_asm {
     () => {
-        core::arch::global_asm!(include_str!(concat!(env!("OUT_DIR"), "/combined.s")));
+        include!(concat!(env!("OUT_DIR"), "/combined.rs"));
     };
 }

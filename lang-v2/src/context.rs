@@ -1,7 +1,6 @@
 use {
     crate::cursor::AccountCursor,
     pinocchio::{account::AccountView, address::Address},
-    solana_program_error::ProgramError,
 };
 
 /// Instruction-scoped context passed to every handler. Holds the
@@ -26,29 +25,6 @@ pub struct Context<'a, T: Bumps> {
     /// by [`Self::remaining_accounts`] for on-demand walking.
     /// After `remaining_accounts` is called this holds a cache of the result.
     remaining_accounts: RemainingAccounts<'a>,
-
-    /// Mutable-account mask covering active mutable accounts in the declared
-    /// region. Starts from `T::MUT_MASK` and includes optional mutable fields
-    /// only when the loaded account is `Some`. Used by
-    /// [`Self::remaining_accounts`] to re-check each trailing account against
-    /// declared mut slots. The `HEADER_SIZE` check in `run_handler` cannot see
-    /// duplicates that only surface while walking the trailing region.
-    mut_mask: MutMask,
-}
-
-pub enum MutMask {
-    Static(&'static [u64; 4]),
-    Dynamic([u64; 4]),
-}
-
-impl MutMask {
-    #[inline(always)]
-    fn as_ref(&self) -> &[u64; 4] {
-        match self {
-            Self::Static(mask) => mask,
-            Self::Dynamic(mask) => mask,
-        }
-    }
 }
 
 enum RemainingAccounts<'a> {
@@ -58,15 +34,8 @@ enum RemainingAccounts<'a> {
         /// Number of accounts remaining after the initially declared region
         remaining: u8,
     },
-    /// Cached result of walking `remaining-accounts`; will return an error if
-    /// duplicate mutable constraints are violated.
-    Cached(Result<alloc::vec::Vec<AccountView>, ProgramError>),
-}
-
-impl<'a> RemainingAccounts<'a> {
-    fn is_unparsed(&self) -> bool {
-        matches!(self, RemainingAccounts::Unparsed { .. })
-    }
+    /// Cached result of walking `remaining-accounts`.
+    Cached(alloc::vec::Vec<AccountView>),
 }
 
 impl<'a, T: Bumps> Context<'a, T> {
@@ -77,7 +46,6 @@ impl<'a, T: Bumps> Context<'a, T> {
         bumps: T::Bumps,
         cursor: &'a mut AccountCursor,
         remaining_num: u8,
-        mut_mask: MutMask,
     ) -> Self {
         Self {
             program_id,
@@ -87,65 +55,34 @@ impl<'a, T: Bumps> Context<'a, T> {
                 cursor,
                 remaining: remaining_num,
             },
-            mut_mask,
         }
     }
 
     /// Returns trailing accounts beyond the declared `T` fields as an
     /// owned `Vec<AccountView>`. First call walks the cursor and caches
-    /// the resulting `Result`; subsequent calls replay the cache (clone
-    /// of the vec on success, clone of the error on failure). Caching
-    /// the error is important: the walk advances an unsafe cursor, and
-    /// a handler that calls this again after an error must not trigger
-    /// another `cursor.next()` loop.
+    /// the views; subsequent calls return a clone of the cache.
     ///
-    /// After each cursor advance, re-tests the cursor's duplicate bitvec
-    /// against the active mutable mask. If a trailing account's dup index
-    /// resolves to a declared mut slot, returns
-    /// `ConstraintDuplicateMutableAccount`. The `HEADER_SIZE`-only check
-    /// in `run_handler` only sees duplicates that existed at the end of
-    /// the declared walk; trailing-region dups can only be caught here.
-    ///
-    /// The mask is sized per declared field, so bits set for trailing indices
-    /// (past `HEADER_SIZE`) are naturally zero — the intersect only fires when
-    /// a trailing slot's bit overlaps with an active declared mut slot's bit,
-    /// which by construction means the runtime resolved the trailing slot as a
-    /// dup of that declared mut account.
-    pub fn remaining_accounts(&mut self) -> Result<alloc::vec::Vec<AccountView>, ProgramError> {
-        if self.remaining_accounts.is_unparsed() {
-            self.remaining_accounts = RemainingAccounts::Cached(self.walk_remaining());
+    /// A trailing account can alias a declared account. The views are raw,
+    /// so aliasing is only rejected when a conflicting borrow is taken:
+    /// loading a view through an account wrapper, borrowing its data, or
+    /// passing it to a CPI fails while a declared wrapper holds a
+    /// conflicting borrow of the same account.
+    pub fn remaining_accounts(&mut self) -> alloc::vec::Vec<AccountView> {
+        if let RemainingAccounts::Unparsed { cursor, remaining } = &mut self.remaining_accounts {
+            let mut v = alloc::vec::Vec::with_capacity(*remaining as usize);
+            for _ in 0..*remaining {
+                // SAFETY: cursor is positioned at the start of the remaining
+                // region and `remaining` is the exact number of accounts to
+                // walk.
+                v.push(unsafe { cursor.next() });
+            }
+            self.remaining_accounts = RemainingAccounts::Cached(v);
         }
 
         match &self.remaining_accounts {
-            RemainingAccounts::Cached(Ok(accs)) => Ok(accs.clone()),
-            RemainingAccounts::Cached(Err(err)) => Err(err.clone()),
+            RemainingAccounts::Cached(accs) => accs.clone(),
             RemainingAccounts::Unparsed { .. } => unreachable!(),
         }
-    }
-
-    fn walk_remaining(&mut self) -> Result<alloc::vec::Vec<AccountView>, ProgramError> {
-        let RemainingAccounts::Unparsed {
-            ref mut cursor,
-            remaining,
-        } = self.remaining_accounts
-        else {
-            unreachable!()
-        };
-        let mut v = alloc::vec::Vec::with_capacity(remaining as usize);
-        let mut_mask = self.mut_mask.as_ref();
-        for _ in 0..remaining {
-            // SAFETY: cursor is positioned at the start of the remaining
-            // region and `remaining_num` is the exact number of accounts
-            // to walk. Walking stops on the first mut-alias error so we
-            // never advance past the remaining region.
-            v.push(unsafe { cursor.next() });
-            if let Some(dups) = cursor.duplicates() {
-                if dups.intersects(mut_mask) {
-                    return Err(crate::ErrorCode::ConstraintDuplicateMutableAccount.into());
-                }
-            }
-        }
-        Ok(v)
     }
 }
 

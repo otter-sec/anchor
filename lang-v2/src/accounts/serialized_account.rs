@@ -36,6 +36,10 @@ pub trait AnchorAccountSerialize<T> {
 /// Validates owner, checks discriminator, deserializes via `S`. Holds a
 /// pinocchio borrow guard (`Ref` for `load`, `RefMut` for `load_mut`);
 /// `exit()` serializes through the held `RefMut`.
+/// If ownership changes after loading, commits compare the serialized payload
+/// (including stale-byte cleanup) against the live data without writing to it.
+/// Unchanged bytes succeed; changed bytes return `ProgramError::IllegalOwner`.
+/// This comparison allocates a temporary payload buffer only on owner changes.
 ///
 /// The wincode-backed instantiation is exposed as [`super::BorshAccount<T>`].
 ///
@@ -108,8 +112,10 @@ where
     /// in-memory mutations because they were just serialized. After
     /// this, `exit()` becomes a no-op until `reacquire_borrow_mut()` is
     /// called. Immutable / already-released borrows skip the commit.
+    /// If ownership changed, unchanged serialized bytes release the borrow
+    /// without writing; changed bytes return `IllegalOwner` and retain the guard.
     pub fn release_borrow(&mut self) -> Result<(), ProgramError> {
-        Self::serialize_mutable_borrow(&self.data, &mut self.borrow, &mut self.serialized_len)?;
+        self.serialize_mutable_borrow()?;
         self.borrow = SerializedAccountBorrow::Released;
         Ok(())
     }
@@ -119,25 +125,38 @@ where
         T::DISCRIMINATOR.len()
     }
 
-    fn serialize_mutable_borrow(
-        data: &T,
-        borrow: &mut SerializedAccountBorrow,
-        serialized_len: &mut usize,
-    ) -> Result<(), ProgramError> {
-        if let SerializedAccountBorrow::Mutable { ref mut guard } = borrow {
+    fn serialize_mutable_borrow(&mut self) -> Result<(), ProgramError> {
+        if let SerializedAccountBorrow::Mutable { ref mut guard } = self.borrow {
             let disc_len = Self::disc_len();
-            let payload_len = guard.len() - disc_len;
-            let mut payload = &mut guard[disc_len..];
-            S::serialize(data, &mut payload)?;
-
-            let new_serialized_len = payload_len - payload.len();
-            let zero_len = serialized_len
-                .saturating_sub(new_serialized_len)
-                .min(payload.len());
-            unsafe { sol_memset(&mut payload[..zero_len], 0, zero_len) };
-            *serialized_len = new_serialized_len;
+            let payload = &mut guard[disc_len..];
+            let new_serialized_len = if self.view.owned_by(&T::OWNER) {
+                Self::serialize_payload(&self.data, payload, self.serialized_len)?
+            } else {
+                // Codecs accept a mutable slice cursor, so serialize into a copy.
+                // Never write foreign-owned data, even if the bytes would match.
+                let mut candidate = payload.to_vec();
+                let len = Self::serialize_payload(&self.data, &mut candidate, self.serialized_len)?;
+                require!(candidate.as_slice() == payload, ProgramError::IllegalOwner);
+                len
+            };
+            self.serialized_len = new_serialized_len;
         }
         Ok(())
+    }
+
+    fn serialize_payload(
+        data: &T,
+        mut payload: &mut [u8],
+        serialized_len: usize,
+    ) -> Result<usize, ProgramError> {
+        let payload_len = payload.len();
+        S::serialize(data, &mut payload)?;
+        let new_serialized_len = payload_len - payload.len();
+        let zero_len = serialized_len
+            .saturating_sub(new_serialized_len)
+            .min(payload.len());
+        unsafe { sol_memset(&mut payload[..zero_len], 0, zero_len) };
+        Ok(new_serialized_len)
     }
 
     /// Re-acquire a mutable borrow after a `release_borrow()` + CPI.
@@ -247,8 +266,8 @@ where
         let data_ref = view.try_borrow()?;
         let (data, serialized_len) = Self::validate_and_load(view, &data_ref)?;
         // SAFETY: AccountView's raw pointer is valid for the entire instruction
-        // lifetime (Solana runtime guarantee). We hold the Ref to prevent
-        // subsequent mutable borrows on the same account (duplicate detection).
+        // lifetime (Solana runtime guarantee). We hold the Ref so an aliased
+        // view of the same account cannot take a mutable borrow.
         let guard: Ref<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
         Ok(Self {
             view,
@@ -260,11 +279,7 @@ where
         })
     }
 
-    /// # Safety
-    ///
-    /// See [`AnchorAccount::load_mut`] — caller must ensure no other live
-    /// `&mut` to the same account data exists.
-    unsafe fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
+    fn load_mut(view: AccountView) -> Result<Self, ProgramError> {
         // Guardrail: catches "forgot `#[account(mut)]`" early with a clear
         // error. Under `default-features = false` the Solana runtime still
         // rejects the tx when we try to write, just with a less specific
@@ -319,7 +334,7 @@ where
             self.borrow = SerializedAccountBorrow::Released;
             self.reacquire_guard_only()?;
         }
-        Self::serialize_mutable_borrow(&self.data, &mut self.borrow, &mut self.serialized_len)?;
+        self.serialize_mutable_borrow()?;
         Ok(())
     }
 }
@@ -330,20 +345,34 @@ where
     S: AnchorAccountSerialize<T>,
 {
     fn close(&mut self, mut destination: AccountView) -> pinocchio::ProgramResult {
+        // Guardrail: catches "forgot `#[account(mut)]`" on the close
+        // destination early with a clear error.
+        #[cfg(feature = "guardrails")]
+        if !destination.is_writable() {
+            return Err(super::slab::cold_not_writable());
+        }
+        // Guardrail: self-close would credit the lamports and then zero them on
+        // the same account, burning them.
+        #[cfg(feature = "guardrails")]
+        if pinocchio::address::address_eq(destination.address(), self.view.address()) {
+            return Err(super::slab::cold_self_close());
+        }
         self.assert_mutable_loaded();
         let mut self_view = self.view;
         let dest_lamports = destination
             .lamports()
             .checked_add(self_view.lamports())
             .ok_or(ProgramError::ArithmeticOverflow)?;
+
+        // Swap our guard for a checked borrow before writing anything. Once
+        // `release_borrow()` has run (e.g. for a CPI between mutation and
+        // close), an aliased view may hold a borrow of the data.
+        self.borrow = SerializedAccountBorrow::Released;
+        let mut data_view = self.view;
+        let mut data = data_view.try_borrow_mut()?;
+
         destination.set_lamports(dest_lamports);
         self_view.set_lamports(0);
-
-        // Drop any active borrow guard before the raw scrub below so the
-        // subsequent `borrow_unchecked_mut` is unaliased. If the user
-        // already called `release_borrow()` (e.g. a CPI between mutation
-        // and close), this is a no-op.
-        self.borrow = SerializedAccountBorrow::Released;
 
         // Defense-in-depth: write a closed-account sentinel (`u8::MAX`)
         // over the discriminator before pinocchio's close() zeros the
@@ -357,17 +386,13 @@ where
         // sanctioned call sequence (pre-CPI commit + derive-emitted
         // close), so the scrub must not be gated on holding a live
         // guard.
-        //
-        // SAFETY: `&mut self` plus the guard release above means no
-        // other live borrow on this account; the view's data is valid
-        // until pinocchio's `close()` reassigns ownership below.
-        let data = unsafe { self_view.borrow_unchecked_mut() };
         let disc_len = Self::disc_len();
         if disc_len > 0 && data.len() >= disc_len {
             // `sol_memset` matches the rest of this module's scrubbing
             // style and works for any discriminator width.
             unsafe { sol_memset(&mut data[..disc_len], u8::MAX, disc_len) };
         }
+        drop(data);
 
         self_view.close()?;
         Ok(())
@@ -436,6 +461,20 @@ where
 {
     fn as_ref(&self) -> &AccountView {
         &self.view
+    }
+}
+
+impl<T, S> crate::LamportsMutable for SerializedAccount<T, S>
+where
+    T: Owner + Discriminator,
+    S: AnchorAccountSerialize<T>,
+{
+    #[inline(always)]
+    fn try_assert_lamports_mutable(&self) -> Result<(), ProgramError> {
+        if !self.is_mutable {
+            return Err(crate::ErrorCode::ConstraintMut.into());
+        }
+        Ok(())
     }
 }
 

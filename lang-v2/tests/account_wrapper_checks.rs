@@ -176,7 +176,7 @@ fn signer_load_mut_rejects_non_signer_non_writable() {
     let mut buf = AccountBuffer::<128>::new();
     buf.init([0x01; 32], SYSTEM_PROGRAM_ID, 0, false, false, false);
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { Signer::load_mut(view) });
+    let err = expect_err(Signer::load_mut(view));
     // Fused check: either flag missing maps to ConstraintSigner.
     assert_eq!(err, ErrorCode::ConstraintSigner.into());
 }
@@ -193,7 +193,7 @@ fn signer_load_mut_rejects_signer_without_writable() {
         false,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { Signer::load_mut(view) });
+    let err = expect_err(Signer::load_mut(view));
     assert_eq!(err, ErrorCode::ConstraintSigner.into());
 }
 
@@ -209,7 +209,7 @@ fn signer_load_mut_rejects_writable_without_signer() {
         false,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { Signer::load_mut(view) });
+    let err = expect_err(Signer::load_mut(view));
     assert_eq!(err, ErrorCode::ConstraintSigner.into());
 }
 
@@ -225,7 +225,7 @@ fn signer_load_mut_accepts_signer_and_writable() {
         false,
     );
     let view = unsafe { buf.view() };
-    let signer = unsafe { Signer::load_mut(view) }.unwrap();
+    let signer = Signer::load_mut(view).unwrap();
     assert_eq!(signer.address().to_bytes(), [0x01; 32]);
 }
 
@@ -261,7 +261,7 @@ fn system_account_default_load_mut_rejects_non_writable() {
         [0x01; 32], PROGRAM_ID, 0, false, /*writable*/ false, false,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { SystemAccount::load_mut(view) });
+    let err = expect_err(SystemAccount::load_mut(view));
     assert_eq!(err, ErrorCode::ConstraintMut.into());
 }
 
@@ -273,7 +273,7 @@ fn system_account_default_load_mut_rejects_writable_wrong_owner() {
         [0x01; 32], PROGRAM_ID, 0, false, /*writable*/ true, false,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { SystemAccount::load_mut(view) });
+    let err = expect_err(SystemAccount::load_mut(view));
     assert_eq!(err, ProgramError::IllegalOwner);
 }
 
@@ -298,7 +298,7 @@ fn unchecked_account_default_load_mut_rejects_non_writable() {
         [0xAB; 32], [0x99; 32], 0, false, /*writable*/ false, false,
     );
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { UncheckedAccount::load_mut(view) });
+    let err = expect_err(UncheckedAccount::load_mut(view));
     assert_eq!(err, ErrorCode::ConstraintMut.into());
 }
 
@@ -309,7 +309,7 @@ fn unchecked_account_load_mut_accepts_writable() {
         [0xAB; 32], [0x99; 32], 0, false, /*writable*/ true, false,
     );
     let view = unsafe { buf.view() };
-    let ua = unsafe { UncheckedAccount::load_mut(view) }.unwrap();
+    let ua = UncheckedAccount::load_mut(view).unwrap();
     assert_eq!(ua.address().to_bytes(), [0xAB; 32]);
 }
 
@@ -677,7 +677,7 @@ fn account_load_mut_rejects_non_writable() {
     let mut buf = AccountBuffer::<128>::new();
     setup_pod_counter_buf(&mut buf, PROGRAM_ID, false, 17);
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { Account::<PodCounter>::load_mut(view) });
+    let err = expect_err(Account::<PodCounter>::load_mut(view));
     assert_eq!(err, ErrorCode::ConstraintMut.into());
 }
 
@@ -710,7 +710,7 @@ fn borsh_account_load_mut_rejects_non_writable() {
     let mut buf = AccountBuffer::<128>::new();
     setup_borsh_counter_buf(&mut buf, PROGRAM_ID, false, 9);
     let view = unsafe { buf.view() };
-    let err = expect_err(unsafe { BorshAccount::<Counter>::load_mut(view) });
+    let err = expect_err(BorshAccount::<Counter>::load_mut(view));
     assert_eq!(err, ErrorCode::ConstraintMut.into());
 }
 
@@ -728,7 +728,7 @@ fn borsh_account_load_mut_accepts_writable_account() {
     let mut buf = AccountBuffer::<128>::new();
     setup_borsh_counter_buf(&mut buf, PROGRAM_ID, true, 9);
     let view = unsafe { buf.view() };
-    let acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
+    let acct = BorshAccount::<Counter>::load_mut(view).unwrap();
     assert_eq!(acct.value, 9);
 }
 

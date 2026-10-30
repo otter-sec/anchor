@@ -63,6 +63,8 @@ impl<T: Id> AsRef<AccountView> for Program<T> {
     }
 }
 
+impl<T: Id> crate::LamportsMutable for Program<T> {}
+
 impl<T: Id> AsRef<Address> for Program<T> {
     fn as_ref(&self) -> &Address {
         self.view.address()

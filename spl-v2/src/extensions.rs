@@ -359,3 +359,17 @@ unsafe impl Zeroable for PausableAccount {}
 impl SplExtension for PausableAccount {
     const TYPE: SplExtensionType = SplExtensionType::PausableAccount;
 }
+
+// ---------------------------------------------------------------------------
+// Constraint markers for `#[account(extensions::*)]`
+// -------------------------------------------
+pub struct MetadataPointerAuthorityConstraint;
+pub struct MetadataPointerMetadataAddressConstraint;
+pub struct GroupPointerAuthorityConstraint;
+pub struct GroupPointerGroupAddressConstraint;
+pub struct GroupMemberPointerAuthorityConstraint;
+pub struct GroupMemberPointerMemberAddressConstraint;
+pub struct CloseAuthorityAuthorityConstraint;
+pub struct TransferHookAuthorityConstraint;
+pub struct TransferHookProgramIdConstraint;
+pub struct PermanentDelegateDelegateConstraint;

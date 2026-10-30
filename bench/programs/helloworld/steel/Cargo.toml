@@ -14,7 +14,7 @@ profile = ["anchor-v2-testing/profile"]
 
 [dependencies]
 steel = "4.0.4"
-solana-program = "4.1.0"
+solana-program = "2.1"
 bytemuck = { version = "1", features = ["derive"] }
 
 [dev-dependencies]

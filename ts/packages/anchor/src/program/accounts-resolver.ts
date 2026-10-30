@@ -39,6 +39,7 @@ import {
 import { AllInstructions } from "./namespace/types.js";
 import Provider from "../provider.js";
 import { AccountsCoder, BorshAccountsCoder } from "../coder/index.js";
+import { assertSafeInteger } from "../coder/borsh/codecs.js";
 import { withProviderDefaults } from "../utils/common.js";
 import { AddressInput, hasToBase58, Program, toAddress } from "./index.js";
 import {
@@ -498,16 +499,22 @@ export class AccountsResolver<IDL extends Idl> {
       case "i32":
         return getI32Encoder().encode(value);
       case "u64":
+        assertSafeInteger(value);
         return getU64Encoder().encode(value);
       case "i64":
+        assertSafeInteger(value);
         return getI64Encoder().encode(value);
       case "u128":
+        assertSafeInteger(value);
         return getU128Encoder().encode(value);
       case "i128":
+        assertSafeInteger(value);
         return getI128Encoder().encode(value);
       case "u256":
+        assertSafeInteger(value);
         return getU256Encoder().encode(value);
       case "i256":
+        assertSafeInteger(value);
         return getI256Encoder().encode(value);
       case "string":
         return getUtf8Encoder().encode(value);

@@ -300,7 +300,7 @@ fn emit_wincode_event_logs_program_data() {
     let counter = do_initialize(&mut svm, &payer);
 
     // bump with amount=12345, step=-7. `emit!` inside the handler fires a
-    // Wincode-serialized Bumped event; `#[event]` supplies AnchorSerialize.
+    // Wincode-serialized Bumped event; `#[event]` supplies both serde derives.
     let mut data = vec![1];
     data.extend_from_slice(&12345u64.to_le_bytes());
     data.extend_from_slice(&(-7i32).to_le_bytes());
@@ -320,7 +320,7 @@ fn emit_wincode_event_logs_program_data() {
     );
 
     // Default-mode event uses Wincode with a borsh-compatible wire format;
-    // `#[event]` derives AnchorSerialize automatically:
+    // `#[event]` derives AnchorSerialize and AnchorDeserialize automatically:
     // u64 LE (8) + i32 LE (4) + bool (1 byte). Total = 21 including disc.
     assert_eq!(bytes.len(), 21);
     let amount = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
@@ -329,6 +329,29 @@ fn emit_wincode_event_logs_program_data() {
     assert_eq!(amount, 12345);
     assert_eq!(step, -7);
     assert_eq!(flag, 1);
+}
+
+#[test]
+fn emit_wincode_event_decodes_with_client_parse_logs() {
+    let (mut svm, payer) = setup();
+    let counter = do_initialize(&mut svm, &payer);
+
+    // Same `bump` as above, but decode the real transaction logs through
+    // the public `anchor_client::parse_logs` API instead of by hand.
+    let mut data = vec![1];
+    data.extend_from_slice(&12345u64.to_le_bytes());
+    data.extend_from_slice(&(-7i32).to_le_bytes());
+    let metas = vec![AccountMeta::new(counter, false)];
+    let meta = send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("bump should succeed");
+
+    let events =
+        anchor_client::parse_logs::<derives_test::Bumped>(&meta.logs, &program_id().to_string())
+            .expect("parse_logs should decode Bumped");
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].amount, 12345);
+    assert_eq!(events[0].step, -7);
+    assert_eq!(events[0].flag, true);
 }
 
 #[test]
