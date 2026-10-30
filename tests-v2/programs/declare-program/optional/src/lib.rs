@@ -19,7 +19,7 @@ pub mod declare_program_optional {
                 .as_ref()
                 .map(|account| account.cpi_handle()),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.optional_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(ctx.accounts.optional_program.address(), cpi_accounts);
         optional_callee::cpi::record(cpi_ctx, value)?;
         Ok(())
     }

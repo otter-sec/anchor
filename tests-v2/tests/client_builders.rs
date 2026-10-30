@@ -210,7 +210,10 @@ fn full_builder_and_instruction_data_update_state() {
         vault,
         authority: authority.pubkey(),
     });
-    assert_eq!(value_ix.data, instruction::SetValue { value: 77 }.data());
+    assert_eq!(
+        value_ix.data,
+        instruction::SetValue { value: 77 }.data().as_slice()
+    );
     send_ix(&mut svm, value_ix, &payer, &[&authority]).expect("set value");
     assert_eq!(vault_value(&svm, vault), 77);
 }

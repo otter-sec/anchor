@@ -4,10 +4,7 @@
 //! happen first and each arm walks only its declared accounts. A
 //! caller-provided `lookup` array resolves duplicate account references:
 //! when the BPF loader writes a dup index into `borrow_state`, the cursor
-//! returns the earlier `AccountView` from `lookup[idx]`. Every view of one
-//! account therefore points at the same `RuntimeAccount` header and shares
-//! its `borrow_state` byte, which the account wrappers use to reject
-//! conflicting borrows of an aliased account.
+//! returns the earlier `AccountView` from `lookup[idx]`.
 
 use pinocchio::account::{AccountView, RuntimeAccount, MAX_PERMITTED_DATA_INCREASE};
 
@@ -52,8 +49,8 @@ pub struct AccountCursor {
     /// into `lookup` and as a runtime counter exposed to callers for
     /// bookkeeping (e.g., remaining-accounts walks).
     consumed: u8,
-}
 
+}
 impl AccountCursor {
     /// Create a fresh cursor at the start of the serialized accounts
     /// region. `input_ptr` must point at the 8-byte `num_accounts`
@@ -76,6 +73,27 @@ impl AccountCursor {
     #[inline(always)]
     pub fn consumed(&self) -> u8 {
         self.consumed
+    }
+
+    /// Returns views already written to the cursor's lookup table.
+    ///
+    /// The caller must only request entries that have already been yielded by
+    /// [`Self::next`]. This lets callers borrow the resolved accounts without
+    /// copying them into another fixed-capacity buffer.
+    #[inline(always)]
+    ///
+    /// # Safety
+    ///
+    /// The returned lifetime must not outlive the lookup table supplied when
+    /// this cursor was created. The dispatcher guarantees that table remains
+    /// alive for the complete instruction.
+    pub(crate) unsafe fn views<'lookup>(&self, start: u8, len: u8) -> &'lookup [AccountView] {
+        // SAFETY: `start..start + len` was populated by previous `next` calls
+        // and the dispatcher-provided lookup table remains live for the
+        // duration of the instruction.
+        unsafe {
+            core::slice::from_raw_parts(self.lookup.add(start as usize), len as usize)
+        }
     }
 
     /// Walk N accounts in a tight loop, storing views in the lookup array.

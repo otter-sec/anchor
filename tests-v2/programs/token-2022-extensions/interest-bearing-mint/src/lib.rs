@@ -12,7 +12,7 @@ pub mod token_2022_ext_interest_bearing_mint {
             mint: ctx.accounts.mint.cpi_handle_mut(),
         };
         token_2022_ext::interest_bearing_mint_initialize(
-            CpiContext::new(ctx.accounts.token_program.address(), accs),
+            CpiContext::<_, 16>::new_with_capacity(ctx.accounts.token_program.address(), accs),
             Some(&authority),
             125,
         )?;
@@ -26,7 +26,7 @@ pub mod token_2022_ext_interest_bearing_mint {
             rate_authority: ctx.accounts.authority.cpi_handle(),
         };
         token_2022_ext::interest_bearing_mint_update_rate(
-            CpiContext::new(ctx.accounts.token_program.address(), accs),
+            CpiContext::<_, 16>::new_with_capacity(ctx.accounts.token_program.address(), accs),
             -125,
         )?;
         Ok(())

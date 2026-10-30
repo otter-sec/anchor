@@ -107,7 +107,10 @@ fn too_few_declared_accounts_fails_before_handler() {
 fn remaining_duplicate_of_declared_mut_is_returned() {
     let (mut svm, payer) = setup();
     let counter = initialize(&mut svm, &payer);
-    let data = dispatch_remaining::instruction::MutateThenReadRemaining { value: 123 }.data();
+    let data = dispatch_remaining::instruction::MutateThenReadRemaining { value: 123 }
+        .data()
+        .as_slice()
+        .to_vec();
 
     send_instruction(
         &mut svm,
@@ -134,7 +137,7 @@ fn loading_remaining_alias_of_declared_mut_fails() {
         let result = call_raw(
             &mut svm,
             &payer,
-            data,
+            data.to_vec(),
             vec![
                 AccountMeta::new(counter, false),
                 AccountMeta::new(counter, false),
@@ -154,7 +157,7 @@ fn loading_remaining_alias_of_declared_readonly() {
     send_instruction(
         &mut svm,
         program_id(),
-        data,
+        data.to_vec(),
         vec![
             AccountMeta::new_readonly(counter, false),
             AccountMeta::new_readonly(counter, false),
@@ -168,7 +171,7 @@ fn loading_remaining_alias_of_declared_readonly() {
     let result = call_raw(
         &mut svm,
         &payer,
-        data,
+        data.to_vec(),
         vec![
             AccountMeta::new_readonly(counter, false),
             AccountMeta::new(counter, false),
@@ -222,8 +225,10 @@ fn remaining_duplicate_of_trailing_account_is_allowed() {
 fn remaining_duplicate_of_optional_some_mut_is_returned() {
     let (mut svm, payer) = setup();
     let counter = initialize(&mut svm, &payer);
-    let data =
-        dispatch_remaining::instruction::OptionalMutThenReadRemaining { expected_count: 1 }.data();
+    let data = dispatch_remaining::instruction::OptionalMutThenReadRemaining { expected_count: 1 }
+        .data()
+        .as_slice()
+        .to_vec();
 
     send_instruction(
         &mut svm,
@@ -287,7 +292,10 @@ fn extra_accounts_are_available_as_trailing_remaining_region() {
     let (mut svm, payer) = setup();
     let counter = initialize(&mut svm, &payer);
     let marker = Pubkey::new_unique();
-    let data = dispatch_remaining::instruction::ReadRemainingOnce { expected_count: 2 }.data();
+    let data = dispatch_remaining::instruction::ReadRemainingOnce { expected_count: 2 }
+        .data()
+        .as_slice()
+        .to_vec();
 
     send_instruction(
         &mut svm,
@@ -345,7 +353,10 @@ fn valid_instruction_with_no_remaining_returns_empty_vec() {
 fn declared_validation_happens_before_remaining_walk() {
     let (mut svm, payer) = setup();
     let wrong_owner = payer.pubkey();
-    let data = dispatch_remaining::instruction::ReadRemainingOnce { expected_count: 2 }.data();
+    let data = dispatch_remaining::instruction::ReadRemainingOnce { expected_count: 2 }
+        .data()
+        .as_slice()
+        .to_vec();
 
     let result = call_raw(
         &mut svm,
@@ -415,7 +426,9 @@ fn malformed_args_fail_after_discriminator_match() {
         value: 0x0102_0304_0506_0708,
         tag: *b"echo",
     }
-    .data();
+    .data()
+    .as_slice()
+    .to_vec();
     data.truncate(5);
 
     let result = call_raw(

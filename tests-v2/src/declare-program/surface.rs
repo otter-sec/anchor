@@ -1,7 +1,6 @@
 use {
     anchor_lang::{
-        solana_program::instruction::AccountMeta, Discriminator, Id, InstructionData,
-        ToAccountMetas,
+        AccountMeta, Discriminator, Id, InstructionData, ToAccountMetas,
     },
     declare_program_surface::surface,
     solana_pubkey::Pubkey,

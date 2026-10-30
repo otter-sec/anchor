@@ -119,7 +119,7 @@ fn setup_shrinkable_bytes_buf(buf: &mut AccountBuffer<256>, items: &[u8], reserv
 
 // Raw data access bypassing the AccountView API (for out-of-band mutation
 // and inspection in these tests).
-fn set_data_bytes(buf: &mut AccountBuffer<256>, offset: usize, bytes: &[u8]) {
+fn set_data_bytes(buf: &AccountBuffer<256>, offset: usize, bytes: &[u8]) {
     let header = core::mem::size_of::<RuntimeAccount>();
     let start = header + offset;
     unsafe {
@@ -221,7 +221,7 @@ fn stale_detection_misses_content_only_out_of_band_mutation() {
     // the BorshAccount is still held. (In normal v2 flow, the borrow
     // would prevent this; the scenario here is contrived to check
     // what exit would do if content changed without a size change.)
-    set_data_bytes(&mut buf, 8, &555u64.to_le_bytes());
+    set_data_bytes(&buf, 8, &555u64.to_le_bytes());
 
     // self.data still reflects the load-time value, 42.
     assert_eq!(acct.value, 42);
@@ -262,7 +262,7 @@ fn reacquire_refreshes_self_data_from_cpi_changes() {
 
     // Step 3: simulated CPI mutates the account's data bytes.
     // Writes 777 as the new u64 value.
-    set_data_bytes(&mut buf, 8, &777u64.to_le_bytes());
+    set_data_bytes(&buf, 8, &777u64.to_le_bytes());
 
     // Step 4: user reacquires the borrow.
     acct.reacquire_borrow_mut().unwrap();
@@ -310,7 +310,7 @@ fn reacquire_rejects_when_discriminator_changes_during_release() {
     // type's bytes while leaving the u64 payload intact (which would
     // happily Borsh-decode as Counter::value).
     let foreign_disc = [0xDE, 0xAD, 0xBE, 0xEF, 0xDE, 0xAD, 0xBE, 0xEF];
-    set_data_bytes(&mut buf, 0, &foreign_disc);
+    set_data_bytes(&buf, 0, &foreign_disc);
 
     let result = acct.reacquire_borrow_mut();
     assert_eq!(
@@ -448,7 +448,7 @@ fn cpi_handle_mut_releases_wrapper_and_preserves_callee_writes() {
             "cpi_handle_mut must commit the caller's in-memory state before the writable CPI"
         );
 
-        set_data_bytes(&mut buf, 8, &777u64.to_le_bytes());
+        set_data_bytes(&buf, 8, &777u64.to_le_bytes());
         let _ = handle;
     }
 
@@ -697,7 +697,7 @@ fn exit_after_released_owner_change_preserves_cpi_data() {
     let mut acct = unsafe { BorshAccount::<Counter>::load_mut(buf.view()) }.unwrap();
     acct.release_borrow().unwrap();
     buf.set_owner(FOREIGN_PROGRAM_ID);
-    set_data_bytes(&mut buf, 8, &777u64.to_le_bytes());
+    set_data_bytes(&buf, 8, &777u64.to_le_bytes());
 
     acct.exit().unwrap();
     assert_eq!(read_data_bytes(&buf, 8, 8), 777u64.to_le_bytes());
@@ -714,7 +714,7 @@ fn exit_after_owner_change_compares_stale_byte_cleanup() {
         acct.release_borrow().unwrap();
         // Match the shorter value's length prefix in the live buffer. The
         // old serialized tail still needs cleanup, independently of that prefix.
-        set_data_bytes(&mut buf, 8, &0u32.to_le_bytes());
+        set_data_bytes(&buf, 8, &0u32.to_le_bytes());
         acct.reacquire_guard_only().unwrap();
         acct.items.clear();
         buf.set_owner(FOREIGN_PROGRAM_ID);
@@ -750,7 +750,7 @@ fn exit_after_owner_change_rejects_stale_snapshot() {
     // The typed snapshot is untouched, but the live payload differs.
     // Fixture writes must happen without a live mutable data guard.
     acct.release_borrow().unwrap();
-    set_data_bytes(&mut buf, 8, &777u64.to_le_bytes());
+    set_data_bytes(&buf, 8, &777u64.to_le_bytes());
     acct.reacquire_guard_only().unwrap();
     buf.set_owner(FOREIGN_PROGRAM_ID);
 

@@ -39,7 +39,7 @@ fn read_data_bytes<const N: usize>(buf: &AccountBuffer<N>, offset: usize, len: u
     }
 }
 
-fn set_data_bytes<const N: usize>(buf: &mut AccountBuffer<N>, offset: usize, bytes: &[u8]) {
+fn set_data_bytes<const N: usize>(buf: &AccountBuffer<N>, offset: usize, bytes: &[u8]) {
     let header = core::mem::size_of::<RuntimeAccount>();
     let start = header + offset;
     unsafe {
@@ -183,7 +183,7 @@ fn le_codec_reacquire_refreshes_from_buffer() {
     let mut new_payload = [0u8; 8];
     new_payload[..4].copy_from_slice(&777u32.to_le_bytes());
     new_payload[4..8].copy_from_slice(&0x1111_2222u32.to_le_bytes());
-    set_data_bytes(&mut buf, 8, &new_payload);
+    set_data_bytes(&buf, 8, &new_payload);
 
     acct.reacquire_borrow_mut().unwrap();
     assert_eq!(acct.count, 777);
@@ -212,7 +212,7 @@ fn le_codec_load_rejects_wrong_discriminator() {
     let mut buf = AccountBuffer::<256>::new();
     setup_stats_buf(&mut buf, 1, 0);
     // Corrupt the disc.
-    set_data_bytes(&mut buf, 0, &[0u8; 8]);
+    set_data_bytes(&buf, 0, &[0u8; 8]);
 
     let view = unsafe { buf.view() };
     let err = StatsAccount::load(view).err();
@@ -262,7 +262,7 @@ fn le_codec_reacquire_rejects_disc_swap() {
     let mut acct = StatsAccount::load_mut(view).unwrap();
     acct.release_borrow().unwrap();
 
-    set_data_bytes(&mut buf, 0, &[0xFF; 8]);
+    set_data_bytes(&buf, 0, &[0xFF; 8]);
     let err = acct.reacquire_borrow_mut().unwrap_err();
     assert_eq!(err, ProgramError::InvalidAccountData);
 }
@@ -406,7 +406,7 @@ fn wincode_codec_load_mut_exit_round_trip() {
 fn wincode_codec_rejects_wrong_disc() {
     let mut buf = AccountBuffer::<256>::new();
     setup_ledger_buf(&mut buf, 0, 0);
-    set_data_bytes(&mut buf, 0, &[0u8; 8]);
+    set_data_bytes(&buf, 0, &[0u8; 8]);
 
     let view = unsafe { buf.view() };
     assert_eq!(
@@ -430,7 +430,7 @@ fn wincode_codec_release_reacquire_picks_up_cpi_write() {
         nonce: 99,
     })
     .unwrap();
-    set_data_bytes(&mut buf, 8, &cpi_payload);
+    set_data_bytes(&buf, 8, &cpi_payload);
 
     acct.reacquire_borrow_mut().unwrap();
     assert_eq!(acct.balance, 12_345);

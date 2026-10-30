@@ -1,6 +1,6 @@
 //! Test program for aliased account inputs.
 //!
-//! Data-carrying wrappers (`Account<T>`, `BorshAccount<T>`, `Box<_>`) hold a
+//! Data-carrying wrappers (`Account<T>`, `BorshAccount<T>`) hold a
 //! borrow on the account's runtime borrow state, so loading a conflicting
 //! alias fails. Wrappers that expose no typed data (`Signer`,
 //! `SystemAccount`, `UncheckedAccount`) hold no borrow and accept aliases;
@@ -68,14 +68,6 @@ pub mod dup_mut {
         Ok(())
     }
 
-    pub fn touch_boxed_mut_and_readonly(
-        ctx: &mut Context<TouchBoxedMutAndReadonly>,
-        value: u64,
-    ) -> Result<()> {
-        ctx.accounts.data_a.value = value.wrapping_add(ctx.accounts.data_b.value);
-        Ok(())
-    }
-
     pub fn touch_optional_mut_and_mut(
         ctx: &mut Context<TouchOptionalMutAndMut>,
         value: u64,
@@ -122,7 +114,10 @@ pub mod dup_mut {
             from: ctx.accounts.payer.cpi_handle_mut(),
             to: ctx.accounts.recipient.cpi_handle_mut(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 2>::new_with_capacity(
+            ctx.accounts.system_program.address(),
+            cpi_accounts,
+        );
         system_program::transfer(cpi_ctx, lamports)?;
         Ok(())
     }
@@ -145,7 +140,10 @@ pub mod dup_mut {
             from: ctx.accounts.payer.cpi_handle_mut(),
             to: ctx.accounts.raw.cpi_handle_mut(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 2>::new_with_capacity(
+            ctx.accounts.system_program.address(),
+            cpi_accounts,
+        );
         system_program::transfer(cpi_ctx, 0)?;
         Ok(())
     }
@@ -225,13 +223,6 @@ pub struct TouchBorshMutAndReadonly {
     #[account(mut)]
     pub data_a: BorshAccount<BorshData>,
     pub data_b: BorshAccount<BorshData>,
-}
-
-#[derive(Accounts)]
-pub struct TouchBoxedMutAndReadonly {
-    #[account(mut)]
-    pub data_a: Box<Account<Data>>,
-    pub data_b: Account<Data>,
 }
 
 #[derive(Accounts)]

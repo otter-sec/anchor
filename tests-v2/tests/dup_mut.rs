@@ -74,11 +74,11 @@ fn init_borsh(svm: &mut LiteSVM, payer: &Keypair, seed: u8) -> Pubkey {
 
 fn send_raw(
     svm: &mut LiteSVM,
-    data: Vec<u8>,
+    data: impl AsRef<[u8]>,
     metas: Vec<AccountMeta>,
     payer: &Keypair,
 ) -> anchor_v2_testing::litesvm::types::TransactionResult {
-    let ix = Instruction::new_with_bytes(program_id(), &data, metas);
+    let ix = Instruction::new_with_bytes(program_id(), data.as_ref(), metas);
     let blockhash = svm.latest_blockhash();
     let message = Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &blockhash);
     let signers: Vec<&dyn solana_signer::Signer> = vec![payer];
@@ -237,7 +237,7 @@ fn two_readonly_alias_ok() {
 }
 
 // ---------------------------------------------------------------------------
-// BorshAccount, Box, and Option fields
+// BorshAccount and Option fields
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -261,29 +261,6 @@ fn borsh_mut_and_readonly() {
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("distinct Borsh accounts should succeed");
     assert_eq!(read_value(&svm, &a), 3);
-}
-
-#[test]
-fn boxed_mut_and_readonly() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let b = init_data(&mut svm, &payer, 1);
-
-    let data = dup_mut::instruction::TouchBoxedMutAndReadonly { value: 4 }.data();
-    let metas = vec![
-        AccountMeta::new(a, false),
-        AccountMeta::new_readonly(a, false),
-    ];
-    assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
-
-    let data = dup_mut::instruction::TouchBoxedMutAndReadonly { value: 4 }.data();
-    let metas = vec![
-        AccountMeta::new(a, false),
-        AccountMeta::new_readonly(b, false),
-    ];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("distinct boxed + plain accounts should succeed");
-    assert_eq!(read_value(&svm, &a), 4);
 }
 
 #[test]

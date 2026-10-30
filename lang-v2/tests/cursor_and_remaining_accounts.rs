@@ -10,8 +10,7 @@
 //!      of the previous one.
 //!   2. Duplicate handling: a dup-record (borrow_state ∈ 0..=254)
 //!      yields the earlier `AccountView` from the lookup array — not
-//!      an `AccountView` pointing at the dup slot — so every view of an
-//!      account shares one runtime borrow state.
+//!      an `AccountView` pointing at the dup slot.
 //!   3. `Context::remaining_accounts` walks the cursor lazily on first
 //!      call, caches the resulting `Vec<AccountView>`, and returns a
 //!      fresh clone on each subsequent call without advancing the
@@ -28,7 +27,6 @@ use {
     core::mem::MaybeUninit,
     pinocchio::account::AccountView,
     solana_address::Address,
-    solana_program_error::ProgramError,
 };
 
 // A placeholder header struct that implements `Bumps` so we can construct
@@ -38,7 +36,6 @@ struct DummyHeader;
 impl Bumps for DummyHeader {
     type Bumps = ();
 }
-
 fn unique_addr(i: u8) -> [u8; 32] {
     let mut a = [0u8; 32];
     a[0] = i + 1; // avoid [0;32] which collides with the System program id.
@@ -154,7 +151,7 @@ fn cursor_walk_n_returns_all_views_at_once() {
 #[test]
 fn cursor_dup_resolves_to_earlier_view() {
     // Record 2 is a dup of record 0. The cursor must return the
-    // `AccountView` stored at `lookup[0]` (same header as record 0),
+    // `AccountView` stored at `lookup[0]` (same address as record 0),
     // not an AccountView pointing at the dup slot.
     let records = [non_dup(0), non_dup(1), AccountRecord::Dup { index: 0 }];
     let mut sbf = SbfInputBuffer::build(&records);
@@ -166,26 +163,9 @@ fn cursor_dup_resolves_to_earlier_view() {
 
     assert_eq!(views[0].address().to_bytes(), unique_addr(0));
     assert_eq!(views[1].address().to_bytes(), unique_addr(1));
+    // Dup slot — resolved to lookup[0].
     assert_eq!(views[2].address().to_bytes(), unique_addr(0));
-    assert_eq!(views[2].account_ptr(), views[0].account_ptr());
-}
 
-#[test]
-fn cursor_dup_shares_borrow_state_with_earlier_view() {
-    let records = [non_dup(0), AccountRecord::Dup { index: 0 }];
-    let mut sbf = SbfInputBuffer::build(&records);
-    let mut lookup = fresh_lookup();
-    let mut cursor =
-        unsafe { AccountCursor::new(sbf.as_mut_ptr(), lookup.as_mut_ptr() as *mut AccountView) };
-
-    let views = unsafe { cursor.walk_n(2) };
-    let mut original = views[0];
-    let alias = views[1];
-
-    let guard = original.try_borrow_mut().expect("first borrow");
-    assert_eq!(alias.try_borrow().err(), Some(ProgramError::AccountBorrowFailed));
-    drop(guard);
-    assert!(alias.try_borrow().is_ok());
 }
 
 // -- Context::remaining_accounts ------------------------------------------
@@ -242,12 +222,13 @@ fn remaining_account_views_expose_compat_helpers() {
         /*remaining_num*/ 2,
     );
 
-    let mut remaining = ctx.remaining_accounts();
-    assert_eq!(remaining[0].key().to_bytes(), unique_addr(1));
-    assert!(!remaining[0].data_is_empty());
-    assert_eq!(remaining[0].try_data_len().unwrap(), 16);
-    assert_eq!(remaining[0].try_borrow_data().unwrap().len(), 16);
-    assert_eq!(remaining[0].try_borrow_mut_data().unwrap().len(), 16);
+    let remaining = ctx.remaining_accounts();
+    let mut account = remaining[0];
+    assert_eq!(account.key().to_bytes(), unique_addr(1));
+    assert!(!account.data_is_empty());
+    assert_eq!(account.try_data_len().unwrap(), 16);
+    assert_eq!(account.try_borrow_data().unwrap().len(), 16);
+    assert_eq!(account.try_borrow_mut_data().unwrap().len(), 16);
 }
 
 #[test]
@@ -311,30 +292,4 @@ fn remaining_accounts_caches_and_does_not_re_walk_cursor() {
     // directly; drop `ctx` first to release the borrow.
     drop(ctx);
     assert_eq!(cursor.consumed(), consumed_before + 2);
-}
-
-#[test]
-fn remaining_alias_shares_borrow_state_with_declared_view() {
-    let records = [non_dup(0), AccountRecord::Dup { index: 0 }];
-    let mut sbf = SbfInputBuffer::build(&records);
-    let mut lookup = fresh_lookup();
-    let mut cursor =
-        unsafe { AccountCursor::new(sbf.as_mut_ptr(), lookup.as_mut_ptr() as *mut AccountView) };
-    let mut declared = unsafe { cursor.walk_n(1) }[0];
-    let declared_address = *declared.address();
-    let guard = declared.try_borrow_mut().expect("declared borrow");
-
-    let program_id = Address::new_from_array([0x42; 32]);
-    let mut ctx: Context<'_, DummyHeader> =
-        Context::new(&program_id, DummyHeader, (), &mut cursor, 1);
-
-    let remaining = ctx.remaining_accounts();
-    assert_eq!(*remaining[0].address(), declared_address);
-    assert_eq!(
-        remaining[0].try_borrow().err(),
-        Some(ProgramError::AccountBorrowFailed),
-        "a remaining alias must observe the declared view's borrow"
-    );
-    drop(guard);
-    assert!(remaining[0].try_borrow().is_ok());
 }

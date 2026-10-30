@@ -14,7 +14,7 @@ no-entrypoint = []
 cpi = ["no-entrypoint"]
 no-idl = []
 no-log-ix-name = []
-idl-build = ["foreign-borsh-account/idl-build"]
+idl-build = ["foreign-borsh-account/idl-build", "anchor-lang/idl-build"]
 
 [dependencies]
 anchor-lang = { path = "../../../lang-v2", default-features = false, features = ["alloc"] }

@@ -126,7 +126,7 @@ fn direct_event_cpi_dispatch_rejects_missing_accounts() {
         &mut svm,
         program_id(),
         event_cpi_ix_data(),
-        vec![],
+        Vec::<AccountMeta>::new(),
         &payer,
         &[],
     );

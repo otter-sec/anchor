@@ -18,8 +18,8 @@ pub struct InterestBearingMintUpdateRate<'a> {
     pub rate_authority: CpiHandle<'a>,
 }
 
-pub fn interest_bearing_mint_initialize<'a>(
-    ctx: CpiContext<'a, InterestBearingMintInitialize<'a>>,
+pub fn interest_bearing_mint_initialize<'a, const N: usize>(
+    ctx: CpiContext<'a, InterestBearingMintInitialize<'a>, N>,
     rate_authority: Option<&Address>,
     rate: i16,
 ) -> Result<(), ProgramError> {
@@ -34,8 +34,8 @@ pub fn interest_bearing_mint_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn interest_bearing_mint_update_rate<'a>(
-    ctx: CpiContext<'a, InterestBearingMintUpdateRate<'a>>,
+pub fn interest_bearing_mint_update_rate<'a, const N: usize>(
+    ctx: CpiContext<'a, InterestBearingMintUpdateRate<'a>, N>,
     rate: i16,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;

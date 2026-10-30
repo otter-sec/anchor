@@ -12,7 +12,7 @@ pub mod equivalence_metadata_v2 {
             metadata: ctx.accounts.metadata.cpi_handle_mut(),
             creator: ctx.accounts.creator.cpi_handle(),
         };
-        metadata::sign_metadata(CpiContext::new(
+        metadata::sign_metadata(CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.metadata_program.address(),
             cpi_accounts,
         ))
@@ -26,7 +26,7 @@ pub mod equivalence_metadata_v2 {
             metadata: ctx.accounts.metadata.cpi_handle_mut(),
             creator: ctx.accounts.creator.cpi_handle(),
         };
-        metadata::remove_creator_verification(CpiContext::new(
+        metadata::remove_creator_verification(CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.metadata_program.address(),
             cpi_accounts,
         ))
@@ -41,7 +41,7 @@ pub mod equivalence_metadata_v2 {
             owner: ctx.accounts.owner.cpi_handle(),
             token: ctx.accounts.token.cpi_handle(),
         };
-        metadata::update_primary_sale_happened_via_token(CpiContext::new(
+        metadata::update_primary_sale_happened_via_token(CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.metadata_program.address(),
             cpi_accounts,
         ))
@@ -55,7 +55,7 @@ pub mod equivalence_metadata_v2 {
             mint_account: ctx.accounts.mint.cpi_handle(),
         };
         metadata::set_token_standard(
-            CpiContext::new(ctx.accounts.metadata_program.address(), cpi_accounts),
+            CpiContext::<_, 16>::new_with_capacity(ctx.accounts.metadata_program.address(), cpi_accounts),
             None,
         )
     }

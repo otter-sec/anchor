@@ -14,7 +14,7 @@ pub mod token_2022_ext_token_group {
             mint_authority: ctx.accounts.mint_authority.cpi_handle(),
         };
         token_2022_ext::token_group_initialize(
-            CpiContext::new(ctx.accounts.token_program.address(), accs),
+            CpiContext::<_, 16>::new_with_capacity(ctx.accounts.token_program.address(), accs),
             Some(ctx.accounts.mint_authority.address()),
             10,
         )?;
@@ -30,7 +30,7 @@ pub mod token_2022_ext_token_group {
             group: ctx.accounts.group.cpi_handle_mut(),
             group_update_authority: ctx.accounts.group_update_authority.cpi_handle(),
         };
-        token_2022_ext::token_member_initialize(CpiContext::new(
+        token_2022_ext::token_member_initialize(CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.token_program.address(),
             accs,
         ))?;

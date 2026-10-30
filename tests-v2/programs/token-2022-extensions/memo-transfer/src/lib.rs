@@ -12,7 +12,7 @@ pub mod token_2022_ext_memo_transfer {
             account: ctx.accounts.account.cpi_handle_mut(),
             owner: ctx.accounts.owner.cpi_handle(),
         };
-        token_2022_ext::memo_transfer_initialize(CpiContext::new(
+        token_2022_ext::memo_transfer_initialize(CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.token_program.address(),
             accs,
         ))?;
@@ -25,7 +25,7 @@ pub mod token_2022_ext_memo_transfer {
             account: ctx.accounts.account.cpi_handle_mut(),
             owner: ctx.accounts.owner.cpi_handle(),
         };
-        token_2022_ext::memo_transfer_disable(CpiContext::new(
+        token_2022_ext::memo_transfer_disable(CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.token_program.address(),
             accs,
         ))?;

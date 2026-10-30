@@ -1,17 +1,23 @@
 use anchor_lang::{wincode, BORSH_CONFIG};
 
+#[repr(align(8))]
+struct AlignedBytes<const N: usize>([u8; N]);
+
 #[test]
 fn borsh_config_rejects_misaligned_borrowed_wide_slices() {
     let values = [11_u64, 22, 33];
     let encoded = wincode::config::serialize(&values[..], BORSH_CONFIG).unwrap();
 
-    // The four-byte length prefix must leave the u64 payload misaligned.
-    #[repr(align(8))]
-    struct AlignedBytes([u8; 28]);
-    let mut buffer = AlignedBytes([0; 28]);
-    buffer.0.copy_from_slice(&encoded);
+    // A Vec<u8> does not guarantee a particular base alignment, so relying on
+    // its allocator layout makes this test pass or fail depending on the host.
+    // The one-byte offset from an explicitly eight-byte-aligned buffer makes
+    // the borrowed u64 payload unaligned on every supported architecture.
+    let mut storage = AlignedBytes::<64>([0; 64]);
+    storage.0[1..1 + encoded.len()].copy_from_slice(&encoded);
+    let misaligned = &storage.0[1..1 + encoded.len()];
 
-    let err = wincode::config::deserialize::<&[u64], _>(&buffer.0, BORSH_CONFIG).unwrap_err();
+    let err =
+        wincode::config::deserialize::<&[u64], _>(misaligned, BORSH_CONFIG).unwrap_err();
     assert!(
         err.to_string().contains("unaligned"),
         "expected an unaligned-reference error, got: {err}"

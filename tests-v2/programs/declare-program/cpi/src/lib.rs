@@ -17,7 +17,7 @@ pub mod declare_program {
             data: ctx.accounts.data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.external_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(ctx.accounts.external_program.address(), cpi_accounts);
         external_cpi::cpi::set_value(cpi_ctx, value)?;
         Ok(())
     }
@@ -31,7 +31,7 @@ pub mod declare_program {
             },
             payer: ctx.accounts.payer.cpi_handle_mut(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.external_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(ctx.accounts.external_program.address(), cpi_accounts);
         external_cpi::cpi::composite(cpi_ctx, count)?;
         Ok(())
     }
@@ -46,7 +46,7 @@ pub mod declare_program {
             data: ctx.accounts.data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.external_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(ctx.accounts.external_program.address(), cpi_accounts);
         external_cpi::cpi::defined_args(
             cpi_ctx,
             external_cpi::MyArgs {
@@ -64,7 +64,7 @@ pub mod declare_program {
             data: ctx.accounts.data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.alt_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(ctx.accounts.alt_program.address(), cpi_accounts);
         alt_cpi::cpi::bump(cpi_ctx, delta)?;
         Ok(())
     }
@@ -80,7 +80,7 @@ pub mod declare_program {
             data: ctx.accounts.data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.hash_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(ctx.accounts.hash_program.address(), cpi_accounts);
         hash_cpi::cpi::apply(cpi_ctx, delta, flag, marker)?;
         Ok(())
     }

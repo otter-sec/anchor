@@ -31,7 +31,7 @@ pub mod caller {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(ctx.accounts.callee_program.address(), cpi_accounts);
         callee::cpi::set_data(cpi_ctx, value)?;
         Ok(())
     }
@@ -44,7 +44,7 @@ pub mod caller {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(ctx.accounts.callee_program.address(), cpi_accounts);
         callee::cpi::set_data_from_bytes(cpi_ctx, bytes);
         Ok(())
     }
@@ -56,7 +56,7 @@ pub mod caller {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(ctx.accounts.callee_program.address(), cpi_accounts);
         callee::cpi::noop(cpi_ctx)?;
         Ok(())
     }
@@ -66,7 +66,7 @@ pub mod caller {
     /// only viable route since the lifetime-anchoring `_phantom` field
     /// is hidden.
     pub fn proxy_empty(ctx: &mut Context<ProxyEmpty>) -> Result<()> {
-        let cpi_ctx = CpiContext::new(
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.callee_program.address(),
             callee::cpi::accounts::Empty::new(),
         );
@@ -84,7 +84,7 @@ pub mod caller {
             authority: ctx.accounts.authority.cpi_handle(),
             spectator: ctx.accounts.spectator.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(ctx.accounts.callee_program.address(), cpi_accounts);
         callee::cpi::touch(cpi_ctx, delta)?;
         Ok(())
     }

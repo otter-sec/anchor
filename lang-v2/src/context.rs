@@ -23,19 +23,23 @@ pub struct Context<'a, T: Bumps> {
     /// *start* of the remaining-accounts region (after `try_accounts`
     /// has consumed exactly `T::HEADER_SIZE` declared accounts). Used
     /// by [`Self::remaining_accounts`] for on-demand walking.
-    /// After `remaining_accounts` is called this holds a cache of the result.
-    remaining_accounts: RemainingAccounts<'a>,
+    /// After `remaining_accounts` is called this holds the range of views
+    /// already written to the cursor's lookup table.
+    remaining_accounts: RemainingAccounts,
+
+    /// The instruction's account lookup table. Remaining accounts are exposed
+    /// as a borrowed slice into this table instead of being copied into a
+    /// second fixed-capacity buffer.
+    cursor: &'a mut AccountCursor,
 }
 
-enum RemainingAccounts<'a> {
+enum RemainingAccounts {
     Unparsed {
-        /// Points to the `remaining-accounts` region
-        cursor: &'a mut AccountCursor,
         /// Number of accounts remaining after the initially declared region
         remaining: u8,
     },
-    /// Cached result of walking `remaining-accounts`.
-    Cached(alloc::vec::Vec<AccountView>),
+    /// Cached range of views in the cursor's lookup table.
+    Cached { start: u8, len: u8 },
 }
 
 impl<'a, T: Bumps> Context<'a, T> {
@@ -52,37 +56,45 @@ impl<'a, T: Bumps> Context<'a, T> {
             accounts,
             bumps,
             remaining_accounts: RemainingAccounts::Unparsed {
-                cursor,
                 remaining: remaining_num,
             },
+            cursor,
         }
     }
 
-    /// Returns trailing accounts beyond the declared `T` fields as an
-    /// owned `Vec<AccountView>`. First call walks the cursor and caches
-    /// the views; subsequent calls return a clone of the cache.
-    ///
-    /// A trailing account can alias a declared account. The views are raw,
-    /// so aliasing is only rejected when a conflicting borrow is taken:
-    /// loading a view through an account wrapper, borrowing its data, or
-    /// passing it to a CPI fails while a declared wrapper holds a
-    /// conflicting borrow of the same account.
-    pub fn remaining_accounts(&mut self) -> alloc::vec::Vec<AccountView> {
-        if let RemainingAccounts::Unparsed { cursor, remaining } = &mut self.remaining_accounts {
-            let mut v = alloc::vec::Vec::with_capacity(*remaining as usize);
-            for _ in 0..*remaining {
-                // SAFETY: cursor is positioned at the start of the remaining
-                // region and `remaining` is the exact number of accounts to
-                // walk.
-                v.push(unsafe { cursor.next() });
-            }
-            self.remaining_accounts = RemainingAccounts::Cached(v);
+    /// Returns trailing accounts beyond the declared `T` fields as a borrowed
+    /// slice into the instruction's account lookup table. The first call
+    /// walks the cursor and caches the resulting range; subsequent calls
+    /// replay that range.
+    pub fn remaining_accounts(&mut self) -> &'a [AccountView] {
+        if let RemainingAccounts::Unparsed { .. } = self.remaining_accounts {
+            let (start, len) = self.walk_remaining();
+            self.remaining_accounts = RemainingAccounts::Cached { start, len };
         }
 
         match &self.remaining_accounts {
-            RemainingAccounts::Cached(accs) => accs.clone(),
+            RemainingAccounts::Cached { start, len } => {
+                // SAFETY: the dispatcher-owned lookup table lives for `'a`,
+                // which is also the lifetime of this instruction context.
+                unsafe { self.cursor.views(*start, *len) }
+            }
             RemainingAccounts::Unparsed { .. } => unreachable!(),
         }
+    }
+
+    fn walk_remaining(&mut self) -> (u8, u8) {
+        let remaining = match self.remaining_accounts {
+            RemainingAccounts::Unparsed { remaining } => remaining,
+            RemainingAccounts::Cached { .. } => unreachable!(),
+        };
+        let start = self.cursor.consumed();
+        for _ in 0..remaining {
+            // SAFETY: cursor is positioned at the start of the remaining
+            // region and `remaining_num` is the exact number of accounts
+            // to walk.
+            unsafe { self.cursor.next() };
+        }
+        (start, remaining)
     }
 }
 

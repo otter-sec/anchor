@@ -17,8 +17,8 @@ pub struct DefaultAccountStateUpdate<'a> {
     pub freeze_authority: CpiHandle<'a>,
 }
 
-pub fn default_account_state_initialize<'a>(
-    ctx: CpiContext<'a, DefaultAccountStateInitialize<'a>>,
+pub fn default_account_state_initialize<'a, const N: usize>(
+    ctx: CpiContext<'a, DefaultAccountStateInitialize<'a>, N>,
     state: &spl_token_2022::state::AccountState,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -32,8 +32,8 @@ pub fn default_account_state_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn default_account_state_update<'a>(
-    ctx: CpiContext<'a, DefaultAccountStateUpdate<'a>>,
+pub fn default_account_state_update<'a, const N: usize>(
+    ctx: CpiContext<'a, DefaultAccountStateUpdate<'a>, N>,
     state: &spl_token_2022::state::AccountState,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;

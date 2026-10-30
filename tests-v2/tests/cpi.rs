@@ -193,12 +193,12 @@ fn test_cpi_ref_args() {
 fn call_raw(
     svm: &mut LiteSVM,
     program: Pubkey,
-    data: Vec<u8>,
+    data: impl AsRef<[u8]>,
     metas: Vec<AccountMeta>,
     payer: &solana_keypair::Keypair,
     extra: &[&solana_keypair::Keypair],
 ) -> TransactionResult {
-    let ix = Instruction::new_with_bytes(program, &data, metas);
+    let ix = Instruction::new_with_bytes(program, data.as_ref(), metas);
     let blockhash = svm.latest_blockhash();
     let msg = Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &blockhash);
     let mut signers: Vec<&dyn solana_signer::Signer> = vec![payer];

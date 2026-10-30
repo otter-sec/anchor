@@ -64,7 +64,7 @@ pub mod spl_ata_test {
 
     #[discrim = 8]
     pub fn mint_to_ata(ctx: &mut Context<MintToAta>, amount: u64) -> Result<()> {
-        let cpi_ctx = CpiContext::new(
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.token_program.address(),
             MintTo {
                 mint: ctx.accounts.mint.cpi_handle_mut(),
@@ -99,7 +99,7 @@ pub mod spl_ata_test {
 
     #[discrim = 12]
     pub fn set_ata_owner(ctx: &mut Context<SetAtaOwner>) -> Result<()> {
-        let cpi_ctx = CpiContext::new(
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.token_program.address(),
             token::SetAuthority {
                 account_or_mint: ctx.accounts.token_account.cpi_handle_mut(),
@@ -108,7 +108,7 @@ pub mod spl_ata_test {
         );
         token::set_authority(
             cpi_ctx,
-            token::spl_token::instruction::AuthorityType::AccountOwner,
+            token::AuthorityType::AccountOwner,
             Some(*ctx.accounts.new_authority.address()),
         )?;
         Ok(())
@@ -116,7 +116,7 @@ pub mod spl_ata_test {
 
     #[discrim = 13]
     pub fn direct_create_ata(ctx: &mut Context<DirectCreateAta>) -> Result<()> {
-        let cpi_ctx = CpiContext::new(
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.associated_token_program.address(),
             associated_token::Create {
                 payer: ctx.accounts.payer.cpi_handle_mut(),
@@ -133,7 +133,7 @@ pub mod spl_ata_test {
 
     #[discrim = 15]
     pub fn direct_create_idempotent_ata(ctx: &mut Context<DirectCreateAta>) -> Result<()> {
-        let cpi_ctx = CpiContext::new(
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.associated_token_program.address(),
             associated_token::Create {
                 payer: ctx.accounts.payer.cpi_handle_mut(),

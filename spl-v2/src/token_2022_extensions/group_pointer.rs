@@ -19,8 +19,8 @@ pub struct GroupPointerUpdate<'a> {
     pub authority: CpiHandle<'a>,
 }
 
-pub fn group_pointer_initialize<'a>(
-    ctx: CpiContext<'a, GroupPointerInitialize<'a>>,
+pub fn group_pointer_initialize<'a, const N: usize>(
+    ctx: CpiContext<'a, GroupPointerInitialize<'a>, N>,
     authority: Option<&Address>,
     group_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
@@ -34,8 +34,8 @@ pub fn group_pointer_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn group_pointer_update<'a>(
-    ctx: CpiContext<'a, GroupPointerUpdate<'a>>,
+pub fn group_pointer_update<'a, const N: usize>(
+    ctx: CpiContext<'a, GroupPointerUpdate<'a>, N>,
     group_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -117,6 +117,11 @@ mod tests {
             authority: CpiHandle::readonly(&authority_view),
         };
 
-        assert_eq!(accounts.to_cpi_handles().len(), 2);
+        assert_eq!(
+            anchor_lang::ToCpiAccountsWithCapacity::<2>::to_cpi_handles_with_capacity(&accounts)
+                .expect("group pointer CPI handles should fit")
+                .len(),
+            2
+        );
     }
 }

@@ -28,12 +28,6 @@ pub mod pda_payer_test {
         Ok(())
     }
 
-    #[discrim = 2]
-    pub fn init_boxed_with_fresh_target(ctx: &mut Context<InitBoxedWithFreshTarget>) -> Result<()> {
-        ctx.accounts.new_account.value = 99;
-        Ok(())
-    }
-
     #[discrim = 3]
     pub fn init_with_too_many_payer_seeds(
         ctx: &mut Context<InitWithTooManyPayerSeeds>,
@@ -70,15 +64,6 @@ pub struct InitWithPdaTarget {
         bump
     )]
     pub new_account: Account<MyData>,
-    pub system_program: Program<System>,
-}
-
-#[derive(Accounts)]
-pub struct InitBoxedWithFreshTarget {
-    #[account(mut, seeds = [b"payer"], bump)]
-    pub pda_payer: SystemAccount,
-    #[account(init, payer = pda_payer, space = 8 + core::mem::size_of::<MyData>())]
-    pub new_account: Box<Account<MyData>>,
     pub system_program: Program<System>,
 }
 

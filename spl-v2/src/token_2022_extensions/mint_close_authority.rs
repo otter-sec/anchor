@@ -11,8 +11,8 @@ pub struct MintCloseAuthorityInitialize<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
-pub fn mint_close_authority_initialize<'a>(
-    ctx: CpiContext<'a, MintCloseAuthorityInitialize<'a>>,
+pub fn mint_close_authority_initialize<'a, const N: usize>(
+    ctx: CpiContext<'a, MintCloseAuthorityInitialize<'a>, N>,
     close_authority: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;

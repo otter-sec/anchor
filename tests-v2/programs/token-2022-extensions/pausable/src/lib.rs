@@ -12,7 +12,7 @@ pub mod token_2022_ext_pausable {
             mint: ctx.accounts.mint.cpi_handle_mut(),
         };
         token_2022_ext::pausable_initialize(
-            CpiContext::new(ctx.accounts.token_program.address(), accs),
+            CpiContext::<_, 16>::new_with_capacity(ctx.accounts.token_program.address(), accs),
             &authority,
         )?;
         Ok(())
@@ -24,7 +24,7 @@ pub mod token_2022_ext_pausable {
             mint: ctx.accounts.mint.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        token_2022_ext::pausable_pause(CpiContext::new(
+        token_2022_ext::pausable_pause(CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.token_program.address(),
             accs,
         ))?;
@@ -37,7 +37,7 @@ pub mod token_2022_ext_pausable {
             mint: ctx.accounts.mint.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        token_2022_ext::pausable_resume(CpiContext::new(
+        token_2022_ext::pausable_resume(CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.token_program.address(),
             accs,
         ))?;

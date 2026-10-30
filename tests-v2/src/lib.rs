@@ -1,7 +1,10 @@
 //! Shared helpers for v2 integration tests.
 
 use {
-    anchor_lang::solana_program::instruction::{AccountMeta, Instruction},
+    anchor_lang::{
+        solana_program::instruction::{AccountMeta, Instruction},
+        AccountMeta as AnchorAccountMeta, FixedVec,
+    },
     anchor_v2_testing::litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
@@ -12,6 +15,40 @@ use {
         sync::{Mutex, Once, OnceLock},
     },
 };
+
+pub trait IntoInstructionAccountMetas {
+    fn into_instruction_account_metas(self) -> Vec<AccountMeta>;
+}
+
+impl IntoInstructionAccountMetas for Vec<AccountMeta> {
+    fn into_instruction_account_metas(self) -> Vec<AccountMeta> {
+        self
+    }
+}
+
+impl IntoInstructionAccountMetas for Vec<AnchorAccountMeta> {
+    fn into_instruction_account_metas(self) -> Vec<AccountMeta> {
+        self.into_iter()
+            .map(|meta| AccountMeta {
+                pubkey: meta.pubkey,
+                is_signer: meta.is_signer,
+                is_writable: meta.is_writable,
+            })
+            .collect()
+    }
+}
+
+impl<const N: usize> IntoInstructionAccountMetas for FixedVec<AnchorAccountMeta, N> {
+    fn into_instruction_account_metas(self) -> Vec<AccountMeta> {
+        self.iter()
+            .map(|meta| AccountMeta {
+                pubkey: meta.pubkey,
+                is_signer: meta.is_signer,
+                is_writable: meta.is_writable,
+            })
+            .collect()
+    }
+}
 
 /// Derives a deterministic keypair from a name string.
 pub fn keypair_for(name: &str) -> Keypair {
@@ -30,12 +67,16 @@ pub fn keypair_for(name: &str) -> Keypair {
 pub fn send_instruction(
     svm: &mut LiteSVM,
     program_id: solana_pubkey::Pubkey,
-    instruction_data: Vec<u8>,
-    account_metas: Vec<AccountMeta>,
+    instruction_data: impl AsRef<[u8]>,
+    account_metas: impl IntoInstructionAccountMetas,
     payer: &Keypair,
     extra_signers: &[&Keypair],
 ) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
-    let instruction = Instruction::new_with_bytes(program_id, &instruction_data, account_metas);
+    let instruction = Instruction::new_with_bytes(
+        program_id,
+        instruction_data.as_ref(),
+        account_metas.into_instruction_account_metas(),
+    );
     let blockhash = svm.latest_blockhash();
     let message = Message::new_with_blockhash(&[instruction], Some(&payer.pubkey()), &blockhash);
 

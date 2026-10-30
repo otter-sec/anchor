@@ -16,7 +16,7 @@ pub mod token_2022_ext_transfer_hook {
             mint: ctx.accounts.mint.cpi_handle_mut(),
         };
         token_2022_ext::transfer_hook_initialize(
-            CpiContext::new(ctx.accounts.token_program.address(), accs),
+            CpiContext::<_, 16>::new_with_capacity(ctx.accounts.token_program.address(), accs),
             Some(&authority),
             Some(&program_id),
         )?;
@@ -30,7 +30,7 @@ pub mod token_2022_ext_transfer_hook {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         token_2022_ext::transfer_hook_update(
-            CpiContext::new(ctx.accounts.token_program.address(), accs),
+            CpiContext::<_, 16>::new_with_capacity(ctx.accounts.token_program.address(), accs),
             Some(&program_id),
         )?;
         Ok(())

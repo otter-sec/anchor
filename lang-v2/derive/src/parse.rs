@@ -2274,7 +2274,7 @@ fn emit_associated_token_init_body(
             match __payer_signer_seeds {
                 Some(__payer_signer) => {
                     anchor_spl::associated_token::create(
-                        anchor_lang::CpiContext::new_with_signer(
+                        anchor_lang::CpiContext::<_, 6>::new_with_signer_capacity(
                             __associated_token_program.account().address(),
                             __create_accounts,
                             &[__payer_signer],
@@ -2282,10 +2282,12 @@ fn emit_associated_token_init_body(
                     )?;
                 }
                 None => {
-                    anchor_spl::associated_token::create(anchor_lang::CpiContext::new(
-                        __associated_token_program.account().address(),
-                        __create_accounts,
-                    ))?;
+                    anchor_spl::associated_token::create(
+                        anchor_lang::CpiContext::<_, 6>::new_with_capacity(
+                            __associated_token_program.account().address(),
+                            __create_accounts,
+                        ),
+                    )?;
                 }
             }
 
@@ -2767,7 +2769,7 @@ pub fn parse_field(
     // Writable check is now owned by `AnchorAccount::load_mut` (default
     // impl in `lang-v2/src/traits.rs`), so the derive no longer emits a
     // separate constraint block for `#[account(mut)]`. Types that
-    // override `load_mut` (Slab/Account, BorshAccount, Signer, Boxed,
+    // override `load_mut` (Slab/Account, BorshAccount, Signer,
     // Option) each validate is_writable themselves; types that inherit
     // the default (UncheckedAccount, SystemAccount, Program, Sysvar) get
     // it via the trait default.

@@ -51,7 +51,14 @@ fn setup() -> (LiteSVM, Keypair) {
 #[test]
 fn init_space_constants_accept_aliases_and_module_max_len() {
     let (mut svm, payer) = setup();
-    send_instruction(&mut svm, program_id(), vec![0], vec![], &payer, &[])
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![0],
+        Vec::<anchor_lang::solana_program::instruction::AccountMeta>::new(),
+        &payer,
+        &[],
+    )
         .expect("compile-time InitSpace constants should match expected sizes");
 }
 

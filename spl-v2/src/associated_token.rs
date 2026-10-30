@@ -53,7 +53,7 @@ pub struct Create<'a> {
 
 pub type CreateIdempotent<'a> = Create<'a>;
 
-pub fn create<'a>(ctx: CpiContext<'a, Create<'a>>) -> Result<(), ProgramError> {
+pub fn create<'a, const N: usize>(ctx: CpiContext<'a, Create<'a>, N>) -> Result<(), ProgramError> {
     #[cfg(feature = "guardrails")]
     {
         require!(
@@ -72,8 +72,8 @@ pub fn create<'a>(ctx: CpiContext<'a, Create<'a>>) -> Result<(), ProgramError> {
     ctx.invoke(&[0])
 }
 
-pub fn create_idempotent<'a>(
-    ctx: CpiContext<'a, CreateIdempotent<'a>>,
+pub fn create_idempotent<'a, const N: usize>(
+    ctx: CpiContext<'a, CreateIdempotent<'a>, N>,
 ) -> Result<(), ProgramError> {
     #[cfg(feature = "guardrails")]
     {

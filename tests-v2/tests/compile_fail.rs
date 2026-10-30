@@ -303,7 +303,7 @@ pub fn build_cpi<'a>(
     data: CpiHandle<'a>,
 ) {
     let accounts = declared::cpi::accounts::Invoke { authority, data };
-    let ctx = CpiContext::new(program, accounts);
+    let ctx = CpiContext::<_, 2>::new_with_capacity(program, accounts);
     declared::cpi::invoke(ctx, 5);
 }
 "#,
@@ -351,7 +351,7 @@ pub fn build_cpi<'a>(
     system_program: CpiHandle<'a>,
 ) {
     let accounts = crate::cpi::accounts::DoThing { system_program };
-    let ctx = CpiContext::new(program, accounts);
+    let ctx = CpiContext::<_, 2>::new_with_capacity(program, accounts);
     crate::cpi::do_thing(ctx);
 }
 "#,
@@ -455,7 +455,7 @@ pub mod program_interface_matching_program_id {
     }
 }
 
-pub fn none_sentinel(required: Address) -> Vec<anchor_lang::AccountMeta> {
+pub fn none_sentinel(required: Address) -> anchor_lang::AccountMetaBuffer<2> {
     crate::accounts::Maybe {
         required,
         optional: None,
@@ -1781,7 +1781,7 @@ declare_program!(bad);
 
 pub fn use_return<'a>(program: &'a Address, data: CpiHandle<'a>) {
     let accounts = bad::cpi::accounts::Ix { data };
-    let ctx = CpiContext::new(program, accounts);
+    let ctx = CpiContext::<_, 2>::new_with_capacity(program, accounts);
     let _ = bad::cpi::ix(ctx).unwrap().get();
 }
 "#,
@@ -1975,7 +1975,7 @@ declare_program!(bad);
 
 pub fn misuse_return<'a>(program: &'a Address, data: CpiHandle<'a>) {
     let accounts = bad::cpi::accounts::Ix { data };
-    let ctx = CpiContext::new(program, accounts);
+    let ctx = CpiContext::<_, 2>::new_with_capacity(program, accounts);
     let _ = bad::cpi::ix(ctx).get();
 }
 "#,
@@ -2244,38 +2244,26 @@ pub struct Close {
 }
 
 #[test]
-fn close_on_boxed_unchecked_account_does_not_compile() {
+fn boxed_account_wrapper_does_not_compile() {
     CompileCase::new(
-        "close_on_boxed_unchecked_account",
+        "boxed_account_wrapper_does_not_compile",
         r#"
 use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
-#[program]
-pub mod close_on_boxed_unchecked_account {
-    use super::*;
-
-    #[discrim = 0]
-    pub fn close(ctx: &mut Context<Close>) -> Result<()> {
-        let _ = ctx;
-        Ok(())
-    }
+#[account]
+pub struct MyAccount {
+    pub value: u64,
 }
 
 #[derive(Accounts)]
-pub struct Close {
-    #[account(mut, close = receiver)]
-    pub data: Box<UncheckedAccount>,
-    #[account(mut)]
-    pub receiver: UncheckedAccount,
+pub struct UsesBoxedAccount {
+    pub account: Box<Account<MyAccount>>,
 }
 "#,
     )
-    .expect_fail(&[
-        "`#[account(close = ...)]` is not supported on `UncheckedAccount`",
-        "close the raw account manually",
-    ]);
+    .expect_fail(&["AnchorAccount"]);
 }
 
 #[test]
@@ -2730,38 +2718,6 @@ pub struct Resize {
 }
 
 #[test]
-fn realloc_on_boxed_unchecked_account_does_not_compile() {
-    CompileCase::new(
-        "realloc_on_boxed_unchecked_account",
-        r#"
-use anchor_lang::prelude::*;
-
-declare_id!("11111111111111111111111111111111");
-
-#[program]
-pub mod realloc_on_boxed_unchecked_account {
-    use super::*;
-
-    #[discrim = 0]
-    pub fn resize(ctx: &mut Context<Resize>) -> Result<()> {
-        let _ = ctx;
-        Ok(())
-    }
-}
-
-#[derive(Accounts)]
-pub struct Resize {
-    #[account(mut, realloc = 16, realloc_payer = payer, realloc_zero = false)]
-    pub data: Box<UncheckedAccount>,
-    #[account(mut)]
-    pub payer: Signer,
-}
-"#,
-    )
-    .expect_fail(&["AccountRealloc", "UncheckedAccount"]);
-}
-
-#[test]
 fn realloc_on_optional_unchecked_account_does_not_compile() {
     CompileCase::new(
         "realloc_on_optional_unchecked_account",
@@ -2826,27 +2782,6 @@ use anchor_lang::accounts::UncheckedAccount as UA;
 pub struct Resize {
     #[account(mut, realloc = 16, realloc_payer = payer, realloc_zero = false)]
     pub data: UA,
-    #[account(mut)]
-    pub payer: Signer,
-}
-"#,
-    )
-    .expect_fail(&["AccountRealloc", "UncheckedAccount"]);
-}
-
-#[test]
-fn realloc_on_box_alias_unchecked_account_does_not_compile() {
-    CompileCase::new(
-        "realloc_on_box_alias_unchecked_account",
-        r#"
-use anchor_lang::prelude::*;
-
-type MyBox<T> = Box<T>;
-
-#[derive(Accounts)]
-pub struct Resize {
-    #[account(mut, realloc = 16, realloc_payer = payer, realloc_zero = false)]
-    pub data: MyBox<UncheckedAccount>,
     #[account(mut)]
     pub payer: Signer,
 }

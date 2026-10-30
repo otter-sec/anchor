@@ -89,12 +89,14 @@ pub use crate::{
     SchemaRead,
     SchemaWrite,
     Space,
-    ToAccountMetas,
     ToCpiAccounts,
+    ToCpiAccountsWithCapacity,
     ToCpiHandle,
     ToCpiHandleMut,
     TryAccounts,
 };
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+pub use crate::ToAccountMetas;
 pub use crate::{emit_cpi, event_cpi};
 #[cfg(feature = "compat")]
 pub use crate::{err, error, pubkey};

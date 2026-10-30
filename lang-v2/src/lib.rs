@@ -2,19 +2,30 @@
 //!
 //! `#![no_std]` compatible.
 
-#![no_std]
+#![cfg_attr(any(target_os = "solana", target_arch = "bpf"), no_std)]
+
 extern crate alloc;
 extern crate self as anchor_lang;
 
+/// Hidden compatibility re-export used by generated V2 host and IDL code.
+#[doc(hidden)]
+pub extern crate alloc as __alloc;
+
 pub mod accounts;
+mod account_meta;
+mod buffers;
 pub mod context;
 mod context_cpi;
 pub mod cpi;
 pub mod cursor;
 mod dispatch;
 pub mod event;
+mod fixed_vec;
 pub mod hash;
+mod idl;
+mod instruction;
 #[doc(hidden)]
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 pub mod idl_build;
 pub mod loader;
 pub mod pod;
@@ -28,6 +39,9 @@ mod traits;
 
 // Re-export derive macros and bytemuck for generated code
 pub use cpi::realloc_account;
+pub use account_meta::AccountMeta;
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+pub use account_meta::ToAccountMetas;
 /// Chunked 4×u64 equality compare for `Address`. Preferred over `==`
 /// on `&Address`. See <https://github.com/anza-xyz/solana-sdk/issues/345>.
 pub use pinocchio::address::address_eq;
@@ -38,35 +52,14 @@ pub use solana_address::{address, declare_id};
 /// Implementation detail of [`solana_msg`] - re-exported for macro access only.
 #[doc(hidden)]
 pub use solana_msg;
-// Re-export for `debug!` macro — routes through this crate's namespace so
-// user programs don't need `solana-program-log` or `extern crate alloc;`.
-#[cfg(feature = "compat")]
-#[doc(hidden)]
-pub use solana_program_log::log as __log_str;
-
-// Ungated re-export so generated macro code (`#[event]`, `debug!`, etc.)
-// can reach `Vec` without std or `extern crate alloc;` in user crates.
-#[doc(hidden)]
-pub extern crate alloc as __alloc;
-
-/// Logs a message via `solana_msg`.
-///
-/// Thin wrapper around `solana_msg::msg!` that always evaluates to
-/// `()`, so it's usable in expression position (match arms, closures, tuples,
-/// etc.).
 #[macro_export]
 macro_rules! msg {
     ($($arg:tt)*) => {{
-        // bring into scope from re-export as the macro accesses it
-        use $crate::solana_msg;
-        solana_msg::msg!($($arg)*);
+        $crate::solana_msg::msg!($($arg)*);
     }};
 }
 
-/// v1-compat logger with full `format!` support (`{:?}`, `{:x}`, etc.).
-///
-/// Heap-allocates via `alloc::format!`. Prefer [`msg!`] for production
-/// (cheaper CUs). Gated behind `compat`.
+/// v1-compat logger. Gated behind `compat`.
 ///
 /// # Example
 ///
@@ -76,15 +69,22 @@ macro_rules! msg {
 #[cfg(feature = "compat")]
 #[macro_export]
 macro_rules! debug {
-    ($msg:expr) => {{
-        $crate::__log_str($msg)
-    }};
-    ($($arg:tt)*) => {{
-        $crate::__log_str(&$crate::__alloc::format!($($arg)*))
-    }};
+    ($($arg:tt)*) => {{ $crate::msg!($($arg)*) }};
 }
 // Re-export wincode for instruction data serialization
 pub use wincode;
+
+pub use buffers::*;
+pub use fixed_vec::FixedVec;
+pub use idl::{__idl, IdlAccountType, IdlEntries, MAX_IDL_SEQUENCE};
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __anchor_program_allocator {
+    () => {
+        $crate::pinocchio::default_allocator!();
+    };
+}
 
 /// Borsh-compatible wincode config: u8 enum tags + fixed u32 LE length
 /// prefixes. Used for borsh-compatible v2 serialization paths (instruction
@@ -184,24 +184,18 @@ pub use cpi::create_account_with_signers;
 /// its associated items — they are implementation details of the IDL
 /// build pipeline and will change without notice. See [`idl_build`] for
 /// the trait definition.
-pub use idl_build::IdlAccountType;
 /// Metadata for a single account in a transaction instruction.
 ///
-/// Re-exported from `solana-instruction` so tests and CPI builders can pass
-/// the output of `to_account_metas()` straight into `solana_instruction::
-/// Instruction::new_with_bytes` without a manual field rename.
-///
-/// `AccountMeta` itself comes from `solana-instruction`, whose account key
-/// field is named `solana_pubkey::Pubkey`. Anchor v2's compat module aliases
-/// `solana_program::pubkey::Pubkey` to [`Address`], but external Solana crates
-/// may still expose nominally distinct `Pubkey` newtypes with the same 32-byte
-/// representation.
-pub use solana_instruction::account_meta::AccountMeta;
+/// This is a fixed-size, allocator-neutral value used by the public V2 account
+/// builder traits. Host-side instruction construction converts it to the SDK's
+/// owned `solana_instruction::AccountMeta` representation at the facade
+/// boundary.
 pub use {
     accounts::{AccountInitialize, SlabInit},
     anchor_derive_accounts::{
-        access_control, account, constant, declare_program, emit, error_code, event, pod_wrapper,
-        program, Accounts, AnchorDeserialize, AnchorSerialize, InitSpace, ToCpiAccounts, __erase,
+        __erase, access_control, account, constant, declare_program, emit, error_code, event,
+        pod_wrapper, program, Accounts, AnchorDeserialize, AnchorSerialize, InitSpace,
+        ToCpiAccounts,
     },
     bytemuck,
     context::{Bumps, Context},
@@ -215,6 +209,7 @@ pub use {
     dispatch::{run_handler, TryAccounts},
     event::{sol_log_data, Event},
     hash::sha256,
+    instruction::CpiInstruction,
     loader::AccountLoader,
     pinocchio::{self, account::AccountView, address::Address},
     traits::*,
@@ -235,11 +230,16 @@ pub mod solana_program {
     }
 
     pub mod instruction {
-        pub use solana_instruction::*;
+        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+        pub use solana_instruction::{AccountMeta, Instruction};
+
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        pub use crate::AccountMeta;
     }
 
     #[cfg(feature = "compat")]
     pub use crate::pubkey;
+    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
     pub use solana_system_interface::instruction as system_instruction;
 
     #[cfg(feature = "compat")]
@@ -260,14 +260,23 @@ pub mod solana_program {
     }
 }
 
-/// Converts a struct of account addresses into a list of [`AccountMeta`]s.
-pub trait ToAccountMetas {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> alloc::vec::Vec<AccountMeta>;
-}
-
 /// Serializes instruction data: discriminator prefix + LE-encoded args.
 pub trait InstructionData: Discriminator {
-    fn data(&self) -> alloc::vec::Vec<u8>;
+    #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+    fn try_data(&self) -> core::result::Result<InstructionDataBuffer, solana_program_error::ProgramError>;
+
+    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+    fn data(&self) -> InstructionDataBuffer;
+
+    /// Fallible instruction serialization for allocator-free runtime paths.
+    ///
+    /// Existing implementations that only provide `data()` remain source
+    /// compatible. Generated V2 instruction types override this method so a
+    /// full buffer reports `InvalidInstructionData` instead of panicking.
+    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+    fn try_data(&self) -> core::result::Result<InstructionDataBuffer, solana_program_error::ProgramError> {
+        Ok(self.data())
+    }
 }
 
 /// Compile-time account-size calculation. Derived via `#[derive(InitSpace)]`.
@@ -309,6 +318,10 @@ impl_space_for_primitives! {
 
 impl<T: Space, const N: usize> Space for [T; N] {
     const INIT_SPACE: usize = T::INIT_SPACE * N;
+}
+
+impl<T: Space, const N: usize> Space for FixedVec<T, N> {
+    const INIT_SPACE: usize = 4 + T::INIT_SPACE * N;
 }
 
 #[doc(hidden)]

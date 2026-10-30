@@ -199,7 +199,7 @@ impl<'a> TypeLowerer<'a> {
             }
             steps.push(quote! {
                 __s.push_str(
-                    &anchor_lang::__alloc::string::ToString::to_string(&((#expr) as usize))
+                    &anchor_lang::__idl::string::ToString::to_string(&((#expr) as usize))
                 );
             });
             remaining = after.to_owned();
@@ -210,9 +210,9 @@ impl<'a> TypeLowerer<'a> {
             });
         }
         quote! {{
-            let mut __s = anchor_lang::__alloc::string::String::new();
+            let mut __s = anchor_lang::__idl::string::String::new();
             #(#steps)*
-            anchor_lang::__alloc::boxed::Box::leak(__s.into_boxed_str()) as &'static str
+            anchor_lang::__idl::boxed::Box::leak(__s.into_boxed_str()) as &'static str
         }}
     }
 }
@@ -459,14 +459,14 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
             // immaterial in the test-only IDL build path.
             let pda_json_expr = match &f.pda_json {
                 Some(ts) => quote! {
-                    let __pda_json: anchor_lang::__alloc::string::String = {
-                        let __body: anchor_lang::__alloc::string::String = #ts;
-                        anchor_lang::__alloc::format!(",\"pda\":{}", __body)
+                    let __pda_json: anchor_lang::__idl::string::String = {
+                        let __body: anchor_lang::__idl::string::String = #ts;
+                        anchor_lang::__idl::format!(",\"pda\":{}", __body)
                     };
                 },
                 None => quote! {
-                    let __pda_json: anchor_lang::__alloc::string::String =
-                        anchor_lang::__alloc::string::String::new();
+                    let __pda_json: anchor_lang::__idl::string::String =
+                        anchor_lang::__idl::string::String::new();
                 },
             };
             let init_signer = f.init_signer;
@@ -475,17 +475,17 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
                     quote! {
                         let __addr: anchor_lang::Address =
                             ::core::convert::Into::into(#address_expr);
-                        let __addr_string = anchor_lang::__alloc::format!("{}", __addr);
-                        let __addr_json: anchor_lang::__alloc::string::String =
-                            anchor_lang::__alloc::format!(
+                        let __addr_string = anchor_lang::__idl::format!("{}", __addr);
+                        let __addr_json: anchor_lang::__idl::string::String =
+                            anchor_lang::__idl::format!(
                                 ",\"address\":{}",
                                 anchor_lang::idl_build::__idl_json_string(&__addr_string),
                             );
                     }
                 } else if let Some(address_override) = f.address_override {
                     quote! {
-                        let __addr_json: anchor_lang::__alloc::string::String =
-                            anchor_lang::__alloc::format!(
+                        let __addr_json: anchor_lang::__idl::string::String =
+                            anchor_lang::__idl::format!(
                                 ",\"address\":{}",
                                 anchor_lang::idl_build::__idl_json_string(#address_override),
                             );
@@ -493,12 +493,12 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
                 } else {
                     quote! {
                         let __addr = <#ty as anchor_lang::IdlAccountType>::__IDL_ADDRESS;
-                        let __addr_json: anchor_lang::__alloc::string::String = match __addr {
-                            Some(a) => anchor_lang::__alloc::format!(
+                        let __addr_json: anchor_lang::__idl::string::String = match __addr {
+                            Some(a) => anchor_lang::__idl::format!(
                                 ",\"address\":{}",
                                 anchor_lang::idl_build::__idl_json_string(a),
                             ),
-                            None => anchor_lang::__alloc::string::String::new(),
+                            None => anchor_lang::__idl::string::String::new(),
                         };
                     }
                 };
@@ -512,7 +512,7 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
                         let __signer_json: &str = if __signer { ",\"signer\":true" } else { "" };
                         #addr_json_expr
                         #pda_json_expr
-                        anchor_lang::__alloc::format!(
+                        anchor_lang::__idl::format!(
                             "{{\"name\":\"{}\"{}{}{}{}{}{}{}}}",
                             #name,
                             #writable_json,
@@ -532,23 +532,23 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
                 let signer_json = if init_signer { ",\"signer\":true" } else { "" };
                 let addr_json_expr = if let Some(address_override) = f.address_override {
                     quote! {
-                        let __addr_json: anchor_lang::__alloc::string::String =
-                            anchor_lang::__alloc::format!(
+                        let __addr_json: anchor_lang::__idl::string::String =
+                            anchor_lang::__idl::format!(
                                 ",\"address\":{}",
                                 anchor_lang::idl_build::__idl_json_string(#address_override),
                             );
                     }
                 } else {
                     quote! {
-                        let __addr_json: anchor_lang::__alloc::string::String =
-                            anchor_lang::__alloc::string::String::new();
+                        let __addr_json: anchor_lang::__idl::string::String =
+                            anchor_lang::__idl::string::String::new();
                     }
                 };
                 quote! {
                     {
                         #addr_json_expr
                         #pda_json_expr
-                        anchor_lang::__alloc::format!(
+                        anchor_lang::__idl::format!(
                             "{{\"name\":\"{}\"{}{}{}{}{}{}{}}}",
                             #name,
                             #writable_json,
@@ -570,11 +570,11 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
         /// struct's account list. Implementation detail of the IDL build
         /// pipeline; do not rely on the shape or call this directly.
         #[doc(hidden)]
-        pub fn __idl_accounts() -> anchor_lang::__alloc::string::String {
-            let __parts: anchor_lang::__alloc::vec::Vec<
-                anchor_lang::__alloc::string::String
-            > = anchor_lang::__alloc::vec![#(#parts),*];
-            let mut __s = anchor_lang::__alloc::string::String::from("[");
+        pub fn __idl_accounts() -> anchor_lang::__idl::string::String {
+            let __parts: anchor_lang::__idl::vec::Vec<
+                anchor_lang::__idl::string::String
+            > = anchor_lang::__idl::vec![#(#parts),*];
+            let mut __s = anchor_lang::__idl::string::String::from("[");
             let mut __first = true;
             for __p in &__parts {
                 // A `Nested<Inner>` whose inner has zero fields contributes
@@ -728,10 +728,9 @@ fn build_joined_type_def_emission(
 ) -> TokenStream2 {
     quote! {
         {
-            let mut __entries: anchor_lang::__alloc::vec::Vec<&'static str> =
-                anchor_lang::__alloc::vec::Vec::new();
+            let mut __entries = anchor_lang::IdlEntries::new();
             #(#entries)*
-            let mut __s = anchor_lang::__alloc::string::String::from(#header);
+            let mut __s = anchor_lang::__idl::string::String::from(#header);
             let mut __first = true;
             for __entry in &__entries {
                 if !__first {
@@ -742,7 +741,7 @@ fn build_joined_type_def_emission(
             }
             __s.push_str(#suffix);
             ::core::option::Option::Some(
-                anchor_lang::__alloc::boxed::Box::leak(__s.into_boxed_str()) as &'static str
+                anchor_lang::__idl::boxed::Box::leak(__s.into_boxed_str()) as &'static str
             )
         }
     }
@@ -755,10 +754,9 @@ fn build_joined_entry_emission(
 ) -> TokenStream2 {
     quote! {
         {
-            let mut __entries: anchor_lang::__alloc::vec::Vec<&'static str> =
-                anchor_lang::__alloc::vec::Vec::new();
+            let mut __entries = anchor_lang::IdlEntries::new();
             #(#entries)*
-            let mut __s = anchor_lang::__alloc::string::String::from(#header);
+            let mut __s = anchor_lang::__idl::string::String::from(#header);
             let mut __first = true;
             for __entry in &__entries {
                 if !__first {
@@ -768,7 +766,7 @@ fn build_joined_entry_emission(
                 __s.push_str(__entry);
             }
             __s.push_str(#suffix);
-            anchor_lang::__alloc::boxed::Box::leak(__s.into_boxed_str()) as &'static str
+            anchor_lang::__idl::boxed::Box::leak(__s.into_boxed_str()) as &'static str
         }
     }
 }
@@ -1022,7 +1020,7 @@ impl SeedJson {
     pub fn into_string_expr(self) -> TokenStream2 {
         match self {
             SeedJson::Static(s) => quote! {
-                anchor_lang::__alloc::string::String::from(#s)
+                anchor_lang::__idl::string::String::from(#s)
             },
             SeedJson::Runtime(ts) => ts,
             SeedJson::Unsupported => {
@@ -1393,7 +1391,7 @@ pub fn pda_object_emission(seeds: &SeedListJson, program: Option<&SeedJson>) -> 
                 .collect();
             quote! {
                 {
-                    let mut __seeds = anchor_lang::__alloc::string::String::from("[");
+                    let mut __seeds = anchor_lang::__idl::string::String::from("[");
                     #(#seed_pushes)*
                     __seeds.push(']');
                     __seeds
@@ -1414,7 +1412,7 @@ pub fn pda_object_emission(seeds: &SeedListJson, program: Option<&SeedJson>) -> 
     };
     quote! {
         {
-            let mut __pda = anchor_lang::__alloc::string::String::from("{\"seeds\":");
+                    let mut __pda = anchor_lang::__idl::string::String::from("{\"seeds\":");
             __pda.push_str(&{ #seeds_expr });
             #program_part
             __pda.push('}');

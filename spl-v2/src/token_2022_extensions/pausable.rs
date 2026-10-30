@@ -18,8 +18,8 @@ pub struct PausableToggle<'a> {
     pub authority: CpiHandle<'a>,
 }
 
-pub fn pausable_initialize<'a>(
-    ctx: CpiContext<'a, PausableInitialize<'a>>,
+pub fn pausable_initialize<'a, const N: usize>(
+    ctx: CpiContext<'a, PausableInitialize<'a>, N>,
     authority: &Address,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -31,7 +31,7 @@ pub fn pausable_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn pausable_pause<'a>(ctx: CpiContext<'a, PausableToggle<'a>>) -> Result<(), ProgramError> {
+pub fn pausable_pause<'a, const N: usize>(ctx: CpiContext<'a, PausableToggle<'a>, N>) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::extension::pausable::instruction::pause(
@@ -43,7 +43,7 @@ pub fn pausable_pause<'a>(ctx: CpiContext<'a, PausableToggle<'a>>) -> Result<(),
     ctx.invoke_ix(ix)
 }
 
-pub fn pausable_resume<'a>(ctx: CpiContext<'a, PausableToggle<'a>>) -> Result<(), ProgramError> {
+pub fn pausable_resume<'a, const N: usize>(ctx: CpiContext<'a, PausableToggle<'a>, N>) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::extension::pausable::instruction::resume(

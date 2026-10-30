@@ -51,7 +51,7 @@ pub mod token_interface_test {
         ctx: &mut Context<MintToInterfaceAccount>,
         amount: u64,
     ) -> Result<()> {
-        let cpi_ctx = CpiContext::new(
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(
             ctx.accounts.token_program.address(),
             MintTo {
                 mint: ctx.accounts.mint.cpi_handle_mut(),

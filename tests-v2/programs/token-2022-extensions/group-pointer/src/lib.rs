@@ -16,7 +16,7 @@ pub mod token_2022_ext_group_pointer {
             mint: ctx.accounts.mint.cpi_handle_mut(),
         };
         token_2022_ext::group_pointer_initialize(
-            CpiContext::new(ctx.accounts.token_program.address(), accs),
+            CpiContext::<_, 16>::new_with_capacity(ctx.accounts.token_program.address(), accs),
             Some(&authority),
             Some(&group_address),
         )?;
@@ -30,7 +30,7 @@ pub mod token_2022_ext_group_pointer {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         token_2022_ext::group_pointer_update(
-            CpiContext::new(ctx.accounts.token_program.address(), accs),
+            CpiContext::<_, 16>::new_with_capacity(ctx.accounts.token_program.address(), accs),
             Some(&group_address),
         )?;
         Ok(())

@@ -111,7 +111,7 @@ pub mod return_callee {
         let cpi_accounts = return_spoof::cpi::accounts::Spoof {
             data: ctx.accounts.data.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.spoof_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 16>::new_with_capacity(ctx.accounts.spoof_program.address(), cpi_accounts);
         let _ = return_spoof::cpi::spoof(cpi_ctx, base)?;
         Ok(())
     }

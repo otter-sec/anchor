@@ -15,8 +15,8 @@ use {
     quote::quote,
     syn::{
         parse::{Parse, ParseStream, Parser}, parse_macro_input, spanned::Spanned, Data,
-        DeriveInput, Expr, ExprLit, ExprUnary, Fields, FnArg, Ident, ItemMod, ItemStruct, Lit,
-        LitStr, Meta, Pat, Token, Type, UnOp,
+        parse_quote, DeriveInput, Expr, ExprLit, ExprUnary, Fields, FnArg, GenericParam, Ident,
+        ItemMod, ItemStruct, Lit, LitStr, Meta, Pat, Token, Type, UnOp,
     },
 };
 
@@ -402,7 +402,13 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
     };
 
     let name = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let (_, ty_generics, _) = input.generics.split_for_impl();
+    let cpi_capacity = Ident::new("__ANCHOR_CPI_CAPACITY", Span::call_site());
+    let mut cpi_generics = input.generics.clone();
+    cpi_generics.params.push(GenericParam::Const(parse_quote!(
+        const #cpi_capacity: usize
+    )));
+    let (impl_generics, _, where_clause) = cpi_generics.split_for_impl();
 
     let meta_steps = cpi_fields.iter().map(|(ident, kind, signer)| {
         let writable = matches!(
@@ -412,34 +418,38 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         match kind {
             CpiFieldKind::Phantom => quote! {},
             CpiFieldKind::Nested => quote! {
-                __accounts.extend(anchor_lang::ToCpiAccounts::to_instruction_accounts(&self.#ident));
+                __accounts
+                    .try_extend_from_slice(
+                    anchor_lang::ToCpiAccountsWithCapacity::<#cpi_lifetime, #cpi_capacity>::to_instruction_accounts_with_capacity(&self.#ident)?.as_slice(),
+                    )
+                    .map_err(|_| anchor_lang::Error::InvalidArgument)?;
             },
             CpiFieldKind::Readonly | CpiFieldKind::Writable => quote! {
-                __accounts.push(
+                __accounts.try_push(
                     anchor_lang::pinocchio::instruction::InstructionAccount::new(
                         self.#ident.address(),
                         #writable,
                         #signer,
                     ),
-                );
+                ).map_err(|_| anchor_lang::Error::InvalidArgument)?;
             },
             CpiFieldKind::OptionalReadonly | CpiFieldKind::OptionalWritable => quote! {
                 match self.#ident {
                     ::core::option::Option::Some(__account) => {
-                        __accounts.push(
+                        __accounts.try_push(
                             anchor_lang::pinocchio::instruction::InstructionAccount::new(
                                 __account.address(),
                                 #writable,
                                 #signer,
                             ),
-                        );
+                        ).map_err(|_| anchor_lang::Error::InvalidArgument)?;
                     }
                     ::core::option::Option::None => {
-                        __accounts.push(
+                        __accounts.try_push(
                             anchor_lang::pinocchio::instruction::InstructionAccount::readonly(
                                 &#accounts_program_id,
                             ),
-                        );
+                        ).map_err(|_| anchor_lang::Error::InvalidArgument)?;
                     }
                 }
             },
@@ -449,22 +459,34 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
     let handle_steps = cpi_fields.iter().map(|(ident, kind, _)| match kind {
         CpiFieldKind::Phantom => quote! {},
         CpiFieldKind::Nested => quote! {
-            __handles.extend(anchor_lang::ToCpiAccounts::to_cpi_handles(&self.#ident));
+            __handles
+                .try_extend_from_slice(
+                    anchor_lang::ToCpiAccountsWithCapacity::<#cpi_lifetime, #cpi_capacity>::to_cpi_handles_with_capacity(&self.#ident)?.as_slice(),
+                )
+                .map_err(|_| anchor_lang::Error::InvalidArgument)?;
         },
         CpiFieldKind::Readonly => quote! {
-            __handles.push(self.#ident.into_readonly());
+            __handles
+                .try_push(self.#ident.into_readonly())
+                .map_err(|_| anchor_lang::Error::InvalidArgument)?;
         },
         CpiFieldKind::Writable => quote! {
-            __handles.push(self.#ident.into());
+            __handles
+                .try_push(self.#ident.into())
+                .map_err(|_| anchor_lang::Error::InvalidArgument)?;
         },
         CpiFieldKind::OptionalReadonly => quote! {
             if let ::core::option::Option::Some(__account) = self.#ident {
-                __handles.push(__account.into_readonly());
+                __handles
+                    .try_push(__account.into_readonly())
+                    .map_err(|_| anchor_lang::Error::InvalidArgument)?;
             }
         },
         CpiFieldKind::OptionalWritable => quote! {
             if let ::core::option::Option::Some(__account) = self.#ident {
-                __handles.push(__account.into());
+                __handles
+                    .try_push(__account.into())
+                    .map_err(|_| anchor_lang::Error::InvalidArgument)?;
             }
         },
     });
@@ -472,44 +494,48 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
     let flag_steps = cpi_fields.iter().map(|(ident, kind, _)| match kind {
         CpiFieldKind::Phantom => quote! {},
         CpiFieldKind::Nested => quote! {
-            __flags.extend(
-                anchor_lang::ToCpiAccounts::optional_account_sentinel_flags(&self.#ident),
-            );
+            __flags
+                .try_extend_from_slice(
+                    anchor_lang::ToCpiAccountsWithCapacity::<#cpi_lifetime, #cpi_capacity>::optional_account_sentinel_flags_with_capacity(&self.#ident)?.as_slice(),
+                )
+                .map_err(|_| anchor_lang::Error::InvalidArgument)?;
         },
         CpiFieldKind::Readonly | CpiFieldKind::Writable => quote! {
-            __flags.push(false);
+            __flags
+                .try_push(false)
+                .map_err(|_| anchor_lang::Error::InvalidArgument)?;
         },
         CpiFieldKind::OptionalReadonly | CpiFieldKind::OptionalWritable => quote! {
-            __flags.push(self.#ident.is_none());
+            __flags
+                .try_push(self.#ident.is_none())
+                .map_err(|_| anchor_lang::Error::InvalidArgument)?;
         },
     });
 
     quote! {
-        impl #impl_generics anchor_lang::ToCpiAccounts<#cpi_lifetime>
+        impl #impl_generics anchor_lang::ToCpiAccountsWithCapacity<#cpi_lifetime, #cpi_capacity>
             for #name #ty_generics #where_clause
         {
-            fn to_instruction_accounts(
+            fn to_instruction_accounts_with_capacity(
                 &self,
-            ) -> anchor_lang::__alloc::vec::Vec<
-                anchor_lang::pinocchio::instruction::InstructionAccount<#cpi_lifetime>,
-            > {
-                let mut __accounts = anchor_lang::__alloc::vec::Vec::new();
+            ) -> anchor_lang::Result<anchor_lang::InstructionAccountBuffer<#cpi_lifetime, #cpi_capacity>> {
+                let mut __accounts = anchor_lang::InstructionAccountBuffer::new();
                 #(#meta_steps)*
-                __accounts
+                Ok(__accounts)
             }
 
-            fn to_cpi_handles(
+            fn to_cpi_handles_with_capacity(
                 &self,
-            ) -> anchor_lang::__alloc::vec::Vec<anchor_lang::CpiHandle<#cpi_lifetime>> {
-                let mut __handles = anchor_lang::__alloc::vec::Vec::new();
+            ) -> anchor_lang::Result<anchor_lang::CpiHandleBuffer<#cpi_lifetime, #cpi_capacity>> {
+                let mut __handles = anchor_lang::CpiHandleBuffer::new();
                 #(#handle_steps)*
-                __handles
+                Ok(__handles)
             }
 
-            fn optional_account_sentinel_flags(&self) -> anchor_lang::__alloc::vec::Vec<bool> {
-                let mut __flags = anchor_lang::__alloc::vec::Vec::new();
+            fn optional_account_sentinel_flags_with_capacity(&self) -> anchor_lang::Result<anchor_lang::BoolBuffer<#cpi_capacity>> {
+                let mut __flags = anchor_lang::BoolBuffer::new();
                 #(#flag_steps)*
-                __flags
+                Ok(__flags)
             }
         }
     }
@@ -1145,7 +1171,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     if named_fields.named.len() > 255 {
         // Syntactic top-level field cap. Flattened Nested account counts are
         // separately bounded by the HEADER_SIZE assert emitted on the
-        // TryAccounts impl (the cursor indexes accounts with a u8).
+        // TryAccounts impl (duplicate-tracking / u8 offset domain is 256 bits).
         return syn::Error::new(name.span(), "`Accounts` derive supports at most 255 fields")
             .to_compile_error();
     }
@@ -1738,10 +1764,10 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             let field_ident = &field.name;
             if nested_client_accounts_type(&field.ty).is_some() {
                 quote! {
-                    __metas.extend(anchor_lang::ToAccountMetas::to_account_metas(
-                        #field_ident,
-                        _is_signer,
-                    ));
+                    __metas.extend_from_slice(
+                        anchor_lang::ToAccountMetas::to_account_metas(#field_ident, _is_signer)
+                            .as_ref(),
+                    );
                 }
             } else if field.is_optional {
                 quote! {
@@ -1895,10 +1921,13 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             let field_ident = &field.name;
             if nested_client_accounts_type(&field.ty).is_some() {
                 quote! {
-                    __metas.extend(anchor_lang::ToAccountMetas::to_account_metas(
-                        &self.#field_ident,
-                        _is_signer,
-                    ));
+                    __metas.extend_from_slice(
+                        anchor_lang::ToAccountMetas::to_account_metas(
+                            &self.#field_ident,
+                            _is_signer,
+                        )
+                        .as_ref(),
+                    );
                 }
             } else if field.is_optional {
                 quote! {
@@ -2020,7 +2049,6 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         };
         quote! {
             pub mod #cpi_mod_name {
-                extern crate alloc;
                 use super::*;
                 #[doc(hidden)]
                 pub const __ANCHOR_ACCOUNTS_PROGRAM_ID: anchor_lang::Address = #accounts_program_id;
@@ -2039,11 +2067,17 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         pub struct #resolved_name {
             #(#client_fields,)*
         }
+        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
         impl anchor_lang::ToAccountMetas for #resolved_name {
-            fn to_account_metas(&self, _is_signer: Option<bool>) -> alloc::vec::Vec<anchor_lang::AccountMeta> {
+            type Output = anchor_lang::AccountMetaBuffer<{ #header_size_expr }>;
+
+            fn to_account_metas(
+                &self,
+                _is_signer: Option<bool>,
+            ) -> Self::Output {
                 #(#required_locals)*
                 #(#derive_stmts)*
-                let mut __metas = alloc::vec::Vec::new();
+                let mut __metas = anchor_lang::AccountMetaBuffer::<{ #header_size_expr }>::new();
                 #(#client_meta_steps)*
                 __metas
             }
@@ -2052,14 +2086,19 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
 
     quote! {
         pub mod #client_mod_name {
-            extern crate alloc;
             use super::*;
             pub struct #name {
                 #(#all_client_fields,)*
             }
+            #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
             impl anchor_lang::ToAccountMetas for #name {
-                fn to_account_metas(&self, _is_signer: Option<bool>) -> alloc::vec::Vec<anchor_lang::AccountMeta> {
-                    let mut __metas = alloc::vec::Vec::new();
+                type Output = anchor_lang::AccountMetaBuffer<{ #header_size_expr }>;
+
+                fn to_account_metas(
+                    &self,
+                    _is_signer: Option<bool>,
+                ) -> Self::Output {
+                    let mut __metas = anchor_lang::AccountMetaBuffer::<{ #header_size_expr }>::new();
                     #(#full_meta_steps)*
                     __metas
                 }
@@ -2129,12 +2168,12 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             }
         }
 
-        // Flattened declared-account count must fit the cursor's u8 account
-        // index. Top-level field count alone is not enough: Nested<Inner>
-        // expands to Inner::HEADER_SIZE slots.
+        // Flattened declared-account count must fit the 256-bit duplicate
+        // bitvec and u8 field-offset domain. Top-level field count alone is
+        // not enough: Nested<Inner> expands to Inner::HEADER_SIZE slots.
         const _: () = assert!(
             <#name as anchor_lang::TryAccounts>::HEADER_SIZE <= 255,
-            "`Accounts` flattened HEADER_SIZE must be <= 255 (u8 account-index domain)"
+            "`Accounts` flattened HEADER_SIZE must be <= 255 (duplicate-tracking domain)"
         );
 
         #[cfg(feature = "idl-build")]
@@ -2152,8 +2191,8 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             /// `accounts[]` and `types[]` arrays.
             #[doc(hidden)]
             pub fn __idl_register_deps(
-                accounts: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
-                types: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
+                accounts: &mut anchor_lang::IdlEntries,
+                types: &mut anchor_lang::IdlEntries,
             ) {
                 #(#idl_dep_walkers)*
             }
@@ -2225,19 +2264,19 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
     let idl_account_entry_fn = quote! {
         fn __idl_account_entry() -> Option<&'static str> {
             let __disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
-            let mut __s = anchor_lang::__alloc::string::String::from(
+            let mut __s = anchor_lang::__idl::string::String::from(
                 concat!("{\"name\":\"", #name_str, "\",\"discriminator\":[")
             );
             for (index, byte) in __disc.iter().enumerate() {
                 if index != 0 {
                     __s.push(',');
                 }
-                __s.push_str(&anchor_lang::__alloc::string::ToString::to_string(byte));
+                __s.push_str(&anchor_lang::__idl::string::ToString::to_string(byte));
             }
             // Retain the defining type only while collecting entries. This
             // prevents same-named types in different modules being deduped.
             __s.push_str(concat!("],\"__anchor_type\":\"", module_path!(), "::", #name_str, "\"}"));
-            Some(anchor_lang::__alloc::boxed::Box::leak(__s.into_boxed_str()))
+            Some(anchor_lang::__idl::boxed::Box::leak(__s.into_boxed_str()))
         }
     };
     let idl_type_def = idl::build_struct_type_def_emission(
@@ -2457,8 +2496,8 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #idl_type_def
             }
             fn __register_idl_deps(
-                accounts: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
-                types: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
+                accounts: &mut ::anchor_lang::IdlEntries,
+                types: &mut ::anchor_lang::IdlEntries,
             ) {
                 if let Some(a) = <Self as anchor_lang::IdlAccountType>::__idl_account_entry() {
                     accounts.push(a);
@@ -2664,8 +2703,8 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
                 #idl_type_def
             }
             fn __register_idl_deps(
-                accounts: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
-                types: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
+                accounts: &mut ::anchor_lang::IdlEntries,
+                types: &mut ::anchor_lang::IdlEntries,
             ) {
                 if let Some(t) = <Self as anchor_lang::IdlAccountType>::__idl_type_def() {
                     types.push(t);
@@ -4057,32 +4096,45 @@ fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStrea
         let event_impl = if serialization.is_bytemuck() {
             quote! {
                 impl anchor_lang::Event for #ident {
-                    fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
+                    fn try_data(&self) -> anchor_lang::Result<anchor_lang::InstructionDataBuffer> {
                         let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
                         let payload = anchor_lang::bytemuck::bytes_of(self);
                         let mut data =
-                            anchor_lang::__alloc::vec::Vec::with_capacity(disc.len() + payload.len());
-                        data.extend_from_slice(disc);
-                        data.extend_from_slice(payload);
-                        data
+                            anchor_lang::InstructionDataBuffer::new();
+                        data.try_extend_from_slice(disc)
+                            .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
+                        data.try_extend_from_slice(payload)
+                            .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
+                        Ok(data)
+                    }
+
+                    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+                    fn data(&self) -> anchor_lang::InstructionDataBuffer {
+                        self.try_data().expect("event serialization exceeded the fixed buffer")
                     }
                 }
             }
         } else {
             quote! {
                 impl anchor_lang::Event for #ident {
-                    fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
+                    fn try_data(&self) -> anchor_lang::Result<anchor_lang::InstructionDataBuffer> {
                         let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
                         let mut data =
-                            anchor_lang::__alloc::vec::Vec::with_capacity(disc.len() + 256);
-                        data.extend_from_slice(disc);
+                            anchor_lang::InstructionDataBuffer::new();
+                        data.try_extend_from_slice(disc)
+                            .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
                         anchor_lang::wincode::config::serialize_into(
                             &mut data,
                             self,
                             anchor_lang::BORSH_CONFIG,
                         )
-                        .expect("declared event serialization cannot fail for derived AnchorSerialize types");
-                        data
+                        .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
+                        Ok(data)
+                    }
+
+                    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+                    fn data(&self) -> anchor_lang::InstructionDataBuffer {
+                        self.try_data().expect("event serialization exceeded the fixed buffer")
                     }
                 }
             }
@@ -4446,8 +4498,8 @@ fn gen_declare_program_idl_account_type_impl(
             const __IDL_TYPE_DEF: Option<&'static str> = Some(#type_def);
 
             fn __register_idl_deps(
-                accounts: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
-                types: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
+                accounts: &mut anchor_lang::IdlEntries,
+                types: &mut anchor_lang::IdlEntries,
             ) {
                 if let Some(a) = <Self as anchor_lang::IdlAccountType>::__IDL_ACCOUNT_ENTRY {
                     accounts.push(a);
@@ -4717,8 +4769,8 @@ fn declare_idl_type_to_tokens_with_generics(
             "f64" => quote! { f64 },
             "u128" => quote! { u128 },
             "i128" => quote! { i128 },
-            "bytes" => quote! { anchor_lang::__alloc::vec::Vec<u8> },
-            "string" => quote! { anchor_lang::__alloc::string::String },
+            "bytes" => quote! { anchor_lang::__idl::vec::Vec<u8> },
+            "string" => quote! { anchor_lang::__idl::string::String },
             "pubkey" => quote! { anchor_lang::Address },
             other => {
                 return Err(syn::Error::new(
@@ -4762,8 +4814,8 @@ fn declare_idl_type_to_tokens_with_generics(
         return Ok(quote! { #ident });
     }
     if let Some(inner) = value.get("vec") {
-        let inner = declare_idl_type_to_tokens_with_generics(inner, span, const_generic_names)?;
-        return Ok(quote! { anchor_lang::__alloc::vec::Vec<#inner> });
+        let inner = declare_idl_type_to_tokens(inner, span)?;
+        return Ok(quote! { anchor_lang::__idl::vec::Vec<#inner> });
     }
     if let Some(inner) = value.get("option") {
         let inner = declare_idl_type_to_tokens_with_generics(inner, span, const_generic_names)?;
@@ -4789,8 +4841,8 @@ fn declare_idl_type_to_tokens_with_generics(
 
 fn declare_idl_defined_builtin(name: &str) -> Option<TokenStream2> {
     match name {
-        "BTreeMap" => Some(quote! { anchor_lang::__alloc::collections::BTreeMap }),
-        "BTreeSet" => Some(quote! { anchor_lang::__alloc::collections::BTreeSet }),
+        "BTreeMap" => Some(quote! { anchor_lang::__idl::collections::BTreeMap }),
+        "BTreeSet" => Some(quote! { anchor_lang::__idl::collections::BTreeSet }),
         "PodBool" => Some(quote! { anchor_lang::pod::PodBool }),
         "PodU16" => Some(quote! { anchor_lang::pod::PodU16 }),
         "PodU32" => Some(quote! { anchor_lang::pod::PodU32 }),
@@ -5236,7 +5288,7 @@ fn process_handler(
             let idl_type = idl::rust_type_to_idl(return_ty);
             quote! {
                 {
-                    let mut __s = anchor_lang::__alloc::string::String::from(",\"returns\":");
+                    let mut __s = anchor_lang::__idl::string::String::from(",\"returns\":");
                     __s.push_str(#idl_type);
                     __s
                 }
@@ -5245,7 +5297,7 @@ fn process_handler(
         .unwrap_or_else(|| quote! { "" });
     let set_return_data = returns_value.then(|| {
         quote! {
-            let mut __return_data = anchor_lang::__alloc::vec::Vec::with_capacity(256);
+            let mut __return_data = anchor_lang::InstructionDataBuffer::new();
             anchor_lang::wincode::config::serialize_into(
                 &mut __return_data,
                 &__result,
@@ -5447,6 +5499,15 @@ fn process_handler(
     } else {
         (quote! {}, quote! {})
     };
+    // Keep generated on-chain CPI frames proportional to the instruction
+    // being serialized. The public `InstructionData` buffer remains bounded
+    // by the transaction limit, but using that full buffer inside every CPI
+    // wrapper needlessly reserves 1232 bytes on the SBF stack.
+    let ix_max_data_len = if has_ref_args {
+        quote! { anchor_lang::MAX_INSTRUCTION_DATA }
+    } else {
+        quote! { ::core::mem::size_of::<Self>() + Self::DISCRIMINATOR.len() }
+    };
     let instruction_struct = quote! {
         #(#handler_cfg_attrs)*
         #[derive(anchor_lang::AnchorSerialize)]
@@ -5459,28 +5520,70 @@ fn process_handler(
         }
         #(#handler_cfg_attrs)*
         impl #ix_lt_decl anchor_lang::InstructionData for #ix_struct_name #ix_lt_use {
-            fn data(&self) -> alloc::vec::Vec<u8> {
-                let mut data = alloc::vec::Vec::with_capacity(256);
-                data.extend_from_slice(Self::DISCRIMINATOR);
+            #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+            fn try_data(&self) -> anchor_lang::Result<anchor_lang::InstructionDataBuffer> {
+                let mut data = anchor_lang::InstructionDataBuffer::new();
+                self.__try_data_into(&mut data)?;
+                Ok(data)
+            }
+
+            #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+            fn try_data(&self) -> anchor_lang::Result<anchor_lang::InstructionDataBuffer> {
+                Ok(self.data())
+            }
+
+            #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+            fn data(&self) -> anchor_lang::InstructionDataBuffer {
+                let mut data = anchor_lang::InstructionDataBuffer::new();
+                self.__try_data_into(&mut data)
+                    .expect("instruction serialization exceeded the fixed buffer");
+                data
+            }
+        }
+
+        #(#handler_cfg_attrs)*
+        impl #ix_lt_decl #ix_struct_name #ix_lt_use {
+            #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+            #[doc(hidden)]
+            pub const __MAX_DATA_LEN: usize = #ix_max_data_len;
+
+            #[doc(hidden)]
+            pub fn __try_data_into<const N: usize>(
+                &self,
+                data: &mut anchor_lang::FixedVec<u8, N>,
+            ) -> anchor_lang::Result<()> {
+                data.try_extend_from_slice(Self::DISCRIMINATOR)
+                    .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
                 anchor_lang::wincode::config::serialize_into(
-                    &mut data,
+                    data,
                     self,
                     anchor_lang::BORSH_CONFIG,
                 )
-                    .expect("instruction serialization failed");
-                data
+                .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
+                Ok(())
             }
         }
         #(#handler_cfg_attrs)*
         impl #ix_lt_decl #ix_struct_name #ix_lt_use {
+            #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
             pub fn to_instruction(
                 self,
                 accounts: impl anchor_lang::ToAccountMetas,
             ) -> anchor_lang::solana_program::instruction::Instruction {
+                let account_metas = accounts
+                    .to_account_metas(None)
+                    .as_ref()
+                    .iter()
+                    .map(|meta| anchor_lang::solana_program::instruction::AccountMeta {
+                        pubkey: meta.pubkey,
+                        is_signer: meta.is_signer,
+                        is_writable: meta.is_writable,
+                    })
+                    .collect();
                 anchor_lang::solana_program::instruction::Instruction::new_with_bytes(
                     #program_id,
                     &<Self as anchor_lang::InstructionData>::data(&self),
-                    accounts.to_account_metas(None),
+                    account_metas,
                 )
             }
         }
@@ -5530,9 +5633,15 @@ fn process_handler(
     // instruction struct's optional ref-args lifetime.
     let cpi_wrapper = {
         let (lt_decl, ix_lt_use_local) = if has_ref_args {
-            (quote! { <'a, 'ix> }, quote! { <'ix> })
+            (
+                quote! { <'a, 'ix, const __ANCHOR_CPI_CAPACITY: usize> },
+                quote! { <'ix> },
+            )
         } else {
-            (quote! { <'a> }, quote! {})
+            (
+                quote! { <'a, const __ANCHOR_CPI_CAPACITY: usize> },
+                quote! {},
+            )
         };
         let (ret_ty, ret_value) = if returns_value {
             (
@@ -5551,7 +5660,11 @@ fn process_handler(
             #accounts_program_id_check
             #(#handler_cfg_attrs)*
             pub fn #fn_name #lt_decl(
-                __ctx: anchor_lang::CpiContext<'a, accounts::#accounts_ident<'a>>,
+                __ctx: anchor_lang::CpiContext<
+                    'a,
+                    accounts::#accounts_ident<'a>,
+                    __ANCHOR_CPI_CAPACITY,
+                >,
                 #(#extra_arg_names: #extra_arg_types,)*
             ) #ret_ty {
                 // No lifetime arguments on the literal: a struct expression
@@ -5560,10 +5673,18 @@ fn process_handler(
                 let __ix = super::instruction::#ix_struct_name {
                     #(#extra_arg_names,)*
                 };
+                #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+                let mut __data = anchor_lang::FixedVec::<
+                    u8,
+                    { super::instruction::#ix_struct_name::__MAX_DATA_LEN },
+                >::new();
+                #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+                __ix.__try_data_into(&mut __data)?;
+                #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
                 let __data = <
                     super::instruction::#ix_struct_name #ix_lt_use_local
                     as anchor_lang::InstructionData
-                >::data(&__ix);
+                >::try_data(&__ix)?;
                 __ctx.invoke(&__data)?;
                 #ret_value
             }
@@ -5850,7 +5971,6 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
     let client_interface = quote! {
         /// Client-side instruction structs for off-chain use.
         pub mod instruction {
-            extern crate alloc;
             use super::*;
             use anchor_lang::Discriminator as _;
             #(#instruction_structs)*
@@ -5872,7 +5992,6 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         /// through `CpiContext::invoke`.
         #cpi_cfg
         pub mod cpi {
-            extern crate alloc;
             use super::*;
             use anchor_lang::InstructionData as _;
 
@@ -5933,7 +6052,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 
         // Custom 2-arg (r1, r2) entrypoint using SIMD-0321 convention.
         #[cfg(not(feature = "no-entrypoint"))]
-        anchor_lang::pinocchio::default_allocator!();
+        anchor_lang::__anchor_program_allocator!();
         #[cfg(not(feature = "no-entrypoint"))]
         anchor_lang::pinocchio::default_panic_handler!();
 
@@ -6061,8 +6180,8 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                 // `args: MixedArgs<'_>`) otherwise lands in
                 // `instructions[].args` as a bare `{defined:{name:...}}`
                 // reference with no matching `types[]` entry.
-                let mut accounts_entries: Vec<&'static str> = Vec::new();
-                let mut types_entries: Vec<&'static str> = Vec::new();
+                let mut accounts_entries = anchor_lang::IdlEntries::new();
+                let mut types_entries = anchor_lang::IdlEntries::new();
                 #(#idl_account_dep_walkers)*
                 #(#ix_arg_type_registers)*
                 accounts_entries.sort();
@@ -6087,18 +6206,18 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                     .filter(|s| !s.is_empty());
                 let repository = option_env!("CARGO_PKG_REPOSITORY")
                     .filter(|s| !s.is_empty());
-                let mut metadata_extras = anchor_lang::__alloc::string::String::new();
+                let mut metadata_extras = anchor_lang::__idl::string::String::new();
                 if let Some(d) = description {
                     // Escape embedded quotes/backslashes so the JSON stays valid.
                     let escaped = d.replace('\\', "\\\\").replace('"', "\\\"");
-                    metadata_extras.push_str(&anchor_lang::__alloc::format!(
+                    metadata_extras.push_str(&anchor_lang::__idl::format!(
                         ",\"description\":\"{}\"",
                         escaped,
                     ));
                 }
                 if let Some(r) = repository {
                     let escaped = r.replace('\\', "\\\\").replace('"', "\\\"");
-                    metadata_extras.push_str(&anchor_lang::__alloc::format!(
+                    metadata_extras.push_str(&anchor_lang::__idl::format!(
                         ",\"repository\":\"{}\"",
                         escaped,
                     ));
@@ -6261,17 +6380,15 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
             // serialized — we still pass it because `__register_idl_deps`
             // takes both buffers, and a nested `#[account]` data type
             // referenced from an event payload would push into it.
-            let mut __accounts: anchor_lang::__alloc::vec::Vec<&'static str> =
-                anchor_lang::__alloc::vec::Vec::new();
-            let mut __types: anchor_lang::__alloc::vec::Vec<&'static str> =
-                anchor_lang::__alloc::vec::Vec::new();
+            let mut __accounts = anchor_lang::IdlEntries::new();
+            let mut __types = anchor_lang::IdlEntries::new();
             <#name as anchor_lang::IdlAccountType>::__register_idl_deps(
                 &mut __accounts,
                 &mut __types,
             );
             __types.sort();
             __types.dedup();
-            let mut __payload = anchor_lang::__alloc::string::String::from(#event_header_json);
+            let mut __payload = anchor_lang::__idl::string::String::from(#event_header_json);
             let mut __first = true;
             for __t in &__types {
                 if !__first { __payload.push(','); }
@@ -6297,8 +6414,8 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #event_type_def
             }
             fn __register_idl_deps(
-                accounts: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
-                types: &mut ::anchor_lang::__alloc::vec::Vec<&'static str>,
+                accounts: &mut ::anchor_lang::IdlEntries,
+                types: &mut ::anchor_lang::IdlEntries,
             ) {
                 if let Some(t) = <Self as anchor_lang::IdlAccountType>::__idl_type_def() {
                     types.push(t);
@@ -6327,24 +6444,30 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
             #discriminator_impl
 
             impl anchor_lang::Event for #name {
-                fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
+                fn try_data(&self) -> anchor_lang::Result<anchor_lang::InstructionDataBuffer> {
+                    let mut buf = anchor_lang::InstructionDataBuffer::new();
+                    self.try_data_into(&mut buf)?;
+                    Ok(buf)
+                }
+
+                fn try_data_into<const N: usize>(
+                    &self,
+                    buf: &mut anchor_lang::FixedVec<u8, N>,
+                ) -> anchor_lang::Result<()> {
                     let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
-                    // 256-byte preallocation matches instruction-data
-                    // emission. Wincode has no `encoded_size()` yet, so this
-                    // is a best-guess that avoids a reallocation for typical
-                    // event shapes.
-                    let mut buf = anchor_lang::__alloc::vec::Vec::with_capacity(
-                        disc.len() + 256,
-                    );
-                    buf.extend_from_slice(disc);
+                    buf.try_extend_from_slice(disc)
+                        .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
                     anchor_lang::wincode::config::serialize_into(
-                        &mut buf,
+                        buf,
                         self,
                         anchor_lang::BORSH_CONFIG,
                     )
-                        .expect("`#[event]` wincode serialization cannot fail for \
-                                 derived AnchorSerialize types");
-                    buf
+                        .map_err(|_| anchor_lang::Error::InvalidInstructionData)
+                }
+
+                #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+                fn data(&self) -> anchor_lang::InstructionDataBuffer {
+                    self.try_data().expect("event serialization exceeded the fixed buffer")
                 }
             }
 
@@ -6490,23 +6613,36 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #discriminator_impl
 
                 impl anchor_lang::Event for #name {
-                    fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
+                    fn try_data(&self) -> anchor_lang::Result<anchor_lang::InstructionDataBuffer> {
+                        let mut buf = anchor_lang::InstructionDataBuffer::new();
+                        self.try_data_into(&mut buf)?;
+                        Ok(buf)
+                    }
+
+                    fn try_data_into<const N: usize>(
+                        &self,
+                        buf: &mut anchor_lang::FixedVec<u8, N>,
+                    ) -> anchor_lang::Result<()> {
                         const SIZE: usize = ::core::mem::size_of::<#name>();
                         let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
-                        let mut buf = anchor_lang::__alloc::vec::Vec::with_capacity(
-                            disc.len() + SIZE,
-                        );
-                        buf.extend_from_slice(disc);
+                        buf.try_extend_from_slice(disc)
+                            .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
                         let start = buf.len();
-                        buf.resize(start + SIZE, 0);
+                        buf.try_extend_from_slice(&[0u8; SIZE])
+                            .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
                         unsafe {
                             ::core::ptr::copy_nonoverlapping(
                                 self as *const Self as *const u8,
-                                buf.as_mut_ptr().add(start),
+                                buf.as_mut_slice().as_mut_ptr().add(start),
                                 SIZE,
                             );
                         }
-                        buf
+                        Ok(())
+                    }
+
+                    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+                    fn data(&self) -> anchor_lang::InstructionDataBuffer {
+                        self.try_data().expect("event serialization exceeded the fixed buffer")
                     }
                 }
 
@@ -6704,7 +6840,9 @@ pub fn emit(input: TokenStream) -> TokenStream {
     let data: proc_macro2::TokenStream = input.into();
     TokenStream::from(quote! {
         {
-            anchor_lang::sol_log_data(&[&anchor_lang::Event::data(&#data)]);
+            let mut __event_data = anchor_lang::InstructionDataBuffer::new();
+            anchor_lang::Event::try_data_into(&#data, &mut __event_data)?;
+            anchor_lang::sol_log_data(&[__event_data.as_slice()]);
         }
     })
 }
@@ -6721,52 +6859,58 @@ pub fn emit_cpi(input: TokenStream) -> TokenStream {
                 event_authority: anchor_lang::CpiHandle<'a>,
             }
 
-            impl<'a> anchor_lang::ToCpiAccounts<'a> for __AnchorEventCpiAccounts<'a> {
-                fn to_instruction_accounts(
+            impl<'a, const N: usize> anchor_lang::ToCpiAccountsWithCapacity<'a, N>
+                for __AnchorEventCpiAccounts<'a>
+            {
+                fn to_instruction_accounts_with_capacity(
                     &self,
-                ) -> anchor_lang::__alloc::vec::Vec<
-                    anchor_lang::pinocchio::instruction::InstructionAccount<'a>
-                > {
-                    let mut __accounts = anchor_lang::__alloc::vec::Vec::with_capacity(1);
-                    __accounts.push(
+                    ) -> anchor_lang::Result<anchor_lang::InstructionAccountBuffer<'a, N>> {
+                    let mut __accounts = anchor_lang::InstructionAccountBuffer::new();
+                    __accounts.try_push(
                         anchor_lang::pinocchio::instruction::InstructionAccount::readonly_signer(
                             self.event_authority.address(),
                         ),
-                    );
-                    __accounts
+                    ).map_err(|_| anchor_lang::Error::InvalidArgument)?;
+                    Ok(__accounts)
                 }
 
-                fn to_cpi_handles(
+                fn to_cpi_handles_with_capacity(
                     &self,
-                ) -> anchor_lang::__alloc::vec::Vec<anchor_lang::CpiHandle<'a>> {
-                    let mut __handles = anchor_lang::__alloc::vec::Vec::with_capacity(1);
-                    __handles.push(self.event_authority);
+                ) -> anchor_lang::Result<anchor_lang::CpiHandleBuffer<'a, N>> {
+                    let mut __handles = anchor_lang::CpiHandleBuffer::new();
                     __handles
+                        .try_push(self.event_authority)
+                        .map_err(|_| anchor_lang::Error::InvalidArgument)?;
+                    Ok(__handles)
                 }
 
-                fn optional_account_sentinel_flags(
+                fn optional_account_sentinel_flags_with_capacity(
                     &self,
-                ) -> anchor_lang::__alloc::vec::Vec<bool> {
-                    let mut __flags = anchor_lang::__alloc::vec::Vec::with_capacity(1);
-                    __flags.push(false);
+                ) -> anchor_lang::Result<anchor_lang::BoolBuffer<N>> {
+                    let mut __flags = anchor_lang::BoolBuffer::new();
                     __flags
+                        .try_push(false)
+                        .map_err(|_| anchor_lang::Error::InvalidArgument)?;
+                    Ok(__flags)
                 }
             }
 
             let __event_authority =
                 anchor_lang::AnchorAccount::cpi_handle(&ctx.accounts.event_authority);
-            let __event_data = anchor_lang::Event::data(&#event_struct);
-            let mut __ix_data = anchor_lang::__alloc::vec::Vec::with_capacity(
-                anchor_lang::event::EVENT_IX_TAG_LE.len() + __event_data.len(),
-            );
-            __ix_data.extend_from_slice(anchor_lang::event::EVENT_IX_TAG_LE);
-            __ix_data.extend_from_slice(&__event_data);
+            let mut __ix_data = anchor_lang::FixedVec::<
+                u8,
+                { anchor_lang::MAX_EVENT_CPI_DATA },
+            >::new();
+            __ix_data
+                .try_extend_from_slice(anchor_lang::event::EVENT_IX_TAG_LE)
+                .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
+            anchor_lang::Event::try_data_into(&#event_struct, &mut __ix_data)?;
 
             let __event_authority_bump = [ctx.bumps.event_authority];
             let __event_authority_seeds: &[&[u8]] =
                 &[b"__event_authority", __event_authority_bump.as_ref()];
             let __event_authority_signers: &[&[&[u8]]] = &[__event_authority_seeds];
-            anchor_lang::CpiContext::new_with_signer(
+            anchor_lang::CpiContext::<_, 1>::new_with_signer_capacity(
                 ctx.program_id,
                 __AnchorEventCpiAccounts { event_authority: __event_authority },
                 __event_authority_signers,

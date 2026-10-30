@@ -1,5 +1,5 @@
 use {
-    anchor_lang::{solana_program::instruction::AccountMeta, Id, InstructionData, ToAccountMetas},
+    anchor_lang::{AccountMeta, Id, InstructionData, ToAccountMetas},
     anchor_v2_testing::litesvm::LiteSVM,
     declare_program_optional::{instruction, optional_callee},
     solana_keypair::Keypair,

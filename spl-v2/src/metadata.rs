@@ -24,8 +24,8 @@ use {
 };
 
 pub const ID: Address = anchor_lang::address!("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
-pub fn approve_collection_authority<'info>(
-    ctx: CpiContext<'info, ApproveCollectionAuthority<'info>>,
+pub fn approve_collection_authority<'info, const N: usize>(
+    ctx: CpiContext<'info, ApproveCollectionAuthority<'info>, N>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::ApproveCollectionAuthority {
         collection_authority_record: *ctx.accounts.collection_authority_record.address(),
@@ -41,8 +41,8 @@ pub fn approve_collection_authority<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn bubblegum_set_collection_size<'info>(
-    ctx: CpiContext<'info, BubblegumSetCollectionSize<'info>>,
+pub fn bubblegum_set_collection_size<'info, const N: usize>(
+    ctx: CpiContext<'info, BubblegumSetCollectionSize<'info>, N>,
     collection_authority_record: Option<Pubkey>,
     size: u64,
 ) -> Result<()> {
@@ -61,7 +61,7 @@ pub fn bubblegum_set_collection_size<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn burn_edition_nft<'info>(ctx: CpiContext<'info, BurnEditionNft<'info>>) -> Result<()> {
+pub fn burn_edition_nft<'info, const N: usize>(ctx: CpiContext<'info, BurnEditionNft<'info>, N>) -> Result<()> {
     let ix = mpl_token_metadata::instructions::BurnEditionNft {
         edition_marker_account: *ctx.accounts.edition_marker.address(),
         master_edition_account: *ctx.accounts.master_edition.address(),
@@ -90,11 +90,11 @@ pub fn burn_edition_nft<'info>(ctx: CpiContext<'info, BurnEditionNft<'info>>) ->
 /// accounts.
 ///
 /// ```ignore
-/// CpiContext::new(program, BurnNft { .. })
+/// CpiContext::<_, N>::new_with_capacity(program, BurnNft { .. })
 ///     .with_remaining_accounts(vec![ctx.accounts.collection_metadata.cpi_handle_mut().into()]);
 /// ```
-pub fn burn_nft<'info>(
-    ctx: CpiContext<'info, BurnNft<'info>>,
+pub fn burn_nft<'info, const N: usize>(
+    ctx: CpiContext<'info, BurnNft<'info>, N>,
     collection_metadata: Option<Pubkey>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::BurnNft {
@@ -110,8 +110,8 @@ pub fn burn_nft<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn create_metadata_accounts_v3<'info>(
-    ctx: CpiContext<'info, CreateMetadataAccountsV3<'info>>,
+pub fn create_metadata_accounts_v3<'info, const N: usize>(
+    ctx: CpiContext<'info, CreateMetadataAccountsV3<'info>, N>,
     data: mpl_token_metadata::types::DataV2,
     is_mutable: bool,
     collection_details: Option<mpl_token_metadata::types::CollectionDetails>,
@@ -138,8 +138,8 @@ pub fn create_metadata_accounts_v3<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn update_metadata_accounts_v2<'info>(
-    ctx: CpiContext<'info, UpdateMetadataAccountsV2<'info>>,
+pub fn update_metadata_accounts_v2<'info, const N: usize>(
+    ctx: CpiContext<'info, UpdateMetadataAccountsV2<'info>, N>,
     new_update_authority: Option<Pubkey>,
     data: Option<mpl_token_metadata::types::DataV2>,
     primary_sale_happened: Option<bool>,
@@ -160,8 +160,8 @@ pub fn update_metadata_accounts_v2<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn create_master_edition_v3<'info>(
-    ctx: CpiContext<'info, CreateMasterEditionV3<'info>>,
+pub fn create_master_edition_v3<'info, const N: usize>(
+    ctx: CpiContext<'info, CreateMasterEditionV3<'info>, N>,
     max_supply: Option<u64>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::CreateMasterEditionV3 {
@@ -181,8 +181,8 @@ pub fn create_master_edition_v3<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn mint_new_edition_from_master_edition_via_token<'info>(
-    ctx: CpiContext<'info, MintNewEditionFromMasterEditionViaToken<'info>>,
+pub fn mint_new_edition_from_master_edition_via_token<'info, const N: usize>(
+    ctx: CpiContext<'info, MintNewEditionFromMasterEditionViaToken<'info>, N>,
     edition: u64,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::MintNewEditionFromMasterEditionViaToken {
@@ -210,15 +210,15 @@ pub fn mint_new_edition_from_master_edition_via_token<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn revoke_collection_authority<'info>(
-    ctx: CpiContext<'info, RevokeCollectionAuthority<'info>>,
+pub fn revoke_collection_authority<'info, const N: usize>(
+    ctx: CpiContext<'info, RevokeCollectionAuthority<'info>, N>,
 ) -> Result<()> {
     let ix = revoke_collection_authority_ix(&ctx.accounts);
     ctx.invoke_ix(ix)
 }
 
-pub fn set_collection_size<'info>(
-    ctx: CpiContext<'info, SetCollectionSize<'info>>,
+pub fn set_collection_size<'info, const N: usize>(
+    ctx: CpiContext<'info, SetCollectionSize<'info>, N>,
     collection_authority_record: Option<Pubkey>,
     size: u64,
 ) -> Result<()> {
@@ -261,8 +261,8 @@ fn set_collection_size_ix(
     ix
 }
 
-pub fn verify_collection<'info>(
-    ctx: CpiContext<'info, VerifyCollection<'info>>,
+pub fn verify_collection<'info, const N: usize>(
+    ctx: CpiContext<'info, VerifyCollection<'info>, N>,
     collection_authority_record: Option<Pubkey>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::VerifyCollection {
@@ -278,8 +278,8 @@ pub fn verify_collection<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn verify_sized_collection_item<'info>(
-    ctx: CpiContext<'info, VerifySizedCollectionItem<'info>>,
+pub fn verify_sized_collection_item<'info, const N: usize>(
+    ctx: CpiContext<'info, VerifySizedCollectionItem<'info>, N>,
     collection_authority_record: Option<Pubkey>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::VerifySizedCollectionItem {
@@ -295,8 +295,8 @@ pub fn verify_sized_collection_item<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn set_and_verify_collection<'info>(
-    ctx: CpiContext<'info, SetAndVerifyCollection<'info>>,
+pub fn set_and_verify_collection<'info, const N: usize>(
+    ctx: CpiContext<'info, SetAndVerifyCollection<'info>, N>,
     collection_authority_record: Option<Pubkey>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::SetAndVerifyCollection {
@@ -313,8 +313,8 @@ pub fn set_and_verify_collection<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn set_and_verify_sized_collection_item<'info>(
-    ctx: CpiContext<'info, SetAndVerifySizedCollectionItem<'info>>,
+pub fn set_and_verify_sized_collection_item<'info, const N: usize>(
+    ctx: CpiContext<'info, SetAndVerifySizedCollectionItem<'info>, N>,
     collection_authority_record: Option<Pubkey>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::SetAndVerifySizedCollectionItem {
@@ -331,8 +331,8 @@ pub fn set_and_verify_sized_collection_item<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn freeze_delegated_account<'info>(
-    ctx: CpiContext<'info, FreezeDelegatedAccount<'info>>,
+pub fn freeze_delegated_account<'info, const N: usize>(
+    ctx: CpiContext<'info, FreezeDelegatedAccount<'info>, N>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::FreezeDelegatedAccount {
         delegate: *ctx.accounts.delegate.address(),
@@ -345,8 +345,8 @@ pub fn freeze_delegated_account<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn thaw_delegated_account<'info>(
-    ctx: CpiContext<'info, ThawDelegatedAccount<'info>>,
+pub fn thaw_delegated_account<'info, const N: usize>(
+    ctx: CpiContext<'info, ThawDelegatedAccount<'info>, N>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::ThawDelegatedAccount {
         delegate: *ctx.accounts.delegate.address(),
@@ -359,8 +359,8 @@ pub fn thaw_delegated_account<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn update_primary_sale_happened_via_token<'info>(
-    ctx: CpiContext<'info, UpdatePrimarySaleHappenedViaToken<'info>>,
+pub fn update_primary_sale_happened_via_token<'info, const N: usize>(
+    ctx: CpiContext<'info, UpdatePrimarySaleHappenedViaToken<'info>, N>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::UpdatePrimarySaleHappenedViaToken {
         metadata: *ctx.accounts.metadata.address(),
@@ -371,8 +371,8 @@ pub fn update_primary_sale_happened_via_token<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn set_token_standard<'info>(
-    ctx: CpiContext<'info, SetTokenStandard<'info>>,
+pub fn set_token_standard<'info, const N: usize>(
+    ctx: CpiContext<'info, SetTokenStandard<'info>, N>,
     edition_account: Option<Pubkey>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::SetTokenStandard {
@@ -385,7 +385,7 @@ pub fn set_token_standard<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn sign_metadata<'info>(ctx: CpiContext<'info, SignMetadata<'info>>) -> Result<()> {
+pub fn sign_metadata<'info, const N: usize>(ctx: CpiContext<'info, SignMetadata<'info>, N>) -> Result<()> {
     let ix = mpl_token_metadata::instructions::SignMetadata {
         creator: *ctx.accounts.creator.address(),
         metadata: *ctx.accounts.metadata.address(),
@@ -394,8 +394,8 @@ pub fn sign_metadata<'info>(ctx: CpiContext<'info, SignMetadata<'info>>) -> Resu
     ctx.invoke_ix(ix)
 }
 
-pub fn remove_creator_verification<'info>(
-    ctx: CpiContext<'info, RemoveCreatorVerification<'info>>,
+pub fn remove_creator_verification<'info, const N: usize>(
+    ctx: CpiContext<'info, RemoveCreatorVerification<'info>, N>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::RemoveCreatorVerification {
         creator: *ctx.accounts.creator.address(),
@@ -405,8 +405,8 @@ pub fn remove_creator_verification<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn utilize<'info>(
-    ctx: CpiContext<'info, Utilize<'info>>,
+pub fn utilize<'info, const N: usize>(
+    ctx: CpiContext<'info, Utilize<'info>, N>,
     use_authority_record: Option<Pubkey>,
     burner: Option<Pubkey>,
     number_of_uses: u64,
@@ -428,8 +428,8 @@ pub fn utilize<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn unverify_collection<'info>(
-    ctx: CpiContext<'info, UnverifyCollection<'info>>,
+pub fn unverify_collection<'info, const N: usize>(
+    ctx: CpiContext<'info, UnverifyCollection<'info>, N>,
     collection_authority_record: Option<Pubkey>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::UnverifyCollection {
@@ -447,8 +447,8 @@ pub fn unverify_collection<'info>(
     ctx.invoke_ix(ix)
 }
 
-pub fn unverify_sized_collection_item<'info>(
-    ctx: CpiContext<'info, UnverifySizedCollectionItem<'info>>,
+pub fn unverify_sized_collection_item<'info, const N: usize>(
+    ctx: CpiContext<'info, UnverifySizedCollectionItem<'info>, N>,
     collection_authority_record: Option<Pubkey>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::UnverifySizedCollectionItem {
@@ -1077,12 +1077,18 @@ mod tests {
             mint: mint_view.to_cpi_handle(),
         };
 
-        let metas = accounts.to_instruction_accounts();
+        let metas = anchor_lang::ToCpiAccountsWithCapacity::<5>::to_instruction_accounts_with_capacity(
+            &accounts,
+        )
+        .expect("metadata CPI accounts should fit");
         assert!(metas[0].is_writable);
         assert!(!metas[1].is_writable);
         assert!(metas[2].is_writable);
 
-        let handles = accounts.to_cpi_handles();
+        let handles = anchor_lang::ToCpiAccountsWithCapacity::<5>::to_cpi_handles_with_capacity(
+            &accounts,
+        )
+        .expect("metadata CPI handles should fit");
         assert!(handles[0].is_writable());
         assert!(!handles[1].is_writable());
         assert!(handles[2].is_writable());
@@ -1109,12 +1115,18 @@ mod tests {
             mint: mint_view.to_cpi_handle(),
         };
 
-        let metas = accounts.to_instruction_accounts();
+        let metas = anchor_lang::ToCpiAccountsWithCapacity::<3>::to_instruction_accounts_with_capacity(
+            &accounts,
+        )
+        .expect("metadata CPI accounts should fit");
         assert!(metas[0].is_writable);
         assert!(!metas[1].is_writable);
         assert!(metas[1].is_signer);
 
-        let handles = accounts.to_cpi_handles();
+        let handles = anchor_lang::ToCpiAccountsWithCapacity::<3>::to_cpi_handles_with_capacity(
+            &accounts,
+        )
+        .expect("metadata CPI handles should fit");
         assert!(handles[0].is_writable());
         assert!(!handles[1].is_writable());
 

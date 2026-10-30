@@ -10,8 +10,8 @@ pub struct NonTransferableMintInitialize<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
-pub fn non_transferable_mint_initialize<'a>(
-    ctx: CpiContext<'a, NonTransferableMintInitialize<'a>>,
+pub fn non_transferable_mint_initialize<'a, const N: usize>(
+    ctx: CpiContext<'a, NonTransferableMintInitialize<'a>, N>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;

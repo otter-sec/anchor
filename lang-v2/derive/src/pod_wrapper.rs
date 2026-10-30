@@ -248,8 +248,8 @@ pub fn expand(item: TokenStream) -> TokenStream {
             const __IDL_TYPE_DEF: Option<&'static str> = Some(#idl_type_def);
 
             fn __register_idl_deps(
-                _accounts: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
-                types: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
+                _accounts: &mut anchor_lang::IdlEntries,
+                types: &mut anchor_lang::IdlEntries,
             ) {
                 if let Some(t) = <Self as anchor_lang::IdlAccountType>::__IDL_TYPE_DEF {
                     types.push(t);

@@ -12,8 +12,8 @@ pub struct MemoTransfer<'a> {
     pub owner: CpiHandle<'a>,
 }
 
-pub fn memo_transfer_initialize<'a>(
-    ctx: CpiContext<'a, MemoTransfer<'a>>,
+pub fn memo_transfer_initialize<'a, const N: usize>(
+    ctx: CpiContext<'a, MemoTransfer<'a>, N>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
@@ -27,8 +27,8 @@ pub fn memo_transfer_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn memo_transfer_disable<'a>(
-    ctx: CpiContext<'a, MemoTransfer<'a>>,
+pub fn memo_transfer_disable<'a, const N: usize>(
+    ctx: CpiContext<'a, MemoTransfer<'a>, N>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;

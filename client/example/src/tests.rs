@@ -59,7 +59,7 @@ fn idl_nested_account_metas_match_v1_program() {
         bar: legacy_composite::accounts::Bar { dummy_b },
     };
     assert_eq!(
-        generated.to_account_metas(None),
+        generated.to_account_metas(None).as_ref(),
         anchor_lang_v1::ToAccountMetas::to_account_metas(&original, None),
     );
 }

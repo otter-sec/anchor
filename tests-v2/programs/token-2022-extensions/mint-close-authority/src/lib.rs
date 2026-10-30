@@ -12,7 +12,7 @@ pub mod token_2022_ext_mint_close_authority {
             mint: ctx.accounts.mint.cpi_handle_mut(),
         };
         token_2022_ext::mint_close_authority_initialize(
-            CpiContext::new(ctx.accounts.token_program.address(), accs),
+            CpiContext::<_, 16>::new_with_capacity(ctx.accounts.token_program.address(), accs),
             Some(&close_authority),
         )?;
         Ok(())
