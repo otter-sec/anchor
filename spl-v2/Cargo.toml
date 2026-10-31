@@ -14,11 +14,13 @@ default = ["guardrails"]
 # every caller uses typed `Program` / `Interface` accounts or performs equivalent
 # validation before constructing CPI contexts.
 guardrails = []
+memo = ["dep:pinocchio-memo"]
 metadata = ["dep:mpl-token-metadata"]
 
 [dependencies]
 anchor-lang = { workspace = true }
 pinocchio = { workspace = true }
+pinocchio-memo = { version = "0.4", optional = true }
 pinocchio-token = "0.6"
 pinocchio-token-2022 = "0.3"
 bytemuck = { version = "1", features = ["derive"] }

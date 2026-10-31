@@ -576,6 +576,7 @@ dependencies = [
  "bytemuck",
  "mpl-token-metadata",
  "pinocchio",
+ "pinocchio-memo",
  "pinocchio-token",
  "pinocchio-token-2022",
  "solana-address 2.7.0",
@@ -4074,6 +4075,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "memo"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+]
+
+[[package]]
+name = "memo-spy"
+version = "0.1.0"
+dependencies = [
+ "pinocchio",
+ "solana-msg 3.1.0",
+ "solana-program-error 3.0.1",
+]
+
+[[package]]
 name = "memoffset"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4577,6 +4595,18 @@ dependencies = [
  "solana-account-view",
  "solana-address 2.7.0",
  "solana-define-syscall 5.2.0",
+ "solana-instruction-view",
+ "solana-program-error 3.0.1",
+]
+
+[[package]]
+name = "pinocchio-memo"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87cd9e3e3c3c315d5c7d974929b74cd074ac280e3ab09111e736e9de47f3ce38"
+dependencies = [
+ "solana-account-view",
+ "solana-address 2.7.0",
  "solana-instruction-view",
  "solana-program-error 3.0.1",
 ]
