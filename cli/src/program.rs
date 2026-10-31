@@ -1,9 +1,6 @@
 #[cfg_attr(feature = "solana-v3", path = "program/deploy_v3.rs")]
 #[cfg_attr(feature = "solana-v4", path = "program/deploy_v4.rs")]
 mod deploy;
-use deploy::{
-    prepare_write_messages, send_messages_in_batches, simulate_and_update_write_compute_unit_limit,
-};
 use {
     crate::{
         compat::{
@@ -18,6 +15,10 @@ use {
     anchor_lang_idl::types::Idl,
     anyhow::{anyhow, bail, Result},
     cargo_metadata::{Metadata, MetadataCommand, Package, TargetKind},
+    deploy::{
+        prepare_write_messages, send_messages_in_batches,
+        simulate_and_update_write_compute_unit_limit,
+    },
     solana_commitment_config::CommitmentConfig,
     solana_compute_budget_interface::ComputeBudgetInstruction,
     solana_instruction::Instruction,
