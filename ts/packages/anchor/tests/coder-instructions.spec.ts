@@ -1,6 +1,9 @@
 import * as assert from "assert";
 import BN from "bn.js";
+import { PublicKey } from "@solana/web3.js";
+import { Buffer } from "buffer";
 import { BorshCoder } from "../src";
+import { encodeLayout } from "@anchor-lang/borsh";
 import { Idl, IdlType } from "../src/idl";
 import { toInstruction } from "../src/program/common";
 
@@ -660,5 +663,152 @@ describe("coder.instructions", () => {
     );
     assert.strictEqual(decoded?.data["wrapper"].Fields.someArg, null);
     assert.ok(decoded?.data["wrapper"].Fields.someArg2.eq(new BN(0x3030)));
+  });
+
+  test("encodes instruction arguments larger than 1000 bytes without truncation", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "test",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [
+        {
+          name: "initialize",
+          discriminator: [0, 1, 2, 3, 4, 5, 6, 7],
+          accounts: [],
+          args: [
+            {
+              name: "keys",
+              type: {
+                vec: "pubkey",
+              },
+            },
+          ],
+        },
+      ],
+      types: [],
+    };
+
+    const idlIx = idl.instructions[0];
+    const coder = new BorshCoder(idl);
+
+    // 32 public keys serialize to 4 + 32*32 = 1028 bytes, exceeding the
+    // encoder's default 1000-byte scratch buffer.
+    const keys = Array.from({ length: 32 }, (_, i) =>
+      new PublicKey(Buffer.alloc(32, i))
+    );
+
+    const encoded = coder.instruction.encode(idlIx.name, { keys });
+    const decoded = coder.instruction.decode(encoded);
+
+    assert.strictEqual(encoded.length, 8 + 4 + 32 * 32);
+    assert.deepStrictEqual(decoded?.data["keys"], keys);
+  });
+
+  test("encodes a vec<u32> larger than 1000 bytes without truncation", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "test",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [
+        {
+          name: "initialize",
+          discriminator: [0, 1, 2, 3, 4, 5, 6, 7],
+          accounts: [],
+          args: [
+            {
+              name: "values",
+              type: {
+                vec: "u32",
+              },
+            },
+          ],
+        },
+      ],
+      types: [],
+    };
+
+    const idlIx = idl.instructions[0];
+    const coder = new BorshCoder(idl);
+
+    // 250 u32 elements serialize to 4 + 250*4 = 1004 bytes: the last element's
+    // primitive write overruns the default 1000-byte scratch buffer and throws
+    // Node's ERR_OUT_OF_RANGE instead of buffer-layout's RangeError.
+    const values = Array.from({ length: 250 }, (_, i) => i);
+
+    const encoded = coder.instruction.encode(idlIx.name, { values });
+    const decoded = coder.instruction.decode(encoded);
+
+    assert.strictEqual(encoded.length, 8 + 4 + 250 * 4);
+    assert.deepStrictEqual(decoded?.data["values"], values);
+  });
+
+  test("retries on the buffer polyfill's Index-out-of-range error (cross-runtime)", () => {
+    // Browser bundles resolve `Buffer` to the npm `buffer` polyfill, whose
+    // checkInt throws a plain RangeError with no code and no "offset" text:
+    // "Index out of range". The overflow detection must still retry there.
+    let attempts = 0;
+    const polyfillLayout = {
+      span: -1,
+      encode: (_src: unknown, b: Buffer) => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new RangeError("Index out of range");
+        }
+        return 4;
+      },
+    } as never as Parameters<typeof encodeLayout>[0];
+
+    const encoded = encodeLayout(polyfillLayout, {});
+
+    assert.strictEqual(attempts, 2);
+    assert.strictEqual(encoded.length, 4);
+  });
+
+  test("rejects a reported length larger than the scratch buffer", () => {
+    // A Structure with a missing fixed-span field counts the un-written span
+    // and reports a length larger than the destination holds, without
+    // throwing; `Buffer.slice` would clamp silently, so encodeLayout must
+    // catch it and retry with a buffer that actually fits.
+    let attempts = 0;
+    const lyingLayout = {
+      span: -1,
+      encode: (_src: unknown, b: Buffer) => {
+        attempts += 1;
+        if (attempts === 1) {
+          return b.length + 4;
+        }
+        return 8;
+      },
+    } as never as Parameters<typeof encodeLayout>[0];
+
+    const encoded = encodeLayout(lyingLayout, {});
+
+    assert.strictEqual(attempts, 2);
+    assert.strictEqual(encoded.length, 8);
+  });
+
+  test("caps the scratch buffer at the max encoded size", () => {
+    // The next allocation is clamped to the cap (an 8 MiB buffer must not
+    // become 16 MiB), so a payload beyond the cap is rejected after a bounded
+    // number of growth attempts, not honored.
+    let attempts = 0;
+    const hugeLayout = {
+      span: -1,
+      encode: () => {
+        attempts += 1;
+        throw new RangeError("encoding overruns Buffer");
+      },
+    } as never as Parameters<typeof encodeLayout>[0];
+
+    assert.throws(() => encodeLayout(hugeLayout, {}));
+    // 1000 doubles up to 8 MiB, then clamps to 10 MiB, then rejects: a
+    // bounded number of attempts, far fewer than an unbounded loop.
+    assert.ok(attempts > 0 && attempts <= 20, `attempts ${attempts}`);
   });
 });
