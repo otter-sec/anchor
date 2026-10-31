@@ -112,6 +112,14 @@ pub struct TestModuleConst {
     pub test_array: [u8; data::SIZE],
 }
 
+const ARRAY_LEN: usize = 10;
+
+#[derive(InitSpace)]
+pub struct TestArrayLenExpr {
+    pub test_add: [u16; ARRAY_LEN + 1],
+    pub test_sub: [u32; ARRAY_LEN - 1],
+}
+
 #[derive(InitSpace)]
 pub struct TestUnnamedStruct(
     pub u8,
@@ -261,6 +269,14 @@ fn test_full_path() {
 #[test]
 fn test_const() {
     assert_eq!(TestConst::INIT_SPACE, (4 + 10) + 10)
+}
+
+#[test]
+fn test_array_len_expr() {
+    assert_eq!(
+        TestArrayLenExpr::INIT_SPACE,
+        (ARRAY_LEN + 1) * 2 + (ARRAY_LEN - 1) * 4
+    )
 }
 
 #[derive(InitSpace)]
