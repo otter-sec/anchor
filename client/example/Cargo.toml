@@ -16,6 +16,7 @@ basic-4 = { path = "../../examples/tutorial/basic-4/programs/basic-4", features 
 composite = { path = "../../tests/composite/programs/composite", features = ["no-entrypoint"] }
 optional = { path = "../../tests/optional/programs/optional", features = ["no-entrypoint"] }
 events = { path = "../../tests/events/programs/events", features = ["no-entrypoint"] }
+events-caller = { path = "../../tests/events/programs/events-caller", features = ["no-entrypoint"] }
 anyhow = "1.0.32"
 clap = { version = "4.2.4", features = ["derive"] }
 shellexpand = "2.1.0"
