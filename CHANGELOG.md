@@ -57,6 +57,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - deps: Bump `heck` to 0.5 to avoid incompatible dependencies ([#4960](https://github.com/otter-sec/anchor/pull/4960)).
 - lang: Read the `#[account]` namespace from the string value ([#5200](https://github.com/otter-sec/anchor/pull/5200)).
 - lang: Reject closing an account into itself from `close()` ([#5202](https://github.com/otter-sec/anchor/pull/5202)).
+- ts: Resolve the generic arguments of generic types nested in a generic type, so IDLs such as the generics test program can be decoded ([#5158](https://github.com/otter-sec/anchor/pull/5158)).
 
 ### Breaking
 
