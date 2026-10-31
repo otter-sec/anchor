@@ -1,14 +1,7 @@
-#[cfg(feature = "solana-v3")]
-mod deploy_v3;
-#[cfg(feature = "solana-v3")]
-use deploy_v3::{
-    prepare_write_messages, send_messages_in_batches, simulate_and_update_write_compute_unit_limit,
-};
-
-#[cfg(feature = "solana-v4")]
-mod deploy_v4;
-#[cfg(feature = "solana-v4")]
-use deploy_v4::{
+#[cfg_attr(feature = "solana-v3", path = "program/deploy_v3.rs")]
+#[cfg_attr(feature = "solana-v4", path = "program/deploy_v4.rs")]
+mod deploy;
+use deploy::{
     prepare_write_messages, send_messages_in_batches, simulate_and_update_write_compute_unit_limit,
 };
 use {
