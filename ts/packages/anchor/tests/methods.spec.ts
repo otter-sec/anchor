@@ -109,7 +109,7 @@ describe("Program namespaces", () => {
         .postInstructions([post])
         .transactionMessage();
 
-      expect(message.version).toBe(0);
+      expect(message.version).toBe(1);
       expect(message.instructions.map((ix) => ix.programAddress)).toEqual([
         SYSTEM_PROGRAM,
         PROGRAM_ADDRESS,
@@ -123,10 +123,43 @@ describe("Program namespaces", () => {
       });
     });
 
-    it("sends the transaction paid for and co-signed by the wallet", async () => {
-      const { provider, wallet, requests } = mockProvider(
-        confirmingResponders()
+    it("builds a message of the version set on the builder", async () => {
+      const { provider } = mockProvider(
+        {},
+        { opts: { transactionVersion: 1 } }
       );
+      const program = new Program(idl, provider);
+
+      const message = await program.methods
+        .initialize(1n)
+        .accounts({ counter: randomAddress() })
+        .transactionVersion(0)
+        .transactionMessage();
+
+      expect(message.version).toBe(0);
+    });
+
+    it("builds messages of the provider's transaction version", async () => {
+      const { provider } = mockProvider(
+        {},
+        { opts: { transactionVersion: 0 } }
+      );
+      const program = new Program(idl, provider);
+
+      const message = await program.methods
+        .initialize(1n)
+        .accounts({ counter: randomAddress() })
+        .transactionMessage();
+
+      expect(message.version).toBe(0);
+    });
+
+    it("sends the transaction paid for and co-signed by the wallet", async () => {
+      const { provider, wallet, requests } = mockProvider({
+        ...confirmingResponders(),
+        simulateTransaction: () =>
+          simulationResponse({ loadedAccountsDataSize: 4096 }),
+      });
       const program = new Program(idl, provider);
       const counter = randomSigner();
 

@@ -310,6 +310,69 @@ const transactionSignature = await connection.sendTransaction(transaction, [
 </Tab> 
 </Tabs>
 
+### Resource Limits
+
+Before sending, `AnchorProvider` estimates the resource limits left unset on a
+transaction message by simulating it with Kit's
+`estimateAndSetResourceLimitsFactory`:
+
+- Version 1 messages get their compute unit and loaded accounts data size limits
+  set in the message config. Legacy and version 0 messages get a
+  `SetComputeUnitLimit` compute budget instruction appended.
+- The compute unit limit gets headroom on top of the estimate: the larger of 300
+  compute units and a margin decaying from 10% to 2% at 500,000 compute units,
+  capped at 1,400,000. Pass `getComputeUnitLimitFromEstimate` to the provider
+  options to change it.
+- Limits set explicitly on the message are kept as is, except for compute unit
+  limits of 0 or 1,400,000, which Kit treats as placeholders and replaces with
+  the estimate.
+
+To set the limits yourself, add them to the message before sending it:
+
+```ts
+import { setTransactionMessageConfig } from "@solana/kit";
+
+const message = await program.methods.initialize(data).transactionMessage();
+
+await provider.sendAndConfirm(
+  setTransactionMessageConfig(
+    { computeUnitLimit: 50_000, loadedAccountsDataSizeLimit: 64_000 },
+    message,
+  ),
+);
+```
+
+Pass `estimateResourceLimits: false` to the provider options, or per call, to
+skip the estimation, e.g. for legacy and version 0 transactions too close to the
+size limit to fit a compute budget instruction:
+
+```ts
+await program.methods.initialize(data).rpc({ estimateResourceLimits: false });
+```
+
+Nothing is estimated either with `skipPreflight`, so failing transactions still
+land. In both cases, legacy and version 0 messages are sent as is, and the
+runtime applies its defaults. Version 1 messages are budgeted zero for any limit
+left unset, so `AnchorProvider` sets 200,000 compute units and 64 MiB of loaded
+account data on them, as does `provider.simulate`.
+
+### Transaction Versions
+
+Transaction messages built by `@anchor-lang/core` default to version 1. Version
+1 messages cannot use address lookup tables, and some wallets do not support
+them yet. In those cases, fall back to version 0 for a whole provider or for a
+single call:
+
+```ts
+const provider = new AnchorProvider(client, wallet, { transactionVersion: 0 });
+
+await program.methods.initialize(data).transactionVersion(0).rpc();
+```
+
+Wallet adapters reject unsupported versions with a `WalletSignTransactionError`
+before the wallet is asked to sign. Version 1 also needs a cluster with
+SIMD-0385 active, so a local validator must run Agave 4.2 or later.
+
 ## Fetch Accounts
 
 The `Program` client simplifies the process of fetching and deserializing

@@ -13,6 +13,8 @@ export {
   getProvider,
   setProvider,
   AnchorProvider,
+  DEFAULT_TRANSACTION_VERSION,
+  getDefaultComputeUnitLimitFromEstimate,
   ProviderError,
   SimulateError,
 } from "./provider.js";
@@ -20,6 +22,7 @@ export type {
   SolanaClient,
   ClusterEndpoints,
   ConfirmOptions,
+  ProviderOptions,
   TransactionMessageWithExtraSigners,
   WalletSigner,
 } from "./provider.js";

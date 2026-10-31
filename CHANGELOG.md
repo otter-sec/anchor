@@ -13,6 +13,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 ### Features
 
 - client: Expose `parse_logs` to decode events from transaction logs while tracking the CPI stack ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
+- ts: Set the transaction message version per provider (`transactionVersion` option) or per call (`.transactionVersion()`) ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+- ts: Estimate the resource limits a transaction message leaves unset before sending, with configurable compute unit headroom (`getComputeUnitLimitFromEstimate`). Disable with `estimateResourceLimits: false` ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 
 ### Fixes
 
@@ -20,12 +22,16 @@ The minor version will be incremented upon a breaking change and the patch versi
 - ts: Reject a JS number that is not a safe integer when encoding `u64`, `i64`, `u128`, `i128`, `u256`, and `i256`. Pass a bigint for values outside ±(2^53 - 1) ([#5203](https://github.com/otter-sec/anchor/pull/5203)).
 - lang-v2: Keep Pod wrapper types (`PodU64`, `PodBool`, ..) in the IDL instead of lowering them to native types, so `declare_program!` generates zero-copy structs with correct program's layout ([#5170](https://github.com/otter-sec/anchor/pull/5170))
 - lang-v2: Restore `AnchorSerialize` and `AnchorDeserialize` as traits for generic bounds alongside the derive macros ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
+- ts: Recover the logs of failed version 1 transactions ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 
 ### Breaking
 
 - lang-v2: `SysvarLoad::read` is now `unsafe`. ([#5205](https://github.com/otter-sec/anchor/pull/5205)).
 - lang-v2: Default `#[event]` structs now derive `AnchorDeserialize` as well as `AnchorSerialize`. Remove any explicit `AnchorDeserialize` derive from these structs to avoid conflicting implementations; `#[event(bytemuck)]` is unchanged ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
 - lang-v2: Replace the duplicate mutable account check with borrow checks, so conflicting aliases fail with `AccountBorrowFailed`. Remove `#[account(unsafe(dup))]` and drop `?` on `ctx.remaining_accounts()`; a read-only `Account<T>` or `Slab<H, T>` used in a writable CPI needs `#[account(mut)]` ([#5091](https://github.com/otter-sec/anchor/pull/5091)).
+- ts: Build version 1 transaction messages by default ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+- ts: Append a compute budget instruction with the estimated compute unit limit to legacy and version 0 messages ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+- ts: Require `@solana/kit` ^8.5.0 ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 
 ## [2.0.0-rc.2] - 2026-10-06
 
