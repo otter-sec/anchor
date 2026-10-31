@@ -45,6 +45,8 @@
     "@expressive-code/plugin-text-markers": "0.40.2",
     "@shikijs/rehype": "3.23.0",
     "@shikijs/themes": "3.23.0",
+    "@solana/addresses": "8.4.0",
+    "@solana/keys": "8.4.0",
     "@tailwindcss/vite": "4.2.1",
     "@types/react": "19.0.0",
     "@types/react-dom": "19.0.0",

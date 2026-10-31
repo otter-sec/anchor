@@ -4,6 +4,7 @@ description: Learn how to use Program Derived Addresses (PDAs) in Anchor program
 ---
 
 import Code from '@/components/code.astro'
+import PdaSeedsFlow from '@/components/pda-seeds-flow'
 import lib from './_pda/lib.rs?raw'
 import idl from './_pda/idl.json?raw'
 import client from './_pda/test.ts?raw'
@@ -173,6 +174,12 @@ pub struct CustomAccount {
 
 </Tab>
 </Tabs>
+
+**Try it live.** The four examples above, derived in the browser from the program id in this page's `declare_id!{:rs}`; edit any input to see its PDA change.
+
+<PdaSeedsFlow client:visible />
+
+Example based on a [PLGRND](https://plgrnd.io) flow.
 
 ## PDA seeds in the IDL
 
