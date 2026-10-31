@@ -342,6 +342,7 @@ pub struct InitInterfaceMintWithExtensions {
         extensions::transfer_hook::program_id = crate::ID,
         extensions::close_authority::authority = authority,
         extensions::permanent_delegate::delegate = authority,
+        extensions::pausable::authority = authority,
     )]
     pub mint: InterfaceAccount<Mint>,
     pub system_program: Program<System>,
@@ -367,6 +368,7 @@ pub struct InitIfNeededInterfaceMintWithExtensions {
         extensions::transfer_hook::program_id = crate::ID,
         extensions::close_authority::authority = authority,
         extensions::permanent_delegate::delegate = authority,
+        extensions::pausable::authority = authority,
     )]
     pub mint: InterfaceAccount<Mint>,
     pub system_program: Program<System>,

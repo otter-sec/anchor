@@ -12,6 +12,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+- lang-v2, spl-v2: Support pausable mint constraints with `init` and `init_if_needed` as in anchor v1 ([#5176](https://github.com/otter-sec/anchor/pull/5176)).
 - client: Expose `parse_logs` to decode events from transaction logs while tracking the CPI stack ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
 
 ### Fixes
