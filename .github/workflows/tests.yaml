@@ -4,13 +4,13 @@ on:
   push:
     branches:
       - master
-      - v0.32
+      - "0.32"
     paths-ignore:
       - 'docs/**'
   pull_request:
     branches:
       - master
-      - v0.32
+      - "0.32"
     paths-ignore:
       - 'docs/**'
 
