@@ -3556,6 +3556,67 @@ fn idl_upgrade(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn idl_build_program(
+    cfg: &WithPath<Config>,
+    program_path: &Path,
+    out: Option<&Path>,
+    out_ts: Option<&Path>,
+    is_workspace: bool,
+    skip_lint: bool,
+    no_docs: bool,
+    cargo_args: &[String],
+) -> Result<()> {
+    let cur_dir = std::env::current_dir()?;
+    std::env::set_current_dir(program_path)?;
+    let idl = generate_idl(cfg, skip_lint, no_docs, cargo_args)?;
+    std::env::set_current_dir(cur_dir)?;
+
+    if is_workspace {
+        let cfg_parent = cfg.path().parent().expect("Invalid Anchor.toml");
+        let idl_dir = out
+            .map(PathBuf::from)
+            .unwrap_or_else(|| cfg_parent.join(&cfg.workspace.idls));
+        fs::create_dir_all(&idl_dir)?;
+        let json_path = idl_dir.join(&idl.metadata.name).with_extension("json");
+        write_idl(&idl, OutFile::File(json_path))?;
+
+        let ts_dir = out_ts
+            .map(PathBuf::from)
+            .unwrap_or_else(|| cfg_parent.join(&cfg.workspace.types));
+        fs::create_dir_all(&ts_dir)?;
+        let ts_path = ts_dir.join(&idl.metadata.name).with_extension("ts");
+        fs::write(&ts_path, idl_ts(&idl)?)?;
+
+        let types_dir = if cfg.workspace.types.is_empty() {
+            None
+        } else {
+            Some(cfg_parent.join(&cfg.workspace.types))
+        };
+        if let Some(ts_out_parent) = ts_path.parent() {
+            write_error_constants_file(&idl, ts_out_parent, types_dir)?;
+        }
+    } else {
+        let out_file = match out {
+            Some(path) => OutFile::File(path.to_path_buf()),
+            None => OutFile::Stdout,
+        };
+        write_idl(&idl, out_file)?;
+
+        if let Some(ts_path) = out_ts {
+            if let Some(parent) = ts_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(ts_path, idl_ts(&idl)?)?;
+
+            let ts_out_parent = ts_path.parent().unwrap_or_else(|| Path::new("."));
+            write_error_constants_file(&idl, ts_out_parent, None)?;
+        }
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn idl_build(
     cfg_override: &ConfigOverride,
     workspace: bool,
@@ -3568,57 +3629,23 @@ fn idl_build(
 ) -> Result<()> {
     let cfg = Config::discover(cfg_override)?
         .ok_or_else(|| anyhow!("The 'anchor idl build' command requires an Anchor workspace."))?;
-    let cfg_parent = cfg.path().parent().expect("Invalid Anchor.toml");
 
     if workspace {
         let programs = get_metadata_ordered_program_list(&cfg)?;
-        let cur_dir = std::env::current_dir()?;
-
-        let idl_out_dir = out.map(PathBuf::from);
-        let ts_out_dir = out_ts.map(PathBuf::from);
+        let idl_out_dir = out.as_deref().map(Path::new);
+        let ts_out_dir = out_ts.as_deref().map(Path::new);
 
         for program_path in programs {
-            std::env::set_current_dir(&program_path)?;
-            let idl = generate_idl(&cfg, skip_lint, no_docs, &cargo_args)?;
-            std::env::set_current_dir(&cur_dir)?;
-
-            // JSON out path
-            let json_path = match &idl_out_dir {
-                Some(dir) => {
-                    fs::create_dir_all(dir)?;
-                    dir.join(&idl.metadata.name).with_extension("json")
-                }
-                None => {
-                    let dir = cfg_parent.join(&cfg.workspace.idls);
-                    fs::create_dir_all(&dir)?;
-                    dir.join(&idl.metadata.name).with_extension("json")
-                }
-            };
-            write_idl(&idl, OutFile::File(json_path))?;
-
-            // TS out path
-            let ts_path = match &ts_out_dir {
-                Some(dir) => {
-                    fs::create_dir_all(dir)?;
-                    dir.join(&idl.metadata.name).with_extension("ts")
-                }
-                None => {
-                    let dir = cfg_parent.join(&cfg.workspace.types);
-                    fs::create_dir_all(&dir)?;
-                    dir.join(&idl.metadata.name).with_extension("ts")
-                }
-            };
-            fs::write(&ts_path, idl_ts(&idl)?)?;
-
-            // Generate error constants file if errors exist
-            let types_dir = if cfg.workspace.types.is_empty() {
-                None
-            } else {
-                Some(cfg_parent.join(&cfg.workspace.types))
-            };
-            if let Some(ts_out_parent) = ts_path.parent() {
-                write_error_constants_file(&idl, ts_out_parent, types_dir)?;
-            }
+            idl_build_program(
+                &cfg,
+                &program_path,
+                idl_out_dir,
+                ts_out_dir,
+                true,
+                skip_lint,
+                no_docs,
+                &cargo_args,
+            )?;
         }
 
         return Ok(());
@@ -3640,25 +3667,17 @@ fn idl_build(
             }
         }
     };
-    std::env::set_current_dir(program_path)?;
-    let idl = generate_idl(&cfg, skip_lint, no_docs, &cargo_args)?;
-    std::env::set_current_dir(current_dir)?;
 
-    let out = match out {
-        Some(path) => OutFile::File(PathBuf::from(path)),
-        None => OutFile::Stdout,
-    };
-    write_idl(&idl, out)?;
-
-    if let Some(path) = out_ts {
-        let ts_out_dir = PathBuf::from(&path);
-        fs::write(path, idl_ts(&idl)?)?;
-        // Generate error constants file if errors exist
-        let ts_out_parent = ts_out_dir.parent().unwrap_or_else(|| Path::new("."));
-        write_error_constants_file(&idl, ts_out_parent, None)?;
-    }
-
-    Ok(())
+    idl_build_program(
+        &cfg,
+        &program_path,
+        out.as_deref().map(Path::new),
+        out_ts.as_deref().map(Path::new),
+        false,
+        skip_lint,
+        no_docs,
+        &cargo_args,
+    )
 }
 
 /// Filters out `cargo build-sbf` specific arguments that are not accepted by `cargo test` when generating IDLs.
