@@ -46,7 +46,7 @@ jobs:
 
       - uses: ./.github/actions/setup-solana/
         env:
-          SOLANA_CLI_VERSION: "2.1.0"
+          SOLANA_CLI_VERSION: "4.1.2"
 
       - uses: ./.github/actions/setup-surfpool/
         env:
