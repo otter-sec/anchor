@@ -213,6 +213,17 @@ pub struct CheckMintExtensionConstraints<'info> {
 }
 
 #[derive(Accounts)]
+pub struct CheckMintNoExtensions<'info> {
+    #[account(mut)]
+    /// CHECK: can be any account
+    pub authority: Signer<'info>,
+    #[account(
+        mint::no_extensions = [TransferFeeConfig, PermanentDelegate],
+    )]
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
+}
+
+#[derive(Accounts)]
 pub struct CheckInitIfNeededMintExtensionConstraints<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,

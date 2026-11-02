@@ -1751,6 +1751,41 @@ fn generate_constraint_mint(
         None => quote! {},
     };
 
+    let no_extensions_check = match &c.no_extensions {
+        Some(extensions) if !extensions.is_empty() => {
+            // Deduplicate so a repeated name does not emit a duplicate
+            // or-pattern alternative.
+            let mut seen = std::collections::HashSet::new();
+            let disallowed = extensions.iter().filter_map(|extension| {
+                if seen.insert(extension.to_string()) {
+                    Some(quote! {
+                        ::anchor_spl::token_2022::spl_token_2022::extension::ExtensionType::#extension
+                    })
+                } else {
+                    None
+                }
+            });
+            quote! {
+                {
+                    use ::anchor_spl::token_2022::spl_token_2022::extension::{
+                        BaseStateWithExtensions, StateWithExtensions,
+                    };
+                    use ::anchor_spl::token_2022::spl_token_2022::state::Mint;
+                    let mint_data = #account_ref.try_borrow_data()?;
+                    let mint_state = StateWithExtensions::<Mint>::unpack(&mint_data)?;
+                    let mint_extensions = mint_state.get_extension_types()?;
+                    if mint_extensions
+                        .iter()
+                        .any(|extension_type| matches!(extension_type, #(#disallowed)|*))
+                    {
+                        return Err(anchor_lang::error::ErrorCode::ConstraintMintNoExtensions.into());
+                    }
+                }
+            }
+        }
+        _ => quote! {},
+    };
+
     quote! {
         {
             #decimal_check
@@ -1768,6 +1803,7 @@ fn generate_constraint_mint(
             #transfer_hook_authority_check
             #transfer_hook_program_id_check
             #pausable_authority_check
+            #no_extensions_check
         }
     }
 }
@@ -2073,6 +2109,78 @@ mod tests {
             generated.contains("ConstraintMintTokenProgram"),
             "expected init_if_needed mint codegen to retain the effective token program check on \
              reused mints, got: {generated}",
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn mint_no_extensions_codegen_rejects_listed_extensions(
+    ) -> std::result::Result<(), String> {
+        let accounts_struct = parse_quote! {
+            pub struct EscrowVaultWithMintGuard<'info> {
+                #[account(mut)]
+                pub payer: Signer<'info>,
+                pub authority: Signer<'info>,
+                #[account(
+                    mint::decimals = 6,
+                    mint::no_extensions = [TransferFeeConfig, PermanentDelegate],
+                )]
+                pub mint: Box<InterfaceAccount<'info, Mint>>,
+                pub system_program: Program<'info, System>,
+                pub token_program: Program<'info, Token2022>,
+            }
+        };
+
+        let accounts = accounts::parse(&accounts_struct).map_err(|err| err.to_string())?;
+        let mint = if let Some(AccountField::Field(field)) = accounts.fields.get(2) {
+            field
+        } else {
+            return Err("expected third account field to be a mint field".into());
+        };
+
+        let generated = generate(mint, &accounts).to_string();
+
+        assert!(
+            generated.contains("ConstraintMintNoExtensions"),
+            "expected mint codegen to emit the no extensions check, got: {generated}",
+        );
+        assert!(
+            generated.contains("TransferFeeConfig"),
+            "expected mint codegen to check for TransferFeeConfig, got: {generated}",
+        );
+        assert!(
+            generated.contains("PermanentDelegate"),
+            "expected mint codegen to check for PermanentDelegate, got: {generated}",
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn mint_no_extensions_empty_list_emits_no_check() -> std::result::Result<(), String> {
+        let accounts_struct = parse_quote! {
+            pub struct MintWithEmptyNoExtensions<'info> {
+                #[account(
+                    mint::decimals = 6,
+                    mint::no_extensions = [],
+                )]
+                pub mint: Box<InterfaceAccount<'info, Mint>>,
+            }
+        };
+
+        let accounts = accounts::parse(&accounts_struct).map_err(|err| err.to_string())?;
+        let mint = if let Some(AccountField::Field(field)) = accounts.fields.first() {
+            field
+        } else {
+            return Err("expected first account field to be a mint field".into());
+        };
+
+        let generated = generate(mint, &accounts).to_string();
+
+        assert!(
+            !generated.contains("ConstraintMintNoExtensions"),
+            "expected an empty no extensions list to emit no check, got: {generated}",
         );
 
         Ok(())

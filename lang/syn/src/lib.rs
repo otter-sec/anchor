@@ -877,6 +877,7 @@ pub enum ConstraintToken {
     MintFreezeAuthority(Context<ConstraintMintFreezeAuthority>),
     MintDecimals(Context<ConstraintMintDecimals>),
     MintTokenProgram(Context<ConstraintTokenProgram>),
+    MintNoExtensions(Context<ConstraintMintNoExtensions>),
     Bump(Context<ConstraintTokenBump>),
     ProgramSeed(Context<ConstraintProgramSeed>),
     Realloc(Context<ConstraintRealloc>),
@@ -1251,6 +1252,11 @@ pub struct ConstraintMintDecimals {
 }
 
 #[derive(Debug, Clone)]
+pub struct ConstraintMintNoExtensions {
+    pub extensions: Vec<Ident>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ConstraintTokenBump {
     pub bump: Option<Expr>,
 }
@@ -1280,6 +1286,7 @@ pub struct ConstraintTokenMintGroup {
     pub mint_authority: Option<Expr>,
     pub freeze_authority: Option<Expr>,
     pub token_program: Option<Expr>,
+    pub no_extensions: Option<Vec<Ident>>,
     pub group_pointer_authority: Option<Expr>,
     pub group_pointer_group_address: Option<Expr>,
     pub group_member_pointer_authority: Option<Expr>,

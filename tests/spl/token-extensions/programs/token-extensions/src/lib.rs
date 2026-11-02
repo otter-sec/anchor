@@ -29,6 +29,10 @@ pub mod token_extensions {
         Ok(())
     }
 
+    pub fn check_mint_no_extensions(_ctx: Context<CheckMintNoExtensions>) -> Result<()> {
+        Ok(())
+    }
+
     pub fn check_init_if_needed_mint_extension_constraints(
         ctx: Context<CheckInitIfNeededMintExtensionConstraints>,
     ) -> Result<()> {

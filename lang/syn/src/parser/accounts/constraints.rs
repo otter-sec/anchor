@@ -192,6 +192,18 @@ pub fn parse_token(stream: ParseStream) -> ParseResult<ConstraintToken> {
                         token_program: stream.parse()?,
                     },
                 )),
+                "no_extensions" => {
+                    let content;
+                    syn::bracketed!(content in stream);
+                    let extensions = content
+                        .parse_terminated(Ident::parse_any, Token![,])?
+                        .into_iter()
+                        .collect();
+                    ConstraintToken::MintNoExtensions(Context::new(
+                        span,
+                        ConstraintMintNoExtensions { extensions },
+                    ))
+                }
                 _ => return Err(ParseError::new(ident.span(), "Invalid attribute")),
             }
         }
@@ -669,6 +681,7 @@ pub struct ConstraintGroupBuilder<'ty> {
     pub mint_freeze_authority: Option<Context<ConstraintMintFreezeAuthority>>,
     pub mint_decimals: Option<Context<ConstraintMintDecimals>>,
     pub mint_token_program: Option<Context<ConstraintTokenProgram>>,
+    pub mint_no_extensions: Option<Context<ConstraintMintNoExtensions>>,
     pub extension_group_pointer_authority: Option<Context<ConstraintExtensionAuthority>>,
     pub extension_group_pointer_group_address:
         Option<Context<ConstraintExtensionGroupPointerGroupAddress>>,
@@ -719,6 +732,7 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             mint_freeze_authority: None,
             mint_decimals: None,
             mint_token_program: None,
+            mint_no_extensions: None,
             extension_group_pointer_authority: None,
             extension_group_pointer_group_address: None,
             extension_group_member_pointer_authority: None,
@@ -937,6 +951,7 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             mint_freeze_authority,
             mint_decimals,
             mint_token_program,
+            mint_no_extensions,
             extension_group_pointer_authority,
             extension_group_pointer_group_address,
             extension_group_member_pointer_authority,
@@ -1047,6 +1062,7 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             &mint_authority,
             &mint_freeze_authority,
             &mint_token_program,
+            &mint_no_extensions,
             &extension_group_pointer_authority,
             &extension_group_pointer_group_address,
             &extension_group_member_pointer_authority,
@@ -1060,6 +1076,7 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             &extension_pausable_authority,
         ) {
             (
+                None,
                 None,
                 None,
                 None,
@@ -1089,6 +1106,9 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
                 token_program: mint_token_program
                     .as_ref()
                     .map(|a| a.clone().into_inner().token_program),
+                no_extensions: mint_no_extensions
+                    .as_ref()
+                    .map(|a| a.clone().into_inner().extensions),
                 // extensions
                 group_pointer_authority: extension_group_pointer_authority
                     .as_ref()
@@ -1286,6 +1306,7 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             ConstraintToken::MintFreezeAuthority(c) => self.add_mint_freeze_authority(c),
             ConstraintToken::MintDecimals(c) => self.add_mint_decimals(c),
             ConstraintToken::MintTokenProgram(c) => self.add_mint_token_program(c),
+            ConstraintToken::MintNoExtensions(c) => self.add_mint_no_extensions(c),
             ConstraintToken::Bump(c) => self.add_bump(c),
             ConstraintToken::ProgramSeed(c) => self.add_program_seed(c),
             ConstraintToken::Realloc(c) => self.add_realloc(c),
@@ -1664,6 +1685,20 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             ));
         }
         self.mint_token_program.replace(c);
+        Ok(())
+    }
+
+    fn add_mint_no_extensions(
+        &mut self,
+        c: Context<ConstraintMintNoExtensions>,
+    ) -> ParseResult<()> {
+        if self.mint_no_extensions.is_some() {
+            return Err(ParseError::new(
+                c.span(),
+                "mint no_extensions already provided",
+            ));
+        }
+        self.mint_no_extensions.replace(c);
         Ok(())
     }
 
