@@ -6,7 +6,7 @@ import {
 } from "@solana/kit";
 import TransactionFactory from "../src/program/namespace/transaction";
 import InstructionFactory from "../src/program/namespace/instruction";
-import { BorshCoder, Idl } from "../src";
+import { BorshCoder, Idl, Provider } from "../src";
 
 describe("Transaction", () => {
   const programAddress = address("Test111111111111111111111111111111111111111");
@@ -40,19 +40,19 @@ describe("Transaction", () => {
     address("SysvarRent111111111111111111111111111111111")
   );
 
-  function buildTxFn() {
+  function buildTxFn(provider = {} as Provider) {
     const coder = new BorshCoder(idl);
     const ixItem = InstructionFactory.build(
       idl.instructions[0],
       (ixName, ix) => coder.instruction.encode(ixName, ix),
       programAddress
     );
-    return TransactionFactory.build(idl.instructions[0], ixItem);
+    return TransactionFactory.build(idl.instructions[0], ixItem, provider);
   }
 
   it("builds a versioned message with the program instruction", () => {
     const message = buildTxFn()({ accounts: { authority: authority.address } });
-    expect(message.version).toBe(0);
+    expect(message.version).toBe(1);
     expect(message.instructions).toHaveLength(1);
     expect(message.instructions[0].programAddress).toBe(programAddress);
     expect(message.instructions[0].accounts).toEqual([
@@ -64,6 +64,23 @@ describe("Transaction", () => {
     // No fee payer nor lifetime: the provider sets them when sending.
     expect("feePayer" in message).toBe(false);
     expect("lifetimeConstraint" in message).toBe(false);
+  });
+
+  it("builds messages of the provider's transaction version", () => {
+    const provider = { transactionVersion: "legacy" } as Provider;
+    const message = buildTxFn(provider)({
+      accounts: { authority: authority.address },
+    });
+    expect(message.version).toBe("legacy");
+  });
+
+  it("prefers the context's transaction version over the provider's", () => {
+    const provider = { transactionVersion: "legacy" } as Provider;
+    const message = buildTxFn(provider)({
+      accounts: { authority: authority.address },
+      transactionVersion: 0,
+    });
+    expect(message.version).toBe(0);
   });
 
   it("adds pre instructions before the method instruction", () => {
