@@ -32,6 +32,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Reject `seeds::program` with `init` regardless of constraint order ([#5191](https://github.com/otter-sec/anchor/issues/5191)).
 - cli: Fix generated projects with `--anchor-version v2` ([#5187](https://github.com/otter-sec/anchor/pull/5187)).
 - cli: Keep a custom provider `ws` URL when rewriting `Anchor.toml` ([#5193](https://github.com/otter-sec/anchor/issues/5193)).
+- ts: Resolve the generic arguments of generic types nested in a generic type, so IDLs such as the generics test program can be decoded ([#5158](https://github.com/otter-sec/anchor/pull/5158)).
 
 ### Breaking
 
