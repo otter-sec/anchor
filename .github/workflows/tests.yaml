@@ -4,11 +4,11 @@ on:
   push:
     branches:
       - master
-      - v0.30
+      - "0.30"
   pull_request:
     branches:
       - master
-      - v0.30
+      - "0.30"
 
 jobs:
   tests:
