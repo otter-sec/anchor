@@ -28,6 +28,7 @@ pub mod token_2022_ext_metadata_pointer {
         let accs = token_2022_ext::MetadataPointerUpdate {
             mint: ctx.accounts.mint.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
+            signers: &[],
         };
         token_2022_ext::metadata_pointer_update(
             CpiContext::new(ctx.accounts.token_program.address(), accs),
