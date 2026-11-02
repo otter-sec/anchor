@@ -29,8 +29,8 @@ impl AnchorAccount for UncheckedAccount {
         Ok(Self { view })
     }
     #[inline(always)]
-    fn account(&self) -> AccountView {
-        self.view
+    fn account(&self) -> &AccountView {
+        &self.view
     }
 }
 

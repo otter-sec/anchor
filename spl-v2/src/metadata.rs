@@ -837,8 +837,9 @@ impl AnchorAccount for MetadataAccount {
         })
     }
 
-    fn account(&self) -> AccountView {
+    fn account(&self) -> &AccountView {
         self.view
+            .as_ref()
             .expect("metadata account loaded without AccountView")
     }
 }
@@ -896,8 +897,9 @@ impl AnchorAccount for MasterEditionAccount {
         })
     }
 
-    fn account(&self) -> AccountView {
+    fn account(&self) -> &AccountView {
         self.view
+            .as_ref()
             .expect("metadata account loaded without AccountView")
     }
 }
@@ -1012,8 +1014,9 @@ impl AnchorAccount for TokenRecordAccount {
         })
     }
 
-    fn account(&self) -> AccountView {
+    fn account(&self) -> &AccountView {
         self.view
+            .as_ref()
             .expect("metadata account loaded without AccountView")
     }
 }

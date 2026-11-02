@@ -208,8 +208,8 @@ impl<T: SysvarLoad> AnchorAccount for Sysvar<T> {
         Ok(Self { view, data })
     }
 
-    fn account(&self) -> AccountView {
-        self.view
+    fn account(&self) -> &AccountView {
+        &self.view
     }
 }
 
