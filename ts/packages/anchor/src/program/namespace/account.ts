@@ -193,7 +193,8 @@ export class AccountClient<
 
   /**
    * Returns multiple deserialized accounts.
-   * Accounts not found or with wrong discriminator are returned as null.
+   * Accounts not found are returned as null. Decoding failures reject the
+   * promise, including invalid discriminators with the default Borsh coder.
    *
    * @param addresses The addresses of the accounts to fetch.
    */
@@ -206,8 +207,9 @@ export class AccountClient<
   }
 
   /**
-   * Returns multiple deserialized accounts.
-   * Accounts not found or with wrong discriminator are returned as null.
+   * Returns multiple deserialized accounts with their RPC response contexts.
+   * Accounts not found are returned as null. Decoding failures reject the
+   * promise, including invalid discriminators with the default Borsh coder.
    *
    * @param addresses The addresses of the accounts to fetch.
    */
@@ -221,7 +223,7 @@ export class AccountClient<
       commitment
     );
 
-    // Decode accounts where discriminator is correct, null otherwise
+    // Preserve missing accounts as null; propagate decoding errors.
     return accounts.map((result) => {
       if (result == null) {
         return null;
