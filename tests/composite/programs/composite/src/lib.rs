@@ -26,10 +26,6 @@ mod composite {
         Ok(())
     }
 
-    /// Like `composite_update`, but every `Accounts` struct in the tree
-    /// declares the instruction args via `#[instruction(..)]`. Regression
-    /// for #2942: nested structs must see the args from the start of the
-    /// instruction data, not from where the parent stopped reading.
     pub fn composite_update_with_args(
         ctx: Context<CompositeUpdateWithArgs>,
         value_a: u64,
@@ -78,7 +74,6 @@ pub struct CompositeUpdateWithArgs<'info> {
     bar: BarWithArgs<'info>,
 }
 
-/// Declares only a prefix of the parent's args.
 #[derive(Accounts)]
 #[instruction(value_a: u64)]
 pub struct FooWithArgs<'info> {
@@ -86,9 +81,8 @@ pub struct FooWithArgs<'info> {
     pub dummy_a: Account<'info, DummyA>,
 }
 
-/// Declares the same args as the parent.
 #[derive(Accounts)]
-#[instruction(value_a: u64, value_b: u64)]
+#[instruction(value_b: u64)]
 pub struct BarWithArgs<'info> {
     #[account(mut, constraint = value_b != 0 @ CompositeError::ZeroValueB)]
     pub dummy_b: Account<'info, DummyB>,

@@ -25,6 +25,34 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
         where_clause,
     } = generics(accs);
 
+    // Nested structs start at the parent arg they name, else after the parent's args.
+    let ix_cursor = private_ident("__ix_data_cursor");
+    let ix_args_end = private_ident("__ix_args_end");
+    let ix_arg_names: Vec<Option<String>> = accs
+        .instruction_api
+        .iter()
+        .flatten()
+        .map(|arg| match arg {
+            syn::FnArg::Typed(t) => match &*t.pat {
+                syn::Pat::Ident(p) => Some(p.ident.to_string()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    let ix_arg_offsets: Vec<syn::Ident> = (0..ix_arg_names.len())
+        .map(|i| private_ident(&format!("__ix_arg_offset_{i}")))
+        .collect();
+    let track_offsets = accs.instruction_api.is_some()
+        && accs
+            .fields
+            .iter()
+            .any(|f| matches!(f, AccountField::CompositeField(_)));
+    let first_arg = match ix_arg_names.first() {
+        Some(Some(n)) => quote! { ::core::option::Option::Some(#n) },
+        _ => quote! { ::core::option::Option::None },
+    };
+
     // Deserialization for each field
     let deser_fields: Vec<proc_macro2::TokenStream> = accs
         .fields
@@ -34,10 +62,23 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                 AccountField::CompositeField(s) => {
                     let name = &s.ident;
                     let ty = &s.raw_field.ty;
+                    let child_ix = if track_offsets {
+                        let arms = ix_arg_names.iter().zip(&ix_arg_offsets).filter_map(
+                            |(n, off)| n.as_ref().map(|n| quote! { Some(#n) => &#ix_data[#off..], }),
+                        );
+                        quote! {
+                            match anchor_lang::__private::ix_first_arg::<#ty, _>(&#bumps.#name) {
+                                #(#arms)*
+                                _ => &#ix_data[#ix_args_end..],
+                            }
+                        }
+                    } else {
+                        quote! { #ix_data }
+                    };
                     quote! {
                         #[cfg(feature = "anchor-debug")]
                         ::anchor_lang::solana_program::log::sol_log(stringify!(#name));
-                        let #name: #ty = anchor_lang::Accounts::try_accounts(#program_id, #accounts, #ix_data, &mut #bumps.#name, #reallocs)?;
+                        let #name: #ty = anchor_lang::Accounts::try_accounts(#program_id, #accounts, #child_ix, &mut #bumps.#name, #reallocs)?;
                     }
                 }
                 AccountField::Field(f) => {
@@ -109,22 +150,23 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
         proc_macro2::Span::call_site(),
     );
 
-    // Deserialize declared instruction args from a private cursor rather
-    // than from `__ix_data` itself. Composite fields receive `__ix_data`
-    // and must see the instruction data from the start, so that a nested
-    // `#[derive(Accounts)]` struct declaring the same `#[instruction(..)]`
-    // args deserializes them from the same offset as its parent.
-    let ix_cursor = private_ident("__ix_data_cursor");
     let ix_de = match &accs.instruction_api {
         None => quote! {},
         Some(ix_api) => {
             let field_deserializers: Vec<proc_macro2::TokenStream> = ix_api
                 .iter()
-                .map(|expr: &syn::FnArg| match expr {
+                .zip(&ix_arg_offsets)
+                .map(|(expr, off): (&syn::FnArg, _)| match expr {
                     syn::FnArg::Typed(arg) => {
                         let field = &arg.pat;
                         let ty = &arg.ty;
+                        let record = if track_offsets {
+                            quote! { let #off = #ix_data.len() - #ix_cursor.len(); }
+                        } else {
+                            quote! {}
+                        };
                         quote! {
+                            #record
                             let #field: #ty = <#ty as anchor_lang::AnchorDeserialize>::deserialize(&mut #ix_cursor)
                                 .map_err(|_| anchor_lang::error::ErrorCode::InstructionDidNotDeserialize)?;
                         }
@@ -137,9 +179,15 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                     _ => panic!("Invalid instruction declaration"),
                 })
                 .collect();
+            let end = if track_offsets {
+                quote! { let #ix_args_end = #ix_data.len() - #ix_cursor.len(); }
+            } else {
+                quote! {}
+            };
             quote! {
                 let mut #ix_cursor: &[u8] = #ix_data;
                 #(#field_deserializers)*
+                #end
             }
         }
     };
@@ -256,6 +304,8 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
         #param_count_const
         #[automatically_derived]
         impl<#combined_generics> anchor_lang::Accounts<#trait_generics, #bumps_struct_name> for #name<#struct_generics> #where_clause {
+            const __ANCHOR_IX_FIRST_ARG: ::core::option::Option<&'static str> = #first_arg;
+
             #[inline(never)]
             fn try_accounts(
                 #program_id: &anchor_lang::solana_program::pubkey::Pubkey,

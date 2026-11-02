@@ -196,6 +196,10 @@ pub fn deprecated_account_info_usage() {}
 /// }
 /// ```
 pub trait Accounts<'info, B>: ToAccountMetas + ToAccountInfos<'info> + Sized {
+    // Name of the first `#[instruction(..)]` arg, used to place nested structs.
+    #[doc(hidden)]
+    const __ANCHOR_IX_FIRST_ARG: Option<&'static str> = None;
+
     /// Returns the validated accounts struct. What constitutes "valid" is
     /// program dependent. However, users of these types should never have to
     /// worry about account substitution attacks. For example, if a program
@@ -646,6 +650,14 @@ pub mod __private {
         anchor_attribute_account::ZeroCopyAccessor,
         base64, bytemuck,
     };
+
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn ix_first_arg<'info, T: crate::Accounts<'info, B>, B>(
+        _bumps: &B,
+    ) -> Option<&'static str> {
+        T::__ANCHOR_IX_FIRST_ARG
+    }
 
     // Used to calculate the maximum between two expressions.
     // It is necessary for the calculation of the enum space.

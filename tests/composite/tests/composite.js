@@ -68,7 +68,7 @@ describe("composite", () => {
         .rpc();
     });
 
-    it("nested structs deserialize the same args as the parent", async () => {
+    it("nested structs read the args they declare", async () => {
       await program.methods
         .compositeUpdateWithArgs(new anchor.BN(111), new anchor.BN(222))
         .accounts({
@@ -84,7 +84,6 @@ describe("composite", () => {
     });
 
     it("a constraint inside a nested struct sees the real arg value", async () => {
-      // `value_b` is only checked by the nested `BarWithArgs` struct.
       try {
         await program.methods
           .compositeUpdateWithArgs(new anchor.BN(111), new anchor.BN(0))
@@ -100,8 +99,6 @@ describe("composite", () => {
         assert.strictEqual(err.error.origin, "dummy_b");
       }
 
-      // `value_a` is checked by the nested `FooWithArgs` struct, which only
-      // declares a prefix of the parent's args.
       try {
         await program.methods
           .compositeUpdateWithArgs(new anchor.BN(0), new anchor.BN(222))
@@ -117,7 +114,6 @@ describe("composite", () => {
         assert.strictEqual(err.error.origin, "dummy_a");
       }
 
-      // Nothing was written by the rejected calls.
       const a = await program.account.dummyA.fetch(dummyA.publicKey);
       const b = await program.account.dummyB.fetch(dummyB.publicKey);
       assert.isTrue(a.data.eq(new anchor.BN(111)));
