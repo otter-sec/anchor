@@ -386,6 +386,40 @@ Example:
 block_production_mode = "clock"
 ```
 
+### extra_args
+
+Append individual arguments for Surfpool options without a dedicated setting.
+Each array entry is one argument. For example, to disable a runtime feature:
+
+```toml
+[surfpool]
+extra_args = ["--disable-feature", "ptokFjwyJtrwCa9Kgo9xoDS59V4QccBGEaRFnRPnSdP"]
+```
+
+Options already supplied by Anchor, including `--no-studio` and `--port`, are
+rejected.
+The flags `--no-deploy`, `--legacy-anchor-compatibility` and
+`--anchor-test-config-path` are rejected in `extra_args`: Anchor sets them
+according to `anchor test --skip-deploy` and the selected test suite.
+
+### Account and genesis fixtures on Surfpool
+
+With `--skip-deploy`, account JSON files, account directories and genesis
+programs load through the initial snapshot. Without it, Surfpool's existing
+automatic deployment runbooks load those fixtures; Anchor does not install or
+compare them twice.
+
+An explicit account address overrides the file's pubkey; `address = "-"`
+uses the file's pubkey. Directory JSON files must contain a valid pubkey.
+The snapshot loader accepts base64, base58 and base64+zstd account data;
+decoded data must fit Solana's 10 MiB account limit.
+
+Invalid or duplicate snapshot images fail before tests run. For declared
+fixtures loaded with `--skip-deploy`, Anchor verifies installed account bytes,
+balances, owners and executable flags. For genesis programs in that snapshot,
+`upgradeable = true` uses the workspace wallet as the upgrade authority;
+otherwise the validator-compatible default authority is used.
+
 ## toolchain
 
 Override toolchain data in the workspace similar to
