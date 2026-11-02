@@ -873,8 +873,8 @@ where
     }
 
     #[inline(always)]
-    fn account(&self) -> AccountView {
-        self.view
+    fn account(&self) -> &AccountView {
+        &self.view
     }
 
     #[inline(always)]
@@ -962,7 +962,7 @@ where
         zero: bool,
     ) -> pinocchio::ProgramResult {
         self.assert_mutable();
-        let mut view = self.account();
+        let mut view = *self.account();
         if new_space != view.data_len() {
             if new_space < Self::MIN_DATA_LEN {
                 return Err(ProgramError::AccountDataTooSmall);
@@ -1354,9 +1354,9 @@ mod tests {
         let old_len = view.data_len();
 
         let acct = CounterAccount::load_mut(view).unwrap();
-        let mut alias = view;
+        let alias = view;
         assert_eq!(
-            crate::realloc_account(&mut alias, 8, &view, false).err(),
+            crate::realloc_account(alias, 8, view, false).err(),
             Some(ProgramError::AccountBorrowFailed),
             "realloc through an alias must not resize under a live Slab"
         );

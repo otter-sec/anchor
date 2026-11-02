@@ -304,8 +304,8 @@ where
         })
     }
 
-    fn account(&self) -> AccountView {
-        self.view
+    fn account(&self) -> &AccountView {
+        &self.view
     }
 
     #[inline(always)]
@@ -412,7 +412,7 @@ where
         zero: bool,
     ) -> pinocchio::ProgramResult {
         self.assert_mutable_loaded();
-        let view = self.account();
+        let view = *self.account();
         if new_space != view.data_len() {
             self.release_borrow()?;
             crate::realloc_account(view, new_space, payer, zero)?;

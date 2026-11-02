@@ -2047,7 +2047,7 @@ fn emit_init_body(
                         if field_is_optional(field_summaries, &field_ident) {
                             quote! {
                                 __p.#key = Some(match (#value).as_ref() {
-                                    Some(__anchor_account) => __anchor_account.account(),
+                                    Some(__anchor_account) => *__anchor_account.account(),
                                     None => {
                                         return Err(
                                             anchor_lang::ErrorCode::ConstraintAccountIsNone
@@ -2058,12 +2058,12 @@ fn emit_init_body(
                             }
                         } else {
                             quote! {
-                                __p.#key = Some(#value.account());
+                                __p.#key = Some(*#value.account());
                             }
                         }
                     } else {
                         quote! {
-                            __p.#key = Some(#value.account());
+                            __p.#key = Some(*#value.account());
                         }
                     }
                 }
@@ -2155,7 +2155,7 @@ fn emit_init_body(
     };
 
     Ok(quote! {
-        let __payer = #payer.account();
+        let __payer = *#payer.account();
         #payer_signer_seeds
         #seeds_arg
         #owner_check
@@ -2206,22 +2206,22 @@ fn emit_associated_token_init_body(
     let authority_handle = field_readonly_cpi_handle_expr(
         field_summaries,
         &associated_token.authority,
-        quote! { __authority.as_ref() },
+        quote! { __authority.account() },
     )?;
     let mint_handle = field_readonly_cpi_handle_expr(
         field_summaries,
         &associated_token.mint,
-        quote! { __mint.as_ref() },
+        quote! { __mint.account() },
     )?;
     let token_program_handle = field_readonly_cpi_handle_expr(
         field_summaries,
         &associated_token.token_program,
-        quote! { __token_program.as_ref() },
+        quote! { __token_program.account() },
     )?;
     let system_program_handle = field_readonly_cpi_handle_expr(
         field_summaries,
         &system_program,
-        quote! { __system_program.as_ref() },
+        quote! { __system_program.account() },
     )?;
     let payer_signer_seeds = emit_payer_signer_seeds_binding(payer, field_names, field_summaries)?;
 
@@ -3204,7 +3204,7 @@ pub fn parse_field(
         constraints.push(quote! {
             {
                 let __new_space = #new_space;
-                let __payer_view = #realloc_payer.account();
+                let __payer_view = *#realloc_payer.account();
                 anchor_lang::AccountRealloc::realloc_account(
                     #realloc_target,
                     __new_space,
@@ -3257,7 +3257,7 @@ pub fn parse_field(
             #(#constraint_exits)*
             anchor_lang::AccountClose::close(
                 &mut self.#field_name,
-                self.#close_target.account(),
+                *self.#close_target.account(),
             )?;
         })
     } else if attrs.is_mut {
@@ -3364,7 +3364,7 @@ pub fn parse_field(
                         #(#inner_constraint_exits)*
                         anchor_lang::AccountClose::close(
                             __inner,
-                            self.#close_target.account(),
+                            *self.#close_target.account(),
                         )?;
                     }
                 }

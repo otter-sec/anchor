@@ -72,22 +72,22 @@ pub(crate) struct CpiBorrowGuard {
 impl<'a> CpiHandle<'a> {
     #[inline(always)]
     pub fn readonly(view: &'a AccountView) -> Self {
-        Self::readonly_with_borrow_check(*view, true)
+        Self::readonly_with_borrow_check(view, true)
     }
 
     #[inline(always)]
-    pub(crate) fn readonly_with_borrow_check(view: AccountView, borrow_check: bool) -> Self {
+    pub(crate) fn readonly_with_borrow_check(view: &'a AccountView, borrow_check: bool) -> Self {
         Self::readonly_with_flags(view, borrow_check, false)
     }
 
     #[inline(always)]
     pub(crate) fn readonly_with_flags(
-        view: AccountView,
+        view: &'a AccountView,
         borrow_check: bool,
         relax_readonly_borrow: bool,
     ) -> Self {
         Self {
-            view,
+            view: *view,
             _borrow: PhantomData,
             writable: false,
             signer: view.is_signer(),
@@ -98,13 +98,13 @@ impl<'a> CpiHandle<'a> {
 
     #[inline(always)]
     pub fn writable(view: &'a mut AccountView) -> Self {
-        Self::writable_with_borrow_check(*view, true)
+        Self::writable_with_borrow_check(view, true)
     }
 
     #[inline(always)]
-    pub(crate) fn writable_with_borrow_check(view: AccountView, borrow_check: bool) -> Self {
+    pub(crate) fn writable_with_borrow_check(view: &'a AccountView, borrow_check: bool) -> Self {
         Self {
-            view,
+            view: *view,
             _borrow: PhantomData,
             writable: true,
             signer: view.is_signer(),
@@ -160,10 +160,10 @@ impl<'a> CpiHandle<'a> {
     /// `CpiHandleMut` field can emit a second readonly meta/handle pair.
     #[inline(always)]
     pub fn into_readonly(self) -> CpiHandle<'a> {
-        let mut handle =
-            Self::readonly_with_flags(self.view, self.borrow_check, self.relax_readonly_borrow);
-        handle.signer = self.signer;
-        handle
+        Self {
+            writable: false,
+            ..self
+        }
     }
 
     /// Access the underlying `AccountView` for CPI account construction.
@@ -203,18 +203,18 @@ impl<'a> CpiHandle<'a> {
 impl<'a> CpiHandleMut<'a> {
     #[inline(always)]
     pub fn writable(view: &'a mut AccountView) -> Self {
-        Self::writable_with_borrow_check(*view, true)
+        Self::writable_with_borrow_check(view, true)
     }
 
     #[inline(always)]
-    pub(crate) fn without_borrow_check(view: AccountView) -> Self {
+    pub(crate) fn without_borrow_check(view: &'a AccountView) -> Self {
         Self::writable_with_borrow_check(view, false)
     }
 
     #[inline(always)]
-    fn writable_with_borrow_check(view: AccountView, borrow_check: bool) -> Self {
+    fn writable_with_borrow_check(view: &'a AccountView, borrow_check: bool) -> Self {
         Self {
-            view,
+            view: *view,
             _borrow: PhantomData,
             signer: view.is_signer(),
             borrow_check,
@@ -258,9 +258,7 @@ impl<'a> CpiHandleMut<'a> {
     /// still emit a second readonly meta/handle pair.
     #[inline(always)]
     pub fn into_readonly(self) -> CpiHandle<'a> {
-        let mut handle = CpiHandle::readonly_with_borrow_check(self.view, self.borrow_check);
-        handle.signer = self.signer;
-        handle
+        CpiHandle::from(self).into_readonly()
     }
 }
 
@@ -369,8 +367,7 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
         Self::load(view)
     }
 
-    /// Copy the pointer-sized view of the underlying runtime account.
-    fn account(&self) -> AccountView;
+    fn account(&self) -> &AccountView;
 
     fn exit(&mut self) -> ProgramResult {
         Ok(())
@@ -389,7 +386,7 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// it is alive. The handle's `is_writable` flag is `false`.
     #[inline(always)]
     fn cpi_handle(&self) -> CpiHandle<'_> {
-        CpiHandle::readonly_with_borrow_check(self.account(), true)
+        CpiHandle::readonly(self.account())
     }
 
     /// Obtain a writable CPI handle for this account.
@@ -538,8 +535,7 @@ pub trait AccountAddress {
 impl<T: AnchorAccount> AccountAddress for T {
     #[inline(always)]
     fn account_address(&self) -> &Address {
-        // SAFETY: the runtime address is immutable and valid while this wrapper is borrowed.
-        unsafe { &(*self.account().account_ptr()).address }
+        self.account().address()
     }
 }
 

@@ -101,8 +101,8 @@ impl AnchorAccount for FakeMintAccount {
         Self::load(view)
     }
 
-    fn account(&self) -> AccountView {
-        self.account
+    fn account(&self) -> &AccountView {
+        &self.account
     }
 }
 
@@ -168,8 +168,8 @@ impl AnchorAccount for FakeTokenAccount {
         Self::load(view)
     }
 
-    fn account(&self) -> AccountView {
-        self.account
+    fn account(&self) -> &AccountView {
+        &self.account
     }
 }
 
