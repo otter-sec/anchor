@@ -36,12 +36,33 @@ env:
   CARGO_PROFILE: ${{ github.event_name == 'pull_request' && 'debug' || 'release' }}
   ANCHOR_BINARY_NAME: anchor-binary
   SURFPOOL_CLI_VERSION: 1.5.0
-  CARGO_CACHE_PATH: |
-    ~/.cargo/registry/index/
-    ~/.cargo/registry/cache/
-    ~/.cargo/git/db/
 
 jobs:
+  # Verification stays cold; only this independent job populates PR caches.
+  populate-pr-caches:
+    name: Populate PR caches
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CACHE: "true"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup/
+      - uses: ./.github/actions/setup-cargo-cache/
+        with:
+          save: true
+      - run: cargo build
+      - run: cargo test --workspace --exclude avm --features allow-missing-optionals,anchor-debug,derive,event-cpi,init-if-needed,lazy-account --no-run
+      - run: cargo test -p anchor-client --features async --no-run
+      - run: cargo test -p avm --no-run
+      - run: cargo test --workspace --exclude avm --no-default-features --features solana-v4,allow-missing-optionals,anchor-debug,derive,event-cpi,init-if-needed,lazy-account,associated_token,mint,token,token_2022,token_2022_extensions --no-run
+      - run: cargo test -p anchor-client --no-default-features --features solana-v4,async --no-run
+      - run: cargo install --path cli anchor-cli --locked --force --debug --features idl-localnet-testing
+      - run: cargo install --path avm --locked --force
+
   test-core:
     name: Core Tests
     runs-on: ubuntu-latest
@@ -54,13 +75,9 @@ jobs:
       - uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: Cache Cargo registry + index
-        id: cache-cargo-build
-        with:
-          path: ${{ env.CARGO_CACHE_PATH }}
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - uses: ./.github/actions/setup-cargo-cache/
+        if: env.CACHE == 'true'
+
       - run: cargo build
       - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu rustfmt && cargo +nightly fmt -- --check
       - run: cargo clippy --all-targets -- -D warnings
@@ -120,13 +137,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup/
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: Cache Cargo registry + index
-        id: cache-cargo-build
-        with:
-          path: ${{ env.CARGO_CACHE_PATH }}
-          key: cargo-v4-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - uses: ./.github/actions/setup-cargo-cache/
+        if: env.CACHE == 'true'
+
       # `--no-default-features` also drops anchor-spl's capability features, so
       # they have to be re-listed alongside the cohort.
       - run: cargo clippy --workspace --exclude avm --all-targets --no-default-features --features solana-v4,associated_token,mint,token,token_2022,token_2022_extensions -- -D warnings
@@ -144,13 +157,24 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup/
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: Cache Cargo registry + index
-        id: cache-anchor
+      - uses: ./.github/actions/setup-solana/
+        if: github.event_name != 'pull_request'
+      - uses: ./.github/actions/setup-surfpool/
+        if: github.event_name != 'pull_request'
+      - uses: ./.github/actions/setup-ts/
+        if: github.event_name != 'pull_request'
+      - uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4 # v2
+        name: Warm SBF platform tools
+        if: github.event_name != 'pull_request'
         with:
-          path: ${{ env.CARGO_CACHE_PATH }}
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          retry_wait_seconds: 60
+          timeout_minutes: 5
+          max_attempts: 5
+          retry_on: error
+          shell: bash
+          command: cargo build-sbf --install-only
+      - uses: ./.github/actions/setup-cargo-cache/
+        if: env.CACHE == 'true'
 
       - run: cargo install --path cli anchor-cli --locked --force --debug --features idl-localnet-testing
         if: env.CARGO_PROFILE == 'debug'
@@ -185,8 +209,14 @@ jobs:
 
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-solana/
+        with:
+          cache-save: false
       - uses: ./.github/actions/setup-ts/
+        with:
+          cache-save: false
       - uses: ./.github/actions/setup-surfpool/
+        with:
+          cache-save: false
 
       - run: cd examples/tutorial && yarn workspaces run test
       - uses: ./.github/actions/git-diff/
@@ -216,6 +246,8 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-solana/
+        with:
+          cache-save: false
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -241,6 +273,8 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-ts/
+        with:
+          cache-save: false
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -269,7 +303,11 @@ jobs:
           name: composite.so
           path: tests/composite/target/deploy/
       - uses: ./.github/actions/setup-solana/
+        with:
+          cache-save: false
       - uses: ./.github/actions/setup-surfpool/
+        with:
+          cache-save: false
       - run: cd client/example && ./run-test.sh
       - uses: ./.github/actions/git-diff/
 
@@ -284,16 +322,17 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-ts/
-      - uses: ./.github/actions/setup-solana/
-      - uses: ./.github/actions/setup-surfpool/
-
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: Cache Cargo registry + index
-        id: cache-anchor
         with:
-          path: ${{ env.CARGO_CACHE_PATH }}
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          cache-save: false
+      - uses: ./.github/actions/setup-solana/
+        with:
+          cache-save: false
+      - uses: ./.github/actions/setup-surfpool/
+        with:
+          cache-save: false
+
+      - uses: ./.github/actions/setup-cargo-cache/
+        if: env.CACHE == 'true'
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -388,16 +427,17 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-ts/
-      - uses: ./.github/actions/setup-solana/
-      - uses: ./.github/actions/setup-surfpool/
-
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: Cache Cargo registry + index
-        id: cache-anchor
         with:
-          path: ${{ env.CARGO_CACHE_PATH }}
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          cache-save: false
+      - uses: ./.github/actions/setup-solana/
+        with:
+          cache-save: false
+      - uses: ./.github/actions/setup-surfpool/
+        with:
+          cache-save: false
+
+      - uses: ./.github/actions/setup-cargo-cache/
+        if: env.CACHE == 'true'
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -592,16 +632,17 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-ts/
-      - uses: ./.github/actions/setup-solana/
-      - uses: ./.github/actions/setup-surfpool/
-
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        if: ${{ env.CACHE != 'false' }}
-        name: Cache Cargo registry + index
-        id: cache-anchor
         with:
-          path: ${{ env.CARGO_CACHE_PATH }}
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          cache-save: false
+      - uses: ./.github/actions/setup-solana/
+        with:
+          cache-save: false
+      - uses: ./.github/actions/setup-surfpool/
+        with:
+          cache-save: false
+
+      - uses: ./.github/actions/setup-cargo-cache/
+        if: env.CACHE == 'true'
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
