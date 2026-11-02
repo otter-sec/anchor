@@ -14,6 +14,14 @@
 //! OR
 //! 2. If no one has exchanged, the initializer can close the escrow account
 //! - Initializer will get back ownership of their token X account
+//!
+//! ## Closing token accounts that may hold dust
+//!
+//! SPL Token `CloseAccount` requires the account balance to be exactly zero. If anything
+//! can transfer into a PDA-owned vault after you record `amount` (airdrops, mistaken
+//! transfers, fees), transferring only `amount` and then closing fails forever and locks
+//! rent. Prefer transferring the vault's **entire** token balance (after checking it is
+//! at least the recorded amount), then close. See coral-xyz/anchor#5240.
 
 use anchor_lang::prelude::*;
 use anchor_spl::{
