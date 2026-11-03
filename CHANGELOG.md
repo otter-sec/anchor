@@ -32,7 +32,9 @@ The minor version will be incremented upon a breaking change and the patch versi
 - ts: Stop the accounts resolver from failing with a max depth error when every account resolves on the last allowed pass ([#5155](https://github.com/otter-sec/anchor/pull/5155)).
 - lang: Reject `seeds::program` with `init` regardless of constraint order ([#5192](https://github.com/otter-sec/anchor/pull/5192)).
 - cli: Fix generated projects with `--anchor-version v2` ([#5187](https://github.com/otter-sec/anchor/pull/5187)).
-- cli: Keep a custom provider `ws` URL when rewriting `Anchor.toml` ([#5194](https://github.com/otter-sec/anchor/pull/5194)).
+- cli: Keep a custom provider `ws` URL when rewriting `Anchor.toml` ([#5193](https://github.com/otter-sec/anchor/issues/5193)).
+- cli: Restore `--verifiable` for deploys, now on `anchor program deploy`, so the `target/verifiable` build can be deployed again without the deprecated `anchor deploy` ([#5223](https://github.com/otter-sec/anchor/pull/5223)).
+- ts: Resolve the generic arguments of generic types nested in a generic type, so IDLs such as the generics test program can be decoded ([#5158](https://github.com/otter-sec/anchor/pull/5158)).
 
 ### Breaking
 
