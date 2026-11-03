@@ -243,13 +243,16 @@ pub fn expand(item: TokenStream) -> TokenStream {
         // `#[repr(transparent)] struct Pod{Enum}(pub u8)` — the wire shape is
         // just a byte, but it still needs a type def so downstream
         // `declare_program!` consumers can resolve `Pod{Enum}` references.
-        #[cfg(feature = "idl-build")]
+        #[cfg(all(
+            feature = "idl-build",
+            not(any(target_os = "solana", target_arch = "bpf"))
+        ))]
         impl anchor_lang::IdlAccountType for #pod_name {
             const __IDL_TYPE_DEF: Option<&'static str> = Some(#idl_type_def);
 
             fn __register_idl_deps(
-                _accounts: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
-                types: &mut anchor_lang::__alloc::vec::Vec<&'static str>,
+                _accounts: &mut anchor_lang::IdlEntries,
+                types: &mut anchor_lang::IdlEntries,
             ) {
                 if let Some(t) = <Self as anchor_lang::IdlAccountType>::__IDL_TYPE_DEF {
                     types.push(t);

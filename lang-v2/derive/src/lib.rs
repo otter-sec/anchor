@@ -3846,7 +3846,13 @@ fn gen_declare_program_types_for_target(
             ));
         }
         let borsh_derives = if borrowed && type_is_dynamic {
-            quote! { #[derive(Clone, anchor_lang::AnchorSerialize)] }
+            quote! {
+                #[derive(
+                    Clone,
+                    anchor_lang::AnchorDeserialize,
+                    anchor_lang::AnchorSerialize,
+                )]
+            }
         } else {
             quote! {
                 #[derive(
@@ -5967,6 +5973,7 @@ fn process_handler(
         Ok(return_ty) => return_ty,
         Err(err) => return HandlerCodegen::error(handler, err),
     };
+    let has_ref_return = return_type.as_ref().is_some_and(needs_ix_lifetime);
     let return_ty = return_type
         .as_ref()
         .map(|return_ty| quote! { #return_ty })
@@ -6309,47 +6316,75 @@ fn process_handler(
     // `ctx: &mut Context<_>`), packs them into the client-side
     // `instruction::<Camel>` struct, and forwards to `CpiContext::invoke`.
     // Lifetime story: `'a` is the CPI handle lifetime; `'ix` matches the
-    // instruction struct's optional ref-args lifetime.
+    // instruction struct's optional ref-args lifetime and, for borrowed
+    // return values, the caller-provided return-data storage.
     let cpi_wrapper = {
         let host_lt_decl = if has_ref_args {
             quote! { <'a, 'ix, const __ANCHOR_CPI_CAPACITY: usize> }
         } else {
             quote! { <'a, const __ANCHOR_CPI_CAPACITY: usize> }
         };
-        let target_lt_decl = if ix_data_bound.is_none() {
-            if has_ref_args {
-                quote! {
-                    <
-                        'a,
-                        'ix,
-                        const __ANCHOR_CPI_CAPACITY: usize,
-                        const __ANCHOR_DATA_CAPACITY: usize,
-                    >
-                }
-            } else {
-                quote! {
-                    <
-                        'a,
-                        const __ANCHOR_CPI_CAPACITY: usize,
-                        const __ANCHOR_DATA_CAPACITY: usize,
-                    >
-                }
+        let mut target_generics = vec![quote! { 'a }];
+        if has_ref_args || has_ref_return {
+            target_generics.push(quote! { 'ix });
+        }
+        target_generics.push(quote! { const __ANCHOR_CPI_CAPACITY: usize });
+        if ix_data_bound.is_none() {
+            target_generics.push(quote! { const __ANCHOR_DATA_CAPACITY: usize });
+        }
+        if has_ref_return {
+            target_generics.push(quote! { const __ANCHOR_RETURN_CAPACITY: usize });
+        }
+        let target_lt_decl = quote! { <#(#target_generics),*> };
+        let ret_ty = if returns_value {
+            quote! { -> anchor_lang::Result<Return<#return_ty>> }
+        } else {
+            quote! { -> anchor_lang::Result<()> }
+        };
+        let host_ret_value = if returns_value {
+            quote! {
+                Ok(Return {
+                    program: *__ctx.program,
+                    phantom: core::marker::PhantomData,
+                })
             }
         } else {
-            host_lt_decl.clone()
+            quote! { Ok(()) }
         };
-        let (ret_ty, ret_value) = if returns_value {
-            (
-                quote! { -> anchor_lang::Result<Return<#return_ty>> },
+        let target_ret_value = if let Some(return_ty) = return_type.as_ref() {
+            let copy_return_data = has_ref_return.then(|| {
                 quote! {
-                    Ok(Return {
-                        program: *__ctx.program,
-                        phantom: core::marker::PhantomData,
-                    })
-                },
-            )
+                    if __return.as_slice().len() > __return_data.capacity() {
+                        return Err(anchor_lang::Error::InvalidInstructionData);
+                    }
+                    __return_data.clear();
+                    __return_data
+                        .try_extend_from_slice(__return.as_slice())
+                        .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
+                    let __return_bytes = __return_data.as_slice();
+                }
+            });
+            let return_bytes = if has_ref_return {
+                quote! { __return_bytes }
+            } else {
+                quote! { __return.as_slice() }
+            };
+            quote! {
+                let __return = anchor_lang::pinocchio::cpi::get_return_data().unwrap();
+                assert!(
+                    anchor_lang::address_eq(__return.program_id(), __ctx.program),
+                    "return data program id mismatch"
+                );
+                #copy_return_data
+                let __value: #return_ty = anchor_lang::wincode::config::deserialize(
+                    #return_bytes,
+                    anchor_lang::BORSH_CONFIG,
+                )
+                .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
+                Ok(Return { value: __value })
+            }
         } else {
-            (quote! { -> anchor_lang::Result<()> }, quote! { Ok(()) })
+            quote! { Ok(()) }
         };
         let target_data_arg = if ix_data_bound.is_none() {
             quote! {
@@ -6358,6 +6393,14 @@ fn process_handler(
         } else {
             quote! {}
         };
+        let target_return_data_arg = has_ref_return.then(|| {
+            quote! {
+                __return_data: &'ix mut anchor_lang::FixedVec<
+                    u8,
+                    __ANCHOR_RETURN_CAPACITY,
+                >,
+            }
+        });
         let target_serialize = match &ix_data_bound {
             Some(bound) => quote! {
                 let mut __data = anchor_lang::FixedVec::<u8, { #bound }>::new();
@@ -6380,13 +6423,14 @@ fn process_handler(
                 >,
                 #(#extra_arg_names: #extra_arg_types,)*
                 #target_data_arg
+                #target_return_data_arg
             ) #ret_ty {
                 let __ix = super::instruction::#ix_struct_name {
                     #(#extra_arg_names,)*
                 };
                 #target_serialize
                 __ctx.invoke(__data.as_slice())?;
-                #ret_value
+                #target_ret_value
             }
 
             #(#handler_cfg_attrs)*
@@ -6404,7 +6448,7 @@ fn process_handler(
                 };
                 let __data = anchor_lang::InstructionData::data(&__ix);
                 __ctx.invoke(__data.as_slice())?;
-                #ret_value
+                #host_ret_value
             }
         }
     };
@@ -6713,11 +6757,13 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
             use super::*;
             use anchor_lang::InstructionData as _;
 
+            #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
             pub struct Return<T> {
                 program: anchor_lang::Address,
                 phantom: core::marker::PhantomData<T>,
             }
 
+            #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
             impl<T> Return<T>
             where
                 T: for<'de> anchor_lang::wincode::SchemaRead<
@@ -6738,6 +6784,18 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                         anchor_lang::BORSH_CONFIG,
                     )
                         .unwrap()
+                }
+            }
+
+            #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+            pub struct Return<T> {
+                value: T,
+            }
+
+            #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+            impl<T> Return<T> {
+                pub fn get(self) -> T {
+                    self.value
                 }
             }
 
