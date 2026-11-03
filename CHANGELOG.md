@@ -21,6 +21,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- ts: Bump `toml` to `^5.0.1` to address security advisories in `toml` <= 5.0.0 ([#5236](https://github.com/otter-sec/anchor/issues/5236)).
 - cli: Accept an explicit program id or workspace program when parsing `program extend` ([#5220](https://github.com/otter-sec/anchor/pull/5220)).
 - Block mutable aliasing between accounts marked `zero` and `init` ([#4871](https://github.com/otter-sec/anchor/pull/4871)).
 - lang: Support fully qualified account types in `Context` ([#4836](https://github.com/otter-sec/anchor/pull/4836)).
