@@ -624,12 +624,21 @@ mod legacy {
 
     /// Serialize a legacy const seed value into the bytes used to derive
     /// the PDA, matching the legacy TS client (`toBufferValue`): strings as
-    /// raw UTF-8, integers as little-endian and byte arrays as-is.
+    /// raw UTF-8, integers as little-endian and byte arrays as-is. Signed
+    /// integers, which the TS client does not handle, are little-endian two's
+    /// complement, as `to_le_bytes` gives in a program's `seeds`. 128-bit
+    /// values are limited to the 64-bit range a JSON number holds here.
     fn const_seed_bytes(ty: &IdlType, value: &serde_json::Value) -> Result<Vec<u8>> {
         let int = |max: u64| {
             value
                 .as_u64()
                 .filter(|n| *n <= max)
+                .ok_or_else(|| anyhow!("Const seed of type {ty:?} is invalid: {value}"))
+        };
+        let sint = |min: i64, max: i64| {
+            value
+                .as_i64()
+                .filter(|n| (min..=max).contains(n))
                 .ok_or_else(|| anyhow!("Const seed of type {ty:?} is invalid: {value}"))
         };
         let bytes = || -> Result<Vec<u8>> {
@@ -654,6 +663,18 @@ mod legacy {
             IdlType::U16 => (int(u16::MAX.into())? as u16).to_le_bytes().to_vec(),
             IdlType::U32 => (int(u32::MAX.into())? as u32).to_le_bytes().to_vec(),
             IdlType::U64 => int(u64::MAX)?.to_le_bytes().to_vec(),
+            IdlType::U128 => u128::from(int(u64::MAX)?).to_le_bytes().to_vec(),
+            IdlType::I8 => (sint(i8::MIN.into(), i8::MAX.into())? as i8)
+                .to_le_bytes()
+                .to_vec(),
+            IdlType::I16 => (sint(i16::MIN.into(), i16::MAX.into())? as i16)
+                .to_le_bytes()
+                .to_vec(),
+            IdlType::I32 => (sint(i32::MIN.into(), i32::MAX.into())? as i32)
+                .to_le_bytes()
+                .to_vec(),
+            IdlType::I64 => sint(i64::MIN, i64::MAX)?.to_le_bytes().to_vec(),
+            IdlType::I128 => i128::from(sint(i64::MIN, i64::MAX)?).to_le_bytes().to_vec(),
             // The inverse converter emits const seeds as `type: "bytes"` +
             // JSON array of u8 values, so accept that shape too. Lets
             // `current -> legacy -> current` round-trip preserve PDA const
@@ -1158,6 +1179,31 @@ mod tests {
     }
 
     #[test]
+    fn legacy_signed_and_128_bit_const_seeds_are_le_bytes() {
+        // Two's complement, as `to_le_bytes` gives in a program's seeds.
+        let seeds = convert_const_seeds(serde_json::json!([
+            { "kind": "const", "type": "i8", "value": -1 },
+            { "kind": "const", "type": "i16", "value": -513 },
+            { "kind": "const", "type": "i32", "value": i32::MIN },
+            { "kind": "const", "type": "i64", "value": -4294967296i64 },
+            { "kind": "const", "type": "i128", "value": -2 },
+            { "kind": "const", "type": "u128", "value": u64::MAX }
+        ]))
+        .unwrap();
+        assert_eq!(
+            seeds,
+            vec![
+                (-1i8).to_le_bytes().to_vec(),
+                (-513i16).to_le_bytes().to_vec(),
+                i32::MIN.to_le_bytes().to_vec(),
+                (-4294967296i64).to_le_bytes().to_vec(),
+                (-2i128).to_le_bytes().to_vec(),
+                u128::from(u64::MAX).to_le_bytes().to_vec(),
+            ]
+        );
+    }
+
+    #[test]
     fn legacy_byte_array_const_seed_is_bytes() {
         let seeds = convert_const_seeds(serde_json::json!([
             { "kind": "const", "type": { "array": ["u8", 3] }, "value": [1, 2, 3] }
@@ -1176,7 +1222,12 @@ mod tests {
             serde_json::json!({
                 "kind": "const", "type": { "array": ["u8", 2] }, "value": [1, 2, 3]
             }),
-            serde_json::json!({ "kind": "const", "type": "i64", "value": 1 }),
+            serde_json::json!({ "kind": "const", "type": "i8", "value": 128 }),
+            serde_json::json!({ "kind": "const", "type": "i16", "value": -32769 }),
+            serde_json::json!({ "kind": "const", "type": "i32", "value": "1" }),
+            serde_json::json!({ "kind": "const", "type": "i64", "value": u64::MAX }),
+            serde_json::json!({ "kind": "const", "type": "i64", "value": 1.5 }),
+            serde_json::json!({ "kind": "const", "type": "u256", "value": 1 }),
         ] {
             assert!(
                 convert_const_seeds(serde_json::json!([seed.clone()])).is_err(),
