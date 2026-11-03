@@ -124,11 +124,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # FIXME: https://github.com/rust-lang/cargo/issues/17093
-      # Stable cargo has a publishing bug. Switch back to stable when the fix is out
+      # Newer Rust changes never type fallback used by solana-client 1.18.
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
         with:
-          toolchain: nightly
+          toolchain: 1.99.1
 
       - name: Install package verification dependencies
         run: sudo apt-get update && sudo apt-get install -y libudev-dev
