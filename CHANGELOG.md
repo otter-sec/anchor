@@ -12,8 +12,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
-- cli: Add `anchor security fetch` to read on-chain `security.json` ([#5124](https://github.com/otter-sec/anchor/issues/5124)).
-- cli: Warn on mainnet deploy without `--security-metadata`, and reject a `security.json` that still matches the `anchor init` template ([#5124](https://github.com/otter-sec/anchor/issues/5124)).
+- cli: Add `anchor security fetch` to read on-chain `security.json` ([#5124](https://github.com/otter-sec/anchor/pull/5124)).
+- cli: Warn on mainnet deploy without `--security-metadata`, and reject a `security.json` that still matches the `anchor init` template ([#5124](https://github.com/otter-sec/anchor/pull/5124)).
 - client: Add support for v1 transactions ([#5076](https://github.com/otter-sec/anchor/pull/5076)).
 - lang: Allow `None` in `mint::authority` and `mint::freeze_authority` constraints ([#5007](https://github.com/otter-sec/anchor/pull/5007)).
 - lang: Implement `Space` for `NonZero*` integers so `#[derive(InitSpace)]` supports them ([#5132](https://github.com/otter-sec/anchor/pull/5132)).
@@ -21,7 +21,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
-- ts: Bump `toml` to `^5.0.1` to address security advisories in `toml` <= 5.0.0 ([#5236](https://github.com/otter-sec/anchor/issues/5236)).
+- ts: Bump `toml` to `^5.0.1` to address security advisories in `toml` <= 5.0.0 ([#5237](https://github.com/otter-sec/anchor/pull/5237)).
 - cli: Accept an explicit program id or workspace program when parsing `program extend` ([#5220](https://github.com/otter-sec/anchor/pull/5220)).
 - Block mutable aliasing between accounts marked `zero` and `init` ([#4871](https://github.com/otter-sec/anchor/pull/4871)).
 - lang: Support fully qualified account types in `Context` ([#4836](https://github.com/otter-sec/anchor/pull/4836)).
@@ -30,9 +30,9 @@ The minor version will be incremented upon a breaking change and the patch versi
 - idl: Fail with an error when a type alias name is defined differently in more than one module, instead of silently using the first definition ([#5131](https://github.com/otter-sec/anchor/pull/5131)).
 - avm: Validate and normalize `platform-tools` versions before building install and uninstall paths, so a version like `v1.54/../../../victim` cannot delete outside `$AVM_HOME/platform-tools` ([#4806](https://github.com/otter-sec/anchor/pull/4806)).
 - ts: Stop the accounts resolver from failing with a max depth error when every account resolves on the last allowed pass ([#5155](https://github.com/otter-sec/anchor/pull/5155)).
-- lang: Reject `seeds::program` with `init` regardless of constraint order ([#5191](https://github.com/otter-sec/anchor/issues/5191)).
+- lang: Reject `seeds::program` with `init` regardless of constraint order ([#5192](https://github.com/otter-sec/anchor/pull/5192)).
 - cli: Fix generated projects with `--anchor-version v2` ([#5187](https://github.com/otter-sec/anchor/pull/5187)).
-- cli: Keep a custom provider `ws` URL when rewriting `Anchor.toml` ([#5193](https://github.com/otter-sec/anchor/issues/5193)).
+- cli: Keep a custom provider `ws` URL when rewriting `Anchor.toml` ([#5194](https://github.com/otter-sec/anchor/pull/5194)).
 
 ### Breaking
 
@@ -53,13 +53,13 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Accept arbitrary expressions in `declare_id!`. ([#5010](https://github.com/otter-sec/anchor/pull/5010)).
 - lang: Avoid an unnecessary stack allocation when snapshotting CPI return data ([#4931](https://github.com/otter-sec/anchor/pull/4931)).
 - lang: Raise an error when modifying data in an account that has had its ownership changed. ([#5011](https://github.com/otter-sec/anchor/pull/5011)).
-- cli: Redact cluster/RPC URLs printed by the CLI so credentials/secrets aren't leaked into terminal scrollback or CI logs. ([#5061](https://github.com/otter-sec/anchor/pull/5061)), ([#5030](https://github.com/otter-sec/anchor/issues/5030)).
+- cli: Redact cluster/RPC URLs printed by the CLI so credentials/secrets aren't leaked into terminal scrollback or CI logs. ([#5061](https://github.com/otter-sec/anchor/pull/5061)).
 - lang: Validate Token-2022 mint extension constraints when reusing existing mints with `init_if_needed` ([#4845](https://github.com/otter-sec/anchor/pull/4845)).
 - cli: Make `anchor keygen new --silent` withhold the seed phrase instead of only the pubkey, matching `solana-keygen new --silent`. ([#5080](https://github.com/otter-sec/anchor/pull/5080)).
 - deps: Bump `heck` to 0.5 to avoid incompatible dependencies ([#4960](https://github.com/otter-sec/anchor/pull/4960)).
 - lang: Read the `#[account]` namespace from the string value ([#5200](https://github.com/otter-sec/anchor/pull/5200)).
 - lang: Reject closing an account into itself from `close()` ([#5202](https://github.com/otter-sec/anchor/pull/5202)).
-- cli: Merge `shutdown_wait` and `upgradeable` from `Test.toml` files that use `extends` ([#5188](https://github.com/otter-sec/anchor/issues/5188)).
+- cli: Merge `shutdown_wait` and `upgradeable` from `Test.toml` files that use `extends` ([#5189](https://github.com/otter-sec/anchor/pull/5189)).
 
 ### Breaking
 
@@ -162,11 +162,11 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Validate `max_len` arguments more strictly during space derivation ([#4707](https://github.com/otter-sec/anchor/pull/4707)).
 - ts: Remove `cross-fetch` dependency ([#4671](https://github.com/solana-foundation/anchor/pull/4671)).
 - lang: Set `anchor-lang` Minimum Supported Rust Version to `1.89` ([#4638](https://github.com/otter-sec/anchor/pull/4638)).
-- lang: Migrate `anchor-syn` from syn 1.x to syn 2.0, allowing use of modern Rust syntax ([#4523](https://github.com/solana-foundation/anchor/issues/4523)).
+- lang: Migrate `anchor-syn` from syn 1.x to syn 2.0, allowing use of modern Rust syntax ([#4523](https://github.com/solana-foundation/anchor/pull/4523)).
 - idl: Bump version to 0.1.3 ([#4453](https://github.com/solana-foundation/anchor/pull/4453)).
 - lang: Avoid fatal errors in IDL building when modern Rust syntax is in use ([#4520](https://github.com/solana-foundation/anchor/pull/4520)).
 - lang: Return `InvalidProgramId` when `Migration::exit` cannot persist migrated state because `To::owner()` does not match `program_id` ([#4706](https://github.com/otter-sec/anchor/pull/4706)).
-- client: Avoid panic in `parse_logs_response` when a program-emitted log line ends with `invoke [1]` ([#4461](https://github.com/solana-foundation/anchor/issues/4461)).
+- client: Avoid panic in `parse_logs_response` when a program-emitted log line ends with `invoke [1]` ([#4475](https://github.com/solana-foundation/anchor/pull/4475)).
 - cli: Correctly honor `--skip-seed-phrase-validation` in `keygen recover` ([#4417](https://github.com/solana-foundation/anchor/pull/4417)).
 - ts: Fix `sha256.hash()` returning corrupted output by using hex encoding ([#4404](https://github.com/solana-foundation/anchor/pull/4404)).
 - lang: Support module constants in `max_len` attribute ([#3879](https://github.com/solana-foundation/anchor/pull/3879)).
@@ -784,7 +784,7 @@ See the [Anchor 0.29 release notes](https://www.anchor-lang.com/release-notes/0.
 
 ### Features
 
-- cli: Add `--run` to `anchor test` for running a subset of test suites ([#1828](https://github.com/solana-foundation/anchor/issues/1828)).
+- cli: Add `--run` to `anchor test` for running a subset of test suites ([#1864](https://github.com/solana-foundation/anchor/pull/1864)).
 - client: Add `transaction` functions to RequestBuilder ([#1958](https://github.com/solana-foundation/anchor/pull/1958)).
 - spl: Add `create_metadata_accounts_v3` and `set_collection_size` wrappers ([#2119](https://github.com/solana-foundation/anchor/pull/2119)).
 - spl: Add `MetadataAccount` account deserialization. ([#2014](https://github.com/solana-foundation/anchor/pull/2014)).
@@ -802,7 +802,7 @@ See the [Anchor 0.29 release notes](https://www.anchor-lang.com/release-notes/0.
 - ts: Add `feePayer` check to `AnchorProvider` methods, so that anchor writes the provider's wallet as fee payer if fee payer isn't already set ([#2186](https://github.com/solana-foundation/anchor/pull/2186)).
 - ts: Add nested PDA inference ([#2194](https://github.com/solana-foundation/anchor/pull/2194)).
 - ts: Add ability to resolve missing accounts with a custom resolver ([#2194](https://github.com/solana-foundation/anchor/pull/2194)).
-- ts: Update the Solana web3 library used by anchor ts to version 1.64.0 ([#2220](https://github.com/solana-foundation/anchor/issues/2220)).
+- ts: Update the Solana web3 library used by anchor ts to version 1.64.0 ([#2223](https://github.com/solana-foundation/anchor/pull/2223)).
 - lang: Updates `AccountsClose` to make it safe to call manually ([#2209](https://github.com/solana-foundation/anchor/pull/2209)).
 - lang: Update rust used in the repo version 1.62 ([#2272](https://github.com/solana-foundation/anchor/pull/2272)).
 - cli: Allow custom cluster config ([#2271](https://github.com/solana-foundation/anchor/pull/2271)).
@@ -916,14 +916,14 @@ See the [Anchor 0.29 release notes](https://www.anchor-lang.com/release-notes/0.
 
 ### Features
 
-- cli: Add `anchor clean` command that's the same as `cargo clean` but preserves keypairs inside `target/deploy` ([#1470](https://github.com/solana-foundation/anchor/issues/1470)).
+- cli: Add `anchor clean` command that's the same as `cargo clean` but preserves keypairs inside `target/deploy` ([#1479](https://github.com/solana-foundation/anchor/pull/1479)).
 - cli: Running `anchor init` now initializes a new git repository for the workspace. This can be disabled with the `--no-git` flag ([#1605](https://github.com/solana-foundation/anchor/pull/1605)).
 - cli: Add support for `anchor idl fetch` to work outside anchor workspace ([#1509](https://github.com/solana-foundation/anchor/pull/1509)).
-- cli: [[test.validator.clone]] also clones the program data account of programs owned by the bpf upgradeable loader ([#1481](https://github.com/solana-foundation/anchor/issues/1481)).
+- cli: [[test.validator.clone]] also clones the program data account of programs owned by the bpf upgradeable loader ([#1495](https://github.com/solana-foundation/anchor/pull/1495)).
 - lang: Add new `AccountSysvarMismatch` error code and test cases for sysvars ([#1535](https://github.com/solana-foundation/anchor/pull/1535)).
 - lang: Replace `std::io::Cursor` with a custom `Write` impl that uses the Solana mem syscalls ([#1589](https://github.com/solana-foundation/anchor/pull/1589)).
 - lang: Add `require_neq`, `require_keys_neq`, `require_gt`, and `require_gte` comparison macros ([#1622](https://github.com/solana-foundation/anchor/pull/1622)).
-- lang: Handle arrays with const as size in instruction data ([#1623](https://github.com/solana-foundation/anchor/issues/1623).
+- lang: Handle arrays with const as size in instruction data ([#1631](https://github.com/solana-foundation/anchor/pull/1631)).
 - spl: Add support for revoke instruction ([#1493](https://github.com/solana-foundation/anchor/pull/1493)).
 - ts: Add provider parameter to `Spl.token` factory method ([#1597](https://github.com/solana-foundation/anchor/pull/1597)).
 
