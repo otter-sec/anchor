@@ -175,13 +175,18 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
     /// length and the body type's alignment are both known statically, and
     /// account data starts eight-byte aligned, so a discriminator that can
     /// never leave the body aligned (e.g. one byte with a `u64` body) is a
-    /// build error instead of a load that fails on every call. Types aligned
-    /// past eight bytes can't be proven either way from an eight-byte
-    /// aligned start, so those still rely on the runtime check.
-    const ALIGNMENT_CHECK: () = assert!(
-        mem::align_of::<T>() > 8 || T::DISCRIMINATOR.len() % mem::align_of::<T>() == 0,
-        "AccountLoader body can never be aligned: discriminator length must be a multiple of the account type's alignment"
-    );
+    /// build error instead of a load that fails on every call. Alignment
+    /// past eight bytes is capped at eight here because the account data
+    /// start is only guaranteed eight-byte aligned; the runtime check
+    /// still verifies the full alignment of the actual body pointer.
+    const ALIGNMENT_CHECK: () = {
+        let align = mem::align_of::<T>();
+        let align = if align > 8 { 8 } else { align };
+        assert!(
+            T::DISCRIMINATOR.len() % align == 0,
+            "AccountLoader body can never be aligned: discriminator length must be a multiple of the account type's alignment (capped at 8)"
+        );
+    };
 
     fn check_alignment(&self, data: &[u8]) -> Result<()> {
         let () = Self::ALIGNMENT_CHECK;

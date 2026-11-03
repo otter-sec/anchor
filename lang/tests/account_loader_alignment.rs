@@ -5,16 +5,16 @@
 //! - A compile-time check in `AccountLoader::check_alignment` rejects
 //!   account types whose discriminator can never leave the body aligned
 //!   (discriminator length not a multiple of the body type's alignment,
-//!   for types aligned to eight bytes or less). A one-byte discriminator
-//!   with a `u64` body — the case in #5246 — is now a build error, so it
-//!   has no runtime test here.
+//!   capped at eight because account data only starts eight-byte
+//!   aligned). A one-byte discriminator with a `u64` body — the case in
+//!   #5246 — is now a build error, so it has no runtime test here.
 //! - The runtime check still guards misalignment that only shows up at
 //!   runtime, e.g. account data that itself starts off an eight-byte
 //!   boundary. These tests use a standard eight-byte discriminator and
 //!   shift the account data start by one byte instead. The `u128` case
-//!   keeps a one-byte discriminator: its sixteen-byte alignment can't be
-//!   proven from an eight-byte aligned start either way, so the static
-//!   check stays quiet and the runtime check does the work.
+//!   keeps the same setup: its sixteen-byte alignment is capped to eight
+//!   by the static check, so the shifted start is what the runtime check
+//!   has to catch.
 
 use anchor_lang::{accounts::account_loader::AccountLoader, prelude::*};
 
@@ -26,9 +26,9 @@ pub struct StandardDiscriminator {
     pub value: u64,
 }
 
-#[account(zero_copy, discriminator = [1u8])]
+#[account(zero_copy, discriminator = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8])]
 #[derive(Default, Debug)]
-pub struct ShortDiscriminatorU128 {
+pub struct StandardDiscriminatorU128 {
     pub value: u128,
 }
 
@@ -125,9 +125,9 @@ fn test_load_init_misaligned() {
 #[test]
 fn test_load_misaligned_u128() {
     setup_misaligned_account!(
-        ShortDiscriminatorU128,
-        [1u8],
-        0,
+        StandardDiscriminatorU128,
+        [1u8; 8],
+        1,
         key,
         owner,
         lamports,
@@ -135,7 +135,7 @@ fn test_load_misaligned_u128() {
         data,
         account_info
     );
-    let loader: AccountLoader<ShortDiscriminatorU128> =
+    let loader: AccountLoader<StandardDiscriminatorU128> =
         AccountLoader::try_from_unchecked(&crate::ID, &account_info).unwrap();
     assert_eq!(
         loader.load().unwrap_err(),
