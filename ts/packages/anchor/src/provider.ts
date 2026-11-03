@@ -513,8 +513,6 @@ async function sendAndConfirmRawTransaction(
       }
     : {};
 
-  let status: SignatureResult;
-
   const startTime = Date.now();
   while (Date.now() - startTime < 60_000) {
     try {
@@ -523,31 +521,40 @@ async function sendAndConfirmRawTransaction(
         sendOptions
       );
 
+      let confirmation: Promise<RpcResponseAndContext<SignatureResult>>;
       if (options?.blockhash) {
         if (sendOptions.maxRetries === 0) {
           const abortSignal = AbortSignal.timeout(15_000);
-          status = (
-            await connection.confirmTransaction(
-              { abortSignal, signature, ...options.blockhash },
-              options && options.commitment
-            )
-          ).value;
+          confirmation = connection.confirmTransaction(
+            { abortSignal, signature, ...options.blockhash },
+            options && options.commitment
+          );
         } else {
-          status = (
-            await connection.confirmTransaction(
-              { signature, ...options.blockhash },
-              options && options.commitment
-            )
-          ).value;
+          confirmation = connection.confirmTransaction(
+            { signature, ...options.blockhash },
+            options && options.commitment
+          );
         }
       } else {
-        status = (
-          await connection.confirmTransaction(
-            signature,
-            options && options.commitment
-          )
-        ).value;
+        confirmation = connection.confirmTransaction(
+          signature,
+          options && options.commitment
+        );
       }
+
+      const status = await confirmation.then(
+        ({ value }) => value,
+        (err) => {
+          // web3.js's HTTP confirmation path rejects with a raw TransactionError.
+          if (
+            typeof err === "string" ||
+            (err !== null && typeof err === "object" && !("message" in err))
+          ) {
+            return { err };
+          }
+          throw err;
+        }
+      );
 
       if (status.err) {
         throw new ConfirmError(
