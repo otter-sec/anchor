@@ -24,7 +24,7 @@ import {
 } from "@solana/kit";
 import {
   AnchorProvider,
-  ProviderOptions,
+  ConfirmOptions,
   SolanaClient,
   WalletSigner,
 } from "../../src/provider";
@@ -48,8 +48,8 @@ export function mockProvider(
     wallet?: WalletSigner;
     /** Extra subscription methods, merged over the confirming defaults. */
     subscriptions?: Record<string, unknown>;
-    /** Default options of the provider. */
-    opts?: ProviderOptions;
+    /** Default confirmation options of the provider. */
+    opts?: ConfirmOptions;
   } = {}
 ) {
   const keypair = Keypair.generate();
@@ -109,8 +109,6 @@ export function confirmingResponders(): Record<string, Responder> {
     getLatestBlockhash: latestBlockhashResponse,
     getEpochInfo: () => ({ absoluteSlot: 1, blockHeight: 1 }),
     getSignatureStatuses: () => ({ context: { slot: 1 }, value: [null] }),
-    simulateTransaction: () =>
-      simulationResponse({ loadedAccountsDataSize: 4096 }),
     sendTransaction: (request) =>
       signatureBase58(decodeWireTransaction(request).transaction),
   };
@@ -192,13 +190,6 @@ export function transferMessage(from: Address) {
   return appendTransactionMessageInstruction(
     transferInstruction(from),
     createTransactionMessage({ version: 0 })
-  );
-}
-
-export function transferMessageV1(from: Address) {
-  return appendTransactionMessageInstruction(
-    transferInstruction(from),
-    createTransactionMessage({ version: 1 })
   );
 }
 

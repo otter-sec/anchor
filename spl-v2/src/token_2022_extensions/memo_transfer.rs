@@ -12,8 +12,8 @@ pub struct MemoTransfer<'a> {
     pub owner: CpiHandle<'a>,
 }
 
-pub fn memo_transfer_initialize<'a, const N: usize>(
-    ctx: CpiContext<'a, MemoTransfer<'a>, N>,
+pub fn memo_transfer_initialize<'a>(
+    ctx: CpiContext<'a, MemoTransfer<'a>, 2>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
@@ -24,11 +24,11 @@ pub fn memo_transfer_initialize<'a, const N: usize>(
         ctx.accounts.owner.address(),
         &signer_addresses,
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
-pub fn memo_transfer_disable<'a, const N: usize>(
-    ctx: CpiContext<'a, MemoTransfer<'a>, N>,
+pub fn memo_transfer_disable<'a>(
+    ctx: CpiContext<'a, MemoTransfer<'a>, 2>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
@@ -40,5 +40,5 @@ pub fn memo_transfer_disable<'a, const N: usize>(
             ctx.accounts.owner.address(),
             &signer_addresses,
         )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }

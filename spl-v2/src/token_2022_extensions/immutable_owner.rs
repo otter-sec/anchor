@@ -10,8 +10,8 @@ pub struct ImmutableOwnerInitialize<'a> {
     pub token_account: CpiHandleMut<'a>,
 }
 
-pub fn immutable_owner_initialize<'a, const N: usize>(
-    ctx: CpiContext<'a, ImmutableOwnerInitialize<'a>, N>,
+pub fn immutable_owner_initialize<'a>(
+    ctx: CpiContext<'a, ImmutableOwnerInitialize<'a>, 1>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
@@ -19,5 +19,5 @@ pub fn immutable_owner_initialize<'a, const N: usize>(
         &program,
         ctx.accounts.token_account.address(),
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }

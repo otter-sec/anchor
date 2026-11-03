@@ -11,8 +11,8 @@ pub struct MintCloseAuthorityInitialize<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
-pub fn mint_close_authority_initialize<'a, const N: usize>(
-    ctx: CpiContext<'a, MintCloseAuthorityInitialize<'a>, N>,
+pub fn mint_close_authority_initialize<'a>(
+    ctx: CpiContext<'a, MintCloseAuthorityInitialize<'a>, 1>,
     close_authority: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -23,5 +23,5 @@ pub fn mint_close_authority_initialize<'a, const N: usize>(
         ctx.accounts.mint.address(),
         close_authority.as_ref(),
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }

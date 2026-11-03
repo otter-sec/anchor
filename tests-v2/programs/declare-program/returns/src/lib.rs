@@ -8,6 +8,12 @@ declare_program!(return_callee);
 
 pub const PROXY_SEED: &[u8] = b"return-proxy";
 
+// The largest return payload in this fixture is 71 bytes. Keep the caller's
+// capacity close to the real payload so generated FixedVec return values do
+// not consume an unnecessarily large SBF stack frame. This is not a runtime
+// or protocol-wide limit.
+const RETURN_DATA_CAPACITY: usize = 80;
+
 #[account]
 #[repr(C)]
 pub struct ProxyResult {
@@ -71,7 +77,7 @@ pub mod declare_program_returns {
         };
         let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-        let mut return_data = FixedVec::<u8, 128>::new();
+        let mut return_data = FixedVec::<u8, RETURN_DATA_CAPACITY>::new();
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
         let returned = return_callee::cpi::describe(cpi_ctx, base, bonus, &mut return_data)?.get();
         #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
@@ -146,7 +152,7 @@ pub mod declare_program_returns {
         };
         let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-        let mut return_data = FixedVec::<u8, 128>::new();
+        let mut return_data = FixedVec::<u8, RETURN_DATA_CAPACITY>::new();
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
         let returned =
             return_callee::cpi::malformed_payload(cpi_ctx, base, &mut return_data)?.get();
@@ -172,7 +178,7 @@ pub mod declare_program_returns {
         };
         let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-        let mut return_data = FixedVec::<u8, 128>::new();
+        let mut return_data = FixedVec::<u8, RETURN_DATA_CAPACITY>::new();
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
         let returned =
             return_callee::cpi::describe_empty(cpi_ctx, base, bonus, &mut return_data)?.get();

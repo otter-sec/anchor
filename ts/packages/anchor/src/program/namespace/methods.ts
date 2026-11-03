@@ -4,7 +4,6 @@ import {
   Instruction,
   Signature,
   TransactionSigner,
-  TransactionVersion,
 } from "@solana/kit";
 import { AccountsCoder } from "../../coder/index.js";
 import {
@@ -196,7 +195,6 @@ export class MethodsBuilder<
   private _postInstructions: Array<Instruction> = [];
   private _accountsResolver: AccountsResolver<IDL>;
   private _resolveAccounts: boolean = true;
-  private _transactionVersion?: TransactionVersion;
 
   constructor(
     private _args: Array<any>,
@@ -328,20 +326,6 @@ export class MethodsBuilder<
   }
 
   /**
-   * Set the version of the transaction message, overriding the provider's
-   * `transactionVersion`, which defaults to `1`.
-   *
-   * Version `1` messages cannot use address lookup tables and may not be
-   * supported by every wallet; use `0` in those cases.
-   *
-   * @param version transaction message version
-   */
-  public transactionVersion(version: TransactionVersion) {
-    this._transactionVersion = version;
-    return this;
-  }
-
-  /**
    * Get the addresses of the instruction accounts.
    *
    * The return type is an object with account names as keys and their
@@ -406,7 +390,6 @@ export class MethodsBuilder<
       remainingAccounts: this._remainingAccounts,
       preInstructions: this._preInstructions,
       postInstructions: this._postInstructions,
-      transactionVersion: this._transactionVersion,
     });
   }
 
@@ -428,7 +411,6 @@ export class MethodsBuilder<
       remainingAccounts: this._remainingAccounts,
       preInstructions: this._preInstructions,
       postInstructions: this._postInstructions,
-      transactionVersion: this._transactionVersion,
       options,
     });
   }
@@ -463,7 +445,6 @@ export class MethodsBuilder<
       remainingAccounts: this._remainingAccounts,
       preInstructions: this._preInstructions,
       postInstructions: this._postInstructions,
-      transactionVersion: this._transactionVersion,
       options,
     });
   }
@@ -489,7 +470,6 @@ export class MethodsBuilder<
       remainingAccounts: this._remainingAccounts,
       preInstructions: this._preInstructions,
       postInstructions: this._postInstructions,
-      transactionVersion: this._transactionVersion,
       options,
     });
   }

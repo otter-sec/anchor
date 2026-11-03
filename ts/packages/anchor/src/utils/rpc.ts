@@ -17,10 +17,7 @@ import {
 } from "@solana/kit";
 import { chunks } from "../utils/common.js";
 import { AddressInput, toAddress } from "../program/common.js";
-import Provider, {
-  DEFAULT_TRANSACTION_VERSION,
-  getProvider,
-} from "../provider.js";
+import Provider, { getProvider } from "../provider.js";
 
 /**
  * Sends a transaction to a program with the given accounts and instruction
@@ -42,9 +39,7 @@ export async function invoke(
       accounts: accounts ?? [],
       ...(data ? { data } : {}),
     },
-    createTransactionMessage({
-      version: provider.transactionVersion ?? DEFAULT_TRANSACTION_VERSION,
-    })
+    createTransactionMessage({ version: 0 })
   );
 
   if (provider.sendAndConfirm === undefined) {

@@ -35,7 +35,6 @@ use {
     solana_address::Address,
     solana_program_error::ProgramError,
     spl_token_2022_interface::{
-        error::TokenError,
         extension::{
             BaseStateWithExtensions, ExtensionType as Token2022ExtensionType,
             PodStateWithExtensions,
@@ -85,43 +84,6 @@ pub trait TokenInterfaceAccountExtensions {
     fn get_extension<T: crate::extensions::ExtensionType>(&self) -> Result<&T, ProgramError>;
 }
 
-fn get_extension<T: crate::extensions::ExtensionType>(
-    tlv_data: &[u8],
-    is_mint: bool,
-) -> Result<&T, ProgramError> {
-    if T::IS_MINT_EXTENSION != is_mint {
-        return Err(ProgramError::InvalidAccountData);
-    }
-
-    let mut offset = 0usize;
-    while offset < tlv_data.len() {
-        let header_end = offset
-            .checked_add(4)
-            .ok_or(ProgramError::InvalidAccountData)?;
-        let header = tlv_data
-            .get(offset..header_end)
-            .ok_or(ProgramError::InvalidAccountData)?;
-        let extension_type = u16::from_le_bytes([header[0], header[1]]);
-        if extension_type == 0 {
-            return Err(TokenError::ExtensionNotFound.into());
-        }
-
-        let extension_len = usize::from(u16::from_le_bytes([header[2], header[3]]));
-        let value_end = header_end
-            .checked_add(extension_len)
-            .ok_or(ProgramError::InvalidAccountData)?;
-        let value = tlv_data
-            .get(header_end..value_end)
-            .ok_or(ProgramError::InvalidAccountData)?;
-        if extension_type == T::TYPE {
-            return bytemuck::try_from_bytes(value).map_err(|_| ProgramError::InvalidArgument);
-        }
-        offset = value_end;
-    }
-
-    Err(TokenError::ExtensionNotFound.into())
-}
-
 impl TokenInterfaceAccountExtensions for InterfaceAccount<Mint> {
     #[inline(always)]
     fn get_extension<T: crate::extensions::ExtensionType>(&self) -> Result<&T, ProgramError> {
@@ -133,7 +95,7 @@ impl TokenInterfaceAccountExtensions for InterfaceAccount<Mint> {
 
         let data = unsafe { account.borrow_unchecked() };
         let state = PodStateWithExtensions::<PodMint>::unpack(data)?;
-        let extension = get_extension::<T>(state.get_tlv_data(), true)?;
+        let extension = state.get_extension::<T>()?;
         let extension_ptr = extension as *const T;
 
         // SAFETY: `PodStateWithExtensions` stores only references into `data`,
@@ -155,7 +117,7 @@ impl TokenInterfaceAccountExtensions for InterfaceAccount<TokenAccount> {
 
         let data = unsafe { account.borrow_unchecked() };
         let state = PodStateWithExtensions::<PodAccount>::unpack(data)?;
-        let extension = get_extension::<T>(state.get_tlv_data(), false)?;
+        let extension = state.get_extension::<T>()?;
         let extension_ptr = extension as *const T;
 
         // SAFETY: `PodStateWithExtensions` stores only references into `data`,

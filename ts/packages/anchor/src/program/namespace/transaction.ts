@@ -7,7 +7,6 @@ import {
   TransactionMessageWithSigners,
 } from "@solana/kit";
 import { Idl } from "../../idl.js";
-import Provider, { DEFAULT_TRANSACTION_VERSION } from "../../provider.js";
 import { splitArgsAndCtx } from "../context.js";
 import { InstructionFn } from "./instruction.js";
 import {
@@ -19,20 +18,14 @@ import {
 export default class TransactionFactory {
   public static build<IDL extends Idl, I extends AllInstructions<IDL>>(
     idlIx: I,
-    ixFn: InstructionFn<IDL, I>,
-    provider: Provider
+    ixFn: InstructionFn<IDL, I>
   ): TransactionFn<IDL, I> {
     const txFn: TransactionFn<IDL, I> = (
       ...args
     ): ProgramTransactionMessage => {
       const [, ctx] = splitArgsAndCtx(idlIx, [...args]);
       return pipe(
-        createTransactionMessage({
-          version:
-            ctx.transactionVersion ??
-            provider.transactionVersion ??
-            DEFAULT_TRANSACTION_VERSION,
-        }),
+        createTransactionMessage({ version: 0 }),
         (message) =>
           appendTransactionMessageInstructions(
             [

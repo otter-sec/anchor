@@ -18,8 +18,8 @@ pub struct PausableToggle<'a> {
     pub authority: CpiHandle<'a>,
 }
 
-pub fn pausable_initialize<'a, const N: usize>(
-    ctx: CpiContext<'a, PausableInitialize<'a>, N>,
+pub fn pausable_initialize<'a>(
+    ctx: CpiContext<'a, PausableInitialize<'a>, 1>,
     authority: &Address,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -28,11 +28,11 @@ pub fn pausable_initialize<'a, const N: usize>(
         ctx.accounts.mint.address(),
         authority,
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
-pub fn pausable_pause<'a, const N: usize>(
-    ctx: CpiContext<'a, PausableToggle<'a>, N>,
+pub fn pausable_pause<'a>(
+    ctx: CpiContext<'a, PausableToggle<'a>, 2>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
@@ -42,11 +42,11 @@ pub fn pausable_pause<'a, const N: usize>(
         ctx.accounts.authority.address(),
         &signer_addresses,
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
-pub fn pausable_resume<'a, const N: usize>(
-    ctx: CpiContext<'a, PausableToggle<'a>, N>,
+pub fn pausable_resume<'a>(
+    ctx: CpiContext<'a, PausableToggle<'a>, 2>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
@@ -56,5 +56,5 @@ pub fn pausable_resume<'a, const N: usize>(
         ctx.accounts.authority.address(),
         &signer_addresses,
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }

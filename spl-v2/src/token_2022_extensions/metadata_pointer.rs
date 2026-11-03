@@ -18,8 +18,8 @@ pub struct MetadataPointerUpdate<'a> {
     pub authority: CpiHandle<'a>,
 }
 
-pub fn metadata_pointer_initialize<'a, const N: usize>(
-    ctx: CpiContext<'a, MetadataPointerInitialize<'a>, N>,
+pub fn metadata_pointer_initialize<'a>(
+    ctx: CpiContext<'a, MetadataPointerInitialize<'a>, 1>,
     authority: Option<&Address>,
     metadata_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
@@ -31,11 +31,11 @@ pub fn metadata_pointer_initialize<'a, const N: usize>(
         authority.copied(),
         metadata_address.copied(),
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
-pub fn metadata_pointer_update<'a, const N: usize>(
-    ctx: CpiContext<'a, MetadataPointerUpdate<'a>, N>,
+pub fn metadata_pointer_update<'a>(
+    ctx: CpiContext<'a, MetadataPointerUpdate<'a>, 2>,
     metadata_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -48,5 +48,5 @@ pub fn metadata_pointer_update<'a, const N: usize>(
         &signer_addresses,
         metadata_address.copied(),
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }

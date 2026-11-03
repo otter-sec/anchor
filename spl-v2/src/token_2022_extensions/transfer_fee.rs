@@ -50,8 +50,8 @@ pub struct WithdrawWithheldTokensFromAccounts<'a> {
     pub authority: CpiHandle<'a>,
 }
 
-pub fn transfer_fee_initialize<'a, const N: usize>(
-    ctx: CpiContext<'a, TransferFeeInitialize<'a>, N>,
+pub fn transfer_fee_initialize<'a>(
+    ctx: CpiContext<'a, TransferFeeInitialize<'a>, 1>,
     transfer_fee_config_authority: Option<&Address>,
     withdraw_withheld_authority: Option<&Address>,
     transfer_fee_basis_points: u16,
@@ -69,11 +69,11 @@ pub fn transfer_fee_initialize<'a, const N: usize>(
         transfer_fee_basis_points,
         maximum_fee,
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
-pub fn transfer_fee_set<'a, const N: usize>(
-    ctx: CpiContext<'a, TransferFeeSetTransferFee<'a>, N>,
+pub fn transfer_fee_set<'a>(
+    ctx: CpiContext<'a, TransferFeeSetTransferFee<'a>, 2>,
     transfer_fee_basis_points: u16,
     maximum_fee: u64,
 ) -> Result<(), ProgramError> {
@@ -88,11 +88,11 @@ pub fn transfer_fee_set<'a, const N: usize>(
         transfer_fee_basis_points,
         maximum_fee,
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
-pub fn transfer_checked_with_fee<'a, const N: usize>(
-    ctx: CpiContext<'a, TransferCheckedWithFee<'a>, N>,
+pub fn transfer_checked_with_fee<'a>(
+    ctx: CpiContext<'a, TransferCheckedWithFee<'a>, 4>,
     amount: u64,
     decimals: u8,
     fee: u64,
@@ -111,7 +111,7 @@ pub fn transfer_checked_with_fee<'a, const N: usize>(
         decimals,
         fee,
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn harvest_withheld_tokens_to_mint<'a, const N: usize>(
@@ -139,11 +139,11 @@ pub fn harvest_withheld_tokens_to_mint<'a, const N: usize>(
             .map_err(|_| ProgramError::InvalidArgument)?;
     }
     let ctx = ctx.with_remaining_accounts(remaining_accounts);
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
-pub fn withdraw_withheld_tokens_from_mint<'a, const N: usize>(
-    ctx: CpiContext<'a, WithdrawWithheldTokensFromMint<'a>, N>,
+pub fn withdraw_withheld_tokens_from_mint<'a>(
+    ctx: CpiContext<'a, WithdrawWithheldTokensFromMint<'a>, 3>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
@@ -156,7 +156,7 @@ pub fn withdraw_withheld_tokens_from_mint<'a, const N: usize>(
             ctx.accounts.authority.address(),
             &signer_addresses,
         )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
 pub fn withdraw_withheld_tokens_from_accounts<'a, const N: usize>(
@@ -184,5 +184,5 @@ pub fn withdraw_withheld_tokens_from_accounts<'a, const N: usize>(
             .map_err(|_| ProgramError::InvalidArgument)?;
     }
     let ctx = ctx.with_remaining_accounts(remaining_accounts);
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }

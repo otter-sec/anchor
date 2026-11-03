@@ -19,6 +19,7 @@ mod fixed_vec;
 pub mod hash;
 #[doc(hidden)]
 pub mod idl_build;
+mod idl_support;
 mod instruction;
 pub mod loader;
 pub mod pod;
@@ -56,18 +57,12 @@ pub use {
 #[doc(hidden)]
 pub extern crate alloc as __alloc;
 
-/// Host-only allocation namespace used by generated IDL code. Keeping this
-/// separate from runtime code makes the target boundary explicit without
-/// changing the IDL format or host tooling.
+// Host-only allocation namespace used by generated IDL code. The definitions
+// live in `idl_support` so the crate root stays focused on the public runtime
+// surface.
 #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 #[doc(hidden)]
-pub mod __idl {
-    pub use alloc::{boxed, collections, format, string, vec};
-}
-
-#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-#[doc(hidden)]
-pub type IdlEntries = alloc::vec::Vec<&'static str>;
+pub use idl_support::{__idl, IdlEntries};
 
 /// Logs a message via `solana_msg`.
 ///
@@ -104,12 +99,10 @@ macro_rules! debug {
     }};
 }
 // Re-export wincode for instruction data serialization
-pub use {
-    buffers::*,
-    fixed_vec::{FixedString, FixedVec},
-    traits::ToCpiAccountsWithCapacity,
-    wincode,
-};
+pub use buffers::CpiHandleBuffer;
+pub use fixed_vec::FixedVec;
+pub use traits::ToCpiAccountsWithCapacity;
+pub use wincode;
 
 /// Borsh-compatible wincode config: u8 enum tags + fixed u32 LE length
 /// prefixes. Used for borsh-compatible v2 serialization paths (instruction
@@ -229,7 +222,7 @@ pub use {
     dispatch::{run_handler, TryAccounts},
     event::{sol_log_data, Event},
     hash::sha256,
-    instruction::CpiInstruction,
+    instruction::{CpiInstruction, InstructionData},
     loader::AccountLoader,
     pinocchio::{self, account::AccountView, address::Address},
     traits::*,
@@ -277,17 +270,6 @@ pub mod solana_program {
     pub mod program {
         pub use crate::program::*;
     }
-}
-
-/// Serializes instruction data: discriminator prefix + LE-encoded args.
-pub trait InstructionData: Discriminator {
-    /// Append serialized instruction data to caller-selected storage.
-    /// Implementations leave the original contents unchanged on failure.
-    fn try_write_data<const N: usize>(&self, output: &mut FixedVec<u8, N>) -> Result<()>;
-
-    /// Owned host representation used by clients and tests.
-    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-    fn data(&self) -> alloc::vec::Vec<u8>;
 }
 
 /// Compile-time account-size calculation. Derived via `#[derive(InitSpace)]`.

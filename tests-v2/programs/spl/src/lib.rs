@@ -24,10 +24,6 @@ declare_id!("SpL1111111111111111111111111111111111111111");
 
 const TOKEN_CPI_EXT_AUTHORITY_SEED: &[u8] = b"token-cpi-ext-authority";
 
-// Token-2022 account size for the ImmutableOwner extension: the 165-byte
-// base account plus one four-byte TLV header and its one-byte payload.
-const TOKEN_2022_IMMUTABLE_OWNER_ACCOUNT_SIZE: u64 = 170;
-
 #[program]
 pub mod spl_test {
     use super::*;
@@ -293,7 +289,7 @@ pub mod spl_test {
             &mut ctx.accounts.account_or_mint,
             &ctx.accounts.current_authority,
             &[],
-            token::AuthorityType::CloseAccount,
+            token::spl_token::instruction::AuthorityType::CloseAccount,
             Some(new_authority),
         )?;
         Ok(())
@@ -350,7 +346,7 @@ pub mod spl_test {
             &mut ctx.accounts.account_or_mint,
             &ctx.accounts.authority,
             signer_seeds,
-            token::AuthorityType::CloseAccount,
+            token::spl_token::instruction::AuthorityType::CloseAccount,
             Some(new_authority),
         )?;
         Ok(())
@@ -1229,7 +1225,10 @@ pub mod spl_test {
         )?;
         require_eq!(
             size,
-            TOKEN_2022_IMMUTABLE_OWNER_ACCOUNT_SIZE,
+            token_2022_cpi::ExtensionType::try_calculate_account_len::<
+                token_2022_cpi::spl_token_2022::state::Account,
+            >(&[token_2022_cpi::ExtensionType::ImmutableOwner])
+            .map_err(|_| ProgramError::InvalidInstructionData)? as u64,
             ProgramError::InvalidInstructionData
         );
         Ok(())
@@ -1331,7 +1330,7 @@ pub mod spl_test {
         let cpi_ctx = CpiContext::<_, 1>::new(ctx.accounts.token_program.address(), accs);
         token_2022_ext_cpi::default_account_state_initialize(
             cpi_ctx,
-            &token_2022_cpi::AccountState::Frozen,
+            &token_2022_cpi::spl_token_2022::state::AccountState::Frozen,
         )?;
         Ok(())
     }
@@ -1476,7 +1475,7 @@ pub mod spl_test {
             update_authority: ctx.accounts.update_authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.token_program.address(), accs);
-        token_2022_ext_cpi::token_metadata_remove_key(cpi_ctx, "field", true)?;
+        token_2022_ext_cpi::token_metadata_remove_key(cpi_ctx, "field".into(), true)?;
         Ok(())
     }
 
@@ -1494,9 +1493,9 @@ pub mod spl_test {
         let cpi_ctx = CpiContext::<_, 4>::new(ctx.accounts.token_program.address(), accs);
         token_2022_ext_cpi::token_metadata_initialize(
             cpi_ctx,
-            "name",
-            "SYM",
-            "https://example.invalid",
+            "name".into(),
+            "SYM".into(),
+            "https://example.invalid".into(),
         )?;
         Ok(())
     }
@@ -1529,7 +1528,7 @@ pub mod spl_test {
         token_2022_ext_cpi::token_metadata_update_field(
             cpi_ctx,
             token_2022_ext_cpi::token_metadata::Field::Name,
-            "name",
+            "name".into(),
         )?;
         Ok(())
     }

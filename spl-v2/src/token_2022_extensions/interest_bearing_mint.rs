@@ -18,8 +18,8 @@ pub struct InterestBearingMintUpdateRate<'a> {
     pub rate_authority: CpiHandle<'a>,
 }
 
-pub fn interest_bearing_mint_initialize<'a, const N: usize>(
-    ctx: CpiContext<'a, InterestBearingMintInitialize<'a>, N>,
+pub fn interest_bearing_mint_initialize<'a>(
+    ctx: CpiContext<'a, InterestBearingMintInitialize<'a>, 1>,
     rate_authority: Option<&Address>,
     rate: i16,
 ) -> Result<(), ProgramError> {
@@ -31,11 +31,11 @@ pub fn interest_bearing_mint_initialize<'a, const N: usize>(
         rate_authority.copied(),
         rate,
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
-pub fn interest_bearing_mint_update_rate<'a, const N: usize>(
-    ctx: CpiContext<'a, InterestBearingMintUpdateRate<'a>, N>,
+pub fn interest_bearing_mint_update_rate<'a>(
+    ctx: CpiContext<'a, InterestBearingMintUpdateRate<'a>, 2>,
     rate: i16,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -48,5 +48,5 @@ pub fn interest_bearing_mint_update_rate<'a, const N: usize>(
         &signer_addresses,
         rate,
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }

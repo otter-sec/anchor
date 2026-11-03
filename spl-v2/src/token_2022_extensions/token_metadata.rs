@@ -1,20 +1,13 @@
 use {
     super::common::validate_token_2022_program,
-    alloc::borrow::ToOwned,
+    alloc::string::String,
     anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
     spl_pod::optional_keys::OptionalNonZeroPubkey,
 };
 
-/// A metadata field that does not require an owned key in the public API.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Field<'a> {
-    Name,
-    Symbol,
-    Uri,
-    Key(&'a str),
-}
+pub use spl_token_metadata_interface::state::Field;
 
 #[derive(ToCpiAccounts)]
 pub struct TokenMetadataInitialize<'a> {
@@ -46,11 +39,11 @@ pub struct TokenMetadataRemoveKey<'a> {
     pub update_authority: CpiHandle<'a>,
 }
 
-pub fn token_metadata_initialize<'a, const N: usize>(
-    ctx: CpiContext<'a, TokenMetadataInitialize<'a>, N>,
-    name: &str,
-    symbol: &str,
-    uri: &str,
+pub fn token_metadata_initialize<'a>(
+    ctx: CpiContext<'a, TokenMetadataInitialize<'a>, 4>,
+    name: String,
+    symbol: String,
+    uri: String,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
@@ -60,15 +53,15 @@ pub fn token_metadata_initialize<'a, const N: usize>(
         ctx.accounts.update_authority.address(),
         ctx.accounts.mint.address(),
         ctx.accounts.mint_authority.address(),
-        name.to_owned(),
-        symbol.to_owned(),
-        uri.to_owned(),
+        name,
+        symbol,
+        uri,
     );
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
-pub fn token_metadata_update_authority<'a, const N: usize>(
-    ctx: CpiContext<'a, TokenMetadataUpdateAuthority<'a>, N>,
+pub fn token_metadata_update_authority<'a>(
+    ctx: CpiContext<'a, TokenMetadataUpdateAuthority<'a>, 2>,
     new_authority: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -81,35 +74,29 @@ pub fn token_metadata_update_authority<'a, const N: usize>(
         ctx.accounts.current_authority.address(),
         new_authority,
     );
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
-pub fn token_metadata_update_field<'a, const N: usize>(
-    ctx: CpiContext<'a, TokenMetadataUpdateField<'a>, N>,
-    field: Field<'_>,
-    value: &str,
+pub fn token_metadata_update_field<'a>(
+    ctx: CpiContext<'a, TokenMetadataUpdateField<'a>, 2>,
+    field: Field,
+    value: String,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let field = match field {
-        Field::Name => spl_token_metadata_interface::state::Field::Name,
-        Field::Symbol => spl_token_metadata_interface::state::Field::Symbol,
-        Field::Uri => spl_token_metadata_interface::state::Field::Uri,
-        Field::Key(key) => spl_token_metadata_interface::state::Field::Key(key.to_owned()),
-    };
     let ix = spl_token_metadata_interface::instruction::update_field(
         &program,
         ctx.accounts.metadata.address(),
         ctx.accounts.update_authority.address(),
         field,
-        value.to_owned(),
+        value,
     );
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
-pub fn token_metadata_remove_key<'a, const N: usize>(
-    ctx: CpiContext<'a, TokenMetadataRemoveKey<'a>, N>,
-    key: &str,
+pub fn token_metadata_remove_key<'a>(
+    ctx: CpiContext<'a, TokenMetadataRemoveKey<'a>, 2>,
+    key: String,
     idempotent: bool,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -118,8 +105,8 @@ pub fn token_metadata_remove_key<'a, const N: usize>(
         &program,
         ctx.accounts.metadata.address(),
         ctx.accounts.update_authority.address(),
-        key.to_owned(),
+        key,
         idempotent,
     );
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }

@@ -1,7 +1,5 @@
 //! Run: `cargo test -p anchor-lang --features testing --test program_invoke`
 
-extern crate alloc;
-
 use {
     anchor_lang::{
         accounts::Account,

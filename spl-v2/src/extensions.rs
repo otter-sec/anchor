@@ -21,6 +21,9 @@
 use {
     bytemuck::{Pod, Zeroable},
     solana_address::Address,
+    spl_token_2022_interface::extension::{
+        Extension as SplExtension, ExtensionType as SplExtensionType,
+    },
 };
 
 // ---------------------------------------------------------------------------
@@ -28,30 +31,9 @@ use {
 // ---------------------------------------------------------------------------
 
 /// Trait for fixed-size Token-2022 extension types.
-pub trait ExtensionType: Pod {
-    /// Token-2022 wire tag for this extension.
-    #[doc(hidden)]
-    const TYPE: u16;
+pub trait ExtensionType: Pod + SplExtension {}
 
-    /// Whether this extension belongs to a mint rather than a token account.
-    #[doc(hidden)]
-    const IS_MINT_EXTENSION: bool;
-}
-
-macro_rules! extension_type {
-    ($type:ty, $tag:expr, mint) => {
-        impl ExtensionType for $type {
-            const TYPE: u16 = $tag;
-            const IS_MINT_EXTENSION: bool = true;
-        }
-    };
-    ($type:ty, $tag:expr, account) => {
-        impl ExtensionType for $type {
-            const TYPE: u16 = $tag;
-            const IS_MINT_EXTENSION: bool = false;
-        }
-    };
-}
+impl<T> ExtensionType for T where T: Pod + SplExtension {}
 
 // ---------------------------------------------------------------------------
 // Extension struct definitions
@@ -134,7 +116,9 @@ impl TransferFeeConfig {
     }
 }
 
-extension_type!(TransferFeeConfig, 1, mint);
+impl SplExtension for TransferFeeConfig {
+    const TYPE: SplExtensionType = SplExtensionType::TransferFeeConfig;
+}
 
 // ---------------------------------------------------------------------------
 // TransferFeeAmount (ExtensionType = 2, account extension)
@@ -153,7 +137,9 @@ impl TransferFeeAmount {
     }
 }
 
-extension_type!(TransferFeeAmount, 2, account);
+impl SplExtension for TransferFeeAmount {
+    const TYPE: SplExtensionType = SplExtensionType::TransferFeeAmount;
+}
 
 // ---------------------------------------------------------------------------
 // MintCloseAuthority (ExtensionType = 3)
@@ -166,7 +152,9 @@ pub struct MintCloseAuthority {
     pub close_authority: OptionalAddress,
 }
 
-extension_type!(MintCloseAuthority, 3, mint);
+impl SplExtension for MintCloseAuthority {
+    const TYPE: SplExtensionType = SplExtensionType::MintCloseAuthority;
+}
 
 // ---------------------------------------------------------------------------
 // DefaultAccountState (ExtensionType = 6)
@@ -180,7 +168,9 @@ pub struct DefaultAccountState {
     pub state: u8,
 }
 
-extension_type!(DefaultAccountState, 6, mint);
+impl SplExtension for DefaultAccountState {
+    const TYPE: SplExtensionType = SplExtensionType::DefaultAccountState;
+}
 
 // ---------------------------------------------------------------------------
 // NonTransferable (ExtensionType = 9, mint extension)
@@ -194,7 +184,9 @@ pub struct NonTransferable;
 unsafe impl Pod for NonTransferable {}
 unsafe impl Zeroable for NonTransferable {}
 
-extension_type!(NonTransferable, 9, mint);
+impl SplExtension for NonTransferable {
+    const TYPE: SplExtensionType = SplExtensionType::NonTransferable;
+}
 
 // ---------------------------------------------------------------------------
 // CpiGuard (ExtensionType = 11, account extension)
@@ -214,7 +206,9 @@ impl CpiGuard {
     }
 }
 
-extension_type!(CpiGuard, 11, account);
+impl SplExtension for CpiGuard {
+    const TYPE: SplExtensionType = SplExtensionType::CpiGuard;
+}
 
 // ---------------------------------------------------------------------------
 // PermanentDelegate (ExtensionType = 12)
@@ -227,7 +221,9 @@ pub struct PermanentDelegate {
     pub delegate: OptionalAddress,
 }
 
-extension_type!(PermanentDelegate, 12, mint);
+impl SplExtension for PermanentDelegate {
+    const TYPE: SplExtensionType = SplExtensionType::PermanentDelegate;
+}
 
 // ---------------------------------------------------------------------------
 // TransferHook (ExtensionType = 14, mint extension)
@@ -241,7 +237,9 @@ pub struct TransferHook {
     pub program_id: OptionalAddress,
 }
 
-extension_type!(TransferHook, 14, mint);
+impl SplExtension for TransferHook {
+    const TYPE: SplExtensionType = SplExtensionType::TransferHook;
+}
 
 // ---------------------------------------------------------------------------
 // TransferHookAccount (ExtensionType = 15, account extension)
@@ -255,7 +253,9 @@ pub struct TransferHookAccount {
     pub transferring: u8,
 }
 
-extension_type!(TransferHookAccount, 15, account);
+impl SplExtension for TransferHookAccount {
+    const TYPE: SplExtensionType = SplExtensionType::TransferHookAccount;
+}
 
 // ---------------------------------------------------------------------------
 // NonTransferableAccount (ExtensionType = 13, account extension)
@@ -269,7 +269,9 @@ pub struct NonTransferableAccount;
 unsafe impl Pod for NonTransferableAccount {}
 unsafe impl Zeroable for NonTransferableAccount {}
 
-extension_type!(NonTransferableAccount, 13, account);
+impl SplExtension for NonTransferableAccount {
+    const TYPE: SplExtensionType = SplExtensionType::NonTransferableAccount;
+}
 
 // ---------------------------------------------------------------------------
 // MetadataPointer (ExtensionType = 18, mint extension)
@@ -283,7 +285,9 @@ pub struct MetadataPointer {
     pub metadata_address: OptionalAddress,
 }
 
-extension_type!(MetadataPointer, 18, mint);
+impl SplExtension for MetadataPointer {
+    const TYPE: SplExtensionType = SplExtensionType::MetadataPointer;
+}
 
 // ---------------------------------------------------------------------------
 // GroupPointer (ExtensionType = 20, mint extension)
@@ -297,7 +301,9 @@ pub struct GroupPointer {
     pub group_address: OptionalAddress,
 }
 
-extension_type!(GroupPointer, 20, mint);
+impl SplExtension for GroupPointer {
+    const TYPE: SplExtensionType = SplExtensionType::GroupPointer;
+}
 
 // ---------------------------------------------------------------------------
 // GroupMemberPointer (ExtensionType = 22, mint extension)
@@ -311,7 +317,9 @@ pub struct GroupMemberPointer {
     pub member_address: OptionalAddress,
 }
 
-extension_type!(GroupMemberPointer, 22, mint);
+impl SplExtension for GroupMemberPointer {
+    const TYPE: SplExtensionType = SplExtensionType::GroupMemberPointer;
+}
 
 // ---------------------------------------------------------------------------
 // PausableConfig (ExtensionType = 26, mint extension)
@@ -332,7 +340,9 @@ impl PausableConfig {
     }
 }
 
-extension_type!(PausableConfig, 26, mint);
+impl SplExtension for PausableConfig {
+    const TYPE: SplExtensionType = SplExtensionType::Pausable;
+}
 
 // ---------------------------------------------------------------------------
 // PausableAccount (ExtensionType = 27, account extension)
@@ -346,38 +356,8 @@ pub struct PausableAccount;
 unsafe impl Pod for PausableAccount {}
 unsafe impl Zeroable for PausableAccount {}
 
-extension_type!(PausableAccount, 27, account);
-
-#[cfg(test)]
-mod tests {
-    use {super::*, spl_token_2022_interface::extension::ExtensionType as CanonicalExtensionType};
-
-    fn assert_extension<T: ExtensionType>(canonical: CanonicalExtensionType, is_mint: bool) {
-        assert_eq!(T::TYPE, canonical as u16);
-        assert_eq!(T::IS_MINT_EXTENSION, is_mint);
-    }
-
-    #[test]
-    fn local_extension_tags_match_token_2022_wire_values() {
-        assert_extension::<TransferFeeConfig>(CanonicalExtensionType::TransferFeeConfig, true);
-        assert_extension::<TransferFeeAmount>(CanonicalExtensionType::TransferFeeAmount, false);
-        assert_extension::<MintCloseAuthority>(CanonicalExtensionType::MintCloseAuthority, true);
-        assert_extension::<DefaultAccountState>(CanonicalExtensionType::DefaultAccountState, true);
-        assert_extension::<NonTransferable>(CanonicalExtensionType::NonTransferable, true);
-        assert_extension::<CpiGuard>(CanonicalExtensionType::CpiGuard, false);
-        assert_extension::<PermanentDelegate>(CanonicalExtensionType::PermanentDelegate, true);
-        assert_extension::<NonTransferableAccount>(
-            CanonicalExtensionType::NonTransferableAccount,
-            false,
-        );
-        assert_extension::<TransferHook>(CanonicalExtensionType::TransferHook, true);
-        assert_extension::<TransferHookAccount>(CanonicalExtensionType::TransferHookAccount, false);
-        assert_extension::<MetadataPointer>(CanonicalExtensionType::MetadataPointer, true);
-        assert_extension::<GroupPointer>(CanonicalExtensionType::GroupPointer, true);
-        assert_extension::<GroupMemberPointer>(CanonicalExtensionType::GroupMemberPointer, true);
-        assert_extension::<PausableConfig>(CanonicalExtensionType::Pausable, true);
-        assert_extension::<PausableAccount>(CanonicalExtensionType::PausableAccount, false);
-    }
+impl SplExtension for PausableAccount {
+    const TYPE: SplExtensionType = SplExtensionType::PausableAccount;
 }
 
 // ---------------------------------------------------------------------------

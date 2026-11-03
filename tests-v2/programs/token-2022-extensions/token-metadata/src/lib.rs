@@ -16,9 +16,9 @@ pub mod token_2022_ext_token_metadata {
         };
         token_2022_ext::token_metadata_initialize(
             CpiContext::<_, 4>::new(ctx.accounts.token_program.address(), accs),
-            "name",
-            "SYM",
-            "https://example.invalid",
+            "name".into(),
+            "SYM".into(),
+            "https://example.invalid".into(),
         )?;
         Ok(())
     }
@@ -47,8 +47,8 @@ pub mod token_2022_ext_token_metadata {
         };
         token_2022_ext::token_metadata_update_field(
             CpiContext::<_, 2>::new(ctx.accounts.token_program.address(), accs),
-            token_2022_ext::token_metadata::Field::Key("field"),
-            "value",
+            token_2022_ext::token_metadata::Field::Key("field".into()),
+            "value".into(),
         )?;
         Ok(())
     }
@@ -61,7 +61,7 @@ pub mod token_2022_ext_token_metadata {
         };
         token_2022_ext::token_metadata_remove_key(
             CpiContext::<_, 2>::new(ctx.accounts.token_program.address(), accs),
-            "field",
+            "field".into(),
             true,
         )?;
         Ok(())

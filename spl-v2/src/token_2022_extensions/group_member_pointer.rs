@@ -18,8 +18,8 @@ pub struct GroupMemberPointerUpdate<'a> {
     pub authority: CpiHandle<'a>,
 }
 
-pub fn group_member_pointer_initialize<'a, const N: usize>(
-    ctx: CpiContext<'a, GroupMemberPointerInitialize<'a>, N>,
+pub fn group_member_pointer_initialize<'a>(
+    ctx: CpiContext<'a, GroupMemberPointerInitialize<'a>, 1>,
     authority: Option<&Address>,
     member_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
@@ -30,11 +30,11 @@ pub fn group_member_pointer_initialize<'a, const N: usize>(
         authority.copied(),
         member_address.copied(),
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
-pub fn group_member_pointer_update<'a, const N: usize>(
-    ctx: CpiContext<'a, GroupMemberPointerUpdate<'a>, N>,
+pub fn group_member_pointer_update<'a>(
+    ctx: CpiContext<'a, GroupMemberPointerUpdate<'a>, 2>,
     member_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -46,5 +46,5 @@ pub fn group_member_pointer_update<'a, const N: usize>(
         &signer_addresses,
         member_address.copied(),
     )?;
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }

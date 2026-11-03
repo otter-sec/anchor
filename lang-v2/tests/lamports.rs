@@ -18,11 +18,9 @@ const PROGRAM_ID: [u8; 32] = [0x42; 32];
 struct Counter {
     value: u64,
 }
-
 impl Owner for Counter {
     const OWNER: Address = Address::new_from_array(PROGRAM_ID);
 }
-
 impl Discriminator for Counter {
     // sha256("account:Counter")[..8]
     const DISCRIMINATOR: &'static [u8] = &[0xff, 0xb0, 0x04, 0xf5, 0xbc, 0xfd, 0x7c, 0x19];

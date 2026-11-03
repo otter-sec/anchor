@@ -1,6 +1,23 @@
 //! Allocator-neutral instruction views used by the public CPI API.
 
-use {crate::Address, pinocchio::instruction::InstructionAccount};
+use {
+    crate::{Address, Discriminator, FixedVec},
+    alloc::vec::Vec,
+    pinocchio::instruction::InstructionAccount,
+};
+
+/// Serializes instruction data: discriminator prefix plus the encoded
+/// arguments. The caller owns the output storage so dynamic payloads do not
+/// force an allocation in the on-chain API.
+pub trait InstructionData: Discriminator {
+    /// Append serialized instruction data to caller-selected storage.
+    /// Implementations leave the original contents unchanged on failure.
+    fn try_write_data<const N: usize>(&self, output: &mut FixedVec<u8, N>) -> crate::Result<()>;
+
+    /// Owned host representation used by clients and tests.
+    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+    fn data(&self) -> alloc::vec::Vec<u8>;
+}
 
 /// A CPI instruction that can be inspected without taking ownership of a
 /// heap-backed instruction representation.
@@ -46,7 +63,6 @@ where
     }
 }
 
-#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 impl CpiInstruction for solana_instruction::Instruction {
     #[inline]
     fn program_id(&self) -> &Address {
@@ -63,7 +79,7 @@ impl CpiInstruction for solana_instruction::Instruction {
         &self,
         visit: impl FnOnce(&[InstructionAccount<'_>]) -> R,
     ) -> R {
-        let accounts: alloc::vec::Vec<_> = self
+        let accounts: Vec<_> = self
             .accounts
             .iter()
             .map(|account| {

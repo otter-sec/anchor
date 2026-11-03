@@ -24,8 +24,8 @@ pub struct TokenMemberInitialize<'a> {
     pub group_update_authority: CpiHandle<'a>,
 }
 
-pub fn token_group_initialize<'a, const N: usize>(
-    ctx: CpiContext<'a, TokenGroupInitialize<'a>, N>,
+pub fn token_group_initialize<'a>(
+    ctx: CpiContext<'a, TokenGroupInitialize<'a>, 3>,
     update_authority: Option<&Address>,
     max_size: u64,
 ) -> Result<(), ProgramError> {
@@ -39,11 +39,11 @@ pub fn token_group_initialize<'a, const N: usize>(
         update_authority.copied(),
         max_size,
     );
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }
 
-pub fn token_member_initialize<'a, const N: usize>(
-    ctx: CpiContext<'a, TokenMemberInitialize<'a>, N>,
+pub fn token_member_initialize<'a>(
+    ctx: CpiContext<'a, TokenMemberInitialize<'a>, 5>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
@@ -55,5 +55,5 @@ pub fn token_member_initialize<'a, const N: usize>(
         ctx.accounts.group.address(),
         ctx.accounts.group_update_authority.address(),
     );
-    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
+    ctx.invoke_ix(ix)
 }

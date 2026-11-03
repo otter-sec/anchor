@@ -12,7 +12,6 @@
 
 extern crate alloc;
 
-pub use anchor_lang::programs::AssociatedToken;
 #[cfg(feature = "guardrails")]
 use anchor_lang::require;
 use {
@@ -20,6 +19,8 @@ use {
     solana_address::Address,
     solana_program_error::ProgramError,
 };
+
+pub use anchor_lang::programs::AssociatedToken;
 
 pub const ID: Address = anchor_lang::address!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
@@ -52,7 +53,7 @@ pub struct Create<'a> {
 
 pub type CreateIdempotent<'a> = Create<'a>;
 
-pub fn create<'a, const N: usize>(ctx: CpiContext<'a, Create<'a>, N>) -> Result<(), ProgramError> {
+pub fn create<'a>(ctx: CpiContext<'a, Create<'a>, 6>) -> Result<(), ProgramError> {
     #[cfg(feature = "guardrails")]
     {
         require!(
@@ -71,8 +72,8 @@ pub fn create<'a, const N: usize>(ctx: CpiContext<'a, Create<'a>, N>) -> Result<
     ctx.invoke(&[0])
 }
 
-pub fn create_idempotent<'a, const N: usize>(
-    ctx: CpiContext<'a, CreateIdempotent<'a>, N>,
+pub fn create_idempotent<'a>(
+    ctx: CpiContext<'a, CreateIdempotent<'a>, 6>,
 ) -> Result<(), ProgramError> {
     #[cfg(feature = "guardrails")]
     {

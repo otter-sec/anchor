@@ -818,6 +818,12 @@ fn needs_ix_lifetime(ty: &Type) -> bool {
     }
 }
 
+fn uses_dynamic_capacity(ty: &Type) -> bool {
+    quote!(#ty)
+        .to_string()
+        .contains("__ANCHOR_DYNAMIC_CAPACITY")
+}
+
 /// Recursively rewrites any elided or named lifetimes in `ty` to `ix`.
 ///
 /// - `&[T]` / `&T` with elided lifetime → `&'ix [T]` / `&'ix T`
@@ -3030,6 +3036,7 @@ fn gen_declared_program(
     validate_declare_program_discriminators(idl, name.span())?;
 
     let dynamic_type_names = declare_program_dynamic_type_names(idl);
+    let fixed_vec_type_names = declare_program_fixed_vec_type_names(idl);
     let types = gen_declare_program_types(idl)?;
     let type_idents = gen_declare_program_type_idents(idl)?;
     let type_reexports = type_idents
@@ -3102,6 +3109,7 @@ fn gen_declared_program(
                 name.span(),
                 &std::collections::BTreeSet::new(),
                 &dynamic_type_names,
+                &fixed_vec_type_names,
             )?;
             host_arg_decls.push(quote! { #arg_ident: #host_ty });
             target_arg_decls.push(quote! { #arg_ident: #target_ty });
@@ -3115,10 +3123,23 @@ fn gen_declared_program(
                     name.span(),
                     &std::collections::BTreeSet::new(),
                     &dynamic_type_names,
+                    &fixed_vec_type_names,
                 )?,
             )
         } else {
             (quote! { () }, quote! { () })
+        };
+
+        let target_uses_dynamic_capacity = args.iter().any(|arg| {
+            arg.get("type")
+                .is_some_and(|ty| declare_idl_type_uses_fixed_vec(ty, &fixed_vec_type_names))
+        }) || ix
+            .get("returns")
+            .is_some_and(|returns| declare_idl_type_uses_fixed_vec(returns, &fixed_vec_type_names));
+        let target_generics = if target_uses_dynamic_capacity {
+            quote! { <'ix, const __ANCHOR_DYNAMIC_CAPACITY: usize> }
+        } else {
+            quote! { <'ix> }
         };
 
         handlers.push(quote! {
@@ -3134,7 +3155,7 @@ fn gen_declared_program(
 
             #[cfg(any(target_os = "solana", target_arch = "bpf"))]
             #[discrim = [#(#discrim_tokens),*]]
-            pub fn #ix_ident<'ix>(
+            pub fn #ix_ident #target_generics(
                 _ctx: &mut anchor_lang::Context<#accounts_ident>,
                 #(#target_arg_decls),*
             ) -> anchor_lang::Result<#target_return_ty> {
@@ -3729,11 +3750,120 @@ fn declare_program_dynamic_type_names(
     }
 }
 
+fn declare_program_fixed_vec_type_names(
+    idl: &serde_json::Value,
+) -> std::collections::BTreeSet<String> {
+    let definitions = idl
+        .get("types")
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut fixed = std::collections::BTreeSet::new();
+    loop {
+        let before = fixed.len();
+        for definition in definitions {
+            let Some(name) = definition.get("name").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            let Some(ty) = definition.get("type") else {
+                continue;
+            };
+            let uses_fixed_vec = match ty.get("kind").and_then(serde_json::Value::as_str) {
+                Some("struct") => ty
+                    .get("fields")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|fields| {
+                        fields.iter().any(|field| {
+                            declare_idl_type_uses_fixed_vec(
+                                field.get("type").unwrap_or(field),
+                                &fixed,
+                            )
+                        })
+                    }),
+                Some("enum") => ty
+                    .get("variants")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|variants| {
+                        variants.iter().any(|variant| {
+                            variant
+                                .get("fields")
+                                .and_then(serde_json::Value::as_array)
+                                .is_some_and(|fields| {
+                                    fields.iter().any(|field| {
+                                        declare_idl_type_uses_fixed_vec(
+                                            field.get("type").unwrap_or(field),
+                                            &fixed,
+                                        )
+                                    })
+                                })
+                        })
+                    }),
+                Some("type") => ty
+                    .get("alias")
+                    .is_some_and(|alias| declare_idl_type_uses_fixed_vec(alias, &fixed)),
+                _ => false,
+            };
+            if uses_fixed_vec {
+                fixed.insert(name.to_owned());
+            }
+        }
+        if fixed.len() == before {
+            return fixed;
+        }
+    }
+}
+
+fn declare_idl_type_uses_fixed_vec(
+    value: &serde_json::Value,
+    fixed_vec_type_names: &std::collections::BTreeSet<String>,
+) -> bool {
+    if value.get("vec").is_some() {
+        return true;
+    }
+    if let Some(defined) = value.get("defined") {
+        let name = defined
+            .as_str()
+            .or_else(|| defined.get("name").and_then(serde_json::Value::as_str));
+        if name.is_some_and(|name| fixed_vec_type_names.contains(name)) {
+            return true;
+        }
+        return defined
+            .get("generics")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|generics| {
+                generics.iter().any(|generic| {
+                    generic
+                        .get("type")
+                        .is_some_and(|ty| declare_idl_type_uses_fixed_vec(ty, fixed_vec_type_names))
+                })
+            });
+    }
+    value
+        .get("option")
+        .is_some_and(|inner| declare_idl_type_uses_fixed_vec(inner, fixed_vec_type_names))
+        || value
+            .get("array")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|array| array.first())
+            .is_some_and(|inner| declare_idl_type_uses_fixed_vec(inner, fixed_vec_type_names))
+}
+
 fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenStream2>> {
     let dynamic_type_names = declare_program_dynamic_type_names(idl);
+    let fixed_vec_type_names = declare_program_fixed_vec_type_names(idl);
     let type_idents = gen_declare_program_type_idents(idl)?;
-    let host = gen_declare_program_types_for_target(idl, false, &dynamic_type_names)?;
-    let target = gen_declare_program_types_for_target(idl, true, &dynamic_type_names)?;
+    let host = gen_declare_program_types_for_target(
+        idl,
+        false,
+        &dynamic_type_names,
+        &std::collections::BTreeSet::new(),
+    )?;
+    let target = gen_declare_program_types_for_target(
+        idl,
+        true,
+        &dynamic_type_names,
+        &fixed_vec_type_names,
+    )?;
     Ok(vec![quote! {
         #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
         mod __anchor_declared_types_host {
@@ -3757,6 +3887,7 @@ fn gen_declare_program_types_for_target(
     idl: &serde_json::Value,
     borrowed: bool,
     dynamic_type_names: &std::collections::BTreeSet<String>,
+    fixed_vec_type_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<Vec<TokenStream2>> {
     let Some(types) = idl.get("types").and_then(serde_json::Value::as_array) else {
         return Ok(Vec::new());
@@ -3793,6 +3924,9 @@ fn gen_declare_program_types_for_target(
         let mut generics = gen_declare_program_type_generics(ty_def, ident.span())?;
         if borrowed && type_is_dynamic {
             generics = generics.with_borrowed_lifetime();
+        }
+        if borrowed && fixed_vec_type_names.contains(name) {
+            generics = generics.with_dynamic_capacity();
         }
         let account_entry = account_entries.get(name).copied();
         let discriminator = account_entry
@@ -3879,6 +4013,7 @@ fn gen_declare_program_types_for_target(
                             &generics.const_generic_names,
                             borrowed,
                             dynamic_type_names,
+                            fixed_vec_type_names,
                         )?
                     }
                     None => DeclareTypeFields::Unit,
@@ -4022,6 +4157,7 @@ fn gen_declare_program_types_for_target(
                         &generics.const_generic_names,
                         borrowed,
                         dynamic_type_names,
+                        fixed_vec_type_names,
                     )?;
                     idl_field_tys.extend(fields.tys().iter().cloned());
                     match fields {
@@ -4070,6 +4206,7 @@ fn gen_declare_program_types_for_target(
                     borrowed,
                     dynamic_type_names,
                     &generics.const_generic_names,
+                    fixed_vec_type_names,
                 )?;
                 let impl_generics = &generics.impl_generics;
                 out.push(quote! {
@@ -4825,15 +4962,34 @@ struct DeclareTypeGenerics {
     idl_where_clause: TokenStream2,
     pod_where_clause: TokenStream2,
     const_generic_names: std::collections::BTreeSet<String>,
+    borrowed_lifetime: bool,
 }
 
 impl DeclareTypeGenerics {
     fn with_borrowed_lifetime(mut self) -> Self {
+        self.borrowed_lifetime = true;
+        self.refresh_generics();
+        self
+    }
+
+    fn with_dynamic_capacity(mut self) -> Self {
+        self.impl_params
+            .push(quote! { const __ANCHOR_DYNAMIC_CAPACITY: usize });
+        self.ty_params.push(quote! { __ANCHOR_DYNAMIC_CAPACITY });
+        self.refresh_generics();
+        self
+    }
+
+    fn refresh_generics(&mut self) {
         let impl_params = &self.impl_params;
         let ty_params = &self.ty_params;
-        self.impl_generics = quote! { <'ix #(, #impl_params)*> };
-        self.ty_generics = quote! { <'ix #(, #ty_params)*> };
-        self
+        if self.borrowed_lifetime {
+            self.impl_generics = quote! { <'ix #(, #impl_params)*> };
+            self.ty_generics = quote! { <'ix #(, #ty_params)*> };
+        } else {
+            self.impl_generics = quote! { <#(#impl_params),*> };
+            self.ty_generics = quote! { <#(#ty_params),*> };
+        }
     }
 }
 
@@ -4850,6 +5006,7 @@ fn gen_declare_program_type_generics(
             idl_where_clause: quote! {},
             pod_where_clause: quote! {},
             const_generic_names: std::collections::BTreeSet::new(),
+            borrowed_lifetime: false,
         });
     };
     let mut impl_params = Vec::new();
@@ -4909,6 +5066,7 @@ fn gen_declare_program_type_generics(
         idl_where_clause,
         pod_where_clause,
         const_generic_names,
+        borrowed_lifetime: false,
     })
 }
 
@@ -5120,6 +5278,7 @@ fn gen_declare_program_type_fields(
     const_generic_names: &std::collections::BTreeSet<String>,
     borrowed: bool,
     dynamic_type_names: &std::collections::BTreeSet<String>,
+    fixed_vec_type_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<DeclareTypeFields> {
     let visibility = public.then(|| quote! { pub });
     let field_shape = serde_json::from_value::<anchor_lang_idl::types::IdlDefinedFields>(
@@ -5145,6 +5304,7 @@ fn gen_declare_program_type_fields(
                     borrowed,
                     dynamic_type_names,
                     const_generic_names,
+                    fixed_vec_type_names,
                 )?;
                 let field_ident = Ident::new(&to_snake_case(field_name), span);
                 field_tokens.push(quote! { #visibility #field_ident: #ty, });
@@ -5171,6 +5331,7 @@ fn gen_declare_program_type_fields(
                     borrowed,
                     dynamic_type_names,
                     const_generic_names,
+                    fixed_vec_type_names,
                 )?;
                 field_tokens.push(quote! { #visibility #ty });
                 field_tys.push(ty);
@@ -5201,6 +5362,7 @@ fn declare_idl_type_to_tokens_with_generics(
         false,
         &std::collections::BTreeSet::new(),
         const_generic_names,
+        &std::collections::BTreeSet::new(),
     )
 }
 
@@ -5209,6 +5371,7 @@ fn declare_idl_type_to_borrowed_tokens_with_generics(
     span: proc_macro2::Span,
     const_generic_names: &std::collections::BTreeSet<String>,
     dynamic_type_names: &std::collections::BTreeSet<String>,
+    fixed_vec_type_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<TokenStream2> {
     declare_idl_type_to_tokens_for_target(
         value,
@@ -5216,6 +5379,7 @@ fn declare_idl_type_to_borrowed_tokens_with_generics(
         true,
         dynamic_type_names,
         const_generic_names,
+        fixed_vec_type_names,
     )
 }
 
@@ -5225,6 +5389,7 @@ fn declare_idl_type_to_tokens_for_target(
     borrowed: bool,
     dynamic_type_names: &std::collections::BTreeSet<String>,
     const_generic_names: &std::collections::BTreeSet<String>,
+    fixed_vec_type_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<TokenStream2> {
     if let Some(s) = value.as_str() {
         return Ok(match s {
@@ -5278,6 +5443,7 @@ fn declare_idl_type_to_tokens_for_target(
                 const_generic_names,
                 borrowed,
                 dynamic_type_names,
+                fixed_vec_type_names,
             )?;
             let value = declare_idl_generic_arg_to_tokens_for_target(
                 &generics[1],
@@ -5285,6 +5451,7 @@ fn declare_idl_type_to_tokens_for_target(
                 const_generic_names,
                 borrowed,
                 dynamic_type_names,
+                fixed_vec_type_names,
             )?;
             return Ok(quote! { &'ix [(#key, #value)] });
         }
@@ -5302,6 +5469,7 @@ fn declare_idl_type_to_tokens_for_target(
                 const_generic_names,
                 borrowed,
                 dynamic_type_names,
+                fixed_vec_type_names,
             )?;
             return Ok(quote! { &'ix [#element] });
         }
@@ -5322,6 +5490,7 @@ fn declare_idl_type_to_tokens_for_target(
                             const_generic_names,
                             borrowed,
                             dynamic_type_names,
+                            fixed_vec_type_names,
                         )
                     })
                     .collect::<syn::Result<Vec<_>>>()
@@ -5329,17 +5498,25 @@ fn declare_idl_type_to_tokens_for_target(
             .transpose()?
             .unwrap_or_default();
         let needs_lifetime = borrowed && dynamic_type_names.contains(defined_name);
+        let capacity_arg = (borrowed && fixed_vec_type_names.contains(defined_name))
+            .then(|| quote! { __ANCHOR_DYNAMIC_CAPACITY });
         if generic_args.is_empty() {
-            return Ok(if needs_lifetime {
-                quote! { #ident<'ix> }
-            } else {
-                quote! { #ident }
+            return Ok(match (needs_lifetime, capacity_arg) {
+                (true, Some(capacity_arg)) => quote! { #ident<'ix, #capacity_arg> },
+                (true, None) => quote! { #ident<'ix> },
+                (false, Some(capacity_arg)) => quote! { #ident<#capacity_arg> },
+                (false, None) => quote! { #ident },
             });
         }
-        return Ok(if needs_lifetime {
-            quote! { #ident<'ix, #(#generic_args),*> }
-        } else {
-            quote! { #ident<#(#generic_args),*> }
+        return Ok(match (needs_lifetime, capacity_arg) {
+            (true, Some(capacity_arg)) => {
+                quote! { #ident<'ix, #(#generic_args,)* #capacity_arg> }
+            }
+            (true, None) => quote! { #ident<'ix, #(#generic_args),*> },
+            (false, Some(capacity_arg)) => {
+                quote! { #ident<#(#generic_args,)* #capacity_arg> }
+            }
+            (false, None) => quote! { #ident<#(#generic_args),*> },
         });
     }
     if let Some(generic) = value.get("generic").and_then(serde_json::Value::as_str) {
@@ -5353,9 +5530,10 @@ fn declare_idl_type_to_tokens_for_target(
             borrowed,
             dynamic_type_names,
             const_generic_names,
+            fixed_vec_type_names,
         )?;
         return Ok(if borrowed {
-            quote! { &'ix [#inner] }
+            quote! { anchor_lang::FixedVec<#inner, __ANCHOR_DYNAMIC_CAPACITY> }
         } else {
             quote! { anchor_lang::__idl::vec::Vec<#inner> }
         });
@@ -5367,6 +5545,7 @@ fn declare_idl_type_to_tokens_for_target(
             borrowed,
             dynamic_type_names,
             const_generic_names,
+            fixed_vec_type_names,
         )?;
         return Ok(quote! { Option<#inner> });
     }
@@ -5383,6 +5562,7 @@ fn declare_idl_type_to_tokens_for_target(
             borrowed,
             dynamic_type_names,
             const_generic_names,
+            fixed_vec_type_names,
         )?;
         let len = declare_idl_array_len_to_tokens(&array[1], span)?;
         return Ok(quote! { [#inner; #len] });
@@ -5444,6 +5624,7 @@ fn declare_idl_generic_arg_to_tokens_for_target(
     const_generic_names: &std::collections::BTreeSet<String>,
     borrowed: bool,
     dynamic_type_names: &std::collections::BTreeSet<String>,
+    fixed_vec_type_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<TokenStream2> {
     match json_str(value, "kind", span)? {
         "type" => {
@@ -5459,6 +5640,7 @@ fn declare_idl_generic_arg_to_tokens_for_target(
                 borrowed,
                 dynamic_type_names,
                 const_generic_names,
+                fixed_vec_type_names,
             )
         }
         "const" => {
@@ -6053,6 +6235,8 @@ fn process_handler(
     let extra_arg_names: Vec<_> = extra_args.iter().map(|(n, _)| *n).collect();
     let (extra_arg_types, has_ref_args) = args_meta(&extra_args);
     let extra_arg_types = &extra_arg_types;
+    let has_dynamic_capacity = extra_arg_types.iter().any(uses_dynamic_capacity)
+        || return_type.as_ref().is_some_and(uses_dynamic_capacity);
 
     // Dispatch arm.
     let dispatch_arm = if let Some(discrim_bytes) = discrim_bytes {
@@ -6329,10 +6513,12 @@ fn process_handler(
             target_generics.push(quote! { 'ix });
         }
         target_generics.push(quote! { const __ANCHOR_CPI_CAPACITY: usize });
-        if ix_data_bound.is_none() {
+        if has_dynamic_capacity {
+            target_generics.push(quote! { const __ANCHOR_DYNAMIC_CAPACITY: usize });
+        } else if ix_data_bound.is_none() {
             target_generics.push(quote! { const __ANCHOR_DATA_CAPACITY: usize });
         }
-        if has_ref_return {
+        if has_ref_return && !has_dynamic_capacity {
             target_generics.push(quote! { const __ANCHOR_RETURN_CAPACITY: usize });
         }
         let target_lt_decl = quote! { <#(#target_generics),*> };
@@ -6370,11 +6556,11 @@ fn process_handler(
                 quote! { __return.as_slice() }
             };
             quote! {
-                let __return = anchor_lang::pinocchio::cpi::get_return_data().unwrap();
-                assert!(
-                    anchor_lang::address_eq(__return.program_id(), __ctx.program),
-                    "return data program id mismatch"
-                );
+                let __return = anchor_lang::pinocchio::cpi::get_return_data()
+                    .ok_or(anchor_lang::Error::InvalidInstructionData)?;
+                if !anchor_lang::address_eq(__return.program_id(), __ctx.program) {
+                    return Err(anchor_lang::Error::IncorrectProgramId);
+                }
                 #copy_return_data
                 let __value: #return_ty = anchor_lang::wincode::config::deserialize(
                     #return_bytes,
@@ -6394,10 +6580,15 @@ fn process_handler(
             quote! {}
         };
         let target_return_data_arg = has_ref_return.then(|| {
+            let capacity = if has_dynamic_capacity {
+                quote! { __ANCHOR_DYNAMIC_CAPACITY }
+            } else {
+                quote! { __ANCHOR_RETURN_CAPACITY }
+            };
             quote! {
                 __return_data: &'ix mut anchor_lang::FixedVec<
                     u8,
-                    __ANCHOR_RETURN_CAPACITY,
+                    #capacity,
                 >,
             }
         });
@@ -8353,6 +8544,39 @@ mod tests {
                 "wrapper copied an unrelated attribute: {wrapper}"
             );
         }
+    }
+
+    #[test]
+    fn target_cpi_return_wrapper_propagates_return_data_errors() {
+        let handler: syn::ItemFn = syn::parse_quote! {
+            pub fn returns_data(
+                ctx: &mut Context<MyAccounts>,
+            ) -> Result<&[u8]> {
+                let _ = ctx;
+                unreachable!()
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Interface,
+            program_id: syn::parse_quote!(crate::ID),
+        };
+
+        let generated = process_handler(&handler, &syn::parse_quote!(external), None, &config)
+            .cpi_wrapper
+            .to_string();
+
+        assert!(
+            generated.contains("ok_or (anchor_lang :: Error :: InvalidInstructionData)"),
+            "target return-data lookup must be fallible: {generated}"
+        );
+        assert!(
+            generated.contains("anchor_lang :: Error :: IncorrectProgramId"),
+            "target return-data owner mismatch must be fallible: {generated}"
+        );
+        assert!(
+            !generated.contains("get_return_data ( ) . unwrap"),
+            "target return-data lookup must not unwrap: {generated}"
+        );
     }
 
     #[test]

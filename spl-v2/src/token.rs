@@ -3,21 +3,11 @@
 //! Layout mirrors `pinocchio-token` — all fields are alignment-1 to support
 //! zerocopy mapping from the account data buffer.
 
-#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-pub use spl_token_interface::ID;
-pub use {crate::mint::Mint, anchor_lang::programs::Token};
-
-#[cfg(any(target_os = "solana", target_arch = "bpf"))]
-pub const ID: Address = anchor_lang::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-
-/// Token authority role without exposing a canonical interface type.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AuthorityType {
-    MintTokens,
-    FreezeAccount,
-    AccountOwner,
-    CloseAccount,
-}
+pub use {
+    crate::mint::Mint,
+    anchor_lang::programs::Token,
+    spl_token_interface::{self as spl_token, ID},
+};
 use {
     anchor_lang::{
         accounts::{Account, Program, SlabInit, SlabSchema},
@@ -336,13 +326,21 @@ pub type TokenSignerSeeds<'a> = &'a [&'a [&'a [u8]]];
 
 #[inline]
 fn token_2022_authority_type(
-    authority_type: AuthorityType,
+    authority_type: spl_token::instruction::AuthorityType,
 ) -> spl_token_2022::instruction::AuthorityType {
     match authority_type {
-        AuthorityType::MintTokens => spl_token_2022::instruction::AuthorityType::MintTokens,
-        AuthorityType::FreezeAccount => spl_token_2022::instruction::AuthorityType::FreezeAccount,
-        AuthorityType::AccountOwner => spl_token_2022::instruction::AuthorityType::AccountOwner,
-        AuthorityType::CloseAccount => spl_token_2022::instruction::AuthorityType::CloseAccount,
+        spl_token::instruction::AuthorityType::MintTokens => {
+            spl_token_2022::instruction::AuthorityType::MintTokens
+        }
+        spl_token::instruction::AuthorityType::FreezeAccount => {
+            spl_token_2022::instruction::AuthorityType::FreezeAccount
+        }
+        spl_token::instruction::AuthorityType::AccountOwner => {
+            spl_token_2022::instruction::AuthorityType::AccountOwner
+        }
+        spl_token::instruction::AuthorityType::CloseAccount => {
+            spl_token_2022::instruction::AuthorityType::CloseAccount
+        }
     }
 }
 
@@ -355,12 +353,12 @@ fn token_cpi_ctx<'a, T, const N: usize>(
 where
     T: anchor_lang::ToCpiAccountsWithCapacity<'a, N>,
 {
-    CpiContext::<_, N>::new_with_signer(program, accounts, signer_seeds)
+    CpiContext::new_with_signer(program, accounts, signer_seeds)
 }
 
-pub fn set_authority<'a, const N: usize>(
-    ctx: CpiContext<'a, accounts::SetAuthority<'a>, N>,
-    authority_type: AuthorityType,
+pub fn set_authority<'a>(
+    ctx: CpiContext<'a, accounts::SetAuthority<'a>, 2>,
+    authority_type: spl_token::instruction::AuthorityType,
     new_authority: Option<Address>,
 ) -> Result<(), ProgramError> {
     crate::token_shared::set_authority(
@@ -595,7 +593,7 @@ pub trait TokenCpiExt {
         account_or_mint: &'a mut Acc,
         current_authority: &'a A,
         signer_seeds: TokenSignerSeeds<'a>,
-        authority_type: AuthorityType,
+        authority_type: spl_token::instruction::AuthorityType,
         new_authority: Option<Address>,
     ) -> Result<(), ProgramError>
     where
@@ -1034,7 +1032,7 @@ impl TokenCpiExt for Program<Token> {
         account_or_mint: &'a mut Acc,
         current_authority: &'a A,
         signer_seeds: TokenSignerSeeds<'a>,
-        authority_type: AuthorityType,
+        authority_type: spl_token::instruction::AuthorityType,
         new_authority: Option<Address>,
     ) -> Result<(), ProgramError>
     where
