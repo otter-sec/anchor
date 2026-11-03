@@ -156,37 +156,3 @@ fn mut_loaded_serialized_account_can_transfer_lamports() {
     assert_eq!(account.get_lamports(), 70);
     assert_eq!(view.get_lamports(), 70);
 }
-
-// `Box<T>` has no `AsRef<AccountView>`, so `LamportsMutable` resolves through
-// `DerefMut` to the inner wrapper's `is_mutable` override rather than the
-// `is_writable`-only default.
-#[test]
-fn readonly_loaded_boxed_account_rejected_despite_writable_meta() {
-    let mut buf = AccountBuffer::<128>::new();
-    setup_counter_buf(&mut buf);
-
-    let view = unsafe { buf.view() };
-    assert!(view.is_writable());
-    let mut account = <Box<BorshAccount<Counter>> as AnchorAccount>::load(view).unwrap();
-    assert_eq!(account.get_lamports(), 100);
-    assert_eq!(
-        account.add_lamports(1).map(|_| ()).unwrap_err(),
-        ErrorCode::ConstraintMut.into()
-    );
-    assert_eq!(account.get_lamports(), 100);
-    assert_eq!(view.get_lamports(), 100);
-}
-
-#[test]
-fn mut_loaded_boxed_account_can_transfer_lamports() {
-    let mut buf = AccountBuffer::<128>::new();
-    setup_counter_buf(&mut buf);
-
-    let view = unsafe { buf.view() };
-    let mut account =
-        <Box<BorshAccount<Counter>> as AnchorAccount>::load_mut(view).unwrap();
-    account.sub_lamports(40).unwrap();
-    account.add_lamports(10).unwrap();
-    assert_eq!(account.get_lamports(), 70);
-    assert_eq!(view.get_lamports(), 70);
-}

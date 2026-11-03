@@ -26,12 +26,12 @@ pub mod dispatch_remaining {
 
     #[discrim = 2]
     pub fn read_remaining_once(ctx: &mut Context<ReadRemaining>, expected_count: u8) -> Result<()> {
+        let counter = *ctx.accounts.counter.account().address();
         let remaining = ctx.remaining_accounts();
         if remaining.len() != expected_count as usize {
             return Err(ProgramError::InvalidArgument.into());
         }
-        if expected_count == 2 && remaining[0].address() != ctx.accounts.counter.account().address()
-        {
+        if expected_count == 2 && remaining[0].address() != &counter {
             return Err(ProgramError::InvalidAccountData.into());
         }
         Ok(())
@@ -39,12 +39,18 @@ pub mod dispatch_remaining {
 
     #[discrim = 3]
     pub fn read_remaining_twice(ctx: &mut Context<ReadRemaining>) -> Result<()> {
-        let first = ctx.remaining_accounts();
+        let first = {
+            let accounts = ctx.remaining_accounts();
+            if accounts.len() != 2 {
+                return Err(ProgramError::InvalidArgument.into());
+            }
+            [*accounts[0].address(), *accounts[1].address()]
+        };
         let second = ctx.remaining_accounts();
-        if first.len() != 2 || second.len() != 2 {
+        if second.len() != 2 {
             return Err(ProgramError::InvalidArgument.into());
         }
-        if first[0].address() != second[0].address() || first[1].address() != second[1].address() {
+        if first[0] != *second[0].address() || first[1] != *second[1].address() {
             return Err(ProgramError::InvalidAccountData.into());
         }
         Ok(())

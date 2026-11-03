@@ -571,4 +571,29 @@ mod tests {
         assert_eq!(ix.accounts[4].pubkey.as_ref(), [5; 32].as_slice());
     }
 
+    #[test]
+    fn canonical_instruction_bridge_preserves_metas_and_checks_capacity() {
+        let program_id = Address::new_from_array([1; 32]);
+        let account = Address::new_from_array([2; 32]);
+        let instruction = Instruction {
+            program_id,
+            accounts: alloc::vec![solana_instruction::AccountMeta::new(account, true)],
+            data: alloc::vec![3, 4],
+        };
+
+        let bridged = CanonicalInstruction::<1>::try_new(&instruction).unwrap();
+        assert_eq!(bridged.program_id(), &program_id);
+        assert_eq!(bridged.data(), [3, 4]);
+        bridged.with_instruction_accounts(|accounts| {
+            assert_eq!(accounts.len(), 1);
+            assert_eq!(accounts[0].address, &account);
+            assert!(accounts[0].is_writable);
+            assert!(accounts[0].is_signer);
+        });
+
+        assert!(matches!(
+            CanonicalInstruction::<0>::try_new(&instruction),
+            Err(ProgramError::InvalidArgument)
+        ));
+    }
 }

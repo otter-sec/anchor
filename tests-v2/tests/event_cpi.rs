@@ -96,6 +96,30 @@ fn emit_cpi_from_handler_succeeds() {
 }
 
 #[test]
+fn emit_cpi_overflow_restores_caller_storage_before_returning() {
+    let (mut svm, payer) = setup();
+    let counter = initialize(&mut svm, &payer);
+    let event_authority = event_authority_pda();
+    let data = event_cpi_test::instruction::EmitOverflowIsAtomic {}.data();
+
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data,
+        vec![
+            AccountMeta::new(counter, false),
+            AccountMeta::new_readonly(event_authority, false),
+            AccountMeta::new_readonly(program_id(), false),
+        ],
+        &payer,
+        &[],
+    )
+    .expect("overflow should be handled before self-CPI");
+
+    assert_eq!(counter_value(&svm, counter), 2);
+}
+
+#[test]
 fn emit_cpi_handler_rejects_wrong_event_authority_account() {
     let (mut svm, payer) = setup();
     let counter = initialize(&mut svm, &payer);

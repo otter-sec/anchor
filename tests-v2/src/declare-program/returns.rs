@@ -152,8 +152,8 @@ fn proxy_state(svm: &LiteSVM, result: Pubkey) -> ProxyState {
 
 #[test]
 fn declared_return_instruction_has_v1_style_return_wrapper() {
-    let _wrapper = return_callee::cpi::calculate;
-    let _defined_wrapper = return_callee::cpi::describe;
+    let _wrapper = return_callee::cpi::calculate::<2>;
+    let _defined_wrapper = return_callee::cpi::describe::<2>;
     assert_eq!(return_callee::instruction::Calculate::DISCRIMINATOR, &[1]);
     assert_eq!(return_callee::instruction::Describe::DISCRIMINATOR, &[2]);
 }

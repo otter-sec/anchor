@@ -1,4 +1,6 @@
 use anchor_lang::prelude::*;
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+use anchor_lang::FixedVec;
 
 declare_id!("8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR");
 
@@ -31,7 +33,7 @@ pub mod caller {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
         callee::cpi::set_data(cpi_ctx, value)?;
         Ok(())
     }
@@ -44,8 +46,14 @@ pub mod caller {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
-        callee::cpi::set_data_from_bytes(cpi_ctx, bytes);
+        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        {
+            let mut data = FixedVec::<u8, 32>::new();
+            callee::cpi::set_data_from_bytes(cpi_ctx, bytes, &mut data)?;
+        }
+        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+        callee::cpi::set_data_from_bytes(cpi_ctx, bytes)?;
         Ok(())
     }
 
@@ -56,7 +64,7 @@ pub mod caller {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
         callee::cpi::noop(cpi_ctx)?;
         Ok(())
     }
@@ -66,7 +74,7 @@ pub mod caller {
     /// only viable route since the lifetime-anchoring `_phantom` field
     /// is hidden.
     pub fn proxy_empty(ctx: &mut Context<ProxyEmpty>) -> Result<()> {
-        let cpi_ctx = CpiContext::new(
+        let cpi_ctx = CpiContext::<_, 0>::new(
             ctx.accounts.callee_program.address(),
             callee::cpi::accounts::Empty::new(),
         );
@@ -84,7 +92,7 @@ pub mod caller {
             authority: ctx.accounts.authority.cpi_handle(),
             spectator: ctx.accounts.spectator.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 4>::new(ctx.accounts.callee_program.address(), cpi_accounts);
         callee::cpi::touch(cpi_ctx, delta)?;
         Ok(())
     }

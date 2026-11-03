@@ -317,6 +317,11 @@ mod tests {
     use super::*;
 
     #[test]
+    fn local_token_2022_id_matches_canonical_id() {
+        assert_eq!(TOKEN_2022_ID, spl_token_2022::ID);
+    }
+
+    #[test]
     fn local_protocol_enums_match_token_2022_wire_values() {
         let extensions = [
             ExtensionType::Uninitialized,
