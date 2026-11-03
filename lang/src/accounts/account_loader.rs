@@ -184,7 +184,8 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
         let align = if align > 8 { 8 } else { align };
         assert!(
             T::DISCRIMINATOR.len() % align == 0,
-            "AccountLoader body can never be aligned: discriminator length must be a multiple of the account type's alignment (capped at 8)"
+            "AccountLoader body can never be aligned: discriminator length must be a multiple of \
+             the account type's alignment (capped at 8)"
         );
     };
 
