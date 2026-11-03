@@ -7506,12 +7506,12 @@ mod tests {
 
         for expected in [
             "pub use super :: __client_accounts_always :: { Always , AlwaysResolved } ;",
-            "# [cfg (any (all (feature = \"extra\")))] \
-             pub use super :: __client_accounts_extra :: { Extra , ExtraResolved } ;",
-            "# [cfg (any (all (feature = \"extra\")))] \
-             pub use super :: super :: __cpi_accounts_extra :: Extra ;",
-            "# [cfg (any (all (feature = \"a\") , all (feature = \"b\")))] \
-             pub use super :: super :: __cpi_accounts_sharedgated :: SharedGated ;",
+            "# [cfg (any (all (feature = \"extra\")))] pub use super :: __client_accounts_extra \
+             :: { Extra , ExtraResolved } ;",
+            "# [cfg (any (all (feature = \"extra\")))] pub use super :: super :: \
+             __cpi_accounts_extra :: Extra ;",
+            "# [cfg (any (all (feature = \"a\") , all (feature = \"b\")))] pub use super :: super \
+             :: __cpi_accounts_sharedgated :: SharedGated ;",
         ] {
             assert!(generated.contains(expected), "missing {expected}: {generated}");
         }
