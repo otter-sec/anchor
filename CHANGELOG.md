@@ -39,6 +39,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - cli: Merge `shutdown_wait` and `upgradeable` from `Test.toml` files that use `extends` ([#5189](https://github.com/otter-sec/anchor/pull/5189)).
 - lang: Generate `u256` and `i256` as `[u8; 32]` in `declare_program!`, so IDLs that use them compile ([#5224](https://github.com/otter-sec/anchor/pull/5224)).
 - idl: Fix legacy const seed conversion: string seeds no longer keep JSON quotes, and unsigned and signed integer and byte array seeds are supported ([#5127](https://github.com/otter-sec/anchor/pull/5127)).
+- lang: Return an error instead of panicking when an `AccountLoader` zero-copy body is misaligned, e.g. with a one-byte custom discriminator ([#5246](https://github.com/otter-sec/anchor/issues/5246)).
 
 ### Breaking
 
