@@ -191,7 +191,7 @@ See the full [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.2.1/CHANGEL
   ([#4638](https://github.com/otter-sec/anchor/pull/4638)).
 - lang: Migrate `anchor-syn` from syn 1.x to syn 2.0, allowing use of modern
   Rust syntax
-  ([#4523](https://github.com/otter-sec/anchor/issues/4523)).
+  ([#4523](https://github.com/otter-sec/anchor/pull/4523)).
 - idl: Bump version to 0.1.3
   ([#4453](https://github.com/otter-sec/anchor/pull/4453)).
 - lang: Avoid fatal errors in IDL building when modern Rust syntax is in use
@@ -201,7 +201,7 @@ See the full [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.2.1/CHANGEL
   ([#4706](https://github.com/otter-sec/anchor/pull/4706)).
 - client: Avoid panic in `parse_logs_response` when a program-emitted log line
   ends with `invoke [1]`
-  ([#4461](https://github.com/otter-sec/anchor/issues/4461)).
+  ([#4475](https://github.com/otter-sec/anchor/pull/4475)).
 - cli: Correctly honor `--skip-seed-phrase-validation` in `keygen recover`
   ([#4417](https://github.com/otter-sec/anchor/pull/4417)).
 - ts: Fix `sha256.hash()` returning corrupted output by using hex encoding
@@ -1321,7 +1321,7 @@ passing ([#3768](https://github.com/solana-foundation/anchor/pull/3768)).
 ### Features
 
 - cli: Add `--run` to `anchor test` for running a subset of test suites
-  ([#1828](https://github.com/solana-foundation/anchor/issues/1828)).
+  ([#1864](https://github.com/solana-foundation/anchor/pull/1864)).
 - client: Add `transaction` functions to RequestBuilder
   ([#1958](https://github.com/solana-foundation/anchor/pull/1958)).
 - spl: Add `create_metadata_accounts_v3` and `set_collection_size` wrappers
@@ -1359,7 +1359,7 @@ passing ([#3768](https://github.com/solana-foundation/anchor/pull/3768)).
 - ts: Add ability to resolve missing accounts with a custom resolver
   ([#2194](https://github.com/solana-foundation/anchor/pull/2194)).
 - ts: Update the Solana web3 library used by anchor ts to version 1.64.0
-  ([#2220](https://github.com/solana-foundation/anchor/issues/2220)).
+  ([#2223](https://github.com/solana-foundation/anchor/pull/2223)).
 - lang: Updates `AccountsClose` to make it safe to call manually
   ([#2209](https://github.com/solana-foundation/anchor/pull/2209)).
 - lang: Update rust used in the repo version 1.62
@@ -1561,7 +1561,7 @@ passing ([#3768](https://github.com/solana-foundation/anchor/pull/3768)).
 
 - cli: Add `anchor clean` command that's the same as `cargo clean` but preserves
   keypairs inside `target/deploy`
-  ([#1470](https://github.com/solana-foundation/anchor/issues/1470)).
+  ([#1479](https://github.com/solana-foundation/anchor/pull/1479)).
 - cli: Running `anchor init` now initializes a new git repository for the
   workspace. This can be disabled with the `--no-git` flag
   ([#1605](https://github.com/solana-foundation/anchor/pull/1605)).
@@ -1569,7 +1569,7 @@ passing ([#3768](https://github.com/solana-foundation/anchor/pull/3768)).
   ([#1509](https://github.com/solana-foundation/anchor/pull/1509)).
 - cli: [[test.validator.clone]] also clones the program data account of programs
   owned by the bpf upgradeable loader
-  ([#1481](https://github.com/solana-foundation/anchor/issues/1481)).
+  ([#1495](https://github.com/solana-foundation/anchor/pull/1495)).
 - lang: Add new `AccountSysvarMismatch` error code and test cases for sysvars
   ([#1535](https://github.com/solana-foundation/anchor/pull/1535)).
 - lang: Replace `std::io::Cursor` with a custom `Write` impl that uses the
@@ -1577,7 +1577,7 @@ passing ([#3768](https://github.com/solana-foundation/anchor/pull/3768)).
 - lang: Add `require_neq`, `require_keys_neq`, `require_gt`, and `require_gte`
   comparison macros ([#1622](https://github.com/solana-foundation/anchor/pull/1622)).
 - lang: Handle arrays with const as size in instruction data
-  ([#1623](https://github.com/solana-foundation/anchor/issues/1623).
+  ([#1631](https://github.com/solana-foundation/anchor/pull/1631)).
 - spl: Add support for revoke instruction
   ([#1493](https://github.com/solana-foundation/anchor/pull/1493)).
 - ts: Add provider parameter to `Spl.token` factory method
