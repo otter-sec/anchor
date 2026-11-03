@@ -696,8 +696,9 @@ describe("coder.instructions", () => {
 
     // 32 public keys serialize to 4 + 32*32 = 1028 bytes, exceeding the
     // encoder's default 1000-byte scratch buffer.
-    const keys = Array.from({ length: 32 }, (_, i) =>
-      new PublicKey(Buffer.alloc(32, i))
+    const keys = Array.from(
+      { length: 32 },
+      (_, i) => new PublicKey(Buffer.alloc(32, i))
     );
 
     const encoded = coder.instruction.encode(idlIx.name, { keys });
