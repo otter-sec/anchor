@@ -4,6 +4,7 @@ wallet = "~/.config/solana/id.json"
 
 [programs.localnet]
 events = "2dhGsWUzy5YKUsjZdLHLmkNpUDAXkNa9MYWsPc4Ziqzy"
+events_caller = "EventsCa11er1111111111111111111111111111111"
 
 [scripts]
 test = "yarn run ts-mocha -t 1000000 -p ./tsconfig.json tests/**/*.ts"
