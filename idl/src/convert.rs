@@ -615,36 +615,71 @@ mod legacy {
                     path: recase_path(&seed.path, |s| s.to_snake_case()),
                 }),
                 IdlSeed::Const(seed) => Self::Const(t::IdlSeedConst {
-                    value: match seed.ty {
-                        IdlType::String => seed.value.to_string().as_bytes().into(),
-                        // The inverse converter emits const seeds as
-                        // `type: "bytes"` + JSON array of u8 values, so
-                        // accept that shape too. Lets `current -> legacy
-                        // -> current` round-trip preserve PDA const seeds.
-                        IdlType::Bytes => {
-                            let arr = seed.value.as_array().ok_or_else(|| {
-                                anyhow!("Const seed of type `bytes` must be a JSON array")
-                            })?;
-                            arr.iter()
-                                .map(|v| {
-                                    v.as_u64()
-                                        .and_then(|n| u8::try_from(n).ok())
-                                        .ok_or_else(|| {
-                                            anyhow!("Const seed bytes must be u8 values, got {v}")
-                                        })
-                                })
-                                .collect::<Result<Vec<u8>>>()?
-                        }
-                        _ => {
-                            return Err(anyhow!(
-                                "Const seed conversion not supported for type {:?}",
-                                seed.ty
-                            ))
-                        }
-                    },
+                    value: const_seed_bytes(&seed.ty, &seed.value)?,
                 }),
             };
             Ok(seed)
+        }
+    }
+
+    /// Bytes of a legacy const seed, as the legacy TS client derives them:
+    /// strings as UTF-8 and unsigned integers as little-endian.
+    fn const_seed_bytes(ty: &IdlType, value: &serde_json::Value) -> Result<Vec<u8>> {
+        fn uint(value: &serde_json::Value, ty: &IdlType) -> Result<u64> {
+            value
+                .as_u64()
+                .ok_or_else(|| anyhow!("Const seed of type {ty:?} must be an unsigned integer"))
+        }
+        fn out_of_range(value: &serde_json::Value, ty: &IdlType) -> anyhow::Error {
+            anyhow!("Const seed {value} is out of range for type {ty:?}")
+        }
+        // The inverse converter emits const seeds as `type: "bytes"` + JSON
+        // array of u8 values, so accept that shape too. Lets `current ->
+        // legacy -> current` round-trip preserve PDA const seeds.
+        fn bytes(value: &serde_json::Value) -> Result<Vec<u8>> {
+            let arr = value
+                .as_array()
+                .ok_or_else(|| anyhow!("Const seed of type `bytes` must be a JSON array"))?;
+            arr.iter()
+                .map(|v| {
+                    v.as_u64()
+                        .and_then(|n| u8::try_from(n).ok())
+                        .ok_or_else(|| anyhow!("Const seed bytes must be u8 values, got {v}"))
+                })
+                .collect()
+        }
+
+        match ty {
+            IdlType::String => value
+                .as_str()
+                .map(|s| s.as_bytes().to_vec())
+                .ok_or_else(|| anyhow!("Const seed of type `string` must be a JSON string")),
+            IdlType::Bytes => bytes(value),
+            IdlType::Array(inner, len) if **inner == IdlType::U8 => {
+                let seed = bytes(value)?;
+                if seed.len() != *len {
+                    return Err(anyhow!(
+                        "Const seed has {} bytes but its type expects {len}",
+                        seed.len()
+                    ));
+                }
+                Ok(seed)
+            }
+            IdlType::U8 => Ok(vec![
+                u8::try_from(uint(value, ty)?).map_err(|_| out_of_range(value, ty))?
+            ]),
+            IdlType::U16 => Ok(u16::try_from(uint(value, ty)?)
+                .map_err(|_| out_of_range(value, ty))?
+                .to_le_bytes()
+                .to_vec()),
+            IdlType::U32 => Ok(u32::try_from(uint(value, ty)?)
+                .map_err(|_| out_of_range(value, ty))?
+                .to_le_bytes()
+                .to_vec()),
+            IdlType::U64 => Ok(uint(value, ty)?.to_le_bytes().to_vec()),
+            _ => Err(anyhow!(
+                "Const seed conversion not supported for type {ty:?}"
+            )),
         }
     }
 
@@ -1073,5 +1108,76 @@ mod tests {
         let actual: serde_json::Value = serde_json::from_slice(&legacy_bytes).unwrap();
 
         assert_eq!(actual, expected);
+    }
+
+    /// Convert a legacy IDL whose only PDA has the given const seed and
+    /// return the seed bytes of the converted IDL.
+    fn convert_const_seed(ty: serde_json::Value, value: serde_json::Value) -> Result<Vec<u8>> {
+        let legacy = serde_json::json!({
+            "version": "0.1.0",
+            "name": "seeds",
+            "instructions": [{
+                "name": "init",
+                "accounts": [{
+                    "name": "pda",
+                    "isMut": true,
+                    "isSigner": false,
+                    "pda": { "seeds": [{ "kind": "const", "type": ty, "value": value }] }
+                }],
+                "args": []
+            }],
+            "metadata": { "address": "11111111111111111111111111111111" }
+        });
+        let idl = convert_idl(&serde_json::to_vec(&legacy).unwrap())?;
+        let idl = serde_json::to_value(idl).unwrap();
+        let seed = &idl["instructions"][0]["accounts"][0]["pda"]["seeds"][0]["value"];
+        Ok(serde_json::from_value(seed.clone()).unwrap())
+    }
+
+    #[test]
+    fn const_seed_string_has_no_json_quotes() {
+        let seed = convert_const_seed("string".into(), "config".into()).unwrap();
+        assert_eq!(seed, b"config");
+    }
+
+    #[test]
+    fn const_seed_unsigned_ints_are_little_endian() {
+        let seed = |ty: &str, v: u64| convert_const_seed(ty.into(), v.into()).unwrap();
+        assert_eq!(seed("u8", 0xab), [0xab]);
+        assert_eq!(seed("u16", 0x0102), [0x02, 0x01]);
+        assert_eq!(seed("u32", 0x0102_0304), [0x04, 0x03, 0x02, 0x01]);
+        assert_eq!(seed("u64", u64::MAX - 1), (u64::MAX - 1).to_le_bytes());
+    }
+
+    #[test]
+    fn const_seed_byte_arrays() {
+        let arr = serde_json::json!({ "array": ["u8", 3] });
+        let seed = convert_const_seed(arr, serde_json::json!([1, 2, 3])).unwrap();
+        assert_eq!(seed, [1, 2, 3]);
+        let seed = convert_const_seed("bytes".into(), serde_json::json!([4, 5])).unwrap();
+        assert_eq!(seed, [4, 5]);
+    }
+
+    #[test]
+    fn const_seed_rejects_malformed_values() {
+        let bad = [
+            ("string", serde_json::json!(1)),
+            ("u8", serde_json::json!(256)),
+            ("u16", serde_json::json!(65536)),
+            ("u32", serde_json::json!(4294967296u64)),
+            ("u64", serde_json::json!(-1)),
+            ("u64", serde_json::json!("7")),
+            ("bytes", serde_json::json!([256])),
+            ("i32", serde_json::json!(1)),
+        ];
+        for (ty, value) in bad {
+            assert!(
+                convert_const_seed(ty.into(), value.clone()).is_err(),
+                "{ty} seed {value} should be rejected"
+            );
+        }
+        // Length must match the declared array length.
+        let arr = serde_json::json!({ "array": ["u8", 2] });
+        assert!(convert_const_seed(arr, serde_json::json!([1, 2, 3])).is_err());
     }
 }
