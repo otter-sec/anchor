@@ -312,12 +312,13 @@ that authority not to be set. With `init`, `mint::freeze_authority = None`
 creates a mint with no freeze authority. `mint::authority = None` cannot be
 used with `init` because SPL Token requires a mint authority at initialization.
 
-`mint::no_extensions` rejects a mint that has any of the listed Token-2022
-extensions. It is meant for programs that must not accept mints with
-extensions that change transfer or custody semantics, for example an escrow
-vault that would silently receive less than the recorded amount from a mint
-with `TransferFeeConfig`, or that a `PermanentDelegate` could drain. Plain
-SPL Token mints have no extensions and always pass.
+Use `anchor_spl::token_interface::get_mint_extension_types` in a plain
+`constraint` to reject a mint with specific Token-2022 extensions. It is
+meant for programs that must not accept mints with extensions that change
+transfer or custody semantics, for example an escrow vault that would
+silently receive less than the recorded amount from a mint with
+`TransferFeeConfig`, or that a `PermanentDelegate` could drain. Plain SPL
+Token mints have no extensions and always pass.
 
 Examples: [Github](https://github.com/solana-developers/anchor-examples/tree/main/account-constraints/mint)
 |
@@ -341,7 +342,13 @@ Examples: [Github](https://github.com/solana-developers/anchor-examples/tree/mai
 )]
 
 #[account(
-    mint::no_extensions = [TransferFeeConfig, PermanentDelegate]
+    constraint = !get_mint_extension_types(&mint.to_account_info())?
+        .iter()
+        .any(|t| matches!(
+            t,
+            ExtensionType::TransferFeeConfig | ExtensionType::PermanentDelegate
+        ))
+        @ MyError::MintHasExtensions
 )]
 ```
 

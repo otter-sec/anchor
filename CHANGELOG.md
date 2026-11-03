@@ -16,7 +16,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - cli: Warn on mainnet deploy without `--security-metadata`, and reject a `security.json` that still matches the `anchor init` template ([#5124](https://github.com/otter-sec/anchor/issues/5124)).
 - client: Add support for v1 transactions ([#5076](https://github.com/otter-sec/anchor/pull/5076)).
 - lang: Allow `None` in `mint::authority` and `mint::freeze_authority` constraints ([#5007](https://github.com/otter-sec/anchor/pull/5007)).
-- lang: Add `mint::no_extensions` constraint to reject mints with listed Token-2022 extensions ([#5239](https://github.com/otter-sec/anchor/issues/5239)).
+- spl: Add `get_mint_extension_types` helper to list a mint's Token-2022 extensions, so programs can reject specific extensions with a plain `constraint` ([#5239](https://github.com/otter-sec/anchor/issues/5239)).
 - lang: Implement `Space` for `NonZero*` integers so `#[derive(InitSpace)]` supports them ([#5132](https://github.com/otter-sec/anchor/pull/5132)).
 - idl: Support `NonZero*` integer types in IDL generation ([#5130](https://github.com/otter-sec/anchor/pull/5130)).
 

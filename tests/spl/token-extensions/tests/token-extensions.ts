@@ -249,7 +249,7 @@ describe("token extensions", () => {
     }
   });
 
-  describe("mint no_extensions constraint", () => {
+  describe("mint extension types helper", () => {
     const plainMint = new Keypair();
 
     it("passes for a mint without transfer fee or permanent delegate", async () => {
@@ -285,14 +285,14 @@ describe("token extensions", () => {
           })
           .signers([payer])
           .rpc();
-        assert.fail("expected ConstraintMintNoExtensions");
+        assert.fail("expected MintHasExtensions");
       } catch (err) {
         assert.ok(err instanceof AnchorError);
         assert.equal(
           (err as AnchorError).error.errorCode.code,
-          "ConstraintMintNoExtensions"
+          "MintHasExtensions"
         );
-        assert.equal((err as AnchorError).error.errorCode.number, 2045);
+        assert.equal((err as AnchorError).error.errorCode.number, 6000);
       }
     });
   });

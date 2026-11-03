@@ -12,6 +12,12 @@ pub use {instructions::*, utils::*};
 
 declare_id!("tKEkkQtgMXhdaz5NMTR3XbdUu215sZyHSj6Menvous1");
 
+#[error_code]
+pub enum TokenExtensionsError {
+    #[msg("Mint has extensions")]
+    MintHasExtensions,
+}
+
 #[program]
 pub mod token_extensions {
     use super::*;
