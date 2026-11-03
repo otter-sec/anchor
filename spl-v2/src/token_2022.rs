@@ -8,9 +8,9 @@ pub(crate) use spl_token_2022_interface as spl_token_2022;
 pub use spl_token_2022_interface::{native_mint, ID};
 use {
     crate::token_shared::multisig_signer_addresses,
-    alloc::vec::Vec,
+    alloc::{string::String, vec::Vec},
     anchor_lang::{
-        require_eq, CpiContext, CpiHandle, CpiHandleMut, FixedString, FixedVec, ToCpiAccounts,
+        require_eq, CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts,
     },
     pinocchio::address::Address,
     solana_program_error::ProgramError,
@@ -148,9 +148,7 @@ pub struct PermanentDelegateInitialize<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
-fn return_data_from(
-    program: &Address,
-) -> Result<FixedVec<u8, { anchor_lang::solana_program::program::MAX_RETURN_DATA }>, ProgramError> {
+fn return_data_from(program: &Address) -> Result<Vec<u8>, ProgramError> {
     let (return_program, data) = anchor_lang::solana_program::program::get_return_data()
         .ok_or(ProgramError::InvalidInstructionData)?;
     require_eq!(
@@ -158,11 +156,7 @@ fn return_data_from(
         program.as_ref(),
         ProgramError::IncorrectProgramId
     );
-    let mut output = FixedVec::new();
-    output
-        .try_extend_from_slice(data.as_slice())
-        .map_err(|_| ProgramError::InvalidInstructionData)?;
-    Ok(output)
+    Ok(data.as_slice().to_vec())
 }
 
 pub fn get_account_data_size<'a, const N: usize>(
@@ -213,20 +207,15 @@ pub fn initialize_immutable_owner<'a, const N: usize>(
 pub fn amount_to_ui_amount<'a, const N: usize>(
     ctx: CpiContext<'a, AmountToUiAmount<'a>, N>,
     amount: u64,
-) -> Result<FixedString<{ anchor_lang::solana_program::program::MAX_RETURN_DATA }>, ProgramError> {
+) -> Result<String, ProgramError> {
     let ix = spl_token_2022::instruction::amount_to_ui_amount(
         ctx.program,
         ctx.accounts.account.address(),
         amount,
     )?;
     crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)?;
-    parse_ui_amount(return_data_from(ctx.program)?.as_slice())
-}
-
-fn parse_ui_amount(
-    data: &[u8],
-) -> Result<FixedString<{ anchor_lang::solana_program::program::MAX_RETURN_DATA }>, ProgramError> {
-    FixedString::try_from(data).map_err(|_| ProgramError::InvalidInstructionData)
+    String::from_utf8(return_data_from(ctx.program)?)
+        .map_err(|_| ProgramError::InvalidInstructionData)
 }
 
 pub fn ui_amount_to_amount<'a, const N: usize>(
