@@ -7513,7 +7513,10 @@ mod tests {
             "# [cfg (any (all (feature = \"a\") , all (feature = \"b\")))] pub use super :: super \
              :: __cpi_accounts_sharedgated :: SharedGated ;",
         ] {
-            assert!(generated.contains(expected), "missing {expected}: {generated}");
+            assert!(
+                generated.contains(expected),
+                "missing {expected}: {generated}"
+            );
         }
         // One ungated handler keeps a shared struct's re-export ungated.
         assert!(
