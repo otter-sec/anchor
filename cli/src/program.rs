@@ -463,6 +463,7 @@ pub fn process_deploy(
             buffer,
             max_len,
             use_rpc,
+            verifiable,
             no_idl,
             security_metadata,
             make_final,
@@ -532,6 +533,7 @@ pub fn process_deploy(
         buffer,
         max_len,
         use_rpc,
+        verifiable,
         no_idl,
         security_metadata,
         make_final,
@@ -592,6 +594,7 @@ fn deploy_workspace(
             None, // buffer
             None, // max_len
             use_rpc,
+            verifiable,
             no_idl,
             security_metadata,
             make_final,
@@ -615,6 +618,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             buffer,
             max_len,
             use_rpc,
+            verifiable,
             no_idl,
             security_metadata,
             make_final,
@@ -629,7 +633,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             buffer,
             max_len,
             use_rpc,
-            false, // verifiable
+            verifiable,
             no_idl,
             security_metadata,
             make_final,
@@ -928,6 +932,7 @@ pub fn program_deploy(
     buffer: Option<Pubkey>,
     max_len: Option<usize>,
     use_rpc: bool,
+    verifiable: bool,
     no_idl: bool,
     security_metadata: bool,
     make_final: bool,
@@ -948,7 +953,7 @@ pub fn program_deploy(
         let programs = get_programs_from_workspace(cfg_override, program_name.clone())?;
 
         let program = &programs[0];
-        let binary_path = program.binary_path(false)?; // false = not verifiable build
+        let binary_path = program.binary_path(verifiable)?;
 
         println!("Deploying program: {}", program.lib_name);
 
@@ -2895,6 +2900,7 @@ mod tests {
             None,
             None,
             false,
+            false,
             true,
             false,
             false,
@@ -2925,6 +2931,7 @@ mod tests {
             Some(Pubkey::new_unique()),
             None,
             None,
+            false,
             false,
             true,
             false,
