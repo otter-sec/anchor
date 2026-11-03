@@ -21,6 +21,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- ts: Bump `toml` to `^5.0.1` to address security advisories in `toml` <= 5.0.0 ([#5236](https://github.com/otter-sec/anchor/issues/5236)).
 - cli: Accept an explicit program id or workspace program when parsing `program extend` ([#5220](https://github.com/otter-sec/anchor/pull/5220)).
 - Block mutable aliasing between accounts marked `zero` and `init` ([#4871](https://github.com/otter-sec/anchor/pull/4871)).
 - lang: Support fully qualified account types in `Context` ([#4836](https://github.com/otter-sec/anchor/pull/4836)).
@@ -32,6 +33,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Reject `seeds::program` with `init` regardless of constraint order ([#5191](https://github.com/otter-sec/anchor/issues/5191)).
 - cli: Fix generated projects with `--anchor-version v2` ([#5187](https://github.com/otter-sec/anchor/pull/5187)).
 - cli: Keep a custom provider `ws` URL when rewriting `Anchor.toml` ([#5193](https://github.com/otter-sec/anchor/issues/5193)).
+- cli: Restore `--verifiable` for deploys, now on `anchor program deploy`, so the `target/verifiable` build can be deployed again without the deprecated `anchor deploy` ([#5223](https://github.com/otter-sec/anchor/pull/5223)).
 - ts: Resolve the generic arguments of generic types nested in a generic type, so IDLs such as the generics test program can be decoded ([#5158](https://github.com/otter-sec/anchor/pull/5158)).
 
 ### Breaking
