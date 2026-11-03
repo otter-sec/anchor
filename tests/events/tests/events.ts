@@ -112,8 +112,8 @@ describe("Events", () => {
       try {
         await program.provider.sendAndConfirm(tx, [], confirmOptions);
       } catch (e) {
+        console.error("Unauthorized event invocation failed:", e);
         if (e.logs.some((log) => log.includes("ConstraintSigner"))) return;
-        console.log(e);
       }
 
       throw new Error("Was able to invoke the self-CPI instruction");
