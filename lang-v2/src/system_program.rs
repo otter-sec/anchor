@@ -3,17 +3,16 @@
 //! Mirrors the v1 `anchor_lang::system_program` CPI utility surface while
 //! using v2 [`CpiContext`] and CPI handle accounts.
 
-extern crate alloc;
-
+pub use crate::programs::System;
 use {
-    crate::{require, CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts},
-    alloc::{string::String, vec::Vec},
+    crate::{
+        require, CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts, ToCpiAccountsWithCapacity,
+    },
+    alloc::vec::Vec,
     pinocchio::address::MAX_SEED_LEN,
     solana_address::Address,
     solana_program_error::{ProgramError, ProgramResult},
 };
-
-pub use crate::programs::System;
 
 pub const ID: Address = crate::address!("11111111111111111111111111111111");
 
@@ -52,12 +51,17 @@ fn checked_seed(seed: &str) -> Result<&[u8], ProgramError> {
 }
 
 #[inline]
-fn invoke<'a, T: ToCpiAccounts<'a>>(ctx: &CpiContext<'a, T>, data: &[u8]) -> ProgramResult {
+fn invoke<'a, T, const N: usize>(ctx: &CpiContext<'a, T, N>, data: &[u8]) -> ProgramResult
+where
+    T: ToCpiAccountsWithCapacity<'a, N>,
+{
     check_system_program(ctx.program)?;
     ctx.invoke(data)
 }
 
-pub fn advance_nonce_account<'a>(ctx: CpiContext<'a, AdvanceNonceAccount<'a>>) -> ProgramResult {
+pub fn advance_nonce_account<'a, const N: usize>(
+    ctx: CpiContext<'a, AdvanceNonceAccount<'a>, N>,
+) -> ProgramResult {
     invoke(&ctx, &4u32.to_le_bytes())
 }
 
@@ -69,7 +73,10 @@ pub struct AdvanceNonceAccount<'a> {
     pub authorized: CpiHandle<'a>,
 }
 
-pub fn allocate<'a>(ctx: CpiContext<'a, Allocate<'a>>, space: u64) -> ProgramResult {
+pub fn allocate<'a, const N: usize>(
+    ctx: CpiContext<'a, Allocate<'a>, N>,
+    space: u64,
+) -> ProgramResult {
     let mut data = Vec::with_capacity(12);
     encode_u32(8, &mut data);
     encode_u64(space, &mut data);
@@ -82,8 +89,8 @@ pub struct Allocate<'a> {
     pub account_to_allocate: CpiHandleMut<'a>,
 }
 
-pub fn allocate_with_seed<'a>(
-    ctx: CpiContext<'a, AllocateWithSeed<'a>>,
+pub fn allocate_with_seed<'a, const N: usize>(
+    ctx: CpiContext<'a, AllocateWithSeed<'a>, N>,
     seed: &str,
     space: u64,
     owner: &Address,
@@ -106,7 +113,10 @@ pub struct AllocateWithSeed<'a> {
     pub base: CpiHandle<'a>,
 }
 
-pub fn assign<'a>(ctx: CpiContext<'a, Assign<'a>>, owner: &Address) -> ProgramResult {
+pub fn assign<'a, const N: usize>(
+    ctx: CpiContext<'a, Assign<'a>, N>,
+    owner: &Address,
+) -> ProgramResult {
     let mut data = Vec::with_capacity(36);
     encode_u32(1, &mut data);
     encode_address(owner, &mut data);
@@ -119,8 +129,8 @@ pub struct Assign<'a> {
     pub account_to_assign: CpiHandleMut<'a>,
 }
 
-pub fn assign_with_seed<'a>(
-    ctx: CpiContext<'a, AssignWithSeed<'a>>,
+pub fn assign_with_seed<'a, const N: usize>(
+    ctx: CpiContext<'a, AssignWithSeed<'a>, N>,
     seed: &str,
     owner: &Address,
 ) -> ProgramResult {
@@ -141,8 +151,8 @@ pub struct AssignWithSeed<'a> {
     pub base: CpiHandle<'a>,
 }
 
-pub fn authorize_nonce_account<'a>(
-    ctx: CpiContext<'a, AuthorizeNonceAccount<'a>>,
+pub fn authorize_nonce_account<'a, const N: usize>(
+    ctx: CpiContext<'a, AuthorizeNonceAccount<'a>, N>,
     new_authority: &Address,
 ) -> ProgramResult {
     let mut data = Vec::with_capacity(36);
@@ -158,8 +168,8 @@ pub struct AuthorizeNonceAccount<'a> {
     pub authorized: CpiHandle<'a>,
 }
 
-pub fn create_account<'a>(
-    ctx: CpiContext<'a, CreateAccount<'a>>,
+pub fn create_account<'a, const N: usize>(
+    ctx: CpiContext<'a, CreateAccount<'a>, N>,
     lamports: u64,
     space: u64,
     owner: &Address,
@@ -180,8 +190,8 @@ pub struct CreateAccount<'a> {
     pub to: CpiHandleMut<'a>,
 }
 
-pub fn create_account_with_seed<'a>(
-    ctx: CpiContext<'a, CreateAccountWithSeed<'a>>,
+pub fn create_account_with_seed<'a, const N: usize>(
+    ctx: CpiContext<'a, CreateAccountWithSeed<'a>, N>,
     seed: &str,
     lamports: u64,
     space: u64,
@@ -208,8 +218,8 @@ pub struct CreateAccountWithSeed<'a> {
     pub base: CpiHandle<'a>,
 }
 
-pub fn create_nonce_account<'a>(
-    ctx: CpiContext<'a, CreateNonceAccount<'a>>,
+pub fn create_nonce_account<'a, const N: usize>(
+    ctx: CpiContext<'a, CreateNonceAccount<'a>, N>,
     lamports: u64,
     authority: &Address,
 ) -> ProgramResult {
@@ -219,7 +229,7 @@ pub fn create_nonce_account<'a>(
         to: ctx.accounts.nonce,
     };
     create_account(
-        CpiContext::new_with_signer(ctx.program, create_accounts, ctx.signer_seeds),
+        CpiContext::<_, 2>::new_with_signer(ctx.program, create_accounts, ctx.signer_seeds),
         lamports,
         NONCE_ACCOUNT_LENGTH,
         &owner,
@@ -230,8 +240,8 @@ pub fn create_nonce_account<'a>(
         recent_blockhashes: ctx.accounts.recent_blockhashes,
         rent: ctx.accounts.rent,
     };
-    initialize_nonce_account(
-        CpiContext::new_with_signer(ctx.program, initialize_accounts, ctx.signer_seeds),
+    initialize_nonce_account::<3>(
+        CpiContext::<_, 3>::new_with_signer(ctx.program, initialize_accounts, ctx.signer_seeds),
         authority,
     )
 }
@@ -246,8 +256,8 @@ pub struct CreateNonceAccount<'a> {
     pub rent: CpiHandle<'a>,
 }
 
-pub fn create_nonce_account_with_seed<'a>(
-    ctx: CpiContext<'a, CreateNonceAccountWithSeed<'a>>,
+pub fn create_nonce_account_with_seed<'a, const N: usize>(
+    ctx: CpiContext<'a, CreateNonceAccountWithSeed<'a>, N>,
     lamports: u64,
     seed: &str,
     authority: &Address,
@@ -259,7 +269,7 @@ pub fn create_nonce_account_with_seed<'a>(
         base: ctx.accounts.base,
     };
     create_account_with_seed(
-        CpiContext::new_with_signer(ctx.program, create_accounts, ctx.signer_seeds),
+        CpiContext::<_, 3>::new_with_signer(ctx.program, create_accounts, ctx.signer_seeds),
         seed,
         lamports,
         NONCE_ACCOUNT_LENGTH,
@@ -271,8 +281,8 @@ pub fn create_nonce_account_with_seed<'a>(
         recent_blockhashes: ctx.accounts.recent_blockhashes,
         rent: ctx.accounts.rent,
     };
-    initialize_nonce_account(
-        CpiContext::new_with_signer(ctx.program, initialize_accounts, ctx.signer_seeds),
+    initialize_nonce_account::<3>(
+        CpiContext::<_, 3>::new_with_signer(ctx.program, initialize_accounts, ctx.signer_seeds),
         authority,
     )
 }
@@ -288,7 +298,10 @@ pub struct CreateNonceAccountWithSeed<'a> {
     pub rent: CpiHandle<'a>,
 }
 
-pub fn transfer<'a>(ctx: CpiContext<'a, Transfer<'a>>, lamports: u64) -> ProgramResult {
+pub fn transfer<'a, const N: usize>(
+    ctx: CpiContext<'a, Transfer<'a>, N>,
+    lamports: u64,
+) -> ProgramResult {
     let mut data = Vec::with_capacity(12);
     encode_u32(2, &mut data);
     encode_u64(lamports, &mut data);
@@ -302,9 +315,9 @@ pub struct Transfer<'a> {
     pub to: CpiHandleMut<'a>,
 }
 
-pub fn transfer_with_seed<'a>(
-    ctx: CpiContext<'a, TransferWithSeed<'a>>,
-    from_seed: String,
+pub fn transfer_with_seed<'a, const N: usize>(
+    ctx: CpiContext<'a, TransferWithSeed<'a>, N>,
+    from_seed: &str,
     from_owner: &Address,
     lamports: u64,
 ) -> ProgramResult {
@@ -326,8 +339,8 @@ pub struct TransferWithSeed<'a> {
     pub to: CpiHandleMut<'a>,
 }
 
-pub fn withdraw_nonce_account<'a>(
-    ctx: CpiContext<'a, WithdrawNonceAccount<'a>>,
+pub fn withdraw_nonce_account<'a, const N: usize>(
+    ctx: CpiContext<'a, WithdrawNonceAccount<'a>, N>,
     lamports: u64,
 ) -> ProgramResult {
     let mut data = Vec::with_capacity(12);
@@ -353,8 +366,8 @@ struct InitializeNonceAccount<'a> {
     rent: CpiHandle<'a>,
 }
 
-fn initialize_nonce_account<'a>(
-    ctx: CpiContext<'a, InitializeNonceAccount<'a>>,
+fn initialize_nonce_account<'a, const N: usize>(
+    ctx: CpiContext<'a, InitializeNonceAccount<'a>, N>,
     authority: &Address,
 ) -> ProgramResult {
     let mut data = Vec::with_capacity(36);

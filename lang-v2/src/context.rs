@@ -4,8 +4,7 @@ use {
 };
 
 /// Instruction-scoped context passed to every handler. Holds the
-/// declared accounts, program_id, PDA bumps, and a cursor for lazy
-/// `remaining_accounts()` access.
+/// declared accounts, program_id, PDA bumps, and access to trailing accounts.
 pub struct Context<'a, T: Bumps> {
     /// Program id as a reference — lives for the whole instruction
     /// since it comes from the entrypoint's input buffer.
@@ -58,29 +57,30 @@ impl<'a, T: Bumps> Context<'a, T> {
         }
     }
 
-    /// Returns trailing accounts beyond the declared `T` fields as an
-    /// owned `Vec<AccountView>`. First call walks the cursor and caches
-    /// the views; subsequent calls return a clone of the cache.
+    /// Returns trailing accounts beyond the declared `T` fields.
     ///
     /// A trailing account can alias a declared account. The views are raw,
     /// so aliasing is only rejected when a conflicting borrow is taken:
     /// loading a view through an account wrapper, borrowing its data, or
     /// passing it to a CPI fails while a declared wrapper holds a
     /// conflicting borrow of the same account.
-    pub fn remaining_accounts(&mut self) -> alloc::vec::Vec<AccountView> {
+    /// The lazy runtime implementation belongs to the stack follow-up; this
+    /// API branch keeps the existing cache internally while exposing only the
+    /// borrowed view.
+    pub fn remaining_accounts(&mut self) -> &[AccountView] {
         if let RemainingAccounts::Unparsed { cursor, remaining } = &mut self.remaining_accounts {
-            let mut v = alloc::vec::Vec::with_capacity(*remaining as usize);
+            let mut accounts = alloc::vec::Vec::with_capacity(*remaining as usize);
             for _ in 0..*remaining {
                 // SAFETY: cursor is positioned at the start of the remaining
                 // region and `remaining` is the exact number of accounts to
                 // walk.
-                v.push(unsafe { cursor.next() });
+                accounts.push(unsafe { cursor.next() });
             }
-            self.remaining_accounts = RemainingAccounts::Cached(v);
+            self.remaining_accounts = RemainingAccounts::Cached(accounts);
         }
 
         match &self.remaining_accounts {
-            RemainingAccounts::Cached(accs) => accs.clone(),
+            RemainingAccounts::Cached(accounts) => accounts,
             RemainingAccounts::Unparsed { .. } => unreachable!(),
         }
     }
