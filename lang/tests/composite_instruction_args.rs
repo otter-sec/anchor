@@ -36,6 +36,7 @@ pub struct Parent<'info> {
     /// CHECK: test only
     #[account(constraint = a == EXPECTED_A @ TestError::ParentWrongA)]
     pub first: UncheckedAccount<'info>,
+    #[instruction(start = a)]
     pub child: Child<'info>,
 }
 
@@ -45,6 +46,7 @@ pub struct PrefixParent<'info> {
     /// CHECK: test only
     #[account(constraint = a == EXPECTED_A @ TestError::ParentWrongA)]
     pub first: UncheckedAccount<'info>,
+    #[instruction(start = a)]
     pub child: Child<'info>,
 }
 
@@ -71,6 +73,7 @@ pub struct FullParentSuffixChild<'info> {
     /// CHECK: test only
     #[account(constraint = a == EXPECTED_A @ TestError::ParentWrongA)]
     pub first: UncheckedAccount<'info>,
+    #[instruction(start = b)]
     pub child: SuffixChild<'info>,
 }
 
@@ -83,6 +86,7 @@ pub struct Mid<'info> {
         constraint = b == EXPECTED_B @ TestError::ChildWrongB,
     )]
     pub target: UncheckedAccount<'info>,
+    #[instruction(start = b)]
     pub inner: SuffixChild<'info>,
 }
 
@@ -92,6 +96,7 @@ pub struct GrandParent<'info> {
     /// CHECK: test only
     #[account(constraint = a == EXPECTED_A @ TestError::ParentWrongA)]
     pub first: UncheckedAccount<'info>,
+    #[instruction(start = a)]
     pub mid: Mid<'info>,
 }
 
@@ -219,7 +224,7 @@ fn child_declaring_only_trailing_args_continues_after_parent() {
 }
 
 #[test]
-fn child_starts_at_named_parent_arg() {
+fn child_starts_at_explicit_parent_arg() {
     try_accounts!(FullParentSuffixChild, ix_data(EXPECTED_A, EXPECTED_B)).unwrap();
     let err =
         try_accounts!(FullParentSuffixChild, ix_data(EXPECTED_A, EXPECTED_B + 1)).unwrap_err();
@@ -256,6 +261,72 @@ fn truncated_data_fails_in_child() {
 #[test]
 fn empty_data_fails() {
     let err = try_accounts!(Parent, Vec::new()).unwrap_err();
+    assert_eq!(
+        error_code(err),
+        anchor_lang::error::ErrorCode::InstructionDidNotDeserialize as u32
+    );
+}
+
+// Identical local names must not opt a child into sharing its parent's argument.
+#[derive(Accounts)]
+#[instruction(a: u64)]
+pub struct LocalNameParent<'info> {
+    pub child: LocalNameChild<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(a: u32)]
+pub struct LocalNameChild<'info> {
+    /// CHECK: test only
+    #[account(constraint = a == 9 @ TestError::ChildWrongA)]
+    pub target: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(a: u32)]
+pub struct SameTypeParent<'info> {
+    pub child: LocalNameChild<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(prefix: String, selected: u32)]
+pub struct VariablePrefixParent<'info> {
+    #[instruction(start = selected)]
+    pub first: LocalNameChild<'info>,
+    #[instruction(start = selected)]
+    pub second: LocalNameChild<'info>,
+}
+
+#[test]
+fn same_local_name_preserves_legacy_suffix() {
+    try_accounts!(LocalNameParent, ix_data(7, 9)).unwrap();
+    // A valid parent value must not mask an invalid child value.
+    let err = try_accounts!(LocalNameParent, ix_data(9, 8)).unwrap_err();
+    assert_eq!(error_code(err), TestError::ChildWrongA as u32 + 6000);
+}
+
+#[test]
+fn same_local_name_and_type_preserve_legacy_suffix() {
+    let data = [7u32.to_le_bytes(), 9u32.to_le_bytes()].concat();
+    try_accounts!(SameTypeParent, data).unwrap();
+    let data = [9u32.to_le_bytes(), 8u32.to_le_bytes()].concat();
+    let err = try_accounts!(SameTypeParent, data).unwrap_err();
+    assert_eq!(error_code(err), TestError::ChildWrongA as u32 + 6000);
+}
+
+#[test]
+fn explicit_start_supports_variable_prefix_renaming_and_siblings() {
+    for prefix in ["", "variable length prefix"] {
+        let mut data = Vec::new();
+        prefix.to_string().serialize(&mut data).unwrap();
+        9u32.serialize(&mut data).unwrap();
+        try_accounts!(VariablePrefixParent, data).unwrap();
+    }
+}
+
+#[test]
+fn legacy_child_rejects_missing_suffix_even_if_parent_matches() {
+    let err = try_accounts!(LocalNameParent, 9u64.to_le_bytes().to_vec()).unwrap_err();
     assert_eq!(
         error_code(err),
         anchor_lang::error::ErrorCode::InstructionDidNotDeserialize as u32

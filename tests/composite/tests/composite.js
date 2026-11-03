@@ -2,10 +2,22 @@ const { assert } = require("chai");
 const anchor = require("@anchor-lang/core");
 
 describe("composite", () => {
-  const provider = anchor.AnchorProvider.local();
+  const provider = anchor.AnchorProvider.local(process.env.ANCHOR_PROVIDER_URL);
 
   // Configure the client to use the local cluster.
   anchor.setProvider(provider);
+
+  async function transactionLogs(signature) {
+    // RPC transaction history can lag behind confirmation on a local validator.
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const tx = await provider.connection.getTransaction(signature, {
+        commitment: "confirmed",
+      });
+      if (tx) return tx.meta.logMessages;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    assert.fail(`transaction history unavailable for ${signature}`);
+  }
 
   it("Is initialized!", async () => {
     const program = anchor.workspace.composite;
@@ -66,6 +78,71 @@ describe("composite", () => {
         ])
         .signers([dummyA, dummyB])
         .rpc();
+    });
+
+    it("keeps identical local argument names positional", async () => {
+      const signature = await program.methods
+        .legacyLocalName(new anchor.BN(7), 9)
+        .accounts({ child: { dummyA: dummyA.publicKey } })
+        .rpc();
+      assert.include(
+        await transactionLogs(signature),
+        "Program log: legacy args: 7, 9"
+      );
+      const account = await program.account.dummyA.fetch(dummyA.publicKey);
+      assert.isTrue(account.data.eq(new anchor.BN(9)));
+
+      try {
+        await program.methods
+          .legacyLocalName(new anchor.BN(9), 8)
+          .accounts({ child: { dummyA: dummyA.publicKey } })
+          .rpc();
+        assert.fail("expected the child to reject its own argument");
+      } catch (err) {
+        assert.instanceOf(err, anchor.AnchorError);
+        assert.strictEqual(err.error.errorCode.code, "WrongLocalValue");
+        assert.strictEqual(err.error.origin, "dummy_a");
+      }
+      const unchanged = await program.account.dummyA.fetch(dummyA.publicKey);
+      assert.isTrue(unchanged.data.eq(new anchor.BN(9)));
+    });
+
+    it("uses an explicit argument after a variable prefix for PDA seeds", async () => {
+      const seedAddress = (value) =>
+        anchor.web3.PublicKey.findProgramAddressSync(
+          [
+            Buffer.from("selected"),
+            new anchor.BN(value).toArrayLike(Buffer, "le", 4),
+          ],
+          program.programId
+        )[0];
+      const signature = await program.methods
+        .explicitSeed("variable prefix", 42)
+        .accounts({
+          child: { target: seedAddress(42), dummyA: dummyA.publicKey },
+        })
+        .rpc();
+      assert.include(
+        await transactionLogs(signature),
+        "Program log: selected args: variable prefix, 42"
+      );
+      const account = await program.account.dummyA.fetch(dummyA.publicKey);
+      assert.isTrue(account.data.eq(new anchor.BN(42)));
+      try {
+        await program.methods
+          .explicitSeed("different prefix", 43)
+          .accounts({
+            child: { target: seedAddress(42), dummyA: dummyA.publicKey },
+          })
+          .rpc();
+        assert.fail("expected PDA seeds to use the selected argument");
+      } catch (err) {
+        assert.instanceOf(err, anchor.AnchorError);
+        assert.strictEqual(err.error.errorCode.code, "ConstraintSeeds");
+        assert.strictEqual(err.error.origin, "target");
+      }
+      const unchanged = await program.account.dummyA.fetch(dummyA.publicKey);
+      assert.isTrue(unchanged.data.eq(new anchor.BN(42)));
     });
 
     it("nested structs read the args they declare", async () => {

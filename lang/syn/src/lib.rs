@@ -652,6 +652,7 @@ impl Field {
 
 #[derive(Debug)]
 pub struct CompositeField {
+    pub instruction_start: Option<Ident>,
     pub ident: Ident,
     pub constraints: ConstraintGroup,
     pub symbol: String,

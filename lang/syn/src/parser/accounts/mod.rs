@@ -93,6 +93,23 @@ pub fn parse(accounts_struct: &syn::ItemStruct) -> ParseResult<AccountsStruct> {
         }
     };
 
+    for field in &fields {
+        if let AccountField::CompositeField(composite) = field {
+            if let Some(start) = &composite.instruction_start {
+                let declared = instruction_api.iter().flatten().any(|arg| {
+                    matches!(arg, syn::FnArg::Typed(arg)
+                        if matches!(arg.pat.as_ref(), syn::Pat::Ident(pat) if pat.ident == *start))
+                });
+                if !declared {
+                    return Err(ParseError::new_spanned(
+                        start,
+                        "instruction start must name an argument declared in the parent's \
+                         #[instruction(...)]",
+                    ));
+                }
+            }
+        }
+    }
     constraints_cross_checks(&fields)?;
 
     Ok(AccountsStruct::new(
@@ -395,8 +412,32 @@ pub fn parse_account_field(f: &syn::Field) -> ParseResult<AccountField> {
     )]
     let ident = f.ident.clone().unwrap();
     let docs = docs::parse(&f.attrs);
+    let mut instruction_start = None;
+    for attr in f
+        .attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("instruction"))
+    {
+        if instruction_start.is_some() {
+            return Err(ParseError::new_spanned(attr, "duplicate instruction start"));
+        }
+        instruction_start = Some(attr.parse_args_with(|input: syn::parse::ParseStream| {
+            let key: syn::Ident = input.parse()?;
+            if key != "start" {
+                return Err(ParseError::new_spanned(key, "expected `start = argument`"));
+            }
+            input.parse::<syn::Token![=]>()?;
+            input.parse::<syn::Ident>()
+        })?);
+    }
     let account_field = match is_field_primitive(f)? {
         true => {
+            if let Some(start) = &instruction_start {
+                return Err(ParseError::new_spanned(
+                    start,
+                    "instruction start is only supported on composite accounts",
+                ));
+            }
             let (ty, is_optional) = parse_ty(f)?;
             let account_constraints = constraints::parse(f, Some(&ty))?;
             AccountField::Field(Field {
@@ -418,6 +459,7 @@ pub fn parse_account_field(f: &syn::Field) -> ParseResult<AccountField> {
             }
             let account_constraints = constraints::parse(f, None)?;
             AccountField::CompositeField(CompositeField {
+                instruction_start,
                 ident,
                 constraints: account_constraints,
                 symbol: ident_string(f)?.0,
@@ -835,4 +877,84 @@ fn parse_sysvar(path: &syn::Path) -> ParseResult<SysvarTy> {
         }
     };
     Ok(ty)
+}
+
+#[cfg(test)]
+mod instruction_start_tests {
+    use super::*;
+
+    fn rejects(item: syn::ItemStruct, message: &str) {
+        let err = parse(&item).unwrap_err();
+        assert!(err.to_string().contains(message), "{err}");
+    }
+
+    #[test]
+    fn rejects_unknown_or_undeclared_start() {
+        rejects(
+            syn::parse_quote! {
+                #[instruction(a: u64)]
+                pub struct Parent<'info> {
+                    #[instruction(start = missing)]
+                    pub child: Child<'info>,
+                }
+            },
+            "must name an argument",
+        );
+        rejects(
+            syn::parse_quote! {
+                pub struct Parent<'info> {
+                    #[instruction(start = a)]
+                    pub child: Child<'info>,
+                }
+            },
+            "must name an argument",
+        );
+    }
+
+    #[test]
+    fn rejects_primitive_and_duplicate_attributes() {
+        rejects(
+            syn::parse_quote! {
+                #[instruction(a: u64)]
+                pub struct Parent<'info> {
+                    #[instruction(start = a)]
+                    pub target: UncheckedAccount<'info>,
+                }
+            },
+            "only supported on composite accounts",
+        );
+        rejects(
+            syn::parse_quote! {
+                #[instruction(a: u64)]
+                pub struct Parent<'info> {
+                    #[instruction(start = a)]
+                    #[instruction(start = a)]
+                    pub child: Child<'info>,
+                }
+            },
+            "duplicate instruction start",
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_attribute() {
+        rejects(
+            syn::parse_quote! {
+                #[instruction(a: u64)]
+                pub struct Parent<'info> {
+                    #[instruction(offset = a)]
+                    pub child: Child<'info>,
+                }
+            },
+            "expected `start = argument`",
+        );
+        assert!(parse(&syn::parse_quote! {
+            #[instruction(a: u64)]
+            pub struct Parent<'info> {
+                #[instruction(start = a, extra)]
+                pub child: Child<'info>,
+            }
+        })
+        .is_err());
+    }
 }

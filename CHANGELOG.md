@@ -24,7 +24,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 ### Fixes
 
 - Block mutable aliasing between accounts marked `zero` and `init` ([#4871](https://github.com/otter-sec/anchor/pull/4871)).
-- lang: Nested `Accounts` structs start reading `#[instruction(..)]` args at the parent arg their first arg names, or after the parent's args otherwise, so they can declare the same args as the parent or only the ones they need ([#2942](https://github.com/otter-sec/anchor/issues/2942)).
+- lang: Allow composite accounts to explicitly select their starting instruction argument with `#[instruction(start = arg)]` on the composite field, preserving the existing remaining-data behavior by default ([#2942](https://github.com/otter-sec/anchor/issues/2942)).
 - lang: Support fully qualified account types in `Context` ([#4836](https://github.com/otter-sec/anchor/pull/4836)).
 - ts: Support `delegatedAmount` in accounts resolver ([#4957](https://github.com/otter-sec/anchor/pull/4957)).
 - cli: Reject `anchor program deploy` when `--program-id` does not match the program keypair pubkey ([#5129](https://github.com/otter-sec/anchor/pull/5129)).

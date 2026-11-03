@@ -26,6 +26,18 @@ mod composite {
         Ok(())
     }
 
+    pub fn legacy_local_name(ctx: Context<LegacyLocalName>, a: u64, b: u32) -> Result<()> {
+        msg!("legacy args: {}, {}", a, b);
+        ctx.accounts.child.dummy_a.data = u64::from(b);
+        Ok(())
+    }
+
+    pub fn explicit_seed(ctx: Context<ExplicitSeed>, prefix: String, value: u32) -> Result<()> {
+        msg!("selected args: {}, {}", prefix, value);
+        ctx.accounts.child.dummy_a.data = u64::from(value);
+        Ok(())
+    }
+
     pub fn composite_update_with_args(
         ctx: Context<CompositeUpdateWithArgs>,
         value_a: u64,
@@ -70,7 +82,9 @@ pub struct Bar<'info> {
 #[derive(Accounts)]
 #[instruction(value_a: u64, value_b: u64)]
 pub struct CompositeUpdateWithArgs<'info> {
+    #[instruction(start = value_a)]
     foo: FooWithArgs<'info>,
+    #[instruction(start = value_b)]
     bar: BarWithArgs<'info>,
 }
 
@@ -90,6 +104,8 @@ pub struct BarWithArgs<'info> {
 
 #[error_code]
 pub enum CompositeError {
+    #[msg("local child argument must be nine")]
+    WrongLocalValue,
     #[msg("value_a must not be zero")]
     ZeroValueA,
     #[msg("value_b must not be zero")]
@@ -104,4 +120,34 @@ pub struct DummyA {
 #[account]
 pub struct DummyB {
     pub data: u64,
+}
+
+#[derive(Accounts)]
+#[instruction(a: u64)]
+pub struct LegacyLocalName<'info> {
+    pub child: LegacyLocalChild<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(a: u32)]
+pub struct LegacyLocalChild<'info> {
+    #[account(mut, constraint = a == 9 @ CompositeError::WrongLocalValue)]
+    pub dummy_a: Account<'info, DummyA>,
+}
+
+#[derive(Accounts)]
+#[instruction(prefix: String, value: u32)]
+pub struct ExplicitSeed<'info> {
+    #[instruction(start = value)]
+    pub child: SeedChild<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(local_value: u32)]
+pub struct SeedChild<'info> {
+    /// CHECK: address is checked by seeds
+    #[account(seeds = [b"selected", local_value.to_le_bytes().as_ref()], bump)]
+    pub target: UncheckedAccount<'info>,
+    #[account(mut)]
+    pub dummy_a: Account<'info, DummyA>,
 }

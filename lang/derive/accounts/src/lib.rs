@@ -32,6 +32,35 @@ use {proc_macro::TokenStream, quote::ToTokens, syn::parse_macro_input};
 /// }
 /// ```
 ///
+/// # Composite instruction arguments
+///
+/// By default, a composite field reads the instruction data remaining after its
+/// parent's declared arguments. Argument names are local to each struct and do
+/// not affect which bytes are read. Siblings receive the same remaining data.
+///
+/// To reuse a parent's arguments, annotate the composite field with
+/// `#[instruction(start = argument)]`. The argument must be declared in the
+/// immediate parent's `#[instruction(...)]`. The child reads sequentially from
+/// that argument's byte offset and may use different local names. This selects
+/// a starting position; it does not reorder arguments or skip intervening ones.
+///
+/// ```ignore
+/// #[derive(Accounts)]
+/// #[instruction(prefix: u64, value: u32)]
+/// pub struct Parent<'info> {
+///     #[instruction(start = value)]
+///     pub child: Child<'info>,
+/// }
+///
+/// #[derive(Accounts)]
+/// #[instruction(local_value: u32)]
+/// pub struct Child<'info> {
+///     /// CHECK: demonstration only
+///     #[account(constraint = local_value == 9)]
+///     pub target: UncheckedAccount<'info>,
+/// }
+/// ```
+///
 /// # Constraints
 ///
 /// There are different types of constraints that can be applied with the `#[account(..)]` attribute.
