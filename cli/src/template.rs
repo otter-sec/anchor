@@ -1,7 +1,7 @@
 use {
     crate::{
         compat::solana_pubkey, config::ProgramWorkspace, create_files, override_or_create_files,
-        AbsolutePath, Files, PackageManager, VERSION,
+        AbsolutePath, Files, PackageManager, DEFAULT_TOOLS_VERSION, VERSION,
     },
     anyhow::Result,
     clap::{Parser, ValueEnum},
@@ -19,7 +19,7 @@ use {
     },
 };
 
-const ANCHOR_MSRV: &str = "1.89.0";
+const ANCHOR_MSRV: &str = "1.95.0";
 const ANCHOR_V2_TEMPLATE_VERSION: &str = "2.0.0-rc.2";
 // Host-side v2 tests depend on Agave and LiteSVM from anchor-next, which require newer Rust.
 const ANCHOR_V2_HOST_RUST_VERSION: &str = "1.97.1";
@@ -617,7 +617,7 @@ solana-sdk-ids = "3"
         Some(TestTemplate::Litesvm) => {
             r#"
 [dev-dependencies]
-# Cargo.lock pins LiteSVM's Rust-1.89-compatible dependency graph.
+# Cargo.lock pins LiteSVM's compatible dependency graph.
 litesvm = "0.15.0"
 solana-message = "4"
 solana-transaction = "4"
@@ -1519,7 +1519,7 @@ impl TestTemplate {
                 }
             }
             Self::Rust | Self::Litesvm => "cargo test".to_owned(),
-            Self::Mollusk => "cargo test-sbf".to_owned(),
+            Self::Mollusk => format!("cargo test-sbf --tools-version {DEFAULT_TOOLS_VERSION}"),
         }
     }
 
@@ -2211,7 +2211,7 @@ mod tests {
         assert!(!test.contains("counter: counter.publicKey"));
 
         let toolchain = rust_toolchain_toml(AnchorVersion::V1);
-        assert!(toolchain.contains("channel = \"1.89.0\""));
+        assert!(toolchain.contains("channel = \"1.95.0\""));
     }
 
     #[test]
