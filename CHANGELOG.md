@@ -32,9 +32,12 @@ The minor version will be incremented upon a breaking change and the patch versi
 - ts: Stop the accounts resolver from failing with a max depth error when every account resolves on the last allowed pass ([#5155](https://github.com/otter-sec/anchor/pull/5155)).
 - lang: Reject `seeds::program` with `init` regardless of constraint order ([#5192](https://github.com/otter-sec/anchor/pull/5192)).
 - cli: Fix generated projects with `--anchor-version v2` ([#5187](https://github.com/otter-sec/anchor/pull/5187)).
-- cli: Keep a custom provider `ws` URL when rewriting `Anchor.toml` ([#5193](https://github.com/otter-sec/anchor/issues/5193)).
+- cli: Keep a custom provider `ws` URL when rewriting `Anchor.toml` ([#5194](https://github.com/otter-sec/anchor/pull/5194)).
 - cli: Restore `--verifiable` for deploys, now on `anchor program deploy`, so the `target/verifiable` build can be deployed again without the deprecated `anchor deploy` ([#5223](https://github.com/otter-sec/anchor/pull/5223)).
 - ts: Resolve the generic arguments of generic types nested in a generic type, so IDLs such as the generics test program can be decoded ([#5158](https://github.com/otter-sec/anchor/pull/5158)).
+- lang, ts: Improve error message wording, and sync messages between TS and Rust ([#4772](https://github.com/otter-sec/anchor/pull/4772)).
+- cli: Merge `shutdown_wait` and `upgradeable` from `Test.toml` files that use `extends` ([#5189](https://github.com/otter-sec/anchor/pull/5189)).
+- lang: Generate `u256` and `i256` as `[u8; 32]` in `declare_program!`, so IDLs that use them compile ([#5224](https://github.com/otter-sec/anchor/pull/5224)).
 
 ### Breaking
 
@@ -46,12 +49,12 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 - cli: Add `NO_DNA` mode to disable supported interactive prompts for CI, scripts, and agent runs ([#4773](https://github.com/otter-sec/anchor/pull/4773)).
 - lang: Use `CreateAccountAllowPrefund` to initialize accounts that already hold lamports, replacing the `Transfer` + `Allocate` + `Assign` CPIs ([#5057](https://github.com/otter-sec/anchor/pull/5057)).
+- cli: Generate a `security.json` template on `anchor init` (skip with `--no-security-metadata`) and upload it on-chain through program-metadata with `anchor deploy --security-metadata` / `anchor program deploy --security-metadata` ([#4177](https://github.com/otter-sec/anchor/pull/4177)).
 
 ### Fixes
 
 - lang: Improve macro hygiene to address potential issues with key validation ([#5105](https://github.com/otter-sec/anchor/pull/5105)).
 - client: Ignore logs from failed transactions in event subscriptions so reverted executions do not emit events ([#4884](https://github.com/otter-sec/anchor/pull/4884)).
-- lang: Generate `u256` and `i256` as `[u8; 32]` in `declare_program!`, so IDLs that use them compile ([#5224](https://github.com/otter-sec/anchor/pull/5224)).
 - lang: Accept arbitrary expressions in `declare_id!`. ([#5010](https://github.com/otter-sec/anchor/pull/5010)).
 - lang: Avoid an unnecessary stack allocation when snapshotting CPI return data ([#4931](https://github.com/otter-sec/anchor/pull/4931)).
 - lang: Raise an error when modifying data in an account that has had its ownership changed. ([#5011](https://github.com/otter-sec/anchor/pull/5011)).
@@ -61,7 +64,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 - deps: Bump `heck` to 0.5 to avoid incompatible dependencies ([#4960](https://github.com/otter-sec/anchor/pull/4960)).
 - lang: Read the `#[account]` namespace from the string value ([#5200](https://github.com/otter-sec/anchor/pull/5200)).
 - lang: Reject closing an account into itself from `close()` ([#5202](https://github.com/otter-sec/anchor/pull/5202)).
-- cli: Merge `shutdown_wait` and `upgradeable` from `Test.toml` files that use `extends` ([#5189](https://github.com/otter-sec/anchor/pull/5189)).
+- lang: Fix CPI client generation for accounts structs with no fields ([#4737](https://github.com/otter-sec/anchor/pull/4737)).
+- lang: Fix path hygiene in `#[derive(Accounts)]` for composite fields using segmented paths ([#4668](https://github.com/otter-sec/anchor/pull/4668)).
 
 ### Breaking
 
@@ -93,11 +97,9 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Provide better error messages for `token` constraints ([#4698](https://github.com/solana-foundation/anchor/pull/4698)).
 - ts: Improve account resolution error of self-referencing PDAs ([#4711](https://github.com/solana-foundation/anchor/pull/4711)).
 - cli: Warn unused `Anchor.toml` fields ([#4749](https://github.com/solana-foundation/anchor/pull/4749)).
-- cli: Generate a `security.json` template on `anchor init` (skip with `--no-security-metadata`) and upload it on-chain through program-metadata with `anchor deploy --security-metadata` / `anchor program deploy --security-metadata` ([#4177](https://github.com/otter-sec/anchor/pull/4177)).
 
 ### Fixes
 
-- lang, ts: Improve error message wording, and sync messages between TS and Rust ([#4772](https://github.com/otter-sec/anchor/pull/4772)).
 - spl: Fix `anchor-spl` failing to build with only the `metadata` feature ([#4742](https://github.com/solana-foundation/anchor/pull/4742)).
 - lang: Honor `is_signer` in generated client and CPI account metas, enabling PDA signer usage ([#3322](https://github.com/otter-sec/anchor/pull/3322)).
 - lang: Report invalid instruction arguments instead of silently omitting their instructions during parsing ([#4008](https://github.com/otter-sec/anchor/pull/4008)).
@@ -120,11 +122,9 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Reduce cloning in `realloc` constraint when shrinking ([#4642](https://github.com/solana-foundation/anchor/pull/4642)).
 - syn: Remove `anyhow` ([#4640](https://github.com/solana-foundation/anchor/pull/4640)).
 - lang: Sync type derives and simplify internal args creation in `declare_program!` ([#4667](https://github.com/solana-foundation/anchor/pull/4667)).
-- lang: Fix path hygiene in `#[derive(Accounts)]` for composite fields using segmented paths.
 - lang: Improve `std` hygiene inside macros ([#4700](https://github.com/solana-foundation/anchor/pull/4700)).
 - cli: Honor the SIMD-0431 minimum extend program size when extending program data ([#4785](https://github.com/otter-sec/anchor/pull/4785)).
 - client: Do not panic in `parse_logs_response` when logs continue after a top-level instruction returns, e.g. the runtime's trailing `"Log truncated"` marker ([#4967](https://github.com/solana-foundation/anchor/pull/4967)).
-- lang: Fix CPI client generation for accounts structs with no fields ([#4737](https://github.com/otter-sec/anchor/pull/4737)).
 
 ### Breaking
 
