@@ -18,8 +18,8 @@ pub struct TransferHookUpdate<'a> {
     pub authority: CpiHandle<'a>,
 }
 
-pub fn transfer_hook_initialize<'a>(
-    ctx: CpiContext<'a, TransferHookInitialize<'a>>,
+pub fn transfer_hook_initialize<'a, const N: usize>(
+    ctx: CpiContext<'a, TransferHookInitialize<'a>, N>,
     authority: Option<&Address>,
     transfer_hook_program_id: Option<&Address>,
 ) -> Result<(), ProgramError> {
@@ -31,11 +31,11 @@ pub fn transfer_hook_initialize<'a>(
         authority.copied(),
         transfer_hook_program_id.copied(),
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn transfer_hook_update<'a>(
-    ctx: CpiContext<'a, TransferHookUpdate<'a>>,
+pub fn transfer_hook_update<'a, const N: usize>(
+    ctx: CpiContext<'a, TransferHookUpdate<'a>, N>,
     transfer_hook_program_id: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -48,5 +48,5 @@ pub fn transfer_hook_update<'a>(
         &signer_addresses,
         transfer_hook_program_id.copied(),
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }

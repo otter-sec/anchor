@@ -19,8 +19,8 @@ pub struct GroupPointerUpdate<'a> {
     pub authority: CpiHandle<'a>,
 }
 
-pub fn group_pointer_initialize<'a>(
-    ctx: CpiContext<'a, GroupPointerInitialize<'a>>,
+pub fn group_pointer_initialize<'a, const N: usize>(
+    ctx: CpiContext<'a, GroupPointerInitialize<'a>, N>,
     authority: Option<&Address>,
     group_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
@@ -31,11 +31,11 @@ pub fn group_pointer_initialize<'a>(
         authority.copied(),
         group_address.copied(),
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn group_pointer_update<'a>(
-    ctx: CpiContext<'a, GroupPointerUpdate<'a>>,
+pub fn group_pointer_update<'a, const N: usize>(
+    ctx: CpiContext<'a, GroupPointerUpdate<'a>, N>,
     group_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -47,7 +47,7 @@ pub fn group_pointer_update<'a>(
         &signer_addresses,
         group_address,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
 fn group_pointer_update_ix(
@@ -73,7 +73,7 @@ mod tests {
         anchor_lang::{
             programs::Token2022,
             testing::{AccountBuffer, MIN_ACCOUNT_BUF},
-            Address, Id,
+            Address, Id, ToCpiAccountsWithCapacity,
         },
     };
 
@@ -117,6 +117,11 @@ mod tests {
             authority: CpiHandle::readonly(&authority_view),
         };
 
-        assert_eq!(accounts.to_cpi_handles().len(), 2);
+        assert_eq!(
+            ToCpiAccountsWithCapacity::<2>::to_cpi_handles_with_capacity(&accounts)
+                .unwrap()
+                .len(),
+            2
+        );
     }
 }

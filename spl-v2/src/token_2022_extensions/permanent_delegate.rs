@@ -11,8 +11,8 @@ pub struct PermanentDelegateInitialize<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
-pub fn permanent_delegate_initialize<'a>(
-    ctx: CpiContext<'a, PermanentDelegateInitialize<'a>>,
+pub fn permanent_delegate_initialize<'a, const N: usize>(
+    ctx: CpiContext<'a, PermanentDelegateInitialize<'a>, N>,
     permanent_delegate: &Address,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -22,5 +22,5 @@ pub fn permanent_delegate_initialize<'a>(
         ctx.accounts.mint.address(),
         permanent_delegate,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }

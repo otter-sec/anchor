@@ -10,11 +10,73 @@ extern crate alloc;
 use anchor_lang::{require, Id};
 use {
     alloc::vec::Vec,
-    anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
-    pinocchio::address::Address,
+    anchor_lang::{
+        CpiContext, CpiHandle, CpiHandleMut, CpiInstruction, FixedVec, ToCpiAccounts,
+        ToCpiAccountsWithCapacity,
+    },
+    pinocchio::{address::Address, instruction::InstructionAccount},
+    solana_instruction::Instruction,
     solana_program_error::ProgramError,
     spl_token_2022_interface as spl_token_2022,
 };
+
+/// Private bridge for canonical SPL builders until their Pinocchio migration.
+///
+/// This keeps the owned Solana instruction type out of `anchor-lang`'s target
+/// API while borrowing its fields into the caller-selected CPI capacity.
+pub(crate) struct CanonicalInstruction<'a, const N: usize> {
+    program_id: &'a Address,
+    data: &'a [u8],
+    accounts: FixedVec<InstructionAccount<'a>, N>,
+}
+
+impl<'a, const N: usize> CanonicalInstruction<'a, N> {
+    fn try_new(instruction: &'a Instruction) -> Result<Self, ProgramError> {
+        let mut accounts = FixedVec::new();
+        for account in &instruction.accounts {
+            accounts
+                .try_push(InstructionAccount::new(
+                    &account.pubkey,
+                    account.is_writable,
+                    account.is_signer,
+                ))
+                .map_err(|_| ProgramError::InvalidArgument)?;
+        }
+
+        Ok(Self {
+            program_id: &instruction.program_id,
+            data: &instruction.data,
+            accounts,
+        })
+    }
+
+    pub(crate) fn invoke<'ctx, T>(
+        ctx: &CpiContext<'ctx, T, N>,
+        instruction: &'a Instruction,
+    ) -> Result<(), ProgramError>
+    where
+        T: ToCpiAccountsWithCapacity<'ctx, N>,
+    {
+        ctx.invoke_ix(Self::try_new(instruction)?)
+    }
+}
+
+impl<const N: usize> CpiInstruction for CanonicalInstruction<'_, N> {
+    fn program_id(&self) -> &Address {
+        self.program_id
+    }
+
+    fn data(&self) -> &[u8] {
+        self.data
+    }
+
+    fn with_instruction_accounts<R>(
+        &self,
+        visit: impl FnOnce(&[InstructionAccount<'_>]) -> R,
+    ) -> R {
+        visit(&self.accounts)
+    }
+}
 
 /// SPL Token encodes a multisig authority by marking the authority account
 /// non-signer and appending each member signer to the instruction. Token CPI
@@ -186,8 +248,8 @@ pub struct SyncNative<'a> {
     pub account: CpiHandleMut<'a>,
 }
 
-pub fn initialize_account<'a>(
-    ctx: CpiContext<'a, InitializeAccount<'a>>,
+pub fn initialize_account<'a, const N: usize>(
+    ctx: CpiContext<'a, InitializeAccount<'a>, N>,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::initialize_account(
         ctx.program,
@@ -195,11 +257,11 @@ pub fn initialize_account<'a>(
         ctx.accounts.mint.address(),
         ctx.accounts.authority.address(),
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn initialize_account3<'a>(
-    ctx: CpiContext<'a, InitializeAccount3<'a>>,
+pub fn initialize_account3<'a, const N: usize>(
+    ctx: CpiContext<'a, InitializeAccount3<'a>, N>,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::initialize_account3(
         ctx.program,
@@ -207,11 +269,11 @@ pub fn initialize_account3<'a>(
         ctx.accounts.mint.address(),
         ctx.accounts.authority.address(),
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn initialize_mint<'a>(
-    ctx: CpiContext<'a, InitializeMint<'a>>,
+pub fn initialize_mint<'a, const N: usize>(
+    ctx: CpiContext<'a, InitializeMint<'a>, N>,
     decimals: u8,
     authority: &Address,
     freeze_authority: Option<&Address>,
@@ -223,11 +285,11 @@ pub fn initialize_mint<'a>(
         freeze_authority,
         decimals,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn initialize_mint2<'a>(
-    ctx: CpiContext<'a, InitializeMint2<'a>>,
+pub fn initialize_mint2<'a, const N: usize>(
+    ctx: CpiContext<'a, InitializeMint2<'a>, N>,
     decimals: u8,
     authority: &Address,
     freeze_authority: Option<&Address>,
@@ -239,10 +301,13 @@ pub fn initialize_mint2<'a>(
         freeze_authority,
         decimals,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn transfer<'a>(ctx: CpiContext<'a, Transfer<'a>>, amount: u64) -> Result<(), ProgramError> {
+pub fn transfer<'a, const N: usize>(
+    ctx: CpiContext<'a, Transfer<'a>, N>,
+    amount: u64,
+) -> Result<(), ProgramError> {
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     #[allow(deprecated)]
     let ix = spl_token_2022::instruction::transfer(
@@ -253,11 +318,11 @@ pub fn transfer<'a>(ctx: CpiContext<'a, Transfer<'a>>, amount: u64) -> Result<()
         &signer_addresses,
         amount,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn transfer_checked<'a>(
-    ctx: CpiContext<'a, TransferChecked<'a>>,
+pub fn transfer_checked<'a, const N: usize>(
+    ctx: CpiContext<'a, TransferChecked<'a>, N>,
     amount: u64,
     decimals: u8,
 ) -> Result<(), ProgramError> {
@@ -272,10 +337,13 @@ pub fn transfer_checked<'a>(
         amount,
         decimals,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn mint_to<'a>(ctx: CpiContext<'a, MintTo<'a>>, amount: u64) -> Result<(), ProgramError> {
+pub fn mint_to<'a, const N: usize>(
+    ctx: CpiContext<'a, MintTo<'a>, N>,
+    amount: u64,
+) -> Result<(), ProgramError> {
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::instruction::mint_to(
         ctx.program,
@@ -285,11 +353,11 @@ pub fn mint_to<'a>(ctx: CpiContext<'a, MintTo<'a>>, amount: u64) -> Result<(), P
         &signer_addresses,
         amount,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn mint_to_checked<'a>(
-    ctx: CpiContext<'a, MintToChecked<'a>>,
+pub fn mint_to_checked<'a, const N: usize>(
+    ctx: CpiContext<'a, MintToChecked<'a>, N>,
     amount: u64,
     decimals: u8,
 ) -> Result<(), ProgramError> {
@@ -303,10 +371,13 @@ pub fn mint_to_checked<'a>(
         amount,
         decimals,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn burn<'a>(ctx: CpiContext<'a, Burn<'a>>, amount: u64) -> Result<(), ProgramError> {
+pub fn burn<'a, const N: usize>(
+    ctx: CpiContext<'a, Burn<'a>, N>,
+    amount: u64,
+) -> Result<(), ProgramError> {
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::instruction::burn(
         ctx.program,
@@ -316,11 +387,11 @@ pub fn burn<'a>(ctx: CpiContext<'a, Burn<'a>>, amount: u64) -> Result<(), Progra
         &signer_addresses,
         amount,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn burn_checked<'a>(
-    ctx: CpiContext<'a, BurnChecked<'a>>,
+pub fn burn_checked<'a, const N: usize>(
+    ctx: CpiContext<'a, BurnChecked<'a>, N>,
     amount: u64,
     decimals: u8,
 ) -> Result<(), ProgramError> {
@@ -334,10 +405,13 @@ pub fn burn_checked<'a>(
         amount,
         decimals,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn approve<'a>(ctx: CpiContext<'a, Approve<'a>>, amount: u64) -> Result<(), ProgramError> {
+pub fn approve<'a, const N: usize>(
+    ctx: CpiContext<'a, Approve<'a>, N>,
+    amount: u64,
+) -> Result<(), ProgramError> {
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::instruction::approve(
         ctx.program,
@@ -347,11 +421,11 @@ pub fn approve<'a>(ctx: CpiContext<'a, Approve<'a>>, amount: u64) -> Result<(), 
         &signer_addresses,
         amount,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn approve_checked<'a>(
-    ctx: CpiContext<'a, ApproveChecked<'a>>,
+pub fn approve_checked<'a, const N: usize>(
+    ctx: CpiContext<'a, ApproveChecked<'a>, N>,
     amount: u64,
     decimals: u8,
 ) -> Result<(), ProgramError> {
@@ -366,10 +440,10 @@ pub fn approve_checked<'a>(
         amount,
         decimals,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn revoke<'a>(ctx: CpiContext<'a, Revoke<'a>>) -> Result<(), ProgramError> {
+pub fn revoke<'a, const N: usize>(ctx: CpiContext<'a, Revoke<'a>, N>) -> Result<(), ProgramError> {
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::instruction::revoke(
         ctx.program,
@@ -377,11 +451,11 @@ pub fn revoke<'a>(ctx: CpiContext<'a, Revoke<'a>>) -> Result<(), ProgramError> {
         ctx.accounts.authority.address(),
         &signer_addresses,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn set_authority<'a>(
-    ctx: CpiContext<'a, SetAuthority<'a>>,
+pub fn set_authority<'a, const N: usize>(
+    ctx: CpiContext<'a, SetAuthority<'a>, N>,
     authority_type: spl_token_2022::instruction::AuthorityType,
     new_authority: Option<&Address>,
 ) -> Result<(), ProgramError> {
@@ -394,10 +468,12 @@ pub fn set_authority<'a>(
         ctx.accounts.current_authority.address(),
         &signer_addresses,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn close_account<'a>(ctx: CpiContext<'a, CloseAccount<'a>>) -> Result<(), ProgramError> {
+pub fn close_account<'a, const N: usize>(
+    ctx: CpiContext<'a, CloseAccount<'a>, N>,
+) -> Result<(), ProgramError> {
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::instruction::close_account(
         ctx.program,
@@ -406,10 +482,12 @@ pub fn close_account<'a>(ctx: CpiContext<'a, CloseAccount<'a>>) -> Result<(), Pr
         ctx.accounts.authority.address(),
         &signer_addresses,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn freeze_account<'a>(ctx: CpiContext<'a, FreezeAccount<'a>>) -> Result<(), ProgramError> {
+pub fn freeze_account<'a, const N: usize>(
+    ctx: CpiContext<'a, FreezeAccount<'a>, N>,
+) -> Result<(), ProgramError> {
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::instruction::freeze_account(
         ctx.program,
@@ -418,10 +496,12 @@ pub fn freeze_account<'a>(ctx: CpiContext<'a, FreezeAccount<'a>>) -> Result<(), 
         ctx.accounts.authority.address(),
         &signer_addresses,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn thaw_account<'a>(ctx: CpiContext<'a, ThawAccount<'a>>) -> Result<(), ProgramError> {
+pub fn thaw_account<'a, const N: usize>(
+    ctx: CpiContext<'a, ThawAccount<'a>, N>,
+) -> Result<(), ProgramError> {
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::instruction::thaw_account(
         ctx.program,
@@ -430,12 +510,14 @@ pub fn thaw_account<'a>(ctx: CpiContext<'a, ThawAccount<'a>>) -> Result<(), Prog
         ctx.accounts.authority.address(),
         &signer_addresses,
     )?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
-pub fn sync_native<'a>(ctx: CpiContext<'a, SyncNative<'a>>) -> Result<(), ProgramError> {
+pub fn sync_native<'a, const N: usize>(
+    ctx: CpiContext<'a, SyncNative<'a>, N>,
+) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::sync_native(ctx.program, ctx.accounts.account.address())?;
-    ctx.invoke_ix(ix)
+    crate::token_shared::CanonicalInstruction::<N>::invoke(&ctx, &ix)
 }
 
 #[cfg(test)]
@@ -488,4 +570,5 @@ mod tests {
         assert_eq!(ix.accounts[3].pubkey.as_ref(), [4; 32].as_slice());
         assert_eq!(ix.accounts[4].pubkey.as_ref(), [5; 32].as_slice());
     }
+
 }
