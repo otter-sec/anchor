@@ -62,6 +62,16 @@ class LazyDefinedLayout extends Layout {
   }
 }
 
+// Identifies a defined type on the recursion stack. A generic type is keyed
+// by its arguments too, so `Nested<u32, Nested<u32, u64>>` is not mistaken
+// for a recursive type.
+function definedTypeKey(
+  name: string,
+  genericArgs?: IdlGenericArg[] | null
+): string {
+  return genericArgs?.length ? `${name}<${JSON.stringify(genericArgs)}>` : name;
+}
+
 export class IdlCoder {
   public static fieldLayout(
     field: PartialField,
@@ -195,7 +205,8 @@ export class IdlCoder {
               name: fieldName,
             });
 
-          if (definedTypeStack.includes(definedName)) {
+          const typeKey = definedTypeKey(definedName, fieldGenericArgs);
+          if (definedTypeStack.includes(typeKey)) {
             if (!allowRecursive) {
               throw new IdlError(
                 `Recursive type must be wrapped in an option or vector: ${definedName}`
@@ -210,7 +221,7 @@ export class IdlCoder {
             types,
             genericArgs: fieldGenericArgs,
             name: fieldName,
-            definedTypeStack: [...definedTypeStack, definedName],
+            definedTypeStack: [...definedTypeStack, typeKey],
           });
         }
         if ("generic" in field.type) {
@@ -476,7 +487,9 @@ export class IdlCoder {
         }
         if ("defined" in ty) {
           const typeName = ty.defined.name;
-          if (definedTypeStack.includes(typeName)) {
+          const genArgs = genericArgs ?? ty.defined.generics;
+          const typeKey = definedTypeKey(typeName, genArgs);
+          if (definedTypeStack.includes(typeKey)) {
             throw new IdlError(
               `Recursive types do not have a static size: ${typeName}`
             );
@@ -487,9 +500,8 @@ export class IdlCoder {
             throw new IdlError(`Type not found: ${JSON.stringify(ty)}`);
           }
 
-          const typeStack = [...definedTypeStack, typeName];
+          const typeStack = [...definedTypeStack, typeKey];
           const typeSize = (type: IdlType) => {
-            const genArgs = genericArgs ?? ty.defined.generics;
             const args = genArgs
               ? IdlCoder.resolveGenericArgs({
                   type,
@@ -543,7 +555,7 @@ export class IdlCoder {
           return IdlCoder.typeSizeWithContext(
             genericArg.type,
             idl,
-            genericArgs,
+            undefined,
             definedTypeStack
           );
         }
@@ -601,13 +613,15 @@ export class IdlCoder {
       return IdlCoder.assertNonRecursiveType(
         genericArg.type,
         idl,
-        genericArgs,
+        undefined,
         definedTypeStack
       );
     }
     if ("defined" in ty) {
       const typeName = ty.defined.name;
-      if (definedTypeStack.includes(typeName)) {
+      const genArgs = genericArgs ?? ty.defined.generics;
+      const typeKey = definedTypeKey(typeName, genArgs);
+      if (definedTypeStack.includes(typeKey)) {
         throw new IdlError(
           `Recursive types do not have a static size: ${typeName}`
         );
@@ -618,9 +632,8 @@ export class IdlCoder {
         throw new IdlError(`Type not found: ${JSON.stringify(ty)}`);
       }
 
-      const typeStack = [...definedTypeStack, typeName];
+      const typeStack = [...definedTypeStack, typeKey];
       const checkType = (type: IdlType) => {
-        const genArgs = genericArgs ?? ty.defined.generics;
         const args = genArgs
           ? IdlCoder.resolveGenericArgs({
               type,
@@ -799,21 +812,35 @@ export class IdlCoder {
       if ("defined" in type) {
         if (!type.defined.generics) return null;
 
-        return type.defined.generics
-          .flatMap((g) => {
-            switch (g.kind) {
-              case "type":
-                return IdlCoder.resolveGenericArgs({
-                  type: g.type,
-                  typeDef,
-                  genericArgs,
-                  isDefined: true,
-                });
-              case "const":
-                return [g];
-            }
-          })
-          .filter((g) => g !== null) as IdlGenericArg[];
+        // The defined type takes its arguments by position, so each one is
+        // resolved in place: a concrete type like `u32` is kept, a nested
+        // generic type is rebuilt, and a const generic passed through by
+        // name (`Foo<N>`) takes the value given for it.
+        const generics = type.defined.generics.map((g): IdlGenericArg => {
+          if (g.kind === "const") {
+            const constIndex =
+              typeDef.generics?.findIndex(
+                (d) => d.kind === "const" && d.name === g.value
+              ) ?? -1;
+            return constIndex === -1 ? g : genericArgs[constIndex];
+          }
+
+          const resolved = IdlCoder.resolveGenericArgs({
+            type: g.type,
+            typeDef,
+            genericArgs,
+            isDefined: true,
+          });
+          return resolved?.[0] ?? g;
+        });
+        if (!isDefined) return generics;
+
+        return [
+          {
+            kind: "type",
+            type: { defined: { name: type.defined.name, generics } },
+          },
+        ];
       }
     }
 
