@@ -3,6 +3,7 @@ use {
     crate::{AccountField, AccountsStruct, ConstraintSeedsGroup, Field, InitKind, Ty},
     proc_macro2::TokenStream,
     quote::{quote, ToTokens},
+    std::collections::HashMap,
     syn::Result,
 };
 
@@ -369,6 +370,13 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
                         }
                     )
                 })
+            } else if references_locals(seed, &args, accounts) {
+                // Arguments and accounts are not in scope where constant
+                // seeds are evaluated, so skip resolving this PDA instead
+                Err(syn::Error::new_spanned(
+                    seed,
+                    format!("Seed expression not supported: {seed:#?}"),
+                ))
             } else if call.method == "as_ref" && call.args.is_empty() {
                 // On e.g. a `&str` const, `.as_ref()` alone is ambiguous
                 // (E0282), so pick `AsRef<[u8]>` like the seeds slice does
@@ -442,6 +450,29 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
             format!("Unexpected seed: {seed:?}"),
         )),
     }
+}
+
+/// Whether the seed mentions an instruction argument or an account, e.g.
+/// `hash(&args.name).to_bytes()`. Such seeds can't be evaluated as constants.
+fn references_locals(
+    seed: &syn::Expr,
+    args: &HashMap<String, String>,
+    accounts: &AccountsStruct,
+) -> bool {
+    fn contains(tokens: TokenStream, names: &[String]) -> bool {
+        tokens.into_iter().any(|token| match token {
+            proc_macro2::TokenTree::Ident(ident) => names.iter().any(|name| ident == name),
+            proc_macro2::TokenTree::Group(group) => contains(group.stream(), names),
+            _ => false,
+        })
+    }
+
+    let names = args
+        .keys()
+        .cloned()
+        .chain(accounts.field_names())
+        .collect::<Vec<_>>();
+    contains(seed.to_token_stream(), &names)
 }
 
 /// Get the bytes of a string or byte string literal seed followed by
