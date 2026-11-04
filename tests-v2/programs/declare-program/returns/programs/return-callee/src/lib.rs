@@ -8,8 +8,10 @@ declare_program!(return_spoof);
 
 pub const RETURN_SEED: &[u8] = b"return-store";
 
-type ReturnString = anchor_lang::FixedVec<u8, { anchor_lang::MAX_IDL_SEQUENCE }>;
-type ReturnVec<T> = anchor_lang::FixedVec<T, { anchor_lang::MAX_IDL_SEQUENCE }>;
+// These are the concrete bounds used by this fixture's return values: the
+// label is "return-payload" and `describe` emits two samples.
+type ReturnString = anchor_lang::FixedVec<u8, 14>;
+type ReturnVec<T> = anchor_lang::FixedVec<T, 2>;
 
 #[account]
 #[repr(C)]

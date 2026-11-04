@@ -141,7 +141,6 @@ impl<T, const N: usize> FixedVec<T, N> {
         Ok(())
     }
 }
-}
 
 impl<const N: usize> FixedVec<u8, N> {
     #[inline]

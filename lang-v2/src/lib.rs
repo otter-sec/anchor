@@ -2,22 +2,15 @@
 //!
 //! `#![no_std]` compatible.
 
-#![cfg_attr(any(target_os = "solana", target_arch = "bpf"), no_std)]
-
+#![no_std]
+#[cfg(test)]
+extern crate std;
 #[cfg(any(
     feature = "alloc",
     not(any(target_os = "solana", target_arch = "bpf"))
 ))]
 extern crate alloc;
 extern crate self as anchor_lang;
-
-/// Hidden compatibility re-export used by generated V2 host and IDL code.
-#[doc(hidden)]
-#[cfg(any(
-    feature = "alloc",
-    not(any(target_os = "solana", target_arch = "bpf"))
-))]
-pub extern crate alloc as __alloc;
 
 mod account_meta;
 pub mod accounts;
@@ -30,10 +23,36 @@ mod dispatch;
 pub mod event;
 mod fixed_vec;
 pub mod hash;
-mod idl;
-#[doc(hidden)]
 #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+#[doc(hidden)]
 pub mod idl_build;
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+#[doc(hidden)]
+pub mod idl_build {
+    /// IDL metadata is collected by host-side tooling. This target-side
+    /// marker keeps common account wrapper bounds allocator-free.
+    pub trait IdlAccountType {
+        const __IDL_ACCOUNT_ENTRY: Option<&'static str> = None;
+        const __IDL_TYPE_DEF: Option<&'static str> = None;
+        const __IDL_IS_SIGNER: bool = false;
+        const __IDL_ADDRESS: Option<&'static str> = None;
+
+        fn __idl_account_entry() -> Option<&'static str> {
+            Self::__IDL_ACCOUNT_ENTRY
+        }
+
+        fn __idl_type_def() -> Option<&'static str> {
+            Self::__IDL_TYPE_DEF
+        }
+
+        fn __register_idl_deps(
+            _accounts: &mut [Option<&'static str>],
+            _types: &mut [Option<&'static str>],
+        ) {
+        }
+    }
+}
+mod idl_support;
 mod instruction;
 pub mod loader;
 pub mod pod;
@@ -41,16 +60,11 @@ pub mod prelude;
 mod program;
 pub mod programs;
 pub mod system_program;
-#[cfg(all(
-    feature = "testing",
-    not(any(target_os = "solana", target_arch = "bpf"))
-))]
+#[cfg(feature = "testing")]
 pub mod testing;
 mod traits;
 
 // Re-export derive macros and bytemuck for generated code
-#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-pub use account_meta::ToAccountMetas;
 /// Chunked 4×u64 equality compare for `Address`. Preferred over `==`
 /// on `&Address`. See <https://github.com/anza-xyz/solana-sdk/issues/345>.
 pub use pinocchio::address::address_eq;
@@ -61,7 +75,30 @@ pub use solana_address::{address, declare_id};
 /// Implementation detail of [`solana_msg`] - re-exported for macro access only.
 #[doc(hidden)]
 pub use solana_msg;
-pub use {account_meta::AccountMeta, cpi::realloc_account};
+#[cfg(feature = "compat")]
+#[doc(hidden)]
+pub use solana_program_log::log as __log_str;
+pub use {
+    account_meta::{AccountMeta, ToAccountMetas},
+    cpi::realloc_account,
+};
+
+/// Hidden compatibility re-export used by host and alloc-enabled generated
+/// code. It is deliberately unavailable to the default SBF target.
+#[doc(hidden)]
+#[cfg(any(
+    feature = "alloc",
+    not(any(target_os = "solana", target_arch = "bpf"))
+))]
+pub extern crate alloc as __alloc;
+
+// Host-only allocation namespace used by generated IDL code. The definitions
+// live in `idl_support` so the crate root stays focused on the public runtime
+// surface.
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+#[doc(hidden)]
+pub use idl_support::{__idl, IdlEntries};
+
 #[macro_export]
 macro_rules! msg {
     ($message:expr) => {{
@@ -103,7 +140,8 @@ macro_rules! msg {
                             }
                             boundary
                         };
-                        self.bytes[self.len..self.len + copied].copy_from_slice(&bytes[..copied]);
+                        self.bytes[self.len..self.len + copied]
+                            .copy_from_slice(&bytes[..copied]);
                         self.len += copied;
                         if copied == bytes.len() {
                             Ok(())
@@ -133,7 +171,10 @@ macro_rules! msg {
     }};
 }
 
-/// v1-compat logger. Gated behind `compat`.
+/// v1-compat logger with full `format!` support (`{:?}`, `{:x}`, etc.).
+///
+/// Heap-allocates via `alloc::format!`. Prefer [`msg!`] for production
+/// (cheaper CUs). Gated behind `compat`.
 ///
 /// # Example
 ///
@@ -143,15 +184,18 @@ macro_rules! msg {
 #[cfg(feature = "compat")]
 #[macro_export]
 macro_rules! debug {
-    ($($arg:tt)*) => {{ $crate::msg!($($arg)*) }};
+    ($msg:expr) => {{
+        $crate::__log_str($msg)
+    }};
+    ($($arg:tt)*) => {{
+        $crate::__log_str(&$crate::__alloc::format!($($arg)*))
+    }};
 }
 // Re-export wincode for instruction data serialization
-pub use {
-    buffers::*,
-    fixed_vec::FixedVec,
-    idl::{__idl, IdlAccountType, IdlEntries, MAX_IDL_SEQUENCE},
-    wincode,
-};
+pub use buffers::{CpiAccountBuffer, CpiHandleBuffer, InstructionDataBuffer, SignerBuffer};
+pub use fixed_vec::FixedVec;
+pub use traits::ToCpiAccountsWithCapacity;
+pub use wincode;
 
 #[inline]
 pub(crate) fn try_extend_instruction_data(
@@ -202,6 +246,11 @@ macro_rules! __anchor_program_allocator {
 ///   intentionally follows wincode here, so floating-point values (including
 ///   NaN) are supported. Programs migrating from v1 should account for this
 ///   serialization difference when validating or comparing float values.
+/// - **Dynamic collections of zero-sized elements** (`Vec<()>`, and the same
+///   shape for any other zero-sized `T`): borsh rejects them. Wincode writes a
+///   `u32` length prefix and no element bytes, then reads that length back.
+///   This does not show up in ordinary account data. Wincode still bounds the
+///   length through its preallocation limit.
 ///
 /// Programs that don't use these types are unaffected.
 ///
@@ -275,12 +324,7 @@ pub use cpi::create_account_with_signers;
 /// its associated items — they are implementation details of the IDL
 /// build pipeline and will change without notice. See [`idl_build`] for
 /// the trait definition.
-/// Metadata for a single account in a transaction instruction.
-///
-/// This is a fixed-size, allocator-neutral value used by the public V2 account
-/// builder traits. Host-side instruction construction converts it to the SDK's
-/// owned `solana_instruction::AccountMeta` representation at the facade
-/// boundary.
+pub use idl_build::IdlAccountType;
 pub use {
     accounts::{AccountInitialize, SlabInit},
     anchor_derive_accounts::{
@@ -300,7 +344,7 @@ pub use {
     dispatch::{run_handler, TryAccounts},
     event::{sol_log_data, Event},
     hash::sha256,
-    instruction::CpiInstruction,
+    instruction::{CpiInstruction, InstructionData},
     loader::AccountLoader,
     pinocchio::{self, account::AccountView, address::Address},
     traits::*,
@@ -324,7 +368,7 @@ pub mod solana_program {
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
         pub use crate::AccountMeta;
         #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-        pub use solana_instruction::{AccountMeta, Instruction};
+        pub use solana_instruction::*;
     }
 
     #[cfg(feature = "compat")]
@@ -337,9 +381,11 @@ pub mod solana_program {
         pub type Pubkey = crate::Address;
     }
 
-    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
     pub mod rent {
+        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
         pub use solana_sysvar::rent::*;
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        pub use pinocchio::sysvars::rent::*;
     }
 
     pub mod sysvar {
@@ -348,28 +394,6 @@ pub mod solana_program {
 
     pub mod program {
         pub use crate::program::*;
-    }
-}
-
-/// Serializes instruction data: discriminator prefix + LE-encoded args.
-pub trait InstructionData: Discriminator {
-    #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-    fn try_data(
-        &self,
-    ) -> core::result::Result<InstructionDataBuffer, solana_program_error::ProgramError>;
-    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-    fn data(&self) -> InstructionDataBuffer;
-
-    /// Fallible instruction serialization for allocator-free runtime paths.
-    ///
-    /// Existing implementations that only provide `data()` remain source
-    /// compatible. Generated V2 instruction types override this method so a
-    /// full buffer reports `InvalidInstructionData` instead of panicking.
-    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-    fn try_data(
-        &self,
-    ) -> core::result::Result<InstructionDataBuffer, solana_program_error::ProgramError> {
-        Ok(self.data())
     }
 }
 
@@ -412,10 +436,6 @@ impl_space_for_primitives! {
 
 impl<T: Space, const N: usize> Space for [T; N] {
     const INIT_SPACE: usize = T::INIT_SPACE * N;
-}
-
-impl<T: Space, const N: usize> Space for FixedVec<T, N> {
-    const INIT_SPACE: usize = 4 + T::INIT_SPACE * N;
 }
 
 #[doc(hidden)]

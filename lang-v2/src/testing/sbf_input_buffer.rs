@@ -18,7 +18,7 @@
 //!       padding (7 bytes) to round to 8-byte alignment
 
 use {
-    std::{vec, vec::Vec},
+    alloc::{vec, vec::Vec},
     pinocchio::account::MAX_PERMITTED_DATA_INCREASE,
 };
 

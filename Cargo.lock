@@ -498,8 +498,8 @@ dependencies = [
  "solana-program-log",
  "solana-program-memory 3.1.0",
  "solana-sha256-hasher 3.1.0",
- "solana-system-interface 3.3.0",
- "solana-sysvar 4.2.0",
+ "solana-system-interface 2.0.0",
+ "solana-sysvar 3.1.1",
  "wincode",
 ]
 
@@ -4175,15 +4175,6 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "memoffset",
-]
-
-[[package]]
-name = "no-alloc-proof"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "pinocchio",
- "pinocchio-system",
 ]
 
 [[package]]

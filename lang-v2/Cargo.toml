@@ -56,8 +56,6 @@ solana-msg = { workspace = true, default-features = false }
 solana-program-memory.workspace = true
 solana-program-log = { workspace = true, features = ["macro"], optional = true }
 solana-sha256-hasher = { workspace = true, features = ["sha2"] }
-solana-system-interface = { workspace = true, features = ["bincode"] }
-solana-sysvar.workspace = true
 bytemuck = { version = "1", features = ["derive"] }
 wincode = { version = "0.6", default-features = false, features = ["derive"] }
 

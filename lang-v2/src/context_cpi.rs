@@ -19,7 +19,7 @@ use {
 ///     data_acc: ctx.accounts.data_acc.cpi_handle_mut(),
 ///     authority: ctx.accounts.authority.cpi_handle(),
 /// };
-/// let cpi_ctx = CpiContext::<_, 2>::new_with_capacity(
+/// let cpi_ctx = CpiContext::<_, 2>::new(
 ///     ctx.accounts.callee.address(),
 ///     cpi_accounts,
 /// );
@@ -41,7 +41,7 @@ where
 {
     /// Construct a CPI context with an explicitly selected inline capacity.
     #[must_use]
-    pub fn new_with_capacity(program: &'a Address, accounts: T) -> Self {
+    pub fn new(program: &'a Address, accounts: T) -> Self {
         Self {
             accounts,
             program,
@@ -51,7 +51,7 @@ where
     }
 
     #[must_use]
-    pub fn new_with_signer_capacity(
+    pub fn new_with_signer(
         program: &'a Address,
         accounts: T,
         signer_seeds: &'a [&'a [&'a [u8]]],
@@ -104,7 +104,7 @@ where
                 .map_err(|_| ProgramError::InvalidArgument)?;
         }
 
-        crate::program::validate_instruction_accounts::<N, _>(
+        crate::program::validate_instruction_accounts(
             &instruction_accounts,
             self.program,
             &handles,
@@ -191,11 +191,13 @@ where
         );
         // Trailing metas (e.g. remaining accounts already baked into `ix`) are
         // never treated as optional sentinels from this accounts struct.
-        optional_sentinel_flags
-            .try_resize(instruction_account_count, false)
-            .map_err(|_| ProgramError::InvalidArgument)?;
+        while optional_sentinel_flags.len() < instruction_account_count {
+            optional_sentinel_flags
+                .try_push(false)
+                .map_err(|_| ProgramError::InvalidArgument)?;
+        }
 
-        crate::program::invoke_signed_with_capacity::<N, I, _>(
+        crate::program::invoke_signed_with_optional_sentinels(
             &ix,
             &handles,
             self.signer_seeds,

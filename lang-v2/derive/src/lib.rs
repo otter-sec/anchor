@@ -7139,7 +7139,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 
         // Custom 2-arg (r1, r2) entrypoint using SIMD-0321 convention.
         #[cfg(not(feature = "no-entrypoint"))]
-        anchor_lang::pinocchio::default_allocator!();
+        anchor_lang::__anchor_program_allocator!();
         #[cfg(not(feature = "no-entrypoint"))]
         anchor_lang::pinocchio::default_panic_handler!();
 

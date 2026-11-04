@@ -530,7 +530,8 @@ fn invoke_ix_allows_signer_meta_without_tx_signer_when_seeds_are_supplied() {
     };
     let ix = signer_instruction(*view.address(), false);
 
-    CpiContext::<_, 3>::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
+    let signer_seeds: &[&[u8]] = &[b"pda", &[7]];
+    CpiContext::<_, 3>::new_with_signer(&program, accounts, &[signer_seeds])
         .invoke_ix(ix)
         .unwrap();
 }
@@ -550,7 +551,8 @@ fn invoke_remaining_pda_as_signer_with_seeds() {
     assert!(remaining_accounts
         .try_push(CpiHandle::readonly(&remaining_view).as_signer())
         .is_ok());
-    CpiContext::<_, 3>::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
+    let signer_seeds: &[&[u8]] = &[b"pda", &[7]];
+    CpiContext::<_, 3>::new_with_signer(&program, accounts, &[signer_seeds])
         .with_remaining_accounts(remaining_accounts)
         .invoke(&[])
         .unwrap();
