@@ -114,6 +114,11 @@ pub fn transfer_checked_with_fee<'a>(
     ctx.invoke_ix(ix)
 }
 
+/// Harvest withheld fees from a caller-selected set of source accounts.
+///
+/// `N` is intentionally selected by the caller because both `sources` and
+/// `remaining_accounts` are variable-length inputs. It must cover the complete
+/// CPI account set; overflow is reported as `InvalidArgument`.
 pub fn harvest_withheld_tokens_to_mint<'a, const N: usize>(
     ctx: CpiContext<'a, HarvestWithheldTokensToMint<'a>, N>,
     sources: &[CpiHandleMut<'a>],
@@ -159,6 +164,11 @@ pub fn withdraw_withheld_tokens_from_mint<'a>(
     ctx.invoke_ix(ix)
 }
 
+/// Withdraw withheld fees from a caller-selected set of source accounts.
+///
+/// `N` is intentionally selected by the caller because both `sources` and
+/// `remaining_accounts` are variable-length inputs. It must cover the complete
+/// CPI account set; overflow is reported as `InvalidArgument`.
 pub fn withdraw_withheld_tokens_from_accounts<'a, const N: usize>(
     ctx: CpiContext<'a, WithdrawWithheldTokensFromAccounts<'a>, N>,
     sources: &[CpiHandleMut<'a>],

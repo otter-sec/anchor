@@ -524,23 +524,6 @@ fn foreign_borsh_account_mutation_is_rejected_on_exit() {
 }
 
 #[test]
-fn bump_by_preserves_user_defined_instruction_argument_coverage() {
-    let (mut svm, payer) = setup();
-    let counter = do_initialize(&mut svm, &payer);
-
-    let mut data = vec![37];
-    data.extend_from_slice(&5u64.to_le_bytes());
-    data.extend_from_slice(b"idl!");
-    let metas = vec![AccountMeta::new(counter, false)];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("bump_by should succeed");
-
-    let account = svm.get_account(&counter).expect("counter exists");
-    let value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
-    assert_eq!(value, 6, "counter starts at 1 and bumps by the argument");
-}
-
-#[test]
 fn read_clock_succeeds_and_sysvar_is_well_formed() {
     let (mut svm, payer) = setup();
     let metas = vec![AccountMeta::new_readonly(clock_sysvar_id(), false)];

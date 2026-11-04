@@ -8665,8 +8665,12 @@ mod tests {
             .to_string();
 
         assert!(
-            generated.contains("ok_or (anchor_lang :: Error :: InvalidInstructionData)"),
-            "target return-data lookup must be fallible: {generated}"
+            generated.contains("sol_get_return_data"),
+            "target return-data lookup must use the fallible syscall path: {generated}"
+        );
+        assert!(
+            generated.contains("return Err (anchor_lang :: Error :: InvalidInstructionData)"),
+            "target return-data lookup must return an error on invalid data: {generated}"
         );
         assert!(
             generated.contains("anchor_lang :: Error :: IncorrectProgramId"),
