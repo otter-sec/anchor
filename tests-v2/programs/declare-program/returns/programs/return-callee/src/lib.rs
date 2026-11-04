@@ -1,7 +1,4 @@
-use anchor_lang::{
-    __alloc::{string::String, vec::Vec},
-    prelude::*,
-};
+use anchor_lang::prelude::*;
 
 declare_id!("BF748KR4UhPq7xbhFQYd7yFKmh5UYdqed9GbD6oZvEyu");
 declare_program!(return_spoof);
