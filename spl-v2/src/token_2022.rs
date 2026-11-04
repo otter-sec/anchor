@@ -168,8 +168,8 @@ pub fn ui_amount_to_amount<'a>(
     Ok(u64::from_le_bytes(bytes))
 }
 
-pub fn reallocate<'a>(
-    ctx: CpiContext<'a, Reallocate<'a>, 4>,
+pub fn reallocate<'a, const N: usize>(
+    ctx: CpiContext<'a, Reallocate<'a>, N>,
     extension_types: &[ExtensionType],
 ) -> Result<(), ProgramError> {
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
@@ -184,8 +184,8 @@ pub fn reallocate<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn withdraw_excess_lamports<'a>(
-    ctx: CpiContext<'a, WithdrawExcessLamports<'a>, 3>,
+pub fn withdraw_excess_lamports<'a, const N: usize>(
+    ctx: CpiContext<'a, WithdrawExcessLamports<'a>, N>,
 ) -> Result<(), ProgramError> {
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::instruction::withdraw_excess_lamports(

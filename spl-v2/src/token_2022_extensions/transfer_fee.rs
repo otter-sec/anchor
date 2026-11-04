@@ -72,8 +72,8 @@ pub fn transfer_fee_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn transfer_fee_set<'a>(
-    ctx: CpiContext<'a, TransferFeeSetTransferFee<'a>, 2>,
+pub fn transfer_fee_set<'a, const N: usize>(
+    ctx: CpiContext<'a, TransferFeeSetTransferFee<'a>, N>,
     transfer_fee_basis_points: u16,
     maximum_fee: u64,
 ) -> Result<(), ProgramError> {
@@ -91,8 +91,8 @@ pub fn transfer_fee_set<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn transfer_checked_with_fee<'a>(
-    ctx: CpiContext<'a, TransferCheckedWithFee<'a>, 4>,
+pub fn transfer_checked_with_fee<'a, const N: usize>(
+    ctx: CpiContext<'a, TransferCheckedWithFee<'a>, N>,
     amount: u64,
     decimals: u8,
     fee: u64,
@@ -147,8 +147,8 @@ pub fn harvest_withheld_tokens_to_mint<'a, const N: usize>(
     ctx.invoke_ix(ix)
 }
 
-pub fn withdraw_withheld_tokens_from_mint<'a>(
-    ctx: CpiContext<'a, WithdrawWithheldTokensFromMint<'a>, 3>,
+pub fn withdraw_withheld_tokens_from_mint<'a, const N: usize>(
+    ctx: CpiContext<'a, WithdrawWithheldTokensFromMint<'a>, N>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;

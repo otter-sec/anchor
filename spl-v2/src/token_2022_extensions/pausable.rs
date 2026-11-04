@@ -31,8 +31,8 @@ pub fn pausable_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn pausable_pause<'a>(
-    ctx: CpiContext<'a, PausableToggle<'a>, 2>,
+pub fn pausable_pause<'a, const N: usize>(
+    ctx: CpiContext<'a, PausableToggle<'a>, N>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
@@ -45,8 +45,8 @@ pub fn pausable_pause<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn pausable_resume<'a>(
-    ctx: CpiContext<'a, PausableToggle<'a>, 2>,
+pub fn pausable_resume<'a, const N: usize>(
+    ctx: CpiContext<'a, PausableToggle<'a>, N>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);

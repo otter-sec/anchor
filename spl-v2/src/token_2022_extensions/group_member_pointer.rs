@@ -33,8 +33,8 @@ pub fn group_member_pointer_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn group_member_pointer_update<'a>(
-    ctx: CpiContext<'a, GroupMemberPointerUpdate<'a>, 2>,
+pub fn group_member_pointer_update<'a, const N: usize>(
+    ctx: CpiContext<'a, GroupMemberPointerUpdate<'a>, N>,
     member_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;

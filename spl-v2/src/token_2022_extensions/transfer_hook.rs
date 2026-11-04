@@ -34,8 +34,8 @@ pub fn transfer_hook_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn transfer_hook_update<'a>(
-    ctx: CpiContext<'a, TransferHookUpdate<'a>, 2>,
+pub fn transfer_hook_update<'a, const N: usize>(
+    ctx: CpiContext<'a, TransferHookUpdate<'a>, N>,
     transfer_hook_program_id: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;

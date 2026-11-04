@@ -92,11 +92,11 @@ pub fn burn_edition_nft<'info>(
 /// accounts.
 ///
 /// ```ignore
-/// CpiContext::<_, 6>::new(program, BurnNft { .. })
-///     .with_remaining_accounts(vec![ctx.accounts.collection_metadata.cpi_handle_mut().into()]);
+/// CpiContext::<_, 7>::new(program, BurnNft { .. })
+///     .with_remaining_accounts(remaining_accounts);
 /// ```
-pub fn burn_nft<'info>(
-    ctx: CpiContext<'info, BurnNft<'info>, 6>,
+pub fn burn_nft<'info, const N: usize>(
+    ctx: CpiContext<'info, BurnNft<'info>, N>,
     collection_metadata: Option<Pubkey>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::BurnNft {

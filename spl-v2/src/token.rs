@@ -356,8 +356,8 @@ where
     CpiContext::new_with_signer(program, accounts, signer_seeds)
 }
 
-pub fn set_authority<'a>(
-    ctx: CpiContext<'a, accounts::SetAuthority<'a>, 2>,
+pub fn set_authority<'a, const N: usize>(
+    ctx: CpiContext<'a, accounts::SetAuthority<'a>, N>,
     authority_type: spl_token::instruction::AuthorityType,
     new_authority: Option<Address>,
 ) -> Result<(), ProgramError> {

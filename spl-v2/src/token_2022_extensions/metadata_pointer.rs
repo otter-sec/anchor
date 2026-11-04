@@ -34,8 +34,8 @@ pub fn metadata_pointer_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn metadata_pointer_update<'a>(
-    ctx: CpiContext<'a, MetadataPointerUpdate<'a>, 2>,
+pub fn metadata_pointer_update<'a, const N: usize>(
+    ctx: CpiContext<'a, MetadataPointerUpdate<'a>, N>,
     metadata_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
