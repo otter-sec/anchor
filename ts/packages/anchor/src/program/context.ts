@@ -1,4 +1,9 @@
-import { AccountMeta, Instruction, TransactionSigner } from "@solana/kit";
+import {
+  AccountMeta,
+  Instruction,
+  TransactionSigner,
+  TransactionVersion,
+} from "@solana/kit";
 import { AddressInput } from "./common.js";
 import type { ConfirmOptions } from "../provider.js";
 import {
@@ -43,6 +48,13 @@ export type Context<A extends Accounts = Accounts> = {
    * Commitment parameters to use for a transaction.
    */
   options?: ConfirmOptions;
+
+  /**
+   * Version of the transaction message to build, overriding the provider's
+   * `transactionVersion`, which defaults to `1`. Use `0` for messages that rely on
+   * address lookup tables, or for wallets that do not support version 1.
+   */
+  transactionVersion?: TransactionVersion;
 };
 
 /**

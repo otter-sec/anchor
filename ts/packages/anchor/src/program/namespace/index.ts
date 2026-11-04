@@ -77,7 +77,7 @@ export default class NamespaceFactory {
         (ixName, ix) => coder.instruction.encode(ixName, ix),
         programAddress
       );
-      const txItem = TransactionFactory.build(idlIx, ixItem);
+      const txItem = TransactionFactory.build(idlIx, ixItem, provider);
       const rpcItem = RpcFactory.build(idlIx, txItem, idlErrors, provider);
       const simulateItem = SimulateFactory.build(
         idlIx,

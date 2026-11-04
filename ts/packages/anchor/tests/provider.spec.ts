@@ -1,10 +1,17 @@
 import { Keypair } from "@solana/web3.js";
 import {
   addSignersToTransactionMessage,
+  address,
+  appendTransactionMessageInstructions,
   Blockhash,
+  decompileTransactionMessage,
   getU32Codec,
+  Instruction,
   Nonce,
   partiallySignTransactionWithSigners,
+  getTransactionMessageComputeUnitLimit,
+  setTransactionMessageComputeUnitLimit,
+  setTransactionMessageConfig,
   setTransactionMessageFeePayer,
   setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
@@ -16,7 +23,11 @@ import {
   TransactionPartialSigner,
   TransactionSigner,
 } from "@solana/kit";
-import { AnchorProvider, ProviderError } from "../src/provider";
+import {
+  AnchorProvider,
+  getDefaultComputeUnitLimitFromEstimate,
+  ProviderError,
+} from "../src/provider";
 import { ProgramError, translateError } from "../src/error";
 import { createWallet } from "../src/wallet";
 import {
@@ -34,7 +45,10 @@ import {
   simulationResponse,
   SYSTEM_PROGRAM,
   transferMessage,
+  transferMessageV1,
 } from "./helpers/mock-provider";
+
+const COMPUTE_BUDGET_PROGRAM = "ComputeBudget111111111111111111111111111111";
 
 /** A key pair wallet whose `signTransactions` calls are recorded. */
 function spiedWallet() {
@@ -67,6 +81,20 @@ describe("AnchorProvider", () => {
         commitment: "confirmed",
         preflightCommitment: "confirmed",
       });
+    });
+
+    it("builds version 1 messages by default", () => {
+      const { provider } = mockProvider({});
+      expect(provider.transactionVersion).toBe(1);
+    });
+
+    it("keeps the transaction version out of the confirmation options", () => {
+      const { provider } = mockProvider(
+        {},
+        { opts: { transactionVersion: 0, skipPreflight: true } }
+      );
+      expect(provider.transactionVersion).toBe(0);
+      expect(provider.opts).not.toHaveProperty("transactionVersion");
     });
   });
 
@@ -319,16 +347,26 @@ describe("AnchorProvider", () => {
       expect(methods).not.toContain("getEpochInfo");
       const lookup = requests.find((r) => r.method === "getAccountInfo")!;
       expect(lookup.params[0]).toBe(nonceAccountAddress);
+      // Estimated against the nonce itself rather than a fresh blockhash.
+      const simulation = requests.find(
+        (r) => r.method === "simulateTransaction"
+      )!;
+      expect(simulation.params[1]).toMatchObject({
+        replaceRecentBlockhash: false,
+      });
     });
 
     it("throws a ProviderError carrying logs on preflight failure", async () => {
-      const { provider, wallet, requests } = mockProvider({
-        getLatestBlockhash: latestBlockhashResponse,
-        sendTransaction: (request) =>
-          preflightFailureResponse(request, {
-            InstructionError: [0, { Custom: 6000 }],
-          }),
-      });
+      const { provider, wallet, requests } = mockProvider(
+        {
+          getLatestBlockhash: latestBlockhashResponse,
+          sendTransaction: (request) =>
+            preflightFailureResponse(request, {
+              InstructionError: [0, { Custom: 6000 }],
+            }),
+        },
+        { opts: { estimateResourceLimits: false } }
+      );
 
       const promise = provider.sendAndConfirm(transferMessage(wallet.address));
       await expect(promise).rejects.toThrow(ProviderError);
@@ -377,19 +415,22 @@ describe("AnchorProvider", () => {
 
     it("refreshes the blockhash and retries when already processed", async () => {
       let sends = 0;
-      const { provider, wallet, requests } = mockProvider({
-        getLatestBlockhash: latestBlockhashResponse,
-        getTransaction: () => null,
-        sendTransaction: (request) => {
-          sends += 1;
-          return preflightFailureResponse(
-            request,
-            sends < 3
-              ? "AlreadyProcessed"
-              : { InstructionError: [0, { Custom: 6000 }] }
-          );
+      const { provider, wallet, requests } = mockProvider(
+        {
+          getLatestBlockhash: latestBlockhashResponse,
+          getTransaction: () => null,
+          sendTransaction: (request) => {
+            sends += 1;
+            return preflightFailureResponse(
+              request,
+              sends < 3
+                ? "AlreadyProcessed"
+                : { InstructionError: [0, { Custom: 6000 }] }
+            );
+          },
         },
-      });
+        { opts: { estimateResourceLimits: false } }
+      );
 
       const promise = provider.sendAndConfirm(transferMessage(wallet.address));
       await expect(promise).rejects.toThrow("Custom program error: #6000");
@@ -404,11 +445,14 @@ describe("AnchorProvider", () => {
     });
 
     it("does not retry when the message carries its own blockhash", async () => {
-      const { provider, wallet, requests } = mockProvider({
-        getTransaction: () => null,
-        sendTransaction: (request) =>
-          preflightFailureResponse(request, "AlreadyProcessed"),
-      });
+      const { provider, wallet, requests } = mockProvider(
+        {
+          getTransaction: () => null,
+          sendTransaction: (request) =>
+            preflightFailureResponse(request, "AlreadyProcessed"),
+        },
+        { opts: { estimateResourceLimits: false } }
+      );
 
       const message = setTransactionMessageLifetimeUsingBlockhash(
         { blockhash: BLOCKHASH, lastValidBlockHeight: 50n },
@@ -428,8 +472,9 @@ describe("AnchorProvider", () => {
         code: 6000,
         index: 0,
       });
-      const { provider, wallet } = mockProvider({
+      const { provider, wallet, requests } = mockProvider({
         getLatestBlockhash: latestBlockhashResponse,
+        simulateTransaction: simulationResponse,
         sendTransaction: () => {
           throw failure;
         },
@@ -451,6 +496,300 @@ describe("AnchorProvider", () => {
       expect(translated).toBeInstanceOf(ProgramError);
       expect(translated.code).toBe(6000);
       expect(translated.msg).toBe("Custom error");
+      const lookup = requests.find((r) => r.method === "getTransaction")!;
+      expect(lookup.params[1]).toMatchObject({
+        maxSupportedTransactionVersion: 1,
+      });
+    });
+  });
+
+  describe("resource limits", () => {
+    const DEFAULT_LIMITS = {
+      computeUnitLimit: 200_000,
+      loadedAccountsDataSizeLimit: 64 * 1024 * 1024,
+    };
+
+    function sentConfig(requests: { method: string; params: unknown[] }[]) {
+      const sent = requests.find((r) => r.method === "sendTransaction")!;
+      const { message } = decodeWireTransaction(sent);
+      const decompiled = decompileTransactionMessage(message);
+      return decompiled.version === 1 ? decompiled.config : undefined;
+    }
+
+    it("estimates the limits left unset before sending", async () => {
+      const { provider, wallet, requests } = mockProvider({
+        ...confirmingResponders(),
+        simulateTransaction: () =>
+          simulationResponse({ loadedAccountsDataSize: 4096 }),
+      });
+
+      await provider.sendAndConfirm(transferMessageV1(wallet.address));
+
+      const simulation = requests.find(
+        (r) => r.method === "simulateTransaction"
+      )!;
+      expect(simulation.params[1]).toMatchObject({
+        commitment: "confirmed",
+        replaceRecentBlockhash: true,
+        sigVerify: false,
+      });
+      // 150 consumed units, plus the 300 unit minimum headroom.
+      expect(sentConfig(requests)).toEqual({
+        computeUnitLimit: 450,
+        loadedAccountsDataSizeLimit: 4096,
+      });
+      const send = requests.find((r) => r.method === "sendTransaction")!;
+      expect((send.params[1] as any).skipPreflight).toBeUndefined();
+    });
+
+    it("maps estimates with the provider's getComputeUnitLimitFromEstimate", async () => {
+      const { provider, wallet, requests } = mockProvider(
+        {
+          ...confirmingResponders(),
+          simulateTransaction: () =>
+            simulationResponse({ loadedAccountsDataSize: 4096 }),
+        },
+        { opts: { getComputeUnitLimitFromEstimate: (units) => units * 2.5 } }
+      );
+
+      await provider.sendAndConfirm(transferMessageV1(wallet.address));
+
+      expect(sentConfig(requests)?.computeUnitLimit).toBe(375);
+      expect(provider.opts).not.toHaveProperty(
+        "getComputeUnitLimitFromEstimate"
+      );
+    });
+
+    it("caps mapped estimates at the compute unit maximum", async () => {
+      const { provider, wallet, requests } = mockProvider({
+        ...confirmingResponders(),
+        simulateTransaction: () =>
+          simulationResponse({
+            unitsConsumed: 1_390_000,
+            loadedAccountsDataSize: 4096,
+          }),
+      });
+
+      await provider.sendAndConfirm(transferMessageV1(wallet.address));
+
+      expect(sentConfig(requests)?.computeUnitLimit).toBe(1_400_000);
+    });
+
+    it("keeps the limits set on the message", async () => {
+      const { provider, wallet, requests } = mockProvider(
+        confirmingResponders()
+      );
+      const limits = {
+        computeUnitLimit: 50_000,
+        loadedAccountsDataSizeLimit: 10_000,
+      };
+
+      await provider.sendAndConfirm(
+        setTransactionMessageConfig(limits, transferMessageV1(wallet.address))
+      );
+
+      expect(requests.map((r) => r.method)).not.toContain(
+        "simulateTransaction"
+      );
+      expect(sentConfig(requests)).toEqual(limits);
+    });
+
+    it("estimates each message of a batch", async () => {
+      const { provider, wallet, requests } = mockProvider({
+        ...confirmingResponders(),
+        simulateTransaction: () =>
+          simulationResponse({ loadedAccountsDataSize: 4096 }),
+      });
+
+      await provider.sendAll([
+        { message: transferMessageV1(wallet.address) },
+        { message: transferMessageV1(wallet.address) },
+      ]);
+
+      expect(
+        requests.filter((r) => r.method === "simulateTransaction")
+      ).toHaveLength(2);
+      expect(sentConfig(requests)).toEqual({
+        computeUnitLimit: 450,
+        loadedAccountsDataSizeLimit: 4096,
+      });
+    });
+
+    it("estimates legacy and version 0 messages with an appended compute budget instruction", async () => {
+      const { provider, wallet, requests } = mockProvider(
+        confirmingResponders()
+      );
+
+      await provider.sendAndConfirm(transferMessage(wallet.address));
+
+      const sent = requests.find((r) => r.method === "sendTransaction")!;
+      const message = decompileTransactionMessage(
+        decodeWireTransaction(sent).message
+      );
+      const instructions = message.instructions as readonly Instruction[];
+      expect(instructions.map((ix) => ix.programAddress)).toEqual([
+        SYSTEM_PROGRAM,
+        COMPUTE_BUDGET_PROGRAM,
+      ]);
+      expect(getTransactionMessageComputeUnitLimit(message)).toBe(450);
+    });
+
+    it("keeps a compute unit limit instruction already on the message", async () => {
+      const { provider, wallet, requests } = mockProvider(
+        confirmingResponders()
+      );
+
+      await provider.sendAndConfirm(
+        setTransactionMessageComputeUnitLimit(
+          20_000,
+          transferMessage(wallet.address)
+        )
+      );
+
+      expect(requests.map((r) => r.method)).not.toContain(
+        "simulateTransaction"
+      );
+      const sent = requests.find((r) => r.method === "sendTransaction")!;
+      const message = decompileTransactionMessage(
+        decodeWireTransaction(sent).message
+      );
+      expect(getTransactionMessageComputeUnitLimit(message)).toBe(20_000);
+    });
+
+    it("sends legacy and version 0 messages as is when estimation is disabled", async () => {
+      const { provider, wallet, requests } = mockProvider(
+        confirmingResponders()
+      );
+
+      await provider.sendAndConfirm(
+        transferMessage(wallet.address),
+        undefined,
+        { estimateResourceLimits: false }
+      );
+
+      expect(requests.map((r) => r.method)).not.toContain(
+        "simulateTransaction"
+      );
+      const sent = requests.find((r) => r.method === "sendTransaction")!;
+      const message = decompileTransactionMessage(
+        decodeWireTransaction(sent).message
+      );
+      const instructions = message.instructions as readonly Instruction[];
+      expect(instructions.map((ix) => ix.programAddress)).toEqual([
+        SYSTEM_PROGRAM,
+      ]);
+      expect((sent.params[1] as any).skipPreflight).toBeUndefined();
+    });
+
+    it("uses the runtime defaults for version 1 messages when estimation is disabled", async () => {
+      const { provider, wallet, requests } = mockProvider(
+        confirmingResponders(),
+        { opts: { estimateResourceLimits: false } }
+      );
+
+      await provider.sendAndConfirm(transferMessageV1(wallet.address));
+
+      expect(requests.map((r) => r.method)).not.toContain(
+        "simulateTransaction"
+      );
+      expect(sentConfig(requests)).toEqual(DEFAULT_LIMITS);
+    });
+
+    it("budgets 200,000 compute units regardless of instruction count by default", async () => {
+      const { provider, wallet, requests } = mockProvider(
+        confirmingResponders(),
+        { opts: { estimateResourceLimits: false } }
+      );
+      const memo: Instruction = {
+        programAddress: address("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
+        accounts: [],
+        data: new TextEncoder().encode("memo"),
+      };
+
+      await provider.sendAndConfirm(
+        appendTransactionMessageInstructions(
+          [memo, memo],
+          transferMessageV1(wallet.address)
+        )
+      );
+
+      expect(sentConfig(requests)?.computeUnitLimit).toBe(200_000);
+    });
+
+    it("uses the runtime defaults without simulating when preflight is skipped", async () => {
+      const { provider, wallet, requests } = mockProvider(
+        confirmingResponders()
+      );
+
+      await provider.sendAndConfirm(
+        transferMessageV1(wallet.address),
+        undefined,
+        { skipPreflight: true }
+      );
+
+      expect(requests.map((r) => r.method)).not.toContain(
+        "simulateTransaction"
+      );
+      expect(sentConfig(requests)).toEqual(DEFAULT_LIMITS);
+    });
+
+    it("reports a failed estimation like a failed preflight", async () => {
+      const logs = [
+        "Program log: AnchorError thrown in programs/test/src/lib.rs",
+      ];
+      const { provider, wallet, requests } = mockProvider({
+        ...confirmingResponders(),
+        simulateTransaction: () =>
+          simulationResponse({
+            err: { InstructionError: [0, { Custom: 6000 }] },
+            logs,
+            loadedAccountsDataSize: 4096,
+          }),
+      });
+
+      const promise = provider.sendAndConfirm(
+        transferMessageV1(wallet.address)
+      );
+      await expect(promise).rejects.toThrow(ProviderError);
+      await expect(promise).rejects.toThrow("Custom program error: #6000");
+      await expect(promise).rejects.toMatchObject({ logs });
+      expect(requests.map((r) => r.method)).not.toContain("sendTransaction");
+
+      const err = await promise.catch((e) => e);
+      const translated = translateError(err, new Map([[6000, "Custom error"]]));
+      expect(translated).toBeInstanceOf(ProgramError);
+      expect(translated.code).toBe(6000);
+    });
+
+    it("simulates with the runtime defaults for the limits left unset", async () => {
+      const { provider, wallet, requests } = mockProvider({
+        getLatestBlockhash: latestBlockhashResponse,
+        simulateTransaction: simulationResponse,
+      });
+
+      await provider.simulate(transferMessageV1(wallet.address));
+
+      const simulations = requests.filter(
+        (r) => r.method === "simulateTransaction"
+      );
+      expect(simulations).toHaveLength(1);
+      const { message } = decodeWireTransaction(simulations[0]);
+      const decompiled = decompileTransactionMessage(message);
+      expect(decompiled.version === 1 && decompiled.config).toEqual(
+        DEFAULT_LIMITS
+      );
+    });
+  });
+
+  describe("getDefaultComputeUnitLimitFromEstimate", () => {
+    it.each([
+      [0, 300],
+      [1_000, 1_300],
+      [100_000, 108_400],
+      [500_000, 510_000],
+      [1_000_000, 1_020_000],
+    ])("maps %i consumed units to a limit of %i", (units, limit) => {
+      expect(getDefaultComputeUnitLimitFromEstimate(units)).toBe(limit);
     });
   });
 

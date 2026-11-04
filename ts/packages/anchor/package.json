@@ -37,7 +37,7 @@
     "@solana-program/program-metadata": "^0.9.3",
     "@solana-program/system": "^0.14.1",
     "@solana-program/token": "^0.16.1",
-    "@solana/kit": "^8.3.0",
+    "@solana/kit": "^8.5.0",
     "camelcase": "^6.3.0",
     "toml": "^3.0.0"
   },
