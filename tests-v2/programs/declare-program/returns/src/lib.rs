@@ -12,6 +12,7 @@ pub const PROXY_SEED: &[u8] = b"return-proxy";
 // capacity close to the real payload so generated FixedVec return values do
 // not consume an unnecessarily large SBF stack frame. This is not a runtime
 // or protocol-wide limit.
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
 const RETURN_DATA_CAPACITY: usize = 80;
 
 #[account]

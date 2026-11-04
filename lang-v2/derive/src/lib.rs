@@ -3824,6 +3824,9 @@ fn declare_idl_type_uses_fixed_vec(
         let name = defined
             .as_str()
             .or_else(|| defined.get("name").and_then(serde_json::Value::as_str));
+        if name.is_some_and(|name| matches!(name, "BTreeMap" | "BTreeSet")) {
+            return true;
+        }
         if name.is_some_and(|name| fixed_vec_type_names.contains(name)) {
             return true;
         }
@@ -5426,7 +5429,7 @@ fn declare_idl_type_to_tokens_for_target(
         } else {
             json_str(defined, "name", span)?
         };
-        if borrowed && defined_name == "BTreeMap" {
+        if defined_name == "BTreeMap" {
             let generics = defined
                 .get("generics")
                 .and_then(serde_json::Value::as_array)
@@ -5453,9 +5456,15 @@ fn declare_idl_type_to_tokens_for_target(
                 dynamic_type_names,
                 fixed_vec_type_names,
             )?;
-            return Ok(quote! { &'ix [(#key, #value)] });
+            return Ok(if borrowed {
+                quote! {
+                    anchor_lang::FixedVec<(#key, #value), __ANCHOR_DYNAMIC_CAPACITY>
+                }
+            } else {
+                quote! { anchor_lang::__idl::collections::BTreeMap<#key, #value> }
+            });
         }
-        if borrowed && defined_name == "BTreeSet" {
+        if defined_name == "BTreeSet" {
             let generics = defined
                 .get("generics")
                 .and_then(serde_json::Value::as_array)
@@ -5471,7 +5480,13 @@ fn declare_idl_type_to_tokens_for_target(
                 dynamic_type_names,
                 fixed_vec_type_names,
             )?;
-            return Ok(quote! { &'ix [#element] });
+            return Ok(if borrowed {
+                quote! {
+                    anchor_lang::FixedVec<#element, __ANCHOR_DYNAMIC_CAPACITY>
+                }
+            } else {
+                quote! { anchor_lang::__idl::collections::BTreeSet<#element> }
+            });
         }
         if let Some(builtin) = declare_idl_defined_builtin(defined_name) {
             return Ok(builtin);
@@ -6237,6 +6252,9 @@ fn process_handler(
     let extra_arg_types = &extra_arg_types;
     let has_dynamic_capacity = extra_arg_types.iter().any(uses_dynamic_capacity)
         || return_type.as_ref().is_some_and(uses_dynamic_capacity);
+    let target_return_data_bound = return_type
+        .as_ref()
+        .and_then(bounded_serialized_len);
 
     // Dispatch arm.
     let dispatch_arm = if let Some(discrim_bytes) = discrim_bytes {
@@ -6555,19 +6573,84 @@ fn process_handler(
             } else {
                 quote! { __return.as_slice() }
             };
-            quote! {
-                let __return = anchor_lang::pinocchio::cpi::get_return_data()
-                    .ok_or(anchor_lang::Error::InvalidInstructionData)?;
-                if !anchor_lang::address_eq(__return.program_id(), __ctx.program) {
-                    return Err(anchor_lang::Error::IncorrectProgramId);
+            if let Some(bound) = target_return_data_bound {
+                quote! {
+                    let mut __return_bytes =
+                        [core::mem::MaybeUninit::<u8>::uninit(); #bound];
+                    let mut __return_program =
+                        core::mem::MaybeUninit::<anchor_lang::Address>::uninit();
+                    let __return_len = unsafe {
+                        anchor_lang::pinocchio::cpi::sol_get_return_data(
+                            __return_bytes.as_mut_ptr().cast::<u8>(),
+                            #bound as u64,
+                            __return_program.as_mut_ptr().cast::<u8>(),
+                        )
+                    } as usize;
+                    if __return_len == 0 || __return_len > #bound {
+                        return Err(anchor_lang::Error::InvalidInstructionData);
+                    }
+                    let __return_program = unsafe { __return_program.assume_init() };
+                    if !anchor_lang::address_eq(&__return_program, __ctx.program) {
+                        return Err(anchor_lang::Error::IncorrectProgramId);
+                    }
+                    let __return_bytes = unsafe {
+                        core::slice::from_raw_parts(
+                            __return_bytes.as_ptr().cast::<u8>(),
+                            __return_len,
+                        )
+                    };
+                    let __value: #return_ty = Return::deserialize(__return_bytes)?;
+                    Ok(Return { value: __value })
                 }
-                #copy_return_data
-                let __value: #return_ty = anchor_lang::wincode::config::deserialize(
-                    #return_bytes,
-                    anchor_lang::BORSH_CONFIG,
-                )
-                .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
-                Ok(Return { value: __value })
+            } else if has_ref_return {
+                let capacity = if has_dynamic_capacity {
+                    quote! { __ANCHOR_DYNAMIC_CAPACITY }
+                } else {
+                    quote! { __ANCHOR_RETURN_CAPACITY }
+                };
+                quote! {
+                    let mut __raw_return_bytes =
+                        [core::mem::MaybeUninit::<u8>::uninit(); #capacity];
+                    let mut __return_program =
+                        core::mem::MaybeUninit::<anchor_lang::Address>::uninit();
+                    let __return_len = unsafe {
+                        anchor_lang::pinocchio::cpi::sol_get_return_data(
+                            __raw_return_bytes.as_mut_ptr().cast::<u8>(),
+                            #capacity as u64,
+                            __return_program.as_mut_ptr().cast::<u8>(),
+                        )
+                    } as usize;
+                    if __return_len == 0 || __return_len > #capacity {
+                        return Err(anchor_lang::Error::InvalidInstructionData);
+                    }
+                    let __return_program = unsafe { __return_program.assume_init() };
+                    if !anchor_lang::address_eq(&__return_program, __ctx.program) {
+                        return Err(anchor_lang::Error::IncorrectProgramId);
+                    }
+                    let __raw_return_bytes = unsafe {
+                        core::slice::from_raw_parts(
+                            __raw_return_bytes.as_ptr().cast::<u8>(),
+                            __return_len,
+                        )
+                    };
+                    __return_data.clear();
+                    __return_data
+                        .try_extend_from_slice(__raw_return_bytes)
+                        .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
+                    let __value: #return_ty = Return::deserialize(__return_data.as_slice())?;
+                    Ok(Return { value: __value })
+                }
+            } else {
+                quote! {
+                    let __return = anchor_lang::pinocchio::cpi::get_return_data()
+                        .ok_or(anchor_lang::Error::InvalidInstructionData)?;
+                    if !anchor_lang::address_eq(__return.program_id(), __ctx.program) {
+                        return Err(anchor_lang::Error::IncorrectProgramId);
+                    }
+                    #copy_return_data
+                    let __value: #return_ty = Return::deserialize(#return_bytes)?;
+                    Ok(Return { value: __value })
+                }
             }
         } else {
             quote! { Ok(()) }
@@ -6985,6 +7068,22 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 
             #[cfg(any(target_os = "solana", target_arch = "bpf"))]
             impl<T> Return<T> {
+                #[inline(never)]
+                fn deserialize<'de>(bytes: &'de [u8]) -> anchor_lang::Result<T>
+                where
+                    T: anchor_lang::wincode::SchemaRead<
+                        'de,
+                        anchor_lang::BorshConfig,
+                        Dst = T,
+                    >,
+                {
+                    anchor_lang::wincode::config::deserialize(
+                        bytes,
+                        anchor_lang::BORSH_CONFIG,
+                    )
+                    .map_err(|_| anchor_lang::Error::InvalidInstructionData)
+                }
+
                 pub fn get(self) -> T {
                     self.value
                 }
