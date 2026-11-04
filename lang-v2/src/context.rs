@@ -22,19 +22,21 @@ pub struct Context<'a, T: Bumps> {
     /// *start* of the remaining-accounts region (after `try_accounts`
     /// has consumed exactly `T::HEADER_SIZE` declared accounts). Used
     /// by [`Self::remaining_accounts`] for on-demand walking.
-    /// After `remaining_accounts` is called this holds a cache of the result.
-    remaining_accounts: RemainingAccounts<'a>,
+    /// After `remaining_accounts` is called this holds the range cached in the
+    /// cursor's dispatcher-owned lookup storage.
+    remaining_accounts: RemainingAccounts,
+
+    /// Cursor for the serialized instruction account region.
+    cursor: &'a mut AccountCursor,
 }
 
-enum RemainingAccounts<'a> {
+enum RemainingAccounts {
     Unparsed {
-        /// Points to the `remaining-accounts` region
-        cursor: &'a mut AccountCursor,
         /// Number of accounts remaining after the initially declared region
         remaining: u8,
     },
-    /// Cached result of walking `remaining-accounts`.
-    Cached(alloc::vec::Vec<AccountView>),
+    /// Cached range of views in the cursor's lookup storage.
+    Cached { start: u8, len: u8 },
 }
 
 impl<'a, T: Bumps> Context<'a, T> {
@@ -51,9 +53,9 @@ impl<'a, T: Bumps> Context<'a, T> {
             accounts,
             bumps,
             remaining_accounts: RemainingAccounts::Unparsed {
-                cursor,
                 remaining: remaining_num,
             },
+            cursor,
         }
     }
 
@@ -64,25 +66,38 @@ impl<'a, T: Bumps> Context<'a, T> {
     /// loading a view through an account wrapper, borrowing its data, or
     /// passing it to a CPI fails while a declared wrapper holds a
     /// conflicting borrow of the same account.
-    /// The lazy runtime implementation belongs to the stack follow-up; this
-    /// API branch keeps the existing cache internally while exposing only the
-    /// borrowed view.
-    pub fn remaining_accounts(&mut self) -> &[AccountView] {
-        if let RemainingAccounts::Unparsed { cursor, remaining } = &mut self.remaining_accounts {
-            let mut accounts = alloc::vec::Vec::with_capacity(*remaining as usize);
-            for _ in 0..*remaining {
-                // SAFETY: cursor is positioned at the start of the remaining
-                // region and `remaining` is the exact number of accounts to
-                // walk.
-                accounts.push(unsafe { cursor.next() });
-            }
-            self.remaining_accounts = RemainingAccounts::Cached(accounts);
+    /// The returned lifetime is tied to the instruction input, not the
+    /// mutable borrow of `Context`, so callers can inspect trailing accounts
+    /// and then update their declared accounts in the same handler.
+    pub fn remaining_accounts(&mut self) -> &'a [AccountView] {
+        if let RemainingAccounts::Unparsed { .. } = self.remaining_accounts {
+            let (start, len) = self.walk_remaining();
+            self.remaining_accounts = RemainingAccounts::Cached { start, len };
         }
 
         match &self.remaining_accounts {
-            RemainingAccounts::Cached(accounts) => accounts,
+            RemainingAccounts::Cached { start, len } => {
+                // SAFETY: the dispatcher-owned lookup storage remains valid
+                // for the duration of this instruction and all entries in the
+                // range were populated by `walk_remaining`.
+                unsafe { self.cursor.views(*start, *len) }
+            }
             RemainingAccounts::Unparsed { .. } => unreachable!(),
         }
+    }
+
+    fn walk_remaining(&mut self) -> (u8, u8) {
+        let remaining = match self.remaining_accounts {
+            RemainingAccounts::Unparsed { remaining } => remaining,
+            RemainingAccounts::Cached { .. } => unreachable!(),
+        };
+        let start = self.cursor.consumed();
+        for _ in 0..remaining {
+            // SAFETY: cursor is positioned at the start of the remaining
+            // region and `remaining` is the exact number of accounts to walk.
+            unsafe { self.cursor.next() };
+        }
+        (start, remaining)
     }
 }
 
