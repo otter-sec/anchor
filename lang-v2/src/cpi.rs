@@ -176,7 +176,9 @@ pub fn find_program_address(seeds: &[&[u8]], program_id: &Address) -> (Address, 
 }
 
 /// Find a PDA, returning an error if none exists.
-#[inline(always)]
+// The PDA search builds a `[&[u8]; 19]` seed array on the stack, so keep this
+// in its own frame instead of inlining it into account validation.
+#[inline(never)]
 pub fn try_find_program_address(
     seeds: &[&[u8]],
     program_id: &Address,
@@ -198,7 +200,9 @@ pub fn try_find_program_address(
 
 /// Find the canonical bump for `seeds` + `program_id` and verify that the
 /// derived PDA equals `expected`. Returns just the bump on success.
-#[inline(always)]
+// The PDA search builds a `[&[u8]; 19]` seed array on the stack, so keep this
+// in its own frame instead of inlining it into account validation.
+#[inline(never)]
 pub fn find_and_verify_program_address(
     seeds: &[&[u8]],
     program_id: &Address,
@@ -313,7 +317,7 @@ fn check_off_curve(addr: &Address) -> Result<(), ProgramError> {
 
 /// Hash seeds into a PDA address (sha256 only, no curve check).
 #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-#[inline(always)]
+#[inline(never)]
 fn hash_pda_seeds(seeds: &[&[u8]], program_id: &Address) -> Result<Address, ProgramError> {
     use solana_sha256_hasher::sol_sha256;
     const PDA_MARKER: &[u8; 21] = b"ProgramDerivedAddress";

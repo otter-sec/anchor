@@ -72,9 +72,9 @@ pub trait AnchorAccountSerialize<T> {
 /// `exit()` serializes through the held `RefMut`.
 /// If ownership changes after loading, host commits compare the serialized
 /// payload (including stale-byte cleanup) against the live data without
-/// writing to it. The allocator-free SBF path performs that comparison in a
-/// bounded stack buffer and rejects payloads larger than
-/// [`crate::MAX_INSTRUCTION_DATA`], preserving the no-`alloc` runtime graph.
+/// writing to it. The allocator-free SBF path compares the encoded stream
+/// directly with the live payload, so it does not require an instruction-sized
+/// scratch buffer.
 ///
 /// The wincode-backed instantiation is exposed as [`super::BorshAccount<T>`].
 ///

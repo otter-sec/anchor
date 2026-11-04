@@ -342,6 +342,28 @@ fn checked_invoke_preserves_real_program_id_account_before_duplicate_address() {
 }
 
 #[test]
+fn checked_invoke_skips_matching_optional_account_when_handle_is_required_later() {
+    let required = account_view([7; 32], false);
+    let extra = account_view([8; 32], false);
+    let required_view = unsafe { required.view() };
+    let extra_view = unsafe { extra.view() };
+    let ix = Instruction {
+        program_id: ID,
+        accounts: vec![
+            AccountMeta::new_readonly(ID, false),
+            AccountMeta::new_readonly(*required_view.address(), false),
+        ],
+        data: vec![],
+    };
+    let handles = [required_view.to_cpi_handle(), extra_view.to_cpi_handle()];
+
+    // The extra trailing handle is allowed by the existing slice-based API.
+    // The matching required account must still consume the first handle
+    // instead of letting the optional sentinel greedily consume it.
+    program::invoke_with_optional_sentinels(&ix, &handles, &[true, false]).unwrap();
+}
+
+#[test]
 fn checked_invoke_accepts_real_program_id_account_before_later_accounts() {
     let first_buffer = account_view([1; 32], false);
     let middle_buffer = account_view([7; 32], false);

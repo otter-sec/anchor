@@ -116,55 +116,23 @@ macro_rules! msg {
     ($($arg:tt)*) => {{
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
         {
-            #[inline(never)]
-            fn __anchor_log_fmt(args: core::fmt::Arguments<'_>) {
-                struct LogBuffer {
-                    bytes: [u8; 1024],
-                    len: usize,
-                }
+            struct LogWriter;
 
-                impl core::fmt::Write for LogBuffer {
-                    fn write_str(&mut self, text: &str) -> core::fmt::Result {
-                        let remaining = self.bytes.len() - self.len;
-                        let bytes = text.as_bytes();
-                        let copied = if bytes.len() <= remaining {
-                            bytes.len()
-                        } else {
-                            let mut boundary = 0;
-                            for (index, character) in text.char_indices() {
-                                let end = index + character.len_utf8();
-                                if end > remaining {
-                                    break;
-                                }
-                                boundary = end;
-                            }
-                            boundary
-                        };
-                        self.bytes[self.len..self.len + copied]
-                            .copy_from_slice(&bytes[..copied]);
-                        self.len += copied;
-                        if copied == bytes.len() {
-                            Ok(())
-                        } else {
-                            Err(core::fmt::Error)
-                        }
+            impl core::fmt::Write for LogWriter {
+                fn write_str(&mut self, text: &str) -> core::fmt::Result {
+                    // Formatting can produce several chunks. Emit each chunk
+                    // directly so logging has no fixed-size scratch buffer.
+                    unsafe {
+                        $crate::pinocchio::syscalls::sol_log_(
+                            text.as_ptr(),
+                            text.len() as u64,
+                        );
                     }
-                }
-
-                let mut buffer = LogBuffer {
-                    bytes: [0; 1024],
-                    len: 0,
-                };
-                let _ = core::fmt::write(&mut buffer, args);
-                unsafe {
-                    $crate::pinocchio::syscalls::sol_log_(
-                        buffer.bytes.as_ptr(),
-                        buffer.len as u64,
-                    );
+                    Ok(())
                 }
             }
 
-            __anchor_log_fmt(core::format_args!($($arg)*));
+            let _ = core::fmt::write(&mut LogWriter, core::format_args!($($arg)*));
         }
         #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
         $crate::solana_msg::msg!($($arg)*);
@@ -192,19 +160,11 @@ macro_rules! debug {
     }};
 }
 // Re-export wincode for instruction data serialization
-pub use buffers::{CpiAccountBuffer, CpiHandleBuffer, InstructionDataBuffer, SignerBuffer};
+pub use buffers::CpiHandleBuffer;
+pub(crate) use buffers::{CpiAccountBuffer, SignerBuffer};
 pub use fixed_vec::FixedVec;
 pub use traits::ToCpiAccountsWithCapacity;
 pub use wincode;
-
-#[inline]
-pub(crate) fn try_extend_instruction_data(
-    data: &mut InstructionDataBuffer,
-    bytes: &[u8],
-) -> Result<()> {
-    data.try_extend_from_slice(bytes)
-        .map_err(|_| solana_program_error::ProgramError::InvalidInstructionData)
-}
 
 #[doc(hidden)]
 #[cfg(not(feature = "alloc"))]

@@ -6200,7 +6200,13 @@ fn process_handler(
         .unwrap_or_else(|| quote! { "" });
     let set_return_data = returns_value.then(|| {
         quote! {
-            let mut __return_data = anchor_lang::InstructionDataBuffer::new();
+            #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+            let mut __return_data = anchor_lang::FixedVec::<
+                u8,
+                { anchor_lang::solana_program::program::MAX_RETURN_DATA },
+            >::new();
+            #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+            let mut __return_data = anchor_lang::__alloc::vec::Vec::new();
             if anchor_lang::wincode::config::serialize_into(
                 &mut __return_data,
                 &__result,
@@ -6210,7 +6216,7 @@ fn process_handler(
             {
                 return anchor_lang::Error::InvalidInstructionData.into();
             }
-            anchor_lang::pinocchio::cpi::set_return_data(&__return_data);
+            anchor_lang::pinocchio::cpi::set_return_data(__return_data.as_ref());
         }
     });
 
@@ -9298,6 +9304,7 @@ mod tests {
         assert_eq!(pod_bool.to_string(), "anchor_lang :: pod :: PodBool");
     }
 
+    #[test]
     fn nested_accounts_preserve_inner_bumps_in_generated_surface() {
         let input: syn::DeriveInput = syn::parse_quote! {
             pub struct Outer {
@@ -9318,7 +9325,7 @@ mod tests {
         );
         assert!(
             generated.contains(
-                "let (__nested_inner , __anchor_bump_cache_inner , _) = < Inner as anchor_lang :: \
+                "let (__nested_inner , __anchor_bump_cache_inner , __nested_ix_args) = < Inner as anchor_lang :: \
                  TryAccounts > :: validate_accounts"
             ),
             "expected nested validate_accounts call to keep the returned bumps value: {generated}"
@@ -9326,7 +9333,7 @@ mod tests {
         assert!(
             generated.contains(
                 "let mut __anchor_bump_cache_inner : < Inner as anchor_lang :: Bumps > :: Bumps = \
-                 :: core :: default :: Default :: default() ;"
+                 :: core :: default :: Default :: default () ;"
             ),
             "expected nested bump cache local declaration: {generated}"
         );

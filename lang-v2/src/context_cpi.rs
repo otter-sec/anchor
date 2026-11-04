@@ -197,7 +197,7 @@ where
                 .map_err(|_| ProgramError::InvalidArgument)?;
         }
 
-        crate::program::invoke_signed_with_optional_sentinels(
+        crate::program::invoke_signed_with_optional_sentinels_with_capacity::<N, I>(
             &ix,
             &handles,
             self.signer_seeds,

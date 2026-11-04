@@ -76,6 +76,32 @@ pub fn invoke_signed_with_optional_sentinels<'a, 'seeds, I>(
 where
     I: CpiInstruction + ?Sized,
 {
+    invoke_signed_with_optional_sentinels_with_capacity::<{ pinocchio::MAX_TX_ACCOUNTS }, I>(
+        instruction,
+        account_handles,
+        signer_seeds,
+        optional_sentinel_flags,
+    )
+}
+
+/// Capacity-aware implementation used by [`crate::CpiContext`]. The public
+/// slice-based compatibility functions retain their protocol-sized fallback,
+/// while generated CPI calls use the capacity selected by their context.
+#[doc(hidden)]
+pub(crate) fn invoke_signed_with_optional_sentinels_with_capacity<
+    'a,
+    'seeds,
+    const N: usize,
+    I,
+>(
+    instruction: &I,
+    account_handles: &[CpiHandle<'a>],
+    signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
+    optional_sentinel_flags: &[bool],
+) -> ProgramResult
+where
+    I: CpiInstruction + ?Sized,
+{
     instruction.with_instruction_accounts(|instruction_accounts| {
         let program_id = instruction.program_id();
         let data = instruction.data();
@@ -91,7 +117,7 @@ where
         // CpiInstruction implementations build a temporary account slice, so
         // fetching it again after validation could observe a different view.
         unsafe {
-            invoke_signed_unchecked_with_accounts(
+            invoke_signed_unchecked_with_accounts::<N>(
                 program_id,
                 data,
                 instruction_accounts,
@@ -100,9 +126,7 @@ where
                 optional_sentinel_flags,
             )
         }
-    })?;
-
-    Ok(())
+    })
 }
 
 /// Invoke a cross-program instruction without borrow validation.
@@ -163,8 +187,30 @@ pub unsafe fn invoke_signed_unchecked_with_optional_sentinels<'a, 'seeds, I>(
 where
     I: CpiInstruction + ?Sized,
 {
+    unsafe {
+        invoke_signed_unchecked_with_optional_sentinels_with_capacity::<
+            { pinocchio::MAX_TX_ACCOUNTS },
+            I,
+        >(instruction, account_handles, signer_seeds, optional_sentinel_flags)
+    }
+}
+
+unsafe fn invoke_signed_unchecked_with_optional_sentinels_with_capacity<
+    'a,
+    'seeds,
+    const N: usize,
+    I,
+>(
+    instruction: &I,
+    account_handles: &[CpiHandle<'a>],
+    signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
+    optional_sentinel_flags: &[bool],
+) -> ProgramResult
+where
+    I: CpiInstruction + ?Sized,
+{
     instruction.with_instruction_accounts(|instruction_accounts| unsafe {
-        invoke_signed_unchecked_with_accounts(
+        invoke_signed_unchecked_with_accounts::<N>(
             instruction.program_id(),
             instruction.data(),
             instruction_accounts,
@@ -175,7 +221,7 @@ where
     })
 }
 
-unsafe fn invoke_signed_unchecked_with_accounts<'a, 'seeds>(
+unsafe fn invoke_signed_unchecked_with_accounts<'a, 'seeds, const N: usize>(
     program_id: &Address,
     data: &[u8],
     instruction_accounts: &[InstructionAccount<'a>],
@@ -194,9 +240,9 @@ unsafe fn invoke_signed_unchecked_with_accounts<'a, 'seeds>(
         accounts: instruction_accounts,
         data,
     };
-    let signers = signers(signer_seeds);
-    let _borrow_guards = crate::enter_cpi(account_handles);
-    let cpi_accounts = cpi_accounts(account_handles);
+    let signers = signers::<N>(signer_seeds)?;
+    let _borrow_guards = crate::enter_cpi::<N>(account_handles)?;
+    let cpi_accounts = cpi_accounts::<N>(account_handles)?;
 
     // SAFETY:
     // - `cpi_accounts` was fully initialized from the provided handles.
@@ -343,17 +389,31 @@ where
             instruction_index,
         );
 
-        let can_consume = handle_index < account_handles.len()
-            && instruction_account_matches_handle(account, &account_handles[handle_index])
-            && (!is_optional
-                || remaining_handles_can_satisfy_required_accounts(
-                    &instruction_accounts[instruction_index + 1..],
-                    program_id,
-                    optional_sentinel_flags,
+        let can_skip = is_optional
+            && can_match_instruction_accounts(
+                instruction_accounts,
+                program_id,
+                account_handles,
+                optional_sentinel_flags,
                 instruction_index + 1,
-                    account_handles.len().saturating_sub(handle_index + 1),
-                ));
-        if can_consume {
+                handle_index,
+            );
+        if can_skip {
+            visit(instruction_index, account, None)?;
+            continue;
+        }
+
+        if handle_index < account_handles.len()
+            && instruction_account_matches_handle(account, &account_handles[handle_index])
+            && can_match_instruction_accounts(
+                instruction_accounts,
+                program_id,
+                account_handles,
+                optional_sentinel_flags,
+                instruction_index + 1,
+                handle_index + 1,
+            )
+        {
             visit(instruction_index, account, Some(handle_index))?;
             handle_index += 1;
             continue;
@@ -379,26 +439,46 @@ where
     Ok(())
 }
 
-fn remaining_handles_can_satisfy_required_accounts(
-    instruction_accounts: &[InstructionAccount<'_>],
+#[inline(never)]
+fn can_match_instruction_accounts<'a>(
+    instruction_accounts: &[InstructionAccount<'a>],
     program_id: &Address,
+    account_handles: &[CpiHandle<'a>],
     optional_sentinel_flags: &[bool],
-    instruction_offset: usize,
-    handle_count: usize,
+    instruction_index: usize,
+    handle_index: usize,
 ) -> bool {
-    handle_count
-        >= instruction_accounts
-            .iter()
-            .enumerate()
-            .filter(|(index, account)| {
-                !is_skippable_optional_sentinel(
-                    program_id,
-                    account,
-                    optional_sentinel_flags,
-                    instruction_offset + index,
-                )
-            })
-            .count()
+    if instruction_index == instruction_accounts.len() {
+        return true;
+    }
+
+    let account = &instruction_accounts[instruction_index];
+    if is_skippable_optional_sentinel(
+        program_id,
+        account,
+        optional_sentinel_flags,
+        instruction_index,
+    ) && can_match_instruction_accounts(
+        instruction_accounts,
+        program_id,
+        account_handles,
+        optional_sentinel_flags,
+        instruction_index + 1,
+        handle_index,
+    ) {
+        return true;
+    }
+
+    handle_index < account_handles.len()
+        && instruction_account_matches_handle(account, &account_handles[handle_index])
+        && can_match_instruction_accounts(
+            instruction_accounts,
+            program_id,
+            account_handles,
+            optional_sentinel_flags,
+            instruction_index + 1,
+            handle_index + 1,
+        )
 }
 
 fn minimum_required_handle_count(
