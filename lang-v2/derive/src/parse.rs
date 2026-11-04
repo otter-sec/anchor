@@ -1604,6 +1604,7 @@ pub fn bump_cache_ident(field_name: &Ident) -> Ident {
 /// `crate :: id ()` → `crate::id()` — matching what a user would hand-write
 /// and what downstream tooling (the Anchor CLI resolver, TS client path
 /// walkers) expect to parse.
+#[allow(dead_code)]
 fn stringify_address_expr(expr: &Expr) -> String {
     let s = quote!(#expr).to_string();
     s.split_whitespace().collect()
