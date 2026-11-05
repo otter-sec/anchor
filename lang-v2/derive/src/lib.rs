@@ -5975,11 +5975,19 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         // duplicate-symbol errors whenever two `no-entrypoint` crates end up
         // in the same host-link (e.g. `cargo test` pulling in multiple `cpi`
         // deps).
+        //
+        // A `cpi` build is a dependency of another program, never a custom
+        // entrypoint's, so it exports nothing: the linker would keep this
+        // dispatcher and every handler in the caller, and two such crates in
+        // one SBF link would define `__anchor_dispatch` twice.
         #[cfg_attr(
             all(target_os = "solana", not(feature = "no-entrypoint")),
             export_name = "entrypoint"
         )]
-        #[cfg_attr(all(target_os = "solana", feature = "no-entrypoint"), no_mangle)]
+        #[cfg_attr(
+            all(target_os = "solana", feature = "no-entrypoint", not(feature = "cpi")),
+            no_mangle
+        )]
         pub unsafe extern "C" fn __anchor_dispatch(
             __input: *mut u8,
             __ix_data_ptr: *const u8,
@@ -7427,6 +7435,34 @@ mod tests {
         assert!(
             err.to_string().contains("only supported with"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn a_cpi_build_does_not_export_the_dispatcher() {
+        let module: syn::ItemMod = syn::parse_quote! {
+            pub mod my_program {
+                use super::*;
+
+                pub fn do_it(ctx: &mut Context<MyAccounts>) -> Result<()> {
+                    let _ = ctx;
+                    Ok(())
+                }
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Executable,
+            program_id: syn::parse_quote!(crate::ID),
+        };
+
+        let generated = impl_program(&module, &config).to_string();
+
+        let export = "# [cfg_attr (all (target_os = \"solana\" , feature = \"no-entrypoint\" , \
+                      not (feature = \"cpi\")) , no_mangle)]";
+        assert!(generated.contains(export), "missing {export}: {generated}");
+        assert!(
+            !generated.contains("feature = \"no-entrypoint\") , no_mangle"),
+            "a cpi build still exports the dispatcher: {generated}"
         );
     }
 
