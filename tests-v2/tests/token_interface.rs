@@ -19,6 +19,7 @@ use {
             metadata_pointer::MetadataPointer,
             mint_close_authority::MintCloseAuthority,
             non_transferable::{NonTransferable, NonTransferableAccount},
+            pausable::PausableConfig,
             permanent_delegate::PermanentDelegate,
             set_account_type,
             transfer_hook::TransferHook,
@@ -1076,6 +1077,7 @@ fn interface_init_creates_token_2022_mint_with_extensions() {
         ExtensionType::MintCloseAuthority,
         ExtensionType::TransferHook,
         ExtensionType::PermanentDelegate,
+        ExtensionType::Pausable,
     ])
     .expect("calculate extended mint length");
     assert_eq!(account.data.len(), expected_len);
@@ -1091,6 +1093,7 @@ fn interface_init_creates_token_2022_mint_with_extensions() {
     assert!(types.contains(&ExtensionType::MintCloseAuthority));
     assert!(types.contains(&ExtensionType::TransferHook));
     assert!(types.contains(&ExtensionType::PermanentDelegate));
+    assert!(types.contains(&ExtensionType::Pausable));
 
     let metadata = state
         .get_extension::<MetadataPointer>()
@@ -1140,6 +1143,14 @@ fn interface_init_creates_token_2022_mint_with_extensions() {
         Option::<Pubkey>::from(delegate.delegate),
         Some(authority.pubkey())
     );
+    let pausable = state
+        .get_extension::<PausableConfig>()
+        .expect("pausable config");
+    assert_eq!(
+        Option::<Pubkey>::from(pausable.authority),
+        Some(authority.pubkey())
+    );
+    assert!(!bool::from(pausable.paused));
 }
 
 fn init_if_needed_mint_with_extensions(
@@ -1194,6 +1205,7 @@ fn seed_token_2022_mint_with_extension_values(
         ExtensionType::MintCloseAuthority,
         ExtensionType::TransferHook,
         ExtensionType::PermanentDelegate,
+        ExtensionType::Pausable,
     ])
     .expect("calculate extended mint length");
     let mut data = vec![0; len];
@@ -1227,6 +1239,11 @@ fn seed_token_2022_mint_with_extension_values(
             .init_extension::<PermanentDelegate>(true)
             .expect("permanent delegate");
         delegate.delegate = Some(authority).try_into().unwrap();
+
+        let pausable = state
+            .init_extension::<PausableConfig>(true)
+            .expect("pausable config");
+        pausable.authority = Some(authority).try_into().unwrap();
     }
     Token2022Mint {
         mint_authority: COption::Some(authority),

@@ -12,6 +12,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+- lang-v2, spl-v2: Support pausable mint constraints with `init` and `init_if_needed` as in anchor v1 ([#5176](https://github.com/otter-sec/anchor/pull/5176)).
 - client: Expose `parse_logs` to decode events from transaction logs while tracking the CPI stack ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
 - ts: Set the transaction message version per provider (`transactionVersion` option) or per call (`.transactionVersion()`) ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 - ts: Estimate the resource limits a transaction message leaves unset before sending, with configurable compute unit headroom (`getComputeUnitLimitFromEstimate`). Disable with `estimateResourceLimits: false` ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
