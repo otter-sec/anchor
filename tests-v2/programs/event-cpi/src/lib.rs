@@ -1,4 +1,4 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::*, FixedVec};
 
 declare_id!("E2BJE8WXAe7fLnW1ekVGg75udBFfWefNUsvPNcaKwLMm");
 
@@ -15,6 +15,11 @@ pub struct EventCpiObserved {
     pub marker: u8,
 }
 
+#[event]
+pub struct EventCpiLarge {
+    pub payload: [u8; 16],
+}
+
 #[program]
 pub mod event_cpi_test {
     use super::*;
@@ -29,6 +34,22 @@ pub mod event_cpi_test {
     pub fn emit_once(ctx: &mut Context<EmitOnce>, value: u64) -> Result<()> {
         ctx.accounts.counter.value = value;
         emit_cpi!(EventCpiObserved { value, marker: 7 });
+        Ok(())
+    }
+
+    #[discrim = 2]
+    pub fn emit_overflow_is_atomic(ctx: &mut Context<EmitOnce>) -> Result<()> {
+        let mut storage = FixedVec::<u8, 8>::new();
+        let result = (|| -> Result<()> {
+            emit_cpi!(EventCpiLarge { payload: [7; 16] }, &mut storage);
+            Ok(())
+        })();
+        require!(
+            matches!(result, Err(Error::InvalidInstructionData)),
+            Error::InvalidInstructionData
+        );
+        require!(storage.is_empty(), Error::InvalidInstructionData);
+        ctx.accounts.counter.value = 2;
         Ok(())
     }
 

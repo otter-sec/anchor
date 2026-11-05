@@ -1604,6 +1604,7 @@ pub fn bump_cache_ident(field_name: &Ident) -> Ident {
 /// `crate :: id ()` → `crate::id()` — matching what a user would hand-write
 /// and what downstream tooling (the Anchor CLI resolver, TS client path
 /// walkers) expect to parse.
+#[allow(dead_code)]
 fn stringify_address_expr(expr: &Expr) -> String {
     let s = quote!(#expr).to_string();
     s.split_whitespace().collect()
@@ -2274,7 +2275,7 @@ fn emit_associated_token_init_body(
             match __payer_signer_seeds {
                 Some(__payer_signer) => {
                     anchor_spl::associated_token::create(
-                        anchor_lang::CpiContext::new_with_signer(
+                        anchor_lang::CpiContext::<_, 6>::new_with_signer(
                             __associated_token_program.account().address(),
                             __create_accounts,
                             &[__payer_signer],
@@ -2282,10 +2283,12 @@ fn emit_associated_token_init_body(
                     )?;
                 }
                 None => {
-                    anchor_spl::associated_token::create(anchor_lang::CpiContext::new(
-                        __associated_token_program.account().address(),
-                        __create_accounts,
-                    ))?;
+                    anchor_spl::associated_token::create(
+                        anchor_lang::CpiContext::<_, 6>::new(
+                            __associated_token_program.account().address(),
+                            __create_accounts,
+                        ),
+                    )?;
                 }
             }
 
@@ -2767,7 +2770,7 @@ pub fn parse_field(
     // Writable check is now owned by `AnchorAccount::load_mut` (default
     // impl in `lang-v2/src/traits.rs`), so the derive no longer emits a
     // separate constraint block for `#[account(mut)]`. Types that
-    // override `load_mut` (Slab/Account, BorshAccount, Signer, Boxed,
+    // override `load_mut` (Slab/Account, BorshAccount, Signer,
     // Option) each validate is_writable themselves; types that inherit
     // the default (UncheckedAccount, SystemAccount, Program, Sysvar) get
     // it via the trait default.

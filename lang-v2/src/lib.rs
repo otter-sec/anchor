@@ -6,16 +6,21 @@
 extern crate alloc;
 extern crate self as anchor_lang;
 
+mod account_meta;
 pub mod accounts;
+mod buffers;
 pub mod context;
 mod context_cpi;
 pub mod cpi;
 pub mod cursor;
 mod dispatch;
 pub mod event;
+mod fixed_vec;
 pub mod hash;
 #[doc(hidden)]
 pub mod idl_build;
+mod idl_support;
+mod instruction;
 pub mod loader;
 pub mod pod;
 pub mod prelude;
@@ -27,7 +32,6 @@ pub mod testing;
 mod traits;
 
 // Re-export derive macros and bytemuck for generated code
-pub use cpi::realloc_account;
 /// Chunked 4×u64 equality compare for `Address`. Preferred over `==`
 /// on `&Address`. See <https://github.com/anza-xyz/solana-sdk/issues/345>.
 pub use pinocchio::address::address_eq;
@@ -43,11 +47,22 @@ pub use solana_msg;
 #[cfg(feature = "compat")]
 #[doc(hidden)]
 pub use solana_program_log::log as __log_str;
+pub use {
+    account_meta::{AccountMeta, ToAccountMetas},
+    cpi::realloc_account,
+};
 
 // Ungated re-export so generated macro code (`#[event]`, `debug!`, etc.)
 // can reach `Vec` without std or `extern crate alloc;` in user crates.
 #[doc(hidden)]
 pub extern crate alloc as __alloc;
+
+// Host-only allocation namespace used by generated IDL code. The definitions
+// live in `idl_support` so the crate root stays focused on the public runtime
+// surface.
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+#[doc(hidden)]
+pub use idl_support::{__idl, IdlEntries};
 
 /// Logs a message via `solana_msg`.
 ///
@@ -84,6 +99,9 @@ macro_rules! debug {
     }};
 }
 // Re-export wincode for instruction data serialization
+pub use buffers::CpiHandleBuffer;
+pub use fixed_vec::FixedVec;
+pub use traits::ToCpiAccountsWithCapacity;
 pub use wincode;
 
 /// Borsh-compatible wincode config: u8 enum tags + fixed u32 LE length
@@ -185,23 +203,12 @@ pub use cpi::create_account_with_signers;
 /// build pipeline and will change without notice. See [`idl_build`] for
 /// the trait definition.
 pub use idl_build::IdlAccountType;
-/// Metadata for a single account in a transaction instruction.
-///
-/// Re-exported from `solana-instruction` so tests and CPI builders can pass
-/// the output of `to_account_metas()` straight into `solana_instruction::
-/// Instruction::new_with_bytes` without a manual field rename.
-///
-/// `AccountMeta` itself comes from `solana-instruction`, whose account key
-/// field is named `solana_pubkey::Pubkey`. Anchor v2's compat module aliases
-/// `solana_program::pubkey::Pubkey` to [`Address`], but external Solana crates
-/// may still expose nominally distinct `Pubkey` newtypes with the same 32-byte
-/// representation.
-pub use solana_instruction::account_meta::AccountMeta;
 pub use {
     accounts::{AccountInitialize, SlabInit},
     anchor_derive_accounts::{
-        access_control, account, constant, declare_program, emit, error_code, event, pod_wrapper,
-        program, Accounts, AnchorDeserialize, AnchorSerialize, InitSpace, ToCpiAccounts, __erase,
+        __erase, access_control, account, constant, declare_program, emit, error_code, event,
+        pod_wrapper, program, Accounts, AnchorDeserialize, AnchorSerialize, InitSpace,
+        ToCpiAccounts,
     },
     bytemuck,
     context::{Bumps, Context},
@@ -215,6 +222,7 @@ pub use {
     dispatch::{run_handler, TryAccounts},
     event::{sol_log_data, Event},
     hash::sha256,
+    instruction::{CpiInstruction, InstructionData},
     loader::AccountLoader,
     pinocchio::{self, account::AccountView, address::Address},
     traits::*,
@@ -235,11 +243,15 @@ pub mod solana_program {
     }
 
     pub mod instruction {
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        pub use crate::AccountMeta;
+        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
         pub use solana_instruction::*;
     }
 
     #[cfg(feature = "compat")]
     pub use crate::pubkey;
+    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
     pub use solana_system_interface::instruction as system_instruction;
 
     #[cfg(feature = "compat")]
@@ -258,16 +270,6 @@ pub mod solana_program {
     pub mod program {
         pub use crate::program::*;
     }
-}
-
-/// Converts a struct of account addresses into a list of [`AccountMeta`]s.
-pub trait ToAccountMetas {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> alloc::vec::Vec<AccountMeta>;
-}
-
-/// Serializes instruction data: discriminator prefix + LE-encoded args.
-pub trait InstructionData: Discriminator {
-    fn data(&self) -> alloc::vec::Vec<u8>;
 }
 
 /// Compile-time account-size calculation. Derived via `#[derive(InitSpace)]`.
@@ -313,8 +315,7 @@ impl<T: Space, const N: usize> Space for [T; N] {
 
 #[doc(hidden)]
 pub mod __private {
-    use crate::CpiHandle;
-    use pinocchio::account::AccountView;
+    use {crate::CpiHandle, pinocchio::account::AccountView};
 
     /// Used by `#[derive(InitSpace)]` on enums to pick the largest variant size.
     pub const fn max(a: usize, b: usize) -> usize {

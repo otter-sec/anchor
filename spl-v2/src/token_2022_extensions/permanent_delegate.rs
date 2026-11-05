@@ -12,7 +12,7 @@ pub struct PermanentDelegateInitialize<'a> {
 }
 
 pub fn permanent_delegate_initialize<'a>(
-    ctx: CpiContext<'a, PermanentDelegateInitialize<'a>>,
+    ctx: CpiContext<'a, PermanentDelegateInitialize<'a>, 1>,
     permanent_delegate: &Address,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;

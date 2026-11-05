@@ -20,7 +20,7 @@ pub struct GroupPointerUpdate<'a> {
 }
 
 pub fn group_pointer_initialize<'a>(
-    ctx: CpiContext<'a, GroupPointerInitialize<'a>>,
+    ctx: CpiContext<'a, GroupPointerInitialize<'a>, 1>,
     authority: Option<&Address>,
     group_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
@@ -34,8 +34,8 @@ pub fn group_pointer_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn group_pointer_update<'a>(
-    ctx: CpiContext<'a, GroupPointerUpdate<'a>>,
+pub fn group_pointer_update<'a, const N: usize>(
+    ctx: CpiContext<'a, GroupPointerUpdate<'a>, N>,
     group_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -73,7 +73,7 @@ mod tests {
         anchor_lang::{
             programs::Token2022,
             testing::{AccountBuffer, MIN_ACCOUNT_BUF},
-            Address, Id,
+            Address, Id, ToCpiAccountsWithCapacity,
         },
     };
 
@@ -117,6 +117,11 @@ mod tests {
             authority: CpiHandle::readonly(&authority_view),
         };
 
-        assert_eq!(accounts.to_cpi_handles().len(), 2);
+        assert_eq!(
+            ToCpiAccountsWithCapacity::<2>::to_cpi_handles_with_capacity(&accounts)
+                .unwrap()
+                .len(),
+            2
+        );
     }
 }

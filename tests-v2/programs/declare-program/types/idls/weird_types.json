@@ -123,6 +123,38 @@
               "name": "DocumentedBorsh"
             }
           }
+        },
+        {
+          "name": "wideMap",
+          "type": {
+            "defined": {
+              "name": "BTreeMap",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": "u64"
+                },
+                {
+                  "kind": "type",
+                  "type": "u16"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "wideSet",
+          "type": {
+            "defined": {
+              "name": "BTreeSet",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": "u64"
+                }
+              ]
+            }
+          }
         }
       ]
     }

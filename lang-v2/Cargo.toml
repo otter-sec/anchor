@@ -9,7 +9,7 @@ license = "Apache-2.0"
 
 [features]
 default = ["alloc", "guardrails"]
-alloc = ["pinocchio/alloc"]
+alloc = ["pinocchio/alloc", "wincode/alloc"]
 idl-build = []
 # Opt-in v1-compat shims for users porting anchor-lang code. Currently
 # exposes v1-style shims such as `debug!`, `error!`, `err!`, and `pubkey!`.
@@ -55,7 +55,7 @@ solana-sha256-hasher = { workspace = true, features = ["sha2"] }
 solana-system-interface = { workspace = true, features = ["bincode"] }
 solana-sysvar.workspace = true
 bytemuck = { version = "1", features = ["derive"] }
-wincode = { version = "0.6", features = ["derive"] }
+wincode = { version = "0.6", default-features = false, features = ["derive"] }
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
 sha2 = "0.10"
