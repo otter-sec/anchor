@@ -152,6 +152,7 @@ impl<'a> TypeLowerer<'a> {
                             "kind": "const",
                             "value": quote!(#expr).to_string().replace(' ', ""),
                         })),
+                        syn::GenericArgument::Lifetime(_) => {}
                         unsupported => panic!(
                             "unsupported generic argument in IDL type `{}`: {}",
                             segment.ident,
