@@ -871,6 +871,42 @@ fn has_cfg_attrs(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(is_cfg_control_attr)
 }
 
+/// The predicates of every `#[cfg(..)]` in `attrs` as one `all(..)`, or `None`
+/// when there are none.
+fn cfg_predicate(attrs: &[syn::Attribute]) -> Option<TokenStream2> {
+    let predicates: Vec<_> = attrs
+        .iter()
+        .filter(|attr| is_cfg_control_attr(attr))
+        .filter_map(|attr| attr.meta.require_list().ok().map(|list| &list.tokens))
+        .collect();
+    (!predicates.is_empty()).then(|| quote! { all(#(#predicates),*) })
+}
+
+/// One re-export per Accounts struct, gated by the `cfg` of the handlers that
+/// use it: ungated when any of them is ungated, else `any` of their `cfg`s.
+fn dedupe_reexports<'a>(
+    codegen: &'a [HandlerCodegen],
+    reexport: impl Fn(&'a HandlerCodegen) -> &'a TokenStream2,
+) -> Vec<TokenStream2> {
+    let mut seen = std::collections::HashSet::new();
+    codegen
+        .iter()
+        .filter(|c| seen.insert(c.accounts_type_name.as_str()))
+        .map(|c| {
+            let tokens = reexport(c);
+            let predicates: Option<Vec<_>> = codegen
+                .iter()
+                .filter(|other| other.accounts_type_name == c.accounts_type_name)
+                .map(|other| other.cfg_predicate.as_ref())
+                .collect();
+            match predicates {
+                Some(predicates) => quote! { #[cfg(any(#(#predicates),*))] #tokens },
+                None => quote! { #tokens },
+            }
+        })
+        .collect()
+}
+
 fn handler_wrapper_inline_attr(attrs: &[syn::Attribute]) -> syn::Attribute {
     attrs
         .iter()
@@ -4994,6 +5030,9 @@ struct HandlerCodegen {
     /// Name of the Accounts struct (e.g. `MutateItemList`). Used to dedupe
     /// `accounts::*` re-exports when multiple handlers share the same Accounts.
     accounts_type_name: String,
+    /// The handler's `#[cfg]` predicates as one `all(..)`, or `None` when the
+    /// handler has none. Gates the deduped account re-exports.
+    cfg_predicate: Option<TokenStream2>,
     idl_name: String,
     idl_disc: String,
     idl_args: TokenStream2,
@@ -5030,6 +5069,7 @@ impl HandlerCodegen {
             cpi_wrapper: quote! {},
             cpi_accounts_reexport: quote! {},
             accounts_type_name: String::new(),
+            cfg_predicate: None,
             idl_name: fn_name.to_string(),
             idl_disc: "[]".to_string(),
             idl_args: quote! { "[]" },
@@ -5498,8 +5538,7 @@ fn process_handler(
     let resolved_type =
         syn::Ident::new(&format!("{accounts_ident}Resolved"), accounts_ident.span());
     let accounts_reexport = quote! {
-        pub use #client_mod::#accounts_ident;
-        pub use #client_mod::#resolved_type;
+        pub use #client_mod::{#accounts_ident, #resolved_type};
     };
 
     // CPI accounts re-export — `__cpi_accounts_<lowercase>` is emitted by
@@ -5596,6 +5635,7 @@ fn process_handler(
         cpi_wrapper,
         cpi_accounts_reexport,
         accounts_type_name: quote! { #accounts_path }.to_string(),
+        cfg_predicate: cfg_predicate(&handler.attrs),
         idl_name: fn_name_str,
         idl_disc: idl::disc_json(&disc_bytes_for_idl),
         idl_args: idl::build_args_json(&extra_args),
@@ -5689,22 +5729,8 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
     let instruction_structs: Vec<_> = codegen.iter().map(|c| &c.instruction_struct).collect();
     // Dedupe `accounts` re-exports: multiple handlers sharing the same
     // Accounts struct would otherwise emit duplicate `pub use` statements.
-    let accounts_reexports: Vec<_> = {
-        let mut seen = std::collections::HashSet::new();
-        codegen
-            .iter()
-            .filter(|c| seen.insert(c.accounts_type_name.clone()))
-            .map(|c| &c.accounts_reexport)
-            .collect()
-    };
-    let cpi_accounts_reexports: Vec<_> = {
-        let mut seen = std::collections::HashSet::new();
-        codegen
-            .iter()
-            .filter(|c| seen.insert(c.accounts_type_name.clone()))
-            .map(|c| &c.cpi_accounts_reexport)
-            .collect()
-    };
+    let accounts_reexports = dedupe_reexports(&codegen, |c| &c.accounts_reexport);
+    let cpi_accounts_reexports = dedupe_reexports(&codegen, |c| &c.cpi_accounts_reexport);
     let cpi_wrappers: Vec<_> = codegen.iter().map(|c| &c.cpi_wrapper).collect();
     let idl_instruction_entries: Vec<_> = codegen
         .iter()
@@ -7427,6 +7453,75 @@ mod tests {
         assert!(
             err.to_string().contains("only supported with"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn account_reexports_follow_the_cfg_of_their_handlers() {
+        let module: syn::ItemMod = syn::parse_quote! {
+            pub mod my_program {
+                use super::*;
+
+                pub fn always(ctx: &mut Context<Always>) -> Result<()> {
+                    let _ = ctx;
+                    Ok(())
+                }
+
+                #[cfg(feature = "extra")]
+                pub fn extra(ctx: &mut Context<Extra>) -> Result<()> {
+                    let _ = ctx;
+                    Ok(())
+                }
+
+                #[cfg(feature = "a")]
+                pub fn gated_a(ctx: &mut Context<SharedGated>) -> Result<()> {
+                    let _ = ctx;
+                    Ok(())
+                }
+
+                #[cfg(feature = "b")]
+                pub fn gated_b(ctx: &mut Context<SharedGated>) -> Result<()> {
+                    let _ = ctx;
+                    Ok(())
+                }
+
+                #[cfg(feature = "a")]
+                pub fn mixed_gated(ctx: &mut Context<SharedMixed>) -> Result<()> {
+                    let _ = ctx;
+                    Ok(())
+                }
+
+                pub fn mixed_open(ctx: &mut Context<SharedMixed>) -> Result<()> {
+                    let _ = ctx;
+                    Ok(())
+                }
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Executable,
+            program_id: syn::parse_quote!(crate::ID),
+        };
+
+        let generated = impl_program(&module, &config).to_string();
+
+        for expected in [
+            "pub use super :: __client_accounts_always :: { Always , AlwaysResolved } ;",
+            "# [cfg (any (all (feature = \"extra\")))] pub use super :: __client_accounts_extra \
+             :: { Extra , ExtraResolved } ;",
+            "# [cfg (any (all (feature = \"extra\")))] pub use super :: super :: \
+             __cpi_accounts_extra :: Extra ;",
+            "# [cfg (any (all (feature = \"a\") , all (feature = \"b\")))] pub use super :: super \
+             :: __cpi_accounts_sharedgated :: SharedGated ;",
+        ] {
+            assert!(
+                generated.contains(expected),
+                "missing {expected}: {generated}"
+            );
+        }
+        // One ungated handler keeps a shared struct's re-export ungated.
+        assert!(
+            !generated.contains("# [cfg (any (all (feature = \"a\")))] pub use"),
+            "a shared struct's re-export was gated: {generated}"
         );
     }
 

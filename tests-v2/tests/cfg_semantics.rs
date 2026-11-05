@@ -28,6 +28,7 @@ anchor-lang = {{ path = "{}" }}
 
 [features]
 idl-build = []
+cpi = []
 extra = []
 live = []
 
@@ -52,10 +53,14 @@ live = []
 }
 
 fn compile_pass_case(name: &str, source: &str) {
-    let output = cargo_case(name, source, "check", &[]);
+    check_pass_case(name, source, &[]);
+}
+
+fn check_pass_case(name: &str, source: &str, features: &[&str]) {
+    let output = cargo_case(name, source, "check", features);
     assert!(
         output.status.success(),
-        "{name} failed to compile\n\nstdout:\n{}\n\nstderr:\n{}",
+        "{name} failed to compile with {features:?}\n\nstdout:\n{}\n\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
@@ -98,6 +103,43 @@ pub mod gated_program {
 pub struct Noop {}
 "#,
     );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
+fn cfg_gated_handler_with_cfg_gated_accounts_compiles_in_every_build() {
+    let source = r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+pub mod gated_accounts_program {
+    use super::*;
+
+    pub fn always(_ctx: &mut Context<Always>) -> Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "extra")]
+    pub fn extra(_ctx: &mut Context<Extra>) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Always {}
+
+#[cfg(feature = "extra")]
+#[derive(Accounts)]
+pub struct Extra {}
+"#;
+    for features in [&[][..], &["cpi"], &["extra"], &["extra", "cpi"]] {
+        check_pass_case("tests_v2_cfg_gated_accounts", source, features);
+    }
 }
 
 #[test]

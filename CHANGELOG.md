@@ -18,6 +18,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang-v2: Gate a handler's account re-exports by its `#[cfg]`, so a gated handler with a gated accounts struct compiles with the feature off ([#5253](https://github.com/otter-sec/anchor/pull/5253)).
 - lang-v2: Stop inlining PDA and account-init scratch into the instruction handler ([#5204](https://github.com/otter-sec/anchor/pull/5204)).
 - ts: Reject a JS number that is not a safe integer when encoding `u64`, `i64`, `u128`, `i128`, `u256`, and `i256`. Pass a bigint for values outside ±(2^53 - 1) ([#5203](https://github.com/otter-sec/anchor/pull/5203)).
 - lang-v2: Keep Pod wrapper types (`PodU64`, `PodBool`, ..) in the IDL instead of lowering them to native types, so `declare_program!` generates zero-copy structs with correct program's layout ([#5170](https://github.com/otter-sec/anchor/pull/5170))
