@@ -171,6 +171,36 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
         Ok(())
     }
 
+    /// Compile-time companion to [`Self::check_alignment`]: the discriminator
+    /// length and the body type's alignment are both known statically, and
+    /// account data starts eight-byte aligned, so a discriminator that can
+    /// never leave the body aligned (e.g. one byte with a `u64` body) is a
+    /// build error instead of a load that fails on every call. Alignment
+    /// past eight bytes is capped at eight here because the account data
+    /// start is only guaranteed eight-byte aligned; the runtime check
+    /// still verifies the full alignment of the actual body pointer.
+    const ALIGNMENT_CHECK: () = {
+        let align = mem::align_of::<T>();
+        let align = if align > 8 { 8 } else { align };
+        assert!(
+            T::DISCRIMINATOR.len() % align == 0,
+            "AccountLoader body can never be aligned: discriminator length must be a multiple of \
+             the account type's alignment (capped at 8)"
+        );
+    };
+
+    fn check_alignment(&self, data: &[u8]) -> Result<()> {
+        let () = Self::ALIGNMENT_CHECK;
+        // `bytemuck::from_bytes` panics on a misaligned body, e.g. when a
+        // one-byte custom discriminator shifts the body off the eight-byte
+        // aligned account data start. Fail with a structured error instead.
+        let body = &data[T::DISCRIMINATOR.len()..];
+        if !(body.as_ptr() as usize).is_multiple_of(mem::align_of::<T>()) {
+            return Err(ErrorCode::AccountDidNotDeserialize.into());
+        }
+        Ok(())
+    }
+
     /// Returns a Ref to the account data structure for reading.
     pub fn load(&self) -> Result<Ref<'_, T>> {
         let data = self.acc_info.try_borrow_data()?;
@@ -185,6 +215,7 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
         }
 
         self.check_size(&data)?;
+        self.check_alignment(&data)?;
 
         Ok(Ref::map(data, |data| {
             bytemuck::from_bytes(&data[disc.len()..mem::size_of::<T>() + disc.len()])
@@ -211,6 +242,7 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
         }
 
         self.check_size(&data)?;
+        self.check_alignment(&data)?;
 
         Ok(RefMut::map(data, |data| {
             bytemuck::from_bytes_mut(
@@ -239,6 +271,8 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
         if has_disc {
             return Err(ErrorCode::AccountDiscriminatorAlreadySet.into());
         }
+
+        self.check_alignment(&data)?;
 
         Ok(RefMut::map(data, |data| {
             bytemuck::from_bytes_mut(
