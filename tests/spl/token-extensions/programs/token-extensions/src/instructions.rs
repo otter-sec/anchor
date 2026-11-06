@@ -1,7 +1,7 @@
 use {
     crate::{
         get_meta_list_size, get_mint_extensible_extension_data,
-        update_account_lamports_to_minimum_balance, META_LIST_ACCOUNT_SEED,
+        update_account_lamports_to_minimum_balance, TokenExtensionsError, META_LIST_ACCOUNT_SEED,
     },
     anchor_lang::{prelude::*, solana_program::entrypoint::ProgramResult},
     anchor_spl::{
@@ -11,12 +11,12 @@ use {
             spl_token_2022::extension::{
                 group_member_pointer::GroupMemberPointer, metadata_pointer::MetadataPointer,
                 mint_close_authority::MintCloseAuthority, pausable::PausableConfig,
-                permanent_delegate::PermanentDelegate, transfer_hook::TransferHook,
+                permanent_delegate::PermanentDelegate, transfer_hook::TransferHook, ExtensionType,
             },
         },
         token_2022_extensions::{self, solana_nullable::MaybeNull},
         token_interface::{
-            get_mint_extension_data, pausable_pause, pausable_resume,
+            get_mint_extension_data, get_mint_extension_types, pausable_pause, pausable_resume,
             spl_token_metadata_interface::state::{Field, TokenMetadata},
             token_metadata_initialize, token_metadata_remove_key, token_metadata_update_field,
             Mint, PausableToggle, Token2022, TokenAccount, TokenMetadataInitialize,
@@ -208,6 +208,23 @@ pub struct CheckMintExtensionConstraints<'info> {
         extensions::close_authority::authority = authority,
         extensions::permanent_delegate::delegate = authority,
         extensions::pausable::authority = authority,
+    )]
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
+}
+
+#[derive(Accounts)]
+pub struct CheckMintNoExtensions<'info> {
+    #[account(mut)]
+    /// CHECK: can be any account
+    pub authority: Signer<'info>,
+    #[account(
+        constraint = !get_mint_extension_types(&mint.to_account_info())?
+            .iter()
+            .any(|extension_type| matches!(
+                extension_type,
+                ExtensionType::TransferFeeConfig | ExtensionType::PermanentDelegate
+            ))
+            @ TokenExtensionsError::MintHasExtensions
     )]
     pub mint: Box<InterfaceAccount<'info, Mint>>,
 }

@@ -101,3 +101,11 @@ pub fn get_mint_extension_data<T: Extension + Pod>(
     let extension_data = *mint_with_extension.get_extension::<T>()?;
     Ok(extension_data)
 }
+
+pub fn get_mint_extension_types(
+    account: &anchor_lang::solana_program::account_info::AccountInfo,
+) -> anchor_lang::Result<Vec<ExtensionType>> {
+    let data = account.try_borrow_data()?;
+    let state = StateWithExtensions::<spl_token_2022::state::Mint>::unpack(&data)?;
+    Ok(state.get_extension_types()?)
+}

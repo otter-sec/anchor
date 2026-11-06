@@ -12,6 +12,12 @@ pub use {instructions::*, utils::*};
 
 declare_id!("tKEkkQtgMXhdaz5NMTR3XbdUu215sZyHSj6Menvous1");
 
+#[error_code]
+pub enum TokenExtensionsError {
+    #[msg("Mint has extensions")]
+    MintHasExtensions,
+}
+
 #[program]
 pub mod token_extensions {
     use super::*;
@@ -26,6 +32,10 @@ pub mod token_extensions {
     pub fn check_mint_extensions_constraints(
         _ctx: Context<CheckMintExtensionConstraints>,
     ) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn check_mint_no_extensions(_ctx: Context<CheckMintNoExtensions>) -> Result<()> {
         Ok(())
     }
 

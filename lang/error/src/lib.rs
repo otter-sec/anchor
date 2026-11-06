@@ -229,7 +229,6 @@ pub enum ErrorCode {
     /// 2044 - A pausable extension authority constraint was violated
     #[msg("A pausable extension authority constraint was violated")]
     ConstraintMintPausableAuthority,
-
     // Require
     /// 2500 - A require expression was violated
     #[msg("A require expression was violated")]
