@@ -356,7 +356,9 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
     // Collect all mutable account fields without `dup` constraint that serialize on exit.
     // Only types that serialize on exit are included, as duplicate mutable accounts
     // are problematic due to double serialization (the second write overwrites the first).
-    // Types like UncheckedAccount, Signer, SystemAccount, AccountLoader, etc. don't serialize on exit
+    // Types like UncheckedAccount, Signer, SystemAccount, etc. don't serialize on exit.
+    // `AccountLoader` DOES serialize on exit (it writes the discriminator at offset 0), so it is
+    // included below.
     //
     // Pure-`init` accounts participate only when the struct has composite fields. A fresh
     // `init` account cannot collide with an already-initialized account, but it can collide
@@ -379,6 +381,7 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
                     crate::Ty::Account(_)
                     | crate::Ty::LazyAccount(_)
                     | crate::Ty::InterfaceAccount(_)
+                    | crate::Ty::AccountLoader(_)
                     | crate::Ty::Migration(_) => Some(f),
                     _ => None,
                 }
