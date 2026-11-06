@@ -60,15 +60,15 @@ fn validate_pda_seeds(seeds: &[&[u8]], max_seed_count: usize) -> Result<(), Prog
 /// account header fields, not the borrowed account data region.
 #[inline]
 pub(crate) fn transfer_lamports_unchecked(
-    from: &AccountView,
-    to: &AccountView,
+    from: AccountView,
+    to: AccountView,
     lamports: u64,
 ) -> Result<(), ProgramError> {
     let ix_data = encode_system_transfer(lamports);
     unsafe {
         let cpi_accounts: [pinocchio::cpi::CpiAccount; 2] = [
-            pinocchio::cpi::CpiAccount::from(from),
-            pinocchio::cpi::CpiAccount::from(to),
+            pinocchio::cpi::CpiAccount::from(&from),
+            pinocchio::cpi::CpiAccount::from(&to),
         ];
         let instruction = pinocchio::instruction::InstructionView {
             program_id: &pinocchio_system::ID,
@@ -450,8 +450,8 @@ fn signer_from_seeds<'a>(seeds: &'a [&'a [u8]]) -> pinocchio::cpi::Signer<'a, 'a
 
 #[doc(hidden)]
 pub fn create_account_with_signers(
-    payer: &AccountView,
-    target: &AccountView,
+    payer: AccountView,
+    target: AccountView,
     space: usize,
     owner: &Address,
     target_signer_seeds: Option<&[&[u8]]>,
@@ -467,7 +467,7 @@ pub fn create_account_with_signers(
     let (funding, payer_signer_seeds) = if current < required {
         (
             Some(pinocchio_system::instructions::Funding {
-                from: payer,
+                from: &payer,
                 lamports: required - current,
             }),
             payer_signer_seeds,
@@ -476,7 +476,7 @@ pub fn create_account_with_signers(
         (None, None)
     };
     let create = pinocchio_system::instructions::CreateAccountAllowPrefund {
-        to: target,
+        to: &target,
         space: space as u64,
         owner,
         funding,
@@ -503,8 +503,8 @@ pub fn create_account_with_signers(
 /// Create a new account via system program CPI (no PDA signing).
 #[inline(always)]
 pub fn create_account(
-    payer: &AccountView,
-    target: &AccountView,
+    payer: AccountView,
+    target: AccountView,
     space: usize,
     owner: &Address,
 ) -> Result<(), ProgramError> {
@@ -516,8 +516,8 @@ pub fn create_account(
 /// `seeds` should include the bump byte, e.g. `&[b"market", id.as_ref(), &[bump]]`.
 #[inline(always)]
 pub fn create_account_signed(
-    payer: &AccountView,
-    target: &AccountView,
+    payer: AccountView,
+    target: AccountView,
     space: usize,
     owner: &Address,
     seeds: &[&[u8]],
@@ -532,9 +532,9 @@ pub fn create_account_signed(
 /// Fails with `AccountBorrowFailed` while any borrow of the account's data is
 /// live.
 pub fn realloc_account(
-    account: &mut AccountView,
+    account: AccountView,
     new_space: usize,
-    payer: &AccountView,
+    payer: AccountView,
     zero: bool,
 ) -> Result<(), ProgramError> {
     account.check_borrow_mut()?;
@@ -550,9 +550,9 @@ pub fn realloc_account(
 /// The caller must hold the only borrow of the account's data and have no
 /// live reference into it.
 pub(crate) unsafe fn realloc_account_unchecked(
-    account: &mut AccountView,
+    mut account: AccountView,
     new_space: usize,
-    payer: &AccountView,
+    payer: AccountView,
     zero: bool,
 ) -> Result<(), ProgramError> {
     use pinocchio::Resize;
@@ -566,7 +566,7 @@ pub(crate) unsafe fn realloc_account_unchecked(
         let deficit = new_rent_minimum.saturating_sub(current_lamports);
         if deficit > 0 {
             require!(!payer_is_account, ProgramError::InvalidArgument);
-            transfer_lamports_unchecked(payer, &*account as &AccountView, deficit)?;
+            transfer_lamports_unchecked(payer, account, deficit)?;
         }
     } else if new_space < old_space {
         let old_rent_minimum = rent_exempt_lamports(old_space)?;
@@ -583,7 +583,7 @@ pub(crate) unsafe fn realloc_account_unchecked(
             // no-op transfer. Skip the lamport writes so we do not overwrite
             // the first write with the second and accidentally burn lamports.
             if !payer_is_account {
-                let mut payer_mut = *payer;
+                let mut payer_mut = payer;
                 // `checked_add` rather than `+`: overflow-checks is disabled in
                 // release builds, and this arithmetic is on user-supplied account
                 // lamports. The total SOL supply is bounded so overflow is

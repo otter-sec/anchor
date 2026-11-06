@@ -2441,7 +2441,7 @@ impl SlabSchema for BadHeader {
     const MIN_DATA_LEN: usize = 16;
 
     fn validate(
-        _view: &AccountView,
+        _view: AccountView,
         _data: &[u8],
     ) -> core::result::Result<(), ProgramError> {
         Ok(())
@@ -2482,7 +2482,7 @@ impl SlabSchema for BadHeader {
     const MIN_DATA_LEN: usize = 9;
 
     fn validate(
-        _view: &AccountView,
+        _view: AccountView,
         _data: &[u8],
     ) -> core::result::Result<(), ProgramError> {
         Ok(())
@@ -2523,7 +2523,7 @@ impl SlabSchema for GoodHeader {
     const MIN_DATA_LEN: usize = 8;
 
     fn validate(
-        _view: &AccountView,
+        _view: AccountView,
         _data: &[u8],
     ) -> core::result::Result<(), ProgramError> {
         Ok(())
@@ -2570,7 +2570,7 @@ impl SlabSchema for GoodHeader {
     const MIN_DATA_LEN: usize = 8;
 
     fn validate(
-        _view: &AccountView,
+        _view: AccountView,
         _data: &[u8],
     ) -> core::result::Result<(), ProgramError> {
         Ok(())

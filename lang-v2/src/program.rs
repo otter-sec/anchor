@@ -393,7 +393,7 @@ fn signers<'seeds>(signer_seeds: &'seeds [&'seeds [&'seeds [u8]]]) -> Vec<Signer
         .collect()
 }
 
-fn cpi_accounts<'a>(account_handles: &[CpiHandle<'a>]) -> Vec<MaybeUninit<CpiAccount<'a>>> {
+fn cpi_accounts<'a>(account_handles: &'a [CpiHandle<'a>]) -> Vec<MaybeUninit<CpiAccount<'a>>> {
     let mut accounts = Vec::with_capacity(account_handles.len());
     // SAFETY: `MaybeUninit<CpiAccount>` does not require initialization.
     unsafe { accounts.set_len(account_handles.len()) };

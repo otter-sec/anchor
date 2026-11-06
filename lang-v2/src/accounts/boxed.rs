@@ -112,8 +112,8 @@ impl<T: AccountInitialize> AccountInitialize for Box<T> {
     type Params<'a> = T::Params<'a>;
 
     fn create_and_initialize<'a>(
-        payer: &AccountView,
-        account: &AccountView,
+        payer: AccountView,
+        account: AccountView,
         space: usize,
         owner: &Address,
         params: &Self::Params<'a>,
