@@ -4,7 +4,7 @@ use {
     proc_macro2::TokenStream,
     quote::{quote, ToTokens},
     std::collections::HashMap,
-    syn::Result,
+    syn::{visit::Visit, Result},
 };
 
 /// Generate the IDL build impl for the Accounts struct.
@@ -452,27 +452,34 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
     }
 }
 
-/// Whether the seed mentions an instruction argument or an account, e.g.
+/// Whether the seed uses an instruction argument or an account, e.g. `args` in
 /// `hash(&args.name).to_bytes()`. Such seeds can't be evaluated as constants.
 fn references_locals(
     seed: &syn::Expr,
     args: &HashMap<String, String>,
     accounts: &AccountsStruct,
 ) -> bool {
-    fn contains(tokens: TokenStream, names: &[String]) -> bool {
-        tokens.into_iter().any(|token| match token {
-            proc_macro2::TokenTree::Ident(ident) => names.iter().any(|name| ident == name),
-            proc_macro2::TokenTree::Group(group) => contains(group.stream(), names),
-            _ => false,
-        })
+    struct LocalFinder {
+        names: Vec<String>,
+        found: bool,
     }
 
-    let names = args
-        .keys()
-        .cloned()
-        .chain(accounts.field_names())
-        .collect::<Vec<_>>();
-    contains(seed.to_token_stream(), &names)
+    impl<'ast> Visit<'ast> for LocalFinder {
+        fn visit_expr_path(&mut self, expr_path: &'ast syn::ExprPath) {
+            // Locals are bare identifiers, so e.g. `system_program::ID` doesn't
+            // use the `system_program` account
+            if let Some(ident) = expr_path.path.get_ident() {
+                self.found |= self.names.iter().any(|name| ident == name);
+            }
+        }
+    }
+
+    let mut finder = LocalFinder {
+        names: args.keys().cloned().chain(accounts.field_names()).collect(),
+        found: false,
+    };
+    finder.visit_expr(seed);
+    finder.found
 }
 
 /// Get the bytes of a string or byte string literal seed followed by

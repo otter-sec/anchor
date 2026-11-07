@@ -87,6 +87,10 @@ pub mod pda_derivation {
     ) -> Result<()> {
         Ok(())
     }
+
+    pub fn const_seed_with_account_name(_ctx: Context<ConstSeedWithAccountName>) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -310,6 +314,14 @@ fn name_seed(name: &str) -> u64 {
 
 fn value_seed(value: u64) -> Vec<u8> {
     value.to_le_bytes().to_vec()
+}
+
+// A constant seed whose path contains the name of an account
+#[derive(Accounts)]
+pub struct ConstSeedWithAccountName<'info> {
+    #[account(seeds = [anchor_lang::system_program::ID.as_ref()], bump)]
+    pub pda: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 #[account]

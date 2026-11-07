@@ -211,4 +211,8 @@ describe("typescript", () => {
       }
     });
   });
+
+  it("Can resolve constant seeds that contain an account name", async () => {
+    await program.methods.constSeedWithAccountName().rpc();
+  });
 });
