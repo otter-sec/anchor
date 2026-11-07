@@ -3,7 +3,8 @@ use {
     crate::{AccountField, AccountsStruct, ConstraintSeedsGroup, Field, InitKind, Ty},
     proc_macro2::TokenStream,
     quote::{quote, ToTokens},
-    syn::Result,
+    std::collections::HashMap,
+    syn::{visit::Visit, Result},
 };
 
 /// Generate the IDL build impl for the Accounts struct.
@@ -369,6 +370,13 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
                         }
                     )
                 })
+            } else if references_locals(seed, &args, accounts) {
+                // Arguments and accounts are not in scope where constant
+                // seeds are evaluated, so skip resolving this PDA instead
+                Err(syn::Error::new_spanned(
+                    seed,
+                    format!("Seed expression not supported: {seed:#?}"),
+                ))
             } else if call.method == "as_ref" && call.args.is_empty() {
                 // On e.g. a `&str` const, `.as_ref()` alone is ambiguous
                 // (E0282), so pick `AsRef<[u8]>` like the seeds slice does
@@ -442,6 +450,36 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
             format!("Unexpected seed: {seed:?}"),
         )),
     }
+}
+
+/// Whether the seed uses an instruction argument or an account, e.g. `args` in
+/// `hash(&args.name).to_bytes()`. Such seeds can't be evaluated as constants.
+fn references_locals(
+    seed: &syn::Expr,
+    args: &HashMap<String, String>,
+    accounts: &AccountsStruct,
+) -> bool {
+    struct LocalFinder {
+        names: Vec<String>,
+        found: bool,
+    }
+
+    impl<'ast> Visit<'ast> for LocalFinder {
+        fn visit_expr_path(&mut self, expr_path: &'ast syn::ExprPath) {
+            // Locals are bare identifiers, so e.g. `system_program::ID` doesn't
+            // use the `system_program` account
+            if let Some(ident) = expr_path.path.get_ident() {
+                self.found |= self.names.iter().any(|name| ident == name);
+            }
+        }
+    }
+
+    let mut finder = LocalFinder {
+        names: args.keys().cloned().chain(accounts.field_names()).collect(),
+        found: false,
+    };
+    finder.visit_expr(seed);
+    finder.found
 }
 
 /// Get the bytes of a string or byte string literal seed followed by
