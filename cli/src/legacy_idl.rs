@@ -10,7 +10,9 @@ use {
         cluster_url,
         compat::{solana_pubkey, solana_rpc_client, solana_transaction},
         config::{Config, ConfigOverride, WithPath},
-        create_client, no_dna_enabled, prepend_compute_unit_ix, with_workspace,
+        create_client,
+        fetch::MAX_IDL_BUFFER_BYTES,
+        no_dna_enabled, prepend_compute_unit_ix, with_workspace,
     },
     anchor_cli_macros::AbsolutePath,
     anchor_lang::{
@@ -242,16 +244,46 @@ fn fetch_idl(cfg_override: &ConfigOverride, idl_addr: Pubkey) -> Result<serde_js
         account = client.get_account(&idl_addr)?;
     }
 
-    // Cut off account discriminator.
-    let mut d: &[u8] = &account.data[IdlAccount::DISCRIMINATOR.len()..];
+    let json = decode_idl_account_data(&account.data)?;
+    serde_json::from_slice(&json).map_err(Into::into)
+}
+
+// Size of the `IdlAccount` header: discriminator + authority + `data_len` (u32).
+const IDL_ACCOUNT_HEADER_LEN: usize = 8 + 32 + 4;
+
+// Extracts and inflates the zlib-compressed IDL stored in a legacy `IdlAccount`.
+//
+// The account contents are controlled by the program's IDL authority, so both the declared
+// length and the decompressed size are untrusted. Decompression is capped at
+// `MAX_IDL_BUFFER_BYTES` so a small compressed payload cannot expand into an unbounded
+// allocation.
+fn decode_idl_account_data(data: &[u8]) -> Result<Vec<u8>> {
+    let mut d = data
+        .get(IdlAccount::DISCRIMINATOR.len()..)
+        .ok_or_else(|| anyhow!("IDL account data is too short"))?;
     let idl_account: IdlAccount = AnchorDeserialize::deserialize(&mut d)?;
 
-    let compressed_len: usize = idl_account.data_len.try_into().unwrap();
-    let compressed_bytes = &account.data[44..44 + compressed_len];
-    let mut z = ZlibDecoder::new(compressed_bytes);
-    let mut s = Vec::new();
-    z.read_to_end(&mut s)?;
-    serde_json::from_slice(&s[..]).map_err(Into::into)
+    let compressed_len = usize::try_from(idl_account.data_len)?;
+    let compressed_bytes = IDL_ACCOUNT_HEADER_LEN
+        .checked_add(compressed_len)
+        .and_then(|end| data.get(IDL_ACCOUNT_HEADER_LEN..end))
+        .ok_or_else(|| {
+            anyhow!(
+                "IDL account declares {compressed_len} bytes of data but only {} are available",
+                data.len().saturating_sub(IDL_ACCOUNT_HEADER_LEN)
+            )
+        })?;
+
+    let mut out = Vec::new();
+    // Read one byte past the cap so that hitting `MAX + 1` definitively signals overflow rather
+    // than a payload that legitimately ends on the boundary.
+    ZlibDecoder::new(compressed_bytes)
+        .take(MAX_IDL_BUFFER_BYTES as u64 + 1)
+        .read_to_end(&mut out)?;
+    if out.len() > MAX_IDL_BUFFER_BYTES {
+        bail!("Decompressed IDL data exceeds the maximum of {MAX_IDL_BUFFER_BYTES} bytes");
+    }
+    Ok(out)
 }
 
 fn get_idl_account(client: &RpcClient, idl_address: &Pubkey) -> Result<IdlAccount> {
@@ -856,4 +888,65 @@ fn print_idl_instruction(ix_name: &str, ix: &Instruction, idl_address: &Pubkey) 
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn idl_account_data(compressed: &[u8], declared_len: u32) -> Vec<u8> {
+        let mut data = IdlAccount::DISCRIMINATOR.to_vec();
+        data.extend_from_slice(&[0u8; 32]);
+        data.extend_from_slice(&declared_len.to_le_bytes());
+        data.extend_from_slice(compressed);
+        data
+    }
+
+    fn zlib(bytes: &[u8]) -> Vec<u8> {
+        let mut e = ZlibEncoder::new(Vec::new(), Compression::default());
+        e.write_all(bytes).unwrap();
+        e.finish().unwrap()
+    }
+
+    #[test]
+    fn decodes_valid_idl_account() {
+        let json = br#"{"name":"test"}"#;
+        let compressed = zlib(json);
+        let data = idl_account_data(&compressed, compressed.len() as u32);
+        assert_eq!(decode_idl_account_data(&data).unwrap(), json);
+    }
+
+    #[test]
+    fn accepts_payload_exactly_at_limit() {
+        let compressed = zlib(&vec![b' '; MAX_IDL_BUFFER_BYTES]);
+        let data = idl_account_data(&compressed, compressed.len() as u32);
+        assert_eq!(
+            decode_idl_account_data(&data).unwrap().len(),
+            MAX_IDL_BUFFER_BYTES
+        );
+    }
+
+    #[test]
+    fn rejects_decompression_bomb() {
+        let compressed = zlib(&vec![b' '; MAX_IDL_BUFFER_BYTES + 1]);
+        let data = idl_account_data(&compressed, compressed.len() as u32);
+        let err = decode_idl_account_data(&data).unwrap_err();
+        assert!(err.to_string().contains("exceeds the maximum"), "{err}");
+    }
+
+    #[test]
+    fn rejects_declared_length_past_account_end() {
+        let compressed = zlib(b"{}");
+        let data = idl_account_data(&compressed, compressed.len() as u32 + 1);
+        assert!(decode_idl_account_data(&data).is_err());
+
+        let data = idl_account_data(&compressed, u32::MAX);
+        assert!(decode_idl_account_data(&data).is_err());
+    }
+
+    #[test]
+    fn rejects_truncated_account() {
+        assert!(decode_idl_account_data(&[]).is_err());
+        assert!(decode_idl_account_data(&IdlAccount::DISCRIMINATOR[..4]).is_err());
+    }
 }
