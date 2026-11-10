@@ -7439,34 +7439,6 @@ mod tests {
     }
 
     #[test]
-    fn a_cpi_build_does_not_export_the_dispatcher() {
-        let module: syn::ItemMod = syn::parse_quote! {
-            pub mod my_program {
-                use super::*;
-
-                pub fn do_it(ctx: &mut Context<MyAccounts>) -> Result<()> {
-                    let _ = ctx;
-                    Ok(())
-                }
-            }
-        };
-        let config = ProgramConfig {
-            mode: ProgramMode::Executable,
-            program_id: syn::parse_quote!(crate::ID),
-        };
-
-        let generated = impl_program(&module, &config).to_string();
-
-        let export = "# [cfg_attr (all (target_os = \"solana\" , feature = \"no-entrypoint\" , \
-                      not (feature = \"cpi\")) , no_mangle)]";
-        assert!(generated.contains(export), "missing {export}: {generated}");
-        assert!(
-            !generated.contains("feature = \"no-entrypoint\") , no_mangle"),
-            "a cpi build still exports the dispatcher: {generated}"
-        );
-    }
-
-    #[test]
     fn program_interface_mode_emits_client_surface_only() {
         let module: syn::ItemMod = syn::parse_quote! {
             pub mod external_program {

@@ -47,6 +47,7 @@ foreign-borsh-account = { path = "programs/foreign-borsh-account" }
 init-space-usability = { path = "programs/init-space-usability" }
 ix-macro = { path = "programs/ix-macro" }
 min-ix-data-len = { path = "programs/min-ix-data-len" }
+nested-caller = { path = "programs/nested-caller", features = ["cpi"] }
 optional-accounts = { path = "programs/optional-accounts" }
 program-interface = { path = "programs/program-interface", features = ["cpi"] }
 seeds = { path = "programs/seeds", features = ["idl-build"] }
