@@ -297,6 +297,12 @@ pub struct SeedArgs {
     pub name: String,
 }
 
+macro_rules! name_bytes {
+    ($args:expr) => {
+        $args.name.as_bytes()
+    };
+}
+
 // https://github.com/otter-sec/anchor/issues/3209
 // https://github.com/otter-sec/anchor/issues/2903
 #[derive(Accounts)]
@@ -306,6 +312,8 @@ pub struct SeedFnWithArgs<'info> {
     pub name_pda: UncheckedAccount<'info>,
     #[account(seeds = [value_seed(value).as_slice()], bump)]
     pub value_pda: UncheckedAccount<'info>,
+    #[account(seeds = [name_bytes!(args).as_ref()], bump)]
+    pub macro_pda: UncheckedAccount<'info>,
 }
 
 fn name_seed(name: &str) -> u64 {

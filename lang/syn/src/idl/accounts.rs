@@ -1,7 +1,7 @@
 use {
     super::common::{get_idl_module_path, get_no_docs},
     crate::{AccountField, AccountsStruct, ConstraintSeedsGroup, Field, InitKind, Ty},
-    proc_macro2::TokenStream,
+    proc_macro2::{TokenStream, TokenTree},
     quote::{quote, ToTokens},
     std::collections::HashMap,
     syn::{visit::Visit, Result},
@@ -464,12 +464,39 @@ fn references_locals(
         found: bool,
     }
 
+    impl LocalFinder {
+        fn is_local(&self, ident: &syn::Ident) -> bool {
+            self.names.iter().any(|name| ident == name)
+        }
+
+        fn has_local(&self, tokens: TokenStream) -> bool {
+            tokens.into_iter().any(|token| match token {
+                TokenTree::Ident(ident) => self.is_local(&ident),
+                TokenTree::Group(group) => self.has_local(group.stream()),
+                _ => false,
+            })
+        }
+    }
+
     impl<'ast> Visit<'ast> for LocalFinder {
         fn visit_expr_path(&mut self, expr_path: &'ast syn::ExprPath) {
             // Locals are bare identifiers, so e.g. `system_program::ID` doesn't
             // use the `system_program` account
             if let Some(ident) = expr_path.path.get_ident() {
-                self.found |= self.names.iter().any(|name| ident == name);
+                self.found |= self.is_local(ident);
+            }
+        }
+
+        fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+            // Macro arguments are unparsed tokens. Check them like the rest of
+            // the seed if they are expressions, e.g. `helper!(args)`, and
+            // otherwise count any identifier that names a local
+            let exprs = mac.parse_body_with(
+                syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated,
+            );
+            match exprs {
+                Ok(exprs) => exprs.iter().for_each(|expr| self.visit_expr(expr)),
+                Err(_) => self.found |= self.has_local(mac.tokens.clone()),
             }
         }
     }
@@ -702,6 +729,49 @@ mod tests {
                 const_seed_expr(&seed).to_token_stream().to_string(),
                 expected.to_token_stream().to_string(),
             );
+        }
+    }
+
+    /// Call `references_locals` for an accounts struct with the arguments `args`
+    /// and `value` and the accounts `payer` and `system_program`.
+    fn seed_references_locals(seed: &syn::Expr) -> bool {
+        let accounts: AccountsStruct = parse_quote! {
+            #[instruction(args: SeedArgs, value: u64)]
+            pub struct Seeds<'info> {
+                pub payer: Signer<'info>,
+                pub system_program: Program<'info, System>,
+            }
+        };
+        let args = accounts.instruction_args().unwrap_or_default();
+        references_locals(seed, &args, &accounts)
+    }
+
+    #[test]
+    fn seeds_that_use_args_or_accounts_reference_locals() {
+        let seeds: [syn::Expr; 6] = [
+            parse_quote!(hash(&args.name).to_bytes()),
+            parse_quote!(value_seed(value).as_slice()),
+            parse_quote!(derive_seed(&payer.key()).as_ref()),
+            parse_quote!(helper!(args).as_ref()),
+            parse_quote!(helper!(args.name).as_ref()),
+            // Not a list of expressions, so any matching identifier counts
+            parse_quote!(vec![value as u8; 8].as_slice()),
+        ];
+        for seed in seeds {
+            assert!(seed_references_locals(&seed), "{}", seed.to_token_stream());
+        }
+    }
+
+    #[test]
+    fn seeds_that_only_share_a_name_with_locals_dont_reference_them() {
+        let seeds: [syn::Expr; 4] = [
+            parse_quote!(system_program::ID.as_ref()),
+            parse_quote!(CONFIG.value.to_le_bytes()),
+            parse_quote!(SEEDS.payer().as_ref()),
+            parse_quote!(helper!(system_program::ID).as_ref()),
+        ];
+        for seed in seeds {
+            assert!(!seed_references_locals(&seed), "{}", seed.to_token_stream());
         }
     }
 }
