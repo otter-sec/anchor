@@ -1,7 +1,7 @@
 //! Syntax highlighting for the source + instruction panes.
 //!
 //! Backed by [`syntect`] (Sublime-syntax engine, used by `bat`, `delta`,
-//! `gitui`) with [`two-face`] for grammar coverage.
+//! `gitui`) with [`two_face`] for grammar coverage.
 //! No tokenizer or grammar is implemented here — we don't ship any custom
 //! parsing logic.
 //!
@@ -133,7 +133,7 @@ pub fn highlight_asm(line: &str) -> Line<'static> {
     highlight_with(&ctx().asm_syntax, line)
 }
 
-/// Convert a [`syntect::highlighting::Style`] and some text to a [`ratatui::style::style`].
+/// Convert a [`syntect::highlighting::Style`] and some text to a [`ratatui::style::Style`].
 fn syntect_style_to_ratatui(style: syntect::highlighting::Style) -> ratatui::style::Style {
     fn translate_colour(
         syntect_color: syntect::highlighting::Color,

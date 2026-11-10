@@ -97,28 +97,7 @@ jobs:
             sleep $((attempt * 20))
           done
 
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        name: Cache AVM target
-        with:
-          path: avm-target/
-          key: cargo-target-${{ runner.os }}-downstream-avm-${{ hashFiles('avm-source/Cargo.lock', 'avm-source/avm/src/**', 'avm-source/avm/platform-tools-map.toml') }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-downstream-avm-
-
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        name: Cache ${{ matrix.name }} Cargo home
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: cargo-home-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.build_path)) }}
-          restore-keys: |
-            cargo-home-${{ runner.os }}-downstream-${{ matrix.directory }}-
-
       - name: Install AVM
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/avm-target
         run: |
           cargo install --path avm-source/avm --locked --force
           avm --version
@@ -154,16 +133,6 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
         shell: bash
 
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        name: Cache Solana Tool Suite
-        with:
-          path: |
-            ~/.cache/solana/
-            ~/.local/share/solana/
-          key: downstream-solana-${{ runner.os }}-v0002-${{ matrix.directory }}-${{ steps.solana.outputs.version }}
-          restore-keys: |
-            downstream-solana-${{ runner.os }}-v0002-${{ matrix.directory }}-
-
       - name: Install project Solana CLI
         working-directory: ${{ steps.project.outputs.path }}
         run: |
@@ -178,15 +147,6 @@ jobs:
 
       - run: solana-keygen new --no-bip39-passphrase
       - run: solana config set --url localhost
-
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        name: Cache ${{ matrix.name }} target
-        with:
-          path: ${{ matrix.build_path }}/target/
-          key: cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.build_path)) }}-${{ github.run_id }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.build_path)) }}-
-            cargo-target-${{ runner.os }}-downstream-${{ matrix.directory }}-
 
       - name: Build ${{ matrix.repository }}
         working-directory: ${{ matrix.build_path }}

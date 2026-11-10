@@ -153,7 +153,7 @@ impl<'a, C: Deref<Target = impl Signer> + Clone> RequestBuilder<'a, C, Arc<dyn T
     /// Build and sign a transaction.
     ///
     /// Note: This will use a transaction with the legacy transaction format. If you'd like to use
-    /// a different transaction format, use [`signed_transaction_versioned`].
+    /// a different transaction format, use [`Self::signed_transaction_versioned`].
     pub async fn signed_transaction(&self) -> Result<Transaction, ClientError> {
         self.signed_transaction_internal(TransactionVersion::Legacy)
             .await
@@ -210,7 +210,7 @@ let tx = request.signed_transaction_versioned(TransactionVersion::V1(config)).aw
     /// Send a transaction.
     ///
     /// Note: This will use a transaction with the legacy transaction format. If you'd like to use
-    /// a different transaction format, use [`send_versioned`].
+    /// a different transaction format, use [`Self::send_versioned`].
     pub async fn send(&self) -> Result<Signature, ClientError> {
         self.send_internal(TransactionVersion::Legacy).await
     }
@@ -263,7 +263,7 @@ let sig = request.send_versioned(TransactionVersion::V1(config)).await.unwrap();
     /// Send a transaction with spinner and config.
     ///
     /// Note: This will use a transaction with the legacy transaction format. If you'd like to use
-    /// a different transaction format, use [`send_with_spinner_and_config_versioned`].
+    /// a different transaction format, use [`Self::send_with_spinner_and_config_versioned`].
     pub async fn send_with_spinner_and_config(
         &self,
         config: RpcSendTransactionConfig,

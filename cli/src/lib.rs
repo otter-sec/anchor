@@ -403,6 +403,7 @@ pub enum Command {
         /// Run the test suites under the specified path
         #[clap(long)]
         run: Vec<String>,
+        #[allow(rustdoc::broken_intra_doc_links)]
         /// Name of the script to run from [scripts] section (defaults to "test")
         #[clap(long)]
         script: Option<String>,
@@ -595,6 +596,7 @@ pub enum Command {
     },
     /// Fetch and deserialize an account using the IDL provided.
     Account {
+        #[allow(rustdoc::invalid_html_tags)]
         /// Account struct to deserialize (format: <program_name>.<Account>)
         account_type: String,
         /// Address of the account to deserialize
@@ -652,6 +654,7 @@ pub enum Command {
         #[clap(subcommand)]
         subcmd: codama::CodamaCommand,
     },
+    #[allow(rustdoc::broken_intra_doc_links)]
     /// [DEPRECATED] Manage legacy on-chain IDL accounts.
     /// These commands interact with the old Anchor IDL instruction protocol and will be removed
     /// in a future release. Migrate to Program Metadata-based IDL management (`anchor idl`).
@@ -750,6 +753,9 @@ pub enum ProgramCommand {
         /// Send write transactions through RPC instead of TPU.
         #[clap(long)]
         use_rpc: bool,
+        /// If true, deploy from path target/verifiable
+        #[clap(short, long, conflicts_with = "program_filepath")]
+        verifiable: bool,
         /// Don't upload IDL during deployment (IDL is uploaded by default)
         #[clap(long)]
         no_idl: bool,
@@ -877,14 +883,15 @@ pub enum ProgramCommand {
         bypass_warning: bool,
     },
     /// Extend the length of an upgradeable program
+    // Allows Clap to accept the missing `program_id` arg.
+    #[clap(allow_missing_positional = true)]
     Extend {
-        /// Program id to extend.
-        /// If not provided, discovers program from workspace using program_name
+        /// Program ID to extend.
         program_id: Option<Pubkey>,
-        /// Program name to extend (from workspace). Used when program_id is not provided
+        /// Workspace program name to extend when program_id is not provided.
         #[clap(short, long)]
         program_name: Option<String>,
-        /// Additional bytes to allocate
+        /// Additional bytes to allocate.
         additional_bytes: usize,
     },
 }
@@ -940,6 +947,9 @@ pub enum IdlCommand {
     /// Generates the IDL for the program using the compilation method.
     #[clap(alias = "b")]
     Build {
+        /// Build the IDL for all programs in the workspace
+        #[clap(long, conflicts_with = "program_name")]
+        workspace: bool,
         // Program name to build the IDL of(current dir's program if not specified)
         #[clap(short, long)]
         program_name: Option<String>,
@@ -3355,6 +3365,7 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             )
         }
         IdlCommand::Build {
+            workspace,
             program_name,
             out,
             out_ts,
@@ -3363,6 +3374,7 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             cargo_args,
         } => idl_build(
             cfg_override,
+            workspace,
             program_name,
             out,
             out_ts,
@@ -3546,8 +3558,71 @@ fn idl_upgrade(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+fn idl_build_program(
+    cfg: &WithPath<Config>,
+    program_path: &Path,
+    out: Option<&Path>,
+    out_ts: Option<&Path>,
+    is_workspace: bool,
+    skip_lint: bool,
+    no_docs: bool,
+    cargo_args: &[String],
+) -> Result<()> {
+    let cur_dir = std::env::current_dir()?;
+    std::env::set_current_dir(program_path)?;
+    let idl = generate_idl(cfg, skip_lint, no_docs, cargo_args)?;
+    std::env::set_current_dir(cur_dir)?;
+
+    if is_workspace {
+        let cfg_parent = cfg.path().parent().expect("Invalid Anchor.toml");
+        let idl_dir = out
+            .map(PathBuf::from)
+            .unwrap_or_else(|| cfg_parent.join(&cfg.workspace.idls));
+        fs::create_dir_all(&idl_dir)?;
+        let json_path = idl_dir.join(&idl.metadata.name).with_extension("json");
+        write_idl(&idl, OutFile::File(json_path))?;
+
+        let ts_dir = out_ts
+            .map(PathBuf::from)
+            .unwrap_or_else(|| cfg_parent.join(&cfg.workspace.types));
+        fs::create_dir_all(&ts_dir)?;
+        let ts_path = ts_dir.join(&idl.metadata.name).with_extension("ts");
+        fs::write(&ts_path, idl_ts(&idl)?)?;
+
+        let types_dir = if cfg.workspace.types.is_empty() {
+            None
+        } else {
+            Some(cfg_parent.join(&cfg.workspace.types))
+        };
+        if let Some(ts_out_parent) = ts_path.parent() {
+            write_error_constants_file(&idl, ts_out_parent, types_dir)?;
+        }
+    } else {
+        let out_file = match out {
+            Some(path) => OutFile::File(path.to_path_buf()),
+            None => OutFile::Stdout,
+        };
+        write_idl(&idl, out_file)?;
+
+        if let Some(ts_path) = out_ts {
+            if let Some(parent) = ts_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(ts_path, idl_ts(&idl)?)?;
+
+            let ts_out_parent = ts_path.parent().unwrap_or_else(|| Path::new("."));
+            write_error_constants_file(&idl, ts_out_parent, None)?;
+        }
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn idl_build(
     cfg_override: &ConfigOverride,
+    workspace: bool,
     program_name: Option<String>,
     out: Option<String>,
     out_ts: Option<String>,
@@ -3557,6 +3632,28 @@ fn idl_build(
 ) -> Result<()> {
     let cfg = Config::discover(cfg_override)?
         .ok_or_else(|| anyhow!("The 'anchor idl build' command requires an Anchor workspace."))?;
+
+    if workspace {
+        let programs = get_metadata_ordered_program_list(&cfg)?;
+        let idl_out_dir = out.as_deref().map(Path::new);
+        let ts_out_dir = out_ts.as_deref().map(Path::new);
+
+        for program_path in programs {
+            idl_build_program(
+                &cfg,
+                &program_path,
+                idl_out_dir,
+                ts_out_dir,
+                true,
+                skip_lint,
+                no_docs,
+                &cargo_args,
+            )?;
+        }
+
+        return Ok(());
+    }
+
     let current_dir = std::env::current_dir()?;
     let program_path = match program_name {
         Some(name) => cfg.get_program(&name)?.path,
@@ -3573,25 +3670,59 @@ fn idl_build(
             }
         }
     };
-    std::env::set_current_dir(program_path)?;
-    let idl = generate_idl(&cfg, skip_lint, no_docs, &cargo_args)?;
-    std::env::set_current_dir(current_dir)?;
 
-    let out = match out {
-        Some(path) => OutFile::File(PathBuf::from(path)),
-        None => OutFile::Stdout,
-    };
-    write_idl(&idl, out)?;
+    idl_build_program(
+        &cfg,
+        &program_path,
+        out.as_deref().map(Path::new),
+        out_ts.as_deref().map(Path::new),
+        false,
+        skip_lint,
+        no_docs,
+        &cargo_args,
+    )
+}
 
-    if let Some(path) = out_ts {
-        let ts_out_dir = PathBuf::from(&path);
-        fs::write(path, idl_ts(&idl)?)?;
-        // Generate error constants file if errors exist
-        let ts_out_parent = ts_out_dir.parent().unwrap_or_else(|| Path::new("."));
-        write_error_constants_file(&idl, ts_out_parent, None)?;
+/// Filters out `cargo build-sbf` specific arguments that are not accepted by `cargo test` when generating IDLs.
+fn filter_cargo_args_for_idl(args: &[String]) -> Vec<String> {
+    let build_sbf_flags_with_val = ["--arch", "--tools-version", "--sbf-out-dir", "--sbf-sdk"];
+    let build_sbf_flags = [
+        "--debug",
+        "--dump",
+        "--force-tools-install",
+        "--generate-child-script-on-failure",
+        "--disable-remap-cwd",
+    ];
+
+    let mut filtered = Vec::new();
+    let mut skip_next = false;
+
+    for arg in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+
+        if build_sbf_flags.iter().any(|&f| f == arg) {
+            continue;
+        }
+
+        if build_sbf_flags_with_val.iter().any(|&f| f == arg) {
+            skip_next = true;
+            continue;
+        }
+
+        if build_sbf_flags_with_val.iter().any(|&f| {
+            arg.strip_prefix(f)
+                .is_some_and(|rest| rest.starts_with('='))
+        }) {
+            continue;
+        }
+
+        filtered.push(arg.clone());
     }
 
-    Ok(())
+    filtered
 }
 
 /// Generate IDL with method decided by whether manifest file has `idl-build` feature or not.
@@ -3603,11 +3734,13 @@ fn generate_idl(
 ) -> Result<Idl> {
     check_idl_build_feature()?;
 
+    let cargo_args = filter_cargo_args_for_idl(cargo_args);
+
     let idl = anchor_lang_idl::build::IdlBuilder::new()
         .resolution(cfg.features.resolution)
         .skip_lint(cfg.features.skip_lint || skip_lint)
         .no_docs(no_docs)
-        .cargo_args(cargo_args.into())
+        .cargo_args(cargo_args)
         .build()?;
 
     // Warn users if there is a potential for a conflict between user-defined discriminators and
@@ -6437,6 +6570,7 @@ fn deploy(
                 None,  // buffer
                 None,  // max_len
                 false, // use_rpc
+                verifiable,
                 no_idl,
                 security_metadata,
                 false, // make_final
@@ -7692,6 +7826,39 @@ mod tests {
     }
 
     #[test]
+    fn test_program_extend_accepts_explicit_id_or_workspace_program() {
+        for args in [
+            vec![
+                "anchor",
+                "program",
+                "extend",
+                "11111111111111111111111111111111",
+                "1024",
+            ],
+            vec![
+                "anchor",
+                "program",
+                "extend",
+                "--program-name",
+                "demo",
+                "1024",
+            ],
+        ] {
+            let opts = Opts::try_parse_from(args).unwrap();
+            let Command::Program {
+                subcmd:
+                    ProgramCommand::Extend {
+                        additional_bytes, ..
+                    },
+            } = opts.command
+            else {
+                panic!("expected program extend");
+            };
+            assert_eq!(additional_bytes, 1024);
+        }
+    }
+
+    #[test]
     fn test_new_accepts_anchor_version() {
         let opts =
             Opts::try_parse_from(["anchor", "new", "example", "--anchor-version", "v2"]).unwrap();
@@ -7832,6 +7999,51 @@ mod tests {
             panic!("expected localnet command");
         };
         assert_eq!(validator, ValidatorType::Surfpool);
+    }
+
+    fn parse_program_deploy_verifiable(args: &[&str]) -> bool {
+        let opts = Opts::try_parse_from(args).unwrap();
+        let Command::Program {
+            subcmd: ProgramCommand::Deploy { verifiable, .. },
+        } = opts.command
+        else {
+            panic!("expected program deploy command");
+        };
+        verifiable
+    }
+
+    #[test]
+    fn test_program_deploy_verifiable_flag() {
+        assert!(!parse_program_deploy_verifiable(&[
+            "anchor", "program", "deploy"
+        ]));
+        assert!(parse_program_deploy_verifiable(&[
+            "anchor",
+            "program",
+            "deploy",
+            "--verifiable",
+        ]));
+        assert!(parse_program_deploy_verifiable(&[
+            "anchor",
+            "program",
+            "deploy",
+            "--program-name",
+            "foo",
+            "-v",
+        ]));
+    }
+
+    #[test]
+    fn test_program_deploy_verifiable_conflicts_with_filepath() {
+        let err = Opts::try_parse_from([
+            "anchor",
+            "program",
+            "deploy",
+            "target/deploy/foo.so",
+            "--verifiable",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     #[test]
@@ -8618,5 +8830,34 @@ mod tests {
         assert!(result.contains("  JsonError: 6003"));
         assert!(result
             .contains("export type TestProgramErrorName = keyof typeof TestProgramErrorCode;"));
+    }
+
+    #[test]
+    fn test_filter_cargo_args_for_idl() {
+        let args = vec![
+            "--debug".to_string(),
+            "--features".to_string(),
+            "my-feature".to_string(),
+            "--arch".to_string(),
+            "v2".to_string(),
+            "--no-default-features".to_string(),
+            "--tools-version".to_string(),
+            "v1.57".to_string(),
+            "--dump".to_string(),
+            "--sbf-out-dir=/tmp/sbf".to_string(),
+            "--features=other-feature".to_string(),
+        ];
+
+        let filtered = filter_cargo_args_for_idl(&args);
+
+        assert_eq!(
+            filtered,
+            vec![
+                "--features".to_string(),
+                "my-feature".to_string(),
+                "--no-default-features".to_string(),
+                "--features=other-feature".to_string(),
+            ]
+        );
     }
 }

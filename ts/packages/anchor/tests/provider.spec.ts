@@ -54,32 +54,69 @@ describe("AnchorProvider transaction-v1 support", () => {
     });
   });
 
-  it("looks up failed version 1 transactions with version 1 support", async () => {
-    const transaction = VersionedTransaction.deserialize(V1_TRANSACTION);
-    jest.spyOn(transaction, "serialize").mockReturnValue(new Uint8Array());
-    const signature = "mocked-signature";
-    const connection = {
-      commitment: "processed",
-      sendRawTransaction: jest.fn().mockResolvedValue(signature),
-      confirmTransaction: jest.fn().mockResolvedValue({
-        value: { err: { InstructionError: [0, "Custom"] } },
-      }),
-      getTransaction: jest.fn().mockResolvedValue({
-        meta: { logMessages: ["Program failed"] },
-      }),
-    } as unknown as Connection;
-    const wallet = {
-      publicKey: PublicKey.default,
-      signTransaction: jest.fn().mockImplementation(async (tx) => tx),
-    } as unknown as Wallet;
-    const provider = new AnchorProvider(connection, wallet);
+  describe.each(["sendAndConfirm", "sendAll"] as const)("%s", (method) => {
+    it.each([
+      "returned error",
+      "rejected object",
+      "rejected string",
+      "transport error",
+    ])("handles a %s during confirmation", async (outcome) => {
+      const transaction = VersionedTransaction.deserialize(V1_TRANSACTION);
+      jest.spyOn(transaction, "serialize").mockReturnValue(new Uint8Array());
+      const signature = "mocked-signature";
+      const transactionError =
+        outcome === "rejected string"
+          ? "AccountNotFound"
+          : { InstructionError: [0, { Custom: 2002 }] };
+      const transportError = new Error("RPC unavailable");
+      const confirmTransaction = jest.fn();
+      if (outcome === "returned error") {
+        confirmTransaction.mockResolvedValue({
+          value: { err: transactionError },
+        });
+      } else {
+        confirmTransaction.mockRejectedValue(
+          outcome === "transport error" ? transportError : transactionError
+        );
+      }
+      const logs = ["Program failed"];
+      const connection = {
+        commitment: "processed",
+        sendRawTransaction: jest.fn().mockResolvedValue(signature),
+        confirmTransaction,
+        getTransaction: jest.fn().mockResolvedValue({
+          meta: { logMessages: logs },
+        }),
+      } as unknown as Connection;
+      const wallet = {
+        publicKey: PublicKey.default,
+        signTransaction: jest.fn().mockImplementation(async (tx) => tx),
+        signAllTransactions: jest.fn().mockImplementation(async (txs) => txs),
+      } as unknown as Wallet;
+      const provider = new AnchorProvider(connection, wallet);
+      const sent =
+        method === "sendAndConfirm"
+          ? provider.sendAndConfirm(transaction)
+          : provider.sendAll([{ tx: transaction }]);
 
-    await expect(provider.sendAndConfirm(transaction)).rejects.toThrow(
-      `Raw transaction ${signature} failed`
-    );
-    expect(connection.getTransaction).toHaveBeenCalledWith(expect.any(String), {
-      commitment: "confirmed",
-      maxSupportedTransactionVersion: 1,
+      if (outcome === "transport error") {
+        await expect(sent).rejects.toBe(transportError);
+        expect(connection.getTransaction).not.toHaveBeenCalled();
+      } else {
+        await expect(sent).rejects.toMatchObject({
+          message: expect.stringContaining(
+            `Raw transaction ${signature} failed`
+          ),
+          logs,
+        });
+        expect(connection.getTransaction).toHaveBeenCalledWith(
+          expect.any(String),
+          {
+            commitment: "confirmed",
+            maxSupportedTransactionVersion: 1,
+          }
+        );
+      }
     });
   });
 });

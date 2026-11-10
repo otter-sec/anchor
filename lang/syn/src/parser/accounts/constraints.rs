@@ -1391,6 +1391,19 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
                 "init must be provided before associated token account token program",
             ));
         }
+        if self.program_seed.is_some() {
+            if c.if_needed {
+                return Err(ParseError::new(
+                    c.span(),
+                    "seeds::program cannot be used with init_if_needed",
+                ));
+            } else {
+                return Err(ParseError::new(
+                    c.span(),
+                    "seeds::program cannot be used with init",
+                ));
+            }
+        }
         self.init.replace(c);
         Ok(())
     }
@@ -1969,5 +1982,106 @@ mod tests {
         let expression = parse_raw_expression("constraint = my_field == 42");
 
         assert_eq!(expression.as_deref(), Some("my_field == 42"));
+    }
+
+    fn parse_accounts_error(accounts_struct: syn::ItemStruct) -> Option<String> {
+        crate::parser::accounts::parse(&accounts_struct)
+            .err()
+            .map(|error| error.to_string())
+    }
+
+    #[test]
+    fn rejects_seeds_program_before_init() {
+        let message = parse_accounts_error(syn::parse_quote! {
+            pub struct Initialize<'info> {
+                #[account(
+                    seeds = [b"data"],
+                    bump,
+                    seeds::program = other_program.key(),
+                    init,
+                    payer = payer,
+                    space = 8,
+                )]
+                pub data: Account<'info, Data>,
+                #[account(mut)]
+                pub payer: Signer<'info>,
+                pub other_program: UncheckedAccount<'info>,
+                pub system_program: Program<'info, System>,
+            }
+        });
+
+        assert_eq!(
+            message.as_deref(),
+            Some("seeds::program cannot be used with init")
+        );
+    }
+
+    #[test]
+    fn rejects_seeds_program_before_init_if_needed() {
+        let message = parse_accounts_error(syn::parse_quote! {
+            pub struct Initialize<'info> {
+                #[account(
+                    seeds = [b"data"],
+                    bump,
+                    seeds::program = other_program.key(),
+                    init_if_needed,
+                    payer = payer,
+                    space = 8,
+                )]
+                pub data: Account<'info, Data>,
+                #[account(mut)]
+                pub payer: Signer<'info>,
+                pub other_program: UncheckedAccount<'info>,
+                pub system_program: Program<'info, System>,
+            }
+        });
+
+        assert_eq!(
+            message.as_deref(),
+            Some("seeds::program cannot be used with init_if_needed")
+        );
+    }
+
+    #[test]
+    fn rejects_seeds_program_after_init() {
+        let message = parse_accounts_error(syn::parse_quote! {
+            pub struct Initialize<'info> {
+                #[account(
+                    init,
+                    payer = payer,
+                    space = 8,
+                    seeds = [b"data"],
+                    bump,
+                    seeds::program = other_program.key(),
+                )]
+                pub data: Account<'info, Data>,
+                #[account(mut)]
+                pub payer: Signer<'info>,
+                pub other_program: UncheckedAccount<'info>,
+                pub system_program: Program<'info, System>,
+            }
+        });
+
+        assert_eq!(
+            message.as_deref(),
+            Some("seeds::program cannot be used with init")
+        );
+    }
+
+    #[test]
+    fn accepts_seeds_program_without_init() {
+        let message = parse_accounts_error(syn::parse_quote! {
+            pub struct Read<'info> {
+                #[account(
+                    seeds = [b"data"],
+                    bump,
+                    seeds::program = other_program.key(),
+                )]
+                pub data: Account<'info, Data>,
+                pub other_program: UncheckedAccount<'info>,
+            }
+        });
+
+        assert_eq!(message, None);
     }
 }

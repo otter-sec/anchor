@@ -41,6 +41,8 @@ const NO_DNA_LEGACY_IDL_ERASE_AUTHORITY_ERROR: &str =
     "Cannot prompt for confirmation because NO_DNA is set. Re-run with --bypass-warning to erase \
      the IDL authority.";
 
+// Variant docs are CLI help, so [DEPRECATED] stays literal.
+#[allow(rustdoc::broken_intra_doc_links)]
 #[derive(Debug, Parser, AbsolutePath)]
 pub enum LegacyIdlCommand {
     /// [DEPRECATED] Close the legacy IDL account and recover rent.

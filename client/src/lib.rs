@@ -226,7 +226,7 @@ impl<C: Clone + Deref<Target = impl Signer>> Client<C> {
 }
 
 /// Auxiliary data structure to align the types of the Solana CLI utils with Anchor client.
-/// Client<C> implementation requires <C: Clone + Deref<Target = impl Signer>> which does not comply with Box<dyn Signer>
+/// `Client<C>` implementation requires `<C: Clone + Deref<Target = impl Signer>>` which does not comply with `Box<dyn Signer>`
 /// that's used when loaded Signer from keypair file. This struct is used to wrap the usage.
 pub struct DynSigner(pub Arc<dyn Signer>);
 
@@ -717,7 +717,7 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     /// Build the request into a transaction.
     ///
     /// Note: This will build a transaction with the legacy transaction format. If you'd like to use
-    /// a different transaction format, use [`transaction_versioned`].
+    /// a different transaction format, use [`Self::transaction_versioned`].
     pub fn transaction(&self) -> Transaction {
         let instructions = &self.instructions();
         Transaction::new_with_payer(instructions, Some(&self.payer.pubkey()))
