@@ -205,3 +205,7 @@ When the instruction is invoked, the PDA is printed to program logs:
 
 </Tab>
 </Tabs>
+
+<Callout variant="warning" title="Seeds the IDL can't describe">
+  The IDL can only describe seeds that are constants, instruction arguments, or account keys or fields. If any seed of an account is something else, such as a function call that takes an instruction argument (`hash(&args.name).to_bytes(){:rs}`) or a macro, the account's PDA is left out of the IDL and clients must pass its address explicitly.
+</Callout>
