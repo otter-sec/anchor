@@ -40,6 +40,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Generate `u256` and `i256` as `[u8; 32]` in `declare_program!`, so IDLs that use them compile ([#5224](https://github.com/otter-sec/anchor/pull/5224)).
 - idl: Fix legacy const seed conversion: string seeds no longer keep JSON quotes, and unsigned and signed integer and byte array seeds are supported ([#5127](https://github.com/otter-sec/anchor/pull/5127)).
 - lang: Return an error instead of panicking when an `AccountLoader` zero-copy body is misaligned, e.g. with a one-byte custom discriminator ([#5247](https://github.com/otter-sec/anchor/pull/5247)).
+- ts: Cap the decompressed size of on-chain IDLs in `decodeIdlAccount` and `Program.fetchIdl`, and reject IDLs that aren't UTF-8 encoded ([#5226](https://github.com/otter-sec/anchor/pull/5226)).
 - cli: Cap decompressed IDL size at 16 MiB in `anchor legacy-idl fetch`, and return an error instead of panicking when the account's declared IDL length exceeds its data ([#5261](https://github.com/otter-sec/anchor/pull/5261)).
 
 ### Breaking
