@@ -6250,8 +6250,9 @@ fn process_handler(
     let extra_arg_names: Vec<_> = extra_args.iter().map(|(n, _)| *n).collect();
     let (extra_arg_types, has_ref_args) = args_meta(&extra_args);
     let extra_arg_types = &extra_arg_types;
-    let has_dynamic_capacity = extra_arg_types.iter().any(uses_dynamic_capacity)
-        || return_type.as_ref().is_some_and(uses_dynamic_capacity);
+    let has_dynamic_arg_capacity = extra_arg_types.iter().any(uses_dynamic_capacity);
+    let has_dynamic_return_capacity = return_type.as_ref().is_some_and(uses_dynamic_capacity);
+    let has_dynamic_capacity = has_dynamic_arg_capacity || has_dynamic_return_capacity;
     let target_return_data_bound = return_type
         .as_ref()
         .and_then(bounded_serialized_len);
@@ -6393,10 +6394,17 @@ fn process_handler(
 
     // Client-side instruction struct.
     let ix_struct_name = syn::Ident::new(&to_camel_case(&fn_name_str), fn_name.span());
-    let (ix_lt_decl, ix_lt_use) = if has_ref_args {
-        (quote! { <'ix> }, quote! { <'ix> })
-    } else {
-        (quote! {}, quote! {})
+    let (ix_lt_decl, ix_lt_use) = match (has_ref_args, has_dynamic_arg_capacity) {
+        (true, true) => (
+            quote! { <'ix, const __ANCHOR_DYNAMIC_CAPACITY: usize> },
+            quote! { <'ix, __ANCHOR_DYNAMIC_CAPACITY> },
+        ),
+        (true, false) => (quote! { <'ix> }, quote! { <'ix> }),
+        (false, true) => (
+            quote! { <const __ANCHOR_DYNAMIC_CAPACITY: usize> },
+            quote! { <__ANCHOR_DYNAMIC_CAPACITY> },
+        ),
+        (false, false) => (quote! {}, quote! {}),
     };
     // Fixed and otherwise provably bounded instructions get an exact generated
     // buffer. Dynamic or opaque instructions receive storage from the caller.
@@ -6533,10 +6541,11 @@ fn process_handler(
         target_generics.push(quote! { const __ANCHOR_CPI_CAPACITY: usize });
         if has_dynamic_capacity {
             target_generics.push(quote! { const __ANCHOR_DYNAMIC_CAPACITY: usize });
-        } else if ix_data_bound.is_none() {
+        }
+        if ix_data_bound.is_none() {
             target_generics.push(quote! { const __ANCHOR_DATA_CAPACITY: usize });
         }
-        if has_ref_return && !has_dynamic_capacity {
+        if has_ref_return && !has_dynamic_return_capacity {
             target_generics.push(quote! { const __ANCHOR_RETURN_CAPACITY: usize });
         }
         let target_lt_decl = quote! { <#(#target_generics),*> };
@@ -6603,7 +6612,7 @@ fn process_handler(
                     Ok(Return { value: __value })
                 }
             } else if has_ref_return {
-                let capacity = if has_dynamic_capacity {
+                let capacity = if has_dynamic_return_capacity {
                     quote! { __ANCHOR_DYNAMIC_CAPACITY }
                 } else {
                     quote! { __ANCHOR_RETURN_CAPACITY }
@@ -6663,7 +6672,7 @@ fn process_handler(
             quote! {}
         };
         let target_return_data_arg = has_ref_return.then(|| {
-            let capacity = if has_dynamic_capacity {
+            let capacity = if has_dynamic_return_capacity {
                 quote! { __ANCHOR_DYNAMIC_CAPACITY }
             } else {
                 quote! { __ANCHOR_RETURN_CAPACITY }
@@ -8679,6 +8688,36 @@ mod tests {
         assert!(
             !generated.contains("get_return_data ( ) . unwrap"),
             "target return-data lookup must not unwrap: {generated}"
+        );
+    }
+
+    #[test]
+    fn dynamic_cpi_wrapper_declares_instruction_data_capacity() {
+        let handler: syn::ItemFn = syn::parse_quote! {
+            pub fn send(
+                ctx: &mut Context<MyAccounts>,
+                values: anchor_lang::FixedVec<u64, __ANCHOR_DYNAMIC_CAPACITY>,
+            ) -> Result<()> {
+                let _ = (ctx, values);
+                Ok(())
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Interface,
+            program_id: syn::parse_quote!(crate::ID),
+        };
+
+        let generated = process_handler(&handler, &syn::parse_quote!(external), None, &config)
+            .cpi_wrapper
+            .to_string();
+
+        assert!(
+            generated.contains("const __ANCHOR_DYNAMIC_CAPACITY : usize"),
+            "dynamic argument capacity must be declared: {generated}"
+        );
+        assert!(
+            generated.contains("const __ANCHOR_DATA_CAPACITY : usize"),
+            "instruction data capacity must be declared independently: {generated}"
         );
     }
 

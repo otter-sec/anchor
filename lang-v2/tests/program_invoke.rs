@@ -10,8 +10,8 @@ use {
         },
         testing::{AccountBuffer, MIN_ACCOUNT_BUF},
         unchecked_invoke_signed_fixed, Address, AnchorAccount, AnchorDeserialize, AnchorSerialize,
-        CpiContext, CpiHandle, CpiHandleMut, Discriminator, Owner, ToCpiAccounts, ToCpiHandle,
-        ToCpiHandleMut,
+        CpiContext, CpiHandle, CpiHandleMut, CpiInstruction, Discriminator, Owner, ToCpiAccounts,
+        ToCpiHandle, ToCpiHandleMut,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::instruction::InstructionAccount,
@@ -20,6 +20,30 @@ use {
 
 const ID: Address = Address::new_from_array([7; 32]);
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
+
+struct CountingInstruction<'a> {
+    program_id: &'a Address,
+    account_callback_count: core::cell::Cell<usize>,
+}
+
+impl CpiInstruction for CountingInstruction<'_> {
+    fn program_id(&self) -> &Address {
+        self.program_id
+    }
+
+    fn data(&self) -> &[u8] {
+        &[]
+    }
+
+    fn with_instruction_accounts<R>(
+        &self,
+        visit: impl FnOnce(&[InstructionAccount<'_>]) -> R,
+    ) -> R {
+        self.account_callback_count
+            .set(self.account_callback_count.get() + 1);
+        visit(&[])
+    }
+}
 
 #[derive(ToCpiAccounts)]
 struct ReadonlyCpi<'a> {
@@ -145,6 +169,18 @@ fn checked_invoke_accepts_matching_handles() {
     let handles = [CpiHandle::writable(&mut view)];
 
     program::invoke(&ix, &handles).unwrap();
+}
+
+#[test]
+fn checked_invoke_uses_one_instruction_account_view() {
+    let instruction = CountingInstruction {
+        program_id: &ID,
+        account_callback_count: core::cell::Cell::new(0),
+    };
+
+    program::invoke(&instruction, &[]).unwrap();
+
+    assert_eq!(instruction.account_callback_count.get(), 1);
 }
 
 #[test]

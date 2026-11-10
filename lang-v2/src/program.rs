@@ -78,26 +78,32 @@ where
     I: CpiInstruction + ?Sized,
 {
     instruction.with_instruction_accounts(|instruction_accounts| {
+        let program_id = instruction.program_id();
+        let data = instruction.data();
         validate_instruction_accounts(
             instruction_accounts,
-            instruction.program_id(),
+            program_id,
             account_handles,
             optional_sentinel_flags,
             signer_seeds.is_empty(),
-        )
+        )?;
+
+        // Keep validation and invocation inside the same callback. Some
+        // CpiInstruction implementations build a temporary account slice, so
+        // fetching it again after validation could observe a different view.
+        unsafe {
+            invoke_signed_unchecked_with_accounts(
+                program_id,
+                data,
+                instruction_accounts,
+                account_handles,
+                signer_seeds,
+                optional_sentinel_flags,
+            )
+        }
     })?;
 
-    // SAFETY: Validation above proves every non-sentinel instruction account
-    // has a matching handle, writable metas use writable handles, and
-    // AccountView borrow state permits the CPI.
-    unsafe {
-        invoke_signed_unchecked_with_optional_sentinels(
-            instruction,
-            account_handles,
-            signer_seeds,
-            optional_sentinel_flags,
-        )
-    }
+    Ok(())
 }
 
 /// Invoke a cross-program instruction without borrow validation.
@@ -158,38 +164,56 @@ pub unsafe fn invoke_signed_unchecked_with_optional_sentinels<'a, 'seeds, I>(
 where
     I: CpiInstruction + ?Sized,
 {
-    instruction.with_instruction_accounts(|instruction_accounts| {
-        let cpi_account_count = required_cpi_account_count(
-            instruction_accounts,
+    instruction.with_instruction_accounts(|instruction_accounts| unsafe {
+        invoke_signed_unchecked_with_accounts(
             instruction.program_id(),
+            instruction.data(),
+            instruction_accounts,
             account_handles,
+            signer_seeds,
             optional_sentinel_flags,
-        )?;
-        let instruction_view = InstructionView {
-            program_id: instruction.program_id(),
-            accounts: instruction_accounts,
-            data: instruction.data(),
-        };
-        let signers = signers(signer_seeds);
-        let _borrow_guards = crate::enter_cpi(account_handles);
-        let cpi_accounts = cpi_accounts(account_handles);
-
-        // SAFETY:
-        // - `cpi_accounts` was fully initialized from the provided handles.
-        // - This function's caller upholds the unchecked CPI aliasing contract.
-        unsafe {
-            pinocchio::cpi::invoke_signed_unchecked(
-                &instruction_view,
-                from_raw_parts(
-                    cpi_accounts.as_ptr() as *const CpiAccount,
-                    cpi_account_count,
-                ),
-                &signers,
-            );
-        }
-
-        Ok(())
+        )
     })
+}
+
+unsafe fn invoke_signed_unchecked_with_accounts<'a, 'seeds>(
+    program_id: &Address,
+    data: &[u8],
+    instruction_accounts: &[InstructionAccount<'a>],
+    account_handles: &[CpiHandle<'a>],
+    signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
+    optional_sentinel_flags: &[bool],
+) -> ProgramResult {
+    let cpi_account_count = required_cpi_account_count(
+        instruction_accounts,
+        program_id,
+        account_handles,
+        optional_sentinel_flags,
+    )?;
+    let instruction_view = InstructionView {
+        program_id,
+        accounts: instruction_accounts,
+        data,
+    };
+    let signers = signers(signer_seeds);
+    let _borrow_guards = crate::enter_cpi(account_handles);
+    let cpi_accounts = cpi_accounts(account_handles);
+
+    // SAFETY:
+    // - `cpi_accounts` was fully initialized from the provided handles.
+    // - This function's caller upholds the unchecked CPI aliasing contract.
+    unsafe {
+        pinocchio::cpi::invoke_signed_unchecked(
+            &instruction_view,
+            from_raw_parts(
+                cpi_accounts.as_ptr() as *const CpiAccount,
+                cpi_account_count,
+            ),
+            &signers,
+        );
+    }
+
+    Ok(())
 }
 
 pub(crate) fn validate_fixed_instruction_accounts<'a, const N: usize>(
