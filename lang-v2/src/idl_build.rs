@@ -175,6 +175,7 @@ impl_idl_account_type_noop!(
     f32,
     f64,
     alloc::string::String,
+    str,
     pinocchio::address::Address,
 );
 

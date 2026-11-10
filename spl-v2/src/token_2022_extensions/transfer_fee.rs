@@ -1,6 +1,6 @@
 use {
     super::common::{pubkey_refs, validate_token_2022_program},
-    crate::{token_2022::spl_token_2022, token_shared::multisig_signer_addresses},
+    crate::token_2022::spl_token_2022,
     alloc::vec::Vec,
     anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
@@ -79,12 +79,11 @@ pub fn transfer_fee_set<'a, const N: usize>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::extension::transfer_fee::instruction::set_transfer_fee(
         &program,
         ctx.accounts.mint.address(),
         ctx.accounts.authority.address(),
-        &signer_addresses,
+        &[],
         transfer_fee_basis_points,
         maximum_fee,
     )?;
@@ -99,14 +98,13 @@ pub fn transfer_checked_with_fee<'a, const N: usize>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::extension::transfer_fee::instruction::transfer_checked_with_fee(
         &program,
         ctx.accounts.source.address(),
         ctx.accounts.mint.address(),
         ctx.accounts.destination.address(),
         ctx.accounts.authority.address(),
-        &signer_addresses,
+        &[],
         amount,
         decimals,
         fee,
@@ -152,14 +150,13 @@ pub fn withdraw_withheld_tokens_from_mint<'a, const N: usize>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix =
         spl_token_2022::extension::transfer_fee::instruction::withdraw_withheld_tokens_from_mint(
             &program,
             ctx.accounts.mint.address(),
             ctx.accounts.destination.address(),
             ctx.accounts.authority.address(),
-            &signer_addresses,
+            &[],
         )?;
     ctx.invoke_ix(ix)
 }
@@ -175,7 +172,6 @@ pub fn withdraw_withheld_tokens_from_accounts<'a, const N: usize>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let source_pubkeys: Vec<Pubkey> = sources.iter().map(|source| *source.address()).collect();
     let source_refs = pubkey_refs(&source_pubkeys);
     let ix =
@@ -184,13 +180,18 @@ pub fn withdraw_withheld_tokens_from_accounts<'a, const N: usize>(
             ctx.accounts.mint.address(),
             ctx.accounts.destination.address(),
             ctx.accounts.authority.address(),
-            &signer_addresses,
+            &[],
             &source_refs,
         )?;
-    let mut remaining_accounts = ctx.remaining_accounts.clone();
+    let mut remaining_accounts = anchor_lang::CpiHandleBuffer::<N>::new();
     for source in sources.iter().copied() {
         remaining_accounts
             .try_push(source.into())
+            .map_err(|_| ProgramError::InvalidArgument)?;
+    }
+    for account in &ctx.remaining_accounts {
+        remaining_accounts
+            .try_push(*account)
             .map_err(|_| ProgramError::InvalidArgument)?;
     }
     let ctx = ctx.with_remaining_accounts(remaining_accounts);

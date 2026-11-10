@@ -1,6 +1,6 @@
 use {
     super::common::validate_token_2022_program,
-    crate::{token_2022::spl_token_2022, token_shared::multisig_signer_addresses},
+    crate::token_2022::spl_token_2022,
     anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
@@ -40,12 +40,11 @@ pub fn interest_bearing_mint_update_rate<'a, const N: usize>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::extension::interest_bearing_mint::instruction::update_rate(
         &program,
         ctx.accounts.mint.address(),
         ctx.accounts.rate_authority.address(),
-        &signer_addresses,
+        &[],
         rate,
     )?;
     ctx.invoke_ix(ix)
