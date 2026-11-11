@@ -362,16 +362,16 @@ where
     #[inline(always)]
     fn from_ref(mut view: AccountView) -> Result<Self, ProgramError> {
         Self::assert_header_alignment();
-        view.check_borrow()?;
-        // SAFETY: AccountView's data pointer is valid for the instruction lifetime
-        // (Solana runtime guarantee). The borrow-state check above rejects a live
-        // mutable borrow before creating the shared view.
-        let data = unsafe { view.borrow_unchecked() };
-        H::validate(&view, data)?;
-        if data.len() < Self::ITEMS_OFFSET {
-            return Err(ProgramError::AccountDataTooSmall);
+        {
+            // Hold a real shared borrow while validating so a custom
+            // `SlabSchema::validate` cannot take a mutable borrow over `data`.
+            let data = view.try_borrow()?;
+            H::validate(&view, &data)?;
+            if data.len() < Self::ITEMS_OFFSET {
+                return Err(ProgramError::AccountDataTooSmall);
+            }
+            Self::validate_tail(&data)?;
         }
-        Self::validate_tail(data)?;
         let header_ptr = unsafe { view.data_ptr().add(Self::HEADER_OFFSET) } as *mut H;
         // Mark one immutable borrow outstanding so that any copied AccountView
         // cannot obtain a mutable borrow via try_borrow_mut(). Additional
@@ -860,15 +860,19 @@ where
             return Err(cold_not_writable());
         }
         view.check_borrow_mut()?;
-        // SAFETY: the check above rules out any live borrow of the data.
-        let data = unsafe { view.borrow_unchecked() };
-        // Validate before `build_mutable`: dropping a mutable slab rewrites a
-        // stale tail `len`, which must never touch a rejected account.
-        H::validate(&view, data)?;
-        if data.len() < Self::ITEMS_OFFSET {
-            return Err(ProgramError::AccountDataTooSmall);
+        {
+            // Hold a temporary shared borrow while validating so a custom
+            // `SlabSchema::validate` cannot take a mutable borrow over `data`.
+            // It is dropped before `build_mutable` takes the exclusive borrow.
+            let data = view.try_borrow()?;
+            // Validate before `build_mutable`: dropping a mutable slab rewrites a
+            // stale tail `len`, which must never touch a rejected account.
+            H::validate(&view, &data)?;
+            if data.len() < Self::ITEMS_OFFSET {
+                return Err(ProgramError::AccountDataTooSmall);
+            }
+            Self::validate_tail(&data)?;
         }
-        Self::validate_tail(data)?;
         Self::build_mutable(view)
     }
 
