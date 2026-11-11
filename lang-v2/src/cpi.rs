@@ -235,7 +235,7 @@ pub fn find_and_verify_program_address(
 /// Uses `sol_sha256` + `sol_curve_validate_point` directly instead of
 /// `sol_create_program_address`. The seeds slice should already be
 /// runtime-valid and include the bump byte.
-#[inline(always)]
+#[inline(never)]
 pub fn create_program_address(
     seeds: &[&[u8]],
     program_id: &Address,
@@ -260,7 +260,7 @@ pub fn create_program_address(
 /// This verifies the exact PDA for the provided seeds, including the runtime's
 /// off-curve requirement. Use [`find_and_verify_program_address`] when the bump
 /// is not already included in `seeds` and needs to be discovered canonically.
-#[inline(always)]
+#[inline(never)]
 pub fn verify_program_address(
     seeds: &[&[u8]],
     program_id: &Address,

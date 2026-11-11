@@ -37,7 +37,7 @@ impl<T: Owner + Discriminator> SlabSchema for T {
         None => panic!("slab schema minimum length overflow"),
     };
 
-    #[inline(always)]
+    #[inline(never)]
     fn validate(view: &AccountView, data: &[u8]) -> Result<(), ProgramError> {
         require!(
             view.owned_by(&T::OWNER),
