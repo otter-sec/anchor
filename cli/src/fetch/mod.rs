@@ -80,12 +80,22 @@ impl Default for FetchTuning {
 pub struct IdlFetcher<'a> {
     client: &'a RpcClient,
     tuning: FetchTuning,
+    program_id: Pubkey,
+    idl_address: Pubkey,
 }
 
 impl<'a> IdlFetcher<'a> {
     // Binds a fetch tuning profile to a shared RPC client for one fetch run.
-    fn new(client: &'a RpcClient, tuning: FetchTuning) -> Self {
-        Self { client, tuning }
+    fn new(client: &'a RpcClient, program_id: Pubkey, tuning: FetchTuning) -> Result<Self> {
+        let program_signer = Pubkey::find_program_address(&[], &program_id).0;
+        let idl_address = Pubkey::create_with_seed(&program_signer, "anchor:idl", &program_id)
+            .map_err(|e| anyhow!("Failed to derive IDL account address: {e}"))?;
+        Ok(Self {
+            client,
+            tuning,
+            program_id,
+            idl_address,
+        })
     }
 
     // Rejects slot queries that point past the cluster's current slot.
@@ -112,7 +122,14 @@ impl<'a> IdlFetcher<'a> {
             .iter()
             .filter_map(|sig| {
                 pb.inc(1);
-                collect_signature_chunks(self.client, sig, &self.tuning, pb)
+                collect_signature_chunks(
+                    self.client,
+                    sig,
+                    &self.tuning,
+                    &self.program_id,
+                    &self.idl_address,
+                    pb,
+                )
             })
             .flatten()
             .collect()
@@ -157,7 +174,14 @@ impl<'a> IdlFetcher<'a> {
                         .iter()
                         .filter_map(|sig| {
                             progress.inc(1);
-                            collect_signature_chunks(self.client, sig, &self.tuning, &progress)
+                            collect_signature_chunks(
+                                self.client,
+                                sig,
+                                &self.tuning,
+                                &self.program_id,
+                                &self.idl_address,
+                                &progress,
+                            )
                         })
                         .flatten()
                         .collect::<Vec<_>>()
@@ -178,10 +202,18 @@ fn collect_signature_chunks(
     client: &RpcClient,
     sig: &RpcConfirmedTransactionStatusWithSignature,
     tuning: &FetchTuning,
+    expected_program_id: &Pubkey,
+    expected_idl_address: &Pubkey,
     pb: &ProgressBar,
 ) -> Option<Vec<SlotChunk>> {
     let signature = Signature::from_str(&sig.signature).ok()?;
-    let chunks = match extract_chunks_from_transaction(client, &signature, tuning) {
+    let chunks = match extract_chunks_from_transaction(
+        client,
+        &signature,
+        tuning,
+        expected_program_id,
+        expected_idl_address,
+    ) {
         Ok(chunks) => chunks,
         Err(e) => {
             pb.println(format!("{e}"));
@@ -249,7 +281,7 @@ pub fn idl_fetch_historical(
     }
 
     let client = create_rpc_client(cfg_override)?;
-    let fetcher = IdlFetcher::new(&client, tuning);
+    let fetcher = IdlFetcher::new(&client, address, tuning)?;
 
     // Validate the target slot before paginating signatures
     if let Some(target_slot) = slot {
