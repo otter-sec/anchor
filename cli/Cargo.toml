@@ -24,7 +24,7 @@ idl-localnet-testing = []
 [dependencies]
 anchor-cli-macros = { workspace = true }
 anchor-client = { workspace = true }
-anchor-lang = { workspace = true }
+anchor-lang = { workspace = true, features = ["default"] }
 anchor-lang-idl = { workspace = true, features = ["build", "convert"] }
 anyhow = "1.0.32"
 base64 = "0.21"

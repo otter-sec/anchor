@@ -12,12 +12,13 @@ default = ["guardrails"]
 # Security-sensitive: disabling this removes defensive program-id checks from
 # CPI helpers that accept caller-supplied program accounts. Keep enabled unless
 # every caller uses typed `Program` / `Interface` accounts or performs equivalent
-# validation before constructing CPI contexts.
-guardrails = []
+# validation before constructing CPI contexts. It also turns on `anchor-lang`'s
+# `guardrails`.
+guardrails = ["anchor-lang/guardrails"]
 metadata = ["dep:mpl-token-metadata"]
 
 [dependencies]
-anchor-lang = { workspace = true }
+anchor-lang = { workspace = true, features = ["alloc"] }
 pinocchio = { workspace = true }
 pinocchio-token = "0.6"
 pinocchio-token-2022 = "0.3"
