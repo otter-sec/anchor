@@ -859,7 +859,6 @@ where
         if !view.is_writable() {
             return Err(cold_not_writable());
         }
-        view.check_borrow_mut()?;
         {
             // Hold a temporary shared borrow while validating so a custom
             // `SlabSchema::validate` cannot take a mutable borrow over `data`.
