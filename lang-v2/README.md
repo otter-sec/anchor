@@ -65,6 +65,13 @@ Most v1 programs port with the below.
 | `Context<T>` in handlers | `&mut Context<T>` (constraints + exit hooks mutate context state) |
 | `Pubkey` | `Address` (drop-in replacement — same 32-byte type) |
 | `Account<T>` | `BorshAccount<T>` |
+| `#[account(mut, dup)]` | `#[account(dup)]` is a compile error — see [Duplicate accounts](#duplicate-accounts) |
+
+### Duplicate accounts
+
+v1 `#[account(mut, dup)]` let mutable serializing accounts (`Account<T>`, `LazyAccount<T>`, `InterfaceAccount<T>`, `Migration`) share an address. v2 rejects `#[account(dup)]`. `BorshAccount<T>` borrows on load: a mutable alias fails with `AccountBorrowFailed` (v1: `ConstraintDuplicateMutableAccount`), and two read-only fields may still share. Zero-copy `Account<T>` follows the same rule, unlike v1 `AccountLoader<T>`, which allowed mutable duplicates. Unlike v1, a `mut` field and a read-only field of the same account also fail. `Signer`, `SystemAccount`, `UncheckedAccount`, and `Program<T>` still alias.
+
+To keep that `dup` pattern, declare the second field as `#[account(mut)] UncheckedAccount`. If the addresses match, mutate the first `BorshAccount` only. If they differ, call `BorshAccount::<T>::load_mut` on the second field's `AccountView` and call `exit()` on the result before drop. The derive writes back declared fields only. A manual `load_mut` does not run the v1 field's constraints, so re-check them (`has_one`, `seeds`, `address`, `constraint`).
 
 ### `compat` feature
 
