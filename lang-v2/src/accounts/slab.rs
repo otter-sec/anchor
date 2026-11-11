@@ -362,16 +362,15 @@ where
     #[inline(always)]
     fn from_ref(mut view: AccountView) -> Result<Self, ProgramError> {
         Self::assert_header_alignment();
-        {
-            // Hold a real shared borrow while validating so a custom
-            // `SlabSchema::validate` cannot take a mutable borrow over `data`.
-            let data = view.try_borrow()?;
-            H::validate(&view, &data)?;
-            if data.len() < Self::ITEMS_OFFSET {
-                return Err(ProgramError::AccountDataTooSmall);
-            }
-            Self::validate_tail(&data)?;
+        // Hold a real shared borrow while validating so a custom
+        // `SlabSchema::validate` cannot take a mutable borrow over `data`.
+        let data = view.try_borrow()?;
+        H::validate(&view, &data)?;
+        if data.len() < Self::ITEMS_OFFSET {
+            return Err(ProgramError::AccountDataTooSmall);
         }
+        Self::validate_tail(&data)?;
+        drop(data);
         let header_ptr = unsafe { view.data_ptr().add(Self::HEADER_OFFSET) } as *mut H;
         // Mark one immutable borrow outstanding so that any copied AccountView
         // cannot obtain a mutable borrow via try_borrow_mut(). Additional
@@ -859,19 +858,18 @@ where
         if !view.is_writable() {
             return Err(cold_not_writable());
         }
-        {
-            // Hold a temporary shared borrow while validating so a custom
-            // `SlabSchema::validate` cannot take a mutable borrow over `data`.
-            // It is dropped before `build_mutable` takes the exclusive borrow.
-            let data = view.try_borrow()?;
-            // Validate before `build_mutable`: dropping a mutable slab rewrites a
-            // stale tail `len`, which must never touch a rejected account.
-            H::validate(&view, &data)?;
-            if data.len() < Self::ITEMS_OFFSET {
-                return Err(ProgramError::AccountDataTooSmall);
-            }
-            Self::validate_tail(&data)?;
+        // Hold a real shared borrow while validating so a custom
+        // `SlabSchema::validate` cannot take a mutable borrow over `data`.
+        // It is dropped before `build_mutable` takes the exclusive borrow.
+        let data = view.try_borrow()?;
+        // Validate before `build_mutable`: dropping a mutable slab rewrites a
+        // stale tail `len`, which must never touch a rejected account.
+        H::validate(&view, &data)?;
+        if data.len() < Self::ITEMS_OFFSET {
+            return Err(ProgramError::AccountDataTooSmall);
         }
+        Self::validate_tail(&data)?;
+        drop(data);
         Self::build_mutable(view)
     }
 
