@@ -330,7 +330,13 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// for as long as those references can exist, and fail if any other
     /// borrow is live.
     ///
-    /// Default impl validates `is_writable` and delegates to `load()`.
+    /// Default impl validates `is_writable` and delegates to `load()`, so it
+    /// takes no exclusive borrow. That is only correct for wrappers that
+    /// never write account data. A wrapper that mutates data or writes it
+    /// back in [`exit`](Self::exit) must override this. Otherwise two
+    /// mutable fields given the same account both load: an in-place wrapper
+    /// writes through a live alias, and a write-back wrapper loses the
+    /// earlier write at `exit`.
     /// Data-carrying wrappers (`Account<T>`, `BorshAccount<T>`, `Slab<H, T>`)
     /// override to take the exclusive borrow and derive write provenance.
     /// `Signer` overrides with a fused `is_signer` + `is_writable` check.
@@ -344,6 +350,12 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
 
     fn account(&self) -> &AccountView;
 
+    /// Persist account state at the end of the instruction.
+    ///
+    /// Write-back wrappers (for example `BorshAccount<T>`, which serializes
+    /// its data here) must have taken the exclusive borrow in
+    /// [`load_mut`](Self::load_mut). That borrow is v2's only protection
+    /// against the same account being passed for two mutable fields.
     fn exit(&mut self) -> ProgramResult {
         Ok(())
     }

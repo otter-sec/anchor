@@ -219,6 +219,16 @@ impl AnchorAccount for DynamicAccount<Post> {
 }
 ```
 
+#### Borrows in custom `AnchorAccount` implementations
+
+v2 has no derive-level duplicate check (see [Duplicate accounts](#duplicate-accounts)). Aliasing is caught only by the borrow each wrapper takes on the account when it loads, so a custom implementation that reads or writes account data must take it:
+
+- `load` must hold a shared borrow (`try_borrow`) until the wrapper drops, even if it deserializes the data into an owned value and no longer reads the account.
+- `load_mut` must hold an exclusive borrow (`try_borrow_mut`). The default `load_mut` only checks `is_writable` and calls `load`, so override it for any wrapper that mutates data.
+- Without that override, the same account passed for two mutable fields loads twice. An in-place wrapper like `Account<T>` writes through a live alias, and a write-back wrapper like `BorshAccount<T>` loses an update when the second `exit()` overwrites the first.
+
+Wrappers that never touch account data, such as `Signer` or `UncheckedAccount`, take no borrow and may alias freely.
+
 ## Contributing
 
 File issues at [otter-sec/anchor](https://github.com/otter-sec/anchor/issues), tagged with `v2` where applicable. Working branch: `anchor-next`. See the top-level [CONTRIBUTING.md](../CONTRIBUTING.md).
