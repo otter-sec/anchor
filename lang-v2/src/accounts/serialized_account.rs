@@ -238,7 +238,7 @@ where
         // the comment there for why this is safe.
         require!(
             view.owned_by(&T::OWNER),
-            super::slab::cold_owner_error(&view)
+            super::slab::cold_owner_error(view)
         );
         let disc_len = Self::disc_len();
         if data.len() < disc_len {
@@ -319,7 +319,7 @@ where
         // Skip serialization only after close() has cleared the account header.
         // A zero lamport balance can be transient when a later exit refunds this
         // account, so lamports alone do not prove that write-back is unnecessary.
-        if super::slab::is_closed(&self.view) {
+        if super::slab::is_closed(self.view) {
             return Ok(());
         }
         // Belt-and-braces: the derive's `realloc` constraint does
@@ -412,10 +412,10 @@ where
         zero: bool,
     ) -> pinocchio::ProgramResult {
         self.assert_mutable_loaded();
-        let mut view = *self.account();
+        let view = *self.account();
         if new_space != view.data_len() {
             self.release_borrow()?;
-            crate::realloc_account(&mut view, new_space, &payer, zero)?;
+            crate::realloc_account(view, new_space, payer, zero)?;
             self.reacquire_guard_only()?;
         }
         Ok(())
@@ -557,8 +557,8 @@ where
 
     #[inline(always)]
     fn create_and_initialize<'a>(
-        payer: &AccountView,
-        account: &AccountView,
+        payer: AccountView,
+        account: AccountView,
         space: usize,
         _owner: &Address,
         _params: &(),
@@ -578,7 +578,7 @@ where
             signer_seeds,
             payer_signer_seeds,
         )?;
-        let mut view_mut = *account;
+        let mut view_mut = account;
         let data_ref = view_mut.try_borrow_mut()?;
         let mut guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
         if guard.len() < disc_len {
@@ -587,7 +587,7 @@ where
         guard[..disc_len].copy_from_slice(disc);
         let (data, serialized_len) = Self::deserialize_payload_with_len(&guard[disc_len..])?;
         Ok(Self {
-            view: *account,
+            view: account,
             data,
             is_mutable: true,
             borrow: SerializedAccountBorrow::Mutable { guard },

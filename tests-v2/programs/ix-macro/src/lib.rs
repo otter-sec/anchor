@@ -13,7 +13,7 @@ pub mod ix_macro {
         amount: u64,
         tag: [u8; 4],
     ) -> Result<()> {
-        let marker = ctx.accounts.marker.account().address();
+        let marker = ctx.accounts.marker.address();
         if !anchor_lang::address_eq(marker, &expected_marker) || tag != *b"ixok" {
             return Err(ProgramError::InvalidInstructionData.into());
         }

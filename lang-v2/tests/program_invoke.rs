@@ -151,6 +151,25 @@ fn checked_invoke_accepts_matching_handles() {
 }
 
 #[test]
+fn cpi_metadata_outlives_the_handle_value() {
+    let buffer = slab_account_view([1; 32], true, 9);
+    let view = unsafe { buffer.view() };
+    let mut account = unsafe { Account::<PodCounter>::load_mut(view) }.unwrap();
+
+    let readonly = {
+        let handle = account.cpi_handle();
+        InstructionAccount::readonly(handle.address())
+    };
+    assert_eq!(readonly.address, view.address());
+
+    let writable = {
+        let handle = account.cpi_handle_mut();
+        InstructionAccount::writable(handle.address())
+    };
+    assert_eq!(writable.address, view.address());
+}
+
+#[test]
 fn account_view_converts_to_cpi_handles() {
     let buffer = account_view([1; 32], true);
     let mut view = unsafe { buffer.view() };
@@ -174,6 +193,9 @@ fn cpi_handle_as_signer_overrides_transaction_view() {
     let handle = CpiHandle::readonly(&view);
     assert!(!handle.is_signer());
     assert!(handle.as_signer().is_signer());
+    let readonly_signer = handle.as_signer().into_readonly();
+    assert!(readonly_signer.is_signer());
+    assert!(!readonly_signer.is_writable());
 
     let mut_buffer = account_view([3; 32], true);
     let mut writable_view = unsafe { mut_buffer.view() };
@@ -185,6 +207,12 @@ fn cpi_handle_as_signer_overrides_transaction_view() {
     let erased: CpiHandle = mut_signer.into();
     assert!(erased.is_signer());
     assert!(erased.is_writable());
+    let readonly_signer = mut_signer.into_readonly();
+    assert!(readonly_signer.is_signer());
+    assert!(!readonly_signer.is_writable());
+    let readonly_signer = erased.into_readonly();
+    assert!(readonly_signer.is_signer());
+    assert!(!readonly_signer.is_writable());
     let signer_buffer = AccountBuffer::<{ MIN_ACCOUNT_BUF + 8 }>::new();
     signer_buffer.init([4; 32], [9; 32], 8, true, false, false);
     let signer_view = unsafe { signer_buffer.view() };

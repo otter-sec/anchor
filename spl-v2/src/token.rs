@@ -58,8 +58,8 @@ pub(crate) fn validate_token_account_initialized(data: &[u8]) -> Result<(), Prog
 
 /// Create a Token-program-owned account, handling PDA signing if needed.
 pub(crate) fn create_token_account(
-    payer: &AccountView,
-    account: &AccountView,
+    payer: AccountView,
+    account: AccountView,
     space: usize,
     signer_seeds: Option<&[&[u8]]>,
     payer_signer_seeds: Option<&[&[u8]]>,
@@ -120,7 +120,7 @@ impl SlabSchema for TokenAccount {
     const MIN_DATA_LEN: usize = core::mem::size_of::<Self>();
 
     #[inline(always)]
-    fn validate(view: &AccountView, data: &[u8]) -> Result<(), ProgramError> {
+    fn validate(view: AccountView, data: &[u8]) -> Result<(), ProgramError> {
         require!(view.owned_by(&Token::id()), ProgramError::IllegalOwner);
         // Exact size distinguishes TokenAccount (165) from Mint (82).
         require_eq!(
@@ -135,18 +135,18 @@ impl SlabSchema for TokenAccount {
 
 /// Init params for `#[account(init, token::mint = ..., token::authority = ...)]`.
 #[derive(Default)]
-pub struct TokenAccountInitParams<'a> {
-    pub mint: Option<&'a AccountView>,
-    pub authority: Option<&'a AccountView>,
+pub struct TokenAccountInitParams {
+    pub mint: Option<AccountView>,
+    pub authority: Option<AccountView>,
 }
 
 impl SlabInit for TokenAccount {
-    type Params<'a> = TokenAccountInitParams<'a>;
+    type Params<'a> = TokenAccountInitParams;
 
     #[cold]
     fn create_and_initialize<'a>(
-        payer: &AccountView,
-        account: &AccountView,
+        payer: AccountView,
+        account: AccountView,
         _space: usize,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
@@ -164,8 +164,8 @@ impl SlabInit for TokenAccount {
         )?;
 
         pinocchio_token::instructions::InitializeAccount3 {
-            account,
-            mint,
+            account: &account,
+            mint: &mint,
             owner: authority.address(),
         }
         .invoke()
