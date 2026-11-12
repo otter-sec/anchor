@@ -23,6 +23,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang-v2: Keep Pod wrapper types (`PodU64`, `PodBool`, ..) in the IDL instead of lowering them to native types, so `declare_program!` generates zero-copy structs with correct program's layout ([#5170](https://github.com/otter-sec/anchor/pull/5170))
 - lang-v2: Reject `try_cpi_handle_mut` on a read-only `BorshAccount`/`SerializedAccount` with `AccountBorrowFailed` ([#5264](https://github.com/otter-sec/anchor/pull/5264)).
 - lang-v2: Restore `AnchorSerialize` and `AnchorDeserialize` as traits for generic bounds alongside the derive macros ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
+- lang-v2: Restore CPI borrow guards in reverse order, so several readonly handles for the same account in one CPI restore its original borrow state ([#5281](https://github.com/otter-sec/anchor/pull/5281)).
 - ts: Recover the logs of failed version 1 transactions ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 - lang-v2: Hold a temporary shared borrow while `Slab::load`/`load_mut` validate, so a custom `SlabSchema::validate` cannot take a mutable borrow over the data ([#5266](https://github.com/otter-sec/anchor/pull/5266)).
 - lang-v2: Restore the original `borrow_state` after a `CpiBorrowGuard` drops, so a `BorshAccount`/`SerializedAccount` released with `release_borrow()` is not left exclusively borrowed after a readonly CPI ([#5265](https://github.com/otter-sec/anchor/pull/5265)).
