@@ -65,6 +65,13 @@ Most v1 programs port with the below.
 | `Context<T>` in handlers | `&mut Context<T>` (constraints + exit hooks mutate context state) |
 | `Pubkey` | `Address` (drop-in replacement — same 32-byte type) |
 | `Account<T>` | `BorshAccount<T>` |
+| `#[account(mut, dup)]` | `#[account(dup)]` is a compile error — see [Duplicate accounts](#duplicate-accounts) |
+
+### Duplicate accounts
+
+v1 `#[account(mut, dup)]` let mutable serializing accounts (`Account<T>`, `LazyAccount<T>`, `InterfaceAccount<T>`, `Migration`) share an address. v2 rejects `#[account(dup)]`. `BorshAccount<T>` borrows on load: a mutable alias fails with `AccountBorrowFailed` (v1: `ConstraintDuplicateMutableAccount`), and two read-only fields may still share. Zero-copy `Account<T>` follows the same rule, unlike v1 `AccountLoader<T>`, which allowed mutable duplicates. Unlike v1, a `mut` field and a read-only field of the same account also fail. `Signer`, `SystemAccount`, `UncheckedAccount`, and `Program<T>` still alias.
+
+To keep that `dup` pattern, declare the second field as `#[account(mut)] UncheckedAccount`. If the addresses match, mutate the first `BorshAccount` only. If they differ, call `BorshAccount::<T>::load_mut` on the second field's `AccountView` and call `exit()` on the result before drop. The derive writes back declared fields only. A manual `load_mut` does not run the v1 field's constraints, so re-check them (`has_one`, `seeds`, `address`, `constraint`).
 
 ### `compat` feature
 
@@ -211,6 +218,16 @@ impl AnchorAccount for DynamicAccount<Post> {
     // load_mut, account
 }
 ```
+
+#### Borrows in custom `AnchorAccount` implementations
+
+v2 has no derive-level duplicate check (see [Duplicate accounts](#duplicate-accounts)). Aliasing is caught only by the borrow each wrapper takes on the account when it loads, so a custom implementation that reads or writes account data must take it:
+
+- `load` must hold a shared borrow (`try_borrow`) until the wrapper drops, even if it deserializes the data into an owned value and no longer reads the account.
+- `load_mut` must hold an exclusive borrow (`try_borrow_mut`). The default `load_mut` only checks `is_writable` and calls `load`, so override it for any wrapper that mutates data.
+- Without that override, the same account passed for two mutable fields loads twice. An in-place wrapper like `Account<T>` writes through a live alias, and a write-back wrapper like `BorshAccount<T>` loses an update when the second `exit()` overwrites the first.
+
+Wrappers that never touch account data, such as `Signer` or `UncheckedAccount`, take no borrow and may alias freely.
 
 ## Contributing
 
