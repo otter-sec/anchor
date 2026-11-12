@@ -1,5 +1,6 @@
 import { AccountsCoder } from "../index.js";
 import { Idl } from "../../idl.js";
+import bs58 from "bs58";
 import * as BufferLayout from "buffer-layout";
 import { NONCE_ACCOUNT_LENGTH, PublicKey } from "@solana/web3.js";
 import { IdlCoder } from "../borsh/idl.js";
@@ -37,13 +38,16 @@ export class SystemAccountsCoder<A extends string = string>
     }
   }
 
-  // TODO: this won't use the appendData.
-  public memcmp(accountName: A, _appendData?: Buffer): any {
+  public memcmp(accountName: A, appendData?: Buffer): any {
     switch (accountName) {
       case "nonce": {
-        return {
-          dataSize: NONCE_ACCOUNT_LENGTH,
-        };
+        return appendData?.length
+          ? {
+              dataSize: NONCE_ACCOUNT_LENGTH,
+              offset: 0,
+              bytes: bs58.encode(appendData),
+            }
+          : { dataSize: NONCE_ACCOUNT_LENGTH };
       }
       default: {
         throw new Error(`Invalid account name: ${accountName}`);
