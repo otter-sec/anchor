@@ -2,7 +2,7 @@ extern crate proc_macro;
 
 use {
     anchor_syn::{codegen::program::common::gen_discriminator, Overrides},
-    quote::{quote, quote_spanned, ToTokens},
+    quote::{quote, quote_spanned},
     syn::{
         parenthesized,
         parse::{Parse, ParseStream},
@@ -343,9 +343,7 @@ impl Parse for AccountArg {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         // Namespace
         if let Ok(ns) = input.parse::<LitStr>() {
-            return Ok(Self::Namespace(
-                ns.to_token_stream().to_string().replace('\"', ""),
-            ));
+            return Ok(Self::Namespace(ns.value()));
         }
 
         // Zero copy
@@ -641,4 +639,31 @@ pub fn declare_id(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     #[allow(unreachable_code)]
     proc_macro::TokenStream::from(ret)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn namespace_of(input: &str) -> syn::Result<Option<String>> {
+        Ok(syn::parse_str::<AccountArgs>(input)?.namespace)
+    }
+
+    #[test]
+    fn namespace_literals_use_the_string_value() {
+        let cases = [
+            (r#""abc""#, "abc"),
+            (r#"r"abc""#, "abc"),
+            (r##"r#"abc"#"##, "abc"),
+            (r#""a\"b""#, "a\"b"),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(
+                namespace_of(input).unwrap().as_deref(),
+                Some(expected),
+                "namespace from {input}"
+            );
+        }
+    }
 }

@@ -197,7 +197,7 @@ pub struct Auth<'info> {
         seeds = [multisig.to_account_info().key.as_ref()],
         bump = multisig.nonce,
     )]
-    multisig_signer: AccountInfo<'info>,
+    multisig_signer: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -207,7 +207,7 @@ pub struct ExecuteTransaction<'info> {
         seeds = [multisig.to_account_info().key.as_ref()],
         bump = multisig.nonce,
     )]
-    multisig_signer: AccountInfo<'info>,
+    multisig_signer: UncheckedAccount<'info>,
     #[account(mut, has_one = multisig)]
     transaction: Account<'info, Transaction>,
 }

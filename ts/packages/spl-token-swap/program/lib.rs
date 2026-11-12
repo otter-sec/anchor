@@ -55,116 +55,116 @@ pub mod spl_token_swap {
 pub struct Initialize<'info> {
     #[account(mut)]
     swap: Signer<'info>,
-    authority: AccountInfo<'info>,
-    token_a: AccountInfo<'info>,
-    token_b: AccountInfo<'info>,
+    authority: UncheckedAccount<'info>,
+    token_a: UncheckedAccount<'info>,
+    token_b: UncheckedAccount<'info>,
     #[account(mut)]
-    pool: AccountInfo<'info>,
-    fee: AccountInfo<'info>,
+    pool: UncheckedAccount<'info>,
+    fee: UncheckedAccount<'info>,
     #[account(mut)]
-    destination: AccountInfo<'info>,
+    destination: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct Swap<'info> {
-    swap: AccountInfo<'info>,
-    authority: AccountInfo<'info>,
+    swap: UncheckedAccount<'info>,
+    authority: UncheckedAccount<'info>,
     user_transfer_authority: Signer<'info>,
     #[account(mut)]
-    source: AccountInfo<'info>,
+    source: UncheckedAccount<'info>,
     #[account(mut)]
-    swap_source: AccountInfo<'info>,
+    swap_source: UncheckedAccount<'info>,
     #[account(mut)]
-    swap_destination: AccountInfo<'info>,
+    swap_destination: UncheckedAccount<'info>,
     #[account(mut)]
-    destination: AccountInfo<'info>,
+    destination: UncheckedAccount<'info>,
     #[account(mut)]
-    pool_mint: AccountInfo<'info>,
+    pool_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    pool_fee: AccountInfo<'info>,
+    pool_fee: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
     // #[account(mut)]
-    // optional_host_fee: AccountInfo<'info>,
+    // optional_host_fee: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct DepositAllTokenTypes<'info> {
-    swap: AccountInfo<'info>,
-    authority: AccountInfo<'info>,
+    swap: UncheckedAccount<'info>,
+    authority: UncheckedAccount<'info>,
     user_transfer_authority: Signer<'info>,
     #[account(mut)]
-    deposit_token_a: AccountInfo<'info>,
+    deposit_token_a: UncheckedAccount<'info>,
     #[account(mut)]
-    deposit_token_b: AccountInfo<'info>,
+    deposit_token_b: UncheckedAccount<'info>,
     #[account(mut)]
-    swap_token_a: AccountInfo<'info>,
+    swap_token_a: UncheckedAccount<'info>,
     #[account(mut)]
-    swap_token_b: AccountInfo<'info>,
+    swap_token_b: UncheckedAccount<'info>,
     #[account(mut)]
-    pool_mint: AccountInfo<'info>,
+    pool_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    destination: AccountInfo<'info>,
+    destination: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct WithdrawAllTokenTypes<'info> {
-    swap: AccountInfo<'info>,
-    authority: AccountInfo<'info>,
+    swap: UncheckedAccount<'info>,
+    authority: UncheckedAccount<'info>,
     user_transfer_authority: Signer<'info>,
     #[account(mut)]
-    pool_mint: AccountInfo<'info>,
+    pool_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    source: AccountInfo<'info>,
+    source: UncheckedAccount<'info>,
     #[account(mut)]
-    swap_token_a: AccountInfo<'info>,
+    swap_token_a: UncheckedAccount<'info>,
     #[account(mut)]
-    swap_token_b: AccountInfo<'info>,
+    swap_token_b: UncheckedAccount<'info>,
     #[account(mut)]
-    destination_token_a: AccountInfo<'info>,
+    destination_token_a: UncheckedAccount<'info>,
     #[account(mut)]
-    destination_token_b: AccountInfo<'info>,
+    destination_token_b: UncheckedAccount<'info>,
     #[account(mut)]
-    fee_account: AccountInfo<'info>,
+    fee_account: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct DepositSingleTokenTypeExactAmountIn<'info> {
-    swap: AccountInfo<'info>,
-    authority: AccountInfo<'info>,
+    swap: UncheckedAccount<'info>,
+    authority: UncheckedAccount<'info>,
     user_transfer_authority: Signer<'info>,
     #[account(mut)]
-    source_token: AccountInfo<'info>,
+    source_token: UncheckedAccount<'info>,
     #[account(mut)]
-    swap_token_a: AccountInfo<'info>,
+    swap_token_a: UncheckedAccount<'info>,
     #[account(mut)]
-    swap_token_b: AccountInfo<'info>,
+    swap_token_b: UncheckedAccount<'info>,
     #[account(mut)]
-    pool_mint: AccountInfo<'info>,
+    pool_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    destination: AccountInfo<'info>,
+    destination: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct WithdrawSingleTokenTypeExactAmountOut<'info> {
-    swap: AccountInfo<'info>,
-    authority: AccountInfo<'info>,
+    swap: UncheckedAccount<'info>,
+    authority: UncheckedAccount<'info>,
     user_transfer_authority: Signer<'info>,
     #[account(mut)]
-    pool_mint: AccountInfo<'info>,
+    pool_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    pool_token_source: AccountInfo<'info>,
+    pool_token_source: UncheckedAccount<'info>,
     #[account(mut)]
-    swap_token_a: AccountInfo<'info>,
+    swap_token_a: UncheckedAccount<'info>,
     #[account(mut)]
-    swap_token_b: AccountInfo<'info>,
+    swap_token_b: UncheckedAccount<'info>,
     #[account(mut)]
-    destination: AccountInfo<'info>,
+    destination: UncheckedAccount<'info>,
     #[account(mut)]
-    fee_account: AccountInfo<'info>,
+    fee_account: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
 }
 

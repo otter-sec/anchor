@@ -21,19 +21,19 @@ pub mod spl_stateless_asks {
 
 #[derive(Accounts)]
 pub struct AcceptOffer<'info> {
-    maker_wallet: AccountInfo<'info>,
+    maker_wallet: UncheckedAccount<'info>,
     taker_wallet: Signer<'info>,
     #[account(mut)]
-    maker_src_account: AccountInfo<'info>,
+    maker_src_account: UncheckedAccount<'info>,
     #[account(mut)]
-    maker_dst_account: AccountInfo<'info>,
+    maker_dst_account: UncheckedAccount<'info>,
     #[account(mut)]
-    taker_src_account: AccountInfo<'info>,
+    taker_src_account: UncheckedAccount<'info>,
     #[account(mut)]
-    taker_dst_account: AccountInfo<'info>,
-    maker_mint: AccountInfo<'info>,
-    taker_mint: AccountInfo<'info>,
-    authority: AccountInfo<'info>,
+    taker_dst_account: UncheckedAccount<'info>,
+    maker_mint: UncheckedAccount<'info>,
+    taker_mint: UncheckedAccount<'info>,
+    authority: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
     // optional_system_program: Program<'info, System>,
 }

@@ -1,6 +1,7 @@
 import { Commitment, PublicKey } from "@solana/web3.js";
 import { BorshCoder, Coder } from "../coder/index.js";
 import {
+  DecodeIdlOptions,
   Idl,
   IdlInstruction,
   convertIdlToCamelCase,
@@ -348,10 +349,12 @@ export class Program<IDL extends Idl = Idl> {
    *
    * @param programId The on-chain address of the program.
    * @param provider  The network and wallet context.
+   * @param options   IDL decoding options, e.g. the maximum decompressed size.
    */
   public static async fetchIdl<IDL extends Idl = Idl>(
     programAddress: Address,
-    provider?: Provider
+    provider?: Provider,
+    options?: DecodeIdlOptions
   ): Promise<IDL | null> {
     provider = provider ?? getProvider();
     const programId = translateAddress(programAddress);
@@ -359,7 +362,7 @@ export class Program<IDL extends Idl = Idl> {
     const accountInfo = await provider.connection.getAccountInfo(idlAddr);
     if (!accountInfo) return null;
 
-    return decodeIdlAccount<IDL>(accountInfo.data);
+    return decodeIdlAccount<IDL>(accountInfo.data, options);
   }
 
   /**

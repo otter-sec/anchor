@@ -12,7 +12,9 @@
     "noImplicitAny": false,
     "strictNullChecks": true,
     "esModuleInterop": true,
+    "lib": ["ES2022", "DOM"],
     "resolveJsonModule": true,
+    "skipLibCheck": true,
     "composite": true,
     "baseUrl": ".",
     "typeRoots": [

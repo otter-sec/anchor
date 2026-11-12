@@ -28,13 +28,13 @@ pub struct Propose<'info> {
     #[account(mut)]
     feature_proposal_address: Signer<'info>,
     #[account(mut)]
-    mint_address: AccountInfo<'info>,
+    mint_address: UncheckedAccount<'info>,
     #[account(mut)]
-    distributor_token_address: AccountInfo<'info>,
+    distributor_token_address: UncheckedAccount<'info>,
     #[account(mut)]
-    acceptance_token_address: AccountInfo<'info>,
+    acceptance_token_address: UncheckedAccount<'info>,
     #[account(mut)]
-    feature: AccountInfo<'info>,
+    feature: UncheckedAccount<'info>,
     system_program: Program<'info, System>,
     token_program: Program<'info, Token>,
     rent: Sysvar<'info, Rent>,
@@ -43,10 +43,10 @@ pub struct Propose<'info> {
 #[derive(Accounts)]
 pub struct Tally<'info> {
     #[account(mut)]
-    feature_proposal_address: AccountInfo<'info>,
-    acceptance_token_address: AccountInfo<'info>,
+    feature_proposal_address: UncheckedAccount<'info>,
+    acceptance_token_address: UncheckedAccount<'info>,
     #[account(mut)]
-    feature: AccountInfo<'info>,
+    feature: UncheckedAccount<'info>,
     system_program: Program<'info, System>,
     clock: Sysvar<'info, Clock>,
 }

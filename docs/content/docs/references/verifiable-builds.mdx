@@ -22,6 +22,13 @@ To produce a verifiable build, run
 anchor build --verifiable
 ```
 
+The binary is written to `target/verifiable`. To deploy it instead of the
+regular build in `target/deploy`, run
+
+```shell
+anchor program deploy --verifiable
+```
+
 ## Verifying
 
 To verify a build against a program deployed on mainnet, run
@@ -39,10 +46,10 @@ If the program has an IDL, it will also check the IDL deployed on chain matches.
 A docker image for each version of Anchor is published on
 [Quay.io](https://quay.io/repository/ottersec/anchor). They are tagged
 in the form `quay.io/ottersec/anchor:<version>`. For example, to get the image
-for Anchor `v1.2.1` one can run
+for Anchor `v1.2.2` one can run
 
 ```shell
-docker pull quay.io/ottersec/anchor:v1.2.1
+docker pull quay.io/ottersec/anchor:v1.2.2
 ```
 
 ## Removing an Image

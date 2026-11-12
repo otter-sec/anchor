@@ -25,7 +25,7 @@ pub type Result<T> = std::result::Result<T, error::Error>;
 
 ## Anchor error
 
-When an error occurs in an Anchor program, it returns a custom [`Error{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/error/enum.Error.html) type defined as:
+When an error occurs in an Anchor program, it returns a custom [`Error{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/prelude/enum.Error.html) type defined as:
 
 ```rust showLineNumbers=false
 #[derive(Debug, PartialEq, Eq)]

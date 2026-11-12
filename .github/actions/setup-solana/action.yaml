@@ -1,9 +1,15 @@
 name: "Setup Solana"
 description: "Setup Solana"
+inputs:
+  cache-save:
+    description: "Allow this job to save the cache"
+    default: "true"
 runs:
   using: "composite"
   steps:
-    - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+    # Writers save after SBF installation; matrix consumers only restore.
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      if: inputs.cache-save == 'true'
       name: Cache Solana Tool Suite
       id: cache-solana
       with:
@@ -11,8 +17,17 @@ runs:
           ~/.cache/solana/
           ~/.local/share/solana/
         key: solana-${{ runner.os }}-v0000-${{ env.SOLANA_VERSION }}
+    - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      if: inputs.cache-save != 'true'
+      name: Restore Solana Tool Suite
+      id: restore-solana
+      with:
+        path: |
+          ~/.cache/solana/
+          ~/.local/share/solana/
+        key: solana-${{ runner.os }}-v0000-${{ env.SOLANA_VERSION }}
     - uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4 # v2
-      if: steps.cache-solana.outputs.cache-hit != 'true'
+      if: steps.cache-solana.outputs.cache-hit != 'true' && steps.restore-solana.outputs.cache-hit != 'true'
       with:
         retry_wait_seconds: 60
         timeout_minutes: 2

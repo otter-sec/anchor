@@ -1,4 +1,4 @@
-//! Like [`Account`](crate::Account), but deserializes on-demand.
+//! Like [`Account`](crate::accounts::account::Account), but deserializes on-demand.
 
 use {
     crate::{

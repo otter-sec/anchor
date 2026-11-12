@@ -51,7 +51,7 @@ pub fn convert_idl_to_legacy(idl: &Idl) -> Result<Vec<u8>> {
 /// 1. The legacy schema types (`Idl`, `IdlInstruction`, ...).
 /// 2. `legacy -> current` conversions (`impl From<...> for t::...`).
 /// 3. `current -> legacy` conversions (`impl TryFrom<t::...> for ...`)
-///    plus the entry point [`to_legacy`].
+///    plus the entry point [`to_legacy`](legacy::to_legacy).
 mod legacy {
     use {
         crate::types as t,
@@ -371,20 +371,73 @@ mod legacy {
         hasher.finalize()[..8].into()
     }
 
+    /// Move each `relations` entry to the account it names, within one
+    /// account list.
+    ///
+    /// Legacy IDLs record a `has_one` on the account that declares it
+    /// (`vault` lists `authority`); the current spec records it on the
+    /// named account (`authority` lists `vault`, the accounts that declare
+    /// it). The per-account conversion copies the entries onto the same
+    /// account, so flip them here, at the instruction level where both
+    /// sides are visible. A relation naming an account outside this list
+    /// is left where it is rather than dropped.
+    fn invert_relations(items: &mut [t::IdlInstructionAccountItem]) {
+        // Relations only ever refer to accounts at the same level, so
+        // handle composite groups on their own first.
+        for item in items.iter_mut() {
+            if let t::IdlInstructionAccountItem::Composite(group) = item {
+                invert_relations(&mut group.accounts);
+            }
+        }
+        let mut moves: Vec<(String, String)> = Vec::new();
+        for item in items.iter_mut() {
+            if let t::IdlInstructionAccountItem::Single(acc) = item {
+                for target in std::mem::take(&mut acc.relations) {
+                    moves.push((acc.name.clone(), target));
+                }
+            }
+        }
+        for (declarer, target) in moves {
+            let placed = items.iter_mut().find_map(|item| match item {
+                t::IdlInstructionAccountItem::Single(acc) if acc.name == target => Some(acc),
+                _ => None,
+            });
+            match placed {
+                Some(acc) if !acc.relations.contains(&declarer) => {
+                    acc.relations.push(declarer);
+                }
+                Some(_) => {} // Already listed; nothing to do.
+                None => {
+                    // No account with that name at this level; put the
+                    // entry back on the declarer instead of losing it.
+                    if let Some(t::IdlInstructionAccountItem::Single(acc)) =
+                        items.iter_mut().find(|item| {
+                            matches!(item, t::IdlInstructionAccountItem::Single(acc) if acc.name == declarer)
+                        })
+                    {
+                        acc.relations.push(target);
+                    }
+                }
+            }
+        }
+    }
+
     impl TryFrom<IdlInstruction> for t::IdlInstruction {
         type Error = anyhow::Error;
 
         fn try_from(value: IdlInstruction) -> Result<Self> {
             let name = value.name.to_snake_case();
+            let mut accounts: Vec<t::IdlInstructionAccountItem> = value
+                .accounts
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<_>>()?;
+            invert_relations(&mut accounts);
             Ok(Self {
                 discriminator: get_disc("global", &name),
                 name,
                 docs: value.docs.unwrap_or_default(),
-                accounts: value
-                    .accounts
-                    .into_iter()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_>>()?,
+                accounts,
                 args: value.args.into_iter().map(Into::into).collect(),
                 returns: value.returns.map(|r| r.into()),
             })
@@ -615,37 +668,87 @@ mod legacy {
                     path: recase_path(&seed.path, |s| s.to_snake_case()),
                 }),
                 IdlSeed::Const(seed) => Self::Const(t::IdlSeedConst {
-                    value: match seed.ty {
-                        IdlType::String => seed.value.to_string().as_bytes().into(),
-                        // The inverse converter emits const seeds as
-                        // `type: "bytes"` + JSON array of u8 values, so
-                        // accept that shape too. Lets `current -> legacy
-                        // -> current` round-trip preserve PDA const seeds.
-                        IdlType::Bytes => {
-                            let arr = seed.value.as_array().ok_or_else(|| {
-                                anyhow!("Const seed of type `bytes` must be a JSON array")
-                            })?;
-                            arr.iter()
-                                .map(|v| {
-                                    v.as_u64()
-                                        .and_then(|n| u8::try_from(n).ok())
-                                        .ok_or_else(|| {
-                                            anyhow!("Const seed bytes must be u8 values, got {v}")
-                                        })
-                                })
-                                .collect::<Result<Vec<u8>>>()?
-                        }
-                        _ => {
-                            return Err(anyhow!(
-                                "Const seed conversion not supported for type {:?}",
-                                seed.ty
-                            ))
-                        }
-                    },
+                    value: const_seed_bytes(&seed.ty, &seed.value)?,
                 }),
             };
             Ok(seed)
         }
+    }
+
+    /// Serialize a legacy const seed value into the bytes used to derive
+    /// the PDA, matching the legacy TS client (`toBufferValue`): strings as
+    /// raw UTF-8, integers as little-endian and byte arrays as-is. Signed
+    /// integers, which the TS client does not handle, are little-endian two's
+    /// complement, as `to_le_bytes` gives in a program's `seeds`. 128-bit
+    /// values are limited to the 64-bit range a JSON number holds here.
+    fn const_seed_bytes(ty: &IdlType, value: &serde_json::Value) -> Result<Vec<u8>> {
+        let int = |max: u64| {
+            value
+                .as_u64()
+                .filter(|n| *n <= max)
+                .ok_or_else(|| anyhow!("Const seed of type {ty:?} is invalid: {value}"))
+        };
+        let sint = |min: i64, max: i64| {
+            value
+                .as_i64()
+                .filter(|n| (min..=max).contains(n))
+                .ok_or_else(|| anyhow!("Const seed of type {ty:?} is invalid: {value}"))
+        };
+        let bytes = || -> Result<Vec<u8>> {
+            let arr = value
+                .as_array()
+                .ok_or_else(|| anyhow!("Const seed of type {ty:?} must be a JSON array"))?;
+            arr.iter()
+                .map(|v| {
+                    v.as_u64()
+                        .and_then(|n| u8::try_from(n).ok())
+                        .ok_or_else(|| anyhow!("Const seed bytes must be u8 values, got {v}"))
+                })
+                .collect()
+        };
+        Ok(match ty {
+            IdlType::String => value
+                .as_str()
+                .ok_or_else(|| anyhow!("Const seed of type `string` must be a JSON string"))?
+                .as_bytes()
+                .to_vec(),
+            IdlType::U8 => vec![int(u8::MAX.into())? as u8],
+            IdlType::U16 => (int(u16::MAX.into())? as u16).to_le_bytes().to_vec(),
+            IdlType::U32 => (int(u32::MAX.into())? as u32).to_le_bytes().to_vec(),
+            IdlType::U64 => int(u64::MAX)?.to_le_bytes().to_vec(),
+            IdlType::U128 => u128::from(int(u64::MAX)?).to_le_bytes().to_vec(),
+            IdlType::I8 => (sint(i8::MIN.into(), i8::MAX.into())? as i8)
+                .to_le_bytes()
+                .to_vec(),
+            IdlType::I16 => (sint(i16::MIN.into(), i16::MAX.into())? as i16)
+                .to_le_bytes()
+                .to_vec(),
+            IdlType::I32 => (sint(i32::MIN.into(), i32::MAX.into())? as i32)
+                .to_le_bytes()
+                .to_vec(),
+            IdlType::I64 => sint(i64::MIN, i64::MAX)?.to_le_bytes().to_vec(),
+            IdlType::I128 => i128::from(sint(i64::MIN, i64::MAX)?).to_le_bytes().to_vec(),
+            // The inverse converter emits const seeds as `type: "bytes"` +
+            // JSON array of u8 values, so accept that shape too. Lets
+            // `current -> legacy -> current` round-trip preserve PDA const
+            // seeds.
+            IdlType::Bytes => bytes()?,
+            IdlType::Array(inner, len) if **inner == IdlType::U8 => {
+                let bytes = bytes()?;
+                if bytes.len() != *len {
+                    return Err(anyhow!(
+                        "Const seed of type [u8; {len}] has {} bytes",
+                        bytes.len()
+                    ));
+                }
+                bytes
+            }
+            _ => {
+                return Err(anyhow!(
+                    "Const seed conversion not supported for type {ty:?}"
+                ))
+            }
+        })
     }
 
     // ---------------------------------------------------------------------
@@ -767,17 +870,61 @@ mod legacy {
         }
     }
 
+    /// Inverse of [`invert_relations`]: the current spec lists, on the
+    /// named account, the accounts that declare it; legacy IDLs list the
+    /// relation on the declarer. Move each entry back to the account it
+    /// names, within one account list.
+    fn invert_relations_legacy(items: &mut [IdlAccountItem]) {
+        for item in items.iter_mut() {
+            if let IdlAccountItem::IdlAccounts(group) = item {
+                invert_relations_legacy(&mut group.accounts);
+            }
+        }
+        let mut moves: Vec<(String, String)> = Vec::new();
+        for item in items.iter_mut() {
+            if let IdlAccountItem::IdlAccount(acc) = item {
+                for declarer in std::mem::take(&mut acc.relations) {
+                    moves.push((acc.name.clone(), declarer));
+                }
+            }
+        }
+        for (named, declarer) in moves {
+            let placed = items.iter_mut().find_map(|item| match item {
+                IdlAccountItem::IdlAccount(acc) if acc.name == declarer => Some(acc),
+                _ => None,
+            });
+            match placed {
+                Some(acc) if !acc.relations.contains(&named) => {
+                    acc.relations.push(named);
+                }
+                Some(_) => {} // Already listed; nothing to do.
+                None => {
+                    // No account with that name at this level; put the
+                    // entry back on the named account instead of losing it.
+                    if let Some(IdlAccountItem::IdlAccount(acc)) = items.iter_mut().find(
+                        |item| matches!(item, IdlAccountItem::IdlAccount(acc) if acc.name == named),
+                    ) {
+                        acc.relations.push(declarer);
+                    }
+                }
+            }
+        }
+    }
+
     impl TryFrom<t::IdlInstruction> for IdlInstruction {
         type Error = anyhow::Error;
 
         fn try_from(ix: t::IdlInstruction) -> Result<Self> {
+            let mut accounts: Vec<IdlAccountItem> =
+                ix.accounts.into_iter().map(Into::into).collect();
+            invert_relations_legacy(&mut accounts);
             Ok(Self {
                 // The legacy spec uses lowerCamelCase identifiers; the forward
                 // converter normalized them to snake_case, so we restore the
                 // original convention here.
                 name: ix.name.to_lower_camel_case(),
                 docs: (!ix.docs.is_empty()).then_some(ix.docs),
-                accounts: ix.accounts.into_iter().map(Into::into).collect(),
+                accounts,
                 args: ix
                     .args
                     .into_iter()
@@ -1056,7 +1203,135 @@ mod legacy {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        crate::types::{IdlInstructionAccountItem, IdlSeed},
+    };
+
+    /// Convert a minimal legacy IDL whose only account has the given PDA
+    /// `seeds`, and return the converted const seed values.
+    fn convert_const_seeds(seeds: serde_json::Value) -> Result<Vec<Vec<u8>>> {
+        let legacy = serde_json::json!({
+            "version": "0.1.0",
+            "name": "seeds",
+            "instructions": [{
+                "name": "init",
+                "accounts": [{
+                    "name": "pdaAccount",
+                    "isMut": true,
+                    "isSigner": false,
+                    "pda": { "seeds": seeds }
+                }],
+                "args": []
+            }],
+            "metadata": { "address": "11111111111111111111111111111111" }
+        });
+        let idl = convert_idl(&serde_json::to_vec(&legacy)?)?;
+        let IdlInstructionAccountItem::Single(acc) = &idl.instructions[0].accounts[0] else {
+            panic!("expected a single account");
+        };
+        Ok(acc
+            .pda
+            .as_ref()
+            .unwrap()
+            .seeds
+            .iter()
+            .map(|seed| match seed {
+                IdlSeed::Const(c) => c.value.clone(),
+                _ => panic!("expected const seed"),
+            })
+            .collect())
+    }
+
+    #[test]
+    fn legacy_string_const_seed_is_utf8_bytes() {
+        // Legacy IDLs store `b"config"` seeds as `type: "string"`; the seed
+        // is the raw UTF-8 bytes, without JSON quotes.
+        let seeds = convert_const_seeds(serde_json::json!([
+            { "kind": "const", "type": "string", "value": "config" }
+        ]))
+        .unwrap();
+        assert_eq!(seeds, vec![b"config".to_vec()]);
+    }
+
+    #[test]
+    fn legacy_integer_const_seeds_are_le_bytes() {
+        // Same encoding as the legacy TS client (`toBufferValue`).
+        let seeds = convert_const_seeds(serde_json::json!([
+            { "kind": "const", "type": "u8", "value": 7 },
+            { "kind": "const", "type": "u16", "value": 513 },
+            { "kind": "const", "type": "u32", "value": 0 },
+            { "kind": "const", "type": "u64", "value": 4294967296u64 }
+        ]))
+        .unwrap();
+        assert_eq!(
+            seeds,
+            vec![
+                vec![7],
+                513u16.to_le_bytes().to_vec(),
+                0u32.to_le_bytes().to_vec(),
+                4294967296u64.to_le_bytes().to_vec(),
+            ]
+        );
+    }
+
+    #[test]
+    fn legacy_signed_and_128_bit_const_seeds_are_le_bytes() {
+        // Two's complement, as `to_le_bytes` gives in a program's seeds.
+        let seeds = convert_const_seeds(serde_json::json!([
+            { "kind": "const", "type": "i8", "value": -1 },
+            { "kind": "const", "type": "i16", "value": -513 },
+            { "kind": "const", "type": "i32", "value": i32::MIN },
+            { "kind": "const", "type": "i64", "value": -4294967296i64 },
+            { "kind": "const", "type": "i128", "value": -2 },
+            { "kind": "const", "type": "u128", "value": u64::MAX }
+        ]))
+        .unwrap();
+        assert_eq!(
+            seeds,
+            vec![
+                (-1i8).to_le_bytes().to_vec(),
+                (-513i16).to_le_bytes().to_vec(),
+                i32::MIN.to_le_bytes().to_vec(),
+                (-4294967296i64).to_le_bytes().to_vec(),
+                (-2i128).to_le_bytes().to_vec(),
+                u128::from(u64::MAX).to_le_bytes().to_vec(),
+            ]
+        );
+    }
+
+    #[test]
+    fn legacy_byte_array_const_seed_is_bytes() {
+        let seeds = convert_const_seeds(serde_json::json!([
+            { "kind": "const", "type": { "array": ["u8", 3] }, "value": [1, 2, 3] }
+        ]))
+        .unwrap();
+        assert_eq!(seeds, vec![vec![1, 2, 3]]);
+    }
+
+    #[test]
+    fn legacy_const_seed_rejects_invalid_values() {
+        for seed in [
+            serde_json::json!({ "kind": "const", "type": "string", "value": 1 }),
+            serde_json::json!({ "kind": "const", "type": "u8", "value": 256 }),
+            serde_json::json!({ "kind": "const", "type": "u16", "value": -1 }),
+            serde_json::json!({ "kind": "const", "type": "u32", "value": "1" }),
+            serde_json::json!({
+                "kind": "const", "type": { "array": ["u8", 2] }, "value": [1, 2, 3]
+            }),
+            serde_json::json!({ "kind": "const", "type": "i8", "value": 128 }),
+            serde_json::json!({ "kind": "const", "type": "i16", "value": -32769 }),
+            serde_json::json!({ "kind": "const", "type": "i32", "value": "1" }),
+            serde_json::json!({ "kind": "const", "type": "i64", "value": u64::MAX }),
+            serde_json::json!({ "kind": "const", "type": "i64", "value": 1.5 }),
+            serde_json::json!({ "kind": "const", "type": "u256", "value": 1 }),
+        ] {
+            assert!(
+                convert_const_seeds(serde_json::json!([seed.clone()])).is_err(),
+                "expected an error for {seed}"
+            );
+        }
+    }
 
     /// Round-trip `external_legacy.json` through the current spec and
     /// back: legacy -> current -> legacy. The output JSON must equal the
@@ -1072,6 +1347,144 @@ mod tests {
             convert_idl_to_legacy(&current).expect("Converting current -> legacy failed");
         let actual: serde_json::Value = serde_json::from_slice(&legacy_bytes).unwrap();
 
+        assert_eq!(actual, expected);
+    }
+
+    /// A legacy string `const` seed must convert to the bytes of the
+    /// string itself, not the bytes of its JSON form (quotes included).
+    /// Regression test for #5255.
+    #[test]
+    fn legacy_string_const_seed_has_no_quotes() {
+        let legacy = r#"{
+            "version": "0.1.0",
+            "name": "demo",
+            "instructions": [
+                {
+                    "name": "init",
+                    "accounts": [
+                        {
+                            "name": "vault",
+                            "isMut": true,
+                            "isSigner": false,
+                            "pda": { "seeds": [{ "kind": "const", "type": "string", "value": "vault" }] }
+                        }
+                    ],
+                    "args": []
+                }
+            ],
+            "metadata": { "address": "11111111111111111111111111111111" }
+        }"#;
+        let current = convert_idl(legacy.as_bytes()).expect("Converting legacy -> current failed");
+        let ix = &current.instructions[0];
+        let acc = match &ix.accounts[0] {
+            crate::types::IdlInstructionAccountItem::Single(acc) => acc,
+            _ => panic!("expected a single account"),
+        };
+        let seeds = &acc.pda.as_ref().expect("expected a PDA").seeds;
+        let value = match &seeds[0] {
+            crate::types::IdlSeed::Const(seed) => &seed.value,
+            _ => panic!("expected a const seed"),
+        };
+        assert_eq!(value, b"vault");
+    }
+
+    /// Legacy `relations` name the account the declarer has_one on; the
+    /// current spec lists them on the named account instead. Converting
+    /// must move each relation to the account it names, and converting
+    /// back must restore the original IDL. Regression test for #5256.
+    #[test]
+    fn legacy_relations_move_to_named_account() {
+        let legacy = r#"{
+            "version": "0.1.0",
+            "name": "demo",
+            "instructions": [
+                {
+                    "name": "withdraw",
+                    "accounts": [
+                        { "name": "vault", "isMut": true, "isSigner": false, "relations": ["authority"] },
+                        { "name": "authority", "isMut": false, "isSigner": true }
+                    ],
+                    "args": []
+                }
+            ],
+            "metadata": { "address": "11111111111111111111111111111111" }
+        }"#;
+        let current = convert_idl(legacy.as_bytes()).expect("Converting legacy -> current failed");
+        let accounts = &current.instructions[0].accounts;
+        let relations = |name: &str| -> Vec<String> {
+            accounts
+                .iter()
+                .find_map(|item| match item {
+                    crate::types::IdlInstructionAccountItem::Single(acc) if acc.name == name => {
+                        Some(acc.relations.clone())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_default()
+        };
+        assert!(
+            relations("vault").is_empty(),
+            "vault must not keep its relations, got {:?}",
+            relations("vault")
+        );
+        assert_eq!(relations("authority"), vec!["vault".to_string()]);
+
+        // And back again: the round-trip must restore the original IDL.
+        let legacy_bytes =
+            convert_idl_to_legacy(&current).expect("Converting current -> legacy failed");
+        let actual: serde_json::Value = serde_json::from_slice(&legacy_bytes).unwrap();
+        let expected: serde_json::Value = serde_json::from_str(legacy).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    /// Relations inside a composite account group flip within that group,
+    /// not at the instruction level. Same bug as #5256, nested.
+    #[test]
+    fn legacy_relations_move_within_composite_group() {
+        let legacy = r#"{
+            "version": "0.1.0",
+            "name": "demo",
+            "instructions": [
+                {
+                    "name": "withdraw",
+                    "accounts": [
+                        {
+                            "name": "ctx",
+                            "accounts": [
+                                { "name": "vault", "isMut": true, "isSigner": false, "relations": ["authority"] },
+                                { "name": "authority", "isMut": false, "isSigner": true }
+                            ]
+                        }
+                    ],
+                    "args": []
+                }
+            ],
+            "metadata": { "address": "11111111111111111111111111111111" }
+        }"#;
+        let current = convert_idl(legacy.as_bytes()).expect("Converting legacy -> current failed");
+        let group = match &current.instructions[0].accounts[0] {
+            crate::types::IdlInstructionAccountItem::Composite(group) => group,
+            _ => panic!("expected a composite group"),
+        };
+        let relations = |name: &str| -> Vec<String> {
+            group
+                .accounts
+                .iter()
+                .find_map(|item| match item {
+                    crate::types::IdlInstructionAccountItem::Single(acc) if acc.name == name => {
+                        Some(acc.relations.clone())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_default()
+        };
+        assert!(relations("vault").is_empty());
+        assert_eq!(relations("authority"), vec!["vault".to_string()]);
+
+        let legacy_bytes =
+            convert_idl_to_legacy(&current).expect("Converting current -> legacy failed");
+        let actual: serde_json::Value = serde_json::from_slice(&legacy_bytes).unwrap();
+        let expected: serde_json::Value = serde_json::from_str(legacy).unwrap();
         assert_eq!(actual, expected);
     }
 }

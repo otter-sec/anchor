@@ -19,9 +19,9 @@ use {
 /// Internal representation of the migration state.
 #[derive(Debug)]
 pub enum MigrationInner<From, To> {
-    /// Account is in old format, will be migrated and serialized on exit
+    /// Account is in the old format; exit fails until it is migrated.
     From(From),
-    /// Account is already in new format, will be serialized on exit
+    /// Account holds new data, written on exit if still owned by the program.
     To(To),
 }
 

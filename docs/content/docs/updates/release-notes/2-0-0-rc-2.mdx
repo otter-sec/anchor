@@ -1,0 +1,171 @@
+---
+title: 2.0.0-rc.2
+description: Anchor - Release Notes 2.0.0-rc.2
+---
+
+`2.0.0-rc.2` is the second release candidate for Anchor v2. Compared with rc1,
+it brings a TypeScript client built on Solana Kit, Agave 4.3-compatible Rust
+dependencies, transaction v1 support in LiteSVM tests, and improvements to
+instruction arguments and account validation.
+
+These notes focus on the changes that affect existing applications. See the
+[release changes](https://github.com/otter-sec/anchor/compare/v2.0.0-rc.1...v2.0.0-rc.2)
+and
+[CHANGELOG](https://github.com/otter-sec/anchor/blob/v2.0.0-rc.2/CHANGELOG.md#200-rc2---2026-10-06)
+for more detail. This is a prerelease; applications should test their migration
+before deploying.
+
+---
+
+## How to upgrade
+
+### Using AVM
+
+Install the prerelease from source:
+
+```bash
+avm install 2.0.0-rc.2 --from-source
+avm use 2.0.0-rc.2
+```
+
+### Without AVM
+
+```bash
+cargo install --git https://github.com/otter-sec/anchor --tag v2.0.0-rc.2 anchor-cli --locked
+```
+
+Update the Anchor dependencies your application uses:
+
+```toml
+[dependencies]
+anchor-lang = "=2.0.0-rc.2"
+anchor-spl = "=2.0.0-rc.2"
+```
+
+Update `anchor-client` to the same version if you use the Rust client. Keep any
+features your application already enables.
+
+For the TypeScript client, use Node.js **22.12 or newer** and install the
+explicit prerelease version:
+
+```bash
+npm install @anchor-lang/core@2.0.0-rc.2 @solana/kit@^8.3.0
+```
+
+Projects still importing `@coral-xyz/anchor` must switch to `@anchor-lang/core`.
+Moving from Anchor v1 also requires the
+[v2 migration changes](https://v2.anchor-lang.com/docs/v2/get-started/migrating-from-v1/); updating package
+versions alone is not sufficient.
+
+---
+
+## TypeScript client built on Solana Kit
+
+The provider, instruction builders, account namespace, account resolver, event
+subscriptions, and serialization codecs now use Kit. Existing TypeScript
+applications need to update their client code:
+
+| Previous API                 | rc2 API                                        |
+| ---------------------------- | ---------------------------------------------- |
+| `PublicKey`                  | Kit `Address`                                  |
+| `BN` integer values          | Native `bigint`                                |
+| `Buffer` in the public API   | `Uint8Array`                                   |
+| `provider.connection`        | `provider.rpc` and `provider.rpcSubscriptions` |
+| `provider.publicKey`         | `provider.wallet.address`                      |
+| `program.programId`          | `program.address`                              |
+| Methods builder `.pubkeys()` | `.addresses()`                                 |
+
+Pass a Kit transaction signer as the provider wallet. A provider can take either
+cluster endpoints or an existing Kit client with `rpc` and `rpcSubscriptions`:
+
+```ts
+import { AnchorProvider, createLocalWallet } from "@anchor-lang/core";
+import { createSolanaRpc, createSolanaRpcSubscriptions } from "@solana/kit";
+
+const provider = new AnchorProvider(
+  {
+    rpc: createSolanaRpc("http://localhost:8899"),
+    rpcSubscriptions: createSolanaRpcSubscriptions("ws://localhost:8900"),
+  },
+  createLocalWallet(),
+);
+```
+
+`createLocalWallet()` reads the keypair file named by `ANCHOR_WALLET`. Use your
+application's Kit signer instead in a browser.
+
+The default provider commitment is now `confirmed`. Event listeners use Kit
+subscriptions, and IDL fetching uses `@solana-program/program-metadata`.
+
+The `@anchor-lang/borsh` and `@anchor-lang/spl-*` packages are no longer part of
+the client. Replace SPL helpers and `Native.system()` with the corresponding
+`@solana-program/*` packages. The former bytes, public-key, token, and hashing
+utilities have moved to Kit or those program packages.
+
+## Agave 4.3 dependencies and transaction v1 tests
+
+The Rust dependency stack is aligned with the SDK crates used by Agave 4.3.
+Individual SDK crates have different version numbers; they are not all version
+`4.3.0`.
+
+`anchor-v2-testing` now uses LiteSVM 0.18 and re-exports it, so tests can import
+`anchor_v2_testing::litesvm::LiteSVM` without a separate LiteSVM dependency. To
+keep a prerelease test harness reproducible, pin the unpublished testing crate
+to the release tag:
+
+```toml
+[dev-dependencies]
+anchor-v2-testing = { git = "https://github.com/otter-sec/anchor", tag = "v2.0.0-rc.2" }
+```
+
+LiteSVM can execute transaction v1 messages containing Anchor instructions.
+Select `VersionedMessage::V1` explicitly and put resource limits in the
+message's `TransactionConfig`, rather than adding ComputeBudget instructions.
+Unset compute-unit and loaded-account-data limits are zero, so set both when
+constructing the message.
+
+This enables local v1 testing; it does not imply that v1 transactions are
+enabled on every cluster. Check the target cluster's feature activation before
+sending them there.
+
+## Instruction arguments and serialization
+
+The Wincode upgrade and serialization fixes restore support for `BTreeMap`,
+`BTreeSet`, and tuples on Rust serialization surfaces. Floating-point values,
+including NaN, are also accepted.
+
+Wincode does not reproduce every v1 Borsh behavior:
+
+- `HashMap` and `HashSet` use iteration order rather than Borsh's sorted order.
+  Use ordered collections or explicitly sorted values when you need canonical
+  encoding.
+- NaN values are accepted rather than rejected. Validate floats explicitly if
+  your application requires finite values.
+
+These differences apply to instruction data, instruction constraint arguments,
+default events, and `#[account(borsh)]` data. Native map/set support in the IDL
+and TypeScript client remains future work; Rust serialization support does not
+imply that these types work end to end in a TS client.
+
+## Instruction introspection and account fixes
+
+`Sysvar<SysvarInstructions>` now supports typed access to the instructions
+sysvar, allowing programs to inspect instructions in the current transaction.
+Pass the instructions sysvar account explicitly; unlike Clock and Rent, it
+cannot be loaded through a sysvar syscall.
+
+Other fixes improve existing account and client behavior:
+
+- Enum variants are emitted correctly in IDLs, and `InitSpace` handles generic
+  enums and qualified type paths more reliably.
+- `Box<T>` forwards foreign-owner initialization and signer/address IDL
+  metadata.
+- PDA signer remaining accounts work through CPI handles, while checked CPI
+  validation uses the account's actual signer status.
+- Explicit PDA bumps no longer trigger automatic client derivation; empty seed
+  arrays work, and optional accounts cannot be used as PDA seeds.
+- Imported bytemuck layouts with padding are rejected, and tail-slab allocation
+  and resizing respect the header's minimum data length.
+
+Deprecated Token-2022 CPI guard helpers have been removed. Applications using
+them must remove those CPI calls; the guard cannot be configured through CPI.

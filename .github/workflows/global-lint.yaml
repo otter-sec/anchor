@@ -29,9 +29,69 @@ jobs:
             **/*.md
             **/*.mdx
           inline: warning
-
           # Only check files in the PR or push
           incremental_files_only: true
 
           # Do not error out on failures, only complain
           strict: false
+
+  # Dead links in the docs and docs-v2 sites, including changelog and
+  # release notes, and in the root README and CHANGELOG (lychee, config in
+  # .lychee.toml).
+  # Rustdoc links are checked by `cargo doc` in Core Tests.
+  docs:
+    name: docs links
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Restore lychee cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .lycheecache
+          key: cache-lychee-${{ github.sha }}
+          restore-keys: cache-lychee-
+
+      - name: Check docs links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          output: lychee/docs.md
+          args: >-
+            --config .lychee.toml
+            --cache
+            --root-dir ${{ github.workspace }}/docs/content
+            --fallback-extensions md,mdx
+            docs/content
+
+      # Runs even if the docs step failed, so one run reports both sites.
+      - name: Check docs-v2 links
+        if: ${{ !cancelled() }}
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          output: lychee/docs-v2.md
+          args: >-
+            --config .lychee.toml
+            --cache
+            --root-dir ${{ github.workspace }}/docs-v2/src/content
+            --fallback-extensions md,mdx
+            docs-v2/src/content
+
+      - name: Check README and CHANGELOG links
+        if: ${{ !cancelled() }}
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          output: lychee/root.md
+          args: >-
+            --config .lychee.toml
+            --cache
+            README.md
+            CHANGELOG.md

@@ -6,9 +6,11 @@
 
 ## Reporting security problems for Anchor
 
-**DO NOT CREATE A GITHUB ISSUE** to report a security problem.
+**DO NOT CREATE A PUBLIC GITHUB ISSUE** to report a security problem.
 
-Instead please email anchor-security@solana.org. Provide a helpful title, detailed description of the vulnerability and an exploit proof-of-concept. Speculative submissions without proof-of-concept will be closed with no further consideration.
+Instead, please submit a draft security advisory through GitHub [here](https://github.com/otter-sec/anchor/security/advisories/new).
+
+Provide a helpful title, detailed description of the vulnerability and an exploit proof-of-concept. Speculative submissions without proof-of-concept will be closed with no further consideration.
 
 If you haven't done so already, please **enable two-factor auth** in your GitHub account.
 
@@ -21,7 +23,7 @@ As a general rule of thumb, we will look to these questions to evaluate eligibil
 
 Regardless, if you think you have an issue, we'd like to hear about it.
 
-For bugs that affect production code, we will pay up to X SOL tokens according to the following guidelines. This is exclusive to any bounties claimed from the protocol. In other words, reports can't double-dip.
+For bugs that affect production code, we will pay SOL tokens according to the following guidelines. This is exclusive to any bounties claimed from the protocol. In other words, reports can't double-dip.
 
 ---
 

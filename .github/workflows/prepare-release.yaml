@@ -112,9 +112,10 @@ jobs:
         run: |
           set -xeou pipefail
 
-          cd ts/packages/borsh && yarn --frozen-lockfile && yarn build && yarn link --force && cd ../../../
-          cd ts/packages/anchor-errors && yarn --frozen-lockfile && yarn build && yarn link --force && cd ../../../
-          cd ts/packages/anchor && yarn --frozen-lockfile && yarn build:node && yarn link && cd ../../../
+          cd ts && yarn --frozen-lockfile && cd ..
+          cd ts/packages/borsh && yarn build && yarn link --force && cd ../../../
+          cd ts/packages/anchor-errors && yarn build && yarn link --force && cd ../../../
+          cd ts/packages/anchor && yarn build:node && yarn link && cd ../../../
 
           cd ts/packages/anchor/
           yarn docs

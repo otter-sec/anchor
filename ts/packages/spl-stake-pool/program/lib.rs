@@ -126,17 +126,17 @@ pub mod spl_stake_pool {
 #[derive(Accounts)]
 pub struct Initialize<'info> {
     #[account(mut)]
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     manager: Signer<'info>,
-    staker: AccountInfo<'info>,
-    stake_pool_withdraw_authority: AccountInfo<'info>,
+    staker: UncheckedAccount<'info>,
+    stake_pool_withdraw_authority: UncheckedAccount<'info>,
     #[account(mut)]
-    validator_list: AccountInfo<'info>,
-    reserve_stake: AccountInfo<'info>,
+    validator_list: UncheckedAccount<'info>,
+    reserve_stake: UncheckedAccount<'info>,
     #[account(mut)]
-    pool_mint: AccountInfo<'info>,
+    pool_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    manager_pool_account: AccountInfo<'info>,
+    manager_pool_account: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
     // optional_deposit_authority: Signer<'info>,
 }
@@ -144,220 +144,220 @@ pub struct Initialize<'info> {
 #[derive(Accounts)]
 pub struct AddValidatorToPool<'info> {
     #[account(mut)]
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     staker: Signer<'info>,
     #[account(mut)]
     funder: Signer<'info>,
-    stake_pool_withdraw: AccountInfo<'info>,
+    stake_pool_withdraw: UncheckedAccount<'info>,
     #[account(mut)]
-    validator_list: AccountInfo<'info>,
+    validator_list: UncheckedAccount<'info>,
     #[account(mut)]
-    stake: AccountInfo<'info>,
-    validator: AccountInfo<'info>,
+    stake: UncheckedAccount<'info>,
+    validator: UncheckedAccount<'info>,
     rent: Sysvar<'info, Rent>,
     clock: Sysvar<'info, Clock>,
-    sysvar_stake_history: AccountInfo<'info>,
-    stake_config: AccountInfo<'info>,
+    sysvar_stake_history: UncheckedAccount<'info>,
+    stake_config: UncheckedAccount<'info>,
     system_program: Program<'info, System>,
-    stake_program: AccountInfo<'info>,
+    stake_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct RemoveValidatorFromPool<'info> {
     #[account(mut)]
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     staker: Signer<'info>,
-    stake_pool_withdraw: AccountInfo<'info>,
-    new_stake_authority: AccountInfo<'info>,
+    stake_pool_withdraw: UncheckedAccount<'info>,
+    new_stake_authority: UncheckedAccount<'info>,
     #[account(mut)]
-    validator_list: AccountInfo<'info>,
+    validator_list: UncheckedAccount<'info>,
     #[account(mut)]
-    stake_account: AccountInfo<'info>,
-    transient_stake_account: AccountInfo<'info>,
+    stake_account: UncheckedAccount<'info>,
+    transient_stake_account: UncheckedAccount<'info>,
     #[account(mut)]
-    destination_stake_account: AccountInfo<'info>,
+    destination_stake_account: UncheckedAccount<'info>,
     clock: Sysvar<'info, Clock>,
-    stake_program: AccountInfo<'info>,
+    stake_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct DecreaseValidatorStake<'info> {
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     staker: Signer<'info>,
-    stake_pool_withdraw_authority: AccountInfo<'info>,
+    stake_pool_withdraw_authority: UncheckedAccount<'info>,
     #[account(mut)]
-    validator_list: AccountInfo<'info>,
+    validator_list: UncheckedAccount<'info>,
     #[account(mut)]
-    validator_stake: AccountInfo<'info>,
+    validator_stake: UncheckedAccount<'info>,
     #[account(mut)]
-    transient_stake: AccountInfo<'info>,
+    transient_stake: UncheckedAccount<'info>,
     clock: Sysvar<'info, Clock>,
     rent: Sysvar<'info, Rent>,
     system_program: Program<'info, System>,
-    stake_program: AccountInfo<'info>,
+    stake_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct IncreaseValidatorStake<'info> {
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     staker: Signer<'info>,
-    stake_pool_withdraw_authority: AccountInfo<'info>,
+    stake_pool_withdraw_authority: UncheckedAccount<'info>,
     #[account(mut)]
-    validator_list: AccountInfo<'info>,
+    validator_list: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_stake: AccountInfo<'info>,
+    reserve_stake: UncheckedAccount<'info>,
     #[account(mut)]
-    transient_stake: AccountInfo<'info>,
-    validator_stake: AccountInfo<'info>,
-    validator: AccountInfo<'info>,
+    transient_stake: UncheckedAccount<'info>,
+    validator_stake: UncheckedAccount<'info>,
+    validator: UncheckedAccount<'info>,
     clock: Sysvar<'info, Clock>,
     rent: Sysvar<'info, Rent>,
-    sysvar_stake_history: AccountInfo<'info>,
-    stake_config: AccountInfo<'info>,
+    sysvar_stake_history: UncheckedAccount<'info>,
+    stake_config: UncheckedAccount<'info>,
     system_program: Program<'info, System>,
-    stake_program: AccountInfo<'info>,
+    stake_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct SetPreferredValidator<'info> {
     #[account(mut)]
-    stake_pool_address: AccountInfo<'info>,
+    stake_pool_address: UncheckedAccount<'info>,
     staker: Signer<'info>,
-    validator_list_address: AccountInfo<'info>,
+    validator_list_address: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct UpdateValidatorListBalance<'info> {
-    stake_pool: AccountInfo<'info>,
-    stake_pool_withdraw_authority: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
+    stake_pool_withdraw_authority: UncheckedAccount<'info>,
     #[account(mut)]
-    validator_list_address: AccountInfo<'info>,
+    validator_list_address: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_stake: AccountInfo<'info>,
+    reserve_stake: UncheckedAccount<'info>,
     clock: Sysvar<'info, Clock>,
-    sysvar_stake_history: AccountInfo<'info>,
-    stake_program: AccountInfo<'info>,
+    sysvar_stake_history: UncheckedAccount<'info>,
+    stake_program: UncheckedAccount<'info>,
     // #[account(mut)]
-    // optional_validator_stake_account: AccountInfo<'info>,
+    // optional_validator_stake_account: UncheckedAccount<'info>,
     // #[account(mut)]
-    // optional_transient_stake_account: AccountInfo<'info>,
+    // optional_transient_stake_account: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct UpdateStakePoolBalance<'info> {
     #[account(mut)]
-    stake_pool: AccountInfo<'info>,
-    withdraw_authority: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
+    withdraw_authority: UncheckedAccount<'info>,
     #[account(mut)]
-    validator_list_storage: AccountInfo<'info>,
-    reserve_stake: AccountInfo<'info>,
+    validator_list_storage: UncheckedAccount<'info>,
+    reserve_stake: UncheckedAccount<'info>,
     #[account(mut)]
-    manager_fee_account: AccountInfo<'info>,
+    manager_fee_account: UncheckedAccount<'info>,
     #[account(mut)]
-    stake_pool_mint: AccountInfo<'info>,
+    stake_pool_mint: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct CleanupRemovedValidatorEntries<'info> {
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     #[account(mut)]
-    validator_list_storage: AccountInfo<'info>,
+    validator_list_storage: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct DepositStake<'info> {
     #[account(mut)]
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     #[account(mut)]
-    validator_list_storage: AccountInfo<'info>,
-    stake_pool_deposit_authority: AccountInfo<'info>,
-    stake_pool_withdraw_authority: AccountInfo<'info>,
+    validator_list_storage: UncheckedAccount<'info>,
+    stake_pool_deposit_authority: UncheckedAccount<'info>,
+    stake_pool_withdraw_authority: UncheckedAccount<'info>,
     #[account(mut)]
-    deposit_stake_address: AccountInfo<'info>,
+    deposit_stake_address: UncheckedAccount<'info>,
     #[account(mut)]
-    validator_stake_account: AccountInfo<'info>,
+    validator_stake_account: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_stake_account: AccountInfo<'info>,
+    reserve_stake_account: UncheckedAccount<'info>,
     #[account(mut)]
-    pool_tokens_to: AccountInfo<'info>,
+    pool_tokens_to: UncheckedAccount<'info>,
     #[account(mut)]
-    manager_fee_account: AccountInfo<'info>,
+    manager_fee_account: UncheckedAccount<'info>,
     #[account(mut)]
-    referrer_pool_tokens_account: AccountInfo<'info>,
+    referrer_pool_tokens_account: UncheckedAccount<'info>,
     #[account(mut)]
-    pool_mint: AccountInfo<'info>,
+    pool_mint: UncheckedAccount<'info>,
     clock: Sysvar<'info, Clock>,
-    sysvar_stake_history: AccountInfo<'info>,
+    sysvar_stake_history: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
-    stake_program: AccountInfo<'info>,
+    stake_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct WithdrawStake<'info> {
     #[account(mut)]
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     #[account(mut)]
-    validator_list_storage: AccountInfo<'info>,
-    stake_pool_withdraw: AccountInfo<'info>,
+    validator_list_storage: UncheckedAccount<'info>,
+    stake_pool_withdraw: UncheckedAccount<'info>,
     #[account(mut)]
-    stake_to_split: AccountInfo<'info>,
+    stake_to_split: UncheckedAccount<'info>,
     #[account(mut)]
-    stake_to_receive: AccountInfo<'info>,
-    user_stake_authority: AccountInfo<'info>,
+    stake_to_receive: UncheckedAccount<'info>,
+    user_stake_authority: UncheckedAccount<'info>,
     user_transfer_authority: Signer<'info>,
     #[account(mut)]
-    user_pool_token_account: AccountInfo<'info>,
+    user_pool_token_account: UncheckedAccount<'info>,
     #[account(mut)]
-    manager_fee_account: AccountInfo<'info>,
+    manager_fee_account: UncheckedAccount<'info>,
     #[account(mut)]
-    pool_mint: AccountInfo<'info>,
+    pool_mint: UncheckedAccount<'info>,
     clock: Sysvar<'info, Clock>,
     token_program: Program<'info, Token>,
-    stake_program: AccountInfo<'info>,
+    stake_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct SetManager<'info> {
     #[account(mut)]
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     manager: Signer<'info>,
     new_manager: Signer<'info>,
-    new_fee_receiver: AccountInfo<'info>,
+    new_fee_receiver: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct SetFee<'info> {
     #[account(mut)]
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     manager: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct SetStaker<'info> {
     #[account(mut)]
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     set_staker_authority: Signer<'info>,
-    new_staker: AccountInfo<'info>,
+    new_staker: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct DepositSol<'info> {
     #[account(mut)]
-    stake_pool: AccountInfo<'info>,
-    stake_pool_withdraw_authority: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
+    stake_pool_withdraw_authority: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_stake_account: AccountInfo<'info>,
+    reserve_stake_account: UncheckedAccount<'info>,
     #[account(mut)]
     lamports_from: Signer<'info>,
     #[account(mut)]
-    pool_tokens_to: AccountInfo<'info>,
+    pool_tokens_to: UncheckedAccount<'info>,
     #[account(mut)]
-    manager_fee_account: AccountInfo<'info>,
+    manager_fee_account: UncheckedAccount<'info>,
     #[account(mut)]
-    referrer_pool_tokens_account: AccountInfo<'info>,
+    referrer_pool_tokens_account: UncheckedAccount<'info>,
     #[account(mut)]
-    pool_mint: AccountInfo<'info>,
+    pool_mint: UncheckedAccount<'info>,
     system_program: Program<'info, System>,
     token_program: Program<'info, Token>,
 }
@@ -365,56 +365,56 @@ pub struct DepositSol<'info> {
 #[derive(Accounts)]
 pub struct SetFundingAuthority<'info> {
     #[account(mut)]
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     manager: Signer<'info>,
-    // optional_auth: AccountInfo<'info>,
+    // optional_auth: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct WithdrawSol<'info> {
     #[account(mut)]
-    stake_pool: AccountInfo<'info>,
-    stake_pool_withdraw_authority: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
+    stake_pool_withdraw_authority: UncheckedAccount<'info>,
     user_transfer_authority: Signer<'info>,
     #[account(mut)]
-    pool_tokens_from: AccountInfo<'info>,
+    pool_tokens_from: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_stake_account: AccountInfo<'info>,
+    reserve_stake_account: UncheckedAccount<'info>,
     #[account(mut)]
-    lamports_to: AccountInfo<'info>,
+    lamports_to: UncheckedAccount<'info>,
     #[account(mut)]
-    manager_fee_account: AccountInfo<'info>,
+    manager_fee_account: UncheckedAccount<'info>,
     #[account(mut)]
-    pool_mint: AccountInfo<'info>,
+    pool_mint: UncheckedAccount<'info>,
     clock: Sysvar<'info, Clock>,
-    sysvar_stake_history: AccountInfo<'info>,
-    stake_program: AccountInfo<'info>,
+    sysvar_stake_history: UncheckedAccount<'info>,
+    stake_program: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct CreateTokenMetadata<'info> {
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     manager: Signer<'info>,
-    stake_pool_withdraw_authority: AccountInfo<'info>,
-    pool_mint: AccountInfo<'info>,
+    stake_pool_withdraw_authority: UncheckedAccount<'info>,
+    pool_mint: UncheckedAccount<'info>,
     #[account(mut)]
     payer: Signer<'info>,
     #[account(mut)]
-    token_metadata: AccountInfo<'info>,
-    mpl_token_metadata: AccountInfo<'info>,
+    token_metadata: UncheckedAccount<'info>,
+    mpl_token_metadata: UncheckedAccount<'info>,
     system_program: Program<'info, System>,
     rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
 pub struct UpdateTokenMetadata<'info> {
-    stake_pool: AccountInfo<'info>,
+    stake_pool: UncheckedAccount<'info>,
     manager: Signer<'info>,
-    stake_pool_withdraw_authority: AccountInfo<'info>,
+    stake_pool_withdraw_authority: UncheckedAccount<'info>,
     #[account(mut)]
-    token_metadata: AccountInfo<'info>,
-    mpl_token_metadata: AccountInfo<'info>,
+    token_metadata: UncheckedAccount<'info>,
+    mpl_token_metadata: UncheckedAccount<'info>,
 }
 
 #[account]

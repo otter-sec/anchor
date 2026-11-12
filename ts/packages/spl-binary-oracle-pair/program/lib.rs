@@ -33,58 +33,58 @@ pub mod spl_binary_oracle_pair {
 #[derive(Accounts)]
 pub struct InitPool<'info> {
     #[account(mut)]
-    pool: AccountInfo<'info>,
-    authority: AccountInfo<'info>,
-    decider: AccountInfo<'info>,
-    deposit_token_mint: AccountInfo<'info>,
+    pool: UncheckedAccount<'info>,
+    authority: UncheckedAccount<'info>,
+    decider: UncheckedAccount<'info>,
+    deposit_token_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    deposit_account: AccountInfo<'info>,
+    deposit_account: UncheckedAccount<'info>,
     #[account(mut)]
-    token_pass_mint: AccountInfo<'info>,
+    token_pass_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    token_fail_mint: AccountInfo<'info>,
+    token_fail_mint: UncheckedAccount<'info>,
     rent: Sysvar<'info, Rent>,
     token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct Deposit<'info> {
-    pool: AccountInfo<'info>,
-    authority: AccountInfo<'info>,
+    pool: UncheckedAccount<'info>,
+    authority: UncheckedAccount<'info>,
     user_transfer_authority: Signer<'info>,
     #[account(mut)]
-    user_token_account: AccountInfo<'info>,
+    user_token_account: UncheckedAccount<'info>,
     #[account(mut)]
-    pool_deposit_token_account: AccountInfo<'info>,
+    pool_deposit_token_account: UncheckedAccount<'info>,
     #[account(mut)]
-    token_pass_mint: AccountInfo<'info>,
+    token_pass_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    token_fail_mint: AccountInfo<'info>,
+    token_fail_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    token_pass_destination_account: AccountInfo<'info>,
+    token_pass_destination_account: UncheckedAccount<'info>,
     #[account(mut)]
-    token_fail_destination_account: AccountInfo<'info>,
+    token_fail_destination_account: UncheckedAccount<'info>,
     clock: Sysvar<'info, Clock>,
     token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct Withdraw<'info> {
-    pool: AccountInfo<'info>,
-    authority: AccountInfo<'info>,
+    pool: UncheckedAccount<'info>,
+    authority: UncheckedAccount<'info>,
     user_transfer_authority: Signer<'info>,
     #[account(mut)]
-    pool_deposit_token_account: AccountInfo<'info>,
+    pool_deposit_token_account: UncheckedAccount<'info>,
     #[account(mut)]
-    token_pass_user_account: AccountInfo<'info>,
+    token_pass_user_account: UncheckedAccount<'info>,
     #[account(mut)]
-    token_fail_user_account: AccountInfo<'info>,
+    token_fail_user_account: UncheckedAccount<'info>,
     #[account(mut)]
-    token_pass_mint: AccountInfo<'info>,
+    token_pass_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    token_fail_mint: AccountInfo<'info>,
+    token_fail_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    user_token_destination_account: AccountInfo<'info>,
+    user_token_destination_account: UncheckedAccount<'info>,
     clock: Sysvar<'info, Clock>,
     token_program: Program<'info, Token>,
 }
@@ -92,7 +92,7 @@ pub struct Withdraw<'info> {
 #[derive(Accounts)]
 pub struct Decide<'info> {
     #[account(mut)]
-    pool: AccountInfo<'info>,
+    pool: UncheckedAccount<'info>,
     decider: Signer<'info>,
     clock: Sysvar<'info, Clock>,
 }

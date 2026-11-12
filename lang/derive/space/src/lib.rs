@@ -43,7 +43,7 @@ use {
 ///    pub data: Account<'info, ExampleAccount>,
 /// }
 /// ```
-#[proc_macro_derive(InitSpace, attributes(max_len))]
+#[proc_macro_derive(InitSpace, attributes(max_len, borsh))]
 pub fn derive_init_space(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -54,6 +54,9 @@ pub fn derive_init_space(item: TokenStream) -> TokenStream {
             let recurse = fields
                 .into_iter()
                 .map(|f| {
+                    if is_borsh_skipped(&f.attrs)? {
+                        return Ok(quote!(0));
+                    }
                     let mut max_len_args = get_max_len_args(&f.attrs)?;
                     Ok(len_from_type(f.ty, &mut max_len_args))
                 })
@@ -88,6 +91,9 @@ pub fn derive_init_space(item: TokenStream) -> TokenStream {
                             .fields
                             .into_iter()
                             .map(|f| {
+                                if is_borsh_skipped(&f.attrs)? {
+                                    return Ok(quote!(0));
+                                }
                                 let mut max_len_args = get_max_len_args(&f.attrs)?;
                                 Ok(len_from_type(f.ty, &mut max_len_args))
                             })
@@ -135,7 +141,7 @@ fn len_from_type(ty: Type, attrs: &mut Option<VecDeque<TokenStream2>>) -> TokenS
         Type::Array(TypeArray { elem, len, .. }) => {
             let array_len = len.to_token_stream();
             let type_len = len_from_type(*elem, attrs);
-            quote!((#array_len * #type_len))
+            quote!(((#array_len) * #type_len))
         }
         Type::Path(ty_path) => {
             let path_segment = match ty_path.path.segments.last() {
@@ -247,6 +253,41 @@ fn get_max_len_args(
         .transpose()
 }
 
+fn is_borsh_skipped(attributes: &[Attribute]) -> Result<bool, syn::Error> {
+    let mut skipped = false;
+
+    for attribute in attributes.iter().filter(|a| a.path().is_ident("borsh")) {
+        let metas =
+            attribute.parse_args_with(Punctuated::<syn::Meta, Token![,]>::parse_terminated)?;
+
+        for meta in metas {
+            match meta {
+                syn::Meta::Path(path) if path.is_ident("skip") => skipped = true,
+                syn::Meta::NameValue(name_value)
+                    if name_value.path.is_ident("serialize_with")
+                        || name_value.path.is_ident("deserialize_with") =>
+                {
+                    let attribute = if name_value.path.is_ident("serialize_with") {
+                        "serialize_with"
+                    } else {
+                        "deserialize_with"
+                    };
+
+                    return Err(syn::Error::new_spanned(
+                        name_value.path,
+                        format!(
+                            "`#[derive(InitSpace)]` does not support `#[borsh({attribute} = ...)]`"
+                        ),
+                    ));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(skipped)
+}
+
 fn get_next_arg(ident: &Ident, args: &mut Option<VecDeque<TokenStream2>>) -> TokenStream2 {
     if let Some(arg_list) = args {
         if let Some(arg) = arg_list.pop_back() {
@@ -294,5 +335,19 @@ mod tests {
             err.to_string(),
             "max_len only accepts integer literals, identifiers, or paths"
         );
+    }
+
+    #[test]
+    fn is_borsh_skipped_rejects_custom_serializers() {
+        for attr in [
+            syn::parse_quote!(#[borsh(serialize_with = serialize)]),
+            syn::parse_quote!(#[borsh(deserialize_with = deserialize)]),
+        ] {
+            let err = is_borsh_skipped(&[attr]).unwrap_err();
+
+            assert!(err
+                .to_string()
+                .contains("#[derive(InitSpace)]` does not support"));
+        }
     }
 }

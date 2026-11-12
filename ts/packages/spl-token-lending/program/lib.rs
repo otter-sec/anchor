@@ -100,40 +100,40 @@ pub mod spl_token_lending {
 #[derive(Accounts)]
 pub struct InitLendingMarket<'info> {
     #[account(mut)]
-    lending_market: AccountInfo<'info>,
+    lending_market: UncheckedAccount<'info>,
     rent: Sysvar<'info, Rent>,
     token_program: Program<'info, Token>,
-    oracle_program: AccountInfo<'info>,
+    oracle_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct SetLendingMarketOwner<'info> {
     #[account(mut)]
-    lending_market: AccountInfo<'info>,
+    lending_market: UncheckedAccount<'info>,
     lending_market_owner: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct InitReserve<'info> {
     #[account(mut)]
-    source_liquidity: AccountInfo<'info>,
+    source_liquidity: UncheckedAccount<'info>,
     #[account(mut)]
-    destination_collateral: AccountInfo<'info>,
+    destination_collateral: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve: AccountInfo<'info>,
-    reserve_liquidity_mint: AccountInfo<'info>,
+    reserve: UncheckedAccount<'info>,
+    reserve_liquidity_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_liquidity_supply: AccountInfo<'info>,
+    reserve_liquidity_supply: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_liquidity_fee_receiver: AccountInfo<'info>,
+    reserve_liquidity_fee_receiver: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_collateral_mint: AccountInfo<'info>,
+    reserve_collateral_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_collateral_supply: AccountInfo<'info>,
-    pyth_product: AccountInfo<'info>,
-    pyth_price: AccountInfo<'info>,
-    lending_market: AccountInfo<'info>,
-    lending_market_authority: AccountInfo<'info>,
+    reserve_collateral_supply: UncheckedAccount<'info>,
+    pyth_product: UncheckedAccount<'info>,
+    pyth_price: UncheckedAccount<'info>,
+    lending_market: UncheckedAccount<'info>,
+    lending_market_authority: UncheckedAccount<'info>,
     lending_market_owner: Signer<'info>,
     user_transfer_authority: Signer<'info>,
     clock: Sysvar<'info, Clock>,
@@ -144,25 +144,25 @@ pub struct InitReserve<'info> {
 #[derive(Accounts)]
 pub struct RefreshReserve<'info> {
     #[account(mut)]
-    reserve: AccountInfo<'info>,
-    reserve_liquidity_oracle: AccountInfo<'info>,
+    reserve: UncheckedAccount<'info>,
+    reserve_liquidity_oracle: UncheckedAccount<'info>,
     clock: Sysvar<'info, Clock>,
 }
 
 #[derive(Accounts)]
 pub struct DepositReserveLiquidity<'info> {
     #[account(mut)]
-    source_liquidity: AccountInfo<'info>,
+    source_liquidity: UncheckedAccount<'info>,
     #[account(mut)]
-    destination_collateral: AccountInfo<'info>,
+    destination_collateral: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve: AccountInfo<'info>,
+    reserve: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_liquidity_supply: AccountInfo<'info>,
+    reserve_liquidity_supply: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_collateral_mint: AccountInfo<'info>,
-    lending_market: AccountInfo<'info>,
-    lending_market_authority: AccountInfo<'info>,
+    reserve_collateral_mint: UncheckedAccount<'info>,
+    lending_market: UncheckedAccount<'info>,
+    lending_market_authority: UncheckedAccount<'info>,
     user_transfer_authority: Signer<'info>,
     clock: Sysvar<'info, Clock>,
     token_program: Program<'info, Token>,
@@ -171,17 +171,17 @@ pub struct DepositReserveLiquidity<'info> {
 #[derive(Accounts)]
 pub struct RedeemReserveCollateral<'info> {
     #[account(mut)]
-    source_collateral: AccountInfo<'info>,
+    source_collateral: UncheckedAccount<'info>,
     #[account(mut)]
-    destination_liquidity: AccountInfo<'info>,
+    destination_liquidity: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve: AccountInfo<'info>,
+    reserve: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_collateral_mint: AccountInfo<'info>,
+    reserve_collateral_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_liquidity_supply: AccountInfo<'info>,
-    lending_market: AccountInfo<'info>,
-    lending_market_authority: AccountInfo<'info>,
+    reserve_liquidity_supply: UncheckedAccount<'info>,
+    lending_market: UncheckedAccount<'info>,
+    lending_market_authority: UncheckedAccount<'info>,
     user_transfer_authority: Signer<'info>,
     clock: Sysvar<'info, Clock>,
     token_program: Program<'info, Token>,
@@ -190,8 +190,8 @@ pub struct RedeemReserveCollateral<'info> {
 #[derive(Accounts)]
 pub struct InitObligation<'info> {
     #[account(mut)]
-    obligation: AccountInfo<'info>,
-    lending_market: AccountInfo<'info>,
+    obligation: UncheckedAccount<'info>,
+    lending_market: UncheckedAccount<'info>,
     obligation_owner: Signer<'info>,
     clock: Sysvar<'info, Clock>,
     rent: Sysvar<'info, Rent>,
@@ -201,21 +201,21 @@ pub struct InitObligation<'info> {
 #[derive(Accounts)]
 pub struct RefreshObligation<'info> {
     #[account(mut)]
-    obligation: AccountInfo<'info>,
+    obligation: UncheckedAccount<'info>,
     clock: Sysvar<'info, Clock>,
-    // optional_pubkey: AccountInfo<'info>,
+    // optional_pubkey: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct DepositObligationCollateral<'info> {
     #[account(mut)]
-    source_collateral: AccountInfo<'info>,
+    source_collateral: UncheckedAccount<'info>,
     #[account(mut)]
-    destination_collateral: AccountInfo<'info>,
-    deposit_reserve: AccountInfo<'info>,
+    destination_collateral: UncheckedAccount<'info>,
+    deposit_reserve: UncheckedAccount<'info>,
     #[account(mut)]
-    obligation: AccountInfo<'info>,
-    lending_market: AccountInfo<'info>,
+    obligation: UncheckedAccount<'info>,
+    lending_market: UncheckedAccount<'info>,
     obligation_owner: Signer<'info>,
     user_transfer_authority: Signer<'info>,
     clock: Sysvar<'info, Clock>,
@@ -225,14 +225,14 @@ pub struct DepositObligationCollateral<'info> {
 #[derive(Accounts)]
 pub struct WithdrawObligationCollateral<'info> {
     #[account(mut)]
-    source_collateral: AccountInfo<'info>,
+    source_collateral: UncheckedAccount<'info>,
     #[account(mut)]
-    destination_collateral: AccountInfo<'info>,
-    withdraw_reserve: AccountInfo<'info>,
+    destination_collateral: UncheckedAccount<'info>,
+    withdraw_reserve: UncheckedAccount<'info>,
     #[account(mut)]
-    obligation: AccountInfo<'info>,
-    lending_market: AccountInfo<'info>,
-    lending_market_authority: AccountInfo<'info>,
+    obligation: UncheckedAccount<'info>,
+    lending_market: UncheckedAccount<'info>,
+    lending_market_authority: UncheckedAccount<'info>,
     obligation_owner: Signer<'info>,
     clock: Sysvar<'info, Clock>,
     token_program: Program<'info, Token>,
@@ -241,35 +241,35 @@ pub struct WithdrawObligationCollateral<'info> {
 #[derive(Accounts)]
 pub struct BorrowObligationLiquidity<'info> {
     #[account(mut)]
-    source_liquidity: AccountInfo<'info>,
+    source_liquidity: UncheckedAccount<'info>,
     #[account(mut)]
-    destination_liquidity: AccountInfo<'info>,
+    destination_liquidity: UncheckedAccount<'info>,
     #[account(mut)]
-    borrow_reserve: AccountInfo<'info>,
+    borrow_reserve: UncheckedAccount<'info>,
     #[account(mut)]
-    borrow_reserve_liquidity_fee_receiver: AccountInfo<'info>,
+    borrow_reserve_liquidity_fee_receiver: UncheckedAccount<'info>,
     #[account(mut)]
-    obligation: AccountInfo<'info>,
-    lending_market: AccountInfo<'info>,
-    lending_market_authority: AccountInfo<'info>,
+    obligation: UncheckedAccount<'info>,
+    lending_market: UncheckedAccount<'info>,
+    lending_market_authority: UncheckedAccount<'info>,
     obligation_owner: Signer<'info>,
     clock: Sysvar<'info, Clock>,
     token_program: Program<'info, Token>,
     // #[account(mut)]
-    // optional_host_fee_receiver: AccountInfo<'info>,
+    // optional_host_fee_receiver: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct RepayObligationLiquidity<'info> {
     #[account(mut)]
-    source_liquidity: AccountInfo<'info>,
+    source_liquidity: UncheckedAccount<'info>,
     #[account(mut)]
-    destination_liquidity: AccountInfo<'info>,
+    destination_liquidity: UncheckedAccount<'info>,
     #[account(mut)]
-    repay_reserve: AccountInfo<'info>,
+    repay_reserve: UncheckedAccount<'info>,
     #[account(mut)]
-    obligation: AccountInfo<'info>,
-    lending_market: AccountInfo<'info>,
+    obligation: UncheckedAccount<'info>,
+    lending_market: UncheckedAccount<'info>,
     user_transfer_authority: Signer<'info>,
     clock: Sysvar<'info, Clock>,
     token_program: Program<'info, Token>,
@@ -278,20 +278,20 @@ pub struct RepayObligationLiquidity<'info> {
 #[derive(Accounts)]
 pub struct LiquidateObligation<'info> {
     #[account(mut)]
-    source_liquidity: AccountInfo<'info>,
+    source_liquidity: UncheckedAccount<'info>,
     #[account(mut)]
-    destination_collateral: AccountInfo<'info>,
+    destination_collateral: UncheckedAccount<'info>,
     #[account(mut)]
-    repay_reserve: AccountInfo<'info>,
+    repay_reserve: UncheckedAccount<'info>,
     #[account(mut)]
-    repay_reserve_liquidity_supply: AccountInfo<'info>,
-    withdraw_reserve: AccountInfo<'info>,
+    repay_reserve_liquidity_supply: UncheckedAccount<'info>,
+    withdraw_reserve: UncheckedAccount<'info>,
     #[account(mut)]
-    withdraw_reserve_collateral_supply: AccountInfo<'info>,
+    withdraw_reserve_collateral_supply: UncheckedAccount<'info>,
     #[account(mut)]
-    obligation: AccountInfo<'info>,
-    lending_market: AccountInfo<'info>,
-    lending_market_authority: AccountInfo<'info>,
+    obligation: UncheckedAccount<'info>,
+    lending_market: UncheckedAccount<'info>,
+    lending_market_authority: UncheckedAccount<'info>,
     user_transfer_authority: Signer<'info>,
     clock: Sysvar<'info, Clock>,
     token_program: Program<'info, Token>,
@@ -300,19 +300,19 @@ pub struct LiquidateObligation<'info> {
 #[derive(Accounts)]
 pub struct FlashLoan<'info> {
     #[account(mut)]
-    source_liquidity: AccountInfo<'info>,
+    source_liquidity: UncheckedAccount<'info>,
     #[account(mut)]
-    destination_liquidity: AccountInfo<'info>,
+    destination_liquidity: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve: AccountInfo<'info>,
+    reserve: UncheckedAccount<'info>,
     #[account(mut)]
-    reserve_liquidity_fee_receiver: AccountInfo<'info>,
+    reserve_liquidity_fee_receiver: UncheckedAccount<'info>,
     #[account(mut)]
-    host_fee_receiver: AccountInfo<'info>,
-    lending_market: AccountInfo<'info>,
-    lending_market_authority: AccountInfo<'info>,
+    host_fee_receiver: UncheckedAccount<'info>,
+    lending_market: UncheckedAccount<'info>,
+    lending_market_authority: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
-    flash_loan_receiver_program: AccountInfo<'info>,
+    flash_loan_receiver_program: UncheckedAccount<'info>,
 }
 
 #[account]

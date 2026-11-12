@@ -3,7 +3,7 @@ use {
     crate::parser::docs,
     proc_macro2::TokenStream,
     quote::quote,
-    syn::{spanned::Spanned, Result},
+    syn::{punctuated::Punctuated, spanned::Spanned, Result, Token},
 };
 
 /// Generate `IdlBuild` impl for a struct.
@@ -216,17 +216,30 @@ fn get_borsh_use_discriminant(attrs: &[syn::Attribute]) -> Result<bool> {
     let mut use_discriminant = None;
 
     for attr in attrs.iter().filter(|attr| attr.path().is_ident("borsh")) {
-        attr.parse_nested_meta(|meta| {
-            if !meta.path.is_ident("use_discriminant") {
-                return Ok(());
+        let metas = attr.parse_args_with(Punctuated::<syn::Meta, Token![,]>::parse_terminated)?;
+
+        for meta in metas {
+            let syn::Meta::NameValue(name_value) = meta else {
+                continue;
+            };
+
+            if !name_value.path.is_ident("use_discriminant") {
+                continue;
             }
 
-            let value = meta.value()?;
-            let value: syn::LitBool = value.parse()?;
-            use_discriminant = Some(value.value);
+            let syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Bool(value),
+                ..
+            }) = &name_value.value
+            else {
+                return Err(syn::Error::new_spanned(
+                    name_value.value,
+                    "expected a boolean literal",
+                ));
+            };
 
-            Ok(())
-        })?;
+            use_discriminant = Some(value.value);
+        }
     }
 
     Ok(use_discriminant.unwrap_or(false))
@@ -236,13 +249,28 @@ fn is_borsh_skipped(attrs: &[syn::Attribute]) -> Result<bool> {
     let mut skipped = false;
 
     for attr in attrs.iter().filter(|attr| attr.path().is_ident("borsh")) {
-        attr.parse_nested_meta(|meta| {
-            if meta.path.is_ident("skip") {
-                skipped = true;
-            }
+        let metas = attr.parse_args_with(Punctuated::<syn::Meta, Token![,]>::parse_terminated)?;
 
-            Ok(())
-        })?;
+        for meta in metas {
+            match meta {
+                syn::Meta::Path(path) if path.is_ident("skip") => skipped = true,
+                syn::Meta::NameValue(name_value)
+                    if name_value.path.is_ident("serialize_with")
+                        || name_value.path.is_ident("deserialize_with") =>
+                {
+                    let attribute = if name_value.path.is_ident("serialize_with") {
+                        "serialize_with"
+                    } else {
+                        "deserialize_with"
+                    };
+                    return Err(syn::Error::new_spanned(
+                        name_value.path,
+                        format!("IDL building does not support `#[borsh({attribute} = ...)]`"),
+                    ));
+                }
+                _ => {}
+            }
+        }
     }
 
     Ok(skipped)
@@ -1047,6 +1075,68 @@ mod tests {
                 Cat = 0,
                 Dog = 1,
                 Mouse = 5,
+            }
+        };
+
+        assert!(gen_idl_type_def_enum(&item).is_ok());
+    }
+
+    #[test]
+    fn test_gen_named_fields_allows_borsh_bound_attributes() {
+        let item: syn::ItemStruct = syn::parse_quote! {
+            struct BoundedField {
+                #[borsh(bound(
+                    serialize = "u64: borsh::ser::BorshSerialize",
+                    deserialize = "u64: borsh::de::BorshDeserialize"
+                ))]
+                value: u64,
+            }
+        };
+
+        let (fields, defined) = gen_named_fields(item.fields.iter(), &[], false).unwrap();
+        assert_eq!(fields.len(), 1);
+        assert_eq!(defined.len(), 1);
+    }
+
+    #[test]
+    fn test_gen_named_fields_rejects_borsh_custom_serializers() {
+        let serialize_with: syn::ItemStruct = syn::parse_quote! {
+            struct SerializeWith {
+                #[borsh(serialize_with = "serialize")]
+                value: u64,
+            }
+        };
+        let deserialize_with: syn::ItemStruct = syn::parse_quote! {
+            struct DeserializeWith {
+                #[borsh(deserialize_with = "deserialize")]
+                value: u64,
+            }
+        };
+
+        let serialize_error = gen_named_fields(serialize_with.fields.iter(), &[], false)
+            .unwrap_err()
+            .to_string();
+        let deserialize_error = gen_named_fields(deserialize_with.fields.iter(), &[], false)
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(
+            serialize_error,
+            "IDL building does not support `#[borsh(serialize_with = ...)]`"
+        );
+        assert_eq!(
+            deserialize_error,
+            "IDL building does not support `#[borsh(deserialize_with = ...)]`"
+        );
+    }
+
+    #[test]
+    fn test_gen_idl_type_def_enum_allows_borsh_init_attribute() {
+        let item: syn::ItemEnum = syn::parse_quote! {
+            #[borsh(init=initialization_method)]
+            enum Animal {
+                Cat,
+                Dog,
             }
         };
 
