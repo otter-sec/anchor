@@ -106,6 +106,8 @@ impl<'a> TypeLowerer<'a> {
         match path {
             "u8" | "u16" | "u32" | "u64" | "u128" | "i8" | "i16" | "i32" | "i64" | "i128"
             | "f32" | "f64" | "bool" => json!(path),
+            "PodU8" => json!("u8"),
+            "PodI8" => json!("i8"),
             "PodU16" | "PodU32" | "PodU64" | "PodU128" | "PodI16" | "PodI32" | "PodI64"
             | "PodI128" | "PodBool" => json!({ "defined": { "name": path } }),
             "String" | "string" | "str" => json!("string"),
@@ -1554,6 +1556,19 @@ mod tests {
             rust_type_to_idl_value(&ty),
             json!({ "array": [{ "defined": { "name": "PodI32" } }, 2] })
         );
+
+        let ty: Type = syn::parse_quote!(PodU8);
+        assert_eq!(rust_type_to_idl_value(&ty), json!("u8"));
+
+        let ty: Type = syn::parse_quote!(anchor_lang::pod::PodI8);
+        assert_eq!(rust_type_to_idl_value(&ty), json!("i8"));
+
+        let ty: Type = syn::parse_quote!([PodU8; 4]);
+        assert_eq!(rust_type_to_idl_value(&ty), json!({ "array": ["u8", 4] }));
+
+        // A user type named `PodU8` is still a defined type
+        let ty: Type = syn::parse_quote!(crate::models::PodU8);
+        assert_eq!(rust_type_to_idl_value(&ty), json!({ "defined": { "name": "PodU8" } }));
     }
 
     #[test]
