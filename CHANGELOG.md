@@ -15,6 +15,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - client: Expose `parse_logs` to decode events from transaction logs while tracking the CPI stack ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
 - ts: Set the transaction message version per provider (`transactionVersion` option) or per call (`.transactionVersion()`) ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 - ts: Estimate the resource limits a transaction message leaves unset before sending, with configurable compute unit headroom (`getComputeUnitLimitFromEstimate`). Disable with `estimateResourceLimits: false` ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+- spl-v2: Add CPI helpers for the Token-2022 `PermissionedBurn` extension (`permissioned_burn_initialize`, `permissioned_burn`, `permissioned_burn_checked`) ([#5283](https://github.com/otter-sec/anchor/pull/5283)).
 
 ### Fixes
 
