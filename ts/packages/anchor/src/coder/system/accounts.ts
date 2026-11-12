@@ -1,3 +1,4 @@
+import bs58 from "bs58";
 import { AccountsCoder } from "../index.js";
 import { Idl } from "../../idl.js";
 import * as BufferLayout from "buffer-layout";
@@ -37,12 +38,15 @@ export class SystemAccountsCoder<A extends string = string>
     }
   }
 
-  // TODO: this won't use the appendData.
-  public memcmp(accountName: A, _appendData?: Buffer): any {
+  public memcmp(accountName: A, appendData?: Buffer): any {
     switch (accountName) {
       case "nonce": {
         return {
           dataSize: NONCE_ACCOUNT_LENGTH,
+          ...(appendData && {
+            offset: 0,
+            bytes: bs58.encode(appendData),
+          }),
         };
       }
       default: {
