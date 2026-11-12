@@ -249,6 +249,54 @@ describe("token extensions", () => {
     }
   });
 
+  describe("mint extension types helper", () => {
+    const plainMint = new Keypair();
+
+    it("passes for a mint without transfer fee or permanent delegate", async () => {
+      await program.methods
+        .createGroupPointerMint()
+        .accountsStrict({
+          payer: payer.publicKey,
+          authority: payer.publicKey,
+          mint: plainMint.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+        })
+        .signers([payer, plainMint])
+        .rpc();
+
+      await program.methods
+        .checkMintNoExtensions()
+        .accountsStrict({
+          authority: payer.publicKey,
+          mint: plainMint.publicKey,
+        })
+        .signers([payer])
+        .rpc();
+    });
+
+    it("fails for a mint with a permanent delegate", async () => {
+      try {
+        await program.methods
+          .checkMintNoExtensions()
+          .accountsStrict({
+            authority: payer.publicKey,
+            mint: mint.publicKey,
+          })
+          .signers([payer])
+          .rpc();
+        assert.fail("expected MintHasExtensions");
+      } catch (err) {
+        assert.ok(err instanceof AnchorError);
+        assert.equal(
+          (err as AnchorError).error.errorCode.code,
+          "MintHasExtensions"
+        );
+        assert.equal((err as AnchorError).error.errorCode.number, 6000);
+      }
+    });
+  });
+
   async function assertNativeMintState() {
     const accountInfo = await provider.connection.getAccountInfo(
       NATIVE_MINT_2022,
