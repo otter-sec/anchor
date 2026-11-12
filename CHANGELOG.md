@@ -23,6 +23,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang-v2: Keep Pod wrapper types (`PodU64`, `PodBool`, ..) in the IDL instead of lowering them to native types, so `declare_program!` generates zero-copy structs with correct program's layout ([#5170](https://github.com/otter-sec/anchor/pull/5170))
 - lang-v2: Restore `AnchorSerialize` and `AnchorDeserialize` as traits for generic bounds alongside the derive macros ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
 - ts: Recover the logs of failed version 1 transactions ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+- lang-v2: Lower `PodU8` and `PodI8` to `u8` and `i8` in the IDL, so `declare_program!` no longer fails on them ([#5273](https://github.com/otter-sec/anchor/pull/5273)).
 
 ### Breaking
 
