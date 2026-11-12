@@ -164,11 +164,13 @@ impl<'a> CpiHandle<'a> {
             // the wrapper is alive. For readonly CPIs that state is too
             // strong: the callee only needs shared borrows, and readonly metas
             // prevent writes. Downgrade to a single shared borrow for the CPI
-            // and restore the exclusive marker afterwards.
+            // and restore the original state afterwards; it is not always `0`
+            // (e.g. a `SerializedAccount` after `release_borrow()`).
+            let restore_to = unsafe { *borrow_state };
             unsafe { *borrow_state = NOT_BORROWED - 1 };
             Some(CpiBorrowGuard {
                 borrow_state,
-                restore_to: 0,
+                restore_to,
             })
         } else {
             None
