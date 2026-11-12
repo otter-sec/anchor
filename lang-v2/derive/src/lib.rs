@@ -2507,6 +2507,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[doc(hidden)]
         impl anchor_lang::IdlAccountType for #name {
             const __IDL_ACCOUNT_ENTRY: Option<&'static str> = #idl_account_entry;
+            const __IDL_NAME: Option<&'static str> = Some(#name_str);
             #idl_account_entry_fn
             fn __idl_type_def() -> Option<&'static str> {
                 #idl_type_def
@@ -2683,6 +2684,12 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
     // structs (e.g. `MixedArgs<'a> { values: &'a [u64] }`) wouldn't compile
     // with the derive.
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let idl_generics_len = input
+        .generics
+        .params
+        .iter()
+        .filter(|param| !matches!(param, syn::GenericParam::Lifetime(_)))
+        .count();
 
     let idl_where_clause = if is_bytemuck {
         let type_path = quote! { #name #ty_generics };
@@ -2708,6 +2715,8 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
         ))]
         #[doc(hidden)]
         impl #impl_generics anchor_lang::IdlAccountType for #name #ty_generics #idl_where_clause {
+            const __IDL_NAME: Option<&'static str> = Some(#name_str);
+            const __IDL_GENERICS: usize = #idl_generics_len;
             fn __idl_type_def() -> Option<&'static str> {
                 #idl_type_def
             }
@@ -6179,7 +6188,7 @@ fn process_handler(
     let idl_returns_json = return_type
         .as_ref()
         .map(|return_ty| {
-            let idl_type = idl::rust_type_to_idl(return_ty);
+            let idl_type = idl::registered_type_to_idl(return_ty);
             quote! {
                 {
                     let mut __s = anchor_lang::__idl::string::String::from(",\"returns\":");
@@ -7488,6 +7497,7 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
         ))]
         #[doc(hidden)]
         impl anchor_lang::IdlAccountType for #name {
+            const __IDL_NAME: Option<&'static str> = Some(#event_name);
             fn __idl_type_def() -> Option<&'static str> {
                 #event_type_def
             }
