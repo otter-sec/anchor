@@ -11,6 +11,7 @@ mod mint_close_authority;
 mod non_transferable;
 mod pausable;
 mod permanent_delegate;
+mod permissioned_burn;
 mod token_group;
 mod token_metadata;
 mod transfer_fee;

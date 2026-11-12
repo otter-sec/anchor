@@ -10180,6 +10180,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "token-2022-ext-permissioned-burn"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+ "solana-program-error 3.0.1",
+]
+
+[[package]]
 name = "token-2022-ext-token-group"
 version = "0.1.0"
 dependencies = [

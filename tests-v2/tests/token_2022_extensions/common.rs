@@ -17,7 +17,7 @@ use {
 
 pub const TOKEN_2022_MAINNET_SO: &str = "fixtures/programs/token_2022_mainnet.so";
 pub const TOKEN_2022_MAINNET_SHA256: &str =
-    "b2a7ce1ea6dfbcbc5ccb0e7f48f7c61dced1a86582d1c7d2e059ac54ed612da4";
+    "15a2e615a42e20f31714bbaaee43002ae6f1cda2e8d7118243117ab3c1342e2d";
 pub const PROGRAMDATA_METADATA_LEN: usize = 45;
 
 pub use {
