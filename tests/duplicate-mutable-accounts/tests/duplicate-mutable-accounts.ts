@@ -405,6 +405,44 @@ describe("duplicate-mutable-accounts", () => {
     );
   });
 
+  it("Should block `init` and `zero AccountLoader` aliased across two composites", async () => {
+    const aliased = anchor.web3.Keypair.generate();
+    await expectBlocked(
+      program.methods
+        .compositeInitAndZeroLoader()
+        .accounts({
+          initPart: {
+            counter: aliased.publicKey,
+            payer: user_wallet.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+          },
+          zeroPart: { counter: aliased.publicKey },
+        })
+        .signers([user_wallet, aliased])
+        .rpc(),
+      "`init` and `zero AccountLoader` in separate composites with one account"
+    );
+  });
+
+  it("Should block a direct `zero AccountLoader` field aliasing an `init` inside a composite", async () => {
+    const aliased = anchor.web3.Keypair.generate();
+    await expectBlocked(
+      program.methods
+        .mixedZeroLoaderAndCompositeInit()
+        .accounts({
+          zeroAccount: aliased.publicKey,
+          initPart: {
+            counter: aliased.publicKey,
+            payer: user_wallet.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+          },
+        })
+        .signers([user_wallet, aliased])
+        .rpc(),
+      "direct `zero AccountLoader` aliasing a composite `init`"
+    );
+  });
+
   it("Should still allow `zero` and `init` on genuinely different accounts", async () => {
     const zeroKp = anchor.web3.Keypair.generate();
     const initKp = anchor.web3.Keypair.generate();

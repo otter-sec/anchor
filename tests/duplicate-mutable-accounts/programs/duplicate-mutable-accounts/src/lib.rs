@@ -121,6 +121,28 @@ pub mod duplicate_mutable_accounts {
         ctx.accounts.init_part.counter.count = 2;
         Ok(())
     }
+
+    // Same as `composite_init_and_zero`, but the `zero` field is an `AccountLoader`.
+    // `AccountLoader` writes its discriminator on exit, so it must be treated like the
+    // other serializing types and must not be allowed to alias a composite `init`.
+    pub fn composite_init_and_zero_loader(
+        ctx: Context<CompositeInitAndZeroLoader>,
+    ) -> Result<()> {
+        ctx.accounts.init_part.counter.count = 1;
+        let mut loader = ctx.accounts.zero_part.counter.load_init()?;
+        loader.count = 2;
+        Ok(())
+    }
+
+    // Same as `mixed_zero_and_composite_init`, but the direct `zero` field is an `AccountLoader`.
+    pub fn mixed_zero_loader_and_composite_init(
+        ctx: Context<MixedZeroLoaderAndCompositeInit>,
+    ) -> Result<()> {
+        let mut loader = ctx.accounts.zero_account.load_init()?;
+        loader.count = 1;
+        ctx.accounts.init_part.counter.count = 2;
+        Ok(())
+    }
 }
 
 #[account]
@@ -281,5 +303,37 @@ pub struct CompositeInitAndZero<'info> {
 pub struct MixedZeroAndCompositeInit<'info> {
     #[account(zero)]
     pub zero_account: Account<'info, Counter>,
+    pub init_part: InitWrapper<'info>,
+}
+
+// --- AccountLoader regression: a `zero AccountLoader<T>` must be caught the same way ---
+
+// Zero-copy counterpart of `Counter`, same 8-byte layout so one fresh account can be
+// aliased by both an `init Account<Counter>` and a `zero AccountLoader<CounterLoader>`.
+#[account(zero_copy(unsafe))]
+#[repr(C)]
+pub struct CounterLoader {
+    pub count: u64,
+}
+
+// Composite holding a `zero AccountLoader` account.
+#[derive(Accounts)]
+pub struct ZeroLoaderWrapper<'info> {
+    #[account(zero)]
+    pub counter: AccountLoader<'info, CounterLoader>,
+}
+
+// `init` and `zero AccountLoader` split across two composites.
+#[derive(Accounts)]
+pub struct CompositeInitAndZeroLoader<'info> {
+    pub init_part: InitWrapper<'info>,
+    pub zero_part: ZeroLoaderWrapper<'info>,
+}
+
+// Direct `zero AccountLoader` field aliasing an `init` account inside a composite.
+#[derive(Accounts)]
+pub struct MixedZeroLoaderAndCompositeInit<'info> {
+    #[account(zero)]
+    pub zero_account: AccountLoader<'info, CounterLoader>,
     pub init_part: InitWrapper<'info>,
 }
