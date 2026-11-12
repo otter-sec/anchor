@@ -4742,10 +4742,10 @@ fn declare_idl_type_to_tokens_with_generics(
         } else {
             json_str(defined, "name", span)?
         };
-        if let Some(builtin) = declare_idl_defined_builtin(defined_name) {
-            return Ok(builtin);
-        }
-        let ident = Ident::new(&to_type_name(defined_name), span);
+        let path = declare_idl_defined_builtin(defined_name).unwrap_or_else(|| {
+            let ident = Ident::new(&to_type_name(defined_name), span);
+            quote! { #ident }
+        });
         let generic_args = defined
             .get("generics")
             .and_then(serde_json::Value::as_array)
@@ -4760,9 +4760,9 @@ fn declare_idl_type_to_tokens_with_generics(
             .transpose()?
             .unwrap_or_default();
         if generic_args.is_empty() {
-            return Ok(quote! { #ident });
+            return Ok(path);
         }
-        return Ok(quote! { #ident<#(#generic_args),*> });
+        return Ok(quote! { #path<#(#generic_args),*> });
     }
     if let Some(generic) = value.get("generic").and_then(serde_json::Value::as_str) {
         let ident = Ident::new(generic, span);
