@@ -24,6 +24,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang-v2: Restore `AnchorSerialize` and `AnchorDeserialize` as traits for generic bounds alongside the derive macros ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
 - ts: Recover the logs of failed version 1 transactions ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 - lang-v2: Hold a temporary shared borrow while `Slab::load`/`load_mut` validate, so a custom `SlabSchema::validate` cannot take a mutable borrow over the data ([#5266](https://github.com/otter-sec/anchor/pull/5266)).
+- lang-v2: Restore the original `borrow_state` after a `CpiBorrowGuard` drops, so a `BorshAccount`/`SerializedAccount` released with `release_borrow()` is not left exclusively borrowed after a readonly CPI ([#5265](https://github.com/otter-sec/anchor/pull/5265)).
 
 ### Breaking
 
