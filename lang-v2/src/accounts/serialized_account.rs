@@ -311,6 +311,8 @@ where
     #[inline(always)]
     fn try_cpi_handle_mut(&mut self) -> Result<crate::CpiHandleMut<'_>, ProgramError> {
         require!(self.account().is_writable(), ProgramError::InvalidArgument);
+        // A read-only load must not yield a writable CPI handle.
+        require!(self.is_mutable, ProgramError::AccountBorrowFailed);
         self.release_borrow()?;
         Ok(crate::CpiHandleMut::writable(&mut self.view))
     }

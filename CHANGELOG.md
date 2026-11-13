@@ -24,6 +24,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang-v2: Reject `try_cpi_handle_mut` on a read-only `BorshAccount`/`SerializedAccount` with `AccountBorrowFailed` ([#5264](https://github.com/otter-sec/anchor/pull/5264)).
 - lang-v2: Hold a temporary shared borrow while `Slab::load`/`load_mut` validate, so a custom `SlabSchema::validate` cannot take a mutable borrow over the data ([#5266](https://github.com/otter-sec/anchor/pull/5266)).
 - lang-v2: Restore the original `borrow_state` after a `CpiBorrowGuard` drops, so a `BorshAccount`/`SerializedAccount` released with `release_borrow()` is not left exclusively borrowed after a readonly CPI ([#5265](https://github.com/otter-sec/anchor/pull/5265)).
 - lang-v2: Stop inlining PDA and account-init scratch into the instruction handler ([#5204](https://github.com/otter-sec/anchor/pull/5204)).
