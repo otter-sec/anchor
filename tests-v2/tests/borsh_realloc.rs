@@ -1,10 +1,28 @@
 use {
-    anchor_lang::{solana_program::instruction::AccountMeta, InstructionData},
+    anchor_lang::{solana_program::instruction::AccountMeta, FixedVec, InstructionData},
     anchor_v2_testing::litesvm::LiteSVM,
     solana_pubkey::Pubkey,
     solana_signer::Signer,
     tests_v2::{build_program, keypair_for, send_instruction},
 };
+
+#[test]
+fn dynamic_instruction_writes_into_caller_storage_fallibly() {
+    let instruction = borsh_realloc::instruction::Grow {
+        new_items: vec![1, 2, 3],
+    };
+    let owned = instruction.data();
+
+    let mut exact = FixedVec::<u8, 15>::new();
+    instruction
+        .try_write_data(&mut exact)
+        .expect("dynamic instruction fits caller-selected storage");
+    assert_eq!(exact.as_slice(), owned.as_slice());
+
+    let mut short = FixedVec::<u8, 14>::new();
+    assert!(instruction.try_write_data(&mut short).is_err());
+    assert!(short.is_empty(), "failed writes must roll back");
+}
 
 fn program_id() -> Pubkey {
     "D51usz545PmMTSqE18F1YSj1RXqvpPhKUUxB6wHPNewT"

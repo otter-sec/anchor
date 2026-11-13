@@ -7,7 +7,8 @@
 //! to the same value.
 
 use anchor_lang::{
-    event, prelude::Address, AnchorDeserialize, AnchorSerialize, Discriminator, Event, BORSH_CONFIG,
+    event, prelude::Address, AnchorDeserialize, AnchorSerialize, Discriminator, Event, FixedVec,
+    BORSH_CONFIG,
 };
 
 #[event]
@@ -77,6 +78,56 @@ fn event_data_is_borsh_shaped() {
     assert_eq!(&bytes[40..42], &3u16.to_le_bytes());
     assert_eq!(&bytes[42..46], &2u32.to_le_bytes());
     assert_eq!(&bytes[46..48], b"hi");
+}
+
+#[test]
+fn dynamic_event_writes_into_caller_storage_fallibly() {
+    let event = Uploaded {
+        sender: Address::new_from_array([7; 32]),
+        len: 3,
+        memo: "hi".into(),
+        tags: vec![1, 2, 3],
+    };
+    let owned = event.data();
+    let mut exact = FixedVec::<u8, 55>::new();
+    event
+        .try_write_data(&mut exact)
+        .expect("dynamic event fits caller-selected storage");
+    assert_eq!(exact.as_slice(), owned.as_slice());
+
+    let mut short = FixedVec::<u8, 55>::new();
+    short.try_push(0xaa).unwrap();
+    assert!(event.try_write_data(&mut short).is_err());
+    assert_eq!(short.as_slice(), &[0xaa], "failed writes must roll back");
+}
+
+fn emit_uploaded<const N: usize>(
+    event: Uploaded,
+    storage: &mut FixedVec<u8, N>,
+) -> anchor_lang::Result<()> {
+    anchor_lang::emit!(event, storage);
+    Ok(())
+}
+
+#[test]
+fn emit_macro_accepts_caller_storage_for_unbounded_events() {
+    let event = || Uploaded {
+        sender: Address::new_from_array([7; 32]),
+        len: 3,
+        memo: "hi".into(),
+        tags: vec![1, 2, 3],
+    };
+
+    let mut exact = FixedVec::<u8, 55>::new();
+    emit_uploaded(event(), &mut exact).expect("caller storage fits the event");
+    assert_eq!(exact.as_slice(), event().data().as_slice());
+
+    let mut short = FixedVec::<u8, 54>::new();
+    assert_eq!(
+        emit_uploaded(event(), &mut short),
+        Err(anchor_lang::Error::InvalidInstructionData),
+    );
+    assert!(short.is_empty(), "failed macro writes must roll back");
 }
 
 #[test]

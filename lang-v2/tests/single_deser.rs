@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use anchor_lang::{prelude::*, TryAccounts};
+use anchor_lang::{prelude::*, FixedVec, InstructionData, TryAccounts};
 
 declare_id!("11111111111111111111111111111111");
 
@@ -60,4 +60,23 @@ fn instruction_args_map_to_tuple() {
 #[test]
 fn instruction_attr_keeps_prefix_tuple() {
     let _: fn(_) -> _ = _instruction_args_keep_declared_prefix;
+}
+
+#[test]
+fn generated_instruction_writes_into_caller_storage() {
+    let instruction = instruction::Ix {
+        amount: 7,
+        step: -3,
+    };
+    let owned = instruction.data();
+    let mut exact = FixedVec::<u8, 20>::new();
+    instruction
+        .try_write_data(&mut exact)
+        .expect("fixed instruction fits its exact wire size");
+    assert_eq!(exact.as_slice(), owned.as_slice());
+
+    let mut short = FixedVec::<u8, 20>::new();
+    short.try_push(0xaa).unwrap();
+    assert!(instruction.try_write_data(&mut short).is_err());
+    assert_eq!(short.as_slice(), &[0xaa], "failed writes must roll back");
 }

@@ -6,7 +6,6 @@ use {
     pinocchio::{
         account::{AccountView, NOT_BORROWED},
         address::Address,
-        instruction::InstructionAccount,
     },
     solana_program_error::{ProgramError, ProgramResult},
 };
@@ -269,25 +268,21 @@ pub(crate) fn enter_cpi<'a>(handles: &[CpiHandle<'a>]) -> alloc::vec::Vec<CpiBor
     guards
 }
 
-/// Converts a CPI accounts struct into instruction metadata and handles.
+/// Capacity-aware CPI account conversion used by [`crate::CpiContext`].
 ///
-/// Implemented by generated CPI accounts structs. Each field maps to an
-/// [`InstructionAccount`] (address + writable/signer flags) and an erased
-/// [`CpiHandle`] for the actual invocation.
-pub trait ToCpiAccounts<'a> {
-    /// Produce instruction account metadata for the CPI instruction.
-    fn to_instruction_accounts(&self) -> alloc::vec::Vec<InstructionAccount<'a>>;
+/// The account struct is converted into inline buffers sized by `N` for the
+/// individual invocation. This avoids imposing a small global runtime limit
+/// while keeping large buffers out of CPI calls that do not need them.
+pub trait ToCpiAccountsWithCapacity<'a, const N: usize> {
+    fn to_instruction_accounts_with_capacity(
+        &self,
+    ) -> Result<crate::FixedVec<pinocchio::instruction::InstructionAccount<'a>, N>, ProgramError>;
 
-    /// Collect all CPI handles for the invocation.
-    fn to_cpi_handles(&self) -> alloc::vec::Vec<CpiHandle<'a>>;
+    fn to_cpi_handles_with_capacity(&self) -> Result<crate::CpiHandleBuffer<'a, N>, ProgramError>;
 
-    /// Parallel to [`to_instruction_accounts`]: `true` at each index where an
-    /// optional field was `None` and a program-id sentinel meta was emitted.
-    ///
-    /// The CPI invoker may skip a matching handle only for these indices.
-    /// Required accounts whose address equals the callee program id must be
-    /// `false` here so they still require a handle.
-    fn optional_account_sentinel_flags(&self) -> alloc::vec::Vec<bool>;
+    fn optional_account_sentinel_flags_with_capacity(
+        &self,
+    ) -> Result<crate::FixedVec<bool, N>, ProgramError>;
 }
 
 pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
@@ -515,7 +510,7 @@ impl ToCpiHandleMut for AccountView {
 ///
 /// This is intentionally implemented blanketly for every [`AnchorAccount`]:
 /// `AnchorAccount::account()` already exposes the underlying `AccountView`,
-/// so boxed and typed account wrappers can all be used uniformly as address
+/// so typed account wrappers can all be used uniformly as address
 /// field references in generated constraint code.
 pub trait AccountAddress {
     fn account_address(&self) -> &Address;
@@ -774,10 +769,10 @@ pub trait ForeignOwnerInit: AccountInitialize {}
 /// | Any of the above                                    | `exit` (exit phase)  |
 ///
 /// There is deliberately **no blanket `impl<T: AccountConstraint<A>>
-/// AccountConstraint<Option<A>> for T`** mirroring the `Box<T>` forwarder
-/// in `accounts/boxed.rs`. Constraint calls on `Option<Field>` are emitted
-/// by the derive inline as `if let Some(ref inner) = self.maybe_x { …
-/// inline call … }` — they never dispatch through a blanket impl.
+/// AccountConstraint<Option<A>> for T`**. Constraint calls on
+/// `Option<Field>` are emitted by the derive inline as
+/// `if let Some(ref inner) = self.maybe_x { … inline call … }` — they never
+/// dispatch through a blanket impl.
 ///
 /// # Extending with third-party constraints
 ///
