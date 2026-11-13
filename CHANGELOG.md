@@ -42,6 +42,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Return an error instead of panicking when an `AccountLoader` zero-copy body is misaligned, e.g. with a one-byte custom discriminator ([#5247](https://github.com/otter-sec/anchor/pull/5247)).
 - ts: Cap the decompressed size of on-chain IDLs in `decodeIdlAccount` and `Program.fetchIdl`, and reject IDLs that aren't UTF-8 encoded ([#5226](https://github.com/otter-sec/anchor/pull/5226)).
 - cli: Cap decompressed IDL size at 16 MiB in `anchor legacy-idl fetch`, and return an error instead of panicking when the account's declared IDL length exceeds its data ([#5261](https://github.com/otter-sec/anchor/pull/5261)).
+- idl: Skip PDA resolution for seeds that use instruction arguments or accounts in function calls, or that contain macros, instead of failing to build the IDL ([#5258](https://github.com/otter-sec/anchor/pull/5258)).
 
 ### Breaking
 

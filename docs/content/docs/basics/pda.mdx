@@ -349,3 +349,11 @@ Program BZLiJ62bzRryYp9mRobz47uA66WDgtfTXhhgM25tJyx5 success
 
 </Tab>
 </Tabs>
+
+<Callout type="warn">
+  The IDL can only describe seeds that are constants, instruction arguments, or
+  account keys or fields. If any seed of an account is something else, such as a
+  function call that takes an instruction argument
+  (`hash(&args.name).to_bytes()`) or a macro, the account's PDA is left out of
+  the IDL and clients must pass its address explicitly.
+</Callout>

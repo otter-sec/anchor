@@ -79,6 +79,18 @@ pub mod pda_derivation {
     pub fn seeds_program_arg(_ctx: Context<SeedsProgramArg>, _some_program: Pubkey) -> Result<()> {
         Ok(())
     }
+
+    pub fn seed_fn_with_args(
+        _ctx: Context<SeedFnWithArgs>,
+        _args: SeedArgs,
+        _value: u64,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn const_seed_with_account_name(_ctx: Context<ConstSeedWithAccountName>) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -278,6 +290,46 @@ pub struct SeedsProgramArg<'info> {
         bump
     )]
     pub pda: UncheckedAccount<'info>,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct SeedArgs {
+    pub name: String,
+}
+
+macro_rules! name_bytes {
+    ($args:expr) => {
+        $args.name.as_bytes()
+    };
+}
+
+// https://github.com/otter-sec/anchor/issues/3209
+// https://github.com/otter-sec/anchor/issues/2903
+#[derive(Accounts)]
+#[instruction(args: SeedArgs, value: u64)]
+pub struct SeedFnWithArgs<'info> {
+    #[account(seeds = [&name_seed(&args.name).to_le_bytes()], bump)]
+    pub name_pda: UncheckedAccount<'info>,
+    #[account(seeds = [value_seed(value).as_slice()], bump)]
+    pub value_pda: UncheckedAccount<'info>,
+    #[account(seeds = [name_bytes!(args).as_ref()], bump)]
+    pub macro_pda: UncheckedAccount<'info>,
+}
+
+fn name_seed(name: &str) -> u64 {
+    name.len() as u64
+}
+
+fn value_seed(value: u64) -> Vec<u8> {
+    value.to_le_bytes().to_vec()
+}
+
+// A constant seed whose path contains the name of an account
+#[derive(Accounts)]
+pub struct ConstSeedWithAccountName<'info> {
+    #[account(seeds = [anchor_lang::system_program::ID.as_ref()], bump)]
+    pub pda: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 #[account]
