@@ -373,3 +373,4 @@ pub struct CloseAuthorityAuthorityConstraint;
 pub struct TransferHookAuthorityConstraint;
 pub struct TransferHookProgramIdConstraint;
 pub struct PermanentDelegateDelegateConstraint;
+pub struct PausableAuthorityConstraint;
