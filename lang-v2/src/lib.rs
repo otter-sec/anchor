@@ -489,6 +489,13 @@ macro_rules! require {
     }};
 }
 
+#[doc(hidden)]
+#[cold]
+#[inline(never)]
+pub fn __require_eq_violation() {
+    msg!("require_eq violation");
+}
+
 /// Ensures two NON-PUBKEY values are equal.
 ///
 /// Use [require_keys_eq] to compare two pubkeys/addresses.
@@ -509,7 +516,7 @@ macro_rules! require_eq {
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 != $value2 {
-            $crate::msg!("require_eq violation");
+            $crate::__require_eq_violation();
             return Err(core::convert::Into::into($error_code));
         }
     }};
