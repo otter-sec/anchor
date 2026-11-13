@@ -1,6 +1,7 @@
 use {
     crate::cursor::AccountCursor,
     pinocchio::{account::AccountView, address::Address},
+    solana_program_error::ProgramError,
 };
 
 /// Instruction-scoped context passed to every handler. Holds the
@@ -84,6 +85,35 @@ impl<'a, T: Bumps> Context<'a, T> {
             }
             RemainingAccounts::Unparsed { .. } => unreachable!(),
         }
+    }
+
+    /// Build CPI handles for all remaining accounts while preserving each
+    /// account's transaction writable and signer flags.
+    ///
+    /// The caller selects the inline capacity. If `N` is smaller than the
+    /// number of remaining accounts, this returns
+    /// [`ProgramError::InvalidArgument`]. Call [`crate::CpiHandle::into_readonly`]
+    /// on handles that do not need writable access in the target program.
+    pub fn remaining_cpi_handles_preserving_flags<const N: usize>(
+        &mut self,
+    ) -> Result<crate::CpiHandleBuffer<'a, N>, ProgramError> {
+        let accounts = self.remaining_accounts();
+        if accounts.len() > N {
+            return Err(ProgramError::InvalidArgument);
+        }
+
+        let mut handles = crate::CpiHandleBuffer::new();
+        for account in accounts {
+            let handle = if account.is_writable() {
+                crate::CpiHandle::writable_with_borrow_check(account, true)
+            } else {
+                crate::CpiHandle::readonly(account)
+            };
+            handles
+                .try_push(handle)
+                .map_err(|_| ProgramError::InvalidArgument)?;
+        }
+        Ok(handles)
     }
 
     fn walk_remaining(&mut self) -> (u8, u8) {

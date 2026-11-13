@@ -22,6 +22,10 @@
 use {
     anchor_lang::{
         cursor::AccountCursor,
+        solana_program::{
+            instruction::{AccountMeta, Instruction},
+            program,
+        },
         testing::{AccountRecord, SbfInputBuffer},
         AccountViewCompat, Bumps, Context,
     },
@@ -46,12 +50,16 @@ fn unique_addr(i: u8) -> [u8; 32] {
 }
 
 fn non_dup(i: u8) -> AccountRecord {
+    non_dup_with_flags(i, false, false)
+}
+
+fn non_dup_with_flags(i: u8, is_signer: bool, is_writable: bool) -> AccountRecord {
     AccountRecord::NonDup {
         address: unique_addr(i),
         owner: [0xAA; 32],
         lamports: 100 + i as u64,
-        is_signer: false,
-        is_writable: false,
+        is_signer,
+        is_writable,
         executable: false,
         data_len: 0,
     }
@@ -220,6 +228,69 @@ fn remaining_accounts_walks_trailing_region() {
     assert_eq!(remaining[0].address().to_bytes(), unique_addr(2));
     assert_eq!(remaining[1].address().to_bytes(), unique_addr(3));
     assert_eq!(remaining[2].address().to_bytes(), unique_addr(4));
+}
+
+#[test]
+fn remaining_cpi_handles_preserve_transaction_flags() {
+    let records = [
+        non_dup_with_flags(0, false, true),
+        non_dup_with_flags(1, true, false),
+    ];
+    let mut sbf = SbfInputBuffer::build(&records);
+    let mut lookup = fresh_lookup();
+    let mut cursor =
+        unsafe { AccountCursor::new(sbf.as_mut_ptr(), lookup.as_mut_ptr() as *mut AccountView) };
+    let program_id = Address::new_from_array([0x42; 32]);
+    let mut ctx: Context<'_, DummyHeader> =
+        Context::new(&program_id, DummyHeader, (), &mut cursor, 2);
+
+    let handles = ctx.remaining_cpi_handles_preserving_flags::<2>().unwrap();
+
+    assert_eq!(handles.len(), 2);
+    assert!(handles[0].is_writable());
+    assert!(!handles[0].is_signer());
+    assert!(!handles[1].is_writable());
+    assert!(handles[1].is_signer());
+}
+
+#[test]
+fn remaining_cpi_handles_reject_insufficient_capacity() {
+    let mut sbf = SbfInputBuffer::build(&[non_dup(0), non_dup(1)]);
+    let mut lookup = fresh_lookup();
+    let mut cursor =
+        unsafe { AccountCursor::new(sbf.as_mut_ptr(), lookup.as_mut_ptr() as *mut AccountView) };
+    let program_id = Address::new_from_array([0x42; 32]);
+    let mut ctx: Context<'_, DummyHeader> =
+        Context::new(&program_id, DummyHeader, (), &mut cursor, 2);
+
+    assert!(matches!(
+        ctx.remaining_cpi_handles_preserving_flags::<1>(),
+        Err(ProgramError::InvalidArgument),
+    ));
+}
+
+#[test]
+fn remaining_cpi_handles_keep_runtime_borrow_checks() {
+    let mut sbf = SbfInputBuffer::build(&[non_dup_with_flags(0, false, true)]);
+    let mut lookup = fresh_lookup();
+    let mut cursor =
+        unsafe { AccountCursor::new(sbf.as_mut_ptr(), lookup.as_mut_ptr() as *mut AccountView) };
+    let program_id = Address::new_from_array([0x42; 32]);
+    let mut ctx: Context<'_, DummyHeader> =
+        Context::new(&program_id, DummyHeader, (), &mut cursor, 1);
+    let account = &ctx.remaining_accounts()[0];
+    let _borrow = account.try_borrow().unwrap();
+    let handles = ctx.remaining_cpi_handles_preserving_flags::<1>().unwrap();
+    let instruction = Instruction {
+        program_id,
+        accounts: vec![AccountMeta::new(*account.address(), false)],
+        data: vec![],
+    };
+
+    assert_eq!(
+        program::invoke(&instruction, &handles).unwrap_err(),
+        ProgramError::AccountBorrowFailed,
+    );
 }
 
 #[test]
