@@ -4165,6 +4165,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nested-caller"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "caller",
+ "pinocchio",
+]
+
+[[package]]
 name = "nix"
 version = "0.31.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9927,6 +9936,7 @@ dependencies = [
  "init-space-usability",
  "ix-macro",
  "min-ix-data-len",
+ "nested-caller",
  "optional-accounts",
  "pinocchio",
  "program-interface",

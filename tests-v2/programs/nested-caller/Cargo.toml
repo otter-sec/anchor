@@ -1,0 +1,26 @@
+[package]
+name = "nested-caller"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = ["no-log-ix-name"]
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+no-idl = []
+no-log-ix-name = []
+
+[dependencies]
+anchor-lang = { path = "../../../lang-v2", default-features = false, features = ["alloc"] }
+# `caller` depends on `callee` through `cpi`, so this SBF link holds two
+# `cpi` crates. Each one used to export `__anchor_dispatch`, and the link
+# failed with a duplicate symbol.
+caller = { path = "../caller", features = ["cpi"] }
+pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
+
+[lints.rust.unexpected_cfgs]
+level = "allow"
