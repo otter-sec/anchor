@@ -23,22 +23,25 @@ use {
     },
 };
 
-const DYNAMIC_LEN_KEY: &str = "__anchor_private_const_len";
-const DEFINED_NAME_KEY: &str = "__anchor_private_defined_name";
+const PLACEHOLDER_KEY: &str = "__anchor_private_placeholder";
 
-/// A defined type reference whose name is resolved when the IDL is built.
-struct DefinedName {
-    ty: TokenStream2,
-    written: String,
-    generics: usize,
+/// A part of the IDL JSON that is filled in when the IDL is built.
+enum Placeholder {
+    /// An array length expression.
+    Len(Expr),
+    /// A defined type name, resolved through `IdlAccountType`.
+    Name {
+        ty: TokenStream2,
+        written: String,
+        generics: usize,
+    },
 }
 
 #[derive(Default)]
 struct TypeLowerer<'a> {
     generics: Option<&'a Generics>,
-    dynamic_lengths: Vec<Expr>,
     resolve_names: bool,
-    defined_names: Vec<DefinedName>,
+    placeholders: Vec<Placeholder>,
 }
 
 impl<'a> TypeLowerer<'a> {
@@ -93,8 +96,12 @@ impl<'a> TypeLowerer<'a> {
             }
         }
 
-        let marker = json!({ DYNAMIC_LEN_KEY: self.dynamic_lengths.len() });
-        self.dynamic_lengths.push(expr.clone());
+        self.placeholder(Placeholder::Len(expr.clone()))
+    }
+
+    fn placeholder(&mut self, placeholder: Placeholder) -> Value {
+        let marker = json!({ PLACEHOLDER_KEY: self.placeholders.len() });
+        self.placeholders.push(placeholder);
         marker
     }
 
@@ -185,13 +192,11 @@ impl<'a> TypeLowerer<'a> {
         }
 
         let name = if self.resolve_names {
-            let marker = json!({ DEFINED_NAME_KEY: self.defined_names.len() });
-            self.defined_names.push(DefinedName {
+            self.placeholder(Placeholder::Name {
                 ty: elide_lifetimes(quote!(#ty)),
                 written: segment.ident.to_string(),
                 generics: generics.len(),
-            });
-            marker
+            })
         } else {
             json!(segment.ident.to_string())
         };
@@ -209,57 +214,46 @@ impl<'a> TypeLowerer<'a> {
 
     fn finish(self, value: Value) -> TokenStream2 {
         let mut remaining = value.to_string();
-        if self.dynamic_lengths.is_empty() && self.defined_names.is_empty() {
+        if self.placeholders.is_empty() {
             return quote! { #remaining };
         }
 
-        // Markers are replaced in the order they appear in the JSON, which
-        // can differ from the order they were created in
-        let markers = [DYNAMIC_LEN_KEY, DEFINED_NAME_KEY].map(|key| format!("{{\"{key}\":"));
-        let mut steps = Vec::new();
-        while let Some((start, key)) = markers
-            .iter()
-            .zip([DYNAMIC_LEN_KEY, DEFINED_NAME_KEY])
-            .filter_map(|(marker, key)| remaining.find(marker.as_str()).map(|start| (start, key)))
-            .min_by_key(|(start, _)| *start)
-        {
-            let index_start = start + key.len() + 4;
-            let index_end = index_start
-                + remaining[index_start..]
-                    .find('}')
-                    .expect("IDL marker should be closed");
-            let index: usize = remaining[index_start..index_end]
+        // Placeholders are filled in the order they appear in the JSON, which can
+        // differ from the order they were created in
+        let marker = format!("{{\"{PLACEHOLDER_KEY}\":");
+        let mut steps = Vec::with_capacity(self.placeholders.len() * 2 + 1);
+        while let Some((before, after)) = remaining.split_once(&marker) {
+            let (index, after) = after
+                .split_once('}')
+                .expect("IDL placeholder should be closed");
+            let index: usize = index
                 .parse()
-                .expect("IDL marker index should be a number");
-            let before = &remaining[..start];
+                .expect("IDL placeholder index should be a number");
             if !before.is_empty() {
                 steps.push(quote! {
                     __s.push_str(#before);
                 });
             }
-            if key == DYNAMIC_LEN_KEY {
-                let expr = &self.dynamic_lengths[index];
-                steps.push(quote! {
+            steps.push(match &self.placeholders[index] {
+                Placeholder::Len(expr) => quote! {
                     __s.push_str(
                         &anchor_lang::__idl::string::ToString::to_string(&((#expr) as usize))
                     );
-                });
-            } else {
-                let DefinedName {
+                },
+                Placeholder::Name {
                     ty,
                     written,
                     generics,
-                } = &self.defined_names[index];
-                steps.push(quote! {
+                } => quote! {
                     __s.push('"');
                     __s.push_str(anchor_lang::idl_build::__idl_defined_name::<#ty>(
                         #written,
                         #generics,
                     ));
                     __s.push('"');
-                });
-            }
-            remaining = remaining[index_end + 1..].to_owned();
+                },
+            });
+            remaining = after.to_owned();
         }
         if !remaining.is_empty() {
             steps.push(quote! {
@@ -1769,7 +1763,7 @@ mod tests {
             generated.contains("__idl_defined_name :: < models :: Aliased < '_ , T , [u8 ; N] > >")
         );
         assert!(generated.contains("\"Aliased\" , 2usize"));
-        assert!(!generated.contains(DEFINED_NAME_KEY));
+        assert!(!generated.contains(PLACEHOLDER_KEY));
 
         // Return types are resolved too
         let ty: Type = syn::parse_quote!(models::Aliased);
