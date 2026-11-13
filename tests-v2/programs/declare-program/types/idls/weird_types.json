@@ -184,6 +184,37 @@
       }
     },
     {
+      "name": "Collections",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "map",
+            "type": {
+              "defined": {
+                "name": "BTreeMap",
+                "generics": [
+                  { "kind": "type", "type": "u8" },
+                  { "kind": "type", "type": "u16" }
+                ]
+              }
+            }
+          },
+          {
+            "name": "set",
+            "type": {
+              "defined": {
+                "name": "BTreeSet",
+                "generics": [
+                  { "kind": "type", "type": "u64" }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "AliasU64",
       "type": {
         "kind": "type",
