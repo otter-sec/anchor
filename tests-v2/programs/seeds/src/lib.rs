@@ -156,6 +156,15 @@ pub struct CheckLiteralExplicitBump {
     pub data: Account<Data>,
 }
 
+// 3b. Same seeds, but the author asserts the stored bump is canonical so
+// the IDL keeps the PDA seeds.
+#[derive(Accounts)]
+pub struct CheckLiteralCanonicalBump {
+    pub payer: Signer,
+    #[account(seeds = [b"data"], bump(canonical) = data.bump)]
+    pub data: Account<Data>,
+}
+
 // 4. Verify function-call seeds + bare bump
 #[derive(Accounts)]
 pub struct CheckFnSeeds {
