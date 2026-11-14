@@ -38,6 +38,7 @@ TESTS_V2_COVERAGE_TESTS := \
 	equivalence_metadata \
 	equivalence_spl \
 	event_cpi \
+	idl_alias_names \
 	idl_convert \
 	idl_defined_args \
 	idl_metadata \
