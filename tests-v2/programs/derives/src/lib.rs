@@ -131,6 +131,13 @@ pub struct PodVecOnly {
     pub items: PodVec<PodU64, 4>,
 }
 
+pub const MAX_ITEMS: usize = 10;
+
+#[derive(IdlType)]
+pub struct NamedConstPodVec {
+    pub items: PodVec<PodU64, MAX_ITEMS>,
+}
+
 /// Nested zero-copy type with Pod wrapper fields. Mixes an align-1 `u8`
 /// with wrappers so the IDL only stays padding-free if the wrappers keep
 /// their names instead of lowering to native types.
@@ -444,6 +451,17 @@ mod idl_tests {
         assert!(pod_vec_type.contains("\"serialization\":\"bytemuckunsafe\""));
         assert!(pod_vec_type.contains("\"repr\":{\"kind\":\"c\"}"));
         assert!(pod_vec_type.contains("\"fields\":[{\"name\":\"len\",\"type\":{\"defined\":{\"name\":\"PodU16\"}}},{\"name\":\"data\",\"type\":{\"array\":[{\"generic\":\"T\"},{\"generic\":\"MAX\"}]}}]"));
+    }
+
+    #[test]
+    fn pod_vec_named_const_is_evaluated_in_idl() {
+        let type_def = <NamedConstPodVec as IdlAccountType>::__idl_type_def()
+            .expect("NamedConstPodVec should emit an IDL type");
+        assert!(
+            type_def.contains("\"kind\":\"const\",\"value\":\"10\""),
+            "{type_def}"
+        );
+        assert!(!type_def.contains("MAX_ITEMS"), "{type_def}");
     }
 
     #[test]
