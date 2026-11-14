@@ -2866,6 +2866,7 @@ use anchor_lang::prelude::*;
 #[derive(IdlType)]
 pub struct InlineTupleField {
     pub pair: (u8, u16),
+    pub nested: Option<(u32, (u64, bool))>,
 }
 "#,
     )
