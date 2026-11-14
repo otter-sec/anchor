@@ -3,7 +3,7 @@
 //!
 //! Dispatches on the wrapper type: default returns `None` (elides
 //! sysvar/signer/program/unchecked from IDL types). Data-bearing wrappers
-//! (`Box<T>`, `Account<T>`, `BorshAccount<T>`, `Nested<T>`) delegate to the
+//! (`Account<T>`, `BorshAccount<T>`, `Nested<T>`) delegate to the
 //! inner type. `Slab<H, T>` is a special case: today it forwards only the
 //! header `H`, because the current IDL has no faithful way to describe the
 //! alignment-padded dynamic tail. User `#[account]`/`#[event]`/
@@ -76,7 +76,7 @@ pub trait IdlAccountType {
     /// Push this type's accounts/types entries (if any) and recursively
     /// register every user-defined type its fields reference. Default: no-op.
     ///
-    /// Wrappers (`Box<T>`, `BorshAccount<T>`, `Nested<T>`) forward to the
+    /// Wrappers (`BorshAccount<T>`, `Nested<T>`) forward to the
     /// inner type. `Slab<H, T>` currently forwards only the header `H`;
     /// see [`crate::accounts::Slab`] for the limitation. Collection impls
     /// (`Vec<T>`, `BTreeMap<K, V>`, `BTreeSet<T>`, `Option<T>`, `[T; N]`,
@@ -198,6 +198,7 @@ impl_idl_account_type_noop!(
     f32,
     f64,
     alloc::string::String,
+    str,
     pinocchio::address::Address,
 );
 

@@ -1858,11 +1858,6 @@ pub struct Bad {{
 
     case("init_owner_override_account", "#[account]", "Account<Data>");
     case(
-        "init_owner_override_boxed_account",
-        "#[account]",
-        "Box<Account<Data>>",
-    );
-    case(
         "init_owner_override_interface_account",
         "#[account]",
         "InterfaceAccount<Data>",
@@ -1871,11 +1866,6 @@ pub struct Bad {{
         "init_owner_override_borsh_account",
         "#[account(borsh)]",
         "BorshAccount<Data>",
-    );
-    case(
-        "init_owner_override_boxed_borsh_account",
-        "#[account(borsh)]",
-        "Box<BorshAccount<Data>>",
     );
 }
 

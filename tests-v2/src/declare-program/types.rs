@@ -2,6 +2,7 @@ use {
     anchor_lang::{Discriminator, Id, IdlAccountType, InstructionData},
     declare_program_types::weird_types,
     solana_pubkey::Pubkey,
+    std::collections::{BTreeMap, BTreeSet},
 };
 
 fn weird_types_id() -> Pubkey {
@@ -64,6 +65,8 @@ fn declared_weird_types_compile_and_serialize() {
         },
         boxed_alias: weird_types::GenericBox { value: 777 },
         documented: weird_types::DocumentedBorsh { value: 31337 },
+        wide_map: BTreeMap::from([(1, 2), (3, 4)]),
+        wide_set: BTreeSet::from([7, 9]),
     }
     .data();
 

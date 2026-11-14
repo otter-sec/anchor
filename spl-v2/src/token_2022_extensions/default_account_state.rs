@@ -1,6 +1,6 @@
 use {
     super::common::validate_token_2022_program,
-    crate::{token_2022::spl_token_2022, token_shared::multisig_signer_addresses},
+    crate::token_2022::spl_token_2022,
     anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     solana_program_error::ProgramError,
 };
@@ -18,7 +18,7 @@ pub struct DefaultAccountStateUpdate<'a> {
 }
 
 pub fn default_account_state_initialize<'a>(
-    ctx: CpiContext<'a, DefaultAccountStateInitialize<'a>>,
+    ctx: CpiContext<'a, DefaultAccountStateInitialize<'a>, 1>,
     state: &spl_token_2022::state::AccountState,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -32,19 +32,18 @@ pub fn default_account_state_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn default_account_state_update<'a>(
-    ctx: CpiContext<'a, DefaultAccountStateUpdate<'a>>,
+pub fn default_account_state_update<'a, const N: usize>(
+    ctx: CpiContext<'a, DefaultAccountStateUpdate<'a>, N>,
     state: &spl_token_2022::state::AccountState,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix =
         spl_token_2022::extension::default_account_state::instruction::update_default_account_state(
             &program,
             ctx.accounts.mint.address(),
             ctx.accounts.freeze_authority.address(),
-            &signer_addresses,
+            &[],
             state,
         )?;
     ctx.invoke_ix(ix)

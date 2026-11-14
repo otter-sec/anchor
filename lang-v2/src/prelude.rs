@@ -91,6 +91,7 @@ pub use crate::{
     Space,
     ToAccountMetas,
     ToCpiAccounts,
+    ToCpiAccountsWithCapacity,
     ToCpiHandle,
     ToCpiHandleMut,
     TryAccounts,

@@ -1,5 +1,4 @@
 mod borsh_account;
-mod boxed;
 mod interface;
 mod program;
 mod serialized_account;

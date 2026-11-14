@@ -16,6 +16,23 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Breaking
 
+## [2.0.0-rc.4] - 2026-11-14
+
+### Features
+
+- ts: Set the transaction message version per provider (`transactionVersion` option) or per call (`.transactionVersion()`) ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+- ts: Estimate the resource limits a transaction message leaves unset before sending, with configurable compute unit headroom (`getComputeUnitLimitFromEstimate`). Disable with `estimateResourceLimits: false` ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+
+### Fixes
+
+- ts: Recover the logs of failed version 1 transactions ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+
+### Breaking
+
+- ts: Build version 1 transaction messages by default ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+- ts: Append a compute budget instruction with the estimated compute unit limit to legacy and version 0 messages ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+- ts: Require `@solana/kit` ^8.5.0 ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+
 ## [2.0.0-rc.3] - 2026-10-30
 
 ### Features

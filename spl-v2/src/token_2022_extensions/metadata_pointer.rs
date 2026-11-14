@@ -1,6 +1,6 @@
 use {
     super::common::validate_token_2022_program,
-    crate::{token_2022::spl_token_2022, token_shared::multisig_signer_addresses},
+    crate::token_2022::spl_token_2022,
     anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
@@ -19,7 +19,7 @@ pub struct MetadataPointerUpdate<'a> {
 }
 
 pub fn metadata_pointer_initialize<'a>(
-    ctx: CpiContext<'a, MetadataPointerInitialize<'a>>,
+    ctx: CpiContext<'a, MetadataPointerInitialize<'a>, 1>,
     authority: Option<&Address>,
     metadata_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
@@ -34,18 +34,17 @@ pub fn metadata_pointer_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn metadata_pointer_update<'a>(
-    ctx: CpiContext<'a, MetadataPointerUpdate<'a>>,
+pub fn metadata_pointer_update<'a, const N: usize>(
+    ctx: CpiContext<'a, MetadataPointerUpdate<'a>, N>,
     metadata_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = spl_token_2022::extension::metadata_pointer::instruction::update(
         &program,
         ctx.accounts.mint.address(),
         ctx.accounts.authority.address(),
-        &signer_addresses,
+        &[],
         metadata_address.copied(),
     )?;
     ctx.invoke_ix(ix)

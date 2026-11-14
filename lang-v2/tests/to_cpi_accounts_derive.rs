@@ -1,8 +1,10 @@
-use anchor_lang::{
-    prelude::*,
-    testing::{AccountBuffer, MIN_ACCOUNT_BUF},
+use {
+    anchor_lang::{
+        prelude::*,
+        testing::{AccountBuffer, MIN_ACCOUNT_BUF},
+    },
+    core::marker::PhantomData,
 };
-use core::marker::PhantomData;
 
 const ID: Address = Address::new_from_array([9; 32]);
 const AUTHORITY_SIGNER: bool = true;
@@ -89,7 +91,8 @@ fn derive_to_cpi_accounts_emits_metas_and_erased_handles() {
         absent: None,
     };
 
-    let metas = accounts.to_instruction_accounts();
+    let metas = ToCpiAccountsWithCapacity::<8>::to_instruction_accounts_with_capacity(&accounts)
+        .expect("eight account metas fit");
     assert_eq!(metas.len(), 8);
     assert_eq!(*metas[0].address, Address::new_from_array([1; 32]));
     assert!(!metas[0].is_writable);
@@ -116,7 +119,8 @@ fn derive_to_cpi_accounts_emits_metas_and_erased_handles() {
     assert!(!metas[7].is_writable);
     assert!(!metas[7].is_signer);
 
-    let handles = accounts.to_cpi_handles();
+    let handles = ToCpiAccountsWithCapacity::<7>::to_cpi_handles_with_capacity(&accounts)
+        .expect("seven account handles fit");
     assert_eq!(handles.len(), 7);
     assert!(!handles[0].is_writable());
     assert!(handles[1].is_writable());
@@ -126,10 +130,29 @@ fn derive_to_cpi_accounts_emits_metas_and_erased_handles() {
     assert!(!handles[5].is_writable());
     assert!(handles[6].is_writable());
 
-    let flags = accounts.optional_account_sentinel_flags();
+    let flags =
+        ToCpiAccountsWithCapacity::<8>::optional_account_sentinel_flags_with_capacity(&accounts)
+            .expect("eight optional-account flags fit");
     assert_eq!(
-        flags,
+        flags.as_slice(),
         vec![false, false, false, false, false, false, false, true]
+    );
+
+    assert_eq!(
+        ToCpiAccountsWithCapacity::<7>::to_instruction_accounts_with_capacity(&accounts)
+            .unwrap_err(),
+        Error::InvalidArgument,
+    );
+    assert_eq!(
+        ToCpiAccountsWithCapacity::<6>::to_cpi_handles_with_capacity(&accounts)
+            .err()
+            .expect("six account handles must overflow"),
+        Error::InvalidArgument,
+    );
+    assert_eq!(
+        ToCpiAccountsWithCapacity::<7>::optional_account_sentinel_flags_with_capacity(&accounts)
+            .unwrap_err(),
+        Error::InvalidArgument,
     );
 }
 
@@ -139,9 +162,21 @@ fn derive_to_cpi_accounts_accepts_phantom_only_empty_structs() {
         _phantom: PhantomData,
     };
 
-    assert!(accounts.to_instruction_accounts().is_empty());
-    assert!(accounts.to_cpi_handles().is_empty());
-    assert!(accounts.optional_account_sentinel_flags().is_empty());
+    assert!(
+        ToCpiAccountsWithCapacity::<0>::to_instruction_accounts_with_capacity(&accounts)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        ToCpiAccountsWithCapacity::<0>::to_cpi_handles_with_capacity(&accounts)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        ToCpiAccountsWithCapacity::<0>::optional_account_sentinel_flags_with_capacity(&accounts)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -156,7 +191,8 @@ fn derive_to_cpi_accounts_duplicate_readonly_erases_handle_mut() {
         writable: writable_view.to_cpi_handle_mut(),
     };
 
-    let metas = accounts.to_instruction_accounts();
+    let metas = ToCpiAccountsWithCapacity::<4>::to_instruction_accounts_with_capacity(&accounts)
+        .expect("duplicate metas fit");
     assert_eq!(metas.len(), 4);
     assert_eq!(*metas[0].address, Address::new_from_array([1; 32]));
     assert!(!metas[0].is_writable);
@@ -167,7 +203,8 @@ fn derive_to_cpi_accounts_duplicate_readonly_erases_handle_mut() {
     assert_eq!(*metas[3].address, Address::new_from_array([2; 32]));
     assert!(metas[3].is_writable);
 
-    let handles = accounts.to_cpi_handles();
+    let handles = ToCpiAccountsWithCapacity::<4>::to_cpi_handles_with_capacity(&accounts)
+        .expect("duplicate handles fit");
     assert_eq!(handles.len(), 4);
     assert!(!handles[0].is_writable());
     assert!(!handles[1].is_writable());
@@ -196,8 +233,10 @@ fn derive_to_cpi_accounts_optional_readonly_normalizes_writable_handles() {
 }
 
 fn assert_optional_readonly_is_readonly(accounts: &OptionalReadonlyCpi<'_>) {
-    let metas = accounts.to_instruction_accounts();
-    let handles = accounts.to_cpi_handles();
+    let metas = ToCpiAccountsWithCapacity::<1>::to_instruction_accounts_with_capacity(accounts)
+        .expect("one account meta fits");
+    let handles = ToCpiAccountsWithCapacity::<1>::to_cpi_handles_with_capacity(accounts)
+        .expect("one account handle fits");
     assert_eq!(metas.len(), 1);
     assert!(!metas[0].is_writable);
     assert_eq!(handles.len(), 1);

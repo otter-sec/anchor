@@ -22,6 +22,10 @@
 use {
     anchor_lang::{
         cursor::AccountCursor,
+        solana_program::{
+            instruction::{AccountMeta, Instruction},
+            program,
+        },
         testing::{AccountRecord, SbfInputBuffer},
         AccountViewCompat, Bumps, Context,
     },
@@ -46,12 +50,16 @@ fn unique_addr(i: u8) -> [u8; 32] {
 }
 
 fn non_dup(i: u8) -> AccountRecord {
+    non_dup_with_flags(i, false, false)
+}
+
+fn non_dup_with_flags(i: u8, is_signer: bool, is_writable: bool) -> AccountRecord {
     AccountRecord::NonDup {
         address: unique_addr(i),
         owner: [0xAA; 32],
         lamports: 100 + i as u64,
-        is_signer: false,
-        is_writable: false,
+        is_signer,
+        is_writable,
         executable: false,
         data_len: 0,
     }
@@ -183,7 +191,10 @@ fn cursor_dup_shares_borrow_state_with_earlier_view() {
     let alias = views[1];
 
     let guard = original.try_borrow_mut().expect("first borrow");
-    assert_eq!(alias.try_borrow().err(), Some(ProgramError::AccountBorrowFailed));
+    assert_eq!(
+        alias.try_borrow().err(),
+        Some(ProgramError::AccountBorrowFailed)
+    );
     drop(guard);
     assert!(alias.try_borrow().is_ok());
 }
@@ -220,6 +231,69 @@ fn remaining_accounts_walks_trailing_region() {
 }
 
 #[test]
+fn remaining_cpi_handles_preserve_transaction_flags() {
+    let records = [
+        non_dup_with_flags(0, false, true),
+        non_dup_with_flags(1, true, false),
+    ];
+    let mut sbf = SbfInputBuffer::build(&records);
+    let mut lookup = fresh_lookup();
+    let mut cursor =
+        unsafe { AccountCursor::new(sbf.as_mut_ptr(), lookup.as_mut_ptr() as *mut AccountView) };
+    let program_id = Address::new_from_array([0x42; 32]);
+    let mut ctx: Context<'_, DummyHeader> =
+        Context::new(&program_id, DummyHeader, (), &mut cursor, 2);
+
+    let handles = ctx.remaining_cpi_handles_preserving_flags::<2>().unwrap();
+
+    assert_eq!(handles.len(), 2);
+    assert!(handles[0].is_writable());
+    assert!(!handles[0].is_signer());
+    assert!(!handles[1].is_writable());
+    assert!(handles[1].is_signer());
+}
+
+#[test]
+fn remaining_cpi_handles_reject_insufficient_capacity() {
+    let mut sbf = SbfInputBuffer::build(&[non_dup(0), non_dup(1)]);
+    let mut lookup = fresh_lookup();
+    let mut cursor =
+        unsafe { AccountCursor::new(sbf.as_mut_ptr(), lookup.as_mut_ptr() as *mut AccountView) };
+    let program_id = Address::new_from_array([0x42; 32]);
+    let mut ctx: Context<'_, DummyHeader> =
+        Context::new(&program_id, DummyHeader, (), &mut cursor, 2);
+
+    assert!(matches!(
+        ctx.remaining_cpi_handles_preserving_flags::<1>(),
+        Err(ProgramError::InvalidArgument),
+    ));
+}
+
+#[test]
+fn remaining_cpi_handles_keep_runtime_borrow_checks() {
+    let mut sbf = SbfInputBuffer::build(&[non_dup_with_flags(0, false, true)]);
+    let mut lookup = fresh_lookup();
+    let mut cursor =
+        unsafe { AccountCursor::new(sbf.as_mut_ptr(), lookup.as_mut_ptr() as *mut AccountView) };
+    let program_id = Address::new_from_array([0x42; 32]);
+    let mut ctx: Context<'_, DummyHeader> =
+        Context::new(&program_id, DummyHeader, (), &mut cursor, 1);
+    let account = &ctx.remaining_accounts()[0];
+    let _borrow = account.try_borrow().unwrap();
+    let handles = ctx.remaining_cpi_handles_preserving_flags::<1>().unwrap();
+    let instruction = Instruction {
+        program_id,
+        accounts: vec![AccountMeta::new(*account.address(), false)],
+        data: vec![],
+    };
+
+    assert_eq!(
+        program::invoke(&instruction, &handles).unwrap_err(),
+        ProgramError::AccountBorrowFailed,
+    );
+}
+
+#[test]
 fn remaining_account_views_expose_compat_helpers() {
     let records = [
         non_dup(0),
@@ -242,12 +316,13 @@ fn remaining_account_views_expose_compat_helpers() {
         /*remaining_num*/ 2,
     );
 
-    let mut remaining = ctx.remaining_accounts();
+    let remaining = ctx.remaining_accounts();
     assert_eq!(remaining[0].key().to_bytes(), unique_addr(1));
     assert!(!remaining[0].data_is_empty());
     assert_eq!(remaining[0].try_data_len().unwrap(), 16);
     assert_eq!(remaining[0].try_borrow_data().unwrap().len(), 16);
-    assert_eq!(remaining[0].try_borrow_mut_data().unwrap().len(), 16);
+    let mut first = remaining[0];
+    assert_eq!(first.try_borrow_mut_data().unwrap().len(), 16);
 }
 
 #[test]
@@ -259,13 +334,8 @@ fn remaining_accounts_returns_empty_when_nothing_trails() {
     let _ = unsafe { cursor.walk_n(2) };
 
     let program_id = Address::new_from_array([0x42; 32]);
-    let mut ctx: Context<'_, DummyHeader> = Context::new(
-        &program_id,
-        DummyHeader,
-        (),
-        &mut cursor,
-        0,
-    );
+    let mut ctx: Context<'_, DummyHeader> =
+        Context::new(&program_id, DummyHeader, (), &mut cursor, 0);
 
     assert!(ctx.remaining_accounts().is_empty());
     // Second call on empty — still empty, no cache bookkeeping bug.
@@ -293,15 +363,18 @@ fn remaining_accounts_caches_and_does_not_re_walk_cursor() {
         /*remaining_num*/ 2,
     );
 
-    let first = ctx.remaining_accounts();
+    let first = {
+        let accounts = ctx.remaining_accounts();
+        [*accounts[0].address(), *accounts[1].address()]
+    };
     let second = ctx.remaining_accounts();
 
     // Structural equality via address, since AccountView is Copy and the
     // cache returns a clone each call.
     assert_eq!(first.len(), 2);
     assert_eq!(second.len(), 2);
-    for (a, b) in first.iter().zip(second.iter()) {
-        assert_eq!(a.address().to_bytes(), b.address().to_bytes());
+    for (address, account) in first.iter().zip(second.iter()) {
+        assert_eq!(address.to_bytes(), account.address().to_bytes());
     }
     // Cursor must have advanced by exactly `remaining_num` (2), not
     // twice that — verifies caching short-circuits the walk.

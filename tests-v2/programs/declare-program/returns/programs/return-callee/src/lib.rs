@@ -1,5 +1,7 @@
-use anchor_lang::__alloc::{string::String, vec::Vec};
-use anchor_lang::prelude::*;
+use anchor_lang::{
+    __alloc::{string::String, vec::Vec},
+    prelude::*,
+};
 
 declare_id!("BF748KR4UhPq7xbhFQYd7yFKmh5UYdqed9GbD6oZvEyu");
 declare_program!(return_spoof);
@@ -111,7 +113,7 @@ pub mod return_callee {
         let cpi_accounts = return_spoof::cpi::accounts::Spoof {
             data: ctx.accounts.data.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.spoof_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 1>::new(ctx.accounts.spoof_program.address(), cpi_accounts);
         let _ = return_spoof::cpi::spoof(cpi_ctx, base)?;
         Ok(())
     }

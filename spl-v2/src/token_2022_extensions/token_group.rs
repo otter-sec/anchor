@@ -25,7 +25,7 @@ pub struct TokenMemberInitialize<'a> {
 }
 
 pub fn token_group_initialize<'a>(
-    ctx: CpiContext<'a, TokenGroupInitialize<'a>>,
+    ctx: CpiContext<'a, TokenGroupInitialize<'a>, 3>,
     update_authority: Option<&Address>,
     max_size: u64,
 ) -> Result<(), ProgramError> {
@@ -43,7 +43,7 @@ pub fn token_group_initialize<'a>(
 }
 
 pub fn token_member_initialize<'a>(
-    ctx: CpiContext<'a, TokenMemberInitialize<'a>>,
+    ctx: CpiContext<'a, TokenMemberInitialize<'a>, 5>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;

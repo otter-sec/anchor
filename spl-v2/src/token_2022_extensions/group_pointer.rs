@@ -1,6 +1,6 @@
 use {
     super::common::validate_token_2022_program,
-    crate::{token_2022::spl_token_2022, token_shared::multisig_signer_addresses},
+    crate::token_2022::spl_token_2022,
     anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
     solana_instruction::Instruction,
@@ -20,7 +20,7 @@ pub struct GroupPointerUpdate<'a> {
 }
 
 pub fn group_pointer_initialize<'a>(
-    ctx: CpiContext<'a, GroupPointerInitialize<'a>>,
+    ctx: CpiContext<'a, GroupPointerInitialize<'a>, 1>,
     authority: Option<&Address>,
     group_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
@@ -34,17 +34,15 @@ pub fn group_pointer_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn group_pointer_update<'a>(
-    ctx: CpiContext<'a, GroupPointerUpdate<'a>>,
+pub fn group_pointer_update<'a, const N: usize>(
+    ctx: CpiContext<'a, GroupPointerUpdate<'a>, N>,
     group_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let signer_addresses = multisig_signer_addresses(&ctx.remaining_accounts);
     let ix = group_pointer_update_ix(
         ctx.program,
         ctx.accounts.mint.address(),
         ctx.accounts.authority.address(),
-        &signer_addresses,
         group_address,
     )?;
     ctx.invoke_ix(ix)
@@ -54,14 +52,13 @@ fn group_pointer_update_ix(
     program: &Address,
     mint: &Address,
     authority: &Address,
-    signer_addresses: &[&Address],
     group_address: Option<&Address>,
 ) -> Result<Instruction, ProgramError> {
     spl_token_2022::extension::group_pointer::instruction::update(
         program,
         mint,
         authority,
-        signer_addresses,
+        &[],
         group_address.copied(),
     )
 }
@@ -73,7 +70,7 @@ mod tests {
         anchor_lang::{
             programs::Token2022,
             testing::{AccountBuffer, MIN_ACCOUNT_BUF},
-            Address, Id,
+            Address, Id, ToCpiAccountsWithCapacity,
         },
     };
 
@@ -94,7 +91,7 @@ mod tests {
         let authority = Address::new_from_array([2; 32]);
         let group = Address::new_from_array([3; 32]);
 
-        let ix = group_pointer_update_ix(&program, &mint, &authority, &[], Some(&group))
+        let ix = group_pointer_update_ix(&program, &mint, &authority, Some(&group))
             .expect("group pointer update ix should build");
         assert_eq!(ix.accounts.len(), 2);
         assert!(ix.accounts[0].is_writable);
@@ -117,6 +114,11 @@ mod tests {
             authority: CpiHandle::readonly(&authority_view),
         };
 
-        assert_eq!(accounts.to_cpi_handles().len(), 2);
+        assert_eq!(
+            ToCpiAccountsWithCapacity::<2>::to_cpi_handles_with_capacity(&accounts)
+                .unwrap()
+                .len(),
+            2
+        );
     }
 }

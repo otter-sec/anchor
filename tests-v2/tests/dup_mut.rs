@@ -237,7 +237,7 @@ fn two_readonly_alias_ok() {
 }
 
 // ---------------------------------------------------------------------------
-// BorshAccount, Box, and Option fields
+// BorshAccount and Option fields
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -261,29 +261,6 @@ fn borsh_mut_and_readonly() {
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("distinct Borsh accounts should succeed");
     assert_eq!(read_value(&svm, &a), 3);
-}
-
-#[test]
-fn boxed_mut_and_readonly() {
-    let (mut svm, payer) = setup();
-    let a = init_data(&mut svm, &payer, 0);
-    let b = init_data(&mut svm, &payer, 1);
-
-    let data = dup_mut::instruction::TouchBoxedMutAndReadonly { value: 4 }.data();
-    let metas = vec![
-        AccountMeta::new(a, false),
-        AccountMeta::new_readonly(a, false),
-    ];
-    assert_borrow_failed(&send_raw(&mut svm, data, metas, &payer));
-
-    let data = dup_mut::instruction::TouchBoxedMutAndReadonly { value: 4 }.data();
-    let metas = vec![
-        AccountMeta::new(a, false),
-        AccountMeta::new_readonly(b, false),
-    ];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
-        .expect("distinct boxed + plain accounts should succeed");
-    assert_eq!(read_value(&svm, &a), 4);
 }
 
 #[test]
