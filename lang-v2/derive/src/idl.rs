@@ -29,6 +29,8 @@ const PLACEHOLDER_KEY: &str = "__anchor_private_placeholder";
 enum Placeholder {
     /// An array length expression.
     Len(Expr),
+    /// A const generic value whose runtime expression must be rendered as JSON.
+    ConstGeneric { expr: Expr, quoted: bool },
     /// A defined type name, resolved through `IdlAccountType`.
     Name {
         ty: TokenStream2,
@@ -105,6 +107,34 @@ impl<'a> TypeLowerer<'a> {
         marker
     }
 
+    fn lower_const_generic_value(&mut self, expr: &Expr) -> Value {
+        let expr = peel_expr(expr);
+        if let Expr::Lit(syn::ExprLit {
+            lit: Lit::Int(len), ..
+        }) = expr
+        {
+            if len.base10_parse::<usize>().is_ok() {
+                return json!(quote!(#expr).to_string().replace(' ', ""));
+            }
+        }
+        if let Expr::Path(path) = expr {
+            if let Some(ident) = path.path.get_ident().filter(|_| path.qself.is_none()) {
+                if self
+                    .generics
+                    .is_some_and(|generics| generics.const_params().any(|p| p.ident == *ident))
+                    || self.generics.is_none()
+                {
+                    return json!(ident.to_string());
+                }
+            }
+        }
+
+        self.placeholder(Placeholder::ConstGeneric {
+            expr: expr.clone(),
+            quoted: true,
+        })
+    }
+
     fn lower_path(&mut self, ty: &TypePath) -> Value {
         let Some(segment) = ty.path.segments.last() else {
             return json!({ "defined": { "name": quote!(#ty).to_string().replace(' ', "") } });
@@ -159,18 +189,27 @@ impl<'a> TypeLowerer<'a> {
                         // `MAX` in `Buf<MAX>` is parsed as a type by syn because
                         // type and const identifiers are indistinguishable here.
                         // Follow Rust naming conventions to recover the const form.
-                        syn::GenericArgument::Type(ty) if looks_like_const_ident(ty) => generics
-                            .push(json!({
+                        syn::GenericArgument::Type(ty) if looks_like_const_ident(ty) => {
+                            let syn::Type::Path(path) = ty else {
+                                unreachable!("looks_like_const_ident only accepts path types")
+                            };
+                            let expr = syn::Expr::Path(syn::ExprPath {
+                                attrs: Vec::new(),
+                                qself: path.qself.clone(),
+                                path: path.path.clone(),
+                            });
+                            generics.push(json!({
                                 "kind": "const",
-                                "value": quote!(#ty).to_string().replace(' ', ""),
-                            })),
+                                "value": self.lower_const_generic_value(&expr),
+                            }));
+                        }
                         syn::GenericArgument::Type(ty) => generics.push(json!({
                             "kind": "type",
                             "type": self.lower(ty),
                         })),
                         syn::GenericArgument::Const(expr) => generics.push(json!({
                             "kind": "const",
-                            "value": quote!(#expr).to_string().replace(' ', ""),
+                            "value": self.lower_const_generic_value(expr),
                         })),
                         unsupported => panic!(
                             "unsupported generic argument in IDL type `{}`: {}",
@@ -237,6 +276,23 @@ impl<'a> TypeLowerer<'a> {
                         &anchor_lang::__alloc::string::ToString::to_string(&((#expr) as usize))
                     );
                 },
+                Placeholder::ConstGeneric { expr, quoted } => {
+                    if *quoted {
+                        quote! {
+                            __s.push('"');
+                            __s.push_str(
+                                &anchor_lang::__idl::string::ToString::to_string(&((#expr) as usize))
+                            );
+                            __s.push('"');
+                        }
+                    } else {
+                        quote! {
+                            __s.push_str(
+                                &anchor_lang::__idl::string::ToString::to_string(&((#expr) as usize))
+                            );
+                        }
+                    }
+                }
                 Placeholder::Name {
                     ty,
                     written,
@@ -316,7 +372,7 @@ fn lower_pod_vec(lowerer: &mut TypeLowerer<'_>, ty: &Type) -> Option<Value> {
                         },
                         {
                             "kind": "const",
-                            "value": quote!(#max_expr).to_string().replace(' ', ""),
+                            "value": lowerer.lower_const_generic_value(max_expr),
                         },
                     ],
                 }
