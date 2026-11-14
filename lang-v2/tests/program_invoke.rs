@@ -539,7 +539,7 @@ fn duplicate_readonly_cpi_handles_restore_exclusive_borrow() {
         third: acct.cpi_handle(),
     };
 
-    CpiContext::<_, 3>::new(&program, accounts)
+    CpiContext::new(&program, accounts)
         .invoke(&[1, 2, 3])
         .unwrap();
 

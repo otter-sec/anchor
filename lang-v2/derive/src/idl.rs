@@ -240,6 +240,7 @@ impl<'a> TypeLowerer<'a> {
                             "kind": "const",
                             "value": self.lower_const_generic_value(expr),
                         })),
+                        syn::GenericArgument::Lifetime(_) => {}
                         unsupported => panic!(
                             "unsupported generic argument in IDL type `{}`: {}",
                             segment.ident,
@@ -317,14 +318,14 @@ impl<'a> TypeLowerer<'a> {
                         quote! {
                             __s.push('"');
                             __s.push_str(
-                                &anchor_lang::__idl::string::ToString::to_string(&((#expr) as usize))
+                                &anchor_lang::__alloc::string::ToString::to_string(&((#expr) as usize))
                             );
                             __s.push('"');
                         }
                     } else {
                         quote! {
                             __s.push_str(
-                                &anchor_lang::__idl::string::ToString::to_string(&((#expr) as usize))
+                                &anchor_lang::__alloc::string::ToString::to_string(&((#expr) as usize))
                             );
                         }
                     }

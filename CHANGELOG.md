@@ -24,6 +24,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang-v2: Preserve `BTreeMap` and `BTreeSet` generic arguments in `declare_program!` ([#5276](https://github.com/otter-sec/anchor/pull/5276)).
 - lang-v2: Evaluate const generic IDL values when generating generic type definitions ([#5275](https://github.com/otter-sec/anchor/pull/5275)).
 - lang-v2: Lower `PodVec` element types with the container's generics and array lengths in the IDL ([#5274](https://github.com/otter-sec/anchor/pull/5274)).
 - lang-v2: Restore CPI borrow guards in reverse order, so several readonly handles for the same account in one CPI restore its original borrow state ([#5281](https://github.com/otter-sec/anchor/pull/5281)).
