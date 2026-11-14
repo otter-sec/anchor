@@ -19,7 +19,7 @@ debug = []
 mock = []
 
 [dependencies]
-anchor-lang = { workspace = true }
+anchor-lang = { workspace = true, features = ["default"] }
 anyhow = "1"
 base64 = "0.22"
 futures = "0.3"

@@ -132,7 +132,9 @@ cargo_toml = "0.22.3"
 litesvm = "0.18.0"
 
 # Internal anchor crates
-anchor-lang = { path = "lang-v2", version = "=2.0.0-rc.3" }
+# `default-features = false` so a member that disables a default, such as
+# `anchor-spl` with `guardrails`, does not turn it back on for its users.
+anchor-lang = { path = "lang-v2", version = "=2.0.0-rc.3", default-features = false }
 anchor-derive-accounts = { path = "lang-v2/derive", version = "=2.0.0-rc.3" }
 anchor-spl = { path = "spl-v2", version = "=2.0.0-rc.3" }
 anchor-client = { path = "client", version = "=2.0.0-rc.3" }
