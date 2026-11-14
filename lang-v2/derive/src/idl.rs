@@ -54,7 +54,7 @@ impl<'a> TypeLowerer<'a> {
     }
 
     fn lower(&mut self, ty: &Type) -> Value {
-        if let Some(value) = pod_vec_type_to_idl_value(ty) {
+        if let Some(value) = lower_pod_vec(self, ty) {
             return value;
         }
         match ty {
@@ -281,11 +281,11 @@ pub fn rust_type_to_idl(ty: &Type) -> TokenStream2 {
     lowerer.finish(value)
 }
 
-fn pod_vec_type_to_idl_value(ty: &Type) -> Option<Value> {
+fn lower_pod_vec(lowerer: &mut TypeLowerer<'_>, ty: &Type) -> Option<Value> {
     match ty {
-        Type::Group(group) => pod_vec_type_to_idl_value(&group.elem),
-        Type::Paren(paren) => pod_vec_type_to_idl_value(&paren.elem),
-        Type::Reference(reference) => pod_vec_type_to_idl_value(reference.elem.as_ref()),
+        Type::Group(group) => lower_pod_vec(lowerer, &group.elem),
+        Type::Paren(paren) => lower_pod_vec(lowerer, &paren.elem),
+        Type::Reference(reference) => lower_pod_vec(lowerer, reference.elem.as_ref()),
         Type::Path(type_path) => {
             let segment = type_path.path.segments.last()?;
             if segment.ident != "PodVec" {
@@ -312,7 +312,7 @@ fn pod_vec_type_to_idl_value(ty: &Type) -> Option<Value> {
                     "generics": [
                         {
                             "kind": "type",
-                            "type": TypeLowerer::default().lower(inner_ty),
+                            "type": lowerer.lower(inner_ty),
                         },
                         {
                             "kind": "const",
@@ -1804,6 +1804,43 @@ mod tests {
         assert!(generated.contains("Box :: leak"));
         assert!(generated.contains("limits :: ITEMS"));
         assert!(!generated.contains("generic"));
+
+        // `PodVec` elements keep the same context
+        let generics: Generics = syn::parse_quote!(<T, const N: usize>);
+        let mut lowerer = TypeLowerer::with_generics(&generics);
+        let generic_elem: Type = syn::parse_quote!(PodVec<T, 4>);
+        assert_eq!(
+            lowerer.lower(&generic_elem),
+            json!({
+                "defined": {
+                    "name": "PodVec",
+                    "generics": [
+                        { "kind": "type", "type": { "generic": "T" } },
+                        { "kind": "const", "value": "4" },
+                    ],
+                }
+            })
+        );
+        let generic_len_elem: Type = syn::parse_quote!(PodVec<[u8; N], 2>);
+        assert_eq!(
+            lowerer.lower(&generic_len_elem),
+            json!({
+                "defined": {
+                    "name": "PodVec",
+                    "generics": [
+                        { "kind": "type", "type": { "array": ["u8", { "generic": "N" }] } },
+                        { "kind": "const", "value": "2" },
+                    ],
+                }
+            })
+        );
+
+        let mut lowerer = TypeLowerer::default();
+        let path_len_elem: Type = syn::parse_quote!(PodVec<[u8; limits::ITEMS], 2>);
+        let value = lowerer.lower(&path_len_elem);
+        let generated = lowerer.finish(value).to_string();
+        assert!(generated.contains("limits :: ITEMS"));
+        assert!(!generated.contains("__anchor_private"));
     }
 
     #[test]

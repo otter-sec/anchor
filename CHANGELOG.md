@@ -24,6 +24,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang-v2: Lower `PodVec` element types with the container's generics and array lengths in the IDL ([#5274](https://github.com/otter-sec/anchor/pull/5274)).
 - lang-v2: Restore CPI borrow guards in reverse order, so several readonly handles for the same account in one CPI restore its original borrow state ([#5281](https://github.com/otter-sec/anchor/pull/5281)).
 - lang-v2: Lower `PodU8` and `PodI8` to `u8` and `i8` in the IDL, so `declare_program!` no longer fails on them ([#5273](https://github.com/otter-sec/anchor/pull/5273)).
 - lang-v2: Reject `try_cpi_handle_mut` on a read-only `BorshAccount`/`SerializedAccount` with `AccountBorrowFailed` ([#5264](https://github.com/otter-sec/anchor/pull/5264)).
