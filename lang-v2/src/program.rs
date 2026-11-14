@@ -1,7 +1,7 @@
 pub use pinocchio::cpi::{set_return_data, MAX_RETURN_DATA};
 use {
     crate::{address_eq, require, Address, CpiHandle, CpiInstruction},
-    core::{mem::MaybeUninit, slice::from_raw_parts},
+    core::{mem::MaybeUninit, ops::Range, slice::from_raw_parts},
     pinocchio::{
         cpi::{CpiAccount, Seed, Signer},
         instruction::{InstructionAccount, InstructionView},
@@ -100,7 +100,7 @@ where
     instruction.with_instruction_accounts(|instruction_accounts| {
         let program_id = instruction.program_id();
         let data = instruction.data();
-        validate_instruction_accounts::<N>(
+        let cpi_account_count = validate_instruction_accounts::<N>(
             instruction_accounts,
             program_id,
             account_handles,
@@ -118,7 +118,7 @@ where
                 instruction_accounts,
                 account_handles,
                 signer_seeds,
-                optional_sentinel_flags,
+                cpi_account_count,
             )
         }
     })
@@ -209,15 +209,26 @@ unsafe fn invoke_signed_unchecked_with_optional_sentinels_with_capacity<
 where
     I: CpiInstruction + ?Sized,
 {
-    instruction.with_instruction_accounts(|instruction_accounts| unsafe {
-        invoke_signed_unchecked_with_accounts::<N>(
-            instruction.program_id(),
-            instruction.data(),
+    instruction.with_instruction_accounts(|instruction_accounts| {
+        let program_id = instruction.program_id();
+        let data = instruction.data();
+        let cpi_account_count = walk_instruction_account_bindings::<N>(
             instruction_accounts,
+            program_id,
             account_handles,
-            signer_seeds,
             optional_sentinel_flags,
-        )
+            |_, _| Ok(()),
+        )?;
+        unsafe {
+            invoke_signed_unchecked_with_accounts::<N>(
+                program_id,
+                data,
+                instruction_accounts,
+                account_handles,
+                signer_seeds,
+                cpi_account_count,
+            )
+        }
     })
 }
 
@@ -227,14 +238,8 @@ unsafe fn invoke_signed_unchecked_with_accounts<'a, 'seeds, const N: usize>(
     instruction_accounts: &[InstructionAccount<'a>],
     account_handles: &[CpiHandle<'a>],
     signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
-    optional_sentinel_flags: &[bool],
+    cpi_account_count: usize,
 ) -> ProgramResult {
-    let cpi_account_count = required_cpi_account_count::<N>(
-        instruction_accounts,
-        program_id,
-        account_handles,
-        optional_sentinel_flags,
-    )?;
     let instruction_view = InstructionView {
         program_id,
         accounts: instruction_accounts,
@@ -298,18 +303,13 @@ pub(crate) fn validate_instruction_accounts<'a, const N: usize>(
     account_handles: &[CpiHandle<'a>],
     optional_sentinel_flags: &[bool],
     enforce_signers: bool,
-) -> ProgramResult {
-    walk_instruction_account_bindings::<N, _>(
+) -> Result<usize, ProgramError> {
+    walk_instruction_account_bindings::<N>(
         instruction_accounts,
         program_id,
         account_handles,
         optional_sentinel_flags,
-        |_, account, binding| {
-            let Some(handle_index) = binding else {
-                return Ok(());
-            };
-            let handle = &account_handles[handle_index];
-
+        |account, handle| {
             if account.is_writable {
                 if handle.requires_borrow_check() {
                     handle.account_view().check_borrow_mut()?;
@@ -349,158 +349,182 @@ fn is_skippable_optional_sentinel(
         && is_optional_instruction_account_sentinel_candidate(program_id, account)
 }
 
-fn required_cpi_account_count<'a, const N: usize>(
+#[inline(never)]
+fn walk_instruction_account_bindings<'a, const N: usize>(
     instruction_accounts: &[InstructionAccount<'a>],
     program_id: &Address,
     account_handles: &[CpiHandle<'a>],
     optional_sentinel_flags: &[bool],
+    mut visit: impl FnMut(&InstructionAccount<'a>, &CpiHandle<'a>) -> ProgramResult,
 ) -> Result<usize, ProgramError> {
-    let mut count = 0;
-    walk_instruction_account_bindings::<N, _>(
+    require!(account_handles.len() <= N, ProgramError::InvalidArgument);
+    // A binding consumes at most one handle per instruction account.
+    let handles = &account_handles[..account_handles.len().min(instruction_accounts.len())];
+    let mut bindings = [0; N];
+    let count = required_cpi_account_count(
         instruction_accounts,
         program_id,
-        account_handles,
+        handles,
         optional_sentinel_flags,
-        |_, _, binding| {
-            count += binding.is_some() as usize;
-            Ok(())
-        },
-    )?;
+        0..instruction_accounts.len(),
+        &mut bindings[..handles.len()],
+        true,
+    )
+    .ok_or_else(|| {
+        if account_handles.len()
+            < minimum_required_handle_count(
+                instruction_accounts,
+                program_id,
+                optional_sentinel_flags,
+            )
+        {
+            ProgramError::NotEnoughAccountKeys
+        } else {
+            ProgramError::InvalidArgument
+        }
+    })?;
+
+    for (&instruction_index, handle) in bindings[..count].iter().zip(handles) {
+        visit(&instruction_accounts[instruction_index], handle)?;
+    }
+
     Ok(count)
 }
 
-fn walk_instruction_account_bindings<'a, const N: usize, F>(
-    instruction_accounts: &[InstructionAccount<'a>],
-    program_id: &Address,
-    account_handles: &[CpiHandle<'a>],
-    optional_sentinel_flags: &[bool],
-    mut visit: F,
-) -> Result<(), ProgramError>
-where
-    F: FnMut(usize, &InstructionAccount<'a>, Option<usize>) -> Result<(), ProgramError>,
-{
-    require!(account_handles.len() <= N, ProgramError::InvalidArgument);
-    let mut handle_index = 0;
-
-    for (instruction_index, account) in instruction_accounts.iter().enumerate() {
-        let is_optional = is_skippable_optional_sentinel(
-            program_id,
-            account,
-            optional_sentinel_flags,
-            instruction_index,
-        );
-
-        let can_skip = is_optional
-            && can_match_instruction_accounts::<N>(
-                instruction_accounts,
-                program_id,
-                account_handles,
-                optional_sentinel_flags,
-                instruction_index + 1,
-                handle_index,
-            );
-        if can_skip {
-            visit(instruction_index, account, None)?;
-            continue;
-        }
-
-        if handle_index < account_handles.len()
-            && instruction_account_matches_handle(account, &account_handles[handle_index])
-            && can_match_instruction_accounts::<N>(
-                instruction_accounts,
-                program_id,
-                account_handles,
-                optional_sentinel_flags,
-                instruction_index + 1,
-                handle_index + 1,
-            )
-        {
-            visit(instruction_index, account, Some(handle_index))?;
-            handle_index += 1;
-            continue;
-        }
-
-        return Err(
-            if account_handles.len()
-                < minimum_required_handle_count(
-                    instruction_accounts,
-                    program_id,
-                    optional_sentinel_flags,
-                )
-            {
-                ProgramError::NotEnoughAccountKeys
-            } else {
-                ProgramError::InvalidArgument
-            },
-        );
-    }
-
-    Ok(())
-}
-
-/// Determine whether an instruction-account suffix has a valid binding using
-/// caller-sized rolling state. This retains the original DP matcher's
-/// polynomial behavior without allocating its full matrix.
+/// Write the skip-first account bindings and return the number consumed.
+/// The output doubles as a rolling DP row.
+/// Each nontrivial split fixes the binding of the middle handle and halves
+/// the handle range. The two smaller problems visit disjoint account ranges.
+/// This takes O(accounts * handles) time, O(handles) scratch, and logarithmic
+/// call depth. `bindings` has one slot per handle throughout.
 #[inline(never)]
-fn can_match_instruction_accounts<'a, const N: usize>(
+fn required_cpi_account_count<'a>(
     instruction_accounts: &[InstructionAccount<'a>],
     program_id: &Address,
     account_handles: &[CpiHandle<'a>],
     optional_sentinel_flags: &[bool],
-    instruction_index: usize,
-    handle_index: usize,
-) -> bool {
-    if account_handles.len() > N || handle_index > account_handles.len() {
-        return false;
-    }
-
-    let mut current = [false; N];
-    let mut current_at_end = handle_index == account_handles.len();
-    if !current_at_end {
-        current[handle_index] = true;
-    }
-
-    for (index, account) in instruction_accounts
-        .iter()
-        .enumerate()
-        .skip(instruction_index)
-    {
-        let is_optional =
-            is_skippable_optional_sentinel(program_id, account, optional_sentinel_flags, index);
-        let mut next = [false; N];
-        let mut next_at_end = current_at_end && is_optional;
-
-        for state in handle_index..account_handles.len() {
-            if !current[state] {
+    instruction_range: Range<usize>,
+    bindings: &mut [usize],
+    allow_unused_handles: bool,
+) -> Option<usize> {
+    // If all optional slots can be skipped, this is already the preferred
+    // binding. In particular, ordinary CPI takes a single linear walk.
+    'skip_all: {
+        let mut matched = 0;
+        for index in instruction_range.clone() {
+            let account = &instruction_accounts[index];
+            if is_skippable_optional_sentinel(program_id, account, optional_sentinel_flags, index) {
                 continue;
             }
-            if is_optional {
-                next[state] = true;
+            let Some(handle) = account_handles.get(matched) else {
+                break 'skip_all;
+            };
+            if !instruction_account_matches_handle(account, handle) {
+                break 'skip_all;
             }
-            if instruction_account_matches_handle(account, &account_handles[state]) {
-                if state + 1 == account_handles.len() {
-                    next_at_end = true;
-                } else {
-                    next[state + 1] = true;
-                }
-            }
+            bindings[matched] = index;
+            matched += 1;
         }
-
-        current = next;
-        current_at_end = next_at_end;
-        if !current_at_end
-            && !current[handle_index..account_handles.len()]
-                .iter()
-                .any(|v| *v)
-        {
-            return false;
+        if allow_unused_handles || matched == account_handles.len() {
+            return Some(matched);
         }
     }
 
-    current_at_end
-        || current[handle_index..account_handles.len()]
+    if account_handles.is_empty()
+        || !optional_sentinel_flags
+            .get(instruction_range.start..)
+            .unwrap_or_default()
             .iter()
-            .any(|v| *v)
+            .take(instruction_range.len())
+            .any(|&optional| optional)
+    {
+        return None;
+    }
+
+    let middle = account_handles.len() / 2;
+    let end = instruction_range.end;
+    let unreachable = usize::MAX;
+    // A reachable suffix carries either the middle handle's account index
+    // or `end + consumed` if the suffix does not bind that handle. Both
+    // individual slice lengths are bounded by isize::MAX divided by element
+    // size, so the endpoint encoding cannot overflow or equal `unreachable`.
+    for (index, state) in bindings.iter_mut().enumerate() {
+        *state = if allow_unused_handles {
+            end + index
+        } else {
+            unreachable
+        };
+    }
+    let mut after_last_handle = end + account_handles.len();
+    for index in instruction_range.clone().rev() {
+        let account = &instruction_accounts[index];
+        let optional =
+            is_skippable_optional_sentinel(program_id, account, optional_sentinel_flags, index);
+        // The next column belongs to the previous row until we overwrite it.
+        for (column, handle) in account_handles.iter().enumerate() {
+            if optional && bindings[column] != unreachable {
+                continue;
+            }
+            let next = bindings
+                .get(column + 1)
+                .copied()
+                .unwrap_or(after_last_handle);
+            bindings[column] =
+                if next != unreachable && instruction_account_matches_handle(account, handle) {
+                    if column == middle {
+                        index
+                    } else {
+                        next
+                    }
+                } else {
+                    unreachable
+                };
+        }
+        if !optional {
+            after_last_handle = unreachable;
+        }
+    }
+
+    let middle_account = bindings[0];
+    if middle_account == unreachable {
+        return None;
+    }
+    if middle_account >= end {
+        // The preferred binding leaves the middle handle unused. Rebuild
+        // using only the consumed prefix, which is at most half the handles.
+        let consumed = middle_account - end;
+        return required_cpi_account_count(
+            instruction_accounts,
+            program_id,
+            &account_handles[..consumed],
+            optional_sentinel_flags,
+            instruction_range,
+            &mut bindings[..consumed],
+            false,
+        );
+    }
+
+    let (left, right) = bindings.split_at_mut(middle);
+    right[0] = middle_account;
+    required_cpi_account_count(
+        instruction_accounts,
+        program_id,
+        &account_handles[..middle],
+        optional_sentinel_flags,
+        instruction_range.start..middle_account,
+        left,
+        false,
+    )?;
+    let right_count = required_cpi_account_count(
+        instruction_accounts,
+        program_id,
+        &account_handles[middle + 1..],
+        optional_sentinel_flags,
+        middle_account + 1..end,
+        &mut right[1..],
+        allow_unused_handles,
+    )?;
+    Some(middle + 1 + right_count)
 }
 
 fn minimum_required_handle_count(
