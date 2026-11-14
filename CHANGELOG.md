@@ -24,8 +24,18 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang-v2: Preserve `BTreeMap` and `BTreeSet` generic arguments in `declare_program!` ([#5276](https://github.com/otter-sec/anchor/pull/5276)).
+- lang-v2: Evaluate const generic IDL values when generating generic type definitions ([#5275](https://github.com/otter-sec/anchor/pull/5275)).
+- lang-v2: Lower `PodVec` element types with the container's generics and array lengths in the IDL ([#5274](https://github.com/otter-sec/anchor/pull/5274)).
+- lang-v2: Restore CPI borrow guards in reverse order, so several readonly handles for the same account in one CPI restore its original borrow state ([#5281](https://github.com/otter-sec/anchor/pull/5281)).
+- lang-v2: Lower `PodU8` and `PodI8` to `u8` and `i8` in the IDL, so `declare_program!` no longer fails on them ([#5273](https://github.com/otter-sec/anchor/pull/5273)).
+- lang-v2: Reject `try_cpi_handle_mut` on a read-only `BorshAccount`/`SerializedAccount` with `AccountBorrowFailed` ([#5264](https://github.com/otter-sec/anchor/pull/5264)).
+- lang-v2: Hold a temporary shared borrow while `Slab::load`/`load_mut` validate, so a custom `SlabSchema::validate` cannot take a mutable borrow over the data ([#5266](https://github.com/otter-sec/anchor/pull/5266)).
+- lang-v2: Restore the original `borrow_state` after a `CpiBorrowGuard` drops, so a `BorshAccount`/`SerializedAccount` released with `release_borrow()` is not left exclusively borrowed after a readonly CPI ([#5265](https://github.com/otter-sec/anchor/pull/5265)).
 - lang-v2: Stop inlining PDA and account-init scratch into the instruction handler ([#5204](https://github.com/otter-sec/anchor/pull/5204)).
 - ts: Reject a JS number that is not a safe integer when encoding `u64`, `i64`, `u128`, `i128`, `u256`, and `i256`. Pass a bigint for values outside ±(2^53 - 1) ([#5203](https://github.com/otter-sec/anchor/pull/5203)).
+- lang-v2: Reference type aliases and renamed imports in the IDL by the type's registered name, and reject aliases of generic types ([#5280](https://github.com/otter-sec/anchor/pull/5280)).
+- lang-v2: Reject inline tuple types during IDL generation with a clear compile-time error instead of emitting unsupported IDL references ([#5277](https://github.com/otter-sec/anchor/pull/5277)).
 - lang-v2: Keep Pod wrapper types (`PodU64`, `PodBool`, ..) in the IDL instead of lowering them to native types, so `declare_program!` generates zero-copy structs with correct program's layout ([#5170](https://github.com/otter-sec/anchor/pull/5170))
 - lang-v2: Restore `AnchorSerialize` and `AnchorDeserialize` as traits for generic bounds alongside the derive macros ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
 

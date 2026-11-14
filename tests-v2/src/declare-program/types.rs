@@ -35,6 +35,7 @@ fn declared_weird_types_compile_and_serialize() {
     assert_idl_type::<weird_types::PodVec<anchor_lang::pod::PodU64, 4>>();
     assert_idl_type::<weird_types::PodWrapperOnly>();
     assert_idl_type::<weird_types::PodVecOnly>();
+    assert_idl_type::<weird_types::Collections>();
 
     assert!(<weird_types::UnitMarker as IdlAccountType>::__IDL_TYPE_DEF
         .expect("unit struct should retain its IDL type definition")
@@ -72,6 +73,21 @@ fn declared_weird_types_compile_and_serialize() {
     );
     assert_eq!(&data[..4], &[90, 91, 92, 93]);
     assert!(data.len() > 4);
+}
+
+#[test]
+fn declared_btree_collections_keep_their_generic_args() {
+    let declared = weird_types::Collections {
+        map: [(1u8, 2u16), (3, 4)].into_iter().collect(),
+        set: [5u64, 6].into_iter().collect(),
+    };
+    let map: std::collections::BTreeMap<u8, u16> = declared.map.clone();
+    let set: std::collections::BTreeSet<u64> = declared.set.clone();
+    let bytes =
+        anchor_lang::wincode::config::serialize(&declared, anchor_lang::BORSH_CONFIG).unwrap();
+    let expected =
+        anchor_lang::wincode::config::serialize(&(map, set), anchor_lang::BORSH_CONFIG).unwrap();
+    assert_eq!(bytes, expected);
 }
 
 #[test]
