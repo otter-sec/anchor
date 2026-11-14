@@ -86,4 +86,5 @@ impl<T: Ids> crate::ToCpiHandleMut for Interface<T> {
 }
 
 #[doc(hidden)]
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 impl<T: Ids> crate::IdlAccountType for Interface<T> {}

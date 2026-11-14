@@ -3,6 +3,12 @@
 //! `#![no_std]` compatible.
 
 #![no_std]
+#[cfg(test)]
+extern crate std;
+#[cfg(any(
+    feature = "alloc",
+    not(any(target_os = "solana", target_arch = "bpf"))
+))]
 extern crate alloc;
 extern crate self as anchor_lang;
 
@@ -17,8 +23,35 @@ mod dispatch;
 pub mod event;
 mod fixed_vec;
 pub mod hash;
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 #[doc(hidden)]
 pub mod idl_build;
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+#[doc(hidden)]
+pub mod idl_build {
+    /// IDL metadata is collected by host-side tooling. This target-side
+    /// marker keeps common account wrapper bounds allocator-free.
+    pub trait IdlAccountType {
+        const __IDL_ACCOUNT_ENTRY: Option<&'static str> = None;
+        const __IDL_TYPE_DEF: Option<&'static str> = None;
+        const __IDL_IS_SIGNER: bool = false;
+        const __IDL_ADDRESS: Option<&'static str> = None;
+
+        fn __idl_account_entry() -> Option<&'static str> {
+            Self::__IDL_ACCOUNT_ENTRY
+        }
+
+        fn __idl_type_def() -> Option<&'static str> {
+            Self::__IDL_TYPE_DEF
+        }
+
+        fn __register_idl_deps(
+            _accounts: &mut [Option<&'static str>],
+            _types: &mut [Option<&'static str>],
+        ) {
+        }
+    }
+}
 mod idl_support;
 mod instruction;
 pub mod loader;
@@ -42,8 +75,6 @@ pub use solana_address::{address, declare_id};
 /// Implementation detail of [`solana_msg`] - re-exported for macro access only.
 #[doc(hidden)]
 pub use solana_msg;
-// Re-export for `debug!` macro — routes through this crate's namespace so
-// user programs don't need `solana-program-log` or `extern crate alloc;`.
 #[cfg(feature = "compat")]
 #[doc(hidden)]
 pub use solana_program_log::log as __log_str;
@@ -52,9 +83,13 @@ pub use {
     cpi::realloc_account,
 };
 
-// Ungated re-export so generated macro code (`#[event]`, `debug!`, etc.)
-// can reach `Vec` without std or `extern crate alloc;` in user crates.
+/// Hidden compatibility re-export used by host and alloc-enabled generated
+/// code. It is deliberately unavailable to the default SBF target.
 #[doc(hidden)]
+#[cfg(any(
+    feature = "alloc",
+    not(any(target_os = "solana", target_arch = "bpf"))
+))]
 pub extern crate alloc as __alloc;
 
 // Host-only allocation namespace used by generated IDL code. The definitions
@@ -64,17 +99,43 @@ pub extern crate alloc as __alloc;
 #[doc(hidden)]
 pub use idl_support::{__idl, IdlEntries};
 
-/// Logs a message via `solana_msg`.
-///
-/// Thin wrapper around `solana_msg::msg!` that always evaluates to
-/// `()`, so it's usable in expression position (match arms, closures, tuples,
-/// etc.).
 #[macro_export]
 macro_rules! msg {
+    ($message:expr) => {{
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        {
+            let message: &str = $message;
+            // SAFETY: the syscall reads the string bytes during this call.
+            unsafe {
+                $crate::pinocchio::syscalls::sol_log_(message.as_ptr(), message.len() as u64);
+            }
+        }
+        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+        $crate::solana_msg::msg!($message);
+    }};
     ($($arg:tt)*) => {{
-        // bring into scope from re-export as the macro accesses it
-        use $crate::solana_msg;
-        solana_msg::msg!($($arg)*);
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        {
+            struct LogWriter;
+
+            impl core::fmt::Write for LogWriter {
+                fn write_str(&mut self, text: &str) -> core::fmt::Result {
+                    // Formatting can produce several chunks. Emit each chunk
+                    // directly so logging has no fixed-size scratch buffer.
+                    unsafe {
+                        $crate::pinocchio::syscalls::sol_log_(
+                            text.as_ptr(),
+                            text.len() as u64,
+                        );
+                    }
+                    Ok(())
+                }
+            }
+
+            let _ = core::fmt::write(&mut LogWriter, core::format_args!($($arg)*));
+        }
+        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+        $crate::solana_msg::msg!($($arg)*);
     }};
 }
 
@@ -100,9 +161,30 @@ macro_rules! debug {
 }
 // Re-export wincode for instruction data serialization
 pub use buffers::CpiHandleBuffer;
+pub(crate) use buffers::{CpiAccountBuffer, SignerBuffer};
 pub use fixed_vec::FixedVec;
 pub use traits::ToCpiAccountsWithCapacity;
 pub use wincode;
+
+#[doc(hidden)]
+#[cfg(not(feature = "alloc"))]
+#[macro_export]
+macro_rules! __anchor_program_allocator {
+    () => {
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        $crate::pinocchio::no_allocator!();
+    };
+}
+
+#[doc(hidden)]
+#[cfg(feature = "alloc")]
+#[macro_export]
+macro_rules! __anchor_program_allocator {
+    () => {
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        $crate::pinocchio::default_allocator!();
+    };
+}
 
 /// Borsh-compatible wincode config: u8 enum tags + fixed u32 LE length
 /// prefixes. Used for borsh-compatible v2 serialization paths (instruction
@@ -260,7 +342,10 @@ pub mod solana_program {
     }
 
     pub mod rent {
+        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
         pub use solana_sysvar::rent::*;
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        pub use pinocchio::sysvars::rent::*;
     }
 
     pub mod sysvar {

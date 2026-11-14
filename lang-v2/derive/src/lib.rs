@@ -6200,14 +6200,23 @@ fn process_handler(
         .unwrap_or_else(|| quote! { "" });
     let set_return_data = returns_value.then(|| {
         quote! {
+            #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+            let mut __return_data = anchor_lang::FixedVec::<
+                u8,
+                { anchor_lang::solana_program::program::MAX_RETURN_DATA },
+            >::new();
+            #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
             let mut __return_data = anchor_lang::__alloc::vec::Vec::new();
-            anchor_lang::wincode::config::serialize_into(
+            if anchor_lang::wincode::config::serialize_into(
                 &mut __return_data,
                 &__result,
                 anchor_lang::BORSH_CONFIG,
             )
-                .expect("return data serialization failed");
-            anchor_lang::pinocchio::cpi::set_return_data(__return_data.as_slice());
+            .is_err()
+            {
+                return anchor_lang::Error::InvalidInstructionData.into();
+            }
+            anchor_lang::pinocchio::cpi::set_return_data(__return_data.as_ref());
         }
     });
 
@@ -7136,7 +7145,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 
         // Custom 2-arg (r1, r2) entrypoint using SIMD-0321 convention.
         #[cfg(not(feature = "no-entrypoint"))]
-        anchor_lang::pinocchio::default_allocator!();
+        anchor_lang::__anchor_program_allocator!();
         #[cfg(not(feature = "no-entrypoint"))]
         anchor_lang::pinocchio::default_panic_handler!();
 
@@ -7255,7 +7264,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                 // View wrappers (Signer, Program<T>, Sysvar<T>, …) use
                 // the trait's default no-op `__register_idl_deps`, so they
                 // contribute nothing. Primitive / collection / `&T`
-                // blanket impls are no-op forwarders (`idl_build.rs`),
+                // blanket impls are no-op forwarders,
                 // so only user-derived `#[account]` / `#[event]` /
                 // `IdlType` structs contribute.
                 //
@@ -9295,6 +9304,7 @@ mod tests {
         assert_eq!(pod_bool.to_string(), "anchor_lang :: pod :: PodBool");
     }
 
+    #[test]
     fn nested_accounts_preserve_inner_bumps_in_generated_surface() {
         let input: syn::DeriveInput = syn::parse_quote! {
             pub struct Outer {
@@ -9315,7 +9325,7 @@ mod tests {
         );
         assert!(
             generated.contains(
-                "let (__nested_inner , __anchor_bump_cache_inner , _) = < Inner as anchor_lang :: \
+                "let (__nested_inner , __anchor_bump_cache_inner , __nested_ix_args) = < Inner as anchor_lang :: \
                  TryAccounts > :: validate_accounts"
             ),
             "expected nested validate_accounts call to keep the returned bumps value: {generated}"
@@ -9323,7 +9333,7 @@ mod tests {
         assert!(
             generated.contains(
                 "let mut __anchor_bump_cache_inner : < Inner as anchor_lang :: Bumps > :: Bumps = \
-                 :: core :: default :: Default :: default() ;"
+                 :: core :: default :: Default :: default () ;"
             ),
             "expected nested bump cache local declaration: {generated}"
         );

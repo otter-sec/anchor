@@ -16,7 +16,7 @@ no-idl = []
 no-log-ix-name = []
 
 [dependencies]
-anchor-lang = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
+anchor-lang = { path = "../../../../lang-v2", default-features = false }
 anchor-spl = { path = "../../../../spl-v2", features = ["guardrails"] }
 solana-program-error.workspace = true
 

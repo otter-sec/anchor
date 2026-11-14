@@ -88,6 +88,7 @@ impl<T: Id> crate::ToCpiHandleMut for Program<T> {
 }
 
 #[doc(hidden)]
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 impl<T: Id> crate::IdlAccountType for Program<T> {
     // `Id::IDL_ADDRESS` defaults to `""`; convert empty → None so unknown
     // program markers elide the `address` field instead of emitting a bogus

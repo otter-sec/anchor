@@ -1,12 +1,14 @@
-use anchor_lang::{
-    __alloc::{string::String, vec::Vec},
-    prelude::*,
-};
+use anchor_lang::prelude::*;
 
 declare_id!("BF748KR4UhPq7xbhFQYd7yFKmh5UYdqed9GbD6oZvEyu");
 declare_program!(return_spoof);
 
 pub const RETURN_SEED: &[u8] = b"return-store";
+
+// These are the concrete bounds used by this fixture's return values: the
+// label is "return-payload" and `describe` emits two samples.
+type ReturnString = anchor_lang::FixedVec<u8, 14>;
+type ReturnVec<T> = anchor_lang::FixedVec<T, 2>;
 
 #[account]
 #[repr(C)]
@@ -22,8 +24,8 @@ pub struct ReturnStore {
 #[derive(Clone, anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize)]
 pub struct ReturnPayload {
     pub amount: u64,
-    pub label: String,
-    pub samples: Vec<u16>,
+    pub label: ReturnString,
+    pub samples: ReturnVec<u16>,
     pub maybe_authority: Option<Address>,
 }
 
@@ -71,12 +73,14 @@ pub mod return_callee {
             .saturating_add(ctx.accounts.data.calls as u64);
         ctx.accounts.data.last_base = base;
         ctx.accounts.data.last_result = amount;
-        let mut samples = Vec::new();
-        samples.push(bonus);
-        samples.push(ctx.accounts.data.calls);
+        let mut samples = ReturnVec::new();
+        samples.try_push(bonus).expect("return samples capacity");
+        samples
+            .try_push(ctx.accounts.data.calls)
+            .expect("return samples capacity");
         Ok(ReturnPayload {
             amount,
-            label: String::from("return-payload"),
+            label: return_label(b"return-payload"),
             samples,
             maybe_authority: Some(*ctx.accounts.authority.address()),
         })
@@ -148,11 +152,19 @@ pub mod return_callee {
         ctx.accounts.data.last_result = amount;
         Ok(ReturnPayload {
             amount,
-            label: String::new(),
-            samples: Vec::new(),
+            label: ReturnString::new(),
+            samples: ReturnVec::new(),
             maybe_authority: None,
         })
     }
+}
+
+fn return_label(value: &[u8]) -> ReturnString {
+    let mut label = ReturnString::new();
+    label
+        .try_extend_from_slice(value)
+        .expect("return label capacity");
+    label
 }
 
 #[derive(Accounts)]

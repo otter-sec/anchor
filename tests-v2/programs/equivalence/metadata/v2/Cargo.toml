@@ -17,7 +17,7 @@ no-log-ix-name = []
 idl-build = []
 
 [dependencies]
-anchor-lang = { path = "../../../../../lang-v2", default-features = false, features = ["alloc"] }
+anchor-lang = { path = "../../../../../lang-v2", default-features = false }
 anchor-spl = { path = "../../../../../spl-v2", features = ["guardrails", "metadata"] }
 
 [lints.rust.unexpected_cfgs]
