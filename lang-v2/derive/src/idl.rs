@@ -44,6 +44,8 @@ struct TypeLowerer<'a> {
     generics: Option<&'a Generics>,
     resolve_names: bool,
     placeholders: Vec<Placeholder>,
+    /// Holds errors encountered during lowering, to be emitted at the end.
+    errors: Vec<syn::Error>,
 }
 
 impl<'a> TypeLowerer<'a> {
@@ -56,17 +58,44 @@ impl<'a> TypeLowerer<'a> {
     }
 
     fn lower(&mut self, ty: &Type) -> Value {
+        fn inline_tuples(ty: &Type) -> Vec<proc_macro2::Span> {
+            struct TupleFinder {
+                spans: Vec<proc_macro2::Span>,
+            }
+
+            impl<'ast> Visit<'ast> for TupleFinder {
+                fn visit_type_tuple(&mut self, tuple: &'ast syn::TypeTuple) {
+                    self.spans.push(tuple.span());
+                    syn::visit::visit_type_tuple(self, tuple);
+                }
+            }
+
+            let mut finder = TupleFinder { spans: Vec::new() };
+            finder.visit_type(ty);
+            finder.spans
+        }
+
+        for span in inline_tuples(ty) {
+            self.errors.push(syn::Error::new(
+                span,
+                "inline tuple types are not supported in IDL generation; use a named tuple struct",
+            ));
+        }
+        self.lower_inner(ty)
+    }
+
+    fn lower_inner(&mut self, ty: &Type) -> Value {
         if let Some(value) = lower_pod_vec(self, ty) {
             return value;
         }
         match ty {
-            Type::Reference(reference) => self.lower(&reference.elem),
-            Type::Group(group) => self.lower(&group.elem),
-            Type::Paren(paren) => self.lower(&paren.elem),
+            Type::Reference(reference) => self.lower_inner(&reference.elem),
+            Type::Group(group) => self.lower_inner(&group.elem),
+            Type::Paren(paren) => self.lower_inner(&paren.elem),
             Type::Slice(slice) if is_u8_path(&slice.elem) => json!("bytes"),
-            Type::Slice(slice) => json!({ "vec": self.lower(&slice.elem) }),
+            Type::Slice(slice) => json!({ "vec": self.lower_inner(&slice.elem) }),
             Type::Array(array) => {
-                let inner = self.lower(&array.elem);
+                let inner = self.lower_inner(&array.elem);
                 let len = self.lower_array_len(&array.len);
                 json!({ "array": [inner, len] })
             }
@@ -164,16 +193,16 @@ impl<'a> TypeLowerer<'a> {
                 let Some(inner) = first_type_arg(segment) else {
                     return json!({ "defined": { "name": "Vec" } });
                 };
-                json!({ "vec": self.lower(inner) })
+                json!({ "vec": self.lower_inner(inner) })
             }
             "Option" => {
                 let Some(inner) = first_type_arg(segment) else {
                     return json!({ "defined": { "name": "Option" } });
                 };
-                json!({ "option": self.lower(inner) })
+                json!({ "option": self.lower_inner(inner) })
             }
             "Box" => first_type_arg(segment)
-                .map(|inner| self.lower(inner))
+                .map(|inner| self.lower_inner(inner))
                 .unwrap_or_else(|| json!({ "defined": { "name": "Box" } })),
             _ => self.lower_defined_path(ty, segment),
         }
@@ -209,7 +238,7 @@ impl<'a> TypeLowerer<'a> {
                         }
                         syn::GenericArgument::Type(ty) => generics.push(json!({
                             "kind": "type",
-                            "type": self.lower(ty),
+                            "type": self.lower_inner(ty),
                         })),
                         syn::GenericArgument::Const(expr) => generics.push(json!({
                             "kind": "const",
@@ -254,6 +283,13 @@ impl<'a> TypeLowerer<'a> {
     }
 
     fn finish(self, value: Value) -> TokenStream2 {
+        if !self.errors.is_empty() {
+            let errors = self.errors.iter().map(syn::Error::to_compile_error);
+            return quote! {{
+                #(#errors;)*
+                panic!()
+            }};
+        }
         let mut remaining = value.to_string();
         if self.placeholders.is_empty() {
             return quote! { #remaining };
@@ -373,7 +409,7 @@ fn lower_pod_vec(lowerer: &mut TypeLowerer<'_>, ty: &Type) -> Option<Value> {
                     "generics": [
                         {
                             "kind": "type",
-                            "type": lowerer.lower(inner_ty),
+                            "type": lowerer.lower_inner(inner_ty),
                         },
                         {
                             "kind": "const",

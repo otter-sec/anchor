@@ -130,9 +130,9 @@ pub mod btree_map_instruction_arg {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
-fn btree_set_tuple_and_idl_type_arguments_remain_supported() {
+fn btree_set_and_idl_type_arguments_remain_supported() {
     cargo_test_pass_case(
-        "btree_set_tuple_and_idl_type_arguments",
+        "btree_set_and_idl_type_arguments",
         r#"
 extern crate alloc;
 
@@ -149,7 +149,6 @@ pub struct NestedArgs {
 #[derive(AnchorDeserialize, AnchorSerialize, IdlType)]
 pub struct CollectionArgs {
     pub values: BTreeSet<NestedArgs>,
-    pub pair: (NestedArgs, u16),
 }
 
 #[derive(Accounts)]
@@ -162,10 +161,9 @@ pub mod btree_set_tuple_and_idl_type_args {
     pub fn set(
         _ctx: &mut Context<Noop>,
         values: BTreeSet<NestedArgs>,
-        pair: (u8, u16),
         args: CollectionArgs,
     ) -> Result<()> {
-        let _ = (values, pair, args);
+        let _ = (values, args);
         Ok(())
     }
 }
@@ -175,7 +173,6 @@ pub mod btree_set_tuple_and_idl_type_args {
 fn nested_dependencies_are_forwarded() {
     let type_def = <CollectionArgs as IdlAccountType>::__idl_type_def().unwrap();
     assert!(type_def.contains("\"name\":\"BTreeSet\""));
-    assert!(type_def.contains("\"name\":\"(NestedArgs,u16)\""));
 
     let mut accounts = alloc::vec::Vec::new();
     let mut types = alloc::vec::Vec::new();
