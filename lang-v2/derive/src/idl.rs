@@ -23,19 +23,33 @@ use {
     },
 };
 
-const DYNAMIC_LEN_KEY: &str = "__anchor_private_const_len";
+const PLACEHOLDER_KEY: &str = "__anchor_private_placeholder";
+
+/// A part of the IDL JSON that is filled in when the IDL is built.
+enum Placeholder {
+    /// An array length expression.
+    Len(Expr),
+    /// A defined type name, resolved through `IdlAccountType`.
+    Name {
+        ty: TokenStream2,
+        written: String,
+        generics: usize,
+    },
+}
 
 #[derive(Default)]
 struct TypeLowerer<'a> {
     generics: Option<&'a Generics>,
-    dynamic_lengths: Vec<Expr>,
+    resolve_names: bool,
+    placeholders: Vec<Placeholder>,
 }
 
 impl<'a> TypeLowerer<'a> {
     fn with_generics(generics: &'a Generics) -> Self {
         Self {
             generics: Some(generics),
-            dynamic_lengths: Vec::new(),
+            resolve_names: true,
+            ..Self::default()
         }
     }
 
@@ -82,8 +96,12 @@ impl<'a> TypeLowerer<'a> {
             }
         }
 
-        let marker = json!({ DYNAMIC_LEN_KEY: self.dynamic_lengths.len() });
-        self.dynamic_lengths.push(expr.clone());
+        self.placeholder(Placeholder::Len(expr.clone()))
+    }
+
+    fn placeholder(&mut self, placeholder: Placeholder) -> Value {
+        let marker = json!({ PLACEHOLDER_KEY: self.placeholders.len() });
+        self.placeholders.push(placeholder);
         marker
     }
 
@@ -127,11 +145,11 @@ impl<'a> TypeLowerer<'a> {
             "Box" => first_type_arg(segment)
                 .map(|inner| self.lower(inner))
                 .unwrap_or_else(|| json!({ "defined": { "name": "Box" } })),
-            _ => self.lower_defined_path(segment),
+            _ => self.lower_defined_path(ty, segment),
         }
     }
 
-    fn lower_defined_path(&mut self, segment: &syn::PathSegment) -> Value {
+    fn lower_defined_path(&mut self, ty: &TypePath, segment: &syn::PathSegment) -> Value {
         let mut generics = Vec::new();
         match &segment.arguments {
             PathArguments::None => {}
@@ -170,12 +188,21 @@ impl<'a> TypeLowerer<'a> {
             }
         }
 
+        let name = if self.resolve_names {
+            self.placeholder(Placeholder::Name {
+                ty: elide_lifetimes(quote!(#ty)),
+                written: segment.ident.to_string(),
+                generics: generics.len(),
+            })
+        } else {
+            json!(segment.ident.to_string())
+        };
         if generics.is_empty() {
-            json!({ "defined": { "name": segment.ident.to_string() } })
+            json!({ "defined": { "name": name } })
         } else {
             json!({
                 "defined": {
-                    "name": segment.ident.to_string(),
+                    "name": name,
                     "generics": generics,
                 }
             })
@@ -184,25 +211,44 @@ impl<'a> TypeLowerer<'a> {
 
     fn finish(self, value: Value) -> TokenStream2 {
         let mut remaining = value.to_string();
-        if self.dynamic_lengths.is_empty() {
+        if self.placeholders.is_empty() {
             return quote! { #remaining };
         }
 
-        let mut steps = Vec::with_capacity(self.dynamic_lengths.len() * 2 + 1);
-        for (index, expr) in self.dynamic_lengths.iter().enumerate() {
-            let marker = json!({ DYNAMIC_LEN_KEY: index }).to_string();
-            let (before, after) = remaining
-                .split_once(&marker)
-                .expect("dynamic IDL array marker should exist");
+        // Placeholders are filled in the order they appear in the JSON, which can
+        // differ from the order they were created in
+        let marker = format!("{{\"{PLACEHOLDER_KEY}\":");
+        let mut steps = Vec::with_capacity(self.placeholders.len() * 2 + 1);
+        while let Some((before, after)) = remaining.split_once(&marker) {
+            let (index, after) = after
+                .split_once('}')
+                .expect("IDL placeholder should be closed");
+            let index: usize = index
+                .parse()
+                .expect("IDL placeholder index should be a number");
             if !before.is_empty() {
                 steps.push(quote! {
                     __s.push_str(#before);
                 });
             }
-            steps.push(quote! {
-                __s.push_str(
-                    &anchor_lang::__alloc::string::ToString::to_string(&((#expr) as usize))
-                );
+            steps.push(match &self.placeholders[index] {
+                Placeholder::Len(expr) => quote! {
+                    __s.push_str(
+                        &anchor_lang::__alloc::string::ToString::to_string(&((#expr) as usize))
+                    );
+                },
+                Placeholder::Name {
+                    ty,
+                    written,
+                    generics,
+                } => quote! {
+                    __s.push('"');
+                    __s.push_str(anchor_lang::idl_build::__idl_defined_name::<#ty>(
+                        #written,
+                        #generics,
+                    ));
+                    __s.push('"');
+                },
             });
             remaining = after.to_owned();
         }
@@ -217,6 +263,15 @@ impl<'a> TypeLowerer<'a> {
             anchor_lang::__alloc::boxed::Box::leak(__s.into_boxed_str()) as &'static str
         }}
     }
+}
+
+pub fn registered_type_to_idl(ty: &Type) -> TokenStream2 {
+    let mut lowerer = TypeLowerer {
+        resolve_names: true,
+        ..TypeLowerer::default()
+    };
+    let value = lowerer.lower(ty);
+    lowerer.finish(value)
 }
 
 /// Convert a Rust type to a generated expression containing its IDL JSON.
@@ -332,6 +387,32 @@ fn looks_like_const_ident(ty: &Type) -> bool {
     };
     let ident = segment.ident.to_string();
     ident.len() > 1 && ident == ident.to_uppercase()
+}
+
+/// Replace every named lifetime with `'_`, since e.g. a handler's `'a` isn't
+/// in scope where the IDL is printed.
+fn elide_lifetimes(tokens: TokenStream2) -> TokenStream2 {
+    use proc_macro2::{Group, Ident, TokenTree};
+
+    let mut after_apostrophe = false;
+    tokens
+        .into_iter()
+        .map(|token| {
+            let token = match token {
+                TokenTree::Ident(ident) if after_apostrophe => {
+                    TokenTree::Ident(Ident::new("_", ident.span()))
+                }
+                TokenTree::Group(group) => {
+                    let mut elided = Group::new(group.delimiter(), elide_lifetimes(group.stream()));
+                    elided.set_span(group.span());
+                    TokenTree::Group(elided)
+                }
+                token => token,
+            };
+            after_apostrophe = matches!(&token, TokenTree::Punct(punct) if punct.as_char() == '\'');
+            token
+        })
+        .collect()
 }
 
 fn peel_expr(expr: &Expr) -> &Expr {
@@ -595,7 +676,10 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
 
 /// Build IDL instruction args JSON from handler parameters.
 pub fn build_args_json(args: &[(&syn::Ident, &Type)]) -> TokenStream2 {
-    let mut lowerer = TypeLowerer::default();
+    let mut lowerer = TypeLowerer {
+        resolve_names: true,
+        ..TypeLowerer::default()
+    };
     let arr: Vec<Value> = args
         .iter()
         .map(|(name, ty)| {
@@ -1668,6 +1752,33 @@ mod tests {
         assert_eq!(
             rust_type_to_idl_value(&plain),
             json!({ "defined": { "name": "Wrapper" } })
+        );
+    }
+
+    #[test]
+    fn defined_names_are_resolved_where_types_are_registered() {
+        let generics: Generics = syn::parse_quote!(<'a, T>);
+        let mut lowerer = TypeLowerer::with_generics(&generics);
+        let ty: Type = syn::parse_quote!(models::Aliased<'a, T, [u8; N]>);
+        let value = lowerer.lower(&ty);
+        let generated = lowerer.finish(value).to_string();
+        assert!(
+            generated.contains("__idl_defined_name :: < models :: Aliased < '_ , T , [u8 ; N] > >")
+        );
+        assert!(generated.contains("\"Aliased\" , 2usize"));
+        assert!(!generated.contains(PLACEHOLDER_KEY));
+
+        // Return types are resolved too
+        let ty: Type = syn::parse_quote!(models::Aliased);
+        let generated = registered_type_to_idl(&ty).to_string();
+        assert!(generated.contains("__idl_defined_name :: < models :: Aliased >"));
+
+        // Constants keep the written name, since their type isn't required
+        // to implement `IdlAccountType`
+        let expected = r#"{"defined":{"name":"Aliased"}}"#;
+        assert_eq!(
+            rust_type_to_idl(&ty).to_string(),
+            quote!(#expected).to_string()
         );
     }
 
