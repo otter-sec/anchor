@@ -2947,3 +2947,22 @@ fn idl_build_accepts_arg_struct_with_idl_type_derive() {
         .check_tests()
         .expect_pass();
 }
+
+#[test]
+fn idl_build_rejects_inline_tuple_fields_without_a_spec_type() {
+    CompileCase::new(
+        "idl_build_inline_tuple_field",
+        r#"
+use anchor_lang::prelude::*;
+
+#[derive(IdlType)]
+pub struct InlineTupleField {
+    pub pair: (u8, u16),
+    pub nested: Option<(u32, (u64, bool))>,
+}
+"#,
+    )
+    .features(&["idl-build"])
+    .check_tests()
+    .expect_fail(&["inline tuple types are not supported in IDL generation"]);
+}
