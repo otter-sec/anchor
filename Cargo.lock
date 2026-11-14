@@ -498,8 +498,8 @@ dependencies = [
  "solana-program-log",
  "solana-program-memory 3.1.0",
  "solana-sha256-hasher 3.1.0",
- "solana-system-interface 2.0.0",
- "solana-sysvar 3.1.1",
+ "solana-system-interface 3.3.0",
+ "solana-sysvar 4.2.0",
  "wincode",
 ]
 
