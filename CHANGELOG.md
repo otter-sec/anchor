@@ -24,6 +24,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang-v2: Lower `PodU8` and `PodI8` to `u8` and `i8` in the IDL, so `declare_program!` no longer fails on them ([#5273](https://github.com/otter-sec/anchor/pull/5273)).
 - lang-v2: Reject `try_cpi_handle_mut` on a read-only `BorshAccount`/`SerializedAccount` with `AccountBorrowFailed` ([#5264](https://github.com/otter-sec/anchor/pull/5264)).
 - lang-v2: Hold a temporary shared borrow while `Slab::load`/`load_mut` validate, so a custom `SlabSchema::validate` cannot take a mutable borrow over the data ([#5266](https://github.com/otter-sec/anchor/pull/5266)).
 - lang-v2: Restore the original `borrow_state` after a `CpiBorrowGuard` drops, so a `BorshAccount`/`SerializedAccount` released with `release_borrow()` is not left exclusively borrowed after a readonly CPI ([#5265](https://github.com/otter-sec/anchor/pull/5265)).
