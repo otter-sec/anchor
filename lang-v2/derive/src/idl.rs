@@ -268,18 +268,18 @@ impl<'a> TypeLowerer<'a> {
     }
 }
 
-/// Convert a Rust type to a generated expression containing its IDL JSON.
-pub fn rust_type_to_idl(ty: &Type) -> TokenStream2 {
-    let mut lowerer = TypeLowerer::default();
-    let value = lowerer.lower(ty);
-    lowerer.finish(value)
-}
-
 pub fn registered_type_to_idl(ty: &Type) -> TokenStream2 {
     let mut lowerer = TypeLowerer {
         resolve_names: true,
         ..TypeLowerer::default()
     };
+    let value = lowerer.lower(ty);
+    lowerer.finish(value)
+}
+
+/// Convert a Rust type to a generated expression containing its IDL JSON.
+pub fn rust_type_to_idl(ty: &Type) -> TokenStream2 {
+    let mut lowerer = TypeLowerer::default();
     let value = lowerer.lower(ty);
     lowerer.finish(value)
 }
