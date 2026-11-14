@@ -149,7 +149,8 @@ idl-build = []
                 for snippet in snippets {
                     assert!(
                         rendered.contains(snippet),
-                        "{} output did not contain {snippet:?}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}",
+                        "{} output did not contain \
+                         {snippet:?}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}",
                         self.name
                     );
                 }
@@ -252,7 +253,10 @@ fn declare_program_rejects_executable_const_generic_values() {
     declare_program_compile_fail_case(
         "declare_program_executable_const_generic",
         idl,
-        &["expected an IDL const generic integer literal; executable Rust expressions are not allowed"],
+        &[
+            "expected an IDL const generic integer literal; executable Rust expressions are not \
+             allowed",
+        ],
     );
 }
 
@@ -303,7 +307,7 @@ pub fn build_cpi<'a>(
     data: CpiHandle<'a>,
 ) {
     let accounts = declared::cpi::accounts::Invoke { authority, data };
-    let ctx = CpiContext::new(program, accounts);
+    let ctx = CpiContext::<_, 2>::new(program, accounts);
     declared::cpi::invoke(ctx, 5);
 }
 "#,
@@ -351,7 +355,7 @@ pub fn build_cpi<'a>(
     system_program: CpiHandle<'a>,
 ) {
     let accounts = crate::cpi::accounts::DoThing { system_program };
-    let ctx = CpiContext::new(program, accounts);
+    let ctx = CpiContext::<_, 1>::new(program, accounts);
     crate::cpi::do_thing(ctx);
 }
 "#,
@@ -850,9 +854,7 @@ pub struct Bad {
         "anchor-spl = {{ path = \"{}\", features = [\"guardrails\"] }}",
         spl.display()
     ))
-    .expect_fail(&[
-        "SPL init constraint `mint::authority` needs an AccountView, not a pubkey",
-    ]);
+    .expect_fail(&["SPL init constraint `mint::authority` needs an AccountView, not a pubkey"]);
 
     CompileCase::new(
         "namespaced_constraint_init_const_freeze_authority_rejected",
@@ -926,9 +928,7 @@ pub struct Bad {
         "anchor-spl = {{ path = \"{}\", features = [\"guardrails\"] }}",
         spl.display()
     ))
-    .expect_fail(&[
-        "SPL init constraint `mint::token_program` needs an AccountView, not a pubkey",
-    ]);
+    .expect_fail(&["SPL init constraint `mint::token_program` needs an AccountView, not a pubkey"]);
 
     CompileCase::new(
         "namespaced_constraint_init_const_token_mint_rejected",
@@ -955,9 +955,7 @@ pub struct Bad {
         "anchor-spl = {{ path = \"{}\", features = [\"guardrails\"] }}",
         spl.display()
     ))
-    .expect_fail(&[
-        "SPL init constraint `token::mint` needs an AccountView, not a pubkey",
-    ]);
+    .expect_fail(&["SPL init constraint `token::mint` needs an AccountView, not a pubkey"]);
 
     CompileCase::new(
         "namespaced_constraint_init_const_token_authority_rejected",
@@ -988,9 +986,7 @@ pub struct Bad {
         "anchor-spl = {{ path = \"{}\", features = [\"guardrails\"] }}",
         spl.display()
     ))
-    .expect_fail(&[
-        "SPL init constraint `token::authority` needs an AccountView, not a pubkey",
-    ]);
+    .expect_fail(&["SPL init constraint `token::authority` needs an AccountView, not a pubkey"]);
 
     CompileCase::new(
         "namespaced_constraint_init_const_token_token_program_rejected",
@@ -1063,9 +1059,7 @@ pub struct Bad {
         "anchor-spl = {{ path = \"{}\", features = [\"guardrails\"] }}",
         spl.display()
     ))
-    .expect_fail(&[
-        "SPL init constraint `mint::authority` needs an AccountView, not a pubkey",
-    ]);
+    .expect_fail(&["SPL init constraint `mint::authority` needs an AccountView, not a pubkey"]);
 }
 
 #[test]
@@ -1781,7 +1775,7 @@ declare_program!(bad);
 
 pub fn use_return<'a>(program: &'a Address, data: CpiHandle<'a>) {
     let accounts = bad::cpi::accounts::Ix { data };
-    let ctx = CpiContext::new(program, accounts);
+    let ctx = CpiContext::<_, 1>::new(program, accounts);
     let _ = bad::cpi::ix(ctx).unwrap().get();
 }
 "#,
@@ -1975,7 +1969,7 @@ declare_program!(bad);
 
 pub fn misuse_return<'a>(program: &'a Address, data: CpiHandle<'a>) {
     let accounts = bad::cpi::accounts::Ix { data };
-    let ctx = CpiContext::new(program, accounts);
+    let ctx = CpiContext::<_, 1>::new(program, accounts);
     let _ = bad::cpi::ix(ctx).get();
 }
 "#,
@@ -2232,41 +2226,6 @@ pub mod close_on_unchecked_account {
 pub struct Close {
     #[account(mut, close = receiver)]
     pub data: UncheckedAccount,
-    #[account(mut)]
-    pub receiver: UncheckedAccount,
-}
-"#,
-    )
-    .expect_fail(&[
-        "`#[account(close = ...)]` is not supported on `UncheckedAccount`",
-        "close the raw account manually",
-    ]);
-}
-
-#[test]
-fn close_on_boxed_unchecked_account_does_not_compile() {
-    CompileCase::new(
-        "close_on_boxed_unchecked_account",
-        r#"
-use anchor_lang::prelude::*;
-
-declare_id!("11111111111111111111111111111111");
-
-#[program]
-pub mod close_on_boxed_unchecked_account {
-    use super::*;
-
-    #[discrim = 0]
-    pub fn close(ctx: &mut Context<Close>) -> Result<()> {
-        let _ = ctx;
-        Ok(())
-    }
-}
-
-#[derive(Accounts)]
-pub struct Close {
-    #[account(mut, close = receiver)]
-    pub data: Box<UncheckedAccount>,
     #[account(mut)]
     pub receiver: UncheckedAccount,
 }
@@ -2730,38 +2689,6 @@ pub struct Resize {
 }
 
 #[test]
-fn realloc_on_boxed_unchecked_account_does_not_compile() {
-    CompileCase::new(
-        "realloc_on_boxed_unchecked_account",
-        r#"
-use anchor_lang::prelude::*;
-
-declare_id!("11111111111111111111111111111111");
-
-#[program]
-pub mod realloc_on_boxed_unchecked_account {
-    use super::*;
-
-    #[discrim = 0]
-    pub fn resize(ctx: &mut Context<Resize>) -> Result<()> {
-        let _ = ctx;
-        Ok(())
-    }
-}
-
-#[derive(Accounts)]
-pub struct Resize {
-    #[account(mut, realloc = 16, realloc_payer = payer, realloc_zero = false)]
-    pub data: Box<UncheckedAccount>,
-    #[account(mut)]
-    pub payer: Signer,
-}
-"#,
-    )
-    .expect_fail(&["AccountRealloc", "UncheckedAccount"]);
-}
-
-#[test]
 fn realloc_on_optional_unchecked_account_does_not_compile() {
     CompileCase::new(
         "realloc_on_optional_unchecked_account",
@@ -2826,27 +2753,6 @@ use anchor_lang::accounts::UncheckedAccount as UA;
 pub struct Resize {
     #[account(mut, realloc = 16, realloc_payer = payer, realloc_zero = false)]
     pub data: UA,
-    #[account(mut)]
-    pub payer: Signer,
-}
-"#,
-    )
-    .expect_fail(&["AccountRealloc", "UncheckedAccount"]);
-}
-
-#[test]
-fn realloc_on_box_alias_unchecked_account_does_not_compile() {
-    CompileCase::new(
-        "realloc_on_box_alias_unchecked_account",
-        r#"
-use anchor_lang::prelude::*;
-
-type MyBox<T> = Box<T>;
-
-#[derive(Accounts)]
-pub struct Resize {
-    #[account(mut, realloc = 16, realloc_payer = payer, realloc_zero = false)]
-    pub data: MyBox<UncheckedAccount>,
     #[account(mut)]
     pub payer: Signer,
 }
@@ -2925,8 +2831,10 @@ pub mod defined_args {
 
 #[test]
 fn idl_build_rejects_arg_struct_without_idl_type_derive() {
-    let source =
-        DEFINED_ARGS_PROGRAM.replace("DERIVE_LIST", "anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize");
+    let source = DEFINED_ARGS_PROGRAM.replace(
+        "DERIVE_LIST",
+        "anchor_lang::AnchorDeserialize, anchor_lang::AnchorSerialize",
+    );
     CompileCase::new("idl_build_arg_struct_missing_idl_type", &source)
         .features(&["idl-build"])
         .check_tests()
@@ -2946,4 +2854,46 @@ fn idl_build_accepts_arg_struct_with_idl_type_derive() {
         .features(&["idl-build"])
         .check_tests()
         .expect_pass();
+}
+
+#[test]
+fn idl_build_rejects_inline_tuple_fields_without_a_spec_type() {
+    CompileCase::new(
+        "idl_build_inline_tuple_field",
+        r#"
+use anchor_lang::prelude::*;
+
+#[derive(IdlType)]
+pub struct InlineTupleField {
+    pub pair: (u8, u16),
+    pub nested: Option<(u32, (u64, bool))>,
+}
+"#,
+    )
+    .features(&["idl-build"])
+    .check_tests()
+    .expect_fail(&["inline tuple types are not supported in IDL generation"]);
+}
+
+#[test]
+fn boxed_accounts_are_not_supported() {
+    CompileCase::new(
+        "boxed_accounts_are_not_supported",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct Data {
+    pub value: u64,
+}
+
+#[derive(Accounts)]
+pub struct BoxedAccount {
+    pub data: Box<Account<Data>>,
+}
+"#,
+    )
+    .expect_fail(&["AnchorAccount", "Box<Slab<Data>>"]);
 }

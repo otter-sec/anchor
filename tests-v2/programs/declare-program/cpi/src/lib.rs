@@ -1,4 +1,6 @@
 use anchor_lang::prelude::*;
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+use anchor_lang::FixedVec;
 
 declare_id!("Dec1areProgram11111111111111111111111111111");
 
@@ -17,7 +19,8 @@ pub mod declare_program {
             data: ctx.accounts.data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.external_program.address(), cpi_accounts);
+        let cpi_ctx =
+            CpiContext::<_, 2>::new(ctx.accounts.external_program.address(), cpi_accounts);
         external_cpi::cpi::set_value(cpi_ctx, value)?;
         Ok(())
     }
@@ -31,7 +34,8 @@ pub mod declare_program {
             },
             payer: ctx.accounts.payer.cpi_handle_mut(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.external_program.address(), cpi_accounts);
+        let cpi_ctx =
+            CpiContext::<_, 3>::new(ctx.accounts.external_program.address(), cpi_accounts);
         external_cpi::cpi::composite(cpi_ctx, count)?;
         Ok(())
     }
@@ -46,15 +50,20 @@ pub mod declare_program {
             data: ctx.accounts.data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.external_program.address(), cpi_accounts);
-        external_cpi::cpi::defined_args(
-            cpi_ctx,
-            external_cpi::MyArgs {
-                amount,
-                tag,
-                owner: *ctx.accounts.authority.address(),
-            },
-        )?;
+        let cpi_ctx =
+            CpiContext::<_, 2>::new(ctx.accounts.external_program.address(), cpi_accounts);
+        let args = external_cpi::MyArgs {
+            amount,
+            tag,
+            owner: *ctx.accounts.authority.address(),
+        };
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        {
+            let mut data = FixedVec::<u8, 64>::new();
+            external_cpi::cpi::defined_args(cpi_ctx, args, &mut data)?;
+        }
+        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+        external_cpi::cpi::defined_args(cpi_ctx, args)?;
         Ok(())
     }
 
@@ -64,7 +73,7 @@ pub mod declare_program {
             data: ctx.accounts.data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.alt_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.alt_program.address(), cpi_accounts);
         alt_cpi::cpi::bump(cpi_ctx, delta)?;
         Ok(())
     }
@@ -80,7 +89,7 @@ pub mod declare_program {
             data: ctx.accounts.data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::new(ctx.accounts.hash_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.hash_program.address(), cpi_accounts);
         hash_cpi::cpi::apply(cpi_ctx, delta, flag, marker)?;
         Ok(())
     }

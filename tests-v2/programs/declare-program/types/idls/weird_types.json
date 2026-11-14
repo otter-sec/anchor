@@ -123,6 +123,38 @@
               "name": "DocumentedBorsh"
             }
           }
+        },
+        {
+          "name": "wideMap",
+          "type": {
+            "defined": {
+              "name": "BTreeMap",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": "u64"
+                },
+                {
+                  "kind": "type",
+                  "type": "u16"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "wideSet",
+          "type": {
+            "defined": {
+              "name": "BTreeSet",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": "u64"
+                }
+              ]
+            }
+          }
         }
       ]
     }
@@ -148,6 +180,37 @@
         "fields": [
           "u8",
           "bool"
+        ]
+      }
+    },
+    {
+      "name": "Collections",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "map",
+            "type": {
+              "defined": {
+                "name": "BTreeMap",
+                "generics": [
+                  { "kind": "type", "type": "u8" },
+                  { "kind": "type", "type": "u16" }
+                ]
+              }
+            }
+          },
+          {
+            "name": "set",
+            "type": {
+              "defined": {
+                "name": "BTreeSet",
+                "generics": [
+                  { "kind": "type", "type": "u64" }
+                ]
+              }
+            }
+          }
         ]
       }
     },

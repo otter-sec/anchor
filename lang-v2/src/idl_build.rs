@@ -3,7 +3,7 @@
 //!
 //! Dispatches on the wrapper type: default returns `None` (elides
 //! sysvar/signer/program/unchecked from IDL types). Data-bearing wrappers
-//! (`Box<T>`, `Account<T>`, `BorshAccount<T>`, `Nested<T>`) delegate to the
+//! (`Account<T>`, `BorshAccount<T>`, `Nested<T>`) delegate to the
 //! inner type. `Slab<H, T>` is a special case: today it forwards only the
 //! header `H`, because the current IDL has no faithful way to describe the
 //! alignment-padded dynamic tail. User `#[account]`/`#[event]`/
@@ -53,6 +53,11 @@ pub trait IdlAccountType {
     const __IDL_TYPE_DEF: Option<&'static str> = None;
     const __IDL_IS_SIGNER: bool = false;
     const __IDL_ADDRESS: Option<&'static str> = None;
+    /// Name of the type in `types[]`, and its number of generic arguments.
+    /// References use it so aliases and renamed imports point at the
+    /// registered type. `None` keeps the name written at the reference.
+    const __IDL_NAME: Option<&'static str> = None;
+    const __IDL_GENERICS: usize = 0;
 
     /// Dynamic accessor for the `accounts[]` entry. Defaults to the trait
     /// const, but derive-generated impls can override it when the final IDL
@@ -71,7 +76,7 @@ pub trait IdlAccountType {
     /// Push this type's accounts/types entries (if any) and recursively
     /// register every user-defined type its fields reference. Default: no-op.
     ///
-    /// Wrappers (`Box<T>`, `BorshAccount<T>`, `Nested<T>`) forward to the
+    /// Wrappers (`BorshAccount<T>`, `Nested<T>`) forward to the
     /// inner type. `Slab<H, T>` currently forwards only the header `H`;
     /// see [`crate::accounts::Slab`] for the limitation. Collection impls
     /// (`Vec<T>`, `BTreeMap<K, V>`, `BTreeSet<T>`, `Option<T>`, `[T; N]`,
@@ -83,6 +88,24 @@ pub trait IdlAccountType {
         _types: &mut alloc::vec::Vec<&'static str>,
     ) {
     }
+}
+
+/// Name to use when a field or instruction argument references `T`.
+#[doc(hidden)]
+pub fn __idl_defined_name<T: IdlAccountType + ?Sized>(
+    written: &'static str,
+    generics: usize,
+) -> &'static str {
+    let Some(name) = T::__IDL_NAME else {
+        return written;
+    };
+    let is_generic = generics != 0 || T::__IDL_GENERICS != 0;
+    assert!(
+        !is_generic || (written == name && generics == T::__IDL_GENERICS),
+        "IDL type `{written}` refers to the generic type `{name}` through an alias or renamed \
+         import. Use `{name}<..>` directly",
+    );
+    name
 }
 
 /// Reject account discriminator collisions while building a v2 IDL.
@@ -188,6 +211,7 @@ macro_rules! impl_idl_account_type_pod_alias {
         $(
             #[doc(hidden)]
             impl IdlAccountType for $t {
+                const __IDL_NAME: Option<&'static str> = Some($name);
                 const __IDL_TYPE_DEF: Option<&'static str> = Some(concat!(
                     "{\"name\":\"",
                     $name,
@@ -341,6 +365,8 @@ impl<T, const MAX: usize> IdlAccountType for crate::pod::PodVec<T, MAX>
 where
     T: bytemuck::Pod + IdlAccountType,
 {
+    const __IDL_NAME: Option<&'static str> = Some("PodVec");
+    const __IDL_GENERICS: usize = 2;
     const __IDL_TYPE_DEF: Option<&'static str> = Some(
         "{\"name\":\"PodVec\",\"generics\":[{\"kind\":\"type\",\"name\":\"T\"},\
          {\"kind\":\"const\",\"name\":\"MAX\",\"type\":\"usize\"}],\

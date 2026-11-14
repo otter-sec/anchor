@@ -1,6 +1,6 @@
 {
   "name": "@anchor-lang/core",
-  "version": "2.0.0-rc.2",
+  "version": "2.0.0-rc.3",
   "description": "Anchor client",
   "module": "./dist/esm/index.js",
   "main": "./dist/cjs/index.js",
@@ -33,7 +33,7 @@
     "test": "jest tests --detectOpenHandles"
   },
   "dependencies": {
-    "@anchor-lang/errors": "^2.0.0-rc.2",
+    "@anchor-lang/errors": "^2.0.0-rc.3",
     "@solana-program/program-metadata": "^0.9.3",
     "@solana-program/system": "^0.14.1",
     "@solana-program/token": "^0.16.1",

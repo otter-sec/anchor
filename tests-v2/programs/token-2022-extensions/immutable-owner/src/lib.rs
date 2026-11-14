@@ -11,7 +11,7 @@ pub mod token_2022_ext_immutable_owner {
         let accs = token_2022_ext::ImmutableOwnerInitialize {
             token_account: ctx.accounts.token_account.cpi_handle_mut(),
         };
-        token_2022_ext::immutable_owner_initialize(CpiContext::new(
+        token_2022_ext::immutable_owner_initialize(CpiContext::<_, 1>::new(
             ctx.accounts.token_program.address(),
             accs,
         ))?;

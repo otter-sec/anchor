@@ -12,7 +12,7 @@ pub struct MintCloseAuthorityInitialize<'a> {
 }
 
 pub fn mint_close_authority_initialize<'a>(
-    ctx: CpiContext<'a, MintCloseAuthorityInitialize<'a>>,
+    ctx: CpiContext<'a, MintCloseAuthorityInitialize<'a>, 1>,
     close_authority: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;

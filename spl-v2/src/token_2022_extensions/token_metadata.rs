@@ -40,7 +40,7 @@ pub struct TokenMetadataRemoveKey<'a> {
 }
 
 pub fn token_metadata_initialize<'a>(
-    ctx: CpiContext<'a, TokenMetadataInitialize<'a>>,
+    ctx: CpiContext<'a, TokenMetadataInitialize<'a>, 4>,
     name: String,
     symbol: String,
     uri: String,
@@ -61,7 +61,7 @@ pub fn token_metadata_initialize<'a>(
 }
 
 pub fn token_metadata_update_authority<'a>(
-    ctx: CpiContext<'a, TokenMetadataUpdateAuthority<'a>>,
+    ctx: CpiContext<'a, TokenMetadataUpdateAuthority<'a>, 2>,
     new_authority: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -78,7 +78,7 @@ pub fn token_metadata_update_authority<'a>(
 }
 
 pub fn token_metadata_update_field<'a>(
-    ctx: CpiContext<'a, TokenMetadataUpdateField<'a>>,
+    ctx: CpiContext<'a, TokenMetadataUpdateField<'a>, 2>,
     field: Field,
     value: String,
 ) -> Result<(), ProgramError> {
@@ -95,7 +95,7 @@ pub fn token_metadata_update_field<'a>(
 }
 
 pub fn token_metadata_remove_key<'a>(
-    ctx: CpiContext<'a, TokenMetadataRemoveKey<'a>>,
+    ctx: CpiContext<'a, TokenMetadataRemoveKey<'a>, 2>,
     key: String,
     idempotent: bool,
 ) -> Result<(), ProgramError> {

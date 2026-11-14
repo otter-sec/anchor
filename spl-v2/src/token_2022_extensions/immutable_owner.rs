@@ -11,7 +11,7 @@ pub struct ImmutableOwnerInitialize<'a> {
 }
 
 pub fn immutable_owner_initialize<'a>(
-    ctx: CpiContext<'a, ImmutableOwnerInitialize<'a>>,
+    ctx: CpiContext<'a, ImmutableOwnerInitialize<'a>, 1>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;

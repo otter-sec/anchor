@@ -11,7 +11,7 @@ pub struct NonTransferableMintInitialize<'a> {
 }
 
 pub fn non_transferable_mint_initialize<'a>(
-    ctx: CpiContext<'a, NonTransferableMintInitialize<'a>>,
+    ctx: CpiContext<'a, NonTransferableMintInitialize<'a>, 1>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;

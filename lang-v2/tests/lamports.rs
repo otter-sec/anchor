@@ -18,11 +18,9 @@ const PROGRAM_ID: [u8; 32] = [0x42; 32];
 struct Counter {
     value: u64,
 }
-
 impl Owner for Counter {
     const OWNER: Address = Address::new_from_array(PROGRAM_ID);
 }
-
 impl Discriminator for Counter {
     // sha256("account:Counter")[..8]
     const DISCRIMINATOR: &'static [u8] = &[0xff, 0xb0, 0x04, 0xf5, 0xbc, 0xfd, 0x7c, 0x19];
@@ -151,40 +149,6 @@ fn mut_loaded_serialized_account_can_transfer_lamports() {
 
     let view = unsafe { buf.view() };
     let mut account = BorshAccount::<Counter>::load_mut(view).unwrap();
-    account.sub_lamports(40).unwrap();
-    account.add_lamports(10).unwrap();
-    assert_eq!(account.get_lamports(), 70);
-    assert_eq!(view.get_lamports(), 70);
-}
-
-// `Box<T>` has no `AsRef<AccountView>`, so `LamportsMutable` resolves through
-// `DerefMut` to the inner wrapper's `is_mutable` override rather than the
-// `is_writable`-only default.
-#[test]
-fn readonly_loaded_boxed_account_rejected_despite_writable_meta() {
-    let mut buf = AccountBuffer::<128>::new();
-    setup_counter_buf(&mut buf);
-
-    let view = unsafe { buf.view() };
-    assert!(view.is_writable());
-    let mut account = <Box<BorshAccount<Counter>> as AnchorAccount>::load(view).unwrap();
-    assert_eq!(account.get_lamports(), 100);
-    assert_eq!(
-        account.add_lamports(1).map(|_| ()).unwrap_err(),
-        ErrorCode::ConstraintMut.into()
-    );
-    assert_eq!(account.get_lamports(), 100);
-    assert_eq!(view.get_lamports(), 100);
-}
-
-#[test]
-fn mut_loaded_boxed_account_can_transfer_lamports() {
-    let mut buf = AccountBuffer::<128>::new();
-    setup_counter_buf(&mut buf);
-
-    let view = unsafe { buf.view() };
-    let mut account =
-        <Box<BorshAccount<Counter>> as AnchorAccount>::load_mut(view).unwrap();
     account.sub_lamports(40).unwrap();
     account.add_lamports(10).unwrap();
     assert_eq!(account.get_lamports(), 70);

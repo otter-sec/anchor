@@ -139,45 +139,6 @@ fn seeded_system_account_can_pay_for_pda_target() {
 }
 
 #[test]
-fn seeded_system_account_can_pay_for_boxed_target() {
-    let (mut svm, payer) = setup();
-    let funded_pda = payer_pda();
-    let new_account = Keypair::new();
-
-    let metas = vec![
-        AccountMeta::new(funded_pda, false),
-        AccountMeta::new(new_account.pubkey(), true),
-        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
-    ];
-    send_instruction(
-        &mut svm,
-        program_id(),
-        vec![2],
-        metas,
-        &payer,
-        &[&new_account],
-    )
-    .expect("boxed-target init should succeed");
-
-    let created = svm
-        .get_account(&new_account.pubkey())
-        .expect("boxed target account exists");
-    let payer_after = svm.get_account(&funded_pda).expect("payer PDA exists");
-
-    assert_eq!(created.owner, program_id());
-    assert_eq!(account_value(&svm, &new_account.pubkey()), 99);
-    assert!(
-        payer_after.lamports < FUNDED_PDA_LAMPORTS,
-        "payer PDA should fund the boxed target"
-    );
-    assert_eq!(
-        payer_after.lamports + created.lamports,
-        FUNDED_PDA_LAMPORTS,
-        "rent should move from the PDA payer into the boxed target"
-    );
-}
-
-#[test]
 fn payer_with_more_than_max_seeds_is_rejected() {
     let (mut svm, payer) = setup();
     let candidate_payer = payer_pda();

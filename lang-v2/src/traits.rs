@@ -6,7 +6,6 @@ use {
     pinocchio::{
         account::{AccountView, NOT_BORROWED},
         address::Address,
-        instruction::InstructionAccount,
     },
     solana_program_error::{ProgramError, ProgramResult},
 };
@@ -164,11 +163,13 @@ impl<'a> CpiHandle<'a> {
             // the wrapper is alive. For readonly CPIs that state is too
             // strong: the callee only needs shared borrows, and readonly metas
             // prevent writes. Downgrade to a single shared borrow for the CPI
-            // and restore the exclusive marker afterwards.
+            // and restore the original state afterwards; it is not always `0`
+            // (e.g. a `SerializedAccount` after `release_borrow()`).
+            let restore_to = unsafe { *borrow_state };
             unsafe { *borrow_state = NOT_BORROWED - 1 };
             Some(CpiBorrowGuard {
                 borrow_state,
-                restore_to: 0,
+                restore_to,
             })
         } else {
             None
@@ -264,28 +265,26 @@ pub(crate) fn enter_cpi<'a>(handles: &[CpiHandle<'a>]) -> alloc::vec::Vec<CpiBor
             guards.push(guard);
         }
     }
+    // Guards for the same account must restore LIFO, and a Vec drops front to back
+    guards.reverse();
     guards
 }
 
-/// Converts a CPI accounts struct into instruction metadata and handles.
+/// Capacity-aware CPI account conversion used by [`crate::CpiContext`].
 ///
-/// Implemented by generated CPI accounts structs. Each field maps to an
-/// [`InstructionAccount`] (address + writable/signer flags) and an erased
-/// [`CpiHandle`] for the actual invocation.
-pub trait ToCpiAccounts<'a> {
-    /// Produce instruction account metadata for the CPI instruction.
-    fn to_instruction_accounts(&self) -> alloc::vec::Vec<InstructionAccount<'a>>;
+/// The account struct is converted into inline buffers sized by `N` for the
+/// individual invocation. This avoids imposing a small global runtime limit
+/// while keeping large buffers out of CPI calls that do not need them.
+pub trait ToCpiAccountsWithCapacity<'a, const N: usize> {
+    fn to_instruction_accounts_with_capacity(
+        &self,
+    ) -> Result<crate::FixedVec<pinocchio::instruction::InstructionAccount<'a>, N>, ProgramError>;
 
-    /// Collect all CPI handles for the invocation.
-    fn to_cpi_handles(&self) -> alloc::vec::Vec<CpiHandle<'a>>;
+    fn to_cpi_handles_with_capacity(&self) -> Result<crate::CpiHandleBuffer<'a, N>, ProgramError>;
 
-    /// Parallel to [`to_instruction_accounts`]: `true` at each index where an
-    /// optional field was `None` and a program-id sentinel meta was emitted.
-    ///
-    /// The CPI invoker may skip a matching handle only for these indices.
-    /// Required accounts whose address equals the callee program id must be
-    /// `false` here so they still require a handle.
-    fn optional_account_sentinel_flags(&self) -> alloc::vec::Vec<bool>;
+    fn optional_account_sentinel_flags_with_capacity(
+        &self,
+    ) -> Result<crate::FixedVec<bool, N>, ProgramError>;
 }
 
 pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
@@ -330,7 +329,13 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// for as long as those references can exist, and fail if any other
     /// borrow is live.
     ///
-    /// Default impl validates `is_writable` and delegates to `load()`.
+    /// Default impl validates `is_writable` and delegates to `load()`, so it
+    /// takes no exclusive borrow. That is only correct for wrappers that
+    /// never write account data. A wrapper that mutates data or writes it
+    /// back in [`exit`](Self::exit) must override this. Otherwise two
+    /// mutable fields given the same account both load: an in-place wrapper
+    /// writes through a live alias, and a write-back wrapper loses the
+    /// earlier write at `exit`.
     /// Data-carrying wrappers (`Account<T>`, `BorshAccount<T>`, `Slab<H, T>`)
     /// override to take the exclusive borrow and derive write provenance.
     /// `Signer` overrides with a fused `is_signer` + `is_writable` check.
@@ -344,6 +349,12 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
 
     fn account(&self) -> &AccountView;
 
+    /// Persist account state at the end of the instruction.
+    ///
+    /// Write-back wrappers (for example `BorshAccount<T>`, which serializes
+    /// its data here) must have taken the exclusive borrow in
+    /// [`load_mut`](Self::load_mut). That borrow is v2's only protection
+    /// against the same account being passed for two mutable fields.
     fn exit(&mut self) -> ProgramResult {
         Ok(())
     }
@@ -501,7 +512,7 @@ impl ToCpiHandleMut for AccountView {
 ///
 /// This is intentionally implemented blanketly for every [`AnchorAccount`]:
 /// `AnchorAccount::account()` already exposes the underlying `AccountView`,
-/// so boxed and typed account wrappers can all be used uniformly as address
+/// so typed account wrappers can all be used uniformly as address
 /// field references in generated constraint code.
 pub trait AccountAddress {
     fn account_address(&self) -> &Address;
@@ -760,10 +771,10 @@ pub trait ForeignOwnerInit: AccountInitialize {}
 /// | Any of the above                                    | `exit` (exit phase)  |
 ///
 /// There is deliberately **no blanket `impl<T: AccountConstraint<A>>
-/// AccountConstraint<Option<A>> for T`** mirroring the `Box<T>` forwarder
-/// in `accounts/boxed.rs`. Constraint calls on `Option<Field>` are emitted
-/// by the derive inline as `if let Some(ref inner) = self.maybe_x { …
-/// inline call … }` — they never dispatch through a blanket impl.
+/// AccountConstraint<Option<A>> for T`**. Constraint calls on
+/// `Option<Field>` are emitted by the derive inline as
+/// `if let Some(ref inner) = self.maybe_x { … inline call … }` — they never
+/// dispatch through a blanket impl.
 ///
 /// # Extending with third-party constraints
 ///

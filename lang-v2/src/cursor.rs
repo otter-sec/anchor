@@ -95,6 +95,17 @@ impl AccountCursor {
         core::slice::from_raw_parts(self.lookup.add(start), n)
     }
 
+    /// Return a previously walked range from the caller-owned lookup storage.
+    ///
+    /// # Safety
+    ///
+    /// The requested range must have been populated by `next` and the lookup
+    /// storage must remain valid for `'a`.
+    #[inline(always)]
+    pub(crate) unsafe fn views<'a>(&self, start: u8, len: u8) -> &'a [AccountView] {
+        core::slice::from_raw_parts(self.lookup.add(start as usize), len as usize)
+    }
+
     /// Advance past one account record and return its `AccountView`.
     ///
     /// Handles both non-duplicated accounts (walks past the record

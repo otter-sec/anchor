@@ -1,9 +1,6 @@
 //! Run: `cargo test -p anchor-lang --features testing --test program_invoke`
 
-extern crate alloc;
-
 use {
-    alloc::boxed::Box,
     anchor_lang::{
         accounts::Account,
         prelude::BorshAccount,
@@ -13,8 +10,8 @@ use {
         },
         testing::{AccountBuffer, MIN_ACCOUNT_BUF},
         unchecked_invoke_signed_fixed, Address, AnchorAccount, AnchorDeserialize, AnchorSerialize,
-        CpiContext, CpiHandle, CpiHandleMut, Discriminator, Owner, ToCpiAccounts, ToCpiHandle,
-        ToCpiHandleMut,
+        CpiContext, CpiHandle, CpiHandleMut, CpiInstruction, Discriminator, Owner, ToCpiAccounts,
+        ToCpiHandle, ToCpiHandleMut,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::instruction::InstructionAccount,
@@ -23,6 +20,30 @@ use {
 
 const ID: Address = Address::new_from_array([7; 32]);
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
+
+struct CountingInstruction<'a> {
+    program_id: &'a Address,
+    account_callback_count: core::cell::Cell<usize>,
+}
+
+impl CpiInstruction for CountingInstruction<'_> {
+    fn program_id(&self) -> &Address {
+        self.program_id
+    }
+
+    fn data(&self) -> &[u8] {
+        &[]
+    }
+
+    fn with_instruction_accounts<R>(
+        &self,
+        visit: impl FnOnce(&[InstructionAccount<'_>]) -> R,
+    ) -> R {
+        self.account_callback_count
+            .set(self.account_callback_count.get() + 1);
+        visit(&[])
+    }
+}
 
 #[derive(ToCpiAccounts)]
 struct ReadonlyCpi<'a> {
@@ -148,6 +169,18 @@ fn checked_invoke_accepts_matching_handles() {
     let handles = [CpiHandle::writable(&mut view)];
 
     program::invoke(&ix, &handles).unwrap();
+}
+
+#[test]
+fn checked_invoke_uses_one_instruction_account_view() {
+    let instruction = CountingInstruction {
+        program_id: &ID,
+        account_callback_count: core::cell::Cell::new(0),
+    };
+
+    program::invoke(&instruction, &[]).unwrap();
+
+    assert_eq!(instruction.account_callback_count.get(), 1);
 }
 
 #[test]
@@ -432,7 +465,7 @@ fn invoke_ix_rejects_readonly_handle_for_writable_meta() {
         data: vec![],
     };
 
-    let err = CpiContext::new(&program, accounts)
+    let err = CpiContext::<_, 3>::new(&program, accounts)
         .invoke_ix(ix)
         .unwrap_err();
 
@@ -449,7 +482,7 @@ fn invoke_ix_rejects_nonsigner_handle_for_signer_meta_without_seeds() {
     };
     let ix = signer_instruction(*view.address(), false);
 
-    let err = CpiContext::new(&program, accounts)
+    let err = CpiContext::<_, 3>::new(&program, accounts)
         .invoke_ix(ix)
         .unwrap_err();
 
@@ -466,7 +499,7 @@ fn invoke_ix_allows_signer_meta_without_tx_signer_when_seeds_are_supplied() {
     };
     let ix = signer_instruction(*view.address(), false);
 
-    CpiContext::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
+    CpiContext::<_, 3>::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
         .invoke_ix(ix)
         .unwrap();
 }
@@ -482,8 +515,12 @@ fn invoke_remaining_pda_as_signer_with_seeds() {
         account: typed_view.to_cpi_handle(),
     };
 
-    CpiContext::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
-        .with_remaining_accounts(vec![CpiHandle::readonly(&remaining_view).as_signer()])
+    let mut remaining_accounts = anchor_lang::CpiHandleBuffer::<3>::new();
+    assert!(remaining_accounts
+        .try_push(CpiHandle::readonly(&remaining_view).as_signer())
+        .is_ok());
+    CpiContext::<_, 3>::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
+        .with_remaining_accounts(remaining_accounts)
         .invoke(&[])
         .unwrap();
 }
@@ -506,7 +543,9 @@ fn invoke_ix_accepts_optional_none_program_id_sentinel() {
         data: vec![],
     };
 
-    CpiContext::new(&program, accounts).invoke_ix(ix).unwrap();
+    CpiContext::<_, 3>::new(&program, accounts)
+        .invoke_ix(ix)
+        .unwrap();
 }
 
 #[test]
@@ -524,7 +563,33 @@ fn cpi_context_invoke_accepts_real_program_id_account_before_later_accounts() {
         third: third.to_cpi_handle(),
     };
 
-    CpiContext::new(&program, accounts).invoke(&[]).unwrap();
+    CpiContext::<_, 3>::new(&program, accounts)
+        .invoke(&[])
+        .unwrap();
+}
+
+#[test]
+fn duplicate_readonly_cpi_handles_restore_exclusive_borrow() {
+    let program = ID;
+    let buffer = slab_account_view([1; 32], true, 9);
+    let view = unsafe { buffer.view() };
+    let acct = Account::<PodCounter>::load_mut(view).unwrap();
+    let accounts = ThreeReadonlyCpi {
+        first: acct.cpi_handle(),
+        second: acct.cpi_handle(),
+        third: acct.cpi_handle(),
+    };
+
+    CpiContext::<_, 3>::new(&program, accounts)
+        .invoke(&[1, 2, 3])
+        .unwrap();
+
+    let alias = unsafe { buffer.view() };
+    assert_eq!(
+        alias.try_borrow().err(),
+        Some(ProgramError::AccountBorrowFailed),
+        "the mutable slab must hold its exclusive borrow again after the CPI"
+    );
 }
 
 #[test]
@@ -545,7 +610,7 @@ fn invoke_ix_rejects_writable_program_id_meta_without_handle() {
         data: vec![],
     };
 
-    let err = CpiContext::new(&program, accounts)
+    let err = CpiContext::<_, 3>::new(&program, accounts)
         .invoke_ix(ix)
         .unwrap_err();
 
@@ -577,7 +642,7 @@ fn cpi_context_invoke_rejects_live_borrow_for_writable_meta() {
         account: view.to_cpi_handle_mut(),
     };
 
-    let err = CpiContext::new(&program, accounts)
+    let err = CpiContext::<_, 3>::new(&program, accounts)
         .invoke(&[1, 2, 3])
         .unwrap_err();
 
@@ -594,7 +659,7 @@ fn cpi_context_invoke_accepts_mutable_slab_handle() {
         account: acct.cpi_handle_mut(),
     };
 
-    CpiContext::new(&program, accounts)
+    CpiContext::<_, 3>::new(&program, accounts)
         .invoke(&[1, 2, 3])
         .unwrap();
 }
@@ -609,39 +674,7 @@ fn cpi_context_invoke_accepts_readonly_slab_handle_from_mutable_wrapper() {
         account: acct.cpi_handle(),
     };
 
-    CpiContext::new(&program, accounts)
-        .invoke(&[1, 2, 3])
-        .unwrap();
-}
-
-#[test]
-fn cpi_context_invoke_accepts_mutable_boxed_slab_handle() {
-    let program = ID;
-    let buffer = slab_account_view([1; 32], true, 9);
-    let view = unsafe { buffer.view() };
-    let mut acct = <Box<Account<PodCounter>> as AnchorAccount>::load_mut(view)
-    .unwrap();
-    let accounts = WritableCpi {
-        account: acct.cpi_handle_mut(),
-    };
-
-    CpiContext::new(&program, accounts)
-        .invoke(&[1, 2, 3])
-        .unwrap();
-}
-
-#[test]
-fn cpi_context_invoke_accepts_readonly_boxed_slab_handle_from_mutable_wrapper() {
-    let program = ID;
-    let buffer = slab_account_view([1; 32], true, 9);
-    let view = unsafe { buffer.view() };
-    let acct = <Box<Account<PodCounter>> as AnchorAccount>::load_mut(view)
-    .unwrap();
-    let accounts = ReadonlyCpi {
-        account: acct.cpi_handle(),
-    };
-
-    CpiContext::new(&program, accounts)
+    CpiContext::<_, 3>::new(&program, accounts)
         .invoke(&[1, 2, 3])
         .unwrap();
 }
@@ -663,7 +696,7 @@ fn invoke_ix_rejects_live_borrow_for_writable_meta() {
         data: vec![],
     };
 
-    let err = CpiContext::new(&program, accounts)
+    let err = CpiContext::<_, 3>::new(&program, accounts)
         .invoke_ix(ix)
         .unwrap_err();
 
@@ -686,7 +719,9 @@ fn invoke_ix_accepts_mutable_slab_handle() {
         data: vec![],
     };
 
-    CpiContext::new(&program, accounts).invoke_ix(ix).unwrap();
+    CpiContext::<_, 3>::new(&program, accounts)
+        .invoke_ix(ix)
+        .unwrap();
 }
 
 #[test]
@@ -705,7 +740,9 @@ fn invoke_ix_accepts_readonly_slab_handle_from_mutable_wrapper() {
         data: vec![],
     };
 
-    CpiContext::new(&program, accounts).invoke_ix(ix).unwrap();
+    CpiContext::<_, 3>::new(&program, accounts)
+        .invoke_ix(ix)
+        .unwrap();
 }
 
 #[test]
@@ -719,35 +756,13 @@ fn cpi_context_invoke_accepts_mutable_borsh_handle() {
         let accounts = WritableCpi {
             account: acct.cpi_handle_mut(),
         };
-        CpiContext::new(&program, accounts)
+        CpiContext::<_, 3>::new(&program, accounts)
             .invoke(&[1, 2, 3])
             .unwrap();
     }
 
     acct.reacquire_borrow_mut().unwrap();
     acct.value = 11;
-    assert_eq!(acct.value, 11);
-}
-
-#[test]
-fn cpi_context_invoke_accepts_mutable_boxed_borsh_handle() {
-    let program = ID;
-    let buffer = borsh_account_view([1; 32], true, 9);
-    let view = unsafe { buffer.view() };
-    let mut acct = <Box<BorshAccount<BorshCounter>> as AnchorAccount>::load_mut(view)
-    .unwrap();
-    acct.value = 11;
-
-    {
-        let accounts = WritableCpi {
-            account: acct.cpi_handle_mut(),
-        };
-        CpiContext::new(&program, accounts)
-            .invoke(&[1, 2, 3])
-            .unwrap();
-    }
-
-    acct.reacquire_borrow_mut().unwrap();
     assert_eq!(acct.value, 11);
 }
 
@@ -768,7 +783,9 @@ fn invoke_ix_accepts_mutable_borsh_handle() {
             accounts: vec![AccountMeta::new(address, false)],
             data: vec![],
         };
-        CpiContext::new(&program, accounts).invoke_ix(ix).unwrap();
+        CpiContext::<_, 3>::new(&program, accounts)
+            .invoke_ix(ix)
+            .unwrap();
     }
 
     acct.reacquire_borrow_mut().unwrap();
