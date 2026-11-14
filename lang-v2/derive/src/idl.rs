@@ -1715,7 +1715,7 @@ mod tests {
         let value = lowerer.lower(&path_len_elem);
         let generated = lowerer.finish(value).to_string();
         assert!(generated.contains("limits :: ITEMS"));
-        assert!(!generated.contains(DYNAMIC_LEN_KEY));
+        assert!(!generated.contains("__anchor_private"));
     }
 
     #[test]
