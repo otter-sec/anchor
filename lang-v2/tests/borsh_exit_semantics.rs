@@ -430,6 +430,31 @@ fn release_borrow_commits_in_memory_changes_to_buffer() {
 }
 
 #[test]
+fn try_cpi_handle_mut_rejects_read_only_load_and_keeps_shared_borrow() {
+    let mut buf = AccountBuffer::<256>::new();
+    // Writable in the transaction, but loaded read-only (no `#[account(mut)]`).
+    setup_counter_buf(&mut buf, 42);
+
+    let view = unsafe { buf.view() };
+    let mut acct = BorshAccount::<Counter>::load(view).unwrap();
+
+    assert_eq!(
+        acct.try_cpi_handle_mut().err(),
+        Some(ProgramError::AccountBorrowFailed),
+        "a read-only load must not yield a writable CPI handle"
+    );
+
+    // The shared guard must still be held: an aliased view cannot take a
+    // mutable borrow, and typed access keeps working.
+    let mut alias = unsafe { buf.view() };
+    assert_eq!(
+        alias.try_borrow_mut().err(),
+        Some(ProgramError::AccountBorrowFailed)
+    );
+    assert_eq!(acct.value, 42);
+}
+
+#[test]
 fn cpi_handle_mut_releases_wrapper_and_preserves_callee_writes() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);

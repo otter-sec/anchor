@@ -528,6 +528,30 @@ fn cpi_context_invoke_accepts_real_program_id_account_before_later_accounts() {
 }
 
 #[test]
+fn duplicate_readonly_cpi_handles_restore_exclusive_borrow() {
+    let program = ID;
+    let buffer = slab_account_view([1; 32], true, 9);
+    let view = unsafe { buffer.view() };
+    let acct = Account::<PodCounter>::load_mut(view).unwrap();
+    let accounts = ThreeReadonlyCpi {
+        first: acct.cpi_handle(),
+        second: acct.cpi_handle(),
+        third: acct.cpi_handle(),
+    };
+
+    CpiContext::new(&program, accounts)
+        .invoke(&[1, 2, 3])
+        .unwrap();
+
+    let alias = unsafe { buffer.view() };
+    assert_eq!(
+        alias.try_borrow().err(),
+        Some(ProgramError::AccountBorrowFailed),
+        "the mutable slab must hold its exclusive borrow again after the CPI"
+    );
+}
+
+#[test]
 fn invoke_ix_rejects_writable_program_id_meta_without_handle() {
     let program = ID;
     let buffer = account_view([1; 32], false);
@@ -612,6 +636,52 @@ fn cpi_context_invoke_accepts_readonly_slab_handle_from_mutable_wrapper() {
     CpiContext::new(&program, accounts)
         .invoke(&[1, 2, 3])
         .unwrap();
+}
+
+#[test]
+fn readonly_cpi_from_mutable_slab_restores_exclusive_borrow() {
+    let program = ID;
+    let buffer = slab_account_view([1; 32], true, 9);
+    let view = unsafe { buffer.view() };
+    let acct = Account::<PodCounter>::load_mut(view).unwrap();
+    let accounts = ReadonlyCpi {
+        account: acct.cpi_handle(),
+    };
+
+    CpiContext::new(&program, accounts)
+        .invoke(&[1, 2, 3])
+        .unwrap();
+
+    let alias = unsafe { buffer.view() };
+    assert_eq!(
+        alias.try_borrow().err(),
+        Some(ProgramError::AccountBorrowFailed),
+        "the mutable slab must hold its exclusive borrow again after the CPI"
+    );
+}
+
+#[test]
+fn relaxed_readonly_cpi_restores_released_borsh_borrow_state() {
+    let program = ID;
+    let buffer = borsh_account_view([1; 32], true, 9);
+    let view = unsafe { buffer.view() };
+    let mut acct = BorshAccount::<BorshCounter>::load_mut(view).unwrap();
+    acct.release_borrow().unwrap();
+
+    // Derive-generated readonly CPI handle for a `mut` BorshAccount field.
+    let accounts = ReadonlyCpi {
+        account: anchor_lang::__private::readonly_cpi_handle_for_account_field(
+            acct.account(),
+            true,
+        ),
+    };
+    CpiContext::new(&program, accounts)
+        .invoke(&[1, 2, 3])
+        .unwrap();
+
+    // The released borrow must not be left pinned as exclusive.
+    acct.reacquire_borrow_mut().unwrap();
+    assert_eq!(acct.value, 9);
 }
 
 #[test]
