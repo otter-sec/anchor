@@ -342,6 +342,37 @@ fn checked_invoke_preserves_real_program_id_account_before_duplicate_address() {
 }
 
 #[test]
+fn checked_invoke_handles_ambiguous_optional_sentinels_without_backtracking() {
+    const OPTIONAL_ACCOUNTS: usize = 32;
+    const HANDLES: usize = OPTIONAL_ACCOUNTS / 2;
+
+    let buffers: Vec<_> = (0..HANDLES).map(|_| account_view([7; 32], false)).collect();
+    let views: Vec<_> = buffers
+        .iter()
+        .map(|buffer| unsafe { buffer.view() })
+        .collect();
+    let handles: Vec<_> = views.iter().map(CpiHandle::readonly).collect();
+
+    let mut accounts = vec![AccountMeta::new_readonly(ID, false); OPTIONAL_ACCOUNTS];
+    accounts.push(AccountMeta::new_readonly(
+        Address::new_from_array([8; 32]),
+        false,
+    ));
+    let ix = Instruction {
+        program_id: ID,
+        accounts,
+        data: vec![],
+    };
+    let mut optional_flags = vec![true; OPTIONAL_ACCOUNTS];
+    optional_flags.push(false);
+
+    assert_eq!(
+        program::invoke_with_optional_sentinels(&ix, &handles, &optional_flags),
+        Err(ProgramError::InvalidArgument)
+    );
+}
+
+#[test]
 fn checked_invoke_skips_matching_optional_account_when_handle_is_required_later() {
     let required = account_view([7; 32], false);
     let extra = account_view([8; 32], false);

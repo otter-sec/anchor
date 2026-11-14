@@ -104,7 +104,7 @@ where
                 .map_err(|_| ProgramError::InvalidArgument)?;
         }
 
-        crate::program::validate_instruction_accounts(
+        crate::program::validate_instruction_accounts::<N>(
             &instruction_accounts,
             self.program,
             &handles,
