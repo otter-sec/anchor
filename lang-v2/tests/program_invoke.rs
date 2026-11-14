@@ -528,6 +528,30 @@ fn cpi_context_invoke_accepts_real_program_id_account_before_later_accounts() {
 }
 
 #[test]
+fn duplicate_readonly_cpi_handles_restore_exclusive_borrow() {
+    let program = ID;
+    let buffer = slab_account_view([1; 32], true, 9);
+    let view = unsafe { buffer.view() };
+    let acct = Account::<PodCounter>::load_mut(view).unwrap();
+    let accounts = ThreeReadonlyCpi {
+        first: acct.cpi_handle(),
+        second: acct.cpi_handle(),
+        third: acct.cpi_handle(),
+    };
+
+    CpiContext::<_, 3>::new(&program, accounts)
+        .invoke(&[1, 2, 3])
+        .unwrap();
+
+    let alias = unsafe { buffer.view() };
+    assert_eq!(
+        alias.try_borrow().err(),
+        Some(ProgramError::AccountBorrowFailed),
+        "the mutable slab must hold its exclusive borrow again after the CPI"
+    );
+}
+
+#[test]
 fn invoke_ix_rejects_writable_program_id_meta_without_handle() {
     let program = ID;
     let buffer = account_view([1; 32], false);

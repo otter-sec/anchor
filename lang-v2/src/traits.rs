@@ -266,6 +266,8 @@ pub(crate) fn enter_cpi<'a>(handles: &[CpiHandle<'a>]) -> alloc::vec::Vec<CpiBor
             guards.push(guard);
         }
     }
+    // Guards for the same account must restore LIFO, and a Vec drops front to back
+    guards.reverse();
     guards
 }
 
