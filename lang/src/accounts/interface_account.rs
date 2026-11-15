@@ -22,7 +22,7 @@ use {
 ///
 /// # Table of Contents
 /// - [Basic Functionality](#basic-functionality)
-/// - [Using InterfaceAccount with non-anchor types](#using-interface-account-with-non-anchor-types)
+/// - [Using InterfaceAccount with non-anchor programs](#using-interface-account-with-non-anchor-programs)
 /// - [Out of the box wrapper types](#out-of-the-box-wrapper-types)
 ///
 /// # Basic Functionality
@@ -31,7 +31,7 @@ use {
 /// This means that the data type that Accounts wraps around (`=T`) needs to
 /// implement the [Owners trait](crate::Owners).
 /// The `#[account]` attribute implements the Owners trait for
-/// a struct using multiple `crate::ID`s declared by [`declareId`](crate::declare_id)
+/// a struct using multiple `crate::ID`s declared by [`declare_id`](crate::declare_id)
 /// in the same program. It follows that InterfaceAccount can also be used
 /// with a `T` that comes from a different program.
 ///
