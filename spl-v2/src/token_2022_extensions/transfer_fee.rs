@@ -5,7 +5,6 @@ use {
     anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
-    solana_pubkey::Pubkey,
 };
 
 #[derive(ToCpiAccounts)]
@@ -123,7 +122,7 @@ pub fn harvest_withheld_tokens_to_mint<'a, const N: usize>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let source_pubkeys: Vec<Pubkey> = sources.iter().map(|source| *source.address()).collect();
+    let source_pubkeys: Vec<Address> = sources.iter().map(|source| *source.address()).collect();
     let source_refs = pubkey_refs(&source_pubkeys);
     let ix = spl_token_2022::extension::transfer_fee::instruction::harvest_withheld_tokens_to_mint(
         &program,
@@ -172,7 +171,7 @@ pub fn withdraw_withheld_tokens_from_accounts<'a, const N: usize>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let source_pubkeys: Vec<Pubkey> = sources.iter().map(|source| *source.address()).collect();
+    let source_pubkeys: Vec<Address> = sources.iter().map(|source| *source.address()).collect();
     let source_refs = pubkey_refs(&source_pubkeys);
     let ix =
         spl_token_2022::extension::transfer_fee::instruction::withdraw_withheld_tokens_from_accounts(

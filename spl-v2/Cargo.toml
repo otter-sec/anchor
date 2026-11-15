@@ -14,7 +14,7 @@ default = ["guardrails"]
 # every caller uses typed `Program` / `Interface` accounts or performs equivalent
 # validation before constructing CPI contexts.
 guardrails = []
-metadata = ["dep:mpl-token-metadata"]
+metadata = ["dep:mpl-token-metadata", "dep:borsh", "dep:solana-pubkey"]
 
 [dependencies]
 anchor-lang = { workspace = true }
@@ -22,16 +22,14 @@ pinocchio = { workspace = true }
 pinocchio-token = "0.6"
 pinocchio-token-2022 = "0.3"
 bytemuck = { version = "1", features = ["derive"] }
-borsh = "1.6.1"
+borsh = { version = "1.6.1", optional = true }
 solana-address = { workspace = true, features = ["bytemuck"] }
-solana-instruction = { workspace = true, default-features = true }
+solana-instruction = { workspace = true, default-features = false }
 solana-program-error.workspace = true
-solana-pubkey.workspace = true
-spl-pod = "0.7"
-spl-token-interface = "2"
-spl-token-2022-interface = "2"
+solana-pubkey = { workspace = true, optional = true }
+spl-token-2022-interface = { version = "3", default-features = false }
 spl-token-group-interface = "0.7"
-spl-token-metadata-interface = "0.8"
+spl-token-metadata-interface = "1"
 mpl-token-metadata = { version = "=5.1.2-alpha.2", optional = true }
 
 [dev-dependencies]
@@ -40,6 +38,7 @@ borsh = "1.6.1"
 # Cross-checks `Mint` / `TokenAccount` layout against the canonical
 # `spl-token-interface` types (see `tests/miri_spl_pod.rs`). Dev-only.
 solana-program-pack.workspace = true
+spl-token-interface = "2"
 
 [lints.rust.unexpected_cfgs]
 level = "warn"

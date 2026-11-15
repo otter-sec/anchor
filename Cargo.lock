@@ -583,11 +583,10 @@ dependencies = [
  "solana-program-error 3.0.1",
  "solana-program-pack 3.1.0",
  "solana-pubkey 4.3.0",
- "spl-pod",
- "spl-token-2022-interface 2.1.0",
+ "spl-token-2022-interface 3.1.2",
  "spl-token-group-interface",
  "spl-token-interface 2.0.0",
- "spl-token-metadata-interface 0.8.0",
+ "spl-token-metadata-interface 1.0.1",
 ]
 
 [[package]]
@@ -11610,3 +11609,7 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "creusot-std"
+version = "0.12.0-dev"

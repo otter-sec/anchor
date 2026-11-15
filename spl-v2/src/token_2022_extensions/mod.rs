@@ -21,11 +21,10 @@ pub mod transfer_fee;
 pub mod transfer_hook;
 
 pub use {
-    default_account_state::*, group_member_pointer::*, group_pointer::*,
-    immutable_owner::*, interest_bearing_mint::*, memo_transfer::*, metadata_pointer::*,
-    mint_close_authority::*, non_transferable::*, pausable::*, permanent_delegate::*, spl_pod,
-    spl_token_metadata_interface, token_group::*, token_metadata::*, transfer_fee::*,
-    transfer_hook::*,
+    default_account_state::*, group_member_pointer::*, group_pointer::*, immutable_owner::*,
+    interest_bearing_mint::*, memo_transfer::*, metadata_pointer::*, mint_close_authority::*,
+    non_transferable::*, pausable::*, permanent_delegate::*, spl_token_metadata_interface,
+    token_group::*, token_metadata::*, transfer_fee::*, transfer_hook::*,
 };
 
 #[cfg(test)]

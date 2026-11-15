@@ -4,7 +4,6 @@ use {
     anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
-    spl_pod::optional_keys::OptionalNonZeroPubkey,
 };
 
 pub use spl_token_metadata_interface::state::Field;
@@ -66,7 +65,9 @@ pub fn token_metadata_update_authority<'a>(
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
-    let new_authority = OptionalNonZeroPubkey::try_from(new_authority.copied())
+    let new_authority = new_authority
+        .copied()
+        .try_into()
         .map_err(|_| ProgramError::InvalidArgument)?;
     let ix = spl_token_metadata_interface::instruction::update_authority(
         &program,
