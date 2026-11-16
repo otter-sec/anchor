@@ -1839,8 +1839,11 @@ fn program_set_upgrade_authority(
     make_final: bool,
     current_upgrade_authority: Option<String>,
 ) -> Result<()> {
-    let (new_upgrade_authority, new_upgrade_authority_signer) =
-        resolve_set_upgrade_authority_args(make_final, new_upgrade_authority, new_upgrade_authority_signer);
+    let (new_upgrade_authority, new_upgrade_authority_signer) = resolve_set_upgrade_authority_args(
+        make_final,
+        new_upgrade_authority,
+        new_upgrade_authority_signer,
+    );
 
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
     let payer = get_payer_keypair(cfg_override, &config)?;
