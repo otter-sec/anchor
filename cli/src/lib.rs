@@ -7050,7 +7050,7 @@ fn keys_list(cfg_override: &ConfigOverride) -> Result<()> {
 /// path.
 fn sync_program_address_in_toml(
     path: &Path,
-    cluster: &str,
+    cluster: &Cluster,
     program_name: &str,
     address: &str,
 ) -> Result<()> {
@@ -7063,8 +7063,21 @@ fn sync_program_address_in_toml(
         .get_mut("programs")
         .and_then(|item| item.as_table_like_mut())
         .ok_or_else(|| anyhow!("Anchor.toml has no [programs] section"))?;
+    // The section key is matched by parsed `Cluster`, not by string: the
+    // config parser accepts any spelling (`Devnet`, `DEVNET`, `d`, ...),
+    // while `cluster.to_string()` only produces the canonical lowercase
+    // form, so looking the key up by string would miss those spellings.
+    let cluster_key = programs
+        .iter()
+        .map(|(key, _)| key)
+        .find(|key| {
+            key.parse::<Cluster>()
+                .is_ok_and(|parsed| &parsed == cluster)
+        })
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow!("Anchor.toml has no [programs.{cluster}] section"))?;
     let cluster_table = programs
-        .get_mut(cluster)
+        .get_mut(&cluster_key)
         .and_then(|item| item.as_table_like_mut())
         .ok_or_else(|| anyhow!("Anchor.toml has no [programs.{cluster}] section"))?;
     let entry = cluster_table.get_mut(program_name).ok_or_else(|| {
@@ -7200,7 +7213,7 @@ fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Res
                         deployment.address = Pubkey::try_from(actual_program_id.as_str()).unwrap();
                         sync_program_address_in_toml(
                             &cfg_path,
-                            &cluster.to_string(),
+                            cluster,
                             name,
                             &actual_program_id,
                         )?;
@@ -8974,7 +8987,7 @@ mod tests {
 
         sync_program_address_in_toml(
             &path,
-            "devnet",
+            &Cluster::Devnet,
             "myprog",
             "8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm",
         )
@@ -8993,6 +9006,53 @@ mod tests {
     }
 
     #[test]
+    fn test_keys_sync_matches_capitalized_cluster_section() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("Anchor.toml");
+        let before = "[programs.Devnet]\nmyprog = \
+                      \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n";
+        fs::write(&path, before).unwrap();
+
+        sync_program_address_in_toml(
+            &path,
+            &Cluster::Devnet,
+            "myprog",
+            "8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm",
+        )
+        .unwrap();
+
+        // The address is updated and the section keeps its original spelling.
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "[programs.Devnet]\nmyprog = \
+             \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\"\n"
+        );
+    }
+
+    #[test]
+    fn test_keys_sync_matches_short_cluster_section() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("Anchor.toml");
+        let before = "[programs.d]\nmyprog = \
+                      \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n";
+        fs::write(&path, before).unwrap();
+
+        sync_program_address_in_toml(
+            &path,
+            &Cluster::Devnet,
+            "myprog",
+            "8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm",
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "[programs.d]\nmyprog = \
+             \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\"\n"
+        );
+    }
+
+    #[test]
     fn test_keys_sync_updates_table_form_address_only() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("Anchor.toml");
@@ -9003,7 +9063,7 @@ mod tests {
 
         sync_program_address_in_toml(
             &path,
-            "devnet",
+            &Cluster::Devnet,
             "myprog",
             "8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm",
         )
@@ -9028,7 +9088,7 @@ mod tests {
 
         assert!(sync_program_address_in_toml(
             &path,
-            "devnet",
+            &Cluster::Devnet,
             "myprog",
             "8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm",
         )
