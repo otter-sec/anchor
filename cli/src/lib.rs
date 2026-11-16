@@ -6863,11 +6863,35 @@ fn config_set(
         None => bail!("Not in an Anchor workspace"),
     };
 
+    let updated = set_provider_overrides(&anchor_toml_path, url, keypair)?;
+
+    if updated {
+        println!("\nConfiguration updated successfully!");
+    } else {
+        println!("No changes made. Use --url or --keypair to update settings.");
+    }
+
+    Ok(())
+}
+
+/// Applies `anchor config set` overrides to the Anchor.toml at `path`,
+/// returning whether anything changed.
+///
+/// The file is edited as a TOML document so comments, key order and
+/// formatting of untouched lines survive the write; only the overridden
+/// keys change.
+fn set_provider_overrides(
+    path: &Path,
+    url: Option<String>,
+    keypair: Option<PathBuf>,
+) -> Result<bool> {
     // Read the current Anchor.toml
-    let mut toml_content =
-        fs::read_to_string(&anchor_toml_path).context("Failed to read Anchor.toml")?;
-    let mut toml_doc: toml::Value =
-        toml::from_str(&toml_content).context("Failed to parse Anchor.toml")?;
+    let toml_content = fs::read_to_string(path).context("Failed to read Anchor.toml")?;
+    // Parse as a document, not a plain value, so the round-trip below
+    // keeps comments and formatting instead of re-emitting the file.
+    let mut toml_doc: toml_edit::Document = toml_content
+        .parse()
+        .context("Failed to parse Anchor.toml")?;
 
     let mut updated = false;
 
@@ -6881,11 +6905,11 @@ fn config_set(
             _ => cluster_url,
         };
 
-        if let Some(provider) = toml_doc.get_mut("provider").and_then(|v| v.as_table_mut()) {
-            provider.insert(
-                "cluster".to_string(),
-                toml::Value::String(expanded_url.clone()),
-            );
+        if let Some(provider) = toml_doc
+            .get_mut("provider")
+            .and_then(|item| item.as_table_mut())
+        {
+            set_string_value(provider, "cluster", expanded_url.clone());
             println!("Updated cluster to: {}", redact_url(&expanded_url));
             updated = true;
         }
@@ -6900,27 +6924,39 @@ fn config_set(
             eprintln!("Warning: Wallet file does not exist: {}", expanded_path);
         }
 
-        if let Some(provider) = toml_doc.get_mut("provider").and_then(|v| v.as_table_mut()) {
-            provider.insert(
-                "wallet".to_string(),
-                toml::Value::String(expanded_path.clone()),
-            );
+        if let Some(provider) = toml_doc
+            .get_mut("provider")
+            .and_then(|item| item.as_table_mut())
+        {
+            set_string_value(provider, "wallet", expanded_path.clone());
             println!("Updated wallet to: {}", expanded_path);
             updated = true;
         }
     }
 
     if updated {
-        // Write the updated config back to Anchor.toml
-        toml_content =
-            toml::to_string_pretty(&toml_doc).context("Failed to serialize Anchor.toml")?;
-        fs::write(&anchor_toml_path, toml_content).context("Failed to write Anchor.toml")?;
-        println!("\nConfiguration updated successfully!");
-    } else {
-        println!("No changes made. Use --url or --keypair to update settings.");
+        // Write the updated config back to Anchor.toml.
+        fs::write(path, toml_doc.to_string()).context("Failed to write Anchor.toml")?;
     }
 
-    Ok(())
+    Ok(updated)
+}
+
+/// Sets a string value in a TOML table. When the key already exists its
+/// formatting is kept — including any trailing comment — by reusing the
+/// old value's decor; otherwise the key is appended to the table.
+fn set_string_value(table: &mut toml_edit::Table, key: &str, value: String) {
+    match table.get_mut(key).and_then(|item| item.as_value_mut()) {
+        Some(old) => {
+            let decor = old.decor().clone();
+            let mut new_value = toml_edit::Value::from(value);
+            *new_value.decor_mut() = decor;
+            *old = new_value;
+        }
+        None => {
+            table.insert(key, toml_edit::Item::Value(toml_edit::Value::from(value)));
+        }
+    }
 }
 
 fn shell(cfg_override: &ConfigOverride) -> Result<()> {
@@ -8859,5 +8895,63 @@ mod tests {
                 "--features=other-feature".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn test_config_set_keeps_comments_and_formatting() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("Anchor.toml");
+        let before = "# My workspace — do not lose this comment\n\
+                      [provider]\n\
+                      cluster = \"localnet\"   # local validator for dev\n\
+                      wallet = \"~/.config/solana/id.json\"\n\
+                      \n\
+                      [programs.localnet]\n\
+                      my_program = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n\
+                      \n\
+                      # NOTE: keep this section below in sync with CI\n\
+                      [test]\n\
+                      startup_wait = 10000\n";
+        fs::write(&path, before).unwrap();
+
+        let updated = set_provider_overrides(&path, Some("devnet".to_string()), None).unwrap();
+        assert!(updated);
+
+        let after = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            after,
+            "# My workspace — do not lose this comment\n\
+             [provider]\n\
+             cluster = \"devnet\"   # local validator for dev\n\
+             wallet = \"~/.config/solana/id.json\"\n\
+             \n\
+             [programs.localnet]\n\
+             my_program = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n\
+             \n\
+             # NOTE: keep this section below in sync with CI\n\
+             [test]\n\
+             startup_wait = 10000\n"
+        );
+    }
+
+    #[test]
+    fn test_config_set_appends_missing_key_and_no_ops_without_provider() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("Anchor.toml");
+        fs::write(&path, "[provider]\nwallet = \"~/.config/solana/id.json\"\n").unwrap();
+
+        let updated = set_provider_overrides(&path, Some("devnet".to_string()), None).unwrap();
+        assert!(updated);
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "[provider]\nwallet = \"~/.config/solana/id.json\"\ncluster = \"devnet\"\n"
+        );
+
+        let path = dir.path().join("Anchor-no-provider.toml");
+        let before = "[test]\nstartup_wait = 10000\n";
+        fs::write(&path, before).unwrap();
+        let updated = set_provider_overrides(&path, Some("devnet".to_string()), None).unwrap();
+        assert!(!updated);
+        assert_eq!(fs::read_to_string(&path).unwrap(), before);
     }
 }
