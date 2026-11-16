@@ -7211,12 +7211,7 @@ fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Res
 
                         // Update the program id
                         deployment.address = Pubkey::try_from(actual_program_id.as_str()).unwrap();
-                        sync_program_address_in_toml(
-                            &cfg_path,
-                            cluster,
-                            name,
-                            &actual_program_id,
-                        )?;
+                        sync_program_address_in_toml(&cfg_path, cluster, name, &actual_program_id)?;
 
                         println!("Updated to {actual_program_id}\n");
                         break 'outer;
@@ -9009,8 +9004,8 @@ mod tests {
     fn test_keys_sync_matches_capitalized_cluster_section() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("Anchor.toml");
-        let before = "[programs.Devnet]\nmyprog = \
-                      \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n";
+        let before =
+            "[programs.Devnet]\nmyprog = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n";
         fs::write(&path, before).unwrap();
 
         sync_program_address_in_toml(
@@ -9024,8 +9019,7 @@ mod tests {
         // The address is updated and the section keeps its original spelling.
         assert_eq!(
             fs::read_to_string(&path).unwrap(),
-            "[programs.Devnet]\nmyprog = \
-             \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\"\n"
+            "[programs.Devnet]\nmyprog = \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\"\n"
         );
     }
 
@@ -9033,8 +9027,7 @@ mod tests {
     fn test_keys_sync_matches_short_cluster_section() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("Anchor.toml");
-        let before = "[programs.d]\nmyprog = \
-                      \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n";
+        let before = "[programs.d]\nmyprog = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n";
         fs::write(&path, before).unwrap();
 
         sync_program_address_in_toml(
@@ -9047,8 +9040,7 @@ mod tests {
 
         assert_eq!(
             fs::read_to_string(&path).unwrap(),
-            "[programs.d]\nmyprog = \
-             \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\"\n"
+            "[programs.d]\nmyprog = \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\"\n"
         );
     }
 
