@@ -1812,6 +1812,24 @@ fn program_set_buffer_authority(
     Ok(())
 }
 
+/// Resolve the effective new upgrade authority for `set_upgrade_authority`.
+///
+/// `--final` makes the program immutable, so a new authority (and its
+/// signer) passed alongside it must be dropped. Without this, the
+/// instruction built below would transfer the authority to the new pubkey
+/// instead of removing it, while the user was told the program is immutable.
+fn resolve_set_upgrade_authority_args(
+    make_final: bool,
+    new_upgrade_authority: Option<Pubkey>,
+    new_upgrade_authority_signer: Option<String>,
+) -> (Option<Pubkey>, Option<String>) {
+    if make_final {
+        (None, None)
+    } else {
+        (new_upgrade_authority, new_upgrade_authority_signer)
+    }
+}
+
 fn program_set_upgrade_authority(
     cfg_override: &ConfigOverride,
     program_id: Pubkey,
@@ -1821,6 +1839,9 @@ fn program_set_upgrade_authority(
     make_final: bool,
     current_upgrade_authority: Option<String>,
 ) -> Result<()> {
+    let (new_upgrade_authority, new_upgrade_authority_signer) =
+        resolve_set_upgrade_authority_args(make_final, new_upgrade_authority, new_upgrade_authority_signer);
+
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
     let payer = get_payer_keypair(cfg_override, &config)?;
 
@@ -2876,6 +2897,28 @@ mod tests {
             expected_program_id,
             program_keypair.pubkey()
         )));
+    }
+
+    #[test]
+    fn set_upgrade_authority_final_drops_new_authority_and_signer() {
+        let new_authority = Pubkey::new_unique();
+
+        assert_eq!(
+            resolve_set_upgrade_authority_args(
+                true,
+                Some(new_authority),
+                Some("signer.json".to_string())
+            ),
+            (None, None)
+        );
+        assert_eq!(
+            resolve_set_upgrade_authority_args(
+                false,
+                Some(new_authority),
+                Some("signer.json".to_string())
+            ),
+            (Some(new_authority), Some("signer.json".to_string()))
+        );
     }
 
     #[test]

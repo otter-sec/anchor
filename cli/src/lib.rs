@@ -809,8 +809,14 @@ pub enum ProgramCommand {
         /// WARNING: Less safe - use only if you're confident the pubkey is correct
         #[clap(long)]
         skip_new_upgrade_authority_signer_check: bool,
-        /// Make the program immutable (cannot be upgraded)
-        #[clap(long = "final")]
+        /// Make the program immutable (cannot be upgraded).
+        /// Conflicts with --new-upgrade-authority / --new-upgrade-authority-signer:
+        /// passing both would print "Making program immutable" while the
+        /// authority is transferred to the new pubkey instead of removed.
+        #[clap(
+            long = "final",
+            conflicts_with_all = ["new_upgrade_authority", "new_upgrade_authority_signer"]
+        )]
         make_final: bool,
         /// Current upgrade authority keypair (defaults to configured wallet)
         #[clap(long)]
@@ -8044,6 +8050,87 @@ mod tests {
         ])
         .unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn test_program_set_upgrade_authority_final_conflicts_with_new_authority() {
+        let err = Opts::try_parse_from([
+            "anchor",
+            "program",
+            "set-upgrade-authority",
+            "11111111111111111111111111111111",
+            "--final",
+            "--new-upgrade-authority",
+            "11111111111111111111111111111111",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn test_program_set_upgrade_authority_final_conflicts_with_new_authority_signer() {
+        let err = Opts::try_parse_from([
+            "anchor",
+            "program",
+            "set-upgrade-authority",
+            "11111111111111111111111111111111",
+            "--final",
+            "--new-upgrade-authority-signer",
+            "/tmp/signer.json",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn test_program_set_upgrade_authority_final_parses_alone() {
+        let opts = Opts::try_parse_from([
+            "anchor",
+            "program",
+            "set-upgrade-authority",
+            "11111111111111111111111111111111",
+            "--final",
+        ])
+        .unwrap();
+        let Command::Program {
+            subcmd:
+                ProgramCommand::SetUpgradeAuthority {
+                    make_final,
+                    new_upgrade_authority,
+                    ..
+                },
+        } = opts.command
+        else {
+            panic!("expected program set-upgrade-authority command");
+        };
+        assert!(make_final);
+        assert_eq!(new_upgrade_authority, None);
+    }
+
+    #[test]
+    fn test_program_set_upgrade_authority_new_authority_parses_alone() {
+        let opts = Opts::try_parse_from([
+            "anchor",
+            "program",
+            "set-upgrade-authority",
+            "11111111111111111111111111111111",
+            "--new-upgrade-authority",
+            "11111111111111111111111111111111",
+        ])
+        .unwrap();
+        let Command::Program {
+            subcmd:
+                ProgramCommand::SetUpgradeAuthority {
+                    make_final,
+                    new_upgrade_authority,
+                    ..
+                },
+        } = opts.command
+        else {
+            panic!("expected program set-upgrade-authority command");
+        };
+        assert!(!make_final);
+        assert!(new_upgrade_authority.is_some());
     }
 
     #[test]
