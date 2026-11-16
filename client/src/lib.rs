@@ -1251,8 +1251,8 @@ mod tests {
         assert!(event_rx.recv_timeout(Duration::from_millis(100)).is_err());
     }
 
-    /// Regression test for Nacodex audit finding #41: a notification with an
-    /// invalid signature or unparsable logs must not kill the subscription.
+    /// Regression test: a notification with an invalid signature or
+    /// unparsable logs must not kill the subscription.
     /// The two bad notifications below are followed by a good one, which
     /// must still be delivered.
     #[test]
