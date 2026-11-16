@@ -74,7 +74,8 @@ fn init_data_account(
 /// in the auto-generated CPI module ("lifetime parameter `'a` is never
 /// used"). The `_phantom: PhantomData<&'a ()>` field anchors `'a` on
 /// `Self`; this test confirms the resulting `cpi::accounts::Empty::new()`
-/// constructor flows through a real CPI call.
+/// constructor flows through a real CPI call. The caller also supplies two
+/// PDA signer groups independently of the empty account list.
 #[test]
 fn test_cpi_empty_accounts() {
     let (mut svm, payer) = setup();

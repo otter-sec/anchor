@@ -363,6 +363,13 @@ mod idl_tests {
     }
 
     #[test]
+    fn fixed_vec_field_emits_a_sequence_type() {
+        let profile = <Profile as IdlAccountType>::__idl_type_def()
+            .expect("Profile should emit its IDL type");
+        assert!(profile.contains("{\"name\":\"scores\",\"type\":{\"vec\":\"u64\"}}"));
+    }
+
+    #[test]
     fn idl_type_tuple_struct_preserves_unnamed_fields() {
         let type_def = <PairTupleIdl as IdlAccountType>::__idl_type_def()
             .expect("PairTupleIdl should emit an IDL type");

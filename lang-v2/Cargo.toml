@@ -54,19 +54,19 @@ solana-address = { workspace = true, features = ["bytemuck", "syscalls", "curve2
 solana-program-error.workspace = true
 solana-program-memory.workspace = true
 solana-program-log = { workspace = true, features = ["macro"], optional = true }
+solana-rent = { workspace = true, features = ["sysvar"] }
 solana-sha256-hasher = { workspace = true, features = ["sha2"] }
 bytemuck = { version = "1", features = ["derive"] }
 wincode = { version = "0.6", default-features = false, features = ["derive"] }
 
 [target.'cfg(not(any(target_os = "solana", target_arch = "bpf")))'.dependencies]
 sha2 = "0.10"
-# Owned instruction builders, system-instruction compatibility, rent helpers,
-# and collection-backed serialization are host/client APIs. Keeping these
+# Owned instruction builders, system-instruction compatibility, and
+# collection-backed serialization are host/client APIs. Keeping these
 # features target-local prevents them from entering an SBF dependency graph.
 solana-instruction = { version = "3", default-features = false, features = ["std"] }
 solana-msg = { workspace = true, default-features = false, features = ["alloc"] }
 solana-system-interface = { workspace = true, features = ["bincode"] }
-solana-sysvar.workspace = true
 wincode = { version = "0.6", default-features = false, features = ["derive", "std"] }
 
 [target.'cfg(any(target_os = "solana", target_arch = "bpf"))'.dependencies]

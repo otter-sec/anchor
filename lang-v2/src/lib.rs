@@ -342,10 +342,10 @@ pub mod solana_program {
     }
 
     pub mod rent {
-        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-        pub use solana_sysvar::rent::*;
-        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-        pub use pinocchio::sysvars::rent::*;
+        pub use solana_rent::{
+            sysvar::{check_id, id, ID},
+            Rent, SIZE,
+        };
     }
 
     pub mod sysvar {

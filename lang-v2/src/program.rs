@@ -3,7 +3,7 @@ use {
     crate::{address_eq, require, Address, CpiHandle, CpiInstruction},
     core::{mem::MaybeUninit, ops::Range, slice::from_raw_parts},
     pinocchio::{
-        cpi::{CpiAccount, Seed, Signer},
+        cpi::CpiAccount,
         instruction::{InstructionAccount, InstructionView},
     },
     solana_program_error::{ProgramError, ProgramResult},
@@ -70,7 +70,7 @@ unsafe fn invoke_signed_unchecked_with_accounts<'a, 'seeds, const N: usize>(
         accounts: instruction_accounts,
         data,
     };
-    let signers = signers::<N>(signer_seeds)?;
+    let signers = signers(signer_seeds)?;
     let _borrow_guards = crate::enter_cpi::<N>(account_handles)?;
     let cpi_accounts = cpi_accounts::<N>(account_handles)?;
 
@@ -373,17 +373,13 @@ fn instruction_account_matches_handle(
     address_eq(account.address, handle.address()) && (!account.is_writable || handle.is_writable())
 }
 
-fn signers<'seeds, const N: usize>(
+pub(crate) fn signers<'seeds>(
     signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
-) -> Result<crate::SignerBuffer<'seeds, N>, ProgramError> {
+) -> Result<crate::SignerBuffer<'seeds>, ProgramError> {
     let mut signers = crate::SignerBuffer::new();
     for seeds in signer_seeds {
-        // SAFETY: `Seed` has the same in-memory representation as `&[u8]`;
-        // this is the conversion used by `CpiContext::invoke` as well.
-        let cpi_seeds: &[Seed] =
-            unsafe { from_raw_parts(seeds.as_ptr() as *const Seed, seeds.len()) };
         signers
-            .try_push(Signer::from(cpi_seeds))
+            .try_push(crate::cpi::signer_from_seeds(seeds))
             .map_err(|_| ProgramError::InvalidArgument)?;
     }
     Ok(signers)

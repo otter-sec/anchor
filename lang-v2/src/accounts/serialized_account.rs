@@ -19,10 +19,15 @@ use {
 /// an associated `Value`, so a single tag can encode every `T` whose own
 /// bounds the impl satisfies.
 ///
-/// Both methods operate on a slice cursor (`&mut &[u8]` / `&mut &mut [u8]`)
+/// Serialization and deserialization operate on a slice cursor
+/// (`&mut &[u8]` / `&mut &mut [u8]`)
 /// and must advance it by the bytes they consume. `SerializedAccount` uses
 /// that cursor position to scrub stale bytes when a value serializes shorter
 /// than it did at load time.
+///
+/// Custom codecs used on-chain without the `alloc` feature must implement
+/// [`Self::serialize_and_compare`] to commit a mutable borrow after ownership
+/// changes. The comparison must leave the account bytes untouched.
 pub trait AnchorAccountSerialize<T> {
     /// Serialize `value` into the buffer past the discriminator.
     fn serialize(value: &T, buf: &mut &mut [u8]) -> Result<(), ProgramError>;
@@ -31,13 +36,16 @@ pub trait AnchorAccountSerialize<T> {
     /// existing foreign-owned payload. The returned length is the encoded
     /// payload length; the boolean also accounts for stale bytes that would
     /// need to be cleared.
-    #[doc(hidden)]
+    ///
+    /// The default compares against a scratch copy on the host and with the
+    /// `alloc` feature. On-chain without `alloc`, the default returns
+    /// [`ProgramError::InvalidAccountData`].
     fn serialize_and_compare(
         value: &T,
         payload: &[u8],
         previous_serialized_len: usize,
     ) -> Result<(usize, bool), ProgramError> {
-        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+        #[cfg(any(feature = "alloc", not(any(target_os = "solana", target_arch = "bpf"))))]
         {
             let mut candidate = alloc::vec::Vec::from(payload);
             let payload_len = candidate.len();
@@ -54,7 +62,7 @@ pub trait AnchorAccountSerialize<T> {
             return Ok((serialized_len, matches));
         }
 
-        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        #[cfg(all(not(feature = "alloc"), any(target_os = "solana", target_arch = "bpf")))]
         {
             let _ = (value, payload, previous_serialized_len);
             Err(ProgramError::InvalidAccountData)
@@ -70,11 +78,10 @@ pub trait AnchorAccountSerialize<T> {
 /// Validates owner, checks discriminator, deserializes via `S`. Holds a
 /// pinocchio borrow guard (`Ref` for `load`, `RefMut` for `load_mut`);
 /// `exit()` serializes through the held `RefMut`.
-/// If ownership changes after loading, host commits compare the serialized
+/// If ownership changes after loading, the codec compares the serialized
 /// payload (including stale-byte cleanup) against the live data without
-/// writing to it. The allocator-free SBF path compares the encoded stream
-/// directly with the live payload, so it does not require an instruction-sized
-/// scratch buffer.
+/// writing to it. See [`AnchorAccountSerialize::serialize_and_compare`] for
+/// the requirements on allocator-free builds.
 ///
 /// The wincode-backed instantiation is exposed as [`super::BorshAccount<T>`].
 ///

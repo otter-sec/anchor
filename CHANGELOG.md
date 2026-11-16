@@ -35,6 +35,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Breaking
 
+- lang-v2: SBF programs that use heap allocation must opt in to the `alloc` feature. Custom `AnchorAccountSerialize` codecs running without `alloc` must implement `serialize_and_compare` to commit a mutable account after its owner changes. Replace the slice-based `solana_program::program::invoke*` helpers with `CpiContext::invoke` or `CpiContext::invoke_ix` ([#5284](https://github.com/otter-sec/anchor/pull/5284)).
+- lang-v2: Use `anchor_lang::system_program` for on-chain System Program CPIs. The owned `solana_program::system_instruction` builders are host-only. Formatted `msg!` output on SBF can span multiple log entries ([#5284](https://github.com/otter-sec/anchor/pull/5284)).
 - lang-v2: `SysvarLoad::read` is now `unsafe`. ([#5205](https://github.com/otter-sec/anchor/pull/5205)).
 - lang-v2: Default `#[event]` structs now derive `AnchorDeserialize` as well as `AnchorSerialize`. Remove any explicit `AnchorDeserialize` derive from these structs to avoid conflicting implementations; `#[event(bytemuck)]` is unchanged ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
 - lang-v2: Replace the duplicate mutable account check with borrow checks, so conflicting aliases fail with `AccountBorrowFailed`. Remove `#[account(unsafe(dup))]` and drop `?` on `ctx.remaining_accounts()`; a read-only `Account<T>` or `Slab<H, T>` used in a writable CPI needs `#[account(mut)]` ([#5091](https://github.com/otter-sec/anchor/pull/5091)).

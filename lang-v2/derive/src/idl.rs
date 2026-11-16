@@ -189,9 +189,9 @@ impl<'a> TypeLowerer<'a> {
             | "PodI128" | "PodBool" => json!({ "defined": { "name": path } }),
             "String" | "string" | "str" => json!("string"),
             "Pubkey" | "Address" | "pubkey" => json!("pubkey"),
-            "Vec" => {
+            "Vec" | "FixedVec" => {
                 let Some(inner) = first_type_arg(segment) else {
-                    return json!({ "defined": { "name": "Vec" } });
+                    return json!({ "defined": { "name": path } });
                 };
                 json!({ "vec": self.lower_inner(inner) })
             }

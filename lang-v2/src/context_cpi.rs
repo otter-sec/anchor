@@ -120,16 +120,7 @@ where
 
         let _borrow_guards = crate::enter_cpi::<N>(&handles)?;
 
-        // Convert signer seeds to pinocchio Signers.
-        // SAFETY: pinocchio::cpi::Seed is repr(C) { *const u8, u64, PhantomData }
-        // which has the same layout as &[u8] on SBF. This is verified by the
-        // static assertion in cpi.rs.
-        let mut signers = crate::SignerBuffer::<N>::new();
-        for seeds in self.signer_seeds {
-            signers
-                .try_push(crate::cpi::signer_from_seeds(seeds))
-                .map_err(|_| ProgramError::InvalidArgument)?;
-        }
+        let signers = crate::program::signers(self.signer_seeds)?;
 
         // Build CpiAccounts and invoke. Account count matches handles (optional
         // None sentinels have metas but no handles); pinocchio skips program-id
@@ -204,8 +195,8 @@ where
 /// for compatibility because the underlying Pinocchio syscall is unchecked;
 /// callers must propagate the validation and invocation result.
 ///
-/// `N` selects the inline account storage for this call. Signer storage also
-/// uses `N` for multiple signer groups; exceeding that capacity returns
+/// `N` selects the inline account storage for this call. Signer groups are
+/// limited by the CPI syscall independently of `N`. Exceeding that limit returns
 /// [`ProgramError::InvalidArgument`] before invocation.
 #[inline(always)]
 pub fn unchecked_invoke_signed_fixed<'a, const N: usize>(
@@ -249,12 +240,7 @@ pub fn unchecked_invoke_signed_fixed<'a, const N: usize>(
             }
         }
         _ => {
-            let mut signers = crate::SignerBuffer::<N>::new();
-            for seeds in signer_seeds {
-                signers
-                    .try_push(crate::cpi::signer_from_seeds(seeds))
-                    .map_err(|_| ProgramError::InvalidArgument)?;
-            }
+            let signers = crate::program::signers(signer_seeds)?;
             unsafe {
                 pinocchio::cpi::invoke_signed_unchecked(&instruction, cpi_accounts, &signers);
             }
