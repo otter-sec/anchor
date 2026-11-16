@@ -9004,7 +9004,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("Anchor.toml");
         let before = "# keep me\nprovider = { cluster = \"localnet\", wallet = \
-                      \"~/.config/solana/id.json\" } # inline provider\n\n[programs.localnet]\nmy_program = \
+                      \"~/.config/solana/id.json\" } # inline \
+                      provider\n\n[programs.localnet]\nmy_program = \
                       \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n";
         fs::write(&path, before).unwrap();
 
@@ -9012,8 +9013,8 @@ mod tests {
         assert!(updated);
         assert_eq!(
             fs::read_to_string(&path).unwrap(),
-            "# keep me\nprovider = { cluster = \"devnet\", wallet = \
-             \"~/.config/solana/id.json\" } # inline provider\n\n[programs.localnet]\nmy_program = \
+            "# keep me\nprovider = { cluster = \"devnet\", wallet = \"~/.config/solana/id.json\" \
+             } # inline provider\n\n[programs.localnet]\nmy_program = \
              \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n"
         );
     }
@@ -9021,7 +9022,8 @@ mod tests {
     #[test]
     fn test_anchor_new_upsert_keeps_comments_and_formatting() {
         let before = "# My workspace — do not lose this comment\n[provider]\ncluster = \
-                      \"localnet\"\nwallet = \"~/.config/solana/id.json\"\n\n[programs.localnet]\nmy_program = \
+                      \"localnet\"\nwallet = \
+                      \"~/.config/solana/id.json\"\n\n[programs.localnet]\nmy_program = \
                       \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n";
         let mut doc: toml_edit::Document = before.parse().unwrap();
         upsert_program_deployment(
