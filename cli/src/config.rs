@@ -908,8 +908,11 @@ impl fmt::Display for Config {
             },
             hooks: Some(self.hooks.clone()),
             programs,
-            workspace: (!self.workspace.members.is_empty() || !self.workspace.exclude.is_empty())
-                .then(|| self.workspace.clone()),
+            workspace: (!self.workspace.members.is_empty()
+                || !self.workspace.exclude.is_empty()
+                || !self.workspace.idls.is_empty()
+                || !self.workspace.types.is_empty())
+            .then(|| self.workspace.clone()),
             surfpool: self.surfpool_config.clone().map(Into::into),
             skip_local_validator: self.skip_local_validator,
             clients: {
@@ -2412,6 +2415,21 @@ go = { enable = true, path = "go-client" }
     fn clients_section_omitted_when_default() {
         let config = Config::from_str(BASE_CONFIG).unwrap();
         assert!(!config.to_string().contains("[clients]"));
+    }
+
+    #[test]
+    fn workspace_idls_types_round_trip_without_members() {
+        let toml = BASE_CONFIG.to_owned()
+            + r#"
+[workspace]
+idls = "target/idl"
+types = "target/types"
+"#;
+        let config = Config::from_str(&toml).unwrap();
+        let serialized = config.to_string();
+        let reparsed = Config::from_str(&serialized).unwrap();
+        assert_eq!(reparsed.workspace.idls, "target/idl");
+        assert_eq!(reparsed.workspace.types, "target/types");
     }
 
     #[test]
