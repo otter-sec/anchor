@@ -2112,7 +2112,7 @@ fn new(
                 std::env::set_current_dir(parent)?;
 
                 let cluster = cfg.provider.cluster.clone();
-                let programs = cfg.programs.entry(cluster).or_default();
+                let programs = cfg.programs.entry(cluster.clone()).or_default();
                 if programs.contains_key(&name) {
                     if !force {
                         return Err(anyhow!("Program already exists"));
@@ -2124,23 +2124,38 @@ fn new(
 
                 template::create_program(&name, template, None, anchor_version)?;
 
+                let program_id = template::get_or_create_program_id(&name, target_dir()?);
                 programs.insert(
                     name.clone(),
                     ProgramDeployment {
-                        address: template::get_or_create_program_id(&name, target_dir()?),
+                        address: program_id,
                         path: None,
                         idl: None,
                     },
+                );
+
+                // Edit the existing Anchor.toml in place instead of
+                // re-emitting it from the parsed config, so comments and
+                // formatting elsewhere in the file survive.
+                let mut doc: toml_edit::Document = fs::read_to_string("Anchor.toml")
+                    .context("Failed to read Anchor.toml")?
+                    .parse()
+                    .context("Failed to parse Anchor.toml")?;
+                upsert_program_deployment(
+                    &mut doc,
+                    &cluster.to_string(),
+                    &name,
+                    &program_id.to_string(),
                 );
 
                 // anchor_version for [toolchain] in Anchor.toml
                 // v2 depends on `anchor-lang` from git, which has no version AVM can read, so use the CLI version.
                 if anchor_version == AnchorVersion::V2 && cfg.toolchain.anchor_version.is_none() {
                     cfg.toolchain.anchor_version = Some(VERSION.to_string());
+                    set_toolchain_anchor_version(&mut doc, VERSION);
                 }
 
-                let toml = cfg.to_string();
-                fs::write("Anchor.toml", toml)?;
+                fs::write("Anchor.toml", doc.to_string()).context("Failed to write Anchor.toml")?;
 
                 println!("Created new program.");
             }
@@ -6907,7 +6922,7 @@ fn set_provider_overrides(
 
         if let Some(provider) = toml_doc
             .get_mut("provider")
-            .and_then(|item| item.as_table_mut())
+            .and_then(|item| item.as_table_like_mut())
         {
             set_string_value(provider, "cluster", expanded_url.clone());
             println!("Updated cluster to: {}", redact_url(&expanded_url));
@@ -6926,7 +6941,7 @@ fn set_provider_overrides(
 
         if let Some(provider) = toml_doc
             .get_mut("provider")
-            .and_then(|item| item.as_table_mut())
+            .and_then(|item| item.as_table_like_mut())
         {
             set_string_value(provider, "wallet", expanded_path.clone());
             println!("Updated wallet to: {}", expanded_path);
@@ -6945,7 +6960,10 @@ fn set_provider_overrides(
 /// Sets a string value in a TOML table. When the key already exists its
 /// formatting is kept — including any trailing comment — by reusing the
 /// old value's decor; otherwise the key is appended to the table.
-fn set_string_value(table: &mut toml_edit::Table, key: &str, value: String) {
+///
+/// Takes a `TableLike` so both `[provider]` header tables and inline
+/// `provider = { ... }` tables work.
+fn set_string_value(table: &mut dyn toml_edit::TableLike, key: &str, value: String) {
     match table.get_mut(key).and_then(|item| item.as_value_mut()) {
         Some(old) => {
             let decor = old.decor().clone();
@@ -6957,6 +6975,44 @@ fn set_string_value(table: &mut toml_edit::Table, key: &str, value: String) {
             table.insert(key, toml_edit::Item::Value(toml_edit::Value::from(value)));
         }
     }
+}
+
+/// Inserts or replaces `name = "address"` under `[programs.<cluster>]` in a
+/// parsed Anchor.toml document, creating the tables when missing. Every
+/// other line in the document is left untouched, so comments and formatting
+/// survive an `anchor new` in an existing workspace.
+fn upsert_program_deployment(
+    doc: &mut toml_edit::Document,
+    cluster: &str,
+    name: &str,
+    address: &str,
+) {
+    let programs = doc
+        .entry("programs")
+        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+        .as_table_like_mut()
+        .expect("programs must be a table");
+    let cluster_table = programs
+        .entry(cluster)
+        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+        .as_table_like_mut()
+        .expect("programs.<cluster> must be a table");
+    cluster_table.insert(
+        name,
+        toml_edit::Item::Value(toml_edit::Value::from(address)),
+    );
+}
+
+/// Sets `anchor_version` under `[toolchain]` in a parsed Anchor.toml
+/// document, creating the section when missing. Used by `anchor new` so
+/// the write keeps the rest of the file intact.
+fn set_toolchain_anchor_version(doc: &mut toml_edit::Document, version: &str) {
+    let toolchain = doc
+        .entry("toolchain")
+        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+        .as_table_like_mut()
+        .expect("toolchain must be a table");
+    set_string_value(toolchain, "anchor_version", version.to_string());
 }
 
 fn shell(cfg_override: &ConfigOverride) -> Result<()> {
@@ -8941,5 +8997,45 @@ mod tests {
         let updated = set_provider_overrides(&path, Some("devnet".to_string()), None).unwrap();
         assert!(!updated);
         assert_eq!(fs::read_to_string(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn test_config_set_updates_inline_provider_table() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("Anchor.toml");
+        let before = "# keep me\nprovider = { cluster = \"localnet\", wallet = \
+                      \"~/.config/solana/id.json\" } # inline provider\n\n[programs.localnet]\nmy_program = \
+                      \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n";
+        fs::write(&path, before).unwrap();
+
+        let updated = set_provider_overrides(&path, Some("devnet".to_string()), None).unwrap();
+        assert!(updated);
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "# keep me\nprovider = { cluster = \"devnet\", wallet = \
+             \"~/.config/solana/id.json\" } # inline provider\n\n[programs.localnet]\nmy_program = \
+             \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n"
+        );
+    }
+
+    #[test]
+    fn test_anchor_new_upsert_keeps_comments_and_formatting() {
+        let before = "# My workspace — do not lose this comment\n[provider]\ncluster = \
+                      \"localnet\"\nwallet = \"~/.config/solana/id.json\"\n\n[programs.localnet]\nmy_program = \
+                      \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n";
+        let mut doc: toml_edit::Document = before.parse().unwrap();
+        upsert_program_deployment(
+            &mut doc,
+            "localnet",
+            "new_program",
+            "11111111111111111111111111111111",
+        );
+        set_toolchain_anchor_version(&mut doc, "0.32.1");
+
+        let after = doc.to_string();
+        assert!(after.starts_with("# My workspace — do not lose this comment\n"));
+        assert!(after.contains("my_program = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\""));
+        assert!(after.contains("new_program = \"11111111111111111111111111111111\""));
+        assert!(after.contains("[toolchain]\nanchor_version = \"0.32.1\""));
     }
 }
