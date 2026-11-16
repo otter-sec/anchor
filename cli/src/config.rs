@@ -624,7 +624,7 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkspaceConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub members: Vec<String>,
@@ -908,11 +908,8 @@ impl fmt::Display for Config {
             },
             hooks: Some(self.hooks.clone()),
             programs,
-            workspace: (!self.workspace.members.is_empty()
-                || !self.workspace.exclude.is_empty()
-                || !self.workspace.idls.is_empty()
-                || !self.workspace.types.is_empty())
-            .then(|| self.workspace.clone()),
+            workspace: (self.workspace != WorkspaceConfig::default())
+                .then(|| self.workspace.clone()),
             surfpool: self.surfpool_config.clone().map(Into::into),
             skip_local_validator: self.skip_local_validator,
             clients: {
