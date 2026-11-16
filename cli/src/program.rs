@@ -920,6 +920,48 @@ fn resolve_program_id(
     }
 }
 
+/// Build the warning printed when a deploy is about to use a program id that
+/// differs from the address declared for the program in Anchor.toml.
+///
+/// A fresh clone (or a deleted `target/deploy`) silently mints a new deploy
+/// keypair, so without this the deploy would land on an address nothing in
+/// the workspace names: Anchor.toml and `declare_id!` keep the old value
+/// while clients such as `anchor shell` keep reading the declared one.
+/// Returns `None` when the ids agree.
+fn deploy_address_mismatch_warning(
+    declared: Pubkey,
+    deploying: Pubkey,
+    lib_name: &str,
+    cluster: &Cluster,
+) -> Option<String> {
+    if declared == deploying {
+        return None;
+    }
+    Some(format!(
+        "Warning: Anchor.toml declares program `{lib_name}` as {declared} for cluster {cluster}, \
+         but this deploy will use {deploying}. Run `anchor keys sync` to adopt the deployed \
+         address."
+    ))
+}
+
+/// Look up the address Anchor.toml declares for `lib_name` on the configured
+/// cluster and build the mismatch warning when the deploy is about to use a
+/// different one. Returns `None` when there is no workspace config, no
+/// declared address for the program (first deploy), or the ids agree.
+fn deploy_address_mismatch_warning_for_config(
+    config: Option<&Config>,
+    lib_name: &str,
+    deploying: Pubkey,
+) -> Option<String> {
+    let cfg = config?;
+    let declared = cfg
+        .programs
+        .get(&cfg.provider.cluster)
+        .and_then(|programs| programs.get(lib_name))
+        .map(|deployment| deployment.address)?;
+    deploy_address_mismatch_warning(declared, deploying, lib_name, &cfg.provider.cluster)
+}
+
 /// Deploy a single program (either from explicit filepath or workspace) - private implementation
 #[allow(clippy::too_many_arguments)]
 pub fn program_deploy(
@@ -944,10 +986,17 @@ pub fn program_deploy(
         ));
     }
 
-    // Determine the program filepath
-    let program_filepath = if let Some(filepath) = program_filepath {
+    // Determine the program filepath and the workspace program name, used to
+    // compare the deploy target against the Anchor.toml declaration.
+    let (program_filepath, program_lib_name) = if let Some(filepath) = program_filepath {
         // Explicit filepath provided
-        filepath
+        let lib_name = program_name.clone().or_else(|| {
+            filepath
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .map(str::to_owned)
+        });
+        (filepath, lib_name)
     } else {
         // Discover from workspace (Anchor or non-Anchor)
         let programs = get_programs_from_workspace(cfg_override, program_name.clone())?;
@@ -957,7 +1006,7 @@ pub fn program_deploy(
 
         println!("Deploying program: {}", program.lib_name);
 
-        binary_path
+        (binary_path, Some(program.lib_name.clone()))
     };
 
     // Load the keypair and reject a mismatched --program-id before any cluster
@@ -1005,6 +1054,18 @@ pub fn program_deploy(
             "Warning: deploying to mainnet without `--security-metadata`. Publish a reviewed \
              `security.json` with `anchor program deploy --security-metadata`."
         );
+    }
+
+    // Warn when the deploy target differs from the address Anchor.toml
+    // declares for this program (e.g. a fresh clone silently minted a new
+    // deploy keypair). This only warns; `anchor keys sync` adopts the new
+    // address.
+    if let Some(lib_name) = program_lib_name.as_deref() {
+        if let Some(warning) =
+            deploy_address_mismatch_warning_for_config(config.as_deref(), lib_name, program_id)
+        {
+            eprintln!("{warning}");
+        }
     }
 
     // Inject per-program --buffer keypair so retries
@@ -2876,6 +2937,80 @@ mod tests {
             expected_program_id,
             program_keypair.pubkey()
         )));
+    }
+
+    #[test]
+    fn deploy_address_mismatch_warning_is_none_when_ids_agree() {
+        let id = Pubkey::new_unique();
+        assert_eq!(
+            deploy_address_mismatch_warning(id, id, "my_program", &Cluster::Localnet),
+            None
+        );
+    }
+
+    #[test]
+    fn deploy_address_mismatch_warning_names_both_addresses() {
+        let declared = Pubkey::new_unique();
+        let deploying = Pubkey::new_unique();
+        let warning =
+            deploy_address_mismatch_warning(declared, deploying, "my_program", &Cluster::Devnet)
+                .unwrap();
+        assert!(warning.contains("my_program"));
+        assert!(warning.contains(&declared.to_string()));
+        assert!(warning.contains(&deploying.to_string()));
+        assert!(warning.contains(&Cluster::Devnet.to_string()));
+        assert!(warning.contains("anchor keys sync"));
+    }
+
+    #[test]
+    fn deploy_address_mismatch_warning_for_config_is_none_without_declaration() {
+        let cfg = Config::default();
+        assert_eq!(
+            deploy_address_mismatch_warning_for_config(
+                Some(&cfg),
+                "my_program",
+                Pubkey::new_unique()
+            ),
+            None
+        );
+        assert_eq!(
+            deploy_address_mismatch_warning_for_config(None, "my_program", Pubkey::new_unique()),
+            None
+        );
+    }
+
+    #[test]
+    fn deploy_address_mismatch_warning_for_config_reads_declared_address() {
+        let declared = Pubkey::new_unique();
+        let deploying = Pubkey::new_unique();
+        let mut cfg = Config::default();
+        cfg.provider.cluster = Cluster::Devnet;
+        cfg.programs.insert(
+            Cluster::Devnet,
+            BTreeMap::from([(
+                "my_program".to_owned(),
+                crate::config::ProgramDeployment {
+                    address: declared,
+                    ..Default::default()
+                },
+            )]),
+        );
+        let warning =
+            deploy_address_mismatch_warning_for_config(Some(&cfg), "my_program", deploying)
+                .unwrap();
+        assert!(warning.contains(&declared.to_string()));
+        assert!(warning.contains(&deploying.to_string()));
+
+        // Agreeing ids stay silent even when declared.
+        assert_eq!(
+            deploy_address_mismatch_warning_for_config(Some(&cfg), "my_program", declared),
+            None
+        );
+        // A program with no declaration for this cluster stays silent.
+        assert_eq!(
+            deploy_address_mismatch_warning_for_config(Some(&cfg), "other_program", deploying),
+            None
+        );
     }
 
     #[test]
