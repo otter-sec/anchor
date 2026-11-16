@@ -7083,7 +7083,8 @@ fn sync_program_address_in_toml(
         toml_edit::Item::Value(value) => {
             let table = value.as_inline_table_mut().ok_or_else(|| {
                 anyhow!(
-                    "Unexpected [programs.{cluster}] entry for `{program_name}`: expected a string or a table"
+                    "Unexpected [programs.{cluster}] entry for `{program_name}`: expected a \
+                     string or a table"
                 )
             })?;
             match table.get_mut("address") {
@@ -7117,7 +7118,8 @@ fn sync_program_address_in_toml(
         },
         _ => {
             return Err(anyhow!(
-                "Unexpected [programs.{cluster}] entry for `{program_name}`: expected a string or a table"
+                "Unexpected [programs.{cluster}] entry for `{program_name}`: expected a string or \
+                 a table"
             ));
         }
     }
@@ -8962,17 +8964,12 @@ mod tests {
     fn test_keys_sync_keeps_comments_and_formatting() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("Anchor.toml");
-        let before = "# My workspace — do not lose this comment\n\
-                      [provider]\n\
-                      cluster = \"localnet\"   # local validator for dev\n\
-                      wallet = \"~/.config/solana/id.json\"\n\
-                      \n\
-                      [programs.devnet]\n\
-                      myprog = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"   # stale address, will be synced\n\
-                      \n\
-                      # NOTE: keep this section below in sync with CI\n\
-                      [test]\n\
-                      startup_wait = 10000\n";
+        let before = "# My workspace — do not lose this comment\n[provider]\ncluster = \
+                      \"localnet\"   # local validator for dev\nwallet = \
+                      \"~/.config/solana/id.json\"\n\n[programs.devnet]\nmyprog = \
+                      \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"   # stale address, will be \
+                      synced\n\n# NOTE: keep this section below in sync with \
+                      CI\n[test]\nstartup_wait = 10000\n";
         fs::write(&path, before).unwrap();
 
         sync_program_address_in_toml(
@@ -8986,17 +8983,12 @@ mod tests {
         let after = fs::read_to_string(&path).unwrap();
         assert_eq!(
             after,
-            "# My workspace — do not lose this comment\n\
-             [provider]\n\
-             cluster = \"localnet\"   # local validator for dev\n\
-             wallet = \"~/.config/solana/id.json\"\n\
-             \n\
-             [programs.devnet]\n\
-             myprog = \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\"   # stale address, will be synced\n\
-             \n\
-             # NOTE: keep this section below in sync with CI\n\
-             [test]\n\
-             startup_wait = 10000\n"
+            "# My workspace — do not lose this comment\n[provider]\ncluster = \"localnet\"   # \
+             local validator for dev\nwallet = \
+             \"~/.config/solana/id.json\"\n\n[programs.devnet]\nmyprog = \
+             \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\"   # stale address, will be \
+             synced\n\n# NOTE: keep this section below in sync with CI\n[test]\nstartup_wait = \
+             10000\n"
         );
     }
 
@@ -9004,7 +8996,9 @@ mod tests {
     fn test_keys_sync_updates_table_form_address_only() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("Anchor.toml");
-        let before = "[programs.devnet]\nmyprog = { address = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\", idl = \"myprog.json\" } # keep me\n";
+        let before = "[programs.devnet]\nmyprog = { address = \
+                      \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\", idl = \"myprog.json\" } # \
+                      keep me\n";
         fs::write(&path, before).unwrap();
 
         sync_program_address_in_toml(
@@ -9017,7 +9011,8 @@ mod tests {
 
         assert_eq!(
             fs::read_to_string(&path).unwrap(),
-            "[programs.devnet]\nmyprog = { address = \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\", idl = \"myprog.json\" } # keep me\n"
+            "[programs.devnet]\nmyprog = { address = \
+             \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\", idl = \"myprog.json\" } # keep me\n"
         );
     }
 
