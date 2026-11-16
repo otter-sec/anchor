@@ -809,10 +809,7 @@ pub enum ProgramCommand {
         /// WARNING: Less safe - use only if you're confident the pubkey is correct
         #[clap(long)]
         skip_new_upgrade_authority_signer_check: bool,
-        /// Make the program immutable (cannot be upgraded).
-        /// Conflicts with --new-upgrade-authority / --new-upgrade-authority-signer:
-        /// passing both would print "Making program immutable" while the
-        /// authority is transferred to the new pubkey instead of removed.
+        /// Make the program immutable (cannot be upgraded). Cannot be combined with a new upgrade authority.
         #[clap(
             long = "final",
             conflicts_with_all = ["new_upgrade_authority", "new_upgrade_authority_signer"]

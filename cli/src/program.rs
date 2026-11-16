@@ -1812,24 +1812,6 @@ fn program_set_buffer_authority(
     Ok(())
 }
 
-/// Resolve the effective new upgrade authority for `set_upgrade_authority`.
-///
-/// `--final` makes the program immutable, so a new authority (and its
-/// signer) passed alongside it must be dropped. Without this, the
-/// instruction built below would transfer the authority to the new pubkey
-/// instead of removing it, while the user was told the program is immutable.
-fn resolve_set_upgrade_authority_args(
-    make_final: bool,
-    new_upgrade_authority: Option<Pubkey>,
-    new_upgrade_authority_signer: Option<String>,
-) -> (Option<Pubkey>, Option<String>) {
-    if make_final {
-        (None, None)
-    } else {
-        (new_upgrade_authority, new_upgrade_authority_signer)
-    }
-}
-
 fn program_set_upgrade_authority(
     cfg_override: &ConfigOverride,
     program_id: Pubkey,
@@ -1839,11 +1821,9 @@ fn program_set_upgrade_authority(
     make_final: bool,
     current_upgrade_authority: Option<String>,
 ) -> Result<()> {
-    let (new_upgrade_authority, new_upgrade_authority_signer) = resolve_set_upgrade_authority_args(
-        make_final,
-        new_upgrade_authority,
-        new_upgrade_authority_signer,
-    );
+    if make_final && (new_upgrade_authority.is_some() || new_upgrade_authority_signer.is_some()) {
+        bail!("--final cannot be combined with a new upgrade authority");
+    }
 
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
     let payer = get_payer_keypair(cfg_override, &config)?;
@@ -2903,25 +2883,42 @@ mod tests {
     }
 
     #[test]
-    fn set_upgrade_authority_final_drops_new_authority_and_signer() {
-        let new_authority = Pubkey::new_unique();
+    fn set_upgrade_authority_final_rejects_new_authority() {
+        let err = program_set_upgrade_authority(
+            &ConfigOverride {
+                cluster: None,
+                wallet: None,
+                commitment: None,
+            },
+            Pubkey::new_unique(),
+            Some(Pubkey::new_unique()),
+            None,
+            false,
+            true,
+            None,
+        )
+        .unwrap_err()
+        .to_string();
 
-        assert_eq!(
-            resolve_set_upgrade_authority_args(
-                true,
-                Some(new_authority),
-                Some("signer.json".to_string())
-            ),
-            (None, None)
-        );
-        assert_eq!(
-            resolve_set_upgrade_authority_args(
-                false,
-                Some(new_authority),
-                Some("signer.json".to_string())
-            ),
-            (Some(new_authority), Some("signer.json".to_string()))
-        );
+        assert!(err.contains("--final cannot be combined with a new upgrade authority"));
+
+        let err = program_set_upgrade_authority(
+            &ConfigOverride {
+                cluster: None,
+                wallet: None,
+                commitment: None,
+            },
+            Pubkey::new_unique(),
+            None,
+            Some("signer.json".to_string()),
+            false,
+            true,
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("--final cannot be combined with a new upgrade authority"));
     }
 
     #[test]
