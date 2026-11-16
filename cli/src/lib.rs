@@ -8901,17 +8901,11 @@ mod tests {
     fn test_config_set_keeps_comments_and_formatting() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("Anchor.toml");
-        let before = "# My workspace — do not lose this comment\n\
-                      [provider]\n\
-                      cluster = \"localnet\"   # local validator for dev\n\
-                      wallet = \"~/.config/solana/id.json\"\n\
-                      \n\
-                      [programs.localnet]\n\
-                      my_program = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n\
-                      \n\
-                      # NOTE: keep this section below in sync with CI\n\
-                      [test]\n\
-                      startup_wait = 10000\n";
+        let before = "# My workspace — do not lose this comment\n[provider]\ncluster = \
+                      \"localnet\"   # local validator for dev\nwallet = \
+                      \"~/.config/solana/id.json\"\n\n[programs.localnet]\nmy_program = \
+                      \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n\n# NOTE: keep this \
+                      section below in sync with CI\n[test]\nstartup_wait = 10000\n";
         fs::write(&path, before).unwrap();
 
         let updated = set_provider_overrides(&path, Some("devnet".to_string()), None).unwrap();
@@ -8920,17 +8914,11 @@ mod tests {
         let after = fs::read_to_string(&path).unwrap();
         assert_eq!(
             after,
-            "# My workspace — do not lose this comment\n\
-             [provider]\n\
-             cluster = \"devnet\"   # local validator for dev\n\
-             wallet = \"~/.config/solana/id.json\"\n\
-             \n\
-             [programs.localnet]\n\
-             my_program = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n\
-             \n\
-             # NOTE: keep this section below in sync with CI\n\
-             [test]\n\
-             startup_wait = 10000\n"
+            "# My workspace — do not lose this comment\n[provider]\ncluster = \"devnet\"   # \
+             local validator for dev\nwallet = \
+             \"~/.config/solana/id.json\"\n\n[programs.localnet]\nmy_program = \
+             \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n\n# NOTE: keep this section below \
+             in sync with CI\n[test]\nstartup_wait = 10000\n"
         );
     }
 
