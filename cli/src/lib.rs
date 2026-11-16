@@ -7037,6 +7037,95 @@ fn keys_list(cfg_override: &ConfigOverride) -> Result<()> {
     })?
 }
 
+/// Updates one program address in Anchor.toml, leaving every other byte
+/// of the file untouched.
+///
+/// `keys sync` used to rewrite the whole file from the in-memory config
+/// (`fs::write(cfg.path(), cfg.to_string())`). That persisted temporary
+/// `--provider.cluster` / `--provider.wallet` overrides into the file and
+/// dropped all comments and formatting, because the in-memory config
+/// carries the overrides and `Display` re-emits the file with defaults
+/// filled in. Reading the file back from disk and touching only the one
+/// address keeps both the overrides and the formatting out of the write
+/// path.
+fn sync_program_address_in_toml(
+    path: &Path,
+    cluster: &str,
+    program_name: &str,
+    address: &str,
+) -> Result<()> {
+    let toml_content = fs::read_to_string(path).context("Failed to read Anchor.toml")?;
+    let mut toml_doc: toml_edit::Document = toml_content
+        .parse()
+        .context("Failed to parse Anchor.toml")?;
+
+    let programs = toml_doc
+        .get_mut("programs")
+        .and_then(|item| item.as_table_like_mut())
+        .ok_or_else(|| anyhow!("Anchor.toml has no [programs] section"))?;
+    let cluster_table = programs
+        .get_mut(cluster)
+        .and_then(|item| item.as_table_like_mut())
+        .ok_or_else(|| anyhow!("Anchor.toml has no [programs.{cluster}] section"))?;
+    let entry = cluster_table.get_mut(program_name).ok_or_else(|| {
+        anyhow!("Anchor.toml has no [programs.{cluster}] entry for `{program_name}`")
+    })?;
+
+    // A program entry is either a bare string (`myprog = "<address>"`) or a
+    // table (`myprog = { address = "...", ... }` / `[programs.<cluster>.<name>]`).
+    match entry {
+        toml_edit::Item::Value(value) if value.as_str().is_some() => {
+            let decor = value.decor().clone();
+            let mut new_value = toml_edit::Value::from(address.to_string());
+            *new_value.decor_mut() = decor;
+            *value = new_value;
+        }
+        toml_edit::Item::Value(value) => {
+            let table = value.as_inline_table_mut().ok_or_else(|| {
+                anyhow!(
+                    "Unexpected [programs.{cluster}] entry for `{program_name}`: expected a string or a table"
+                )
+            })?;
+            match table.get_mut("address") {
+                Some(old) => {
+                    let decor = old.decor().clone();
+                    let mut new_value = toml_edit::Value::from(address.to_string());
+                    *new_value.decor_mut() = decor;
+                    *old = new_value;
+                }
+                None => {
+                    table.insert("address", toml_edit::Value::from(address.to_string()));
+                }
+            }
+        }
+        toml_edit::Item::Table(table) => match table
+            .get_mut("address")
+            .and_then(|item| item.as_value_mut())
+        {
+            Some(old) => {
+                let decor = old.decor().clone();
+                let mut new_value = toml_edit::Value::from(address.to_string());
+                *new_value.decor_mut() = decor;
+                *old = new_value;
+            }
+            None => {
+                table.insert(
+                    "address",
+                    toml_edit::Item::Value(toml_edit::Value::from(address.to_string())),
+                );
+            }
+        },
+        _ => {
+            return Err(anyhow!(
+                "Unexpected [programs.{cluster}] entry for `{program_name}`: expected a string or a table"
+            ));
+        }
+    }
+
+    fs::write(path, toml_doc.to_string()).context("Failed to write Anchor.toml")?;
+    Ok(())
+}
+
 /// Sync program `declare_id!` pubkeys with the pubkey from `target/deploy/<KEYPAIR>.json`.
 fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Result<()> {
     with_workspace(cfg_override, |cfg| -> Result<()> {
@@ -7046,6 +7135,9 @@ fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Res
             .unwrap();
 
         let cfg_cluster = cfg.provider.cluster.to_owned();
+        // Copy the path out: the loop below mutably borrows `cfg.programs`,
+        // so `cfg.path()` cannot be called inside it.
+        let cfg_path = cfg.path().to_path_buf();
         println!(
             "Syncing program ids for the configured cluster ({})\n",
             redact_url(&cfg_cluster.to_string())
@@ -7104,7 +7196,12 @@ fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Res
 
                         // Update the program id
                         deployment.address = Pubkey::try_from(actual_program_id.as_str()).unwrap();
-                        fs::write(cfg.path(), cfg.to_string())?;
+                        sync_program_address_in_toml(
+                            &cfg_path,
+                            &cluster.to_string(),
+                            name,
+                            &actual_program_id,
+                        )?;
 
                         println!("Updated to {actual_program_id}\n");
                         break 'outer;
@@ -8858,6 +8955,93 @@ mod tests {
                 "--no-default-features".to_string(),
                 "--features=other-feature".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn test_keys_sync_keeps_comments_and_formatting() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("Anchor.toml");
+        let before = "# My workspace — do not lose this comment\n\
+                      [provider]\n\
+                      cluster = \"localnet\"   # local validator for dev\n\
+                      wallet = \"~/.config/solana/id.json\"\n\
+                      \n\
+                      [programs.devnet]\n\
+                      myprog = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"   # stale address, will be synced\n\
+                      \n\
+                      # NOTE: keep this section below in sync with CI\n\
+                      [test]\n\
+                      startup_wait = 10000\n";
+        fs::write(&path, before).unwrap();
+
+        sync_program_address_in_toml(
+            &path,
+            "devnet",
+            "myprog",
+            "8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm",
+        )
+        .unwrap();
+
+        let after = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            after,
+            "# My workspace — do not lose this comment\n\
+             [provider]\n\
+             cluster = \"localnet\"   # local validator for dev\n\
+             wallet = \"~/.config/solana/id.json\"\n\
+             \n\
+             [programs.devnet]\n\
+             myprog = \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\"   # stale address, will be synced\n\
+             \n\
+             # NOTE: keep this section below in sync with CI\n\
+             [test]\n\
+             startup_wait = 10000\n"
+        );
+    }
+
+    #[test]
+    fn test_keys_sync_updates_table_form_address_only() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("Anchor.toml");
+        let before = "[programs.devnet]\nmyprog = { address = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\", idl = \"myprog.json\" } # keep me\n";
+        fs::write(&path, before).unwrap();
+
+        sync_program_address_in_toml(
+            &path,
+            "devnet",
+            "myprog",
+            "8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm",
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "[programs.devnet]\nmyprog = { address = \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\", idl = \"myprog.json\" } # keep me\n"
+        );
+    }
+
+    #[test]
+    fn test_keys_sync_errors_on_missing_program_entry() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("Anchor.toml");
+        fs::write(
+            &path,
+            "[programs.devnet]\nother = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n",
+        )
+        .unwrap();
+
+        assert!(sync_program_address_in_toml(
+            &path,
+            "devnet",
+            "myprog",
+            "8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm",
+        )
+        .is_err());
+        // A failed sync leaves the file untouched.
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "[programs.devnet]\nother = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n"
         );
     }
 }
