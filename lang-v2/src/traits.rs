@@ -380,6 +380,12 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// The handle borrows `self` mutably, preventing any typed access
     /// while it is alive.
     ///
+    /// For [`crate::accounts::SerializedAccount`] (including `BorshAccount`),
+    /// obtaining this handle commits pending changes and releases the data
+    /// borrow. The first typed access afterward revalidates and reloads the
+    /// account automatically. Call `reacquire_borrow_mut()` before that access
+    /// to handle reload errors explicitly; implicit reload failures panic.
+    ///
     /// # Panics
     ///
     /// Panics if the underlying account is not marked writable in

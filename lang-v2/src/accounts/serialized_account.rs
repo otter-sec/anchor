@@ -114,8 +114,8 @@ where
     /// that call `check_borrow_mut()`. The CPI sees the user's
     /// in-memory mutations because they were just serialized. After
     /// this, `exit()` becomes a no-op until typed access lazily reacquires
-    /// the borrow or `reacquire_borrow_mut()` is called. Immutable / already-released
-    /// borrows skip the commit.
+    /// the borrow or `reacquire_borrow_mut()` is called. Immutable /
+    /// already-released borrows skip the commit.
     /// If ownership changed, unchanged serialized bytes release the borrow
     /// without writing; changed bytes return `IllegalOwner` and retain the guard.
     pub fn release_borrow(&mut self) -> Result<(), ProgramError> {
@@ -168,6 +168,9 @@ where
     }
 
     /// Re-acquire a mutable borrow after a `release_borrow()` + CPI.
+    ///
+    /// Typed access also reacquires lazily. Call this before the first typed
+    /// access to handle reload errors explicitly instead of panicking.
     ///
     /// Re-runs the full load-time invariants (owner / size /
     /// discriminator) and re-deserializes `self.data` from the live
@@ -228,8 +231,9 @@ where
     /// still on disk, which fails in the shrink case where the stored
     /// length prefix now exceeds the post-resize buffer.
     ///
-    /// For post-CPI use (where CPI may have mutated owner, disc, or
-    /// payload), use [`reacquire_borrow_mut`] instead.
+    /// After a CPI that may have changed owner, discriminator, or payload,
+    /// rely on lazy typed access or call [`Self::reacquire_borrow_mut`] to
+    /// revalidate and reload the account instead.
     pub fn reacquire_guard_only(&mut self) -> Result<(), ProgramError> {
         self.assert_mutable_loaded();
         let mut view_mut = self.view;
