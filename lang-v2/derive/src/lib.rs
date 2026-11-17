@@ -3664,9 +3664,9 @@ fn declare_idl_type_uses_borrowed_data(
         let name = defined
             .as_str()
             .or_else(|| defined.get("name").and_then(serde_json::Value::as_str));
-        if matches!(name, Some("BTreeMap" | "BTreeSet"))
-            || name.is_some_and(|name| dynamic_type_names.contains(name))
-        {
+        // `BTreeMap` and `BTreeSet` lower to `FixedVec` like `vec`, so their
+        // generic arguments below decide whether they borrow.
+        if name.is_some_and(|name| dynamic_type_names.contains(name)) {
             return true;
         }
         return defined
@@ -3680,8 +3680,10 @@ fn declare_idl_type_uses_borrowed_data(
                 })
             });
     }
-    if value.get("vec").is_some() {
-        return true;
+    // SBF lowers `vec<T>` to `FixedVec<T, N>`, which borrows only if `T`
+    // does. Marking every vec as borrowed adds an unused `'ix` lifetime.
+    if let Some(inner) = value.get("vec") {
+        return declare_idl_type_uses_borrowed_data(inner, dynamic_type_names);
     }
     value
         .get("option")
@@ -6600,7 +6602,7 @@ fn process_handler(
                     let __return_len = unsafe {
                         anchor_lang::pinocchio::cpi::sol_get_return_data(
                             __return_bytes.as_mut_ptr().cast::<u8>(),
-                            #bound as u64,
+                            (#bound) as u64,
                             __return_program.as_mut_ptr().cast::<u8>(),
                         )
                     } as usize;

@@ -193,7 +193,50 @@ pub mod declare_program_returns {
         ctx.accounts.result.last_payload_has_authority = returned.maybe_authority.is_some() as u8;
         Ok(())
     }
+
+    #[discrim = 8]
+    pub fn proxy_digest(ctx: &mut Context<ProxyCalculate>, base: u64, mode: u8) -> Result<()> {
+        require_keys_eq!(
+            ctx.accounts.result.authority,
+            *ctx.accounts.authority.address()
+        );
+        let callee = ctx.accounts.callee_program.address();
+        let data = ctx.accounts.callee_data.cpi_handle_mut();
+        let authority = ctx.accounts.authority.cpi_handle();
+        let returned: [u8; 32] = match mode {
+            0 => {
+                let cpi_accounts = return_callee::cpi::accounts::Digest { data, authority };
+                let cpi_ctx = CpiContext::<_, 2>::new(callee, cpi_accounts);
+                return_callee::cpi::digest(cpi_ctx, base)?.get()
+            }
+            1 => {
+                let cpi_accounts = return_callee::cpi::accounts::DigestShort { data, authority };
+                let cpi_ctx = CpiContext::<_, 2>::new(callee, cpi_accounts);
+                return_callee::cpi::digest_short(cpi_ctx, base)?.get()
+            }
+            2 => {
+                let cpi_accounts = return_callee::cpi::accounts::DigestLong { data, authority };
+                let cpi_ctx = CpiContext::<_, 2>::new(callee, cpi_accounts);
+                return_callee::cpi::digest_long(cpi_ctx, base)?.get()
+            }
+            _ => return Err(ProgramError::InvalidInstructionData),
+        };
+        ctx.accounts.result.calls = ctx.accounts.result.calls.saturating_add(1);
+        ctx.accounts.result.last_return = u64::from_le_bytes(returned[..8].try_into().unwrap());
+        ctx.accounts.result.last_payload_sample_sum =
+            returned.iter().map(|byte| *byte as u64).sum();
+        ctx.accounts.result.last_payload_label_len = returned.len() as u32;
+        Ok(())
+    }
 }
+
+// `vec<u64>`, `BTreeSet<u64>` and `BTreeMap<u64, u8>` borrow nothing from
+// instruction data. Their SBF types take a capacity but no `'ix` lifetime.
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+const _: fn(&mut &[u8]) -> Result<return_callee::PendingInboundNonce<4>> =
+    <return_callee::PendingInboundNonce<4> as anchor_lang::AccountDeserialize>::try_deserialize;
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+const _: Option<return_callee::NonceIndex<4>> = None;
 
 #[derive(Accounts)]
 pub struct InitializeResult {

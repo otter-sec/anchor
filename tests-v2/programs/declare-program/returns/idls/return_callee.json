@@ -116,9 +116,90 @@
           "name": "ReturnPayload"
         }
       }
+    },
+    {
+      "name": "digest",
+      "discriminator": [8],
+      "accounts": [
+        { "name": "data", "writable": true },
+        { "name": "authority", "signer": true }
+      ],
+      "args": [
+        { "name": "base", "type": "u64" }
+      ],
+      "returns": { "array": ["u8", 32] }
+    },
+    {
+      "name": "digestShort",
+      "discriminator": [9],
+      "accounts": [
+        { "name": "data", "writable": true },
+        { "name": "authority", "signer": true }
+      ],
+      "args": [
+        { "name": "base", "type": "u64" }
+      ],
+      "returns": { "array": ["u8", 32] }
+    },
+    {
+      "name": "digestLong",
+      "discriminator": [10],
+      "accounts": [
+        { "name": "data", "writable": true },
+        { "name": "authority", "signer": true }
+      ],
+      "args": [
+        { "name": "base", "type": "u64" }
+      ],
+      "returns": { "array": ["u8", 32] }
+    }
+  ],
+  "accounts": [
+    {
+      "name": "PendingInboundNonce",
+      "discriminator": [170, 176, 95, 240, 120, 231, 241, 218]
     }
   ],
   "types": [
+    {
+      "name": "PendingInboundNonce",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "nonces", "type": { "vec": "u64" } },
+          { "name": "bump", "type": "u8" }
+        ]
+      }
+    },
+    {
+      "name": "NonceIndex",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "seen",
+            "type": {
+              "defined": {
+                "name": "BTreeSet",
+                "generics": [{ "kind": "type", "type": "u64" }]
+              }
+            }
+          },
+          {
+            "name": "lastByNonce",
+            "type": {
+              "defined": {
+                "name": "BTreeMap",
+                "generics": [
+                  { "kind": "type", "type": "u64" },
+                  { "kind": "type", "type": "u8" }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
     {
       "name": "ReturnPayload",
       "type": {

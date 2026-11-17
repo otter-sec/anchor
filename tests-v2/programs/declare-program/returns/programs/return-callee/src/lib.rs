@@ -153,6 +153,52 @@ pub mod return_callee {
             maybe_authority: None,
         })
     }
+
+    #[discrim = 8]
+    pub fn digest(ctx: &mut Context<Calculate>, base: u64) -> Result<[u8; 32]> {
+        Ok(digest_bytes(record_digest_call(ctx, base)?))
+    }
+
+    // The IDL declares `[u8; 32]`, but this returns one byte too few.
+    #[discrim = 9]
+    pub fn digest_short(ctx: &mut Context<Calculate>, base: u64) -> Result<[u8; 31]> {
+        let digest = digest_bytes(record_digest_call(ctx, base)?);
+        let mut short = [0; 31];
+        short.copy_from_slice(&digest[..31]);
+        Ok(short)
+    }
+
+    // The IDL declares `[u8; 32]`, but this returns one byte too many.
+    #[discrim = 10]
+    pub fn digest_long(ctx: &mut Context<Calculate>, base: u64) -> Result<[u8; 33]> {
+        let digest = digest_bytes(record_digest_call(ctx, base)?);
+        let mut long = [0xff; 33];
+        long[..32].copy_from_slice(&digest);
+        Ok(long)
+    }
+}
+
+fn record_digest_call(ctx: &mut Context<Calculate>, base: u64) -> Result<(u64, u16)> {
+    require_keys_eq!(
+        ctx.accounts.data.authority,
+        *ctx.accounts.authority.address()
+    );
+    ctx.accounts.data.calls = ctx.accounts.data.calls.saturating_add(1);
+    ctx.accounts.data.last_base = base;
+    Ok((base, ctx.accounts.data.calls))
+}
+
+/// Bytes 0..8 hold `base`, bytes 8..10 hold `calls`, and byte `i` of the
+/// rest holds `i`. Every byte position is distinct, so a shifted or
+/// truncated copy fails the caller's checks.
+fn digest_bytes((base, calls): (u64, u16)) -> [u8; 32] {
+    let mut digest = [0; 32];
+    digest[..8].copy_from_slice(&base.to_le_bytes());
+    digest[8..10].copy_from_slice(&calls.to_le_bytes());
+    for (i, byte) in digest.iter_mut().enumerate().skip(10) {
+        *byte = i as u8;
+    }
+    digest
 }
 
 #[derive(Accounts)]

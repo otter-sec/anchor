@@ -480,3 +480,101 @@ fn declare_program_cpi_return_rejects_wrong_authority_before_return_data() {
         }
     );
 }
+
+fn expected_digest(base: u64, calls: u16) -> [u8; 32] {
+    let mut digest = [0; 32];
+    digest[..8].copy_from_slice(&base.to_le_bytes());
+    digest[8..10].copy_from_slice(&calls.to_le_bytes());
+    for (i, byte) in digest.iter_mut().enumerate().skip(10) {
+        *byte = i as u8;
+    }
+    digest
+}
+
+fn proxy_digest_metas(result: Pubkey, callee_data: Pubkey, authority: Pubkey) -> Vec<AccountMeta> {
+    vec![
+        AccountMeta::new(result, false),
+        AccountMeta::new(callee_data, false),
+        AccountMeta::new_readonly(authority, true),
+        AccountMeta::new_readonly(callee_id(), false),
+    ]
+}
+
+#[test]
+fn declare_program_cpi_return_fixed_array_round_trips() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("declare-program-returns-digest-authority");
+    let callee_data = initialize_callee_store(&mut svm, &payer, &authority);
+    let result = initialize_proxy_result(&mut svm, &payer, &authority);
+    let base = 0x0807_0605_0403_0201;
+
+    let meta = send_instruction(
+        &mut svm,
+        caller_id(),
+        instruction::ProxyDigest { base, mode: 0 }.data(),
+        proxy_digest_metas(result, callee_data, authority.pubkey()),
+        &payer,
+        &[&authority],
+    )
+    .expect("proxy_digest should CPI and read a [u8; 32] return");
+
+    let digest = expected_digest(base, 1);
+    assert_eq!(meta.return_data.program_id, callee_id());
+    assert_eq!(meta.return_data.data, digest);
+    assert_eq!(
+        callee_state(&svm, callee_data),
+        CalleeState {
+            last_base: base,
+            last_result: 0,
+            calls: 1,
+        }
+    );
+    assert_eq!(
+        proxy_state(&svm, result),
+        ProxyState {
+            last_return: base,
+            last_observed: 0,
+            last_payload_amount: 0,
+            last_payload_sample_sum: digest.iter().map(|byte| *byte as u64).sum(),
+            last_payload_label_len: 32,
+            calls: 1,
+            last_payload_has_authority: 0,
+        }
+    );
+}
+
+#[test]
+fn declare_program_cpi_return_fixed_array_rejects_short_return_data() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("declare-program-returns-digest-short-authority");
+    let callee_data = initialize_callee_store(&mut svm, &payer, &authority);
+    let result = initialize_proxy_result(&mut svm, &payer, &authority);
+
+    assert_failed_return_preserves_state(
+        &mut svm,
+        &payer,
+        &authority,
+        callee_data,
+        result,
+        instruction::ProxyDigest { base: 33, mode: 1 }.data(),
+        proxy_digest_metas(result, callee_data, authority.pubkey()),
+    );
+}
+
+#[test]
+fn declare_program_cpi_return_fixed_array_rejects_long_return_data() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("declare-program-returns-digest-long-authority");
+    let callee_data = initialize_callee_store(&mut svm, &payer, &authority);
+    let result = initialize_proxy_result(&mut svm, &payer, &authority);
+
+    assert_failed_return_preserves_state(
+        &mut svm,
+        &payer,
+        &authority,
+        callee_data,
+        result,
+        instruction::ProxyDigest { base: 33, mode: 2 }.data(),
+        proxy_digest_metas(result, callee_data, authority.pubkey()),
+    );
+}
