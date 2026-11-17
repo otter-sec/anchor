@@ -181,10 +181,12 @@ where
     /// `InvalidAccountData` if the account no longer validates as `T`.
     pub fn reacquire_borrow_mut(&mut self) -> Result<(), ProgramError> {
         self.assert_mutable_loaded();
-        self.reacquire_borrow()
+        self.reacquire_borrow_internal()
     }
 
-    fn reacquire_borrow(&self) -> Result<(), ProgramError> {
+    /// Reacquire the original shared or mutable borrow, revalidate the account,
+    /// and refresh its cached value from the live bytes.
+    fn reacquire_borrow_internal(&self) -> Result<(), ProgramError> {
         require!(self.view.owned_by(&T::OWNER), ProgramError::IllegalOwner);
         let mut view = self.view;
         // SAFETY: as in load/load_mut, the runtime buffer outlives this wrapper;
@@ -452,7 +454,7 @@ where
     type Target = T;
     fn deref(&self) -> &T {
         if self.borrow.get().is_none() {
-            self.reacquire_borrow()
+            self.reacquire_borrow_internal()
                 .expect("failed to reacquire account borrow");
         }
         // SAFETY: the initialized guard pins this value until exclusive access
@@ -471,7 +473,7 @@ where
             panic!("use #[account(mut)] for mutable access");
         }
         if self.borrow.get().is_none() {
-            self.reacquire_borrow()
+            self.reacquire_borrow_internal()
                 .expect("failed to reacquire account borrow");
         }
         self.data.get_mut()
