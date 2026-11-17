@@ -194,10 +194,8 @@ fn le_codec_reacquire_refreshes_from_buffer() {
 }
 
 #[test]
-#[should_panic(
-    expected = "SerializedAccount mutated through a read-only load. Add #[account(mut)] to your \
-                accounts struct."
-)]
+#[should_panic(expected = "SerializedAccount mutated through a read-only load. Add \
+                           #[account(mut)] to your accounts struct.")]
 fn le_codec_reacquire_mut_panics_when_loaded_read_only() {
     let mut buf = AccountBuffer::<256>::new();
     setup_stats_buf(&mut buf, 1, 0);
@@ -419,7 +417,7 @@ fn wincode_codec_rejects_wrong_disc() {
 }
 
 #[test]
-fn wincode_codec_release_reacquire_picks_up_cpi_write() {
+fn wincode_codec_lazy_reacquire_picks_up_cpi_write() {
     let mut buf = AccountBuffer::<256>::new();
     setup_ledger_buf(&mut buf, 0, 0);
 
@@ -435,7 +433,6 @@ fn wincode_codec_release_reacquire_picks_up_cpi_write() {
     .unwrap();
     set_data_bytes(&buf, 8, &cpi_payload);
 
-    acct.reacquire_borrow_mut().unwrap();
     assert_eq!(acct.balance, 12_345);
     assert_eq!(acct.nonce, 99);
 }

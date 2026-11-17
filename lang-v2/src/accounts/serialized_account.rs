@@ -1,6 +1,7 @@
 use {
     crate::{require, require_eq, AccountInitialize, AnchorAccount, Discriminator, Owner},
     core::{
+        cell::{Cell, OnceCell, UnsafeCell},
         marker::PhantomData,
         ops::{Deref, DerefMut},
     },
@@ -35,7 +36,10 @@ pub trait AnchorAccountSerialize<T> {
 ///
 /// Validates owner, checks discriminator, deserializes via `S`. Holds a
 /// pinocchio borrow guard (`Ref` for `load`, `RefMut` for `load_mut`);
-/// `exit()` serializes through the held `RefMut`.
+/// `exit()` serializes through the held `RefMut`. After a writable CPI, the
+/// first typed access revalidates and reloads the account, reacquiring its guard.
+/// Invalid accounts panic on implicit access; use `reacquire_borrow_mut()` to
+/// handle reload errors explicitly.
 /// If ownership changes after loading, commits compare the serialized payload
 /// (including stale-byte cleanup) against the live data without writing to it.
 /// Unchanged bytes succeed; changed bytes return `ProgramError::IllegalOwner`.
@@ -56,17 +60,16 @@ where
     S: AnchorAccountSerialize<T>,
 {
     view: AccountView,
-    data: T,
+    data: UnsafeCell<T>,
     is_mutable: bool,
-    borrow: SerializedAccountBorrow,
-    serialized_len: usize,
+    borrow: OnceCell<SerializedAccountBorrow>,
+    serialized_len: Cell<usize>,
     _serializer: PhantomData<S>,
 }
 
 enum SerializedAccountBorrow {
     Immutable { _guard: Ref<'static, [u8]> },
     Mutable { guard: RefMut<'static, [u8]> },
-    Released,
 }
 
 // Forward `Space::INIT_SPACE` from the inner type and add the type's
@@ -110,13 +113,14 @@ where
     /// the underlying `AccountView` can be resized or passed to CPIs
     /// that call `check_borrow_mut()`. The CPI sees the user's
     /// in-memory mutations because they were just serialized. After
-    /// this, `exit()` becomes a no-op until `reacquire_borrow_mut()` is
-    /// called. Immutable / already-released borrows skip the commit.
+    /// this, `exit()` becomes a no-op until typed access lazily reacquires
+    /// the borrow or `reacquire_borrow_mut()` is called. Immutable / already-released
+    /// borrows skip the commit.
     /// If ownership changed, unchanged serialized bytes release the borrow
     /// without writing; changed bytes return `IllegalOwner` and retain the guard.
     pub fn release_borrow(&mut self) -> Result<(), ProgramError> {
         self.serialize_mutable_borrow()?;
-        self.borrow = SerializedAccountBorrow::Released;
+        self.borrow.take();
         Ok(())
     }
 
@@ -126,20 +130,24 @@ where
     }
 
     fn serialize_mutable_borrow(&mut self) -> Result<(), ProgramError> {
-        if let SerializedAccountBorrow::Mutable { ref mut guard } = self.borrow {
+        if let Some(SerializedAccountBorrow::Mutable { guard }) = self.borrow.get_mut() {
             let disc_len = Self::disc_len();
             let payload = &mut guard[disc_len..];
             let new_serialized_len = if self.view.owned_by(&T::OWNER) {
-                Self::serialize_payload(&self.data, payload, self.serialized_len)?
+                Self::serialize_payload(self.data.get_mut(), payload, self.serialized_len.get())?
             } else {
                 // Codecs accept a mutable slice cursor, so serialize into a copy.
                 // Never write foreign-owned data, even if the bytes would match.
                 let mut candidate = payload.to_vec();
-                let len = Self::serialize_payload(&self.data, &mut candidate, self.serialized_len)?;
+                let len = Self::serialize_payload(
+                    self.data.get_mut(),
+                    &mut candidate,
+                    self.serialized_len.get(),
+                )?;
                 require!(candidate.as_slice() == payload, ProgramError::IllegalOwner);
                 len
             };
-            self.serialized_len = new_serialized_len;
+            self.serialized_len.set(new_serialized_len);
         }
         Ok(())
     }
@@ -173,27 +181,39 @@ where
     /// `InvalidAccountData` if the account no longer validates as `T`.
     pub fn reacquire_borrow_mut(&mut self) -> Result<(), ProgramError> {
         self.assert_mutable_loaded();
-        // Re-run the load-time invariants. A CPI in the release window
-        // could have mutated owner, discriminator, or payload in any
-        // combination — without re-checking, we'd accept an account that
-        // no longer validates as `T`.
+        self.reacquire_borrow()
+    }
+
+    fn reacquire_borrow(&self) -> Result<(), ProgramError> {
         require!(self.view.owned_by(&T::OWNER), ProgramError::IllegalOwner);
-        let mut view_mut = self.view;
-        let data_ref = view_mut.try_borrow_mut()?;
-        let disc_len = Self::disc_len();
-        if data_ref.len() < disc_len {
-            return Err(ProgramError::AccountDataTooSmall);
-        }
-        require_eq!(
-            &data_ref[..disc_len],
-            T::DISCRIMINATOR,
-            ProgramError::InvalidAccountData
-        );
-        let (data, serialized_len) = Self::deserialize_payload_with_len(&data_ref[disc_len..])?;
-        self.data = data;
-        self.serialized_len = serialized_len;
-        let guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
-        self.borrow = SerializedAccountBorrow::Mutable { guard };
+        let mut view = self.view;
+        // SAFETY: as in load/load_mut, the runtime buffer outlives this wrapper;
+        // the stored guard prevents conflicting data borrows until release.
+        let borrow = if self.is_mutable {
+            let guard = view.try_borrow_mut()?;
+            SerializedAccountBorrow::Mutable {
+                guard: unsafe { core::mem::transmute(guard) },
+            }
+        } else {
+            let guard = view.try_borrow()?;
+            SerializedAccountBorrow::Immutable {
+                _guard: unsafe { core::mem::transmute(guard) },
+            }
+        };
+        let bytes = match &borrow {
+            SerializedAccountBorrow::Mutable { guard } => &guard[..],
+            SerializedAccountBorrow::Immutable { _guard } => &_guard[..],
+        };
+        let (data, serialized_len) = Self::validate_and_load(self.view, bytes)?;
+        self.borrow
+            .set(borrow)
+            .map_err(|_| ProgramError::AccountBorrowFailed)?;
+        self.serialized_len.set(serialized_len);
+        // SAFETY: a released guard can only be cleared through &mut self, so
+        // no typed references survive release. Publish the guard before replacing
+        // data; replace before dropping the old value so reentrant Drop sees it.
+        let old = unsafe { self.data.get().replace(data) };
+        drop(old);
         Ok(())
     }
 
@@ -221,7 +241,7 @@ where
             return Err(ProgramError::AccountDataTooSmall);
         }
         let guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
-        self.borrow = SerializedAccountBorrow::Mutable { guard };
+        self.borrow = OnceCell::from(SerializedAccountBorrow::Mutable { guard });
         Ok(())
     }
 
@@ -271,10 +291,10 @@ where
         let guard: Ref<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
         Ok(Self {
             view,
-            data,
+            data: UnsafeCell::new(data),
             is_mutable: false,
-            borrow: SerializedAccountBorrow::Immutable { _guard: guard },
-            serialized_len,
+            borrow: OnceCell::from(SerializedAccountBorrow::Immutable { _guard: guard }),
+            serialized_len: Cell::new(serialized_len),
             _serializer: PhantomData,
         })
     }
@@ -296,10 +316,10 @@ where
         let guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
         Ok(Self {
             view,
-            data,
+            data: UnsafeCell::new(data),
             is_mutable: true,
-            borrow: SerializedAccountBorrow::Mutable { guard },
-            serialized_len,
+            borrow: OnceCell::from(SerializedAccountBorrow::Mutable { guard }),
+            serialized_len: Cell::new(serialized_len),
             _serializer: PhantomData,
         })
     }
@@ -328,12 +348,12 @@ where
         // release_borrow + reacquire after resize, but if someone resizes
         // through a non-derive path the guard's length would be stale.
         // Detect and fix before serializing.
-        let stale = matches!(&self.borrow, SerializedAccountBorrow::Mutable { guard } if guard.len() != self.view.data_len());
+        let stale = matches!(self.borrow.get(), Some(SerializedAccountBorrow::Mutable { guard }) if guard.len() != self.view.data_len());
         if stale {
             // Drop the stale guard directly rather than via release_borrow:
             // serializing through a stale-length guard would OOB on shrink.
             // The serialize below runs through the freshly reacquired guard.
-            self.borrow = SerializedAccountBorrow::Released;
+            self.borrow.take();
             self.reacquire_guard_only()?;
         }
         self.serialize_mutable_borrow()?;
@@ -369,7 +389,7 @@ where
         // Swap our guard for a checked borrow before writing anything. Once
         // `release_borrow()` has run (e.g. for a CPI between mutation and
         // close), an aliased view may hold a borrow of the data.
-        self.borrow = SerializedAccountBorrow::Released;
+        self.borrow.take();
         let mut data_view = self.view;
         let mut data = data_view.try_borrow_mut()?;
 
@@ -431,12 +451,13 @@ where
 {
     type Target = T;
     fn deref(&self) -> &T {
-        match &self.borrow {
-            SerializedAccountBorrow::Mutable { .. } | SerializedAccountBorrow::Immutable { .. } => {
-                &self.data
-            }
-            SerializedAccountBorrow::Released => panic!("account borrow released (closed)"),
+        if self.borrow.get().is_none() {
+            self.reacquire_borrow()
+                .expect("failed to reacquire account borrow");
         }
+        // SAFETY: the initialized guard pins this value until exclusive access
+        // to self permits release, reload, or mutation.
+        unsafe { &*self.data.get() }
     }
 }
 
@@ -446,13 +467,14 @@ where
     S: AnchorAccountSerialize<T>,
 {
     fn deref_mut(&mut self) -> &mut T {
-        match &self.borrow {
-            SerializedAccountBorrow::Mutable { .. } => &mut self.data,
-            SerializedAccountBorrow::Immutable { .. } => {
-                panic!("use #[account(mut)] for mutable access")
-            }
-            SerializedAccountBorrow::Released => panic!("account borrow released (closed)"),
+        if !self.is_mutable {
+            panic!("use #[account(mut)] for mutable access");
         }
+        if self.borrow.get().is_none() {
+            self.reacquire_borrow()
+                .expect("failed to reacquire account borrow");
+        }
+        self.data.get_mut()
     }
 }
 
@@ -590,10 +612,10 @@ where
         let (data, serialized_len) = Self::deserialize_payload_with_len(&guard[disc_len..])?;
         Ok(Self {
             view: *account,
-            data,
+            data: UnsafeCell::new(data),
             is_mutable: true,
-            borrow: SerializedAccountBorrow::Mutable { guard },
-            serialized_len,
+            borrow: OnceCell::from(SerializedAccountBorrow::Mutable { guard }),
+            serialized_len: Cell::new(serialized_len),
             _serializer: PhantomData,
         })
     }
