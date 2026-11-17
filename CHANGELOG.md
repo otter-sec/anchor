@@ -12,6 +12,14 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+### Fixes
+
+### Breaking
+
+## [2.0.0-rc.4] - 2026-11-14
+
+### Features
+
 - ts: Set the transaction message version per provider (`transactionVersion` option) or per call (`.transactionVersion()`) ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 - ts: Estimate the resource limits a transaction message leaves unset before sending, with configurable compute unit headroom (`getComputeUnitLimitFromEstimate`). Disable with `estimateResourceLimits: false` ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 
@@ -24,6 +32,12 @@ The minor version will be incremented upon a breaking change and the patch versi
 - ts: Build version 1 transaction messages by default ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 - ts: Append a compute budget instruction with the estimated compute unit limit to legacy and version 0 messages ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 - ts: Require `@solana/kit` ^8.5.0 ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+- lang-v2: Make the public API allocator-free ([#5185](https://github.com/otter-sec/anchor/pull/5185)). To migrate:
+  - `CpiContext<'a, T>` is now `CpiContext<'a, T, N>`, where `N` is the inline capacity for the CPI accounts and remaining accounts. Write `CpiContext::<_, N>::new(..)`.
+  - `CpiHandleBuffer`, `InstructionAccountBuffer` and `FixedVec` replace `Vec` in the CPI types. Pass them to `CpiContext::with_remaining_accounts`.
+  - `ctx.remaining_accounts()` returns `&'a [AccountView]`, not `Vec<AccountView>`. Remove code that needs an owned `Vec`.
+  - `Box<T>` is no longer an account type. Remove the `Box` and use the account type directly.
+  - `InstructionData::data()` and `ToAccountMetas::to_account_metas` return a `Vec` on the host only. On-chain, call `InstructionData::try_write_data` with a `FixedVec<u8, N>`. On-chain `ToAccountMetas` returns an `Output` type such as `FixedVec<AccountMeta, N>`.
 
 ## [2.0.0-rc.3] - 2026-10-30
 
@@ -53,6 +67,9 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang-v2: `SysvarLoad::read` is now `unsafe`. ([#5205](https://github.com/otter-sec/anchor/pull/5205)).
 - lang-v2: Default `#[event]` structs now derive `AnchorDeserialize` as well as `AnchorSerialize`. Remove any explicit `AnchorDeserialize` derive from these structs to avoid conflicting implementations; `#[event(bytemuck)]` is unchanged ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
 - lang-v2: Replace the duplicate mutable account check with borrow checks, so conflicting aliases fail with `AccountBorrowFailed`. Remove `#[account(unsafe(dup))]` and drop `?` on `ctx.remaining_accounts()`; a read-only `Account<T>` or `Slab<H, T>` used in a writable CPI needs `#[account(mut)]` ([#5091](https://github.com/otter-sec/anchor/pull/5091)).
+- lang-v2: Check the owner before the data size when loading a `#[account(mut)]` `Account<T>` or `Slab<H, T>`. A wallet in a typed slot now fails with `IllegalOwner`, and a missing account with `UninitializedAccount`. Both returned `AccountDataTooSmall` in rc.2. Update any code that matches on that error ([#5091](https://github.com/otter-sec/anchor/pull/5091)).
+- lang-v2: Remove the lifetime from `Interface`. Write `Interface<TokenInterface>`, not `Interface<'info, TokenInterface>` ([#4891](https://github.com/otter-sec/anchor/pull/4891)).
+- lang-v2: Require Rust 1.95.0 (`rust-version`) for `anchor-lang`, `anchor-derive-accounts` and `anchor-spl`. The default platform-tools of Agave 4.2.2 (v1.54, Rust 1.89) cannot build them. Use platform-tools v1.57 or newer, for example `cargo build-sbf --tools-version v1.58` ([#5229](https://github.com/otter-sec/anchor/pull/5229)).
 
 ## [2.0.0-rc.2] - 2026-10-06
 

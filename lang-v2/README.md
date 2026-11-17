@@ -73,6 +73,20 @@ v1 `#[account(mut, dup)]` let mutable serializing accounts (`Account<T>`, `LazyA
 
 To keep that `dup` pattern, declare the second field as `#[account(mut)] UncheckedAccount`. If the addresses match, mutate the first `BorshAccount` only. If they differ, call `BorshAccount::<T>::load_mut` on the second field's `AccountView` and call `exit()` on the result before drop. The derive writes back declared fields only. A manual `load_mut` does not run the v1 field's constraints, so re-check them (`has_one`, `seeds`, `address`, `constraint`).
 
+### Migrating between 2.0 release candidates
+
+Each row is a breaking change that the compiler or the runtime reports after an upgrade. See the [CHANGELOG](../CHANGELOG.md) for the full list.
+
+| Since | You see | Change |
+|---|---|---|
+| rc.3 ([#4891](https://github.com/otter-sec/anchor/pull/4891)) | `Interface<'static, TokenInterface>` does not compile | Write `Interface<TokenInterface>`. `Interface` has no lifetime parameter. |
+| rc.3 ([#5091](https://github.com/otter-sec/anchor/pull/5091)) | `IllegalOwner` or `UninitializedAccount` where rc.2 returned `AccountDataTooSmall` | A `#[account(mut)]` `Account<T>` checks the owner before the size. A wallet gives `IllegalOwner`. A missing account gives `UninitializedAccount`. Update code that matches `AccountDataTooSmall`. |
+| rc.3 ([#5229](https://github.com/otter-sec/anchor/pull/5229)) | `rustc 1.89.0-dev is not supported by the following packages` | The on-chain crates need Rust 1.95.0. Build with platform-tools v1.57 or newer: `cargo build-sbf --tools-version v1.58`. The default tools of Agave 4.2.2 are v1.54 (Rust 1.89). |
+| rc.4 ([#5185](https://github.com/otter-sec/anchor/pull/5185)) | `CpiContext` takes 3 generic arguments | Write `CpiContext::<_, N>::new(..)`. `N` is the inline capacity for CPI accounts and remaining accounts. |
+| rc.4 ([#5185](https://github.com/otter-sec/anchor/pull/5185)) | `ctx.remaining_accounts()` type mismatch | It returns `&'a [AccountView]`, not `Vec<AccountView>`. |
+| rc.4 ([#5185](https://github.com/otter-sec/anchor/pull/5185)) | `Box<T>` is not an account type | Use the account type directly. |
+| rc.4 ([#5185](https://github.com/otter-sec/anchor/pull/5185)) | `InstructionData::data()` or `to_account_metas` missing on-chain | Both return a `Vec` on the host only. On-chain, call `try_write_data` with a `FixedVec<u8, N>`. |
+
 ### `compat` feature
 
 To help improve the migration for users, we've added an additional `compat` flag to more easily bridge the gap between v1 and v2 programs.
