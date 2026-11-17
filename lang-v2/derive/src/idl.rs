@@ -30,7 +30,7 @@ enum Placeholder {
     /// An array length expression.
     Len(Expr),
     /// A const generic value whose runtime expression must be rendered as JSON.
-    ConstGeneric { expr: Expr, quoted: bool },
+    ConstGeneric { expr: Expr },
     /// A defined type name, resolved through `IdlAccountType`.
     Name {
         ty: TokenStream2,
@@ -138,11 +138,28 @@ impl<'a> TypeLowerer<'a> {
 
     fn lower_const_generic_value(&mut self, expr: &Expr) -> Value {
         let expr = peel_expr(expr);
-        if let Expr::Lit(syn::ExprLit {
-            lit: Lit::Int(len), ..
+        if matches!(
+            expr,
+            Expr::Lit(syn::ExprLit {
+                lit: Lit::Int(_) | Lit::Bool(_) | Lit::Char(_),
+                ..
+            })
+        ) {
+            return json!(quote!(#expr).to_string().replace(' ', ""));
+        }
+        if let Expr::Unary(syn::ExprUnary {
+            op: syn::UnOp::Neg(_),
+            expr: inner,
+            ..
         }) = expr
         {
-            if len.base10_parse::<usize>().is_ok() {
+            if matches!(
+                inner.as_ref(),
+                Expr::Lit(syn::ExprLit {
+                    lit: Lit::Int(_),
+                    ..
+                })
+            ) {
                 return json!(quote!(#expr).to_string().replace(' ', ""));
             }
         }
@@ -158,10 +175,7 @@ impl<'a> TypeLowerer<'a> {
             }
         }
 
-        self.placeholder(Placeholder::ConstGeneric {
-            expr: expr.clone(),
-            quoted: true,
-        })
+        self.placeholder(Placeholder::ConstGeneric { expr: expr.clone() })
     }
 
     fn lower_path(&mut self, ty: &TypePath) -> Value {
@@ -317,23 +331,15 @@ impl<'a> TypeLowerer<'a> {
                         &anchor_lang::__idl::string::ToString::to_string(&((#expr) as usize))
                     );
                 },
-                Placeholder::ConstGeneric { expr, quoted } => {
-                    if *quoted {
-                        quote! {
-                            __s.push('"');
-                            __s.push_str(
-                                &anchor_lang::__idl::string::ToString::to_string(&((#expr) as usize))
-                            );
-                            __s.push('"');
-                        }
-                    } else {
-                        quote! {
-                            __s.push_str(
-                                &anchor_lang::__idl::string::ToString::to_string(&((#expr) as usize))
-                            );
-                        }
-                    }
-                }
+                Placeholder::ConstGeneric { expr } => quote! {
+                    __s.push('"');
+                    __s.push_str(
+                        &anchor_lang::__idl::format!("{:?}", (#expr))
+                            .replace('\\', "\\\\")
+                            .replace('"', "\\\"")
+                    );
+                    __s.push('"');
+                },
                 Placeholder::Name {
                     ty,
                     written,
@@ -1857,6 +1863,23 @@ mod tests {
             rust_type_to_idl_value(&plain),
             json!({ "defined": { "name": "Wrapper" } })
         );
+    }
+
+    #[test]
+    fn const_generic_literals_keep_their_declared_value() {
+        let mut lowerer = TypeLowerer::default();
+        for (source, expected) in [
+            ("true", "true"),
+            ("'x'", "'x'"),
+            ("-1", "-1"),
+            (
+                "340282366920938463463374607431768211455",
+                "340282366920938463463374607431768211455",
+            ),
+        ] {
+            let expr: Expr = syn::parse_str(source).unwrap();
+            assert_eq!(lowerer.lower_const_generic_value(&expr), json!(expected));
+        }
     }
 
     #[test]
