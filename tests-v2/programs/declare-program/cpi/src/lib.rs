@@ -57,12 +57,8 @@ pub mod declare_program {
             tag,
             owner: *ctx.accounts.authority.address(),
         };
-        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-        {
-            let mut data = FixedVec::<u8, 64>::new();
-            external_cpi::cpi::defined_args(cpi_ctx, args, &mut data)?;
-        }
-        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+        // `MyArgs` is fixed-size, so the IDL bounds it and both targets
+        // share one signature.
         external_cpi::cpi::defined_args(cpi_ctx, args)?;
         Ok(())
     }
@@ -127,6 +123,17 @@ pub struct ProxyHash {
     pub data: UncheckedAccount,
     pub authority: Signer,
     pub hash_program: UncheckedAccount,
+}
+
+/// `MemoArgs` holds `bytes`, so the IDL gives no bound and SBF callers
+/// still pass instruction data storage.
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
+pub fn memo_args_take_data_buffer<'a>(
+    ctx: CpiContext<'a, external::cpi::accounts::Memo<'a>, 1>,
+    args: external::MemoArgs<'_>,
+    data: &mut FixedVec<u8, 64>,
+) -> Result<()> {
+    external::cpi::memo(ctx, args, data)
 }
 
 #[cfg(feature = "cpi")]

@@ -18,6 +18,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 ### Fixes
 
 - ts: Recover the logs of failed version 1 transactions ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+- lang-v2: Size named IDL argument types from their definitions in `declare_program!`, so a fixed-size params struct gets a generated CPI buffer and the same `cpi::*` signature on SBF and the host ([#TBD](https://github.com/otter-sec/anchor/pull/TBD)).
 
 ### Breaking
 
