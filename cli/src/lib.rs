@@ -9003,6 +9003,11 @@ mod tests {
             result.is_err(),
             "a broken Anchor.toml must error, not silently fall back: {result:?}"
         );
+        let err = format!("{:?}", result.unwrap_err());
+        assert!(
+            err.contains("Anchor.toml"),
+            "the error must say which file is broken: {err}"
+        );
     }
 
     #[test]
