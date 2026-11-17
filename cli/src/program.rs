@@ -937,6 +937,9 @@ fn deploy_address_mismatch_warning(
     if declared == deploying {
         return None;
     }
+    // A custom cluster URL can carry an RPC provider key in its query string
+    // or path, so print only the scheme and host instead of the raw URL.
+    let cluster = redact_url(&cluster.to_string());
     Some(format!(
         "Warning: Anchor.toml declares program `{lib_name}` as {declared} for cluster {cluster}, \
          but this deploy will use {deploying}. Run `anchor keys sync` to adopt the deployed \
@@ -3011,6 +3014,27 @@ mod tests {
             deploy_address_mismatch_warning_for_config(Some(&cfg), "other_program", deploying),
             None
         );
+    }
+
+    #[test]
+    fn deploy_address_mismatch_warning_redacts_custom_cluster_url() {
+        let declared = Pubkey::new_unique();
+        let deploying = Pubkey::new_unique();
+        let cluster = Cluster::Custom(
+            "https://devnet.helius-rpc.com/?api-key=secret123".to_owned(),
+            "wss://devnet.helius-rpc.com/?api-key=secret123".to_owned(),
+        );
+        let warning =
+            deploy_address_mismatch_warning(declared, deploying, "my_program", &cluster).unwrap();
+        assert!(warning.contains("https://devnet.helius-rpc.com"));
+        assert!(!warning.contains("secret123"));
+        assert!(!warning.contains("api-key"));
+
+        // Named clusters print unchanged.
+        let warning =
+            deploy_address_mismatch_warning(declared, deploying, "my_program", &Cluster::Devnet)
+                .unwrap();
+        assert!(warning.contains("for cluster devnet,"));
     }
 
     #[test]
