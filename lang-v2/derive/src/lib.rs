@@ -5976,6 +5976,10 @@ fn bounded_serialized_len(ty: &Type) -> Option<TokenStream2> {
                     "u32" | "i32" | "f32" | "char" => Some(4),
                     "u64" | "i64" | "f64" => Some(8),
                     "u128" | "i128" => Some(16),
+                    // Bare `Address` is the spelling `use anchor_lang::prelude::*`
+                    // brings into scope; same 32-byte type the qualified
+                    // spellings in `is_canonical_address` name.
+                    "Address" => Some(32),
                     _ => None,
                 }
             } else if is_canonical_address(&path.path) {
@@ -9332,5 +9336,36 @@ mod tests {
                 .contains("let __bumps = OuterBumps { inner : __anchor_bump_cache_inner , } ;"),
             "expected final outer bumps assembly to include the nested bump cache: {generated}"
         );
+    }
+
+    fn bounded_len(ty: syn::Type) -> Option<String> {
+        bounded_serialized_len(&ty).map(|tokens| tokens.to_string())
+    }
+
+    #[test]
+    fn bounded_serialized_len_recognizes_bare_address() {
+        assert_eq!(
+            bounded_len(syn::parse_quote!(Address)),
+            Some("32usize".to_string()),
+            "bare `Address` from `use anchor_lang::prelude::*` is a 32-byte address"
+        );
+        assert_eq!(
+            bounded_len(syn::parse_quote!(anchor_lang::prelude::Address)),
+            Some("32usize".to_string())
+        );
+        assert_eq!(
+            bounded_len(syn::parse_quote!(Option<Address>)),
+            Some("1usize + (32usize)".to_string())
+        );
+        assert_eq!(
+            bounded_len(syn::parse_quote!([Address; 4])),
+            Some("(32usize) * (4)".to_string())
+        );
+    }
+
+    #[test]
+    fn bounded_serialized_len_still_rejects_user_types() {
+        assert_eq!(bounded_len(syn::parse_quote!(MyEnum)), None);
+        assert_eq!(bounded_len(syn::parse_quote!(Vec<u8>)), None);
     }
 }
