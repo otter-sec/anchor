@@ -460,7 +460,10 @@ export function decodeIdlAccountRaw(data: Buffer) {
   offset += 1;
 
   const format = data.readUInt8(offset) as Format;
-  if (format !== Format.Json) {
+  // `None` only means no format was set: the program-metadata CLI writes it
+  // when it can't tell the format from the file, and its `fetch` ignores the
+  // format. The data is still parsed as JSON.
+  if (format !== Format.Json && format !== Format.None) {
     throw new Error(
       `IDL has data format '${format}', only JSON IDLs (${Format.Json}) are supported`
     );

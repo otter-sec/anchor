@@ -5,11 +5,13 @@ import { deflateSync, gzipSync } from "zlib";
 import {
   DEFAULT_MAX_IDL_DATA_SIZE,
   FORMAT_JSON,
+  Format,
   Idl,
   MetadataCompression,
   MetadataEncoding,
   Program,
   decodeIdlAccount,
+  decodeIdlAccountRaw,
   idlAddress,
 } from "../src";
 
@@ -30,7 +32,8 @@ const BOMB_SIZE = DEFAULT_MAX_IDL_DATA_SIZE + 1024 * 1024;
 function metadataAccount(
   data: Buffer,
   compression: MetadataCompression,
-  encoding = MetadataEncoding.Utf8
+  encoding = MetadataEncoding.Utf8,
+  format = FORMAT_JSON
 ): Buffer {
   const header = Buffer.alloc(1 + 32 + 32 + 1 + 1 + 16 + 1 + 1 + 1 + 1);
   let offset = 0;
@@ -45,7 +48,7 @@ function metadataAccount(
   offset += 1;
   header.writeUInt8(compression, offset);
   offset += 1;
-  header.writeUInt8(FORMAT_JSON, offset);
+  header.writeUInt8(format, offset);
   offset += 1;
   header.writeUInt8(0, offset); // directly embedded data
 
@@ -65,9 +68,18 @@ function compress(data: Buffer, compression: MetadataCompression): Buffer {
   }
 }
 
-function idlAccount(idl: Idl, compression: MetadataCompression): Buffer {
+function idlAccount(
+  idl: Idl,
+  compression: MetadataCompression,
+  format = FORMAT_JSON
+): Buffer {
   const json = Buffer.from(JSON.stringify(idl));
-  return metadataAccount(compress(json, compression), compression);
+  return metadataAccount(
+    compress(json, compression),
+    compression,
+    MetadataEncoding.Utf8,
+    format
+  );
 }
 
 const bombs = new Map<MetadataCompression, Buffer>();
@@ -126,6 +138,54 @@ describe("decodeIdlAccount", () => {
   it.each(allCompressions)("decodes a normal %s IDL", (_, compression) => {
     expect(decodeIdlAccount(idlAccount(otherIdl, compression))).toEqual(
       otherIdl
+    );
+  });
+
+  // The program-metadata CLI writes `Format.None` when it can't tell the
+  // format from the file name, and many mainnet IDLs are stored that way.
+  it.each(allCompressions)(
+    "decodes a %s IDL without a format",
+    (_, compression) => {
+      const data = idlAccount(otherIdl, compression, Format.None);
+
+      expect(decodeIdlAccountRaw(data).format).toEqual(Format.None);
+      expect(decodeIdlAccount(data)).toEqual(otherIdl);
+    }
+  );
+
+  it("rejects an IDL without a format that isn't JSON", () => {
+    const data = metadataAccount(
+      Buffer.from("name: other"),
+      MetadataCompression.None,
+      MetadataEncoding.Utf8,
+      Format.None
+    );
+
+    expect(() => decodeIdlAccount(data)).toThrow(SyntaxError);
+  });
+
+  it.each([
+    ["YAML", Format.Yaml],
+    ["TOML", Format.Toml],
+    ["unknown", 4],
+  ])("rejects an IDL with the %s format", (_, format) => {
+    const data = idlAccount(otherIdl, MetadataCompression.Zlib, format);
+
+    expect(() => decodeIdlAccount(data)).toThrow(
+      `IDL has data format '${format}', only JSON IDLs (1) are supported`
+    );
+  });
+
+  it("stops inflating an IDL without a format at the default limit", () => {
+    const data = metadataAccount(
+      bomb(MetadataCompression.Zlib),
+      MetadataCompression.Zlib,
+      MetadataEncoding.Utf8,
+      Format.None
+    );
+
+    expect(() => decodeIdlAccount(data)).toThrow(
+      `Decompressed IDL data exceeds the maximum of ${DEFAULT_MAX_IDL_DATA_SIZE} bytes`
     );
   });
 
@@ -232,6 +292,24 @@ describe("Program.fetchIdl", () => {
           {
             owner: OTHER_PROGRAM_ID,
             data: idlAccount(otherIdl, MetadataCompression.Zlib),
+          },
+        ],
+      ])
+    );
+
+    await expect(
+      Program.fetchIdl(OTHER_PROGRAM_ID, provider as any)
+    ).resolves.toEqual(otherIdl);
+  });
+
+  it("fetches an IDL without a format", async () => {
+    const provider = mockProvider(
+      new Map([
+        [
+          idlAddress(OTHER_PROGRAM_ID).toBase58(),
+          {
+            owner: OTHER_PROGRAM_ID,
+            data: idlAccount(otherIdl, MetadataCompression.Zlib, Format.None),
           },
         ],
       ])
