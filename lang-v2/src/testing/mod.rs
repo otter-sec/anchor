@@ -1,10 +1,8 @@
 //! Test scaffolding for anchor-v2 unsafe code paths.
 //!
-//! Construct mock pinocchio types (`AccountView`, the SBF loader's
-//! serialized input buffer) on the stack so that integration tests can
-//! exercise the framework's `unsafe` code paths under Miri without
-//! booting an SVM. Used by the `miri_*` integration tests in
-//! `lang-v2/tests/`.
+//! Construct stack-backed mock `AccountView` values and host-only serialized
+//! SBF input buffers. Integration tests use these fixtures to exercise the
+//! framework's `unsafe` code paths under Miri without booting an SVM.
 //!
 //! ## Why a `pub` module rather than `tests/common/`
 //!
@@ -24,9 +22,9 @@
 //! lands upstream.
 
 pub mod account_buffer;
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 pub mod sbf_input_buffer;
 
-pub use {
-    account_buffer::{AccountBuffer, MIN_ACCOUNT_BUF},
-    sbf_input_buffer::{AccountRecord, SbfInputBuffer},
-};
+pub use account_buffer::{AccountBuffer, MIN_ACCOUNT_BUF};
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+pub use sbf_input_buffer::{AccountRecord, SbfInputBuffer};
