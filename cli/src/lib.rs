@@ -2141,12 +2141,7 @@ fn new(
                     .context("Failed to read Anchor.toml")?
                     .parse()
                     .context("Failed to parse Anchor.toml")?;
-                upsert_program_deployment(
-                    &mut doc,
-                    &cluster.to_string(),
-                    &name,
-                    &program_id.to_string(),
-                );
+                upsert_program_deployment(&mut doc, &cluster, &name, &program_id.to_string());
 
                 // anchor_version for [toolchain] in Anchor.toml
                 // v2 depends on `anchor-lang` from git, which has no version AVM can read, so use the CLI version.
@@ -6983,7 +6978,7 @@ fn set_string_value(table: &mut dyn toml_edit::TableLike, key: &str, value: Stri
 /// survive an `anchor new` in an existing workspace.
 fn upsert_program_deployment(
     doc: &mut toml_edit::Document,
-    cluster: &str,
+    cluster: &Cluster,
     name: &str,
     address: &str,
 ) {
@@ -6992,8 +6987,23 @@ fn upsert_program_deployment(
         .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
         .as_table_like_mut()
         .expect("programs must be a table");
+    // The section key is matched by parsed `Cluster`, not by string: the
+    // config parser accepts any spelling (`Devnet`, `DEVNET`, `d`, ...),
+    // while `cluster.to_string()` only produces the canonical lowercase
+    // form, so looking the key up by string would miss those spellings
+    // and create a duplicate section. When no section matches, fall back
+    // to the canonical spelling for the new section.
+    let cluster_key = programs
+        .iter()
+        .map(|(key, _)| key)
+        .find(|key| {
+            key.parse::<Cluster>()
+                .is_ok_and(|parsed| &parsed == cluster)
+        })
+        .map(str::to_owned)
+        .unwrap_or_else(|| cluster.to_string());
     let cluster_table = programs
-        .entry(cluster)
+        .entry(&cluster_key)
         .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
         .as_table_like_mut()
         .expect("programs.<cluster> must be a table");
@@ -9028,7 +9038,7 @@ mod tests {
         let mut doc: toml_edit::Document = before.parse().unwrap();
         upsert_program_deployment(
             &mut doc,
-            "localnet",
+            &Cluster::Localnet,
             "new_program",
             "11111111111111111111111111111111",
         );
@@ -9039,5 +9049,42 @@ mod tests {
         assert!(after.contains("my_program = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\""));
         assert!(after.contains("new_program = \"11111111111111111111111111111111\""));
         assert!(after.contains("[toolchain]\nanchor_version = \"0.32.1\""));
+    }
+
+    #[test]
+    fn test_anchor_new_upsert_matches_capitalized_cluster_section() {
+        let before =
+            "[programs.Devnet]\nmy_program = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n";
+        let mut doc: toml_edit::Document = before.parse().unwrap();
+        upsert_program_deployment(
+            &mut doc,
+            &Cluster::Devnet,
+            "new_program",
+            "11111111111111111111111111111111",
+        );
+
+        let after = doc.to_string();
+        // The new program lands in the existing section, keeping its
+        // original spelling, instead of creating a duplicate [programs.devnet].
+        assert!(after.contains("[programs.Devnet]"));
+        assert!(after.contains("new_program = \"11111111111111111111111111111111\""));
+        assert!(!after.contains("[programs.devnet]"));
+    }
+
+    #[test]
+    fn test_anchor_new_upsert_matches_short_cluster_section() {
+        let before = "[programs.d]\nmy_program = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n";
+        let mut doc: toml_edit::Document = before.parse().unwrap();
+        upsert_program_deployment(
+            &mut doc,
+            &Cluster::Devnet,
+            "new_program",
+            "11111111111111111111111111111111",
+        );
+
+        let after = doc.to_string();
+        assert!(after.contains("[programs.d]"));
+        assert!(after.contains("new_program = \"11111111111111111111111111111111\""));
+        assert!(!after.contains("[programs.devnet]"));
     }
 }
