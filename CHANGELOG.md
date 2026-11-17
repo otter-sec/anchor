@@ -18,7 +18,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 ### Fixes
 
 - ts: Recover the logs of failed version 1 transactions ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
-- lang-v2: Compile `declare_program!` for SBF when an instruction returns a fixed array, or a type holds a `vec`, `BTreeMap` or `BTreeSet` of types that borrow nothing ([#5300](https://github.com/otter-sec/anchor/issues/5300)).
+- lang-v2: Compile `declare_program!` for SBF when an instruction returns a fixed array, or a type holds a `vec`, `BTreeMap` or `BTreeSet` of types that borrow nothing ([#5320](https://github.com/otter-sec/anchor/pull/5320)).
 
 ### Breaking
 
