@@ -99,57 +99,57 @@ pub extern crate alloc as __alloc;
 #[doc(hidden)]
 pub use idl_support::{__idl, IdlEntries};
 
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
 #[macro_export]
 macro_rules! msg {
     ($message:expr) => {{
-        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-        {
-            let message: &str = $message;
-            // SAFETY: the syscall reads the string bytes during this call.
-            unsafe {
-                $crate::pinocchio::syscalls::sol_log_(message.as_ptr(), message.len() as u64);
-            }
+        let message: &str = $message;
+        // SAFETY: the syscall reads the string bytes during this call.
+        unsafe {
+            $crate::pinocchio::syscalls::sol_log_(message.as_ptr(), message.len() as u64);
         }
-        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-        $crate::solana_msg::msg!($message);
     }};
     ($($arg:tt)*) => {{
-        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-        {
-            struct LogWriter;
+        struct LogWriter;
 
-            impl core::fmt::Write for LogWriter {
-                fn write_str(&mut self, text: &str) -> core::fmt::Result {
-                    // Formatting can produce several chunks. Emit each chunk
-                    // directly so logging has no fixed-size scratch buffer.
-                    unsafe {
-                        $crate::pinocchio::syscalls::sol_log_(
-                            text.as_ptr(),
-                            text.len() as u64,
-                        );
-                    }
-                    Ok(())
+        impl core::fmt::Write for LogWriter {
+            fn write_str(&mut self, text: &str) -> core::fmt::Result {
+                // Formatting can produce several chunks. Emit each chunk
+                // directly so logging has no fixed-size scratch buffer.
+                unsafe {
+                    $crate::pinocchio::syscalls::sol_log_(text.as_ptr(), text.len() as u64);
                 }
+                Ok(())
             }
-
-            let _ = core::fmt::write(&mut LogWriter, core::format_args!($($arg)*));
         }
-        #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+
+        let _ = core::fmt::write(&mut LogWriter, core::format_args!($($arg)*));
+    }};
+}
+
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+#[macro_export]
+macro_rules! msg {
+    ($($arg:tt)*) => {{
         $crate::solana_msg::msg!($($arg)*);
     }};
 }
 
+/// V1-compatible logger. On SBF, formatting uses [`msg!`].
+#[cfg(all(feature = "compat", any(target_os = "solana", target_arch = "bpf")))]
+pub use crate::msg as debug;
+
 /// v1-compat logger with full `format!` support (`{:?}`, `{:x}`, etc.).
 ///
-/// Heap-allocates via `alloc::format!`. Prefer [`msg!`] for production
-/// (cheaper CUs). Gated behind `compat`.
+/// On SBF, formatted output uses [`msg!`]. Host formatting uses `alloc::format!`.
+/// Gated behind `compat`.
 ///
 /// # Example
 ///
 /// ```ignore
 /// debug!("raw bytes: {:?}", &data[..32]);
 /// ```
-#[cfg(feature = "compat")]
+#[cfg(all(feature = "compat", not(any(target_os = "solana", target_arch = "bpf"))))]
 #[macro_export]
 macro_rules! debug {
     ($msg:expr) => {{

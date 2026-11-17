@@ -6214,7 +6214,8 @@ fn process_handler(
             )
             .is_err()
             {
-                return anchor_lang::Error::InvalidInstructionData.into();
+                anchor_lang::msg!("Return data serialization failed");
+                return anchor_lang::Error::BorshIoError.into();
             }
             anchor_lang::pinocchio::cpi::set_return_data(__return_data.as_ref());
         }

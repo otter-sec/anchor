@@ -95,18 +95,6 @@ impl<T, const N: usize> FixedVec<T, N> {
     }
 
     #[inline]
-    pub(crate) fn resize(&mut self, len: usize, value: T)
-    where
-        T: Clone,
-    {
-        assert!(len <= N, "fixed vector capacity exceeded");
-        while self.len < len {
-            self.push(value.clone());
-        }
-        self.truncate(len);
-    }
-
-    #[inline]
     pub fn as_slice(&self) -> &[T] {
         unsafe { slice::from_raw_parts(self.data.as_ptr().cast(), self.len) }
     }
