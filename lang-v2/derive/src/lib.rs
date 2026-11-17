@@ -1802,6 +1802,61 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         })
         .collect();
 
+    // Same steps for the on-chain impl, writing into a `FixedVec` sized to
+    // HEADER_SIZE (one meta per field, nested structs included). The
+    // capacity is exact by construction, so the fallible pushes cannot
+    // overflow; `expect` only documents that invariant, as `PodVec` does.
+    let client_meta_steps_sbf: Vec<_> = field_kinds
+        .iter()
+        .map(|(field, _kind)| {
+            let writable = field.idl_writable;
+            let signer_expr = client_meta_signer_expr(field);
+            let field_ident = &field.name;
+            if nested_client_accounts_type(&field.ty).is_some() {
+                quote! {
+                    __metas
+                        .try_extend_from_slice(
+                            anchor_lang::ToAccountMetas::to_account_metas(
+                                #field_ident,
+                                _is_signer,
+                            )
+                            .as_ref(),
+                        )
+                        .expect("account metas exceeded the struct's fixed capacity");
+                }
+            } else if field.is_optional {
+                quote! {
+                    match #field_ident {
+                        Some(__addr) => __metas
+                            .try_push(anchor_lang::AccountMeta {
+                                pubkey: __addr,
+                                is_writable: #writable,
+                                is_signer: #signer_expr,
+                            })
+                            .expect("account metas exceeded the struct's fixed capacity"),
+                        None => __metas
+                            .try_push(anchor_lang::AccountMeta {
+                                pubkey: #accounts_program_id,
+                                is_writable: false,
+                                is_signer: false,
+                            })
+                            .expect("account metas exceeded the struct's fixed capacity"),
+                    }
+                }
+            } else {
+                quote! {
+                    __metas
+                        .try_push(anchor_lang::AccountMeta {
+                            pubkey: #field_ident,
+                            is_writable: #writable,
+                            is_signer: #signer_expr,
+                        })
+                        .expect("account metas exceeded the struct's fixed capacity");
+                }
+            }
+        })
+        .collect();
+
     // PDA finder functions for seed-bearing fields.
     let pda_fns: Vec<TokenStream2> = fields
         .iter()
@@ -1962,6 +2017,58 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         })
         .collect();
 
+    // On-chain mirror of `full_meta_steps` (see `client_meta_steps_sbf`).
+    let full_meta_steps_sbf: Vec<_> = fields
+        .iter()
+        .map(|field| {
+            let writable = field.idl_writable;
+            let signer_expr = client_meta_signer_expr(field);
+            let field_ident = &field.name;
+            if nested_client_accounts_type(&field.ty).is_some() {
+                quote! {
+                    __metas
+                        .try_extend_from_slice(
+                            anchor_lang::ToAccountMetas::to_account_metas(
+                                &self.#field_ident,
+                                _is_signer,
+                            )
+                            .as_ref(),
+                        )
+                        .expect("account metas exceeded the struct's fixed capacity");
+                }
+            } else if field.is_optional {
+                quote! {
+                    match self.#field_ident {
+                        Some(__addr) => __metas
+                            .try_push(anchor_lang::AccountMeta {
+                                pubkey: __addr,
+                                is_writable: #writable,
+                                is_signer: #signer_expr,
+                            })
+                            .expect("account metas exceeded the struct's fixed capacity"),
+                        None => __metas
+                            .try_push(anchor_lang::AccountMeta {
+                                pubkey: #accounts_program_id,
+                                is_writable: false,
+                                is_signer: false,
+                            })
+                            .expect("account metas exceeded the struct's fixed capacity"),
+                    }
+                }
+            } else {
+                quote! {
+                    __metas
+                        .try_push(anchor_lang::AccountMeta {
+                            pubkey: self.#field_ident,
+                            is_writable: #writable,
+                            is_signer: #signer_expr,
+                        })
+                        .expect("account metas exceeded the struct's fixed capacity");
+                }
+            }
+        })
+        .collect();
+
     let resolved_name = syn::Ident::new(&format!("{name}Resolved"), name.span());
 
     // --- CPI accounts struct (cross-program invocation, on-chain side) ---
@@ -2087,6 +2194,18 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 __metas
             }
         }
+        #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+        impl anchor_lang::ToAccountMetas for #resolved_name {
+            type Output =
+                anchor_lang::FixedVec<anchor_lang::AccountMeta, {#header_size_expr}>;
+            fn to_account_metas(&self, _is_signer: Option<bool>) -> Self::Output {
+                #(#required_locals)*
+                #(#derive_stmts)*
+                let mut __metas = anchor_lang::FixedVec::new();
+                #(#client_meta_steps_sbf)*
+                __metas
+            }
+        }
     };
 
     quote! {
@@ -2103,6 +2222,16 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 ) -> anchor_lang::__alloc::vec::Vec<anchor_lang::AccountMeta> {
                     let mut __metas = anchor_lang::__alloc::vec::Vec::new();
                     #(#full_meta_steps)*
+                    __metas
+                }
+            }
+            #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+            impl anchor_lang::ToAccountMetas for #name {
+                type Output =
+                    anchor_lang::FixedVec<anchor_lang::AccountMeta, {#header_size_expr}>;
+                fn to_account_metas(&self, _is_signer: Option<bool>) -> Self::Output {
+                    let mut __metas = anchor_lang::FixedVec::new();
+                    #(#full_meta_steps_sbf)*
                     __metas
                 }
             }
@@ -8896,6 +9025,56 @@ mod tests {
         assert!(
             override_generated.contains("declared :: ID"),
             "#[accounts_program_id] should flow into the exposed const: {override_generated}"
+        );
+    }
+
+    #[test]
+    fn client_accounts_emit_on_chain_to_account_metas() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            pub struct Outer {
+                pub authority: anchor_lang::accounts::UncheckedAccount,
+                pub optional: Option<anchor_lang::accounts::UncheckedAccount>,
+                pub inner: anchor_lang::Nested<Inner>,
+            }
+        };
+
+        let generated = impl_accounts(&input).to_string();
+
+        // The whole expansion, including both cfg-gated impls, must be
+        // syntactically valid Rust.
+        syn::parse_file(&generated).expect("generated client accounts code should parse");
+
+        // Both client structs (full and resolved) gain an SBF impl returning
+        // a FixedVec sized to the flattened account count: 2 direct fields
+        // plus the nested struct's HEADER_SIZE.
+        assert_eq!(
+            generated
+                .matches("anchor_lang :: FixedVec < anchor_lang :: AccountMeta")
+                .count(),
+            2,
+            "expected an on-chain ToAccountMetas impl for both client structs: {generated}"
+        );
+        assert!(
+            generated.contains("2usize + < Inner as anchor_lang :: TryAccounts > :: HEADER_SIZE"),
+            "expected the FixedVec capacity to sum direct fields and nested HEADER_SIZE: \
+             {generated}"
+        );
+        assert!(
+            generated.contains("target_os = \"solana\""),
+            "expected the on-chain impl to be cfg-gated on target_os solana: {generated}"
+        );
+        assert!(
+            generated.contains("try_push"),
+            "expected the on-chain impl to use the fallible FixedVec push: {generated}"
+        );
+        assert!(
+            generated.contains("try_extend_from_slice"),
+            "expected nested accounts to extend the fixed buffer: {generated}"
+        );
+        // The off-chain Vec impl is untouched.
+        assert!(
+            generated.contains("__metas . push"),
+            "expected the off-chain impl to keep pushing into a Vec: {generated}"
         );
     }
 
