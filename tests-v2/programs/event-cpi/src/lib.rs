@@ -20,6 +20,26 @@ pub struct EventCpiLarge {
     pub payload: [u8; 16],
 }
 
+#[event]
+pub struct EventCpiPreludeAddress {
+    pub authority: Address,
+    pub value: u64,
+}
+
+/// A local `Address` that shadows the prelude one with a 64-byte encoding.
+/// `#[event]` reads the bare name as 32 bytes, so the bound is too small.
+pub mod shadowed {
+    use anchor_lang::prelude::{event, AnchorDeserialize, AnchorSerialize, IdlType};
+
+    #[derive(AnchorSerialize, AnchorDeserialize, IdlType)]
+    pub struct Address(pub [u8; 64]);
+
+    #[event]
+    pub struct EventCpiShadowedAddress {
+        pub authority: Address,
+    }
+}
+
 #[program]
 pub mod event_cpi_test {
     use super::*;
@@ -50,6 +70,47 @@ pub mod event_cpi_test {
         );
         require!(storage.is_empty(), Error::InvalidInstructionData);
         ctx.accounts.counter.value = 2;
+        Ok(())
+    }
+
+    #[discrim = 3]
+    pub fn emit_prelude_address(ctx: &mut Context<EmitOnce>, authority: Address) -> Result<()> {
+        emit!(EventCpiPreludeAddress {
+            authority,
+            value: 3
+        });
+        emit_cpi!(EventCpiPreludeAddress {
+            authority,
+            value: 3
+        });
+        ctx.accounts.counter.value = 3;
+        Ok(())
+    }
+
+    #[discrim = 4]
+    pub fn emit_shadowed_address_overflows(ctx: &mut Context<EmitOnce>) -> Result<()> {
+        use shadowed::{Address, EventCpiShadowedAddress};
+        let logged = (|| -> Result<()> {
+            emit!(EventCpiShadowedAddress {
+                authority: Address([7; 64])
+            });
+            Ok(())
+        })();
+        require!(
+            matches!(logged, Err(Error::InvalidInstructionData)),
+            Error::InvalidInstructionData
+        );
+        let invoked = (|| -> Result<()> {
+            emit_cpi!(EventCpiShadowedAddress {
+                authority: Address([7; 64])
+            });
+            Ok(())
+        })();
+        require!(
+            matches!(invoked, Err(Error::InvalidInstructionData)),
+            Error::InvalidInstructionData
+        );
+        ctx.accounts.counter.value = 4;
         Ok(())
     }
 

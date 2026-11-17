@@ -4,6 +4,21 @@ use crate::{Discriminator, FixedVec};
 pub const EVENT_IX_TAG: u64 = 0x1d9acb512ea545e4;
 pub const EVENT_IX_TAG_LE: &[u8] = &EVENT_IX_TAG.to_le_bytes();
 
+/// Bound that `emit!(event)` and `emit_cpi!(event)` require when `#[event]`
+/// cannot bound the serialized length of every field. No type implements
+/// it, so those calls fail to compile with the message below.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "event `{Self}` has no serialized size bound, so `emit!(event)` and \
+               `emit_cpi!(event)` cannot size its buffer",
+    label = "this call needs a caller buffer",
+    note = "pass a buffer: `emit_cpi!(event, &mut storage)` or `emit!(event, &mut storage)`, \
+            where `storage` is a `FixedVec<u8, N>` large enough for the event",
+    note = "`#[event]` bounds primitives, `Address`, `Pubkey`, arrays, tuples, `Option` and \
+            `FixedVec` of those, but not user types"
+)]
+pub trait EventSizeBound<R> {}
+
 /// Trait for event structs. Implemented by the `#[event]` attribute macro.
 ///
 /// The optional `#[event(name = "...")]` argument overrides the event's
