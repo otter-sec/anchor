@@ -82,6 +82,8 @@ where
         self
     }
 
+    /// Add remaining accounts without changing the total CPI capacity `N`.
+    /// Use `new_with_capacity` to reserve space for declared and remaining accounts.
     #[must_use]
     pub fn with_remaining_accounts(mut self, ra: crate::CpiHandleBuffer<'a, N>) -> Self {
         self.remaining_accounts = ra;
