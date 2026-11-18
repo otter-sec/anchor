@@ -32,7 +32,7 @@ where
     T: ToCpiAccountsWithCapacity<'a, N>,
 {
     pub accounts: T,
-    pub remaining_accounts: crate::CpiHandleBuffer<'a, N>,
+    pub remaining_accounts: &'a [CpiHandle<'a>],
     pub program: &'a Address,
     pub signer_seeds: &'a [&'a [&'a [u8]]],
 }
@@ -47,7 +47,7 @@ where
         Self {
             accounts,
             program,
-            remaining_accounts: crate::CpiHandleBuffer::new(),
+            remaining_accounts: &[],
             signer_seeds: &[],
         }
     }
@@ -61,7 +61,7 @@ where
         Self {
             accounts,
             program,
-            remaining_accounts: crate::CpiHandleBuffer::new(),
+            remaining_accounts: &[],
             signer_seeds,
         }
     }
@@ -72,9 +72,15 @@ where
         self
     }
 
+    /// Borrow remaining CPI handles from caller-owned storage.
+    ///
+    /// The slice can come from an array, a buffer of any capacity, or a split
+    /// of another slice. Its storage must remain alive through the invocation.
+    /// `N` must cover the named and remaining accounts together. Invocation
+    /// returns `InvalidArgument` if that capacity is exceeded.
     #[must_use]
-    pub fn with_remaining_accounts(mut self, ra: crate::CpiHandleBuffer<'a, N>) -> Self {
-        self.remaining_accounts = ra;
+    pub fn with_remaining_accounts(mut self, accounts: &'a [CpiHandle<'a>]) -> Self {
+        self.remaining_accounts = accounts;
         self
     }
 
@@ -90,7 +96,7 @@ where
 
         // Append remaining accounts using the handle's writable/signer flags
         // so PDA remaining accounts marked with `as_signer()` emit signer metas.
-        for handle in &self.remaining_accounts {
+        for handle in self.remaining_accounts {
             instruction_accounts
                 .try_push(InstructionAccount::new(
                     handle.address(),
@@ -190,7 +196,7 @@ where
         );
 
         let mut handles = self.accounts.to_cpi_handles_with_capacity()?;
-        for handle in &self.remaining_accounts {
+        for handle in self.remaining_accounts {
             handles
                 .try_push(*handle)
                 .map_err(|_| ProgramError::InvalidArgument)?;

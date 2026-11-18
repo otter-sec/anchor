@@ -136,12 +136,12 @@ pub fn harvest_withheld_tokens_to_mint<'a, const N: usize>(
             .try_push(source.into())
             .map_err(|_| ProgramError::InvalidArgument)?;
     }
-    for account in &ctx.remaining_accounts {
+    for account in ctx.remaining_accounts {
         remaining_accounts
             .try_push(*account)
             .map_err(|_| ProgramError::InvalidArgument)?;
     }
-    let ctx = ctx.with_remaining_accounts(remaining_accounts);
+    let ctx = ctx.with_remaining_accounts(&remaining_accounts);
     ctx.invoke_ix(ix)
 }
 
@@ -189,11 +189,11 @@ pub fn withdraw_withheld_tokens_from_accounts<'a, const N: usize>(
             .try_push(source.into())
             .map_err(|_| ProgramError::InvalidArgument)?;
     }
-    for account in &ctx.remaining_accounts {
+    for account in ctx.remaining_accounts {
         remaining_accounts
             .try_push(*account)
             .map_err(|_| ProgramError::InvalidArgument)?;
     }
-    let ctx = ctx.with_remaining_accounts(remaining_accounts);
+    let ctx = ctx.with_remaining_accounts(&remaining_accounts);
     ctx.invoke_ix(ix)
 }

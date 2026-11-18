@@ -505,6 +505,63 @@ fn invoke_ix_allows_signer_meta_without_tx_signer_when_seeds_are_supplied() {
 }
 
 #[test]
+fn remaining_account_slice_overflow_returns_invalid_argument() {
+    let buffer = account_view([1; 32], false);
+    let view = unsafe { buffer.view() };
+    let remaining = [view.to_cpi_handle(); 2];
+    let context = CpiContext::<_, 2>::new(
+        &ID,
+        ReadonlyCpi {
+            account: view.to_cpi_handle(),
+        },
+    )
+    .with_remaining_accounts(&remaining);
+    let instruction = Instruction {
+        program_id: ID,
+        accounts: vec![AccountMeta::new_readonly(*view.address(), false); 3],
+        data: vec![],
+    };
+
+    assert_eq!(context.invoke(&[]), Err(ProgramError::InvalidArgument));
+    assert_eq!(
+        context.invoke_ix(instruction),
+        Err(ProgramError::InvalidArgument)
+    );
+}
+
+#[test]
+fn remaining_account_slice_keeps_borrow_validation() {
+    let named_buffer = account_view([1; 32], false);
+    let remaining_buffer = account_view([2; 32], true);
+    let named_view = unsafe { named_buffer.view() };
+    let mut remaining_view = unsafe { remaining_buffer.view() };
+    let alias = remaining_view;
+    let _borrow = alias.try_borrow().unwrap();
+    let remaining = [CpiHandle::writable(&mut remaining_view)];
+    let context = CpiContext::<_, 2>::new(
+        &ID,
+        ReadonlyCpi {
+            account: named_view.to_cpi_handle(),
+        },
+    )
+    .with_remaining_accounts(&remaining);
+    let instruction = Instruction {
+        program_id: ID,
+        accounts: vec![
+            AccountMeta::new_readonly(*named_view.address(), false),
+            AccountMeta::new(*alias.address(), false),
+        ],
+        data: vec![],
+    };
+
+    assert_eq!(context.invoke(&[]), Err(ProgramError::AccountBorrowFailed));
+    assert_eq!(
+        context.invoke_ix(instruction),
+        Err(ProgramError::AccountBorrowFailed)
+    );
+}
+
+#[test]
 fn invoke_remaining_pda_as_signer_with_seeds() {
     let program = ID;
     let typed_buffer = account_view([1; 32], false);
@@ -520,7 +577,7 @@ fn invoke_remaining_pda_as_signer_with_seeds() {
         .try_push(CpiHandle::readonly(&remaining_view).as_signer())
         .is_ok());
     CpiContext::<_, 3>::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
-        .with_remaining_accounts(remaining_accounts)
+        .with_remaining_accounts(&remaining_accounts)
         .invoke(&[])
         .unwrap();
 }

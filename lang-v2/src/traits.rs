@@ -118,7 +118,7 @@ impl<'a> CpiHandle<'a> {
     /// Mark this handle as a signer for CPI account metas.
     ///
     /// Transaction signers are already detected from the view. Use this for
-    /// PDA remaining accounts: `with_remaining_accounts` copies
+    /// PDA remaining accounts: `CpiContext::invoke` copies
     /// [`CpiHandle::is_signer`] onto each remaining `InstructionAccount`, and
     /// `invoke_signed` still requires matching [`crate::CpiContext::with_signer`]
     /// seeds at runtime.
