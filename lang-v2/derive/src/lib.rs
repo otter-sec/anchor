@@ -979,6 +979,97 @@ fn client_meta_signer_expr(field: &parse::AccountField) -> TokenStream2 {
     }
 }
 
+/// Emit the `to_account_metas` body steps shared by the full client
+/// accounts struct and its `Resolved` sibling, on- and off-chain.
+///
+/// `value` maps a field name to the expression holding its value, and
+/// `nested` to the argument passed to a nested struct's `to_account_metas`:
+/// the `Resolved` struct reads its locals (nested ones already as
+/// references), the full struct reads through `self` and borrows nested
+/// structs. `sbf` selects the fallible `FixedVec` pushes used on-chain over
+/// the infallible `Vec` ones used off-chain; the capacity is exact by
+/// construction, so the fallible pushes cannot overflow and `expect` only
+/// documents that invariant, as `PodVec` does.
+fn account_meta_steps<'a>(
+    fields: impl IntoIterator<Item = &'a parse::AccountField>,
+    value: impl Fn(&syn::Ident) -> TokenStream2,
+    nested: impl Fn(&syn::Ident) -> TokenStream2,
+    program_id: &syn::Expr,
+    sbf: bool,
+) -> Vec<TokenStream2> {
+    // Push / extend helpers so the Vec and FixedVec forms differ only in
+    // the fallible call plus the capacity `expect`.
+    let push_meta = |meta: TokenStream2| -> TokenStream2 {
+        if sbf {
+            quote! {
+                __metas
+                    .try_push(#meta)
+                    .expect("account metas exceeded the struct's fixed capacity")
+            }
+        } else {
+            quote! { __metas.push(#meta) }
+        }
+    };
+    let extend_metas = |metas: TokenStream2| -> TokenStream2 {
+        if sbf {
+            quote! {
+                __metas
+                    .try_extend_from_slice(#metas)
+                    .expect("account metas exceeded the struct's fixed capacity")
+            }
+        } else {
+            quote! { __metas.extend_from_slice(#metas) }
+        }
+    };
+    fields
+        .into_iter()
+        .map(|field| {
+            let writable = field.idl_writable;
+            let signer_expr = client_meta_signer_expr(field);
+            let field_ident = &field.name;
+            if nested_client_accounts_type(&field.ty).is_some() {
+                let arg = nested(field_ident);
+                let extend = extend_metas(quote! {
+                    anchor_lang::ToAccountMetas::to_account_metas(#arg, _is_signer).as_ref()
+                });
+                quote! { #extend; }
+            } else if field.is_optional {
+                let value_expr = value(field_ident);
+                let some = push_meta(quote! {
+                    anchor_lang::AccountMeta {
+                        pubkey: __addr,
+                        is_writable: #writable,
+                        is_signer: #signer_expr,
+                    }
+                });
+                let none = push_meta(quote! {
+                    anchor_lang::AccountMeta {
+                        pubkey: #program_id,
+                        is_writable: false,
+                        is_signer: false,
+                    }
+                });
+                quote! {
+                    match #value_expr {
+                        Some(__addr) => #some,
+                        None => #none,
+                    }
+                }
+            } else {
+                let value_expr = value(field_ident);
+                let push = push_meta(quote! {
+                    anchor_lang::AccountMeta {
+                        pubkey: #value_expr,
+                        is_writable: #writable,
+                        is_signer: #signer_expr,
+                    }
+                });
+                quote! { #push; }
+            }
+        })
+        .collect()
+}
+
 fn cpi_meta_signer_expr(field: &parse::AccountField) -> TokenStream2 {
     let init_signer = field.idl_init_signer;
     match idl_field_ty(field) {
@@ -1762,100 +1853,25 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Build AccountMeta entries in original field order, using bare idents.
-    let client_meta_steps: Vec<_> = field_kinds
-        .iter()
-        .map(|(field, _kind)| {
-            let writable = field.idl_writable;
-            let signer_expr = client_meta_signer_expr(field);
-            let field_ident = &field.name;
-            if nested_client_accounts_type(&field.ty).is_some() {
-                quote! {
-                    __metas.extend_from_slice(
-                        anchor_lang::ToAccountMetas::to_account_metas(#field_ident, _is_signer)
-                            .as_ref(),
-                    );
-                }
-            } else if field.is_optional {
-                quote! {
-                    match #field_ident {
-                        Some(__addr) => __metas.push(anchor_lang::AccountMeta {
-                            pubkey: __addr,
-                            is_writable: #writable,
-                            is_signer: #signer_expr,
-                        }),
-                        None => __metas.push(anchor_lang::AccountMeta {
-                            pubkey: #accounts_program_id,
-                            is_writable: false,
-                            is_signer: false,
-                        }),
-                    }
-                }
-            } else {
-                quote! {
-                    __metas.push(anchor_lang::AccountMeta {
-                        pubkey: #field_ident,
-                        is_writable: #writable,
-                        is_signer: #signer_expr,
-                    });
-                }
-            }
-        })
-        .collect();
+    // The Resolved struct's locals already hold references for nested
+    // structs, so both accessors are the bare ident.
+    let client_meta_steps = account_meta_steps(
+        field_kinds.iter().map(|(field, _)| *field),
+        |ident| quote! { #ident },
+        |ident| quote! { #ident },
+        &accounts_program_id,
+        false,
+    );
 
     // Same steps for the on-chain impl, writing into a `FixedVec` sized to
-    // HEADER_SIZE (one meta per field, nested structs included). The
-    // capacity is exact by construction, so the fallible pushes cannot
-    // overflow; `expect` only documents that invariant, as `PodVec` does.
-    let client_meta_steps_sbf: Vec<_> = field_kinds
-        .iter()
-        .map(|(field, _kind)| {
-            let writable = field.idl_writable;
-            let signer_expr = client_meta_signer_expr(field);
-            let field_ident = &field.name;
-            if nested_client_accounts_type(&field.ty).is_some() {
-                quote! {
-                    __metas
-                        .try_extend_from_slice(
-                            anchor_lang::ToAccountMetas::to_account_metas(
-                                #field_ident,
-                                _is_signer,
-                            )
-                            .as_ref(),
-                        )
-                        .expect("account metas exceeded the struct's fixed capacity");
-                }
-            } else if field.is_optional {
-                quote! {
-                    match #field_ident {
-                        Some(__addr) => __metas
-                            .try_push(anchor_lang::AccountMeta {
-                                pubkey: __addr,
-                                is_writable: #writable,
-                                is_signer: #signer_expr,
-                            })
-                            .expect("account metas exceeded the struct's fixed capacity"),
-                        None => __metas
-                            .try_push(anchor_lang::AccountMeta {
-                                pubkey: #accounts_program_id,
-                                is_writable: false,
-                                is_signer: false,
-                            })
-                            .expect("account metas exceeded the struct's fixed capacity"),
-                    }
-                }
-            } else {
-                quote! {
-                    __metas
-                        .try_push(anchor_lang::AccountMeta {
-                            pubkey: #field_ident,
-                            is_writable: #writable,
-                            is_signer: #signer_expr,
-                        })
-                        .expect("account metas exceeded the struct's fixed capacity");
-                }
-            }
-        })
-        .collect();
+    // HEADER_SIZE (one meta per field, nested structs included).
+    let client_meta_steps_sbf = account_meta_steps(
+        field_kinds.iter().map(|(field, _)| *field),
+        |ident| quote! { #ident },
+        |ident| quote! { #ident },
+        &accounts_program_id,
+        true,
+    );
 
     // PDA finder functions for seed-bearing fields.
     let pda_fns: Vec<TokenStream2> = fields
@@ -1974,100 +1990,22 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Full struct to_account_metas: straightforward self.field access.
-    let full_meta_steps: Vec<_> = fields
-        .iter()
-        .map(|field| {
-            let writable = field.idl_writable;
-            let signer_expr = client_meta_signer_expr(field);
-            let field_ident = &field.name;
-            if nested_client_accounts_type(&field.ty).is_some() {
-                quote! {
-                    __metas.extend_from_slice(
-                        anchor_lang::ToAccountMetas::to_account_metas(
-                            &self.#field_ident,
-                            _is_signer,
-                        )
-                        .as_ref(),
-                    );
-                }
-            } else if field.is_optional {
-                quote! {
-                    match self.#field_ident {
-                        Some(__addr) => __metas.push(anchor_lang::AccountMeta {
-                            pubkey: __addr,
-                            is_writable: #writable,
-                            is_signer: #signer_expr,
-                        }),
-                        None => __metas.push(anchor_lang::AccountMeta {
-                            pubkey: #accounts_program_id,
-                            is_writable: false,
-                            is_signer: false,
-                        }),
-                    }
-                }
-            } else {
-                quote! {
-                    __metas.push(anchor_lang::AccountMeta {
-                        pubkey: self.#field_ident,
-                        is_writable: #writable,
-                        is_signer: #signer_expr,
-                    });
-                }
-            }
-        })
-        .collect();
+    let full_meta_steps = account_meta_steps(
+        fields.iter(),
+        |ident| quote! { self.#ident },
+        |ident| quote! { &self.#ident },
+        &accounts_program_id,
+        false,
+    );
 
-    // On-chain mirror of `full_meta_steps` (see `client_meta_steps_sbf`).
-    let full_meta_steps_sbf: Vec<_> = fields
-        .iter()
-        .map(|field| {
-            let writable = field.idl_writable;
-            let signer_expr = client_meta_signer_expr(field);
-            let field_ident = &field.name;
-            if nested_client_accounts_type(&field.ty).is_some() {
-                quote! {
-                    __metas
-                        .try_extend_from_slice(
-                            anchor_lang::ToAccountMetas::to_account_metas(
-                                &self.#field_ident,
-                                _is_signer,
-                            )
-                            .as_ref(),
-                        )
-                        .expect("account metas exceeded the struct's fixed capacity");
-                }
-            } else if field.is_optional {
-                quote! {
-                    match self.#field_ident {
-                        Some(__addr) => __metas
-                            .try_push(anchor_lang::AccountMeta {
-                                pubkey: __addr,
-                                is_writable: #writable,
-                                is_signer: #signer_expr,
-                            })
-                            .expect("account metas exceeded the struct's fixed capacity"),
-                        None => __metas
-                            .try_push(anchor_lang::AccountMeta {
-                                pubkey: #accounts_program_id,
-                                is_writable: false,
-                                is_signer: false,
-                            })
-                            .expect("account metas exceeded the struct's fixed capacity"),
-                    }
-                }
-            } else {
-                quote! {
-                    __metas
-                        .try_push(anchor_lang::AccountMeta {
-                            pubkey: self.#field_ident,
-                            is_writable: #writable,
-                            is_signer: #signer_expr,
-                        })
-                        .expect("account metas exceeded the struct's fixed capacity");
-                }
-            }
-        })
-        .collect();
+    // On-chain mirror of `full_meta_steps`.
+    let full_meta_steps_sbf = account_meta_steps(
+        fields.iter(),
+        |ident| quote! { self.#ident },
+        |ident| quote! { &self.#ident },
+        &accounts_program_id,
+        true,
+    );
 
     let resolved_name = syn::Ident::new(&format!("{name}Resolved"), name.span());
 
