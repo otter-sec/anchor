@@ -187,7 +187,7 @@ pub fn initialize_account<'a>(
 }
 
 pub fn initialize_account3<'a>(
-    ctx: CpiContext<'a, InitializeAccount3<'a>, 3>,
+    ctx: CpiContext<'a, InitializeAccount3<'a>, 2>,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::initialize_account3(
         ctx.program,

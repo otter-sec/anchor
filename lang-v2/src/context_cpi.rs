@@ -21,7 +21,7 @@ use {
 ///     data_acc: ctx.accounts.data_acc.cpi_handle_mut(),
 ///     authority: ctx.accounts.authority.cpi_handle(),
 /// };
-/// let cpi_ctx = CpiContext::<_, 2>::new(
+/// let cpi_ctx = CpiContext::new(
 ///     ctx.accounts.callee.address(),
 ///     cpi_accounts,
 /// );
@@ -41,9 +41,21 @@ impl<'a, T, const N: usize> CpiContext<'a, T, N>
 where
     T: ToCpiAccountsWithCapacity<'a, N>,
 {
-    /// Construct a CPI context with an explicitly selected inline capacity.
+    /// Construct a CPI context with the account layout's inferred capacity.
     #[must_use]
-    pub fn new(program: &'a Address, accounts: T) -> Self {
+    pub fn new(program: &'a Address, accounts: T) -> Self
+    where
+        T: crate::CpiAccountCount<N>,
+    {
+        Self::new_with_capacity(program, accounts)
+    }
+
+    /// Construct a CPI context with a caller-selected total capacity.
+    ///
+    /// Use this for remaining accounts, handwritten account conversions, or
+    /// nested layouts whose count depends on generic type or const arguments.
+    #[must_use]
+    pub fn new_with_capacity(program: &'a Address, accounts: T) -> Self {
         Self {
             accounts,
             program,
@@ -54,6 +66,19 @@ where
 
     #[must_use]
     pub fn new_with_signer(
+        program: &'a Address,
+        accounts: T,
+        signer_seeds: &'a [&'a [&'a [u8]]],
+    ) -> Self
+    where
+        T: crate::CpiAccountCount<N>,
+    {
+        Self::new_with_signer_and_capacity(program, accounts, signer_seeds)
+    }
+
+    /// Construct a signed CPI context with a caller-selected total capacity.
+    #[must_use]
+    pub fn new_with_signer_and_capacity(
         program: &'a Address,
         accounts: T,
         signer_seeds: &'a [&'a [&'a [u8]]],

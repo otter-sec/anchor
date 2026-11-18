@@ -387,9 +387,9 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
                     )
                     .to_compile_error();
                 }
-                cpi_fields.push((ident, CpiFieldKind::Readonly, quote! { false }));
+                cpi_fields.push((ident, CpiFieldKind::Readonly, quote! { false }, &field.ty));
             }
-            cpi_fields.push((ident, kind, signer.expr));
+            cpi_fields.push((ident, kind, signer.expr, &field.ty));
         }
     }
 
@@ -402,7 +402,75 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
     };
 
     let name = &input.ident;
-    let (_, ty_generics, _) = input.generics.split_for_impl();
+    let (count_impl_generics, ty_generics, count_where_clause) = input.generics.split_for_impl();
+    let generic_names: Vec<_> = input
+        .generics
+        .params
+        .iter()
+        .filter_map(|param| match param {
+            GenericParam::Type(param) => Some(param.ident.to_string()),
+            GenericParam::Const(param) => Some(param.ident.to_string()),
+            GenericParam::Lifetime(_) => None,
+        })
+        .collect();
+    let lifetime_names: Vec<_> = input
+        .generics
+        .lifetimes()
+        .map(|param| param.lifetime.ident.to_string())
+        .collect();
+
+    // A const argument cannot mention the impl's generic lifetimes. Erasing
+    // them is valid for account counts; type-dependent nested layouts keep
+    // their existing caller-selected capacity instead.
+    struct CountType<'a> {
+        generic_names: &'a [String],
+        lifetime_names: &'a [String],
+        depends_on_generic: bool,
+    }
+    impl syn::visit_mut::VisitMut for CountType<'_> {
+        fn visit_path_mut(&mut self, path: &mut syn::Path) {
+            if path.leading_colon.is_none() {
+                self.depends_on_generic |= path.segments.first().is_some_and(|segment| {
+                    self.generic_names.contains(&segment.ident.to_string())
+                });
+            }
+            syn::visit_mut::visit_path_mut(self, path);
+        }
+
+        fn visit_lifetime_mut(&mut self, lifetime: &mut syn::Lifetime) {
+            if self.lifetime_names.contains(&lifetime.ident.to_string()) {
+                *lifetime = syn::Lifetime::new("'static", lifetime.ident.span());
+            }
+        }
+    }
+
+    let mut default_count = quote! { 0usize };
+    let mut infer_capacity = true;
+    for (_, kind, _, ty) in &cpi_fields {
+        if matches!(kind, CpiFieldKind::Nested) {
+            let mut count_ty = (*ty).clone();
+            let mut visitor = CountType {
+                generic_names: &generic_names,
+                lifetime_names: &lifetime_names,
+                depends_on_generic: false,
+            };
+            syn::visit_mut::VisitMut::visit_type_mut(&mut visitor, &mut count_ty);
+            infer_capacity &= !visitor.depends_on_generic;
+            default_count = quote! {
+                #default_count
+                    + <#count_ty as anchor_lang::CpiAccountCount<_>>::ACCOUNT_COUNT
+            };
+        } else {
+            default_count = quote! { #default_count + 1usize };
+        }
+    }
+    let default_capacity_impl = infer_capacity.then(|| {
+        quote! {
+            impl #count_impl_generics anchor_lang::CpiAccountCount<{ #default_count }>
+                for #name #ty_generics #count_where_clause
+            {}
+        }
+    });
     let cpi_capacity = Ident::new("__ANCHOR_CPI_CAPACITY", Span::call_site());
     let mut cpi_generics = input.generics.clone();
     cpi_generics.params.push(GenericParam::Const(parse_quote!(
@@ -410,7 +478,7 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
     )));
     let (impl_generics, _, where_clause) = cpi_generics.split_for_impl();
 
-    let meta_steps = cpi_fields.iter().map(|(ident, kind, signer)| {
+    let meta_steps = cpi_fields.iter().map(|(ident, kind, signer, _)| {
         let writable = matches!(
             kind,
             CpiFieldKind::Writable | CpiFieldKind::OptionalWritable
@@ -456,7 +524,7 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         }
     });
 
-    let handle_steps = cpi_fields.iter().map(|(ident, kind, _)| match kind {
+    let handle_steps = cpi_fields.iter().map(|(ident, kind, _, _)| match kind {
         CpiFieldKind::Phantom => quote! {},
         CpiFieldKind::Nested => quote! {
             __handles
@@ -491,7 +559,7 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         },
     });
 
-    let flag_steps = cpi_fields.iter().map(|(ident, kind, _)| match kind {
+    let flag_steps = cpi_fields.iter().map(|(ident, kind, _, _)| match kind {
         CpiFieldKind::Phantom => quote! {},
         CpiFieldKind::Nested => quote! {
             __flags
@@ -513,6 +581,8 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
     });
 
     quote! {
+        #default_capacity_impl
+
         impl #impl_generics anchor_lang::ToCpiAccountsWithCapacity<#cpi_lifetime, #cpi_capacity>
             for #name #ty_generics #where_clause
         {
@@ -8060,6 +8130,8 @@ pub fn emit_cpi(input: TokenStream) -> TokenStream {
             struct __AnchorEventCpiAccounts<'a> {
                 event_authority: anchor_lang::CpiHandle<'a>,
             }
+
+            impl anchor_lang::CpiAccountCount<1> for __AnchorEventCpiAccounts<'_> {}
 
             impl<'a, const N: usize> anchor_lang::ToCpiAccountsWithCapacity<'a, N>
                 for __AnchorEventCpiAccounts<'a>

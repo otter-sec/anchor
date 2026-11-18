@@ -287,6 +287,19 @@ pub trait ToCpiAccountsWithCapacity<'a, const N: usize> {
     ) -> Result<crate::FixedVec<bool, N>, ProgramError>;
 }
 
+/// The exact number of instruction-account slots in a fixed CPI layout.
+///
+/// Derived by [`crate::ToCpiAccounts`] so [`crate::CpiContext::new`] can infer
+/// its capacity. Optional sentinels and duplicate metas occupy slots too.
+/// Explicit-capacity constructors only require [`ToCpiAccountsWithCapacity`].
+/// Concrete nested layouts used by the derive must provide this metadata too.
+/// Type- or const-dependent nested layouts use explicit-capacity constructors.
+/// Handwritten implementations should select one count and retain its default
+/// `ACCOUNT_COUNT` value.
+pub trait CpiAccountCount<const N: usize> {
+    const ACCOUNT_COUNT: usize = N;
+}
+
 pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     type Data;
 
