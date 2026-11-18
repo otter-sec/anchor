@@ -52,8 +52,8 @@ where
 
     /// Construct a CPI context with a caller-selected total capacity.
     ///
-    /// Use this for remaining accounts, handwritten account conversions, or
-    /// nested layouts whose count depends on generic type or const arguments.
+    /// Use this for handwritten conversions or layouts that require explicit
+    /// capacity, including helpers with runtime-sized source-account lists.
     #[must_use]
     pub fn new_with_capacity(program: &'a Address, accounts: T) -> Self {
         Self {
@@ -82,12 +82,22 @@ where
         self
     }
 
-    /// Add remaining accounts without changing the total CPI capacity `N`.
-    /// Use `new_with_capacity` to reserve space for declared and remaining accounts.
+    /// Select the total CPI capacity from the remaining-account buffer.
+    /// Include declared metas and optional sentinels in that capacity.
     #[must_use]
-    pub fn with_remaining_accounts(mut self, ra: crate::CpiHandleBuffer<'a, N>) -> Self {
-        self.remaining_accounts = ra;
-        self
+    pub fn with_remaining_accounts<const CAPACITY: usize>(
+        self,
+        ra: crate::CpiHandleBuffer<'a, CAPACITY>,
+    ) -> CpiContext<'a, T, CAPACITY>
+    where
+        T: ToCpiAccountsWithCapacity<'a, CAPACITY>,
+    {
+        CpiContext {
+            accounts: self.accounts,
+            program: self.program,
+            remaining_accounts: ra,
+            signer_seeds: self.signer_seeds,
+        }
     }
 
     /// Invoke the CPI with the given instruction data. Collects accounts

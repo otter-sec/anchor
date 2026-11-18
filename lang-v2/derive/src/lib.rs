@@ -83,9 +83,13 @@ pub fn __erase(_: TokenStream, _: TokenStream) -> TokenStream {
 // #[derive(ToCpiAccounts)]
 // ---------------------------------------------------------------------------
 
+/// Derive CPI account conversion and fixed-layout capacity inference.
+///
+/// Use `#[cpi_capacity(explicit)]` for runtime-sized account lists or nested
+/// handwritten conversions that do not provide generated count metadata.
 #[proc_macro_derive(
     ToCpiAccounts,
-    attributes(signer, nested, account_meta, accounts_program_id)
+    attributes(signer, nested, account_meta, accounts_program_id, cpi_capacity)
 )]
 pub fn derive_to_cpi_accounts(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -315,9 +319,35 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         Err(err) => return err.to_compile_error(),
     };
 
+    let mut explicit_capacity = false;
+    for attr in &input.attrs {
+        if attr.path().is_ident("cpi_capacity") {
+            let option = match attr.parse_args::<Ident>() {
+                Ok(option) => option,
+                Err(err) => return err.to_compile_error(),
+            };
+            if option != "explicit" || explicit_capacity {
+                return syn::Error::new_spanned(
+                    attr,
+                    "expected a single #[cpi_capacity(explicit)] attribute",
+                )
+                .to_compile_error();
+            }
+            explicit_capacity = true;
+        }
+    }
+
     let mut cpi_fields = Vec::new();
     let mut cpi_lifetime = None::<syn::Lifetime>;
     for field in fields {
+        if let Some(attr) = field
+            .attrs
+            .iter()
+            .find(|attr| attr.path().is_ident("cpi_capacity"))
+        {
+            return syn::Error::new_spanned(attr, "cpi_capacity must be placed on the struct")
+                .to_compile_error();
+        }
         let ident = field
             .ident
             .as_ref()
@@ -444,10 +474,14 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         }
     }
 
+    let mut layout_count = quote! { 0usize };
     let mut default_count = quote! { 0usize };
-    let mut infer_capacity = true;
+    let mut infer_capacity = !explicit_capacity;
     for (_, kind, _, ty) in &cpi_fields {
         if matches!(kind, CpiFieldKind::Nested) {
+            layout_count = quote! {
+                #layout_count + <#ty>::__ANCHOR_CPI_ACCOUNT_COUNT
+            };
             let mut count_ty = (*ty).clone();
             let mut visitor = CountType {
                 generic_names: &generic_names,
@@ -457,13 +491,24 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
             syn::visit_mut::VisitMut::visit_type_mut(&mut visitor, &mut count_ty);
             infer_capacity &= !visitor.depends_on_generic;
             default_count = quote! {
-                #default_count
-                    + <#count_ty as anchor_lang::CpiAccountCount<_>>::ACCOUNT_COUNT
+                #default_count + <#count_ty>::__ANCHOR_CPI_ACCOUNT_COUNT
             };
         } else {
+            layout_count = quote! { #layout_count + 1usize };
             default_count = quote! { #default_count + 1usize };
         }
     }
+    // Concrete outer layouts can evaluate this even when stable Rust cannot
+    // express an inferred-capacity impl for the generic nested layout itself.
+    let count_metadata_impl = (!explicit_capacity).then(|| {
+        quote! {
+            impl #count_impl_generics #name #ty_generics #count_where_clause {
+                #[doc(hidden)]
+                #[allow(dead_code)]
+                pub const __ANCHOR_CPI_ACCOUNT_COUNT: usize = #layout_count;
+            }
+        }
+    });
     let default_capacity_impl = infer_capacity.then(|| {
         quote! {
             impl #count_impl_generics anchor_lang::CpiAccountCount<{ #default_count }>
@@ -581,6 +626,7 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
     });
 
     quote! {
+        #count_metadata_impl
         #default_capacity_impl
 
         impl #impl_generics anchor_lang::ToCpiAccountsWithCapacity<#cpi_lifetime, #cpi_capacity>

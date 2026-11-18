@@ -92,8 +92,8 @@ pub fn burn_edition_nft<'info>(
 /// accounts.
 ///
 /// ```ignore
-/// CpiContext::<_, 7>::new_with_capacity(program, BurnNft { .. })
-///     .with_remaining_accounts(remaining_accounts);
+/// CpiContext::new(program, BurnNft { .. })
+///     .with_remaining_accounts::<7>(remaining_accounts);
 /// ```
 pub fn burn_nft<'info, const N: usize>(
     ctx: CpiContext<'info, BurnNft<'info>, N>,

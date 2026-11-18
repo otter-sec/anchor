@@ -520,8 +520,7 @@ fn invoke_remaining_pda_as_signer_with_seeds() {
     assert!(remaining_accounts
         .try_push(CpiHandle::readonly(&remaining_view).as_signer())
         .is_ok());
-    CpiContext::<_, 3>::new_with_capacity(&program, accounts)
-        .with_signer(&[&[b"pda", &[7]]])
+    CpiContext::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
         .with_remaining_accounts(remaining_accounts)
         .invoke(&[])
         .unwrap();
