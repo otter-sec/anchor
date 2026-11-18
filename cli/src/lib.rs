@@ -1253,7 +1253,7 @@ pub fn prepend_compute_unit_ix(
 /// instead lets `entry` restore the toolchain first and then exit with
 /// the requested code.
 #[derive(Debug)]
-pub struct ExitCode(pub i32);
+pub(crate) struct ExitCode(pub i32);
 
 impl std::fmt::Display for ExitCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -6710,7 +6710,7 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
 
         if !exit.status.success() {
             eprintln!("Deploy failed.");
-            return Err(ExitCode(exit.status.code().unwrap()).into());
+            return Err(ExitCode(exit.status.code().unwrap_or(1)).into());
         }
 
         println!("Deploy complete.");
