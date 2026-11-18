@@ -353,7 +353,7 @@ fn token_cpi_ctx<'a, T, const N: usize>(
 where
     T: anchor_lang::ToCpiAccountsWithCapacity<'a, N>,
 {
-    CpiContext::new_with_signer_and_capacity(program, accounts, signer_seeds)
+    CpiContext::new_with_capacity(program, accounts).with_signer(signer_seeds)
 }
 
 pub fn set_authority<'a, const N: usize>(

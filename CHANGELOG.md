@@ -21,6 +21,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Breaking
 
+- lang-v2: Infer `CpiContext` constructor capacities from fixed CPI account layouts. Use `new_with_capacity` for explicit totals and `.with_signer(...)` for signer seeds ([#5325](https://github.com/otter-sec/anchor/pull/5325)).
 - ts: Build version 1 transaction messages by default ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 - ts: Append a compute budget instruction with the estimated compute unit limit to legacy and version 0 messages ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 - ts: Require `@solana/kit` ^8.5.0 ([#5216](https://github.com/otter-sec/anchor/pull/5216)).

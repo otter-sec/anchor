@@ -73,22 +73,7 @@ where
     where
         T: crate::CpiAccountCount<N>,
     {
-        Self::new_with_signer_and_capacity(program, accounts, signer_seeds)
-    }
-
-    /// Construct a signed CPI context with a caller-selected total capacity.
-    #[must_use]
-    pub fn new_with_signer_and_capacity(
-        program: &'a Address,
-        accounts: T,
-        signer_seeds: &'a [&'a [&'a [u8]]],
-    ) -> Self {
-        Self {
-            accounts,
-            program,
-            remaining_accounts: crate::CpiHandleBuffer::new(),
-            signer_seeds,
-        }
+        Self::new_with_capacity(program, accounts).with_signer(signer_seeds)
     }
 
     #[must_use]
