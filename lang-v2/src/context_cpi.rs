@@ -13,6 +13,8 @@ use {
 ///
 /// Bundles a typed CPI accounts struct with the target program, optional
 /// PDA signer seeds, and optional remaining accounts.
+/// The remaining-handle slice has its own lifetime so caller-owned storage
+/// only needs to remain alive while the context uses it.
 ///
 /// # Example
 ///
@@ -27,17 +29,17 @@ use {
 /// );
 /// callee::cpi::set_data(cpi_ctx, data)?;
 /// ```
-pub struct CpiContext<'a, T, const N: usize>
+pub struct CpiContext<'a, 'remaining, T, const N: usize>
 where
     T: ToCpiAccountsWithCapacity<'a, N>,
 {
     pub accounts: T,
-    pub remaining_accounts: &'a [CpiHandle<'a>],
+    pub remaining_accounts: &'remaining [CpiHandle<'a>],
     pub program: &'a Address,
     pub signer_seeds: &'a [&'a [&'a [u8]]],
 }
 
-impl<'a, T, const N: usize> CpiContext<'a, T, N>
+impl<'a, 'remaining, T, const N: usize> CpiContext<'a, 'remaining, T, N>
 where
     T: ToCpiAccountsWithCapacity<'a, N>,
 {
@@ -72,16 +74,17 @@ where
         self
     }
 
-    /// Borrow remaining CPI handles from caller-owned storage.
-    ///
-    /// The slice can come from an array, a buffer of any capacity, or a split
-    /// of another slice. Its storage must remain alive through the invocation.
-    /// `N` must cover the named and remaining accounts together. Invocation
-    /// returns `InvalidArgument` if that capacity is exceeded.
     #[must_use]
-    pub fn with_remaining_accounts(mut self, accounts: &'a [CpiHandle<'a>]) -> Self {
-        self.remaining_accounts = accounts;
-        self
+    pub fn with_remaining_accounts<'new_remaining>(
+        self,
+        accounts: &'new_remaining [CpiHandle<'a>],
+    ) -> CpiContext<'a, 'new_remaining, T, N> {
+        CpiContext {
+            accounts: self.accounts,
+            remaining_accounts: accounts,
+            program: self.program,
+            signer_seeds: self.signer_seeds,
+        }
     }
 
     /// Invoke the CPI with the given instruction data. Collects accounts

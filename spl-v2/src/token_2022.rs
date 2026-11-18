@@ -96,7 +96,7 @@ fn return_data_from(program: &Address) -> Result<Vec<u8>, ProgramError> {
 }
 
 pub fn get_account_data_size<'a>(
-    ctx: CpiContext<'a, GetAccountDataSize<'a>, 1>,
+    ctx: CpiContext<'a, '_, GetAccountDataSize<'a>, 1>,
     extension_types: &[ExtensionType],
 ) -> Result<u64, ProgramError> {
     let ix = spl_token_2022::instruction::get_account_data_size(
@@ -114,7 +114,7 @@ pub fn get_account_data_size<'a>(
 }
 
 pub fn initialize_mint_close_authority<'a>(
-    ctx: CpiContext<'a, InitializeMintCloseAuthority<'a>, 1>,
+    ctx: CpiContext<'a, '_, InitializeMintCloseAuthority<'a>, 1>,
     close_authority: Option<&Address>,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::initialize_mint_close_authority(
@@ -126,7 +126,7 @@ pub fn initialize_mint_close_authority<'a>(
 }
 
 pub fn initialize_immutable_owner<'a>(
-    ctx: CpiContext<'a, InitializeImmutableOwner<'a>, 1>,
+    ctx: CpiContext<'a, '_, InitializeImmutableOwner<'a>, 1>,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::initialize_immutable_owner(
         ctx.program,
@@ -136,7 +136,7 @@ pub fn initialize_immutable_owner<'a>(
 }
 
 pub fn amount_to_ui_amount<'a>(
-    ctx: CpiContext<'a, AmountToUiAmount<'a>, 1>,
+    ctx: CpiContext<'a, '_, AmountToUiAmount<'a>, 1>,
     amount: u64,
 ) -> Result<String, ProgramError> {
     let ix = spl_token_2022::instruction::amount_to_ui_amount(
@@ -150,7 +150,7 @@ pub fn amount_to_ui_amount<'a>(
 }
 
 pub fn ui_amount_to_amount<'a>(
-    ctx: CpiContext<'a, UiAmountToAmount<'a>, 1>,
+    ctx: CpiContext<'a, '_, UiAmountToAmount<'a>, 1>,
     ui_amount: &str,
 ) -> Result<u64, ProgramError> {
     let ix = spl_token_2022::instruction::ui_amount_to_amount(
@@ -168,7 +168,7 @@ pub fn ui_amount_to_amount<'a>(
 }
 
 pub fn reallocate<'a, const N: usize>(
-    ctx: CpiContext<'a, Reallocate<'a>, N>,
+    ctx: CpiContext<'a, '_, Reallocate<'a>, N>,
     extension_types: &[ExtensionType],
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::reallocate(
@@ -183,7 +183,7 @@ pub fn reallocate<'a, const N: usize>(
 }
 
 pub fn withdraw_excess_lamports<'a, const N: usize>(
-    ctx: CpiContext<'a, WithdrawExcessLamports<'a>, N>,
+    ctx: CpiContext<'a, '_, WithdrawExcessLamports<'a>, N>,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::withdraw_excess_lamports(
         ctx.program,
@@ -196,7 +196,7 @@ pub fn withdraw_excess_lamports<'a, const N: usize>(
 }
 
 pub fn create_native_mint<'a>(
-    ctx: CpiContext<'a, CreateNativeMint<'a>, 3>,
+    ctx: CpiContext<'a, '_, CreateNativeMint<'a>, 3>,
 ) -> Result<(), ProgramError> {
     let ix =
         spl_token_2022::instruction::create_native_mint(ctx.program, ctx.accounts.payer.address())?;
@@ -204,7 +204,7 @@ pub fn create_native_mint<'a>(
 }
 
 pub fn initialize_non_transferable_mint<'a>(
-    ctx: CpiContext<'a, InitializeNonTransferableMint<'a>, 1>,
+    ctx: CpiContext<'a, '_, InitializeNonTransferableMint<'a>, 1>,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::initialize_non_transferable_mint(
         ctx.program,
@@ -214,7 +214,7 @@ pub fn initialize_non_transferable_mint<'a>(
 }
 
 pub fn initialize_permanent_delegate<'a>(
-    ctx: CpiContext<'a, PermanentDelegateInitialize<'a>, 1>,
+    ctx: CpiContext<'a, '_, PermanentDelegateInitialize<'a>, 1>,
     permanent_delegate: &Address,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::initialize_permanent_delegate(

@@ -51,7 +51,7 @@ pub struct WithdrawWithheldTokensFromAccounts<'a> {
 }
 
 pub fn transfer_fee_initialize<'a>(
-    ctx: CpiContext<'a, TransferFeeInitialize<'a>, 1>,
+    ctx: CpiContext<'a, '_, TransferFeeInitialize<'a>, 1>,
     transfer_fee_config_authority: Option<&Address>,
     withdraw_withheld_authority: Option<&Address>,
     transfer_fee_basis_points: u16,
@@ -73,7 +73,7 @@ pub fn transfer_fee_initialize<'a>(
 }
 
 pub fn transfer_fee_set<'a, const N: usize>(
-    ctx: CpiContext<'a, TransferFeeSetTransferFee<'a>, N>,
+    ctx: CpiContext<'a, '_, TransferFeeSetTransferFee<'a>, N>,
     transfer_fee_basis_points: u16,
     maximum_fee: u64,
 ) -> Result<(), ProgramError> {
@@ -91,7 +91,7 @@ pub fn transfer_fee_set<'a, const N: usize>(
 }
 
 pub fn transfer_checked_with_fee<'a, const N: usize>(
-    ctx: CpiContext<'a, TransferCheckedWithFee<'a>, N>,
+    ctx: CpiContext<'a, '_, TransferCheckedWithFee<'a>, N>,
     amount: u64,
     decimals: u8,
     fee: u64,
@@ -118,7 +118,7 @@ pub fn transfer_checked_with_fee<'a, const N: usize>(
 /// `remaining_accounts` are variable-length inputs. It must cover the complete
 /// CPI account set; overflow is reported as `InvalidArgument`.
 pub fn harvest_withheld_tokens_to_mint<'a, const N: usize>(
-    ctx: CpiContext<'a, HarvestWithheldTokensToMint<'a>, N>,
+    ctx: CpiContext<'a, '_, HarvestWithheldTokensToMint<'a>, N>,
     sources: &[CpiHandleMut<'a>],
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -146,7 +146,7 @@ pub fn harvest_withheld_tokens_to_mint<'a, const N: usize>(
 }
 
 pub fn withdraw_withheld_tokens_from_mint<'a, const N: usize>(
-    ctx: CpiContext<'a, WithdrawWithheldTokensFromMint<'a>, N>,
+    ctx: CpiContext<'a, '_, WithdrawWithheldTokensFromMint<'a>, N>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
@@ -167,7 +167,7 @@ pub fn withdraw_withheld_tokens_from_mint<'a, const N: usize>(
 /// `remaining_accounts` are variable-length inputs. It must cover the complete
 /// CPI account set; overflow is reported as `InvalidArgument`.
 pub fn withdraw_withheld_tokens_from_accounts<'a, const N: usize>(
-    ctx: CpiContext<'a, WithdrawWithheldTokensFromAccounts<'a>, N>,
+    ctx: CpiContext<'a, '_, WithdrawWithheldTokensFromAccounts<'a>, N>,
     sources: &[CpiHandleMut<'a>],
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
