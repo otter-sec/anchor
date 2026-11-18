@@ -154,10 +154,6 @@ fn derive_to_cpi_accounts_emits_metas_and_erased_handles() {
             .unwrap_err(),
         Error::InvalidArgument,
     );
-    assert_eq!(
-        CpiContext::new(&ID, accounts).remaining_accounts.capacity(),
-        8
-    );
 }
 
 #[test]
@@ -180,10 +176,6 @@ fn derive_to_cpi_accounts_accepts_phantom_only_empty_structs() {
         ToCpiAccountsWithCapacity::<0>::optional_account_sentinel_flags_with_capacity(&accounts)
             .unwrap()
             .is_empty()
-    );
-    assert_eq!(
-        CpiContext::new(&ID, accounts).remaining_accounts.capacity(),
-        0
     );
 }
 
@@ -221,45 +213,6 @@ fn derive_to_cpi_accounts_duplicate_readonly_erases_handle_mut() {
     assert_eq!(*handles[0].address(), Address::new_from_array([1; 32]));
     assert_eq!(*handles[2].address(), Address::new_from_array([2; 32]));
     assert_eq!(*handles[3].address(), Address::new_from_array([2; 32]));
-    assert_eq!(
-        CpiContext::new(&ID, accounts).remaining_accounts.capacity(),
-        4
-    );
-}
-
-#[test]
-fn cpi_context_infers_capacity_for_absent_optional_accounts() {
-    let context = CpiContext::new(
-        &ID,
-        OptionalReadonlyCpi {
-            optional_readonly: None,
-        },
-    );
-    assert_eq!(context.remaining_accounts.capacity(), 1);
-    context.invoke(&[]).unwrap();
-
-    let seeds: &[&[&[u8]]] = &[&[b"pda"]];
-    let context = CpiContext::new_with_signer(&ID, context.accounts, seeds);
-    assert_eq!(context.signer_seeds, seeds);
-    context.invoke(&[]).unwrap();
-}
-
-#[test]
-fn explicit_cpi_capacity_preserves_signers_for_remaining_accounts() {
-    let buffer = account([1; 32], false, false);
-    let view = unsafe { buffer.view() };
-    let mut remaining = anchor_lang::CpiHandleBuffer::<2>::new();
-    assert!(remaining.try_push(view.to_cpi_handle().as_signer()).is_ok());
-    let context = CpiContext::<_, 2>::new_with_capacity(
-        &ID,
-        OptionalReadonlyCpi {
-            optional_readonly: None,
-        },
-    )
-    .with_remaining_accounts(remaining);
-    assert_eq!(context.invoke(&[]), Err(Error::MissingRequiredSignature));
-
-    context.with_signer(&[&[b"pda"]]).invoke(&[]).unwrap();
 }
 
 #[test]

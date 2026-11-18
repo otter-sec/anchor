@@ -73,7 +73,7 @@ where
     where
         T: crate::CpiAccountCount<N>,
     {
-        Self::new_with_capacity(program, accounts).with_signer(signer_seeds)
+        Self::new(program, accounts).with_signer(signer_seeds)
     }
 
     #[must_use]
