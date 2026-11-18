@@ -35,6 +35,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                     let name = &s.ident;
                     let ty = &s.raw_field.ty;
                     quote! {
+                        #[allow(rust_analyzer::inactive_code)]
                         #[cfg(feature = "anchor-debug")]
                         ::anchor_lang::solana_program::log::sol_log(stringify!(#name));
                         let #name: #ty = anchor_lang::Accounts::try_accounts(#program_id, #accounts, #ix_data, &mut #bumps.#name, #reallocs)?;
@@ -90,6 +91,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                             quote! {}
                         };
                         quote! {
+                            #[allow(rust_analyzer::inactive_code)]
                             #[cfg(feature = "anchor-debug")]
                             ::anchor_lang::solana_program::log::sol_log(stringify!(#typed_name));
                             let #typed_name = anchor_lang::Accounts::try_accounts(#program_id, #accounts, #ix_data, #bumps, #reallocs)
