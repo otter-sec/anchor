@@ -94,6 +94,86 @@ fn compile_pass_case(name: &str, source: &str) {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "spawns cargo; covered by normal cargo test")]
+fn remaining_accounts_require_an_independent_total_capacity() {
+    let source = r#"
+use anchor_lang::{prelude::*, CpiHandleBuffer};
+
+#[derive(ToCpiAccounts)]
+pub struct Named<'a> { pub account: CpiHandle<'a> }
+
+pub fn forward<'a>(program: &'a Address, account: CpiHandle<'a>, extra: CpiHandle<'a>) -> Result<()> {
+    let mut remaining = CpiHandleBuffer::new();
+    remaining.try_push(extra).map_err(|_| Error::InvalidArgument)?;
+    CpiContext::new(program, Named { account }).with_remaining_accounts(remaining).invoke(&[])
+}
+"#;
+    compile_fail_case("remaining_total_capacity_unspecified", source, &["E0284"]);
+    compile_pass_case(
+        "remaining_total_capacity_selected",
+        &source.replace("CpiHandleBuffer::new()", "CpiHandleBuffer::<2>::new()"),
+    );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "spawns cargo; covered by normal cargo test")]
+fn cpi_account_count_has_no_overridable_value() {
+    compile_fail_case(
+        "cpi_count_value_override",
+        r#"
+pub struct Manual;
+impl anchor_lang::CpiAccountCount<2> for Manual {
+    const ACCOUNT_COUNT: usize = 1;
+}
+"#,
+        &["E0438", "ACCOUNT_COUNT"],
+    );
+    compile_pass_case(
+        "cpi_count_marker_implementation",
+        "pub struct Manual; impl anchor_lang::CpiAccountCount<2> for Manual {}",
+    );
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "spawns cargo; covered by normal cargo test")]
+fn explicit_capacity_supports_handwritten_nested_conversions() {
+    let source = r#"
+use anchor_lang::{prelude::*, CpiHandleBuffer, FixedVec};
+use anchor_lang::pinocchio::instruction::InstructionAccount;
+
+#[derive(ToCpiAccounts)]
+pub struct Leaf<'a> { pub account: CpiHandle<'a> }
+
+pub struct Manual<'a>(pub Leaf<'a>);
+impl<'a, const N: usize> ToCpiAccountsWithCapacity<'a, N> for Manual<'a> {
+    fn to_instruction_accounts_with_capacity(&self) -> Result<FixedVec<InstructionAccount<'a>, N>> {
+        ToCpiAccountsWithCapacity::<N>::to_instruction_accounts_with_capacity(&self.0)
+    }
+    fn to_cpi_handles_with_capacity(&self) -> Result<CpiHandleBuffer<'a, N>> {
+        ToCpiAccountsWithCapacity::<N>::to_cpi_handles_with_capacity(&self.0)
+    }
+    fn optional_account_sentinel_flags_with_capacity(&self) -> Result<FixedVec<bool, N>> {
+        ToCpiAccountsWithCapacity::<N>::optional_account_sentinel_flags_with_capacity(&self.0)
+    }
+}
+
+#[derive(ToCpiAccounts)]
+#[cpi_capacity(explicit)]
+pub struct Outer<'a> { #[nested] pub inner: Manual<'a> }
+
+pub fn forward<'a>(program: &'a Address, inner: Manual<'a>) -> Result<()> {
+    CpiContext::<_, 1>::new_with_capacity(program, Outer { inner }).invoke(&[])
+}
+"#;
+    compile_pass_case("explicit_handwritten_nested_cpi", source);
+    compile_fail_case(
+        "explicit_nested_layout_has_no_inferred_capacity",
+        &source.replace("CpiContext::<_, 1>::new_with_capacity", "CpiContext::new"),
+        &["CpiAccountCount"],
+    );
+}
+
+#[test]
 #[cfg_attr(
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
