@@ -3631,7 +3631,7 @@ fn declare_idl_type_uses_borrowed_data(
     value: &serde_json::Value,
     dynamic_type_names: &std::collections::BTreeSet<String>,
 ) -> bool {
-    if matches!(value.as_str(), Some("bytes" | "string")) {
+    if value.as_str() == Some("string") {
         return true;
     }
     if let Some(defined) = value.get("defined") {
@@ -5228,7 +5228,6 @@ fn declare_idl_type_to_tokens_for_target(
             "f64" => quote! { f64 },
             "u128" => quote! { u128 },
             "i128" => quote! { i128 },
-            "bytes" if borrowed => quote! { &'ix [u8] },
             "bytes" => quote! { anchor_lang::Vec<u8> },
             "string" if borrowed => quote! { &'ix str },
             "string" => quote! { anchor_lang::__idl::string::String },
@@ -8921,6 +8920,21 @@ mod tests {
             "declare_program markers should expose their known address for IDL emission: \
              {generated}"
         );
+    }
+
+    #[test]
+    fn declare_idl_bytes_use_owned_vectors_on_both_targets() {
+        let bytes = json!("bytes");
+        let names = std::collections::BTreeSet::new();
+        let span = proc_macro2::Span::call_site();
+
+        assert!(!declare_idl_type_uses_borrowed_data(&bytes, &names));
+        for borrowed in [false, true] {
+            let tokens =
+                declare_idl_type_to_tokens_for_target(&bytes, span, borrowed, &names, &names)
+                    .unwrap();
+            assert_eq!(tokens.to_string(), "anchor_lang :: Vec < u8 >");
+        }
     }
 
     #[test]
