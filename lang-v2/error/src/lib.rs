@@ -37,6 +37,8 @@ pub enum ErrorCode {
     RequireKeysNeqViolated,
     RequireGtViolated,
     RequireGteViolated,
+    /// The program's heap allocator could not satisfy a reservation.
+    HeapAllocationFailed,
 }
 
 impl From<ErrorCode> for Error {
@@ -68,6 +70,7 @@ impl From<ErrorCode> for Error {
             ErrorCode::RequireKeysNeqViolated => Self::Custom(2504),
             ErrorCode::RequireGtViolated => Self::Custom(2505),
             ErrorCode::RequireGteViolated => Self::Custom(2506),
+            ErrorCode::HeapAllocationFailed => Self::Custom(4104),
         }
     }
 }

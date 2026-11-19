@@ -7,8 +7,8 @@
 //! to the same value.
 
 use anchor_lang::{
-    event, prelude::Address, AnchorDeserialize, AnchorSerialize, Discriminator, Event, FixedVec,
-    BORSH_CONFIG,
+    event, prelude::Address, AnchorDeserialize, AnchorSerialize, Discriminator, Event,
+    Vec as AnchorVec, BORSH_CONFIG,
 };
 
 #[event]
@@ -89,22 +89,20 @@ fn dynamic_event_writes_into_caller_storage_fallibly() {
         tags: vec![1, 2, 3],
     };
     let owned = event.data();
-    let mut exact = FixedVec::<u8, 55>::new();
+    let mut exact = AnchorVec::with_capacity(55);
     event
         .try_write_data(&mut exact)
         .expect("dynamic event fits caller-selected storage");
     assert_eq!(exact.as_slice(), owned.as_slice());
 
-    let mut short = FixedVec::<u8, 55>::new();
+    let mut short = AnchorVec::with_capacity(55);
     short.try_push(0xaa).unwrap();
-    assert!(event.try_write_data(&mut short).is_err());
-    assert_eq!(short.as_slice(), &[0xaa], "failed writes must roll back");
+    event.try_write_data(&mut short).unwrap();
+    assert_eq!(short[0], 0xaa);
+    assert_eq!(&short[1..], owned.as_slice());
 }
 
-fn emit_uploaded<const N: usize>(
-    event: Uploaded,
-    storage: &mut FixedVec<u8, N>,
-) -> anchor_lang::Result<()> {
+fn emit_uploaded(event: Uploaded, storage: &mut AnchorVec<u8>) -> anchor_lang::Result<()> {
     anchor_lang::emit!(event, storage);
     Ok(())
 }
@@ -118,16 +116,13 @@ fn emit_macro_accepts_caller_storage_for_unbounded_events() {
         tags: vec![1, 2, 3],
     };
 
-    let mut exact = FixedVec::<u8, 55>::new();
+    let mut exact = AnchorVec::with_capacity(55);
     emit_uploaded(event(), &mut exact).expect("caller storage fits the event");
     assert_eq!(exact.as_slice(), event().data().as_slice());
 
-    let mut short = FixedVec::<u8, 54>::new();
-    assert_eq!(
-        emit_uploaded(event(), &mut short),
-        Err(anchor_lang::Error::InvalidInstructionData),
-    );
-    assert!(short.is_empty(), "failed macro writes must roll back");
+    let mut short = AnchorVec::with_capacity(54);
+    emit_uploaded(event(), &mut short).expect("caller storage can grow");
+    assert_eq!(short.as_slice(), event().data().as_slice());
 }
 
 #[test]

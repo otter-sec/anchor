@@ -152,8 +152,8 @@ fn proxy_state(svm: &LiteSVM, result: Pubkey) -> ProxyState {
 
 #[test]
 fn declared_return_instruction_has_v1_style_return_wrapper() {
-    let _wrapper = return_callee::cpi::calculate::<2>;
-    let _defined_wrapper = return_callee::cpi::describe::<2>;
+    let _wrapper = return_callee::cpi::calculate;
+    let _defined_wrapper = return_callee::cpi::describe;
     assert_eq!(return_callee::instruction::Calculate::DISCRIMINATOR, &[1]);
     assert_eq!(return_callee::instruction::Describe::DISCRIMINATOR, &[2]);
 }
@@ -186,7 +186,7 @@ fn assert_failed_return_preserves_state(
     authority: &Keypair,
     callee_data: Pubkey,
     result: Pubkey,
-    ix_data: Vec<u8>,
+    ix_data: anchor_lang::Vec<u8>,
     metas: Vec<AccountMeta>,
 ) {
     let send_result = send_instruction(svm, caller_id(), ix_data, metas, payer, &[authority]);

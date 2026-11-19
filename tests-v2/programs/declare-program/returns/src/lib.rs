@@ -1,19 +1,12 @@
 use anchor_lang::prelude::*;
 #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-use anchor_lang::FixedVec;
+use anchor_lang::Vec;
 
 declare_id!("Dec1areProgram11111111111111111111111111111");
 
 declare_program!(return_callee);
 
 pub const PROXY_SEED: &[u8] = b"return-proxy";
-
-// The largest return payload in this fixture is 71 bytes. Keep the caller's
-// capacity close to the real payload so generated FixedVec return values do
-// not consume an unnecessarily large SBF stack frame. This is not a runtime
-// or protocol-wide limit.
-#[cfg(any(target_os = "solana", target_arch = "bpf"))]
-const RETURN_DATA_CAPACITY: usize = 80;
 
 #[account]
 #[repr(C)]
@@ -57,7 +50,7 @@ pub mod declare_program_returns {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
         let returned = return_callee::cpi::calculate(cpi_ctx, base, bonus)?.get();
         ctx.accounts.result.calls = ctx.accounts.result.calls.saturating_add(1);
         ctx.accounts.result.last_return = returned;
@@ -76,9 +69,9 @@ pub mod declare_program_returns {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-        let mut return_data = FixedVec::<u8, RETURN_DATA_CAPACITY>::new();
+        let mut return_data = Vec::new();
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
         let returned = return_callee::cpi::describe(cpi_ctx, base, bonus, &mut return_data)?.get();
         #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
@@ -102,7 +95,7 @@ pub mod declare_program_returns {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
         let returned = return_callee::cpi::no_return_but_idl_says(cpi_ctx, base)?.get();
         ctx.accounts.result.last_return = returned;
         Ok(())
@@ -118,7 +111,7 @@ pub mod declare_program_returns {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
         let returned = return_callee::cpi::short_return(cpi_ctx, base)?.get();
         ctx.accounts.result.last_return = returned;
         Ok(())
@@ -135,7 +128,7 @@ pub mod declare_program_returns {
             authority: ctx.accounts.authority.cpi_handle(),
             spoof_program: ctx.accounts.spoof_program.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
         let returned = return_callee::cpi::spoofed_return(cpi_ctx, base)?.get();
         ctx.accounts.result.last_return = returned;
         Ok(())
@@ -151,9 +144,9 @@ pub mod declare_program_returns {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-        let mut return_data = FixedVec::<u8, RETURN_DATA_CAPACITY>::new();
+        let mut return_data = Vec::new();
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
         let returned =
             return_callee::cpi::malformed_payload(cpi_ctx, base, &mut return_data)?.get();
@@ -177,9 +170,9 @@ pub mod declare_program_returns {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-        let mut return_data = FixedVec::<u8, RETURN_DATA_CAPACITY>::new();
+        let mut return_data = Vec::new();
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
         let returned =
             return_callee::cpi::describe_empty(cpi_ctx, base, bonus, &mut return_data)?.get();

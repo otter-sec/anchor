@@ -86,6 +86,6 @@ pub struct Update {
 //   input + 10400  authority.address[0..32]
 
 #[cfg(target_os = "solana")]
-anchor_lang::pinocchio::default_allocator!();
+anchor_lang::default_allocator!();
 #[cfg(target_os = "solana")]
 anchor_lang::pinocchio::default_panic_handler!();

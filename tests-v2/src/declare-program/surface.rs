@@ -134,11 +134,11 @@ fn declared_surface_complex_types_compile_and_serialize() {
         small: -7,
         count: 99,
         maybe_label: Some("surface".to_string()),
-        keys: vec![owner],
+        keys: anchor_lang::Vec::from([owner]),
         pair: [-1, 2],
     };
     let data = surface::instruction::ComplexArgs {
-        amounts: vec![1, 2, 3],
+        amounts: anchor_lang::Vec::from([1, 2, 3]),
         maybe_owner: Some(owner),
         fixed: [4, 5, 6, 7],
         by_object: args.clone(),

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use anchor_lang::{prelude::*, FixedVec, InstructionData, TryAccounts};
+use anchor_lang::{prelude::*, InstructionData, TryAccounts, Vec as AnchorVec};
 
 declare_id!("11111111111111111111111111111111");
 
@@ -69,14 +69,15 @@ fn generated_instruction_writes_into_caller_storage() {
         step: -3,
     };
     let owned = instruction.data();
-    let mut exact = FixedVec::<u8, 20>::new();
+    let mut exact = AnchorVec::with_capacity(20);
     instruction
         .try_write_data(&mut exact)
         .expect("fixed instruction fits its exact wire size");
     assert_eq!(exact.as_slice(), owned.as_slice());
 
-    let mut short = FixedVec::<u8, 20>::new();
+    let mut short = AnchorVec::with_capacity(20);
     short.try_push(0xaa).unwrap();
-    assert!(instruction.try_write_data(&mut short).is_err());
-    assert_eq!(short.as_slice(), &[0xaa], "failed writes must roll back");
+    instruction.try_write_data(&mut short).unwrap();
+    assert_eq!(short[0], 0xaa);
+    assert_eq!(&short[1..], owned.as_slice());
 }

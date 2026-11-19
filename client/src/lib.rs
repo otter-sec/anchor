@@ -586,8 +586,7 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     /// ```
     #[must_use]
     pub fn accounts(mut self, accounts: impl ToAccountMetas) -> Self {
-        let mut metas = accounts.to_account_metas(None);
-        self.accounts.append(&mut metas);
+        self.accounts.extend(accounts.to_account_metas(None));
         self
     }
 
@@ -599,7 +598,7 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
 
     #[must_use]
     pub fn args(mut self, args: impl InstructionData) -> Self {
-        self.instruction_data = Some(args.data());
+        self.instruction_data = Some(args.data().into_iter().collect());
         self
     }
 
@@ -814,8 +813,8 @@ mod tests {
         const DISCRIMINATOR: &'static [u8] = &[0; 8];
     }
     impl Event for MockEvent {
-        fn data(&self) -> Vec<u8> {
-            Vec::new()
+        fn try_write_data(&self, _output: &mut anchor_lang::Vec<u8>) -> anchor_lang::Result<()> {
+            Ok(())
         }
     }
 

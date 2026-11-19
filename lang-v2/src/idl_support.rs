@@ -6,9 +6,9 @@
 #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 #[doc(hidden)]
 pub mod __idl {
-    pub use alloc::{boxed, collections, format, string, vec};
+    pub use alloc::{boxed, collections, format, string};
 }
 
 #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 #[doc(hidden)]
-pub type IdlEntries = alloc::vec::Vec<&'static str>;
+pub type IdlEntries = crate::Vec<&'static str>;

@@ -1,5 +1,5 @@
 use {
-    crate::cursor::AccountCursor,
+    crate::{cursor::AccountCursor, CpiHandle, Vec},
     pinocchio::{account::AccountView, address::Address},
     solana_program_error::ProgramError,
 };
@@ -90,24 +90,18 @@ impl<'a, T: Bumps> Context<'a, T> {
     /// Build CPI handles for all remaining accounts while preserving each
     /// account's transaction writable and signer flags.
     ///
-    /// The caller selects the inline capacity. If `N` is smaller than the
-    /// number of remaining accounts, this returns
-    /// [`ProgramError::InvalidArgument`]. Call [`crate::CpiHandle::into_readonly`]
-    /// on handles that do not need writable access in the target program.
-    pub fn remaining_cpi_handles_preserving_flags<const N: usize>(
+    /// Call [`crate::CpiHandle::into_readonly`] on handles that do not need
+    /// writable access in the target program.
+    pub fn remaining_cpi_handles_preserving_flags(
         &mut self,
-    ) -> Result<crate::CpiHandleBuffer<'a, N>, ProgramError> {
+    ) -> Result<Vec<CpiHandle<'a>>, ProgramError> {
         let accounts = self.remaining_accounts();
-        if accounts.len() > N {
-            return Err(ProgramError::InvalidArgument);
-        }
-
-        let mut handles = crate::CpiHandleBuffer::new();
+        let mut handles = Vec::try_with_capacity(accounts.len())?;
         for account in accounts {
             let handle = if account.is_writable() {
-                crate::CpiHandle::writable_with_borrow_check(account, true)
+                CpiHandle::writable_with_borrow_check(account, true)
             } else {
-                crate::CpiHandle::readonly(account)
+                CpiHandle::readonly(account)
             };
             handles
                 .try_push(handle)

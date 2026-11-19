@@ -114,7 +114,7 @@ pub mod dup_mut {
             from: ctx.accounts.payer.cpi_handle_mut(),
             to: ctx.accounts.recipient.cpi_handle_mut(),
         };
-        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.system_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
         system_program::transfer(cpi_ctx, lamports)?;
         Ok(())
     }
@@ -137,7 +137,7 @@ pub mod dup_mut {
             from: ctx.accounts.payer.cpi_handle_mut(),
             to: ctx.accounts.raw.cpi_handle_mut(),
         };
-        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.system_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
         system_program::transfer(cpi_ctx, 0)?;
         Ok(())
     }
