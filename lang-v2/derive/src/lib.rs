@@ -6220,20 +6220,11 @@ fn process_handler(
                 self,
                 accounts: impl anchor_lang::ToAccountMetas,
             ) -> anchor_lang::solana_program::instruction::Instruction {
-                let account_metas = accounts
-                    .to_account_metas(None)
-                    .iter()
-                    .map(|meta| anchor_lang::solana_program::instruction::AccountMeta {
-                        pubkey: meta.pubkey,
-                        is_signer: meta.is_signer,
-                        is_writable: meta.is_writable,
-                    })
-                    .collect();
-                anchor_lang::solana_program::instruction::Instruction::new_with_bytes(
-                    #program_id,
-                    &<Self as anchor_lang::InstructionData>::data(&self),
-                    account_metas,
-                )
+                anchor_lang::solana_program::instruction::Instruction {
+                    program_id: #program_id,
+                    data: <Self as anchor_lang::InstructionData>::data(&self).into_vec(),
+                    accounts: accounts.to_account_metas(None).into_vec(),
+                }
             }
         }
     };

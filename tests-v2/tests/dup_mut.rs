@@ -74,11 +74,15 @@ fn init_borsh(svm: &mut LiteSVM, payer: &Keypair, seed: u8) -> Pubkey {
 
 fn send_raw(
     svm: &mut LiteSVM,
-    data: impl AsRef<[u8]>,
+    data: impl Into<Vec<u8>>,
     metas: Vec<AccountMeta>,
     payer: &Keypair,
 ) -> anchor_v2_testing::litesvm::types::TransactionResult {
-    let ix = Instruction::new_with_bytes(program_id(), data.as_ref(), metas);
+    let ix = Instruction {
+        program_id: program_id(),
+        data: data.into(),
+        accounts: metas,
+    };
     let blockhash = svm.latest_blockhash();
     let message = Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &blockhash);
     let signers: Vec<&dyn solana_signer::Signer> = vec![payer];

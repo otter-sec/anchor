@@ -80,3 +80,34 @@ fn dedup_removes_only_consecutive_duplicates() {
     values.dedup();
     assert_eq!(values.as_slice(), &[1, 2, 1]);
 }
+
+#[test]
+fn converts_to_std_vec_without_reallocating() {
+    #[repr(align(64))]
+    struct CountDrop<'a>(&'a Cell<usize>);
+
+    impl Drop for CountDrop<'_> {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+
+    let drops = Cell::new(0);
+    let mut values = Vec::with_capacity(4);
+    values.push(CountDrop(&drops));
+    let pointer = values.as_ptr();
+    let mut converted = values.into_vec();
+    assert_eq!(converted.as_ptr(), pointer);
+    assert_eq!(converted.len(), 1);
+    assert_eq!(converted.capacity(), 4);
+    assert_eq!(drops.get(), 0);
+    converted.reserve_exact(8);
+    drop(converted);
+    assert_eq!(drops.get(), 1);
+
+    let empty = Vec::<u8>::new().into_vec();
+    assert_eq!(empty.capacity(), 0);
+    let units: std::vec::Vec<_> = Vec::from([(), ()]).into();
+    assert_eq!(units.len(), 2);
+    assert_eq!(units.capacity(), usize::MAX);
+}

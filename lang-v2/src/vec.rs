@@ -1,6 +1,6 @@
 //! A growable buffer backed by the program's global allocator. This reimplements `Vec`
 //! using the Pinocchio allocator, allowing `no_alloc` builds.
-//! When compiled off-chain, uses the system allocator.
+//! When compiled off-chain, uses the host's global allocator.
 
 use {
     anchor_lang_error::{Error, ErrorCode},
@@ -16,9 +16,11 @@ use {
 };
 
 #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+extern crate std;
+
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 mod heap {
-    extern crate std;
-    pub use std::alloc::{alloc, dealloc, realloc};
+    pub use super::std::alloc::{alloc, dealloc, realloc};
 }
 
 #[cfg(any(target_os = "solana", target_arch = "bpf"))]
@@ -179,6 +181,22 @@ impl<T> Vec<T> {
 
     pub const fn capacity(&self) -> usize {
         self.allocation.cap
+    }
+
+    /// Converts to a standard vector without allocating or moving elements.
+    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+    pub fn into_vec(self) -> std::vec::Vec<T> {
+        let value = ManuallyDrop::new(self);
+        // SAFETY: Both vectors use the global allocator and Layout::array::<T>(cap).
+        // The pointer is aligned even without an allocation, and the first len
+        // elements are initialized. ManuallyDrop transfers ownership to std.
+        unsafe {
+            std::vec::Vec::from_raw_parts(
+                value.allocation.ptr.as_ptr(),
+                value.len,
+                value.capacity(),
+            )
+        }
     }
 
     pub fn try_reserve(&mut self, additional: usize) -> Result<(), TryReserveError> {
@@ -391,6 +409,13 @@ impl<T> FromIterator<T> for Vec<T> {
 impl<T, const N: usize> From<[T; N]> for Vec<T> {
     fn from(values: [T; N]) -> Self {
         values.into_iter().collect()
+    }
+}
+
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+impl<T> From<Vec<T>> for std::vec::Vec<T> {
+    fn from(value: Vec<T>) -> Self {
+        value.into_vec()
     }
 }
 

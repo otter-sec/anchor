@@ -198,7 +198,11 @@ fn call_raw(
     payer: &solana_keypair::Keypair,
     extra: &[&solana_keypair::Keypair],
 ) -> TransactionResult {
-    let ix = Instruction::new_with_bytes(program, &data, metas);
+    let ix = Instruction {
+        program_id: program,
+        data: data.into_vec(),
+        accounts: metas,
+    };
     let blockhash = svm.latest_blockhash();
     let msg = Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &blockhash);
     let mut signers: Vec<&dyn solana_signer::Signer> = vec![payer];

@@ -586,7 +586,12 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     /// ```
     #[must_use]
     pub fn accounts(mut self, accounts: impl ToAccountMetas) -> Self {
-        self.accounts.extend(accounts.to_account_metas(None));
+        let metas = accounts.to_account_metas(None);
+        if self.accounts.capacity() == 0 {
+            self.accounts = metas.into_vec();
+        } else {
+            self.accounts.extend(metas);
+        }
         self
     }
 
@@ -598,7 +603,7 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
 
     #[must_use]
     pub fn args(mut self, args: impl InstructionData) -> Self {
-        self.instruction_data = Some(args.data().into_iter().collect());
+        self.instruction_data = Some(args.data().into());
         self
     }
 
@@ -819,6 +824,23 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn request_appends_accounts_in_order() {
+        let payer = solana_keypair::Keypair::new();
+        let client = Client::new(Cluster::Localnet, &payer);
+        let program = client.program(Pubkey::new_unique()).unwrap();
+        let first = AccountMeta::new_readonly(Pubkey::new_unique(), false);
+        let remaining = AccountMeta::new(Pubkey::new_unique(), true);
+
+        let request = program
+            .request()
+            .accounts([first.clone()])
+            .accounts([remaining.clone()]);
+
+        assert_eq!(request.accounts, [first, remaining]);
+    }
+
     #[test]
     fn new_execution() {
         let mut logs: &[String] =
