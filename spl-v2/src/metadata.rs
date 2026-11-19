@@ -92,9 +92,8 @@ pub fn burn_edition_nft<'info>(ctx: CpiContext<'info, BurnEditionNft<'info>>) ->
 /// # use anchor_spl::metadata::{self, BurnNft};
 /// # fn burn<'info>(accounts: BurnNft<'info>, collection_metadata: CpiHandleMut<'info>) -> Result<()> {
 /// let collection_address = *collection_metadata.address();
-/// let remaining_accounts = anchor_lang::Vec::from([collection_metadata.into()]);
-///
-/// let ctx = CpiContext::new(&metadata::ID, accounts).with_remaining_accounts(remaining_accounts);
+/// let ctx = CpiContext::new(&metadata::ID, accounts)
+///     .with_remaining_accounts([collection_metadata.into()]);
 /// metadata::burn_nft(ctx, Some(collection_address))?;
 /// # Ok(())
 /// # }

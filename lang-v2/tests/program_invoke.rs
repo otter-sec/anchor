@@ -515,12 +515,9 @@ fn invoke_remaining_pda_as_signer_with_seeds() {
         account: typed_view.to_cpi_handle(),
     };
 
-    let mut remaining_accounts = anchor_lang::Vec::with_capacity(3);
-    assert!(remaining_accounts
-        .try_push(CpiHandle::readonly(&remaining_view).as_signer())
-        .is_ok());
+    let remaining_accounts = [CpiHandle::readonly(&remaining_view).as_signer()];
     CpiContext::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
-        .with_remaining_accounts(remaining_accounts)
+        .with_remaining_accounts(remaining_accounts.as_slice())
         .invoke(&[])
         .unwrap();
 }
