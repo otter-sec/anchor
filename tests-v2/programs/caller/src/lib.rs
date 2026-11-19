@@ -74,9 +74,18 @@ pub mod caller {
     /// only viable route since the lifetime-anchoring `_phantom` field
     /// is hidden.
     pub fn proxy_empty(ctx: &mut Context<ProxyEmpty>) -> Result<()> {
-        let cpi_ctx = CpiContext::<_, 0>::new(
+        // Signer groups are independent of the zero-account CPI capacity.
+        let (_, first_bump) = anchor_lang::cpi::try_find_program_address(&[b"first"], &ID)?;
+        let (_, second_bump) = anchor_lang::cpi::try_find_program_address(&[b"second"], &ID)?;
+        let first_bump = [first_bump];
+        let second_bump = [second_bump];
+        let first: &[&[u8]] = &[b"first", &first_bump];
+        let second: &[&[u8]] = &[b"second", &second_bump];
+        let signer_seeds = [first, second];
+        let cpi_ctx = CpiContext::<_, 0>::new_with_signer(
             ctx.accounts.callee_program.address(),
             callee::cpi::accounts::Empty::new(),
+            &signer_seeds,
         );
         callee::cpi::empty(cpi_ctx)?;
         Ok(())

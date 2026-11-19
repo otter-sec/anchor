@@ -3,7 +3,7 @@
 /// On-chain: `sol_sha256` syscall. Off-chain: `sha2` crate.
 #[inline]
 pub fn sha256(data: &[u8]) -> [u8; 32] {
-    #[cfg(target_os = "solana")]
+    #[cfg(any(target_os = "solana", target_arch = "bpf"))]
     {
         use solana_sha256_hasher::sol_sha256;
         let slices: [&[u8]; 1] = [data];
@@ -15,7 +15,7 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
             out.assume_init()
         }
     }
-    #[cfg(not(target_os = "solana"))]
+    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
     {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();

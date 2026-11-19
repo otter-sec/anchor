@@ -22,15 +22,11 @@
 use {
     anchor_lang::{
         cursor::AccountCursor,
-        solana_program::{
-            instruction::{AccountMeta, Instruction},
-            program,
-        },
         testing::{AccountRecord, SbfInputBuffer},
-        AccountViewCompat, Bumps, Context,
+        unchecked_invoke_signed_fixed, AccountViewCompat, Bumps, Context,
     },
     core::mem::MaybeUninit,
-    pinocchio::account::AccountView,
+    pinocchio::{account::AccountView, instruction::InstructionAccount},
     solana_address::Address,
     solana_program_error::ProgramError,
 };
@@ -281,14 +277,10 @@ fn remaining_cpi_handles_keep_runtime_borrow_checks() {
     let account = &ctx.remaining_accounts()[0];
     let _borrow = account.try_borrow().unwrap();
     let handles = ctx.remaining_cpi_handles_preserving_flags::<1>().unwrap();
-    let instruction = Instruction {
-        program_id,
-        accounts: vec![AccountMeta::new(*account.address(), false)],
-        data: vec![],
-    };
+    let metas = [InstructionAccount::writable(account.address())];
 
     assert_eq!(
-        program::invoke(&instruction, &handles).unwrap_err(),
+        unchecked_invoke_signed_fixed(&program_id, &[], &metas, &[handles[0]], &[]).unwrap_err(),
         ProgramError::AccountBorrowFailed,
     );
 }

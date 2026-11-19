@@ -245,6 +245,7 @@ impl<T: SysvarLoad> crate::ToCpiHandleMut for Sysvar<T> {
 }
 
 #[doc(hidden)]
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 impl<T: SysvarLoad> crate::IdlAccountType for Sysvar<T> {
     const __IDL_ADDRESS: Option<&'static str> = if T::IDL_ADDRESS.is_empty() {
         None

@@ -497,9 +497,9 @@ dependencies = [
  "solana-program-error 3.0.1",
  "solana-program-log",
  "solana-program-memory 3.1.0",
+ "solana-rent 4.4.0",
  "solana-sha256-hasher 3.1.0",
  "solana-system-interface 3.3.0",
- "solana-sysvar 4.2.0",
  "wincode",
 ]
 

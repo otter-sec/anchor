@@ -17,7 +17,7 @@ guardrails = []
 metadata = ["dep:mpl-token-metadata"]
 
 [dependencies]
-anchor-lang = { workspace = true }
+anchor-lang = { workspace = true, features = ["alloc"] }
 pinocchio = { workspace = true }
 pinocchio-token = "0.6"
 pinocchio-token-2022 = "0.3"

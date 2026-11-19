@@ -58,6 +58,7 @@ impl AnchorAccount for Signer {
 view_wrapper_traits!(Signer);
 
 #[doc(hidden)]
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 impl crate::IdlAccountType for Signer {
     const __IDL_IS_SIGNER: bool = true;
 }

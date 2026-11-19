@@ -64,4 +64,5 @@ impl ForeignOwnerInit for UncheckedAccount {}
 view_wrapper_traits!(UncheckedAccount);
 
 #[doc(hidden)]
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 impl crate::IdlAccountType for UncheckedAccount {}

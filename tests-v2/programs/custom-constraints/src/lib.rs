@@ -7,8 +7,6 @@
 //! `tests/custom_constraints.rs` assert the resulting on-chain state
 //! to pin down WHERE in the lifecycle the derive routes each call.
 
-extern crate alloc;
-
 use anchor_lang::prelude::*;
 
 declare_id!("CC111111111111111111111111111111111111111111");

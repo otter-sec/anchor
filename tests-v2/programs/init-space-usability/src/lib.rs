@@ -1,5 +1,3 @@
-extern crate alloc;
-
 use anchor_lang::prelude::*;
 
 declare_id!("9AbShpmjP5WcQLSBW1NQmczpYVmT2CR2FLFoQdxxk47d");
@@ -16,6 +14,9 @@ pub type Scalar = f32;
 pub type Coordinate = i32;
 pub type Owner = Address;
 
+type BoundedString = anchor_lang::FixedVec<u8, { limits::NAME }>;
+type BoundedTags = anchor_lang::FixedVec<BoundedString, { limits::ITEMS }>;
+
 #[derive(InitSpace)]
 pub struct Vector2 {
     pub x: Scalar,
@@ -26,15 +27,13 @@ pub struct Vector2 {
 #[derive(InitSpace)]
 pub struct Profile {
     pub owner: Owner,
-    #[max_len(limits::NAME)]
-    pub name: alloc::string::String,
+    pub name: BoundedString,
 }
 
 #[account(borsh)]
 #[derive(InitSpace)]
 pub struct Nested {
-    #[max_len(limits::ITEMS, limits::NAME)]
-    pub tags: alloc::vec::Vec<alloc::string::String>,
+    pub tags: BoundedTags,
 }
 
 #[account(borsh)]
@@ -74,18 +73,13 @@ pub mod init_space_usability {
     #[discrim = 1]
     pub fn init_profile(ctx: &mut Context<InitProfile>) -> Result<()> {
         ctx.accounts.profile.owner = *ctx.accounts.payer.account().address();
-        ctx.accounts.profile.name = alloc::string::String::from("init-space");
+        ctx.accounts.profile.name = bounded_string("init-space")?;
         Ok(())
     }
 
     #[discrim = 2]
     pub fn init_nested(ctx: &mut Context<InitNested>) -> Result<()> {
-        ctx.accounts.nested.tags = alloc::vec![
-            alloc::string::String::from("zero"),
-            alloc::string::String::from("one"),
-            alloc::string::String::from("two"),
-            alloc::string::String::from("three"),
-        ];
+        ctx.accounts.nested.tags = bounded_tags(&["zero", "one", "two", "three"])?;
         Ok(())
     }
 
@@ -96,6 +90,27 @@ pub mod init_space_usability {
         ctx.accounts.image.pixels = [1, 2, 3, 4];
         Ok(())
     }
+}
+
+fn bounded_string(value: &str) -> Result<BoundedString> {
+    let mut result = BoundedString::new();
+    result
+        .try_extend_from_slice(value.as_bytes())
+        .map_err(|_| Error::InvalidInstructionData)?;
+    Ok(result)
+}
+
+fn bounded_tags(values: &[&str]) -> Result<BoundedTags> {
+    let mut result = BoundedTags::new();
+    for value in values {
+        let mut item = BoundedString::new();
+        item.try_extend_from_slice(value.as_bytes())
+            .map_err(|_| Error::InvalidInstructionData)?;
+        result
+            .try_push(item)
+            .map_err(|_| Error::InvalidInstructionData)?;
+    }
+    Ok(result)
 }
 
 fn require_space<T: Space>(expected: usize) -> Result<()> {

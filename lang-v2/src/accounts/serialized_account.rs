@@ -19,13 +19,55 @@ use {
 /// an associated `Value`, so a single tag can encode every `T` whose own
 /// bounds the impl satisfies.
 ///
-/// Both methods operate on a slice cursor (`&mut &[u8]` / `&mut &mut [u8]`)
+/// Serialization and deserialization operate on a slice cursor
+/// (`&mut &[u8]` / `&mut &mut [u8]`)
 /// and must advance it by the bytes they consume. `SerializedAccount` uses
 /// that cursor position to scrub stale bytes when a value serializes shorter
 /// than it did at load time.
+///
+/// Custom codecs used on-chain without the `alloc` feature must implement
+/// [`Self::serialize_and_compare`] to commit a mutable borrow after ownership
+/// changes. The comparison must leave the account bytes untouched.
 pub trait AnchorAccountSerialize<T> {
     /// Serialize `value` into the buffer past the discriminator.
     fn serialize(value: &T, buf: &mut &mut [u8]) -> Result<(), ProgramError>;
+
+    /// Serialize without writing, comparing the encoded bytes with an
+    /// existing foreign-owned payload. The returned length is the encoded
+    /// payload length; the boolean also accounts for stale bytes that would
+    /// need to be cleared.
+    ///
+    /// The default compares against a scratch copy on the host and with the
+    /// `alloc` feature. On-chain without `alloc`, the default returns
+    /// [`ProgramError::InvalidAccountData`].
+    fn serialize_and_compare(
+        value: &T,
+        payload: &[u8],
+        previous_serialized_len: usize,
+    ) -> Result<(usize, bool), ProgramError> {
+        #[cfg(any(feature = "alloc", not(any(target_os = "solana", target_arch = "bpf"))))]
+        {
+            let mut candidate = alloc::vec::Vec::from(payload);
+            let payload_len = candidate.len();
+            let mut output = candidate.as_mut_slice();
+            Self::serialize(value, &mut output)?;
+            let serialized_len = payload_len - output.len();
+            let zero_len = previous_serialized_len
+                .saturating_sub(serialized_len)
+                .min(payload.len().saturating_sub(serialized_len));
+            let matches = candidate.get(..serialized_len) == payload.get(..serialized_len)
+                && payload
+                    .get(serialized_len..serialized_len + zero_len)
+                    .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0));
+            return Ok((serialized_len, matches));
+        }
+
+        #[cfg(all(not(feature = "alloc"), any(target_os = "solana", target_arch = "bpf")))]
+        {
+            let _ = (value, payload, previous_serialized_len);
+            Err(ProgramError::InvalidAccountData)
+        }
+    }
 
     /// Deserialize a `T` from the buffer past the discriminator.
     fn deserialize(buf: &mut &[u8]) -> Result<T, ProgramError>;
@@ -36,10 +78,10 @@ pub trait AnchorAccountSerialize<T> {
 /// Validates owner, checks discriminator, deserializes via `S`. Holds a
 /// pinocchio borrow guard (`Ref` for `load`, `RefMut` for `load_mut`);
 /// `exit()` serializes through the held `RefMut`.
-/// If ownership changes after loading, commits compare the serialized payload
-/// (including stale-byte cleanup) against the live data without writing to it.
-/// Unchanged bytes succeed; changed bytes return `ProgramError::IllegalOwner`.
-/// This comparison allocates a temporary payload buffer only on owner changes.
+/// If ownership changes after loading, the codec compares the serialized
+/// payload (including stale-byte cleanup) against the live data without
+/// writing to it. See [`AnchorAccountSerialize::serialize_and_compare`] for
+/// the requirements on allocator-free builds.
 ///
 /// The wincode-backed instantiation is exposed as [`super::BorshAccount<T>`].
 ///
@@ -132,11 +174,9 @@ where
             let new_serialized_len = if self.view.owned_by(&T::OWNER) {
                 Self::serialize_payload(&self.data, payload, self.serialized_len)?
             } else {
-                // Codecs accept a mutable slice cursor, so serialize into a copy.
-                // Never write foreign-owned data, even if the bytes would match.
-                let mut candidate = payload.to_vec();
-                let len = Self::serialize_payload(&self.data, &mut candidate, self.serialized_len)?;
-                require!(candidate.as_slice() == payload, ProgramError::IllegalOwner);
+                let (len, matches) =
+                    S::serialize_and_compare(&self.data, payload, self.serialized_len)?;
+                require!(matches, ProgramError::IllegalOwner);
                 len
             };
             self.serialized_len = new_serialized_len;
@@ -526,6 +566,7 @@ where
 }
 
 #[doc(hidden)]
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 impl<T, S> crate::IdlAccountType for SerializedAccount<T, S>
 where
     T: Owner + Discriminator + crate::IdlAccountType,

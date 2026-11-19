@@ -316,10 +316,10 @@ declare_id!("So11111111111111111111111111111111111111112");
         std::fs::write(
             src_dir.join("lib.rs"),
             r#"
-#[cfg(not(target_os = "solana"))]
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 declare_id!("11111111111111111111111111111111");
 
-#[cfg(target_os = "solana")]
+#[cfg(any(target_os = "solana", target_arch = "bpf"))]
 declare_id!("So11111111111111111111111111111111111111112");
 "#,
         )

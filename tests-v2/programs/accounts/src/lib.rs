@@ -104,8 +104,13 @@ pub mod accounts_test {
     #[discrim = 6]
     pub fn read_rent(ctx: &mut Context<ReadRent>) -> Result<()> {
         let rent = &*ctx.accounts.rent;
+        let lamports_per_byte =
+            rent.try_minimum_balance(0)? / pinocchio::sysvars::rent::ACCOUNT_STORAGE_OVERHEAD;
+        let sdk_rent =
+            anchor_lang::solana_program::rent::Rent::with_lamports_per_byte(lamports_per_byte);
+        let minimum = rent.try_minimum_balance(100)?;
         require!(
-            rent.try_minimum_balance(100)? > 0,
+            minimum > 0 && minimum == sdk_rent.minimum_balance(100),
             ProgramError::InvalidAccountData
         );
         Ok(())

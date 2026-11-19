@@ -95,18 +95,6 @@ impl<T, const N: usize> FixedVec<T, N> {
     }
 
     #[inline]
-    pub(crate) fn resize(&mut self, len: usize, value: T)
-    where
-        T: Clone,
-    {
-        assert!(len <= N, "fixed vector capacity exceeded");
-        while self.len < len {
-            self.push(value.clone());
-        }
-        self.truncate(len);
-    }
-
-    #[inline]
     pub fn as_slice(&self) -> &[T] {
         unsafe { slice::from_raw_parts(self.data.as_ptr().cast(), self.len) }
     }
@@ -153,6 +141,14 @@ impl<T, const N: usize> Default for FixedVec<T, N> {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// `FixedVec` is encoded as a sequence: a four-byte length prefix followed by
+// at most `N` elements.  Keep the bound aligned with the existing `InitSpace`
+// treatment of Borsh `Vec`/`String`, so bounded runtime fields can be used in
+// account schemas without reintroducing an allocator-backed type.
+impl<T: crate::Space, const N: usize> crate::Space for FixedVec<T, N> {
+    const INIT_SPACE: usize = core::mem::size_of::<u32>() + T::INIT_SPACE * N;
 }
 
 impl<T, const N: usize> Drop for FixedVec<T, N> {

@@ -354,6 +354,20 @@ impl<T: IdlAccountType, const N: usize> IdlAccountType for [T; N] {
     }
 }
 
+// `FixedVec<T, N>` is the bounded, allocator-free counterpart to `Vec<T>`.
+// Like the unbounded collection impl above, it only needs to forward IDL
+// dependency registration to its element type; the derive macro describes the
+// field's collection shape when it emits the containing type definition.
+#[doc(hidden)]
+impl<T: IdlAccountType, const N: usize> IdlAccountType for crate::FixedVec<T, N> {
+    fn __register_idl_deps(
+        accounts: &mut alloc::vec::Vec<&'static str>,
+        types: &mut alloc::vec::Vec<&'static str>,
+    ) {
+        T::__register_idl_deps(accounts, types);
+    }
+}
+
 // `PodVec<T, MAX>` — the zero-copy bounded-capacity analog of `Vec<T>`.
 // It contributes a generic type definition so downstream `declare_program!`
 // consumers can reconstruct the length prefix plus fixed-capacity backing

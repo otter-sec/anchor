@@ -113,6 +113,7 @@ solana-program-pack = "3.1.0"
 solana-program-runtime = "~4.3.0"
 solana-pubkey = "4.3.0"
 solana-pubsub-client = "4.3.0"
+solana-rent = { version = "4.4.0", default-features = false }
 solana-rpc-client = "4.3.0"
 solana-rpc-client-api = "4.3.0"
 solana-sbpf = "0.23.0"

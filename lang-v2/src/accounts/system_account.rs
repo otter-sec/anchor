@@ -32,4 +32,5 @@ impl AnchorAccount for SystemAccount {
 view_wrapper_traits!(SystemAccount);
 
 #[doc(hidden)]
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 impl crate::IdlAccountType for SystemAccount {}
