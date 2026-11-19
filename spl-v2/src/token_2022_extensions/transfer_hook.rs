@@ -19,7 +19,7 @@ pub struct TransferHookUpdate<'a> {
 }
 
 pub fn transfer_hook_initialize<'a>(
-    ctx: CpiContext<'a, TransferHookInitialize<'a>, 1>,
+    ctx: CpiContext<'a, TransferHookInitialize<'a>>,
     authority: Option<&Address>,
     transfer_hook_program_id: Option<&Address>,
 ) -> Result<(), ProgramError> {
@@ -34,8 +34,8 @@ pub fn transfer_hook_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn transfer_hook_update<'a, const N: usize>(
-    ctx: CpiContext<'a, TransferHookUpdate<'a>, N>,
+pub fn transfer_hook_update<'a>(
+    ctx: CpiContext<'a, TransferHookUpdate<'a>>,
     transfer_hook_program_id: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;

@@ -1,5 +1,5 @@
 use {
-    alloc::vec::Vec, pinocchio::address::Address, solana_program_error::ProgramError,
+    anchor_lang::Vec, pinocchio::address::Address, solana_program_error::ProgramError,
     solana_pubkey::Pubkey,
 };
 

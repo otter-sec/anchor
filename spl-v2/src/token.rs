@@ -344,20 +344,8 @@ fn token_2022_authority_type(
     }
 }
 
-#[inline]
-fn token_cpi_ctx<'a, T, const N: usize>(
-    program: &'a Address,
-    accounts: T,
-    signer_seeds: TokenSignerSeeds<'a>,
-) -> CpiContext<'a, T, N>
-where
-    T: anchor_lang::ToCpiAccountsWithCapacity<'a, N>,
-{
-    CpiContext::new_with_signer(program, accounts, signer_seeds)
-}
-
-pub fn set_authority<'a, const N: usize>(
-    ctx: CpiContext<'a, accounts::SetAuthority<'a>, N>,
+pub fn set_authority<'a>(
+    ctx: CpiContext<'a, accounts::SetAuthority<'a>>,
     authority_type: spl_token::instruction::AuthorityType,
     new_authority: Option<Address>,
 ) -> Result<(), ProgramError> {
@@ -614,7 +602,7 @@ impl TokenCpiExt for Program<Token> {
         A: ToCpiHandle + ?Sized,
     {
         mint_to(
-            token_cpi_ctx::<_, 3>(
+            CpiContext::new_with_signer(
                 self.address(),
                 accounts::MintTo {
                     mint: mint.try_to_cpi_handle_mut()?,
@@ -641,7 +629,7 @@ impl TokenCpiExt for Program<Token> {
         A: ToCpiHandle + ?Sized,
     {
         transfer(
-            token_cpi_ctx::<_, 3>(
+            CpiContext::new_with_signer(
                 self.address(),
                 accounts::Transfer {
                     from: from.try_to_cpi_handle_mut()?,
@@ -671,7 +659,7 @@ impl TokenCpiExt for Program<Token> {
         A: ToCpiHandle + ?Sized,
     {
         transfer_checked(
-            token_cpi_ctx::<_, 4>(
+            CpiContext::new_with_signer(
                 self.address(),
                 accounts::TransferChecked {
                     from: from.try_to_cpi_handle_mut()?,
@@ -700,7 +688,7 @@ impl TokenCpiExt for Program<Token> {
         A: ToCpiHandle + ?Sized,
     {
         burn(
-            token_cpi_ctx::<_, 3>(
+            CpiContext::new_with_signer(
                 self.address(),
                 accounts::Burn {
                     from: from.try_to_cpi_handle_mut()?,
@@ -727,7 +715,7 @@ impl TokenCpiExt for Program<Token> {
         A: ToCpiHandle + ?Sized,
     {
         approve(
-            token_cpi_ctx::<_, 3>(
+            CpiContext::new_with_signer(
                 self.address(),
                 accounts::Approve {
                     to: source.try_to_cpi_handle_mut()?,
@@ -750,7 +738,7 @@ impl TokenCpiExt for Program<Token> {
         S: ToCpiHandleMut + ?Sized,
         A: ToCpiHandle + ?Sized,
     {
-        revoke(token_cpi_ctx::<_, 2>(
+        revoke(CpiContext::new_with_signer(
             self.address(),
             accounts::Revoke {
                 source: source.try_to_cpi_handle_mut()?,
@@ -772,7 +760,7 @@ impl TokenCpiExt for Program<Token> {
         Dest: ToCpiHandleMut + ?Sized,
         A: ToCpiHandle + ?Sized,
     {
-        close_account(token_cpi_ctx::<_, 3>(
+        close_account(CpiContext::new_with_signer(
             self.address(),
             accounts::CloseAccount {
                 account: account.try_to_cpi_handle_mut()?,
@@ -798,7 +786,7 @@ impl TokenCpiExt for Program<Token> {
         A: ToCpiHandle + ?Sized,
     {
         mint_to_checked(
-            token_cpi_ctx::<_, 3>(
+            CpiContext::new_with_signer(
                 self.address(),
                 accounts::MintToChecked {
                     mint: mint.try_to_cpi_handle_mut()?,
@@ -827,7 +815,7 @@ impl TokenCpiExt for Program<Token> {
         A: ToCpiHandle + ?Sized,
     {
         burn_checked(
-            token_cpi_ctx::<_, 3>(
+            CpiContext::new_with_signer(
                 self.address(),
                 accounts::BurnChecked {
                     from: from.try_to_cpi_handle_mut()?,
@@ -858,7 +846,7 @@ impl TokenCpiExt for Program<Token> {
         A: ToCpiHandle + ?Sized,
     {
         approve_checked(
-            token_cpi_ctx::<_, 4>(
+            CpiContext::new_with_signer(
                 self.address(),
                 accounts::ApproveChecked {
                     to: source.try_to_cpi_handle_mut()?,
@@ -885,7 +873,7 @@ impl TokenCpiExt for Program<Token> {
         M: ToCpiHandle + ?Sized,
         A: ToCpiHandle + ?Sized,
     {
-        freeze_account(token_cpi_ctx::<_, 3>(
+        freeze_account(CpiContext::new_with_signer(
             self.address(),
             accounts::FreezeAccount {
                 account: account.try_to_cpi_handle_mut()?,
@@ -908,7 +896,7 @@ impl TokenCpiExt for Program<Token> {
         M: ToCpiHandle + ?Sized,
         A: ToCpiHandle + ?Sized,
     {
-        thaw_account(token_cpi_ctx::<_, 3>(
+        thaw_account(CpiContext::new_with_signer(
             self.address(),
             accounts::ThawAccount {
                 account: account.try_to_cpi_handle_mut()?,
@@ -923,7 +911,7 @@ impl TokenCpiExt for Program<Token> {
     where
         Acc: ToCpiHandleMut + ?Sized,
     {
-        sync_native(CpiContext::<_, 1>::new(
+        sync_native(CpiContext::new(
             self.address(),
             accounts::SyncNative {
                 account: account.try_to_cpi_handle_mut()?,
@@ -944,7 +932,7 @@ impl TokenCpiExt for Program<Token> {
         R: ToCpiHandle + ?Sized,
     {
         initialize_mint(
-            CpiContext::<_, 2>::new(
+            CpiContext::new(
                 self.address(),
                 accounts::InitializeMint {
                     mint: mint.try_to_cpi_handle_mut()?,
@@ -968,7 +956,7 @@ impl TokenCpiExt for Program<Token> {
         M: ToCpiHandleMut + ?Sized,
     {
         initialize_mint2(
-            CpiContext::<_, 1>::new(
+            CpiContext::new(
                 self.address(),
                 accounts::InitializeMint2 {
                     mint: mint.try_to_cpi_handle_mut()?,
@@ -993,7 +981,7 @@ impl TokenCpiExt for Program<Token> {
         A: ToCpiHandle + ?Sized,
         R: ToCpiHandle + ?Sized,
     {
-        initialize_account(CpiContext::<_, 4>::new(
+        initialize_account(CpiContext::new(
             self.address(),
             accounts::InitializeAccount {
                 account: account.try_to_cpi_handle_mut()?,
@@ -1015,7 +1003,7 @@ impl TokenCpiExt for Program<Token> {
         M: ToCpiHandle + ?Sized,
         A: ToCpiHandle + ?Sized,
     {
-        initialize_account3(CpiContext::<_, 3>::new(
+        initialize_account3(CpiContext::new(
             self.address(),
             accounts::InitializeAccount3 {
                 account: account.try_to_cpi_handle_mut()?,
@@ -1038,7 +1026,7 @@ impl TokenCpiExt for Program<Token> {
         A: ToCpiHandle + ?Sized,
     {
         set_authority(
-            token_cpi_ctx::<_, 2>(
+            CpiContext::new_with_signer(
                 self.address(),
                 accounts::SetAuthority {
                     account_or_mint: account_or_mint.try_to_cpi_handle_mut()?,

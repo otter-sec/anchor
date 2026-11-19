@@ -258,8 +258,8 @@ impl Drop for CpiBorrowGuard {
     }
 }
 
-pub(crate) fn enter_cpi<'a>(handles: &[CpiHandle<'a>]) -> alloc::vec::Vec<CpiBorrowGuard> {
-    let mut guards = alloc::vec::Vec::new();
+pub(crate) fn enter_cpi<'a>(handles: &[CpiHandle<'a>]) -> crate::Vec<CpiBorrowGuard> {
+    let mut guards = crate::Vec::new();
     for handle in handles {
         if let Some(guard) = handle.enter_cpi() {
             guards.push(guard);
@@ -270,21 +270,15 @@ pub(crate) fn enter_cpi<'a>(handles: &[CpiHandle<'a>]) -> alloc::vec::Vec<CpiBor
     guards
 }
 
-/// Capacity-aware CPI account conversion used by [`crate::CpiContext`].
-///
-/// The account struct is converted into inline buffers sized by `N` for the
-/// individual invocation. This avoids imposing a small global runtime limit
-/// while keeping large buffers out of CPI calls that do not need them.
-pub trait ToCpiAccountsWithCapacity<'a, const N: usize> {
-    fn to_instruction_accounts_with_capacity(
+/// Collect the named CPI accounts and optional-account sentinel flags.
+pub trait ToCpiAccounts<'a> {
+    fn to_instruction_accounts(
         &self,
-    ) -> Result<crate::FixedVec<pinocchio::instruction::InstructionAccount<'a>, N>, ProgramError>;
+    ) -> Result<crate::Vec<pinocchio::instruction::InstructionAccount<'a>>, ProgramError>;
 
-    fn to_cpi_handles_with_capacity(&self) -> Result<crate::CpiHandleBuffer<'a, N>, ProgramError>;
+    fn to_cpi_handles(&self) -> Result<crate::Vec<CpiHandle<'a>>, ProgramError>;
 
-    fn optional_account_sentinel_flags_with_capacity(
-        &self,
-    ) -> Result<crate::FixedVec<bool, N>, ProgramError>;
+    fn optional_account_sentinel_flags(&self) -> Result<crate::Vec<bool>, ProgramError>;
 }
 
 pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
@@ -881,8 +875,8 @@ impl<T: crate::IdlAccountType> crate::IdlAccountType for Nested<T> {
         T::__idl_type_def()
     }
     fn __register_idl_deps(
-        accounts: &mut ::alloc::vec::Vec<&'static str>,
-        types: &mut ::alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::Vec<&'static str>,
+        types: &mut crate::Vec<&'static str>,
     ) {
         T::__register_idl_deps(accounts, types);
     }

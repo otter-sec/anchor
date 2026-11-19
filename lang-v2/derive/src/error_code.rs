@@ -136,9 +136,9 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
         impl #name {
             #[doc(hidden)]
             pub fn __idl_errors() -> anchor_lang::__idl::string::String {
-                let mut __parts: anchor_lang::__idl::vec::Vec<
+                let mut __parts: anchor_lang::Vec<
                     anchor_lang::__idl::string::String
-                > = anchor_lang::__idl::vec::Vec::new();
+                > = anchor_lang::Vec::new();
                 #(#idl_entry_pushes)*
                 let mut __payload = anchor_lang::__idl::string::String::from("[");
                 let mut __first = true;

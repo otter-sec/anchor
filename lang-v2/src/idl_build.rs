@@ -84,8 +84,8 @@ pub trait IdlAccountType {
     /// Primitive impls (bool, u*, i*, f*, String,
     /// Address, etc.) use the default no-op — they never appear in `types[]`.
     fn __register_idl_deps(
-        _accounts: &mut alloc::vec::Vec<&'static str>,
-        _types: &mut alloc::vec::Vec<&'static str>,
+        _accounts: &mut crate::Vec<&'static str>,
+        _types: &mut crate::Vec<&'static str>,
     ) {
     }
 }
@@ -221,8 +221,8 @@ macro_rules! impl_idl_account_type_pod_alias {
                 ));
 
                 fn __register_idl_deps(
-                    _accounts: &mut alloc::vec::Vec<&'static str>,
-                    types: &mut alloc::vec::Vec<&'static str>,
+                    _accounts: &mut crate::Vec<&'static str>,
+                    types: &mut crate::Vec<&'static str>,
                 ) {
                     if let Some(t) = <Self as IdlAccountType>::__IDL_TYPE_DEF {
                         types.push(t);
@@ -248,8 +248,18 @@ impl_idl_account_type_pod_alias!(
 #[doc(hidden)]
 impl<T: IdlAccountType> IdlAccountType for alloc::vec::Vec<T> {
     fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::Vec<&'static str>,
+        types: &mut crate::Vec<&'static str>,
+    ) {
+        T::__register_idl_deps(accounts, types);
+    }
+}
+
+#[doc(hidden)]
+impl<T: IdlAccountType> IdlAccountType for crate::Vec<T> {
+    fn __register_idl_deps(
+        accounts: &mut crate::Vec<&'static str>,
+        types: &mut crate::Vec<&'static str>,
     ) {
         T::__register_idl_deps(accounts, types);
     }
@@ -258,8 +268,8 @@ impl<T: IdlAccountType> IdlAccountType for alloc::vec::Vec<T> {
 #[doc(hidden)]
 impl<K: IdlAccountType, V: IdlAccountType> IdlAccountType for alloc::collections::BTreeMap<K, V> {
     fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::Vec<&'static str>,
+        types: &mut crate::Vec<&'static str>,
     ) {
         K::__register_idl_deps(accounts, types);
         V::__register_idl_deps(accounts, types);
@@ -269,8 +279,8 @@ impl<K: IdlAccountType, V: IdlAccountType> IdlAccountType for alloc::collections
 #[doc(hidden)]
 impl<T: IdlAccountType> IdlAccountType for alloc::collections::BTreeSet<T> {
     fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::Vec<&'static str>,
+        types: &mut crate::Vec<&'static str>,
     ) {
         T::__register_idl_deps(accounts, types);
     }
@@ -281,8 +291,8 @@ macro_rules! impl_idl_account_type_tuple {
         #[doc(hidden)]
         impl<$($ty: IdlAccountType),+> IdlAccountType for ($($ty,)+) {
             fn __register_idl_deps(
-                accounts: &mut alloc::vec::Vec<&'static str>,
-                types: &mut alloc::vec::Vec<&'static str>,
+                accounts: &mut crate::Vec<&'static str>,
+                types: &mut crate::Vec<&'static str>,
             ) {
                 $( $ty::__register_idl_deps(accounts, types); )+
             }
@@ -315,8 +325,8 @@ impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 #[doc(hidden)]
 impl<T: IdlAccountType> IdlAccountType for [T] {
     fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::Vec<&'static str>,
+        types: &mut crate::Vec<&'static str>,
     ) {
         T::__register_idl_deps(accounts, types);
     }
@@ -327,8 +337,8 @@ impl<T: IdlAccountType> IdlAccountType for [T] {
 #[doc(hidden)]
 impl<T: IdlAccountType + ?Sized> IdlAccountType for &T {
     fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::Vec<&'static str>,
+        types: &mut crate::Vec<&'static str>,
     ) {
         T::__register_idl_deps(accounts, types);
     }
@@ -337,8 +347,8 @@ impl<T: IdlAccountType + ?Sized> IdlAccountType for &T {
 #[doc(hidden)]
 impl<T: IdlAccountType> IdlAccountType for Option<T> {
     fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::Vec<&'static str>,
+        types: &mut crate::Vec<&'static str>,
     ) {
         T::__register_idl_deps(accounts, types);
     }
@@ -347,8 +357,8 @@ impl<T: IdlAccountType> IdlAccountType for Option<T> {
 #[doc(hidden)]
 impl<T: IdlAccountType, const N: usize> IdlAccountType for [T; N] {
     fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::Vec<&'static str>,
+        types: &mut crate::Vec<&'static str>,
     ) {
         T::__register_idl_deps(accounts, types);
     }
@@ -376,8 +386,8 @@ where
     );
 
     fn __register_idl_deps(
-        accounts: &mut alloc::vec::Vec<&'static str>,
-        types: &mut alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::Vec<&'static str>,
+        types: &mut crate::Vec<&'static str>,
     ) {
         if let Some(t) = <Self as IdlAccountType>::__IDL_TYPE_DEF {
             types.push(t);
@@ -393,8 +403,8 @@ mod tests {
 
     #[test]
     fn pod_vec_registers_length_wrapper_for_native_elements() {
-        let mut accounts = alloc::vec::Vec::new();
-        let mut types = alloc::vec::Vec::new();
+        let mut accounts = crate::Vec::new();
+        let mut types = crate::Vec::new();
 
         <crate::pod::PodVec<u8, 4> as IdlAccountType>::__register_idl_deps(
             &mut accounts,
@@ -415,8 +425,8 @@ mod tests {
 
     #[test]
     fn pod_vec_registers_defined_element_wrappers() {
-        let mut accounts = alloc::vec::Vec::new();
-        let mut types = alloc::vec::Vec::new();
+        let mut accounts = crate::Vec::new();
+        let mut types = crate::Vec::new();
 
         <crate::pod::PodVec<crate::pod::PodU64, 4> as IdlAccountType>::__register_idl_deps(
             &mut accounts,

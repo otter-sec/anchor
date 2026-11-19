@@ -751,9 +751,9 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
         /// pipeline; do not rely on the shape or call this directly.
         #[doc(hidden)]
         pub fn __idl_accounts() -> anchor_lang::__idl::string::String {
-            let __parts: anchor_lang::__idl::vec::Vec<
+            let __parts: anchor_lang::Vec<
                 anchor_lang::__idl::string::String
-            > = anchor_lang::__idl::vec![#(#parts),*];
+            > = anchor_lang::Vec::from([#(#parts),*]);
             let mut __s = anchor_lang::__idl::string::String::from("[");
             let mut __first = true;
             for __p in &__parts {

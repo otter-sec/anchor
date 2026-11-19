@@ -1,4 +1,4 @@
-use crate::{Discriminator, FixedVec};
+use crate::Discriminator;
 
 // Sha256(anchor:event)[..8], matching Anchor v1's self-CPI event instruction tag.
 pub const EVENT_IX_TAG: u64 = 0x1d9acb512ea545e4;
@@ -24,11 +24,15 @@ pub const EVENT_IX_TAG_LE: &[u8] = &EVENT_IX_TAG.to_le_bytes();
 pub trait Event: Discriminator {
     /// Append the serialized event to caller-selected storage.
     /// Implementations leave the original contents unchanged on failure.
-    fn try_write_data<const N: usize>(&self, output: &mut FixedVec<u8, N>) -> crate::Result<()>;
+    fn try_write_data(&self, output: &mut crate::Vec<u8>) -> crate::Result<()>;
 
-    /// Owned host representation used by clients and tests.
-    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-    fn data(&self) -> alloc::vec::Vec<u8>;
+    /// Serialize into an owned event buffer.
+    fn data(&self) -> crate::Vec<u8> {
+        let mut data = crate::Vec::new();
+        self.try_write_data(&mut data)
+            .expect("event serialization failed");
+        data
+    }
 }
 
 /// Log event data via the `sol_log_data` syscall.

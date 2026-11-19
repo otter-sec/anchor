@@ -53,7 +53,8 @@ fn all_labeled_variants() -> Vec<(&'static str, ErrorCode)> {
             | ErrorCode::RequireKeysEqViolated
             | ErrorCode::RequireKeysNeqViolated
             | ErrorCode::RequireGtViolated
-            | ErrorCode::RequireGteViolated => (),
+            | ErrorCode::RequireGteViolated
+            | ErrorCode::HeapAllocationFailed => (),
         }
     }
     exhaustiveness_check(ErrorCode::AccountNotEnoughKeys);
@@ -95,6 +96,7 @@ fn all_labeled_variants() -> Vec<(&'static str, ErrorCode)> {
         ("RequireKeysNeqViolated", ErrorCode::RequireKeysNeqViolated),
         ("RequireGtViolated", ErrorCode::RequireGtViolated),
         ("RequireGteViolated", ErrorCode::RequireGteViolated),
+        ("HeapAllocationFailed", ErrorCode::HeapAllocationFailed),
     ]
 }
 
@@ -118,7 +120,7 @@ fn no_two_variants_share_a_custom_code() {
     }
     // Snapshot — adding a new Custom variant forces a review of this number.
     assert_eq!(
-        custom_count, 17,
+        custom_count, 18,
         "Number of Custom error codes changed; update this snapshot after review"
     );
 }
@@ -128,6 +130,7 @@ fn custom_codes_are_in_reserved_ranges() {
     // Documented reserved ranges:
     //   2000-2499 — constraint failures
     //   2500-2999 — require! macro violations
+    //   4100-4999 — miscellaneous framework errors
     //
     // Codes outside these ranges may collide with v1 or downstream programs.
     for (label, code) in all_labeled_variants() {
@@ -135,10 +138,12 @@ fn custom_codes_are_in_reserved_ranges() {
         if let ProgramError::Custom(n) = err {
             let in_constraints = (2000..=2499).contains(&n);
             let in_requires = (2500..=2999).contains(&n);
+            let in_miscellaneous = (4100..=4999).contains(&n);
             assert!(
-                in_constraints || in_requires,
+                in_constraints || in_requires || in_miscellaneous,
                 "ErrorCode::{} maps to Custom({}), outside the documented \
-                 ranges [2000-2499] (constraints) and [2500-2999] (require!)",
+                 ranges [2000-2499] (constraints), [2500-2999] (require!), and \
+                 [4100-4999] (miscellaneous)",
                 label,
                 n
             );
@@ -224,6 +229,11 @@ fn builtin_groupings_are_stable() {
         "RequireGteViolated",
         ErrorCode::RequireGteViolated.into(),
         Custom(2506),
+    );
+    check(
+        "HeapAllocationFailed",
+        ErrorCode::HeapAllocationFailed.into(),
+        Custom(4104),
     );
 
     check(

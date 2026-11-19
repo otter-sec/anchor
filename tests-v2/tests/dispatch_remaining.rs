@@ -56,10 +56,10 @@ fn initialize(svm: &mut LiteSVM, payer: &Keypair) -> Pubkey {
 fn call_raw(
     svm: &mut LiteSVM,
     payer: &Keypair,
-    data: Vec<u8>,
+    data: impl AsRef<[u8]>,
     accounts: Vec<AccountMeta>,
 ) -> TransactionResult {
-    let ix = Instruction::new_with_bytes(program_id(), &data, accounts);
+    let ix = Instruction::new_with_bytes(program_id(), data.as_ref(), accounts);
     let blockhash = svm.latest_blockhash();
     let msg = Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &blockhash);
     let signers: Vec<&dyn solana_signer::Signer> = vec![payer];

@@ -193,7 +193,7 @@ fn test_cpi_ref_args() {
 fn call_raw(
     svm: &mut LiteSVM,
     program: Pubkey,
-    data: Vec<u8>,
+    data: anchor_lang::Vec<u8>,
     metas: Vec<AccountMeta>,
     payer: &solana_keypair::Keypair,
     extra: &[&solana_keypair::Keypair],

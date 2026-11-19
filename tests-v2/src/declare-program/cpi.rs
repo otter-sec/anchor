@@ -347,7 +347,7 @@ fn declared_scalar_and_defined_args_serialize_after_discriminator() {
 #[test]
 fn declared_vec_and_string_args_compile_and_include_discriminator() {
     let data = external::instruction::BytesAndString {
-        payload: vec![1, 2, 3],
+        payload: anchor_lang::Vec::from([1, 2, 3]),
         label: "anchor".to_string(),
     }
     .data();

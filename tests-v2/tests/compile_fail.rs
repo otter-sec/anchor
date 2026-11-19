@@ -307,7 +307,7 @@ pub fn build_cpi<'a>(
     data: CpiHandle<'a>,
 ) {
     let accounts = declared::cpi::accounts::Invoke { authority, data };
-    let ctx = CpiContext::<_, 2>::new(program, accounts);
+    let ctx = CpiContext::new(program, accounts);
     declared::cpi::invoke(ctx, 5);
 }
 "#,
@@ -355,7 +355,7 @@ pub fn build_cpi<'a>(
     system_program: CpiHandle<'a>,
 ) {
     let accounts = crate::cpi::accounts::DoThing { system_program };
-    let ctx = CpiContext::<_, 1>::new(program, accounts);
+    let ctx = CpiContext::new(program, accounts);
     crate::cpi::do_thing(ctx);
 }
 "#,
@@ -459,7 +459,7 @@ pub mod program_interface_matching_program_id {
     }
 }
 
-pub fn none_sentinel(required: Address) -> Vec<anchor_lang::AccountMeta> {
+pub fn none_sentinel(required: Address) -> anchor_lang::Vec<anchor_lang::AccountMeta> {
     crate::accounts::Maybe {
         required,
         optional: None,
@@ -1775,7 +1775,7 @@ declare_program!(bad);
 
 pub fn use_return<'a>(program: &'a Address, data: CpiHandle<'a>) {
     let accounts = bad::cpi::accounts::Ix { data };
-    let ctx = CpiContext::<_, 1>::new(program, accounts);
+    let ctx = CpiContext::new(program, accounts);
     let _ = bad::cpi::ix(ctx).unwrap().get();
 }
 "#,
@@ -1871,7 +1871,7 @@ declare_program!(bad);
 pub fn use_declared_types(
     value: bad::ObjectTuple,
     variant: bad::ObjectEnum,
-) -> anchor_lang::__alloc::vec::Vec<u8> {
+) -> anchor_lang::Vec<u8> {
     let bad::ObjectTuple(bytes, maybe) = value;
     let _ = maybe;
     match variant {
@@ -1969,7 +1969,7 @@ declare_program!(bad);
 
 pub fn misuse_return<'a>(program: &'a Address, data: CpiHandle<'a>) {
     let accounts = bad::cpi::accounts::Ix { data };
-    let ctx = CpiContext::<_, 1>::new(program, accounts);
+    let ctx = CpiContext::new(program, accounts);
     let _ = bad::cpi::ix(ctx).get();
 }
 "#,

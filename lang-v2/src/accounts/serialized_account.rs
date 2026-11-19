@@ -540,8 +540,8 @@ where
         T::__idl_type_def()
     }
     fn __register_idl_deps(
-        accounts: &mut ::alloc::vec::Vec<&'static str>,
-        types: &mut ::alloc::vec::Vec<&'static str>,
+        accounts: &mut crate::Vec<&'static str>,
+        types: &mut crate::Vec<&'static str>,
     ) {
         T::__register_idl_deps(accounts, types);
     }
