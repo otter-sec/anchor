@@ -32,6 +32,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - ts: Build version 1 transaction messages by default ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 - ts: Append a compute budget instruction with the estimated compute unit limit to legacy and version 0 messages ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 - ts: Require `@solana/kit` ^8.5.0 ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
+- spl-v2: Build without `std` on upstream BPF. Use `spl-token-2022-interface` 3 and `spl-token-metadata-interface` 1, use `token::AuthorityType` instead of `token::spl_token::instruction::AuthorityType`, and remove the `token::spl_token` and `token_2022_extensions::spl_pod` re-exports ([#5290](https://github.com/otter-sec/anchor/pull/5290)).
 
 ## [2.0.0-rc.3] - 2026-10-30
 

@@ -289,7 +289,7 @@ pub mod spl_test {
             &mut ctx.accounts.account_or_mint,
             &ctx.accounts.current_authority,
             &[],
-            token::spl_token::instruction::AuthorityType::CloseAccount,
+            token::AuthorityType::CloseAccount,
             Some(new_authority),
         )?;
         Ok(())
@@ -346,7 +346,7 @@ pub mod spl_test {
             &mut ctx.accounts.account_or_mint,
             &ctx.accounts.authority,
             signer_seeds,
-            token::spl_token::instruction::AuthorityType::CloseAccount,
+            token::AuthorityType::CloseAccount,
             Some(new_authority),
         )?;
         Ok(())

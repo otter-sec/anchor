@@ -265,12 +265,7 @@ fn token_account_init_space(
     }
 
     let mint_data = unsafe { mint.borrow_unchecked() };
-    let mint_state = PodStateWithExtensions::<PodMint>::unpack(mint_data)?;
-    let mint_extensions = mint_state.get_extension_types()?;
-    let required_extensions =
-        Token2022ExtensionType::get_required_init_account_extensions(&mint_extensions);
-
-    Token2022ExtensionType::try_calculate_account_len::<PodAccount>(&required_extensions)
+    spl_token_2022::extension::account_len::try_calculate_account_len_from_mint_data(mint_data, &[])
 }
 
 // ---------------------------------------------------------------------------
