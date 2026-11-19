@@ -5972,6 +5972,11 @@ fn bounded_serialized_len(ty: &Type) -> Option<TokenStream2> {
             let fixed = if path.path.segments.len() == 1 {
                 match ident.as_str() {
                     "bool" | "u8" | "i8" => Some(1usize),
+                    // The prelude exports `Address` (and `Pubkey` under
+                    // `compat`). A local type with the same name and a
+                    // longer encoding overflows the `FixedVec` buffer,
+                    // which returns an error instead of writing past it.
+                    "Address" | "Pubkey" => Some(32),
                     "u16" | "i16" => Some(2),
                     "u32" | "i32" | "f32" | "char" => Some(4),
                     "u64" | "i64" | "f64" => Some(8),
@@ -6029,7 +6034,33 @@ fn bounded_fields_serialized_len(fields: &Fields) -> Option<TokenStream2> {
 
 fn bounded_event_methods(event_data_bound: Option<TokenStream2>) -> TokenStream2 {
     let Some(event_data_bound) = event_data_bound else {
-        return TokenStream2::new();
+        // No bound, so `emit!(event)` and `emit_cpi!(event)` cannot size a
+        // buffer. Nothing implements `EventSizeBound`, so a call fails to
+        // compile with a message that names the storage form. The bound
+        // names `R`, so rustc checks it only at a call site.
+        return quote! {
+            #[doc(hidden)]
+            pub fn __anchor_with_event_data<R>(
+                &self,
+                _callback: impl FnOnce(&[u8]) -> anchor_lang::Result<R>,
+            ) -> anchor_lang::Result<R>
+            where
+                Self: anchor_lang::event::EventSizeBound<R>,
+            {
+                Err(anchor_lang::Error::InvalidInstructionData)
+            }
+
+            #[doc(hidden)]
+            pub fn __anchor_with_event_cpi_data<R>(
+                &self,
+                _callback: impl FnOnce(&[u8]) -> anchor_lang::Result<R>,
+            ) -> anchor_lang::Result<R>
+            where
+                Self: anchor_lang::event::EventSizeBound<R>,
+            {
+                Err(anchor_lang::Error::InvalidInstructionData)
+            }
+        };
     };
     let event_cpi_capacity =
         quote! { anchor_lang::event::EVENT_IX_TAG_LE.len() + (#event_data_bound) };

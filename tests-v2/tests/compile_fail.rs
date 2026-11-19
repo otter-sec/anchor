@@ -2897,3 +2897,126 @@ pub struct BoxedAccount {
     )
     .expect_fail(&["AnchorAccount", "Box<Slab<Data>>"]);
 }
+
+const UNBOUNDED_EVENT_PROGRAM: &str = r#"
+use anchor_lang::{prelude::*, FixedVec};
+
+declare_id!("E2BJE8WXAe7fLnW1ekVGg75udBFfWefNUsvPNcaKwLMm");
+
+#[derive(Clone, Copy, AnchorSerialize, AnchorDeserialize)]
+#[repr(u8)]
+pub enum Side {
+    Bid,
+    Ask,
+}
+
+#[event]
+pub struct OrderPlaced {
+    pub side: Side,
+    pub amount: u64,
+}
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct Emit {
+    pub payer: Signer,
+}
+
+#[program]
+pub mod unbounded_event {
+    use super::*;
+
+    pub fn emit_event(ctx: &mut Context<Emit>) -> Result<()> {
+        let mut storage = FixedVec::<u8, 64>::new();
+        let _ = &mut storage;
+        EMIT_CALL
+        Ok(())
+    }
+}
+"#;
+
+fn unbounded_event_case(name: &'static str, call: &str) -> CompileCase<'static> {
+    let source = UNBOUNDED_EVENT_PROGRAM.replace("EMIT_CALL", call);
+    CompileCase::new(name, Box::leak(source.into_boxed_str()))
+}
+
+const UNBOUNDED_EVENT_ERROR: &str = "event `OrderPlaced` has no serialized size bound, so \
+                                     `emit!(event)` and `emit_cpi!(event)` cannot size its buffer";
+const UNBOUNDED_EVENT_HINT: &str = "pass a buffer: `emit_cpi!(event, &mut storage)`";
+
+#[test]
+fn emit_cpi_without_storage_rejects_unbounded_event_with_hint() {
+    unbounded_event_case(
+        "emit_cpi_without_storage_rejects_unbounded_event",
+        "emit_cpi!(OrderPlaced { side: Side::Bid, amount: 1 });",
+    )
+    .expect_fail(&[UNBOUNDED_EVENT_ERROR, UNBOUNDED_EVENT_HINT]);
+}
+
+#[test]
+fn emit_without_storage_rejects_unbounded_event_with_hint() {
+    unbounded_event_case(
+        "emit_without_storage_rejects_unbounded_event",
+        "emit!(OrderPlaced { side: Side::Ask, amount: 1 });",
+    )
+    .expect_fail(&[UNBOUNDED_EVENT_ERROR, UNBOUNDED_EVENT_HINT]);
+}
+
+#[test]
+fn emit_with_storage_accepts_unbounded_event() {
+    unbounded_event_case(
+        "emit_with_storage_accepts_unbounded_event",
+        "emit_cpi!(OrderPlaced { side: Side::Bid, amount: 1 }, &mut storage);
+        emit!(OrderPlaced { side: Side::Ask, amount: 2 }, &mut storage);",
+    )
+    .build()
+    .expect_pass();
+}
+
+#[test]
+fn emit_without_storage_accepts_bare_address_and_pubkey() {
+    CompileCase::new(
+        "emit_without_storage_accepts_bare_address_and_pubkey",
+        r#"
+use anchor_lang::prelude::*;
+// The prelude exports a bare `Pubkey` only under `compat`.
+use anchor_lang::Address as Pubkey;
+
+declare_id!("E2BJE8WXAe7fLnW1ekVGg75udBFfWefNUsvPNcaKwLMm");
+
+#[event]
+pub struct Keys {
+    pub address: Address,
+    pub pubkey: Pubkey,
+    pub maybe: Option<Address>,
+    pub pair: [Address; 2],
+}
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct Emit {
+    pub payer: Signer,
+}
+
+#[program]
+pub mod bare_address_event {
+    use super::*;
+
+    pub fn emit_event(ctx: &mut Context<Emit>) -> Result<()> {
+        let key = Address::new_from_array([1; 32]);
+        let event = || Keys {
+            address: key,
+            pubkey: key,
+            maybe: Some(key),
+            pair: [key; 2],
+        };
+        emit!(event());
+        emit_cpi!(event());
+        Ok(())
+    }
+}
+"#,
+    )
+    .build()
+    .expect_pass();
+}

@@ -232,3 +232,70 @@ fn short_overlapping_custom_discriminator_still_dispatches_normally() {
 
     assert_eq!(counter_value(&svm, counter), 0xe4);
 }
+
+fn emit_accounts(counter: Pubkey) -> Vec<AccountMeta> {
+    vec![
+        AccountMeta::new(counter, false),
+        AccountMeta::new_readonly(event_authority_pda(), false),
+        AccountMeta::new_readonly(program_id(), false),
+    ]
+}
+
+#[test]
+fn emit_cpi_bounds_prelude_address_field() {
+    let (mut svm, payer) = setup();
+    let counter = initialize(&mut svm, &payer);
+    let authority = keypair_for("event-cpi-authority").pubkey();
+    let data = event_cpi_test::instruction::EmitPreludeAddress {
+        authority: authority.to_bytes().into(),
+    }
+    .data();
+
+    let meta = send_instruction(
+        &mut svm,
+        program_id(),
+        data,
+        emit_accounts(counter),
+        &payer,
+        &[],
+    )
+    .expect("an event with a prelude `Address` field should emit");
+
+    let event = event_cpi_test::EventCpiPreludeAddress {
+        authority: authority.to_bytes().into(),
+        value: 3,
+    };
+    let mut expected = EVENT_IX_TAG_LE.to_vec();
+    expected.extend_from_slice(&anchor_lang::Event::data(&event));
+    let inner: Vec<_> = meta
+        .inner_instructions
+        .iter()
+        .flatten()
+        .map(|ix| ix.instruction.data.clone())
+        .collect();
+    assert_eq!(inner, vec![expected], "self-CPI must carry the full event");
+    assert_eq!(counter_value(&svm, counter), 3);
+}
+
+#[test]
+fn emit_cpi_shadowed_address_overflow_fails_without_writing() {
+    let (mut svm, payer) = setup();
+    let counter = initialize(&mut svm, &payer);
+    let data = event_cpi_test::instruction::EmitShadowedAddressOverflows {}.data();
+
+    let meta = send_instruction(
+        &mut svm,
+        program_id(),
+        data,
+        emit_accounts(counter),
+        &payer,
+        &[],
+    )
+    .expect("the handler checks both emits return InvalidInstructionData");
+
+    assert!(
+        meta.inner_instructions.iter().flatten().next().is_none(),
+        "an event over its bound must not reach the self-CPI"
+    );
+    assert_eq!(counter_value(&svm, counter), 4);
+}

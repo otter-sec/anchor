@@ -25,6 +25,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang-v2: Bound `#[event]` fields spelled as a bare `Address` or `Pubkey`, so `emit!(event)` and `emit_cpi!(event)` compile for them. An event without a bound now fails with an error that points to `emit_cpi!(event, &mut storage)` ([#5319](https://github.com/otter-sec/anchor/pull/5319)).
 - ts: Recover the logs of failed version 1 transactions ([#5216](https://github.com/otter-sec/anchor/pull/5216)).
 
 ### Breaking
