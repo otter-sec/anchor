@@ -990,10 +990,7 @@ fn create_program_template_mollusk_test(name: &str, tests_path: &Path) -> Files 
             r#"#![cfg(feature = "test-sbf")]
 
 use {{
-    anchor_lang::{{
-        accounts::Account, solana_program::instruction::Instruction, InstructionData, Space,
-        ToAccountMetas,
-    }},
+    anchor_lang::{{accounts::Account, Space}},
     mollusk_svm::{{program::keyed_account_for_system_program, result::Check, Mollusk}},
     solana_account::Account as SolanaAccount,
     solana_pubkey::Pubkey,
@@ -1007,16 +1004,11 @@ fn test_initialize() {{
     let payer = Pubkey::new_unique();
     let counter = Pubkey::new_unique();
 
-    let instruction = Instruction::new_with_bytes(
-        program_id,
-        &{0}::instruction::Initialize {{}}.data(),
-        {0}::accounts::Initialize {{
-            payer,
-            counter,
-            system_program: solana_sdk_ids::system_program::id(),
-        }}
-        .to_account_metas(None),
-    );
+    let instruction = {0}::instruction::Initialize {{}}.to_instruction({0}::accounts::Initialize {{
+        payer,
+        counter,
+        system_program: solana_sdk_ids::system_program::id(),
+    }});
 
     let counter_space = <Account<{0}::state::Counter> as Space>::INIT_SPACE;
     let accounts = vec![
@@ -1058,11 +1050,8 @@ fn create_program_template_litesvm_test(name: &str, tests_path: &Path) -> Files 
         format!(
             r#"
 use {{
-    anchor_lang::{{
-        accounts::Account, bytemuck, programs::System,
-        solana_program::instruction::Instruction, Id, InstructionData, Space, ToAccountMetas,
-    }},
-    anchor_v2_testing::{{litesvm::LiteSVM, Keypair, Message, Signer, VersionedMessage, VersionedTransaction}},
+    anchor_lang::{{accounts::Account, bytemuck, programs::System, Id, Space}},
+    anchor_v2_testing::{{Keypair, Message, Signer, VersionedMessage, VersionedTransaction}},
 }};
 
 #[test]
@@ -1082,16 +1071,11 @@ fn test_initialize() {{
     svm.add_program(program_id, bytes).unwrap();
     svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
 
-    let instruction = Instruction::new_with_bytes(
-        program_id,
-        &{0}::instruction::Initialize {{}}.data(),
-        {0}::accounts::Initialize {{
-            payer: payer.pubkey(),
-            counter: counter.pubkey(),
-            system_program: System::id(),
-        }}
-        .to_account_metas(None),
-    );
+    let instruction = {0}::instruction::Initialize {{}}.to_instruction({0}::accounts::Initialize {{
+        payer: payer.pubkey(),
+        counter: counter.pubkey(),
+        system_program: System::id(),
+    }});
 
     let blockhash = svm.latest_blockhash();
     let msg = Message::new_with_blockhash(&[instruction], Some(&payer.pubkey()), &blockhash);
