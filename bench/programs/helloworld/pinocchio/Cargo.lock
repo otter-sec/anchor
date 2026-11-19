@@ -103,7 +103,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "anchor-derive-accounts"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "anchor-lang-idl",
  "bs58",
@@ -118,7 +118,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-lang"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "anchor-derive-accounts",
  "bytemuck",

@@ -141,7 +141,7 @@ version = "0.1.0"
 
 [[package]]
 name = "anchor-attribute-access-control"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -150,7 +150,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-account"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "anchor-syn",
  "proc-macro2",
@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-constant"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-error"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -178,7 +178,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-event"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "anchor-syn",
  "proc-macro2",
@@ -188,7 +188,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-program"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "anchor-lang-idl",
  "anchor-syn",
@@ -233,7 +233,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-accounts"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "anchor-lang-idl",
  "bs58",
@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-accounts-v1"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -257,7 +257,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-serde"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "anchor-syn",
  "proc-macro-crate",
@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-space"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -277,7 +277,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-lang"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "anchor-derive-accounts",
  "bytemuck",
@@ -318,7 +318,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-lang-v1"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "anchor-attribute-access-control",
  "anchor-attribute-account",
@@ -361,7 +361,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-syn"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.4"
 dependencies = [
  "anyhow",
  "bs58",
