@@ -18,9 +18,8 @@
 
 use {
     anchor_lang::{
-        prelude::BorshAccount,
-        testing::AccountBuffer,
-        AnchorAccount, AnchorDeserialize, AnchorSerialize, Discriminator, Owner,
+        prelude::BorshAccount, testing::AccountBuffer, AnchorAccount, AnchorDeserialize,
+        AnchorSerialize, Discriminator, Owner,
     },
     pinocchio::{account::RuntimeAccount, address::Address},
     solana_program_error::ProgramError,
@@ -480,14 +479,6 @@ fn cpi_handle_mut_releases_wrapper_and_preserves_callee_writes() {
         let _ = handle;
     }
 
-    let stale_access = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = acct.value;
-    }));
-    assert!(
-        stale_access.is_err(),
-        "typed access must stay released until the wrapper is refreshed after the CPI"
-    );
-
     acct.exit().unwrap();
     let bytes = read_data_bytes(&buf, 8, 8);
     assert_eq!(
@@ -497,11 +488,19 @@ fn cpi_handle_mut_releases_wrapper_and_preserves_callee_writes() {
          wrapper"
     );
 
-    acct.reacquire_borrow_mut().unwrap();
     assert_eq!(
         acct.value, 777,
-        "reacquire_borrow_mut must refresh the released wrapper from the callee's live bytes"
+        "first access must reload the callee's bytes"
     );
+    let shared = &*acct;
+    assert!(
+        core::ptr::eq(shared, &*acct),
+        "repeated reads keep the cache"
+    );
+    assert_eq!(shared.value, 777);
+    acct.value = 888;
+    acct.exit().unwrap();
+    assert_eq!(read_data_bytes(&buf, 8, 8), 888u64.to_le_bytes());
 }
 
 #[test]
@@ -549,16 +548,96 @@ fn release_borrow_zeroes_bytes_between_new_and_old_serialized_lengths() {
 }
 
 #[test]
-#[should_panic(expected = "account borrow released (closed)")]
-fn deref_mut_panics_after_release_borrow() {
+fn deref_mut_reloads_before_mutating_after_release() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);
-
-    let view = unsafe { buf.view() };
-    let mut acct = BorshAccount::<Counter>::load_mut(view).unwrap();
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(buf.view()) }.unwrap();
 
     acct.release_borrow().unwrap();
-    acct.value = 100;
+    set_data_bytes(&buf, 8, &777u64.to_le_bytes());
+    acct.value += 1;
+    assert_eq!(acct.value, 778);
+    acct.exit().unwrap();
+    acct.release_borrow().unwrap();
+    assert_eq!(read_data_bytes(&buf, 8, 8), 778u64.to_le_bytes());
+    set_data_bytes(&buf, 8, &999u64.to_le_bytes());
+    assert_eq!(acct.value, 999, "each release invalidates the cache");
+}
+
+#[test]
+fn lazy_reload_preserves_readonly_borrow_permissions() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf, 42);
+    let mut acct = unsafe { BorshAccount::<Counter>::load(buf.view()) }.unwrap();
+    acct.release_borrow().unwrap();
+    set_data_bytes(&buf, 8, &777u64.to_le_bytes());
+
+    let mut alias = unsafe { buf.view() };
+    let shared = alias.try_borrow().unwrap();
+    assert_eq!(acct.value, 777);
+    drop(shared);
+    assert_eq!(
+        alias.try_borrow_mut().err(),
+        Some(ProgramError::AccountBorrowFailed)
+    );
+    assert_eq!(
+        acct.try_cpi_handle_mut().err(),
+        Some(ProgramError::AccountBorrowFailed)
+    );
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        acct.value = 999;
+    }))
+    .is_err());
+}
+
+#[test]
+fn lazy_reload_rejects_invalid_accounts() {
+    for invalidation in 0..5 {
+        let mut buf = AccountBuffer::<256>::new();
+        setup_counter_buf(&mut buf, 42);
+        let mut acct = unsafe { BorshAccount::<Counter>::load_mut(buf.view()) }.unwrap();
+        acct.release_borrow().unwrap();
+        match invalidation {
+            0 => buf.set_owner(FOREIGN_PROGRAM_ID),
+            1 => set_data_bytes(&buf, 0, &[0; 8]),
+            2 => buf.set_data_len(4),
+            3 => buf.set_data_len(8),
+            _ => unsafe { buf.view() }.close().unwrap(),
+        }
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = acct.value;
+            }))
+            .is_err(),
+            "invalid account {invalidation} must not expose cached data"
+        );
+        assert!(
+            unsafe { buf.view() }.check_borrow_mut().is_ok(),
+            "failed reload must release its guard"
+        );
+        acct.exit().unwrap();
+    }
+}
+
+#[test]
+fn lazy_reload_rejects_conflicting_borrows_and_can_retry() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf, 42);
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(buf.view()) }.unwrap();
+    acct.release_borrow().unwrap();
+    let mut alias = unsafe { buf.view() };
+    let guard = alias.try_borrow_mut().unwrap();
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = acct.value;
+    }))
+    .is_err());
+    drop(guard);
+    set_data_bytes(&buf, 8, &777u64.to_le_bytes());
+    assert_eq!(acct.value, 777);
+    assert_eq!(
+        alias.try_borrow_mut().err(),
+        Some(ProgramError::AccountBorrowFailed)
+    );
 }
 
 // -- 6. Stale detection DOES fire on size change --------------------

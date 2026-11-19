@@ -140,7 +140,7 @@ None of these carry an `'info` lifetime — pinocchio's account model is static-
 | `Sysvar<T>` | `Sysvar<Clock>`, `Sysvar<Rent>`. Prefer `Clock::get()` / `Rent::get()` syscalls where possible. (v1 compat) |
 | `Sysvar<SysvarInstructions>` | Instruction introspection. No syscall exists for this sysvar, so the account must be passed in the transaction; the wrapper reads its data and derefs to pinocchio's `Instructions`. |
 
-**Aliased accounts.** A transaction can pass one account in more than one slot, and every slot shares that account's runtime borrow state. Wrappers with typed data (`Account<T>`, `BorshAccount<T>`, `Slab<H, T>`, `Sysvar<SysvarInstructions>`) hold a borrow while they are alive: a mutable load needs no other borrow, and a read-only load needs no mutable borrow. A conflicting alias fails with `AccountBorrowFailed`. `Signer`, `SystemAccount`, `UncheckedAccount`, and `Program<T>` expose no typed data and hold no borrow, so one wallet can be both payer and authority. Raw data borrows and CPI handles through those wrappers still fail while a typed wrapper holds a conflicting borrow.
+**Aliased accounts.** A transaction can pass one account in more than one slot, and every slot shares that account's runtime borrow state. Wrappers with typed data (`Account<T>`, `BorshAccount<T>`, `Slab<H, T>`, `Sysvar<SysvarInstructions>`) borrow on load: a mutable load needs no other borrow, and a read-only load needs no mutable borrow. A conflicting alias fails with `AccountBorrowFailed`. Serialized accounts can release their borrow for a CPI and reacquire it on the next typed access, as described below. `Signer`, `SystemAccount`, `UncheckedAccount`, and `Program<T>` expose no typed data and hold no borrow, so one wallet can be both payer and authority. Raw data borrows and CPI handles through those wrappers still fail while a typed wrapper holds a conflicting borrow.
 
 ## CPI Semantics
 
@@ -157,6 +157,12 @@ let metas = multisig_v2::accounts::CreateResolved { creator: creator.pubkey() }
 ```
 
 In v1, the caller built the `AccountMeta` vector by hand on every call — deriving the PDA, wiring up `system_program`, and keeping the order in sync with the handler's `#[derive(Accounts)]`.
+
+### Serialized accounts after a CPI
+
+For `BorshAccount<T>` and other `SerializedAccount<T, S>` wrappers, `cpi_handle_mut()` commits pending changes and releases the data borrow. After the CPI handle's Rust borrow ends, the first field read or write automatically reacquires the original shared or mutable data borrow, rechecks owner, discriminator, and size, and deserializes the live bytes. Later accesses use the refreshed cache. Accounts that are never accessed again stay released, so `exit()` does not overwrite the callee's changes.
+
+If the account no longer validates or another alias holds a conflicting borrow, implicit reacquisition panics. Call `reacquire_borrow_mut()?` before the first field access to handle reload errors explicitly. If you pass the account to a writable CPI through a raw view instead of its typed handle, call `release_borrow()?` before invoking it; field access afterward still reloads lazily.
 
 ## Interface programs
 
