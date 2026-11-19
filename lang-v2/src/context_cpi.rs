@@ -21,7 +21,7 @@ use {
 ///     data_acc: ctx.accounts.data_acc.cpi_handle_mut(),
 ///     authority: ctx.accounts.authority.cpi_handle(),
 /// };
-/// let cpi_ctx = CpiContext::<_, 2>::new(
+/// let cpi_ctx = CpiContext::new(
 ///     ctx.accounts.callee.address(),
 ///     cpi_accounts,
 /// );
@@ -41,9 +41,21 @@ impl<'a, T, const N: usize> CpiContext<'a, T, N>
 where
     T: ToCpiAccountsWithCapacity<'a, N>,
 {
-    /// Construct a CPI context with an explicitly selected inline capacity.
+    /// Construct a CPI context with the account layout's inferred capacity.
     #[must_use]
-    pub fn new(program: &'a Address, accounts: T) -> Self {
+    pub fn new(program: &'a Address, accounts: T) -> Self
+    where
+        T: crate::CpiAccountCount<N>,
+    {
+        Self::new_with_capacity(program, accounts)
+    }
+
+    /// Construct a CPI context with a caller-selected total capacity.
+    ///
+    /// Use this for handwritten conversions or layouts that require explicit
+    /// capacity, including helpers with runtime-sized source-account lists.
+    #[must_use]
+    pub fn new_with_capacity(program: &'a Address, accounts: T) -> Self {
         Self {
             accounts,
             program,
@@ -57,13 +69,11 @@ where
         program: &'a Address,
         accounts: T,
         signer_seeds: &'a [&'a [&'a [u8]]],
-    ) -> Self {
-        Self {
-            accounts,
-            program,
-            remaining_accounts: crate::CpiHandleBuffer::new(),
-            signer_seeds,
-        }
+    ) -> Self
+    where
+        T: crate::CpiAccountCount<N>,
+    {
+        Self::new(program, accounts).with_signer(signer_seeds)
     }
 
     #[must_use]
@@ -72,10 +82,22 @@ where
         self
     }
 
+    /// Select the total CPI capacity from the remaining-account buffer.
+    /// Include declared metas and optional sentinels in that capacity.
     #[must_use]
-    pub fn with_remaining_accounts(mut self, ra: crate::CpiHandleBuffer<'a, N>) -> Self {
-        self.remaining_accounts = ra;
-        self
+    pub fn with_remaining_accounts<const CAPACITY: usize>(
+        self,
+        ra: crate::CpiHandleBuffer<'a, CAPACITY>,
+    ) -> CpiContext<'a, T, CAPACITY>
+    where
+        T: ToCpiAccountsWithCapacity<'a, CAPACITY>,
+    {
+        CpiContext {
+            accounts: self.accounts,
+            program: self.program,
+            remaining_accounts: ra,
+            signer_seeds: self.signer_seeds,
+        }
     }
 
     /// Invoke the CPI with the given instruction data. Collects accounts

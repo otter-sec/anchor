@@ -152,6 +152,67 @@ fn test_cpi_set_data() {
     assert_eq!(stored_value, 42, "CPI should have set value to 42");
 }
 
+#[test]
+fn test_inferred_cpi_with_remaining_account_updates_state_and_checks_authority() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("remaining-capacity-authority");
+    let impostor = keypair_for("remaining-capacity-impostor");
+    svm.airdrop(&authority.pubkey(), 1_000_000_000).unwrap();
+    svm.airdrop(&impostor.pubkey(), 1_000_000_000).unwrap();
+    let data_pda = init_data_account(&mut svm, &payer, &authority);
+
+    send_instruction(
+        &mut svm,
+        caller_id(),
+        caller::instruction::ProxySetDataWithRemaining { value: 42 }.data(),
+        vec![
+            AccountMeta::new(data_pda, false),
+            AccountMeta::new_readonly(authority.pubkey(), true),
+            AccountMeta::new_readonly(callee_id(), false),
+        ],
+        &payer,
+        &[&authority],
+    )
+    .expect("inferred CPI must widen for the remaining authority and execute the callee");
+    let account = svm.get_account(&data_pda).unwrap();
+    assert_eq!(
+        u64::from_le_bytes(account.data[8..16].try_into().unwrap()),
+        42
+    );
+
+    let direct_failure = call_raw(
+        &mut svm,
+        callee_id(),
+        callee::instruction::SetData { value: 999 }.data(),
+        vec![
+            AccountMeta::new(data_pda, false),
+            AccountMeta::new_readonly(impostor.pubkey(), true),
+        ],
+        &payer,
+        &[&impostor],
+    )
+    .expect_err("direct call must reject the wrong authority");
+    let cpi_failure = call_raw(
+        &mut svm,
+        caller_id(),
+        caller::instruction::ProxySetDataWithRemaining { value: 999 }.data(),
+        vec![
+            AccountMeta::new(data_pda, false),
+            AccountMeta::new_readonly(impostor.pubkey(), true),
+            AccountMeta::new_readonly(callee_id(), false),
+        ],
+        &payer,
+        &[&impostor],
+    )
+    .expect_err("CPI must preserve the callee's authority check");
+    assert_eq!(cpi_failure.err, direct_failure.err);
+    let account = svm.get_account(&data_pda).unwrap();
+    assert_eq!(
+        u64::from_le_bytes(account.data[8..16].try_into().unwrap()),
+        42
+    );
+}
+
 /// Regression: a handler argument that borrows instruction data gives
 /// the generated instruction struct a lifetime parameter. The cpi
 /// wrapper wrote that lifetime into the struct literal, and a struct

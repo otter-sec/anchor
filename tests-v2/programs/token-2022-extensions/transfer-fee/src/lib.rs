@@ -59,7 +59,7 @@ pub mod token_2022_ext_transfer_fee {
         };
         let source = ctx.accounts.source.cpi_handle_mut();
         token_2022_ext::harvest_withheld_tokens_to_mint(
-            CpiContext::<_, 2>::new(ctx.accounts.token_program.address(), accs),
+            CpiContext::<_, 2>::new_with_capacity(ctx.accounts.token_program.address(), accs),
             core::slice::from_ref(&source),
         )?;
         Ok(())
@@ -90,7 +90,7 @@ pub mod token_2022_ext_transfer_fee {
         };
         let source = ctx.accounts.source.cpi_handle_mut();
         token_2022_ext::withdraw_withheld_tokens_from_accounts(
-            CpiContext::<_, 4>::new(ctx.accounts.token_program.address(), accs),
+            CpiContext::<_, 4>::new_with_capacity(ctx.accounts.token_program.address(), accs),
             core::slice::from_ref(&source),
         )?;
         Ok(())

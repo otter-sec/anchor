@@ -232,6 +232,115 @@ fn derive_to_cpi_accounts_optional_readonly_normalizes_writable_handles() {
     assert_optional_readonly_is_readonly(&from_handle_mut);
 }
 
+#[test]
+fn remaining_account_buffer_can_widen_an_inferred_context() {
+    let buffer = account([1; 32], false, false);
+    let view = unsafe { buffer.view() };
+    let mut remaining = anchor_lang::CpiHandleBuffer::<2>::new();
+    assert!(remaining.try_push(view.to_cpi_handle().as_signer()).is_ok());
+    let seeds: &[&[&[u8]]] = &[&[b"pda"]];
+    let context = CpiContext::new_with_signer(
+        &ID,
+        OptionalReadonlyCpi {
+            optional_readonly: None,
+        },
+        seeds,
+    );
+    assert_eq!(context.remaining_accounts.capacity(), 1);
+    let context = context.with_remaining_accounts(remaining);
+
+    assert_eq!(context.remaining_accounts.capacity(), 2);
+    assert_eq!(context.signer_seeds, seeds);
+    context.invoke(&[]).unwrap();
+    assert_eq!(
+        context.with_signer(&[]).invoke(&[]),
+        Err(Error::MissingRequiredSignature),
+    );
+
+    let mut too_small = anchor_lang::CpiHandleBuffer::<1>::new();
+    assert!(too_small.try_push(view.to_cpi_handle()).is_ok());
+    assert_eq!(
+        CpiContext::new(
+            &ID,
+            OptionalReadonlyCpi {
+                optional_readonly: None,
+            },
+        )
+        .with_remaining_accounts(too_small)
+        .invoke(&[]),
+        Err(Error::InvalidArgument),
+    );
+}
+
+#[test]
+fn concrete_generic_nesting_infers_all_emitted_account_slots() {
+    #[derive(ToCpiAccounts)]
+    struct Inner<'a, T, const MARKER: usize> {
+        #[account_meta(duplicate_readonly)]
+        account: CpiHandle<'a>,
+        #[account_meta(skip)]
+        payload: [T; MARKER],
+    }
+
+    #[derive(ToCpiAccounts)]
+    struct Mid<'a, T, const MARKER: usize> {
+        #[nested]
+        inner: Inner<'a, T, MARKER>,
+        optional: Option<CpiHandle<'a>>,
+    }
+
+    #[derive(ToCpiAccounts)]
+    struct Outer<'a> {
+        #[nested]
+        mid: Mid<'a, u8, 7>,
+    }
+
+    let buffer = account([1; 32], false, false);
+    let view = unsafe { buffer.view() };
+    let optional_buffer = account([2; 32], false, false);
+    let optional_view = unsafe { optional_buffer.view() };
+    for optional in [None, Some(optional_view.to_cpi_handle())] {
+        let context = CpiContext::new(
+            &ID,
+            Outer {
+                mid: Mid {
+                    inner: Inner {
+                        account: view.to_cpi_handle(),
+                        payload: [42; 7],
+                    },
+                    optional,
+                },
+            },
+        );
+
+        assert_eq!(context.remaining_accounts.capacity(), 3);
+        assert_eq!(context.accounts.mid.inner.payload, [42; 7]);
+        let metas = ToCpiAccountsWithCapacity::<3>::to_instruction_accounts_with_capacity(
+            &context.accounts,
+        )
+        .unwrap();
+        assert_eq!(metas.len(), 3);
+        assert_eq!(*metas[0].address, *view.address());
+        assert_eq!(*metas[1].address, *view.address());
+        assert_eq!(
+            *metas[2].address,
+            if optional.is_some() {
+                *optional_view.address()
+            } else {
+                ID
+            },
+        );
+        assert_eq!(
+            ToCpiAccountsWithCapacity::<2>::to_instruction_accounts_with_capacity(
+                &context.accounts
+            )
+            .unwrap_err(),
+            Error::InvalidArgument,
+        );
+        context.invoke(&[]).unwrap();
+    }
+}
+
 fn assert_optional_readonly_is_readonly(accounts: &OptionalReadonlyCpi<'_>) {
     let metas = ToCpiAccountsWithCapacity::<1>::to_instruction_accounts_with_capacity(accounts)
         .expect("one account meta fits");

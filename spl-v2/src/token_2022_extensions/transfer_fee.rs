@@ -30,6 +30,7 @@ pub struct TransferCheckedWithFee<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[cpi_capacity(explicit)]
 pub struct HarvestWithheldTokensToMint<'a> {
     pub mint: CpiHandleMut<'a>,
 }
@@ -43,6 +44,7 @@ pub struct WithdrawWithheldTokensFromMint<'a> {
 }
 
 #[derive(ToCpiAccounts)]
+#[cpi_capacity(explicit)]
 pub struct WithdrawWithheldTokensFromAccounts<'a> {
     pub mint: CpiHandle<'a>,
     pub destination: CpiHandleMut<'a>,

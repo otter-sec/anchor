@@ -38,6 +38,54 @@ pub mod caller {
         Ok(())
     }
 
+    /// Infer the named layout, then supply the authority as a remaining account.
+    pub fn proxy_set_data_with_remaining(
+        ctx: &mut Context<ProxySetData>,
+        value: u64,
+    ) -> Result<()> {
+        #[derive(ToCpiAccounts)]
+        struct Data<'a, T> {
+            data: CpiHandleMut<'a>,
+            #[account_meta(skip)]
+            marker: core::marker::PhantomData<T>,
+        }
+        #[derive(ToCpiAccounts)]
+        struct Nested<'a, T> {
+            #[nested]
+            data: Data<'a, T>,
+        }
+        #[derive(ToCpiAccounts)]
+        struct Named<'a> {
+            #[nested]
+            nested: Nested<'a, u8>,
+        }
+
+        let accounts = Named {
+            nested: Nested {
+                data: Data {
+                    data: ctx.accounts.callee_data.cpi_handle_mut(),
+                    marker: core::marker::PhantomData,
+                },
+            },
+        };
+        let context = CpiContext::new(ctx.accounts.callee_program.address(), accounts);
+        let mut remaining = anchor_lang::CpiHandleBuffer::<2>::new();
+        remaining
+            .try_push(ctx.accounts.authority.cpi_handle())
+            .map_err(|_| Error::InvalidArgument)?;
+
+        // Borsh encodes this instruction as its discriminator followed by one u64.
+        let mut data = anchor_lang::FixedVec::<
+            u8,
+            { callee::instruction::SetData::DISCRIMINATOR.len() + u64::BITS as usize / 8 },
+        >::new();
+        anchor_lang::InstructionData::try_write_data(
+            &callee::instruction::SetData { value },
+            &mut data,
+        )?;
+        context.with_remaining_accounts(remaining).invoke(&data)
+    }
+
     /// CPIs into `set_data_from_bytes`, whose `&[u8]` argument gives the
     /// generated instruction struct a lifetime parameter. Exercises the
     /// ref-args branch of the auto-generated cpi wrapper.

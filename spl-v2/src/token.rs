@@ -353,7 +353,7 @@ fn token_cpi_ctx<'a, T, const N: usize>(
 where
     T: anchor_lang::ToCpiAccountsWithCapacity<'a, N>,
 {
-    CpiContext::new_with_signer(program, accounts, signer_seeds)
+    CpiContext::new_with_capacity(program, accounts).with_signer(signer_seeds)
 }
 
 pub fn set_authority<'a, const N: usize>(
@@ -1015,7 +1015,7 @@ impl TokenCpiExt for Program<Token> {
         M: ToCpiHandle + ?Sized,
         A: ToCpiHandle + ?Sized,
     {
-        initialize_account3(CpiContext::<_, 3>::new(
+        initialize_account3(CpiContext::new(
             self.address(),
             accounts::InitializeAccount3 {
                 account: account.try_to_cpi_handle_mut()?,

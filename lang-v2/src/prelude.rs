@@ -64,6 +64,7 @@ pub use crate::{
     // Context
     Context,
     // CPI
+    CpiAccountCount,
     CpiContext,
     CpiHandle,
     CpiHandleMut,

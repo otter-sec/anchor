@@ -101,7 +101,7 @@ macro_rules! debug {
 // Re-export wincode for instruction data serialization
 pub use buffers::CpiHandleBuffer;
 pub use fixed_vec::FixedVec;
-pub use traits::ToCpiAccountsWithCapacity;
+pub use traits::{CpiAccountCount, ToCpiAccountsWithCapacity};
 pub use wincode;
 
 /// Borsh-compatible wincode config: u8 enum tags + fixed u32 LE length

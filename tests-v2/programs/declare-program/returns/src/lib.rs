@@ -135,7 +135,7 @@ pub mod declare_program_returns {
             authority: ctx.accounts.authority.cpi_handle(),
             spoof_program: ctx.accounts.spoof_program.cpi_handle(),
         };
-        let cpi_ctx = CpiContext::<_, 2>::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
         let returned = return_callee::cpi::spoofed_return(cpi_ctx, base)?.get();
         ctx.accounts.result.last_return = returned;
         Ok(())

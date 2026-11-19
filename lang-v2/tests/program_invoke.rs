@@ -465,7 +465,7 @@ fn invoke_ix_rejects_readonly_handle_for_writable_meta() {
         data: vec![],
     };
 
-    let err = CpiContext::<_, 3>::new(&program, accounts)
+    let err = CpiContext::<_, 3>::new_with_capacity(&program, accounts)
         .invoke_ix(ix)
         .unwrap_err();
 
@@ -482,7 +482,7 @@ fn invoke_ix_rejects_nonsigner_handle_for_signer_meta_without_seeds() {
     };
     let ix = signer_instruction(*view.address(), false);
 
-    let err = CpiContext::<_, 3>::new(&program, accounts)
+    let err = CpiContext::<_, 3>::new_with_capacity(&program, accounts)
         .invoke_ix(ix)
         .unwrap_err();
 
@@ -499,7 +499,8 @@ fn invoke_ix_allows_signer_meta_without_tx_signer_when_seeds_are_supplied() {
     };
     let ix = signer_instruction(*view.address(), false);
 
-    CpiContext::<_, 3>::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
+    CpiContext::<_, 3>::new_with_capacity(&program, accounts)
+        .with_signer(&[&[b"pda", &[7]]])
         .invoke_ix(ix)
         .unwrap();
 }
@@ -519,7 +520,7 @@ fn invoke_remaining_pda_as_signer_with_seeds() {
     assert!(remaining_accounts
         .try_push(CpiHandle::readonly(&remaining_view).as_signer())
         .is_ok());
-    CpiContext::<_, 3>::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
+    CpiContext::new_with_signer(&program, accounts, &[&[b"pda", &[7]]])
         .with_remaining_accounts(remaining_accounts)
         .invoke(&[])
         .unwrap();
@@ -543,7 +544,7 @@ fn invoke_ix_accepts_optional_none_program_id_sentinel() {
         data: vec![],
     };
 
-    CpiContext::<_, 3>::new(&program, accounts)
+    CpiContext::<_, 3>::new_with_capacity(&program, accounts)
         .invoke_ix(ix)
         .unwrap();
 }
@@ -610,7 +611,7 @@ fn invoke_ix_rejects_writable_program_id_meta_without_handle() {
         data: vec![],
     };
 
-    let err = CpiContext::<_, 3>::new(&program, accounts)
+    let err = CpiContext::<_, 3>::new_with_capacity(&program, accounts)
         .invoke_ix(ix)
         .unwrap_err();
 
@@ -642,7 +643,7 @@ fn cpi_context_invoke_rejects_live_borrow_for_writable_meta() {
         account: view.to_cpi_handle_mut(),
     };
 
-    let err = CpiContext::<_, 3>::new(&program, accounts)
+    let err = CpiContext::<_, 3>::new_with_capacity(&program, accounts)
         .invoke(&[1, 2, 3])
         .unwrap_err();
 
@@ -659,7 +660,7 @@ fn cpi_context_invoke_accepts_mutable_slab_handle() {
         account: acct.cpi_handle_mut(),
     };
 
-    CpiContext::<_, 3>::new(&program, accounts)
+    CpiContext::<_, 3>::new_with_capacity(&program, accounts)
         .invoke(&[1, 2, 3])
         .unwrap();
 }
@@ -674,7 +675,7 @@ fn cpi_context_invoke_accepts_readonly_slab_handle_from_mutable_wrapper() {
         account: acct.cpi_handle(),
     };
 
-    CpiContext::<_, 3>::new(&program, accounts)
+    CpiContext::<_, 3>::new_with_capacity(&program, accounts)
         .invoke(&[1, 2, 3])
         .unwrap();
 }
@@ -696,7 +697,7 @@ fn invoke_ix_rejects_live_borrow_for_writable_meta() {
         data: vec![],
     };
 
-    let err = CpiContext::<_, 3>::new(&program, accounts)
+    let err = CpiContext::<_, 3>::new_with_capacity(&program, accounts)
         .invoke_ix(ix)
         .unwrap_err();
 
@@ -719,7 +720,7 @@ fn invoke_ix_accepts_mutable_slab_handle() {
         data: vec![],
     };
 
-    CpiContext::<_, 3>::new(&program, accounts)
+    CpiContext::<_, 3>::new_with_capacity(&program, accounts)
         .invoke_ix(ix)
         .unwrap();
 }
@@ -740,7 +741,7 @@ fn invoke_ix_accepts_readonly_slab_handle_from_mutable_wrapper() {
         data: vec![],
     };
 
-    CpiContext::<_, 3>::new(&program, accounts)
+    CpiContext::<_, 3>::new_with_capacity(&program, accounts)
         .invoke_ix(ix)
         .unwrap();
 }
@@ -756,7 +757,7 @@ fn cpi_context_invoke_accepts_mutable_borsh_handle() {
         let accounts = WritableCpi {
             account: acct.cpi_handle_mut(),
         };
-        CpiContext::<_, 3>::new(&program, accounts)
+        CpiContext::<_, 3>::new_with_capacity(&program, accounts)
             .invoke(&[1, 2, 3])
             .unwrap();
     }
@@ -783,7 +784,7 @@ fn invoke_ix_accepts_mutable_borsh_handle() {
             accounts: vec![AccountMeta::new(address, false)],
             data: vec![],
         };
-        CpiContext::<_, 3>::new(&program, accounts)
+        CpiContext::<_, 3>::new_with_capacity(&program, accounts)
             .invoke_ix(ix)
             .unwrap();
     }
