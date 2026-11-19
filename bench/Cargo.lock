@@ -235,6 +235,7 @@ dependencies = [
 name = "anchor-derive-accounts"
 version = "2.0.0-rc.4"
 dependencies = [
+ "anchor-lang-error",
  "anchor-lang-idl",
  "bs58",
  "curve25519-dalek",
@@ -280,6 +281,7 @@ name = "anchor-lang"
 version = "2.0.0-rc.4"
 dependencies = [
  "anchor-derive-accounts",
+ "anchor-lang-error",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
@@ -293,6 +295,13 @@ dependencies = [
  "solana-system-interface",
  "solana-sysvar",
  "wincode",
+]
+
+[[package]]
+name = "anchor-lang-error"
+version = "2.0.0-rc.4"
+dependencies = [
+ "solana-program-error",
 ]
 
 [[package]]
