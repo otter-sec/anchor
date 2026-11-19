@@ -1,8 +1,5 @@
 use {
-    anchor_lang::{
-        solana_program::instruction::{AccountMeta, Instruction},
-        InstructionData, ToAccountMetas,
-    },
+    anchor_lang::solana_program::instruction::{AccountMeta, Instruction},
     anchor_v2_testing::{
         litesvm::{
             types::{FailedTransactionMetadata, TransactionMetadata},
@@ -38,19 +35,14 @@ fn config_address(creator: &anchor_lang::Address) -> (anchor_lang::Address, u8) 
 }
 
 fn create_multisig(svm: &mut LiteSVM, creator: &Keypair, signers: &[&Keypair], threshold: u8) {
-    let mut metas = multisig_v2::accounts::CreateResolved {
-        creator: creator.pubkey(),
-    }
-    .to_account_metas(None);
+    let mut ix =
+        instruction::Create { threshold }.to_instruction(multisig_v2::accounts::CreateResolved {
+            creator: creator.pubkey(),
+        });
     for s in signers {
-        metas.push(AccountMeta::new_readonly(s.pubkey(), true));
+        ix.accounts
+            .push(AccountMeta::new_readonly(s.pubkey(), true));
     }
-
-    let ix = Instruction::new_with_bytes(
-        multisig_v2::id(),
-        &instruction::Create { threshold }.data(),
-        metas,
-    );
 
     let mut all_signers: Vec<&Keypair> = vec![creator];
     all_signers.extend_from_slice(signers);
@@ -78,14 +70,11 @@ fn test_deposit() {
 
     let (config, _) = config_address(&creator.pubkey());
 
-    let ix = Instruction::new_with_bytes(
-        multisig_v2::id(),
-        &instruction::Deposit { amount: 1_000_000 }.data(),
+    let ix = instruction::Deposit { amount: 1_000_000 }.to_instruction(
         multisig_v2::accounts::DepositResolved {
             depositor: creator.pubkey(),
             config,
-        }
-        .to_account_metas(None),
+        },
     );
     let res = send(&mut svm, ix, &[&creator]).expect("deposit");
     println!("deposit CUs: {}", res.compute_units_consumed);
@@ -102,19 +91,14 @@ fn test_set_label() {
     label[..label_bytes.len()].copy_from_slice(label_bytes);
 
     let (config, _) = config_address(&creator.pubkey());
-    let ix = Instruction::new_with_bytes(
-        multisig_v2::id(),
-        &instruction::SetLabel {
-            label_len: label_bytes.len() as u8,
-            label,
-        }
-        .data(),
-        multisig_v2::accounts::SetLabelResolved {
-            creator: creator.pubkey(),
-            config,
-        }
-        .to_account_metas(None),
-    );
+    let ix = instruction::SetLabel {
+        label_len: label_bytes.len() as u8,
+        label,
+    }
+    .to_instruction(multisig_v2::accounts::SetLabelResolved {
+        creator: creator.pubkey(),
+        config,
+    });
     let res = send(&mut svm, ix, &[&creator]).expect("set_label");
     println!("set_label CUs: {}", res.compute_units_consumed);
 }
@@ -131,32 +115,26 @@ fn test_execute_transfer() {
     svm.airdrop(&recipient.pubkey(), 1_000_000).unwrap();
 
     // Deposit first
-    let ix = Instruction::new_with_bytes(
-        multisig_v2::id(),
-        &instruction::Deposit { amount: 2_000_000 }.data(),
+    let ix = instruction::Deposit { amount: 2_000_000 }.to_instruction(
         multisig_v2::accounts::DepositResolved {
             depositor: creator.pubkey(),
             config,
-        }
-        .to_account_metas(None),
+        },
     );
     send(&mut svm, ix, &[&creator]).expect("deposit");
 
     // Execute transfer
-    let mut metas = multisig_v2::accounts::ExecuteTransferResolved {
-        config,
-        creator: creator.pubkey(),
-        recipient: recipient.pubkey(),
-    }
-    .to_account_metas(None);
-    metas.push(AccountMeta::new_readonly(signer_one.pubkey(), true));
-    metas.push(AccountMeta::new_readonly(signer_two.pubkey(), true));
-
-    let ix = Instruction::new_with_bytes(
-        multisig_v2::id(),
-        &instruction::ExecuteTransfer { amount: 500_000 }.data(),
-        metas,
+    let mut ix = instruction::ExecuteTransfer { amount: 500_000 }.to_instruction(
+        multisig_v2::accounts::ExecuteTransferResolved {
+            config,
+            creator: creator.pubkey(),
+            recipient: recipient.pubkey(),
+        },
     );
+    ix.accounts
+        .push(AccountMeta::new_readonly(signer_one.pubkey(), true));
+    ix.accounts
+        .push(AccountMeta::new_readonly(signer_two.pubkey(), true));
     let res = send(&mut svm, ix, &[&creator, &signer_one, &signer_two]).expect("execute_transfer");
     println!("execute_transfer CUs: {}", res.compute_units_consumed);
 }
