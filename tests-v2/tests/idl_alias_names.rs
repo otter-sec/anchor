@@ -93,7 +93,7 @@ fn declared_aliases_use_the_registered_types() {
     let _ = Holder {
         aliased: BumpArgs { amount: 1 },
         renamed: BumpArgs { amount: 2 },
-        list: vec![BumpArgs { amount: 3 }],
+        list: anchor_lang::Vec::from([BumpArgs { amount: 3 }]),
         wrapped: Wrapper {
             value: BumpArgs { amount: 4 },
         },
