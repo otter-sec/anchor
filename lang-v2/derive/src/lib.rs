@@ -3664,11 +3664,12 @@ fn declare_idl_type_uses_borrowed_data(
         let name = defined
             .as_str()
             .or_else(|| defined.get("name").and_then(serde_json::Value::as_str));
-        if matches!(name, Some("BTreeMap" | "BTreeSet"))
-            || name.is_some_and(|name| dynamic_type_names.contains(name))
-        {
+        if name.is_some_and(|name| dynamic_type_names.contains(name)) {
             return true;
         }
+        // BTreeMap/BTreeSet borrow only through their element types: their
+        // target form is `FixedVec<...>` with no `'ix` of its own, so fall
+        // through to the generic-args scan below instead of returning true.
         return defined
             .get("generics")
             .and_then(serde_json::Value::as_array)
@@ -3680,8 +3681,11 @@ fn declare_idl_type_uses_borrowed_data(
                 })
             });
     }
-    if value.get("vec").is_some() {
-        return true;
+    // A `vec<T>` borrows only when `T` does: its target form is
+    // `FixedVec<T, CAP>`, which mentions `'ix` only through `T`
+    // (e.g. `vec<string>` but not `vec<u64>`).
+    if let Some(inner) = value.get("vec") {
+        return declare_idl_type_uses_borrowed_data(inner, dynamic_type_names);
     }
     value
         .get("option")
@@ -6600,7 +6604,7 @@ fn process_handler(
                     let __return_len = unsafe {
                         anchor_lang::pinocchio::cpi::sol_get_return_data(
                             __return_bytes.as_mut_ptr().cast::<u8>(),
-                            #bound as u64,
+                            (#bound) as u64,
                             __return_program.as_mut_ptr().cast::<u8>(),
                         )
                     } as usize;
@@ -8698,6 +8702,119 @@ mod tests {
         assert!(
             !generated.contains("get_return_data ( ) . unwrap"),
             "target return-data lookup must not unwrap: {generated}"
+        );
+    }
+
+    #[test]
+    fn target_cpi_return_wrapper_parenthesizes_array_return_bound() {
+        // Regression test for anchor#5300: a `[u8; 32]` return has the
+        // serialized-length bound `(1usize) * (32)`, and the `as u64` cast
+        // on the `sol_get_return_data` length must apply to the whole
+        // product. Without the parens `as` binds to `(32)` only, giving
+        // `usize * u64` (E0277) plus mismatched-type errors on SBF.
+        let handler: syn::ItemFn = syn::parse_quote! {
+            pub fn clear(
+                ctx: &mut Context<MyAccounts>,
+            ) -> Result<[u8; 32]> {
+                let _ = ctx;
+                unreachable!()
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Interface,
+            program_id: syn::parse_quote!(crate::ID),
+        };
+
+        let generated = process_handler(&handler, &syn::parse_quote!(external), None, &config)
+            .cpi_wrapper
+            .to_string();
+
+        assert!(
+            generated.contains("sol_get_return_data"),
+            "array return must use the bounded return-data path: {generated}"
+        );
+        assert!(
+            !generated.contains("* (32) as u64"),
+            "the u64 cast must not bind to the array length only: {generated}"
+        );
+        assert!(
+            generated.contains(") as u64"),
+            "the bound must be cast to u64 as a whole: {generated}"
+        );
+    }
+
+    #[test]
+    fn declare_program_borrowed_data_ignores_owned_vec_elements() {
+        // Regression test for anchor#5300: `vec<u64>` borrows nothing, its
+        // target form is `FixedVec<u64, CAP>`, so a struct holding only it
+        // must not get the `'ix` lifetime (E0392 on SBF otherwise).
+        let dynamic = std::collections::BTreeSet::new();
+        assert!(
+            !declare_idl_type_uses_borrowed_data(&json!({"vec": "u64"}), &dynamic),
+            "vec<u64> must not count as borrowed data"
+        );
+        assert!(
+            declare_idl_type_uses_borrowed_data(&json!({"vec": "string"}), &dynamic),
+            "vec<string> borrows through its element"
+        );
+        assert!(
+            declare_idl_type_uses_borrowed_data(&json!({"vec": "bytes"}), &dynamic),
+            "vec<bytes> borrows through its element"
+        );
+        assert!(
+            !declare_idl_type_uses_borrowed_data(
+                &json!({"defined": {"name": "BTreeMap", "generics": [{"kind": "type", "type": "u64"}, {"kind": "type", "type": "u64"}]}}),
+                &dynamic
+            ),
+            "BTreeMap<u64, u64> must not count as borrowed data"
+        );
+        assert!(
+            declare_idl_type_uses_borrowed_data(
+                &json!({"defined": {"name": "BTreeMap", "generics": [{"kind": "type", "type": "string"}, {"kind": "type", "type": "u64"}]}}),
+                &dynamic
+            ),
+            "BTreeMap<string, u64> borrows through its key"
+        );
+    }
+
+    #[test]
+    fn declare_program_vec_u64_account_has_no_borrowed_lifetime() {
+        // End-to-end form of the anchor#5300 account half: the
+        // `PendingInboundNonce` shape (`vec<u64>` + `u8`) must generate a
+        // target struct with no `'ix` lifetime, while still carrying the
+        // dynamic-capacity const generic its `FixedVec` field needs.
+        let idl = json!({
+            "types": [
+                {"name": "PendingInboundNonce", "type": {"kind": "struct", "fields": [
+                    {"name": "nonces", "type": {"vec": "u64"}},
+                    {"name": "bump", "type": "u8"}
+                ]}}
+            ]
+        });
+        let dynamic = declare_program_dynamic_type_names(&idl);
+        assert!(
+            !dynamic.contains("PendingInboundNonce"),
+            "vec<u64> account must not be classified dynamic: {dynamic:?}"
+        );
+        let fixed = declare_program_fixed_vec_type_names(&idl);
+        assert!(
+            fixed.contains("PendingInboundNonce"),
+            "vec<u64> account still needs the dynamic capacity: {fixed:?}"
+        );
+        let generated = gen_declare_program_types_for_target(&idl, true, &dynamic, &fixed)
+            .expect("types should generate");
+        let tokens = generated
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            !tokens.contains("'ix"),
+            "vec<u64> account struct must not mention 'ix: {tokens}"
+        );
+        assert!(
+            tokens.contains("FixedVec < u64"),
+            "nonces field must stay a FixedVec<u64>: {tokens}"
         );
     }
 
