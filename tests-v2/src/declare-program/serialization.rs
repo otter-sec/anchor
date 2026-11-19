@@ -104,7 +104,7 @@ fn declared_program_type_serialization_controls_account_traits() {
         data: serialization::ImplicitBorshAccount {
             count: 7,
             label: "implicit".to_string(),
-            items: vec![1, 2, 3],
+            items: anchor_lang::Vec::from([1, 2, 3]),
         },
     }
     .data();
@@ -162,7 +162,7 @@ fn declared_account_deserialize_unchecked_skips_discriminator_prefix() {
     let original = serialization::ImplicitBorshAccount {
         count: 9,
         label: "decoded".to_string(),
-        items: vec![5, 6, 7],
+        items: anchor_lang::Vec::from([5, 6, 7]),
     };
     let payload =
         anchor_lang::wincode::config::serialize(&original, BORSH_CONFIG).unwrap();
@@ -184,7 +184,7 @@ fn declared_account_deserialize_rejects_wrong_discriminator() {
     let original = serialization::ImplicitBorshAccount {
         count: 1,
         label: "wrong-disc".to_string(),
-        items: vec![8, 9],
+        items: anchor_lang::Vec::from([8, 9]),
     };
     let payload =
         anchor_lang::wincode::config::serialize(&original, BORSH_CONFIG).unwrap();

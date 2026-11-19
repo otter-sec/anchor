@@ -30,12 +30,16 @@ pub fn keypair_for(name: &str) -> Keypair {
 pub fn send_instruction(
     svm: &mut LiteSVM,
     program_id: solana_pubkey::Pubkey,
-    instruction_data: Vec<u8>,
-    account_metas: Vec<AccountMeta>,
+    instruction_data: impl Into<Vec<u8>>,
+    account_metas: impl Into<Vec<AccountMeta>>,
     payer: &Keypair,
     extra_signers: &[&Keypair],
 ) -> anyhow::Result<anchor_v2_testing::litesvm::types::TransactionMetadata> {
-    let instruction = Instruction::new_with_bytes(program_id, &instruction_data, account_metas);
+    let instruction = Instruction {
+        program_id,
+        data: instruction_data.into(),
+        accounts: account_metas.into(),
+    };
     let blockhash = svm.latest_blockhash();
     let message = Message::new_with_blockhash(&[instruction], Some(&payer.pubkey()), &blockhash);
 

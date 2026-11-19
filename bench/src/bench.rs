@@ -215,10 +215,13 @@ pub struct BenchInstruction {
 
 impl BenchInstruction {
     /// Creates a benchmark instruction from serialized data and account metas.
-    pub fn new(instruction_data: Vec<u8>, account_metas: Vec<AccountMeta>) -> Self {
+    pub fn new(
+        instruction_data: impl Into<Vec<u8>>,
+        account_metas: impl Into<Vec<AccountMeta>>,
+    ) -> Self {
         Self {
-            instruction_data,
-            account_metas,
+            instruction_data: instruction_data.into(),
+            account_metas: account_metas.into(),
             signers: Vec::new(),
         }
     }
@@ -300,11 +303,11 @@ impl BenchContext {
     /// Executes a benchmark instruction using an explicit signer list.
     pub fn execute_with_signers(
         &mut self,
-        instruction_data: Vec<u8>,
-        account_metas: Vec<AccountMeta>,
+        instruction_data: impl Into<Vec<u8>>,
+        account_metas: impl Into<Vec<AccountMeta>>,
         signers: &[&dyn solana_signer::Signer],
     ) -> Result<TransactionMetadata> {
-        self.execute_raw(instruction_data, account_metas, signers)
+        self.execute_raw(instruction_data.into(), account_metas.into(), signers)
     }
 
     /// Constructs and submits the underlying transaction to LiteSVM.
@@ -314,8 +317,11 @@ impl BenchContext {
         account_metas: Vec<AccountMeta>,
         signers: &[&dyn solana_signer::Signer],
     ) -> Result<TransactionMetadata> {
-        let instruction =
-            Instruction::new_with_bytes(self.program_id, &instruction_data, account_metas);
+        let instruction = Instruction {
+            program_id: self.program_id,
+            data: instruction_data,
+            accounts: account_metas,
+        };
 
         let blockhash = self.svm.latest_blockhash();
         let message =

@@ -174,8 +174,8 @@ fn nested_dependencies_are_forwarded() {
     let type_def = <CollectionArgs as IdlAccountType>::__idl_type_def().unwrap();
     assert!(type_def.contains("\"name\":\"BTreeSet\""));
 
-    let mut accounts = alloc::vec::Vec::new();
-    let mut types = alloc::vec::Vec::new();
+    let mut accounts = anchor_lang::Vec::new();
+    let mut types = anchor_lang::Vec::new();
     <CollectionArgs as IdlAccountType>::__register_idl_deps(&mut accounts, &mut types);
     assert!(types.iter().any(|ty| ty.contains("\"name\":\"NestedArgs\"")));
 }

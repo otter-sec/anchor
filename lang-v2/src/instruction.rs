@@ -1,22 +1,24 @@
 //! Allocator-neutral instruction views used by the public CPI API.
 
 use {
-    crate::{Address, Discriminator, FixedVec},
-    alloc::vec::Vec,
+    crate::{Address, Discriminator, Vec},
     pinocchio::instruction::InstructionAccount,
 };
 
 /// Serializes instruction data: discriminator prefix plus the encoded
-/// arguments. The caller owns the output storage so dynamic payloads do not
-/// force an allocation in the on-chain API.
+/// arguments. The caller can reuse the output buffer across serializations.
 pub trait InstructionData: Discriminator {
     /// Append serialized instruction data to caller-selected storage.
     /// Implementations leave the original contents unchanged on failure.
-    fn try_write_data<const N: usize>(&self, output: &mut FixedVec<u8, N>) -> crate::Result<()>;
+    fn try_write_data(&self, output: &mut crate::Vec<u8>) -> crate::Result<()>;
 
-    /// Owned host representation used by clients and tests.
-    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-    fn data(&self) -> alloc::vec::Vec<u8>;
+    /// Serialize into an owned instruction buffer.
+    fn data(&self) -> Vec<u8> {
+        let mut data = Vec::new();
+        self.try_write_data(&mut data)
+            .expect("instruction serialization failed");
+        data
+    }
 }
 
 /// A CPI instruction that can be inspected without taking ownership of a

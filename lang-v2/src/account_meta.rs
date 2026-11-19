@@ -1,7 +1,8 @@
 //! Allocator-neutral account metadata used by V2 account builders.
 
 #[cfg(any(target_os = "solana", target_arch = "bpf"))]
-use crate::{Address, FixedVec};
+use crate::Address;
+use crate::Vec;
 #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 pub use solana_instruction::AccountMeta;
 
@@ -39,52 +40,40 @@ impl AccountMeta {
     }
 }
 
-/// Converts account addresses into a fixed-capacity metadata buffer.
-///
-/// The capacity is selected by each generated account type, so this public
-/// API does not require an allocator or impose a global account limit.
-#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+/// Converts account addresses into a metadata buffer.
 pub trait ToAccountMetas {
-    fn to_account_metas(&self, is_signer: Option<bool>) -> alloc::vec::Vec<AccountMeta>;
+    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<AccountMeta>;
 }
 
-#[cfg(any(target_os = "solana", target_arch = "bpf"))]
-pub trait ToAccountMetas {
-    type Output: AsRef<[AccountMeta]>;
-
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Self::Output;
-}
-
-#[cfg(any(target_os = "solana", target_arch = "bpf"))]
-impl<const N: usize> ToAccountMetas for FixedVec<AccountMeta, N> {
-    type Output = FixedVec<AccountMeta, N>;
-
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Self::Output {
-        let mut output = FixedVec::new();
-        for meta in self {
-            let mut meta = meta.clone();
-            if let Some(is_signer) = is_signer {
-                meta.is_signer = is_signer;
-            }
-            output.push(meta);
-        }
-        output
+impl ToAccountMetas for [AccountMeta] {
+    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<AccountMeta> {
+        self.iter()
+            .cloned()
+            .map(|mut meta| {
+                if let Some(is_signer) = is_signer {
+                    meta.is_signer = is_signer;
+                }
+                meta
+            })
+            .collect()
     }
 }
 
-#[cfg(any(target_os = "solana", target_arch = "bpf"))]
-impl<const N: usize> ToAccountMetas for [AccountMeta; N] {
-    type Output = FixedVec<AccountMeta, N>;
+impl ToAccountMetas for Vec<AccountMeta> {
+    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<AccountMeta> {
+        self.as_slice().to_account_metas(is_signer)
+    }
+}
 
-    fn to_account_metas(&self, is_signer: Option<bool>) -> Self::Output {
-        let mut output = FixedVec::new();
-        for meta in self {
-            let mut meta = meta.clone();
-            if let Some(is_signer) = is_signer {
-                meta.is_signer = is_signer;
-            }
-            output.push(meta);
-        }
-        output
+#[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+impl ToAccountMetas for alloc::vec::Vec<AccountMeta> {
+    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<AccountMeta> {
+        self.as_slice().to_account_metas(is_signer)
+    }
+}
+
+impl<const N: usize> ToAccountMetas for [AccountMeta; N] {
+    fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<AccountMeta> {
+        self.as_slice().to_account_metas(is_signer)
     }
 }

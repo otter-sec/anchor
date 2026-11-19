@@ -19,7 +19,7 @@ pub struct MetadataPointerUpdate<'a> {
 }
 
 pub fn metadata_pointer_initialize<'a>(
-    ctx: CpiContext<'a, MetadataPointerInitialize<'a>, 1>,
+    ctx: CpiContext<'a, MetadataPointerInitialize<'a>>,
     authority: Option<&Address>,
     metadata_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
@@ -34,8 +34,8 @@ pub fn metadata_pointer_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn metadata_pointer_update<'a, const N: usize>(
-    ctx: CpiContext<'a, MetadataPointerUpdate<'a>, N>,
+pub fn metadata_pointer_update<'a>(
+    ctx: CpiContext<'a, MetadataPointerUpdate<'a>>,
     metadata_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;

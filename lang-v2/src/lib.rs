@@ -8,14 +8,12 @@ extern crate self as anchor_lang;
 
 mod account_meta;
 pub mod accounts;
-mod buffers;
 pub mod context;
 mod context_cpi;
 pub mod cpi;
 pub mod cursor;
 mod dispatch;
 pub mod event;
-mod fixed_vec;
 pub mod hash;
 #[doc(hidden)]
 pub mod idl_build;
@@ -30,6 +28,7 @@ pub mod system_program;
 #[cfg(feature = "testing")]
 pub mod testing;
 mod traits;
+mod vec;
 
 // Re-export derive macros and bytemuck for generated code
 /// Chunked 4×u64 equality compare for `Address`. Preferred over `==`
@@ -54,8 +53,7 @@ pub use {
     error::{Error, ErrorCode, Result},
 };
 
-// Ungated re-export so generated macro code (`#[event]`, `debug!`, etc.)
-// can reach `Vec` without std or `extern crate alloc;` in user crates.
+// Allocation helpers used by generated code and macros.
 #[doc(hidden)]
 pub extern crate alloc as __alloc;
 
@@ -101,10 +99,10 @@ macro_rules! debug {
     }};
 }
 // Re-export wincode for instruction data serialization
-pub use buffers::CpiHandleBuffer;
-pub use fixed_vec::FixedVec;
-pub use traits::ToCpiAccountsWithCapacity;
-pub use wincode;
+pub use {
+    vec::{TryReserveError, TryReserveErrorKind, Vec},
+    wincode,
+};
 
 /// Borsh-compatible wincode config: u8 enum tags + fixed u32 LE length
 /// prefixes. Used for borsh-compatible v2 serialization paths (instruction

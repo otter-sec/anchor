@@ -54,8 +54,8 @@ fn plain_enum_emits_variants() {
 
 #[test]
 fn opted_in_nested_pod_emits_bytemuck_layout() {
-    let mut accounts = Vec::new();
-    let mut types = Vec::new();
+    let mut accounts = anchor_lang::Vec::new();
+    let mut types = anchor_lang::Vec::new();
     <accounts_test::NestedPodContainer as IdlAccountType>::__register_idl_deps(
         &mut accounts,
         &mut types,
@@ -83,8 +83,8 @@ fn unannotated_repr_c_idl_type_remains_borsh() {
 
 #[test]
 fn plain_arg_struct_registers_as_type_not_account() {
-    let mut accounts: Vec<&'static str> = Vec::new();
-    let mut types: Vec<&'static str> = Vec::new();
+    let mut accounts = anchor_lang::Vec::new();
+    let mut types = anchor_lang::Vec::new();
     <accounts_test::BumpArgs as IdlAccountType>::__register_idl_deps(&mut accounts, &mut types);
 
     assert!(

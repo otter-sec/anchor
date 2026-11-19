@@ -15,10 +15,10 @@ use {
     quote::quote,
     syn::{
         parse::{Parse, ParseStream, Parser},
-        parse_macro_input, parse_quote,
+        parse_macro_input,
         spanned::Spanned,
-        Data, DeriveInput, Expr, ExprLit, ExprUnary, Fields, FnArg, GenericParam, Ident, ItemMod,
-        ItemStruct, Lit, LitStr, Meta, Pat, Token, Type, UnOp,
+        Data, DeriveInput, Expr, ExprLit, ExprUnary, Fields, FnArg, Ident, ItemMod, ItemStruct,
+        Lit, LitStr, Meta, Pat, Token, Type, UnOp,
     },
 };
 
@@ -402,13 +402,11 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
     };
 
     let name = &input.ident;
-    let (_, ty_generics, _) = input.generics.split_for_impl();
-    let cpi_capacity = Ident::new("__ANCHOR_CPI_CAPACITY", Span::call_site());
-    let mut cpi_generics = input.generics.clone();
-    cpi_generics.params.push(GenericParam::Const(parse_quote!(
-        const #cpi_capacity: usize
-    )));
-    let (impl_generics, _, where_clause) = cpi_generics.split_for_impl();
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let account_count = cpi_fields
+        .iter()
+        .filter(|(_, kind, _)| !matches!(kind, CpiFieldKind::Phantom))
+        .count();
 
     let meta_steps = cpi_fields.iter().map(|(ident, kind, signer)| {
         let writable = matches!(
@@ -420,9 +418,8 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
             CpiFieldKind::Nested => quote! {
                 __accounts
                     .try_extend_from_slice(
-                        anchor_lang::ToCpiAccountsWithCapacity::<#cpi_lifetime, #cpi_capacity>::to_instruction_accounts_with_capacity(&self.#ident)?.as_slice(),
-                    )
-                    .map_err(|_| anchor_lang::Error::InvalidArgument)?;
+                        anchor_lang::ToCpiAccounts::<#cpi_lifetime>::to_instruction_accounts(&self.#ident)?.as_slice(),
+                    )?;
             },
             CpiFieldKind::Readonly | CpiFieldKind::Writable => quote! {
                 __accounts.try_push(
@@ -461,9 +458,8 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         CpiFieldKind::Nested => quote! {
             __handles
                 .try_extend_from_slice(
-                    anchor_lang::ToCpiAccountsWithCapacity::<#cpi_lifetime, #cpi_capacity>::to_cpi_handles_with_capacity(&self.#ident)?.as_slice(),
-                )
-                .map_err(|_| anchor_lang::Error::InvalidArgument)?;
+                    anchor_lang::ToCpiAccounts::<#cpi_lifetime>::to_cpi_handles(&self.#ident)?.as_slice(),
+                )?;
         },
         CpiFieldKind::Readonly => quote! {
             __handles
@@ -496,9 +492,8 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         CpiFieldKind::Nested => quote! {
             __flags
                 .try_extend_from_slice(
-                    anchor_lang::ToCpiAccountsWithCapacity::<#cpi_lifetime, #cpi_capacity>::optional_account_sentinel_flags_with_capacity(&self.#ident)?.as_slice(),
-                )
-                .map_err(|_| anchor_lang::Error::InvalidArgument)?;
+                    anchor_lang::ToCpiAccounts::<#cpi_lifetime>::optional_account_sentinel_flags(&self.#ident)?.as_slice(),
+                )?;
         },
         CpiFieldKind::Readonly | CpiFieldKind::Writable => quote! {
             __flags
@@ -513,27 +508,27 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
     });
 
     quote! {
-        impl #impl_generics anchor_lang::ToCpiAccountsWithCapacity<#cpi_lifetime, #cpi_capacity>
+        impl #impl_generics anchor_lang::ToCpiAccounts<#cpi_lifetime>
             for #name #ty_generics #where_clause
         {
-            fn to_instruction_accounts_with_capacity(
+            fn to_instruction_accounts(
                 &self,
-            ) -> anchor_lang::Result<anchor_lang::FixedVec<anchor_lang::pinocchio::instruction::InstructionAccount<#cpi_lifetime>, #cpi_capacity>> {
-                let mut __accounts = anchor_lang::FixedVec::new();
+            ) -> anchor_lang::Result<anchor_lang::Vec<anchor_lang::pinocchio::instruction::InstructionAccount<#cpi_lifetime>>> {
+                let mut __accounts = anchor_lang::Vec::try_with_capacity(#account_count)?;
                 #(#meta_steps)*
                 Ok(__accounts)
             }
 
-            fn to_cpi_handles_with_capacity(
+            fn to_cpi_handles(
                 &self,
-            ) -> anchor_lang::Result<anchor_lang::CpiHandleBuffer<#cpi_lifetime, #cpi_capacity>> {
-                let mut __handles = anchor_lang::CpiHandleBuffer::new();
+            ) -> anchor_lang::Result<anchor_lang::Vec<anchor_lang::CpiHandle<#cpi_lifetime>>> {
+                let mut __handles = anchor_lang::Vec::try_with_capacity(#account_count)?;
                 #(#handle_steps)*
                 Ok(__handles)
             }
 
-            fn optional_account_sentinel_flags_with_capacity(&self) -> anchor_lang::Result<anchor_lang::FixedVec<bool, #cpi_capacity>> {
-                let mut __flags = anchor_lang::FixedVec::new();
+            fn optional_account_sentinel_flags(&self) -> anchor_lang::Result<anchor_lang::Vec<bool>> {
+                let mut __flags = anchor_lang::Vec::try_with_capacity(#account_count)?;
                 #(#flag_steps)*
                 Ok(__flags)
             }
@@ -816,12 +811,6 @@ fn needs_ix_lifetime(ty: &Type) -> bool {
         }),
         _ => false,
     }
-}
-
-fn uses_dynamic_capacity(ty: &Type) -> bool {
-    quote!(#ty)
-        .to_string()
-        .contains("__ANCHOR_DYNAMIC_CAPACITY")
 }
 
 /// Recursively rewrites any elided or named lifetimes in `ty` to `ix`.
@@ -1968,7 +1957,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     //
     // Emits a sibling `__cpi_accounts_<name>` module containing a struct of
     // `CpiHandle<'a>` / `CpiHandleMut<'a>` fields and a
-    // `ToCpiAccountsWithCapacity<'a, N>` impl driven by each field's
+    // `ToCpiAccounts<'a>` impl driven by each field's
     // compile-time writable / signer flags. `Nested<T>` fields hold T's
     // generated CPI accounts struct and flatten through the same trait,
     // matching the account ordering used by `TryAccounts`. Optional accounts
@@ -2079,10 +2068,10 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             fn to_account_metas(
                 &self,
                 _is_signer: Option<bool>,
-            ) -> anchor_lang::__alloc::vec::Vec<anchor_lang::AccountMeta> {
+            ) -> anchor_lang::Vec<anchor_lang::AccountMeta> {
                 #(#required_locals)*
                 #(#derive_stmts)*
-                let mut __metas = anchor_lang::__alloc::vec::Vec::new();
+                let mut __metas = anchor_lang::Vec::new();
                 #(#client_meta_steps)*
                 __metas
             }
@@ -2100,8 +2089,8 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 fn to_account_metas(
                     &self,
                     _is_signer: Option<bool>,
-                ) -> anchor_lang::__alloc::vec::Vec<anchor_lang::AccountMeta> {
-                    let mut __metas = anchor_lang::__alloc::vec::Vec::new();
+                ) -> anchor_lang::Vec<anchor_lang::AccountMeta> {
+                    let mut __metas = anchor_lang::Vec::new();
                     #(#full_meta_steps)*
                     __metas
                 }
@@ -3045,7 +3034,6 @@ fn gen_declared_program(
     validate_declare_program_discriminators(idl, name.span())?;
 
     let dynamic_type_names = declare_program_dynamic_type_names(idl);
-    let fixed_vec_type_names = declare_program_fixed_vec_type_names(idl);
     let types = gen_declare_program_types(idl)?;
     let type_idents = gen_declare_program_type_idents(idl)?;
     let type_reexports = type_idents
@@ -3118,7 +3106,6 @@ fn gen_declared_program(
                 name.span(),
                 &std::collections::BTreeSet::new(),
                 &dynamic_type_names,
-                &fixed_vec_type_names,
             )?;
             host_arg_decls.push(quote! { #arg_ident: #host_ty });
             target_arg_decls.push(quote! { #arg_ident: #target_ty });
@@ -3132,23 +3119,10 @@ fn gen_declared_program(
                     name.span(),
                     &std::collections::BTreeSet::new(),
                     &dynamic_type_names,
-                    &fixed_vec_type_names,
                 )?,
             )
         } else {
             (quote! { () }, quote! { () })
-        };
-
-        let target_uses_dynamic_capacity = args.iter().any(|arg| {
-            arg.get("type")
-                .is_some_and(|ty| declare_idl_type_uses_fixed_vec(ty, &fixed_vec_type_names))
-        }) || ix
-            .get("returns")
-            .is_some_and(|returns| declare_idl_type_uses_fixed_vec(returns, &fixed_vec_type_names));
-        let target_generics = if target_uses_dynamic_capacity {
-            quote! { <'ix, const __ANCHOR_DYNAMIC_CAPACITY: usize> }
-        } else {
-            quote! { <'ix> }
         };
 
         handlers.push(quote! {
@@ -3164,7 +3138,7 @@ fn gen_declared_program(
 
             #[cfg(any(target_os = "solana", target_arch = "bpf"))]
             #[discrim = [#(#discrim_tokens),*]]
-            pub fn #ix_ident #target_generics(
+            pub fn #ix_ident<'ix>(
                 _ctx: &mut anchor_lang::Context<#accounts_ident>,
                 #(#target_arg_decls),*
             ) -> anchor_lang::Result<#target_return_ty> {
@@ -3657,16 +3631,14 @@ fn declare_idl_type_uses_borrowed_data(
     value: &serde_json::Value,
     dynamic_type_names: &std::collections::BTreeSet<String>,
 ) -> bool {
-    if matches!(value.as_str(), Some("bytes" | "string")) {
+    if value.as_str() == Some("string") {
         return true;
     }
     if let Some(defined) = value.get("defined") {
         let name = defined
             .as_str()
             .or_else(|| defined.get("name").and_then(serde_json::Value::as_str));
-        if matches!(name, Some("BTreeMap" | "BTreeSet"))
-            || name.is_some_and(|name| dynamic_type_names.contains(name))
-        {
+        if name.is_some_and(|name| dynamic_type_names.contains(name)) {
             return true;
         }
         return defined
@@ -3680,11 +3652,9 @@ fn declare_idl_type_uses_borrowed_data(
                 })
             });
     }
-    if value.get("vec").is_some() {
-        return true;
-    }
     value
-        .get("option")
+        .get("vec")
+        .or_else(|| value.get("option"))
         .is_some_and(|inner| declare_idl_type_uses_borrowed_data(inner, dynamic_type_names))
         || value
             .get("array")
@@ -3759,123 +3729,11 @@ fn declare_program_dynamic_type_names(
     }
 }
 
-fn declare_program_fixed_vec_type_names(
-    idl: &serde_json::Value,
-) -> std::collections::BTreeSet<String> {
-    let definitions = idl
-        .get("types")
-        .and_then(serde_json::Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default();
-    let mut fixed = std::collections::BTreeSet::new();
-    loop {
-        let before = fixed.len();
-        for definition in definitions {
-            let Some(name) = definition.get("name").and_then(serde_json::Value::as_str) else {
-                continue;
-            };
-            let Some(ty) = definition.get("type") else {
-                continue;
-            };
-            let uses_fixed_vec = match ty.get("kind").and_then(serde_json::Value::as_str) {
-                Some("struct") => ty
-                    .get("fields")
-                    .and_then(serde_json::Value::as_array)
-                    .is_some_and(|fields| {
-                        fields.iter().any(|field| {
-                            declare_idl_type_uses_fixed_vec(
-                                field.get("type").unwrap_or(field),
-                                &fixed,
-                            )
-                        })
-                    }),
-                Some("enum") => ty
-                    .get("variants")
-                    .and_then(serde_json::Value::as_array)
-                    .is_some_and(|variants| {
-                        variants.iter().any(|variant| {
-                            variant
-                                .get("fields")
-                                .and_then(serde_json::Value::as_array)
-                                .is_some_and(|fields| {
-                                    fields.iter().any(|field| {
-                                        declare_idl_type_uses_fixed_vec(
-                                            field.get("type").unwrap_or(field),
-                                            &fixed,
-                                        )
-                                    })
-                                })
-                        })
-                    }),
-                Some("type") => ty
-                    .get("alias")
-                    .is_some_and(|alias| declare_idl_type_uses_fixed_vec(alias, &fixed)),
-                _ => false,
-            };
-            if uses_fixed_vec {
-                fixed.insert(name.to_owned());
-            }
-        }
-        if fixed.len() == before {
-            return fixed;
-        }
-    }
-}
-
-fn declare_idl_type_uses_fixed_vec(
-    value: &serde_json::Value,
-    fixed_vec_type_names: &std::collections::BTreeSet<String>,
-) -> bool {
-    if value.get("vec").is_some() {
-        return true;
-    }
-    if let Some(defined) = value.get("defined") {
-        let name = defined
-            .as_str()
-            .or_else(|| defined.get("name").and_then(serde_json::Value::as_str));
-        if name.is_some_and(|name| matches!(name, "BTreeMap" | "BTreeSet")) {
-            return true;
-        }
-        if name.is_some_and(|name| fixed_vec_type_names.contains(name)) {
-            return true;
-        }
-        return defined
-            .get("generics")
-            .and_then(serde_json::Value::as_array)
-            .is_some_and(|generics| {
-                generics.iter().any(|generic| {
-                    generic
-                        .get("type")
-                        .is_some_and(|ty| declare_idl_type_uses_fixed_vec(ty, fixed_vec_type_names))
-                })
-            });
-    }
-    value
-        .get("option")
-        .is_some_and(|inner| declare_idl_type_uses_fixed_vec(inner, fixed_vec_type_names))
-        || value
-            .get("array")
-            .and_then(serde_json::Value::as_array)
-            .and_then(|array| array.first())
-            .is_some_and(|inner| declare_idl_type_uses_fixed_vec(inner, fixed_vec_type_names))
-}
-
 fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenStream2>> {
     let dynamic_type_names = declare_program_dynamic_type_names(idl);
-    let fixed_vec_type_names = declare_program_fixed_vec_type_names(idl);
     let type_idents = gen_declare_program_type_idents(idl)?;
-    let host = gen_declare_program_types_for_target(
-        idl,
-        false,
-        &dynamic_type_names,
-        &std::collections::BTreeSet::new(),
-    )?;
-    let target = gen_declare_program_types_for_target(
-        idl,
-        true,
-        &dynamic_type_names,
-        &fixed_vec_type_names,
-    )?;
+    let host = gen_declare_program_types_for_target(idl, false, &dynamic_type_names)?;
+    let target = gen_declare_program_types_for_target(idl, true, &dynamic_type_names)?;
     Ok(vec![quote! {
         #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
         mod __anchor_declared_types_host {
@@ -3899,7 +3757,6 @@ fn gen_declare_program_types_for_target(
     idl: &serde_json::Value,
     borrowed: bool,
     dynamic_type_names: &std::collections::BTreeSet<String>,
-    fixed_vec_type_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<Vec<TokenStream2>> {
     let Some(types) = idl.get("types").and_then(serde_json::Value::as_array) else {
         return Ok(Vec::new());
@@ -3936,9 +3793,6 @@ fn gen_declare_program_types_for_target(
         let mut generics = gen_declare_program_type_generics(ty_def, ident.span())?;
         if borrowed && type_is_dynamic {
             generics = generics.with_borrowed_lifetime();
-        }
-        if borrowed && fixed_vec_type_names.contains(name) {
-            generics = generics.with_dynamic_capacity();
         }
         let account_entry = account_entries.get(name).copied();
         let discriminator = account_entry
@@ -4025,7 +3879,6 @@ fn gen_declare_program_types_for_target(
                             &generics.const_generic_names,
                             borrowed,
                             dynamic_type_names,
-                            fixed_vec_type_names,
                         )?
                     }
                     None => DeclareTypeFields::Unit,
@@ -4169,7 +4022,6 @@ fn gen_declare_program_types_for_target(
                         &generics.const_generic_names,
                         borrowed,
                         dynamic_type_names,
-                        fixed_vec_type_names,
                     )?;
                     idl_field_tys.extend(fields.tys().iter().cloned());
                     match fields {
@@ -4218,7 +4070,6 @@ fn gen_declare_program_types_for_target(
                     borrowed,
                     dynamic_type_names,
                     &generics.const_generic_names,
-                    fixed_vec_type_names,
                 )?;
                 let impl_generics = &generics.impl_generics;
                 out.push(quote! {
@@ -4574,7 +4425,7 @@ fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStrea
                 }
             })
         };
-        let bounded_methods = bounded_event_methods(event_data_bound);
+        let bounded_methods = event_buffer_methods(event_data_bound);
 
         event_reexports.push(quote! { pub use super::#ident; });
         parser_variants.push(quote! { #ident(super::events::#ident) });
@@ -4582,9 +4433,9 @@ fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStrea
         let event_impl = if serialization.is_bytemuck() {
             quote! {
                 impl anchor_lang::Event for #ident {
-                    fn try_write_data<const N: usize>(
+                    fn try_write_data(
                         &self,
-                        data: &mut anchor_lang::FixedVec<u8, N>,
+                        data: &mut anchor_lang::Vec<u8>,
                     ) -> anchor_lang::Result<()> {
                         let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
                         let payload = anchor_lang::bytemuck::bytes_of(self);
@@ -4598,26 +4449,14 @@ fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStrea
                         }
                         result
                     }
-
-                    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-                    fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
-                        let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
-                        let payload = anchor_lang::bytemuck::bytes_of(self);
-                        let mut data = anchor_lang::__alloc::vec::Vec::with_capacity(
-                            disc.len() + payload.len(),
-                        );
-                        data.extend_from_slice(disc);
-                        data.extend_from_slice(payload);
-                        data
-                    }
                 }
             }
         } else {
             quote! {
                 impl anchor_lang::Event for #ident {
-                    fn try_write_data<const N: usize>(
+                    fn try_write_data(
                         &self,
-                        data: &mut anchor_lang::FixedVec<u8, N>,
+                        data: &mut anchor_lang::Vec<u8>,
                     ) -> anchor_lang::Result<()> {
                         let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
                         let start = data.len();
@@ -4635,20 +4474,6 @@ fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStrea
                             data.truncate(start);
                         }
                         result
-                    }
-
-                    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-                    fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
-                        let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
-                        let mut data = anchor_lang::__alloc::vec::Vec::new();
-                        data.extend_from_slice(disc);
-                        anchor_lang::wincode::config::serialize_into(
-                            &mut data,
-                            self,
-                            anchor_lang::BORSH_CONFIG,
-                        )
-                        .expect("declared event serialization failed");
-                        data
                     }
                 }
             }
@@ -4673,9 +4498,9 @@ fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStrea
 
                 #[cfg(any(target_os = "solana", target_arch = "bpf"))]
                 impl<'ix> anchor_lang::Event for #ident<'ix> {
-                    fn try_write_data<const N: usize>(
+                    fn try_write_data(
                         &self,
-                        data: &mut anchor_lang::FixedVec<u8, N>,
+                        data: &mut anchor_lang::Vec<u8>,
                     ) -> anchor_lang::Result<()> {
                         let start = data.len();
                         let result = (|| {
@@ -4984,14 +4809,6 @@ impl DeclareTypeGenerics {
         self
     }
 
-    fn with_dynamic_capacity(mut self) -> Self {
-        self.impl_params
-            .push(quote! { const __ANCHOR_DYNAMIC_CAPACITY: usize });
-        self.ty_params.push(quote! { __ANCHOR_DYNAMIC_CAPACITY });
-        self.refresh_generics();
-        self
-    }
-
     fn refresh_generics(&mut self) {
         let impl_params = &self.impl_params;
         let ty_params = &self.ty_params;
@@ -5290,7 +5107,6 @@ fn gen_declare_program_type_fields(
     const_generic_names: &std::collections::BTreeSet<String>,
     borrowed: bool,
     dynamic_type_names: &std::collections::BTreeSet<String>,
-    fixed_vec_type_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<DeclareTypeFields> {
     let visibility = public.then(|| quote! { pub });
     let field_shape = serde_json::from_value::<anchor_lang_idl::types::IdlDefinedFields>(
@@ -5316,7 +5132,6 @@ fn gen_declare_program_type_fields(
                     borrowed,
                     dynamic_type_names,
                     const_generic_names,
-                    fixed_vec_type_names,
                 )?;
                 let field_ident = Ident::new(&to_snake_case(field_name), span);
                 field_tokens.push(quote! { #visibility #field_ident: #ty, });
@@ -5343,7 +5158,6 @@ fn gen_declare_program_type_fields(
                     borrowed,
                     dynamic_type_names,
                     const_generic_names,
-                    fixed_vec_type_names,
                 )?;
                 field_tokens.push(quote! { #visibility #ty });
                 field_tys.push(ty);
@@ -5374,7 +5188,6 @@ fn declare_idl_type_to_tokens_with_generics(
         false,
         &std::collections::BTreeSet::new(),
         const_generic_names,
-        &std::collections::BTreeSet::new(),
     )
 }
 
@@ -5383,7 +5196,6 @@ fn declare_idl_type_to_borrowed_tokens_with_generics(
     span: proc_macro2::Span,
     const_generic_names: &std::collections::BTreeSet<String>,
     dynamic_type_names: &std::collections::BTreeSet<String>,
-    fixed_vec_type_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<TokenStream2> {
     declare_idl_type_to_tokens_for_target(
         value,
@@ -5391,7 +5203,6 @@ fn declare_idl_type_to_borrowed_tokens_with_generics(
         true,
         dynamic_type_names,
         const_generic_names,
-        fixed_vec_type_names,
     )
 }
 
@@ -5401,7 +5212,6 @@ fn declare_idl_type_to_tokens_for_target(
     borrowed: bool,
     dynamic_type_names: &std::collections::BTreeSet<String>,
     const_generic_names: &std::collections::BTreeSet<String>,
-    fixed_vec_type_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<TokenStream2> {
     if let Some(s) = value.as_str() {
         return Ok(match s {
@@ -5418,8 +5228,7 @@ fn declare_idl_type_to_tokens_for_target(
             "f64" => quote! { f64 },
             "u128" => quote! { u128 },
             "i128" => quote! { i128 },
-            "bytes" if borrowed => quote! { &'ix [u8] },
-            "bytes" => quote! { anchor_lang::__idl::vec::Vec<u8> },
+            "bytes" => quote! { anchor_lang::Vec<u8> },
             "string" if borrowed => quote! { &'ix str },
             "string" => quote! { anchor_lang::__idl::string::String },
             "pubkey" => quote! { anchor_lang::Address },
@@ -5455,7 +5264,6 @@ fn declare_idl_type_to_tokens_for_target(
                 const_generic_names,
                 borrowed,
                 dynamic_type_names,
-                fixed_vec_type_names,
             )?;
             let value = declare_idl_generic_arg_to_tokens_for_target(
                 &generics[1],
@@ -5463,11 +5271,10 @@ fn declare_idl_type_to_tokens_for_target(
                 const_generic_names,
                 borrowed,
                 dynamic_type_names,
-                fixed_vec_type_names,
             )?;
             return Ok(if borrowed {
                 quote! {
-                    anchor_lang::FixedVec<(#key, #value), __ANCHOR_DYNAMIC_CAPACITY>
+                    anchor_lang::Vec<(#key, #value)>
                 }
             } else {
                 quote! { anchor_lang::__idl::collections::BTreeMap<#key, #value> }
@@ -5487,11 +5294,10 @@ fn declare_idl_type_to_tokens_for_target(
                 const_generic_names,
                 borrowed,
                 dynamic_type_names,
-                fixed_vec_type_names,
             )?;
             return Ok(if borrowed {
                 quote! {
-                    anchor_lang::FixedVec<#element, __ANCHOR_DYNAMIC_CAPACITY>
+                    anchor_lang::Vec<#element>
                 }
             } else {
                 quote! { anchor_lang::__idl::collections::BTreeSet<#element> }
@@ -5514,7 +5320,6 @@ fn declare_idl_type_to_tokens_for_target(
                             const_generic_names,
                             borrowed,
                             dynamic_type_names,
-                            fixed_vec_type_names,
                         )
                     })
                     .collect::<syn::Result<Vec<_>>>()
@@ -5522,25 +5327,11 @@ fn declare_idl_type_to_tokens_for_target(
             .transpose()?
             .unwrap_or_default();
         let needs_lifetime = borrowed && dynamic_type_names.contains(defined_name);
-        let capacity_arg = (borrowed && fixed_vec_type_names.contains(defined_name))
-            .then(|| quote! { __ANCHOR_DYNAMIC_CAPACITY });
-        if generic_args.is_empty() {
-            return Ok(match (needs_lifetime, capacity_arg) {
-                (true, Some(capacity_arg)) => quote! { #path<'ix, #capacity_arg> },
-                (true, None) => quote! { #path<'ix> },
-                (false, Some(capacity_arg)) => quote! { #path<#capacity_arg> },
-                (false, None) => path,
-            });
-        }
-        return Ok(match (needs_lifetime, capacity_arg) {
-            (true, Some(capacity_arg)) => {
-                quote! { #path<'ix, #(#generic_args,)* #capacity_arg> }
-            }
-            (true, None) => quote! { #path<'ix, #(#generic_args),*> },
-            (false, Some(capacity_arg)) => {
-                quote! { #path<#(#generic_args,)* #capacity_arg> }
-            }
-            (false, None) => quote! { #path<#(#generic_args),*> },
+        return Ok(match (needs_lifetime, generic_args.is_empty()) {
+            (true, true) => quote! { #path<'ix> },
+            (true, false) => quote! { #path<'ix, #(#generic_args),*> },
+            (false, true) => path,
+            (false, false) => quote! { #path<#(#generic_args),*> },
         });
     }
     if let Some(generic) = value.get("generic").and_then(serde_json::Value::as_str) {
@@ -5554,13 +5345,8 @@ fn declare_idl_type_to_tokens_for_target(
             borrowed,
             dynamic_type_names,
             const_generic_names,
-            fixed_vec_type_names,
         )?;
-        return Ok(if borrowed {
-            quote! { anchor_lang::FixedVec<#inner, __ANCHOR_DYNAMIC_CAPACITY> }
-        } else {
-            quote! { anchor_lang::__idl::vec::Vec<#inner> }
-        });
+        return Ok(quote! { anchor_lang::Vec<#inner> });
     }
     if let Some(inner) = value.get("option") {
         let inner = declare_idl_type_to_tokens_for_target(
@@ -5569,7 +5355,6 @@ fn declare_idl_type_to_tokens_for_target(
             borrowed,
             dynamic_type_names,
             const_generic_names,
-            fixed_vec_type_names,
         )?;
         return Ok(quote! { Option<#inner> });
     }
@@ -5586,7 +5371,6 @@ fn declare_idl_type_to_tokens_for_target(
             borrowed,
             dynamic_type_names,
             const_generic_names,
-            fixed_vec_type_names,
         )?;
         let len = declare_idl_array_len_to_tokens(&array[1], span)?;
         return Ok(quote! { [#inner; #len] });
@@ -5648,7 +5432,6 @@ fn declare_idl_generic_arg_to_tokens_for_target(
     const_generic_names: &std::collections::BTreeSet<String>,
     borrowed: bool,
     dynamic_type_names: &std::collections::BTreeSet<String>,
-    fixed_vec_type_names: &std::collections::BTreeSet<String>,
 ) -> syn::Result<TokenStream2> {
     match json_str(value, "kind", span)? {
         "type" => {
@@ -5664,7 +5447,6 @@ fn declare_idl_generic_arg_to_tokens_for_target(
                 borrowed,
                 dynamic_type_names,
                 const_generic_names,
-                fixed_vec_type_names,
             )
         }
         "const" => {
@@ -5947,8 +5729,8 @@ fn is_canonical_address(path: &syn::Path) -> bool {
 ///
 /// Rust layout is not the wire layout: dynamically sized values, padding, and
 /// length prefixes make `size_of::<T>()` unsuitable for sizing CPI buffers.
-/// Return `None` when the macro cannot prove a bound. Those call sites must
-/// receive storage from the caller rather than guessing a global capacity.
+/// Return `None` when the macro cannot prove a bound. The generated vector
+/// can grow as serialization writes into it.
 fn bounded_serialized_len(ty: &Type) -> Option<TokenStream2> {
     match ty {
         Type::Array(array) => {
@@ -6001,18 +5783,6 @@ fn bounded_serialized_len(ty: &Type) -> Option<TokenStream2> {
                 let inner = bounded_serialized_len(inner)?;
                 return Some(quote! { 1usize + (#inner) });
             }
-            if path_matches(&path.path, &["anchor_lang", "FixedVec"]) {
-                let mut args = arguments.args.iter();
-                let inner = match args.next()? {
-                    syn::GenericArgument::Type(ty) => bounded_serialized_len(ty)?,
-                    _ => return None,
-                };
-                let capacity = match args.next()? {
-                    syn::GenericArgument::Const(capacity) => capacity,
-                    _ => return None,
-                };
-                return Some(quote! { 4usize + (#capacity) * (#inner) });
-            }
             None
         }
         _ => None,
@@ -6027,12 +5797,10 @@ fn bounded_fields_serialized_len(fields: &Fields) -> Option<TokenStream2> {
     Some(quote! { 0usize #(+ (#fields))* })
 }
 
-fn bounded_event_methods(event_data_bound: Option<TokenStream2>) -> TokenStream2 {
-    let Some(event_data_bound) = event_data_bound else {
-        return TokenStream2::new();
-    };
+fn event_buffer_methods(event_data_bound: Option<TokenStream2>) -> TokenStream2 {
+    let event_capacity = event_data_bound.unwrap_or_else(|| quote! { 0 });
     let event_cpi_capacity =
-        quote! { anchor_lang::event::EVENT_IX_TAG_LE.len() + (#event_data_bound) };
+        quote! { anchor_lang::event::EVENT_IX_TAG_LE.len() + (#event_capacity) };
 
     quote! {
         #[doc(hidden)]
@@ -6040,7 +5808,8 @@ fn bounded_event_methods(event_data_bound: Option<TokenStream2>) -> TokenStream2
             &self,
             callback: impl FnOnce(&[u8]) -> anchor_lang::Result<R>,
         ) -> anchor_lang::Result<R> {
-            let mut data = anchor_lang::FixedVec::<u8, { #event_data_bound }>::new();
+            let mut data = anchor_lang::Vec::try_with_capacity(#event_capacity)
+                .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
             anchor_lang::Event::try_write_data(self, &mut data)?;
             callback(data.as_slice())
         }
@@ -6050,7 +5819,8 @@ fn bounded_event_methods(event_data_bound: Option<TokenStream2>) -> TokenStream2
             &self,
             callback: impl FnOnce(&[u8]) -> anchor_lang::Result<R>,
         ) -> anchor_lang::Result<R> {
-            let mut data = anchor_lang::FixedVec::<u8, { #event_cpi_capacity }>::new();
+            let mut data = anchor_lang::Vec::try_with_capacity(#event_cpi_capacity)
+                .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
             data.try_extend_from_slice(anchor_lang::event::EVENT_IX_TAG_LE)
                 .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
             anchor_lang::Event::try_write_data(self, &mut data)?;
@@ -6200,7 +5970,7 @@ fn process_handler(
         .unwrap_or_else(|| quote! { "" });
     let set_return_data = returns_value.then(|| {
         quote! {
-            let mut __return_data = anchor_lang::__alloc::vec::Vec::new();
+            let mut __return_data = anchor_lang::Vec::new();
             anchor_lang::wincode::config::serialize_into(
                 &mut __return_data,
                 &__result,
@@ -6259,12 +6029,7 @@ fn process_handler(
     let extra_arg_names: Vec<_> = extra_args.iter().map(|(n, _)| *n).collect();
     let (extra_arg_types, has_ref_args) = args_meta(&extra_args);
     let extra_arg_types = &extra_arg_types;
-    let has_dynamic_arg_capacity = extra_arg_types.iter().any(uses_dynamic_capacity);
-    let has_dynamic_return_capacity = return_type.as_ref().is_some_and(uses_dynamic_capacity);
-    let has_dynamic_capacity = has_dynamic_arg_capacity || has_dynamic_return_capacity;
-    let target_return_data_bound = return_type
-        .as_ref()
-        .and_then(bounded_serialized_len);
+    let target_return_data_bound = return_type.as_ref().and_then(bounded_serialized_len);
 
     // Dispatch arm.
     let dispatch_arm = if let Some(discrim_bytes) = discrim_bytes {
@@ -6403,20 +6168,11 @@ fn process_handler(
 
     // Client-side instruction struct.
     let ix_struct_name = syn::Ident::new(&to_camel_case(&fn_name_str), fn_name.span());
-    let (ix_lt_decl, ix_lt_use) = match (has_ref_args, has_dynamic_arg_capacity) {
-        (true, true) => (
-            quote! { <'ix, const __ANCHOR_DYNAMIC_CAPACITY: usize> },
-            quote! { <'ix, __ANCHOR_DYNAMIC_CAPACITY> },
-        ),
-        (true, false) => (quote! { <'ix> }, quote! { <'ix> }),
-        (false, true) => (
-            quote! { <const __ANCHOR_DYNAMIC_CAPACITY: usize> },
-            quote! { <__ANCHOR_DYNAMIC_CAPACITY> },
-        ),
-        (false, false) => (quote! {}, quote! {}),
+    let (ix_lt_decl, ix_lt_use) = if has_ref_args {
+        (quote! { <'ix> }, quote! { <'ix> })
+    } else {
+        (quote! {}, quote! {})
     };
-    // Fixed and otherwise provably bounded instructions get an exact generated
-    // buffer. Dynamic or opaque instructions receive storage from the caller.
     let ix_discriminator_len = disc_literal_bytes.len();
     let ix_data_bound = extra_arg_types
         .iter()
@@ -6435,9 +6191,9 @@ fn process_handler(
         }
         #(#handler_cfg_attrs)*
         impl #ix_lt_decl anchor_lang::InstructionData for #ix_struct_name #ix_lt_use {
-            fn try_write_data<const N: usize>(
+            fn try_write_data(
                 &self,
-                data: &mut anchor_lang::FixedVec<u8, N>,
+                data: &mut anchor_lang::Vec<u8>,
             ) -> anchor_lang::Result<()> {
                 let start = data.len();
                 let result = (|| {
@@ -6455,19 +6211,6 @@ fn process_handler(
                 }
                 result
             }
-
-            #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-            fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
-                let mut data = anchor_lang::__alloc::vec::Vec::new();
-                data.extend_from_slice(Self::DISCRIMINATOR);
-                anchor_lang::wincode::config::serialize_into(
-                    &mut data,
-                    self,
-                    anchor_lang::BORSH_CONFIG,
-                )
-                .expect("instruction serialization failed");
-                data
-            }
         }
         #(#handler_cfg_attrs)*
         impl #ix_lt_decl #ix_struct_name #ix_lt_use {
@@ -6476,20 +6219,11 @@ fn process_handler(
                 self,
                 accounts: impl anchor_lang::ToAccountMetas,
             ) -> anchor_lang::solana_program::instruction::Instruction {
-                let account_metas = accounts
-                    .to_account_metas(None)
-                    .iter()
-                    .map(|meta| anchor_lang::solana_program::instruction::AccountMeta {
-                        pubkey: meta.pubkey,
-                        is_signer: meta.is_signer,
-                        is_writable: meta.is_writable,
-                    })
-                    .collect();
-                anchor_lang::solana_program::instruction::Instruction::new_with_bytes(
-                    #program_id,
-                    &<Self as anchor_lang::InstructionData>::data(&self),
-                    account_metas,
-                )
+                anchor_lang::solana_program::instruction::Instruction {
+                    program_id: #program_id,
+                    data: <Self as anchor_lang::InstructionData>::data(&self).into_vec(),
+                    accounts: accounts.to_account_metas(None).into_vec(),
+                }
             }
         }
     };
@@ -6539,23 +6273,13 @@ fn process_handler(
     // return values, the caller-provided return-data storage.
     let cpi_wrapper = {
         let host_lt_decl = if has_ref_args {
-            quote! { <'a, 'ix, const __ANCHOR_CPI_CAPACITY: usize> }
+            quote! { <'a, 'ix> }
         } else {
-            quote! { <'a, const __ANCHOR_CPI_CAPACITY: usize> }
+            quote! { <'a> }
         };
         let mut target_generics = vec![quote! { 'a }];
         if has_ref_args || has_ref_return {
             target_generics.push(quote! { 'ix });
-        }
-        target_generics.push(quote! { const __ANCHOR_CPI_CAPACITY: usize });
-        if has_dynamic_capacity {
-            target_generics.push(quote! { const __ANCHOR_DYNAMIC_CAPACITY: usize });
-        }
-        if ix_data_bound.is_none() {
-            target_generics.push(quote! { const __ANCHOR_DATA_CAPACITY: usize });
-        }
-        if has_ref_return && !has_dynamic_return_capacity {
-            target_generics.push(quote! { const __ANCHOR_RETURN_CAPACITY: usize });
         }
         let target_lt_decl = quote! { <#(#target_generics),*> };
         let ret_ty = if returns_value {
@@ -6574,23 +6298,6 @@ fn process_handler(
             quote! { Ok(()) }
         };
         let target_ret_value = if let Some(return_ty) = return_type.as_ref() {
-            let copy_return_data = has_ref_return.then(|| {
-                quote! {
-                    if __return.as_slice().len() > __return_data.capacity() {
-                        return Err(anchor_lang::Error::InvalidInstructionData);
-                    }
-                    __return_data.clear();
-                    __return_data
-                        .try_extend_from_slice(__return.as_slice())
-                        .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
-                    let __return_bytes = __return_data.as_slice();
-                }
-            });
-            let return_bytes = if has_ref_return {
-                quote! { __return_bytes }
-            } else {
-                quote! { __return.as_slice() }
-            };
             if let Some(bound) = target_return_data_bound {
                 quote! {
                     let mut __return_bytes =
@@ -6621,24 +6328,19 @@ fn process_handler(
                     Ok(Return { value: __value })
                 }
             } else if has_ref_return {
-                let capacity = if has_dynamic_return_capacity {
-                    quote! { __ANCHOR_DYNAMIC_CAPACITY }
-                } else {
-                    quote! { __ANCHOR_RETURN_CAPACITY }
-                };
                 quote! {
                     let mut __raw_return_bytes =
-                        [core::mem::MaybeUninit::<u8>::uninit(); #capacity];
+                        [core::mem::MaybeUninit::<u8>::uninit(); anchor_lang::pinocchio::cpi::MAX_RETURN_DATA];
                     let mut __return_program =
                         core::mem::MaybeUninit::<anchor_lang::Address>::uninit();
                     let __return_len = unsafe {
                         anchor_lang::pinocchio::cpi::sol_get_return_data(
                             __raw_return_bytes.as_mut_ptr().cast::<u8>(),
-                            #capacity as u64,
+                            anchor_lang::pinocchio::cpi::MAX_RETURN_DATA as u64,
                             __return_program.as_mut_ptr().cast::<u8>(),
                         )
                     } as usize;
-                    if __return_len == 0 || __return_len > #capacity {
+                    if __return_len == 0 || __return_len > anchor_lang::pinocchio::cpi::MAX_RETURN_DATA {
                         return Err(anchor_lang::Error::InvalidInstructionData);
                     }
                     let __return_program = unsafe { __return_program.assume_init() };
@@ -6665,43 +6367,25 @@ fn process_handler(
                     if !anchor_lang::address_eq(__return.program_id(), __ctx.program) {
                         return Err(anchor_lang::Error::IncorrectProgramId);
                     }
-                    #copy_return_data
-                    let __value: #return_ty = Return::deserialize(#return_bytes)?;
+                    let __value: #return_ty = Return::deserialize(__return.as_slice())?;
                     Ok(Return { value: __value })
                 }
             }
         } else {
             quote! { Ok(()) }
         };
-        let target_data_arg = if ix_data_bound.is_none() {
-            quote! {
-                __data: &mut anchor_lang::FixedVec<u8, __ANCHOR_DATA_CAPACITY>,
-            }
-        } else {
-            quote! {}
-        };
         let target_return_data_arg = has_ref_return.then(|| {
-            let capacity = if has_dynamic_return_capacity {
-                quote! { __ANCHOR_DYNAMIC_CAPACITY }
-            } else {
-                quote! { __ANCHOR_RETURN_CAPACITY }
-            };
-            quote! {
-                __return_data: &'ix mut anchor_lang::FixedVec<
-                    u8,
-                    #capacity,
-                >,
-            }
+            quote! { __return_data: &'ix mut anchor_lang::Vec<u8>, }
         });
-        let target_serialize = match &ix_data_bound {
-            Some(bound) => quote! {
-                let mut __data = anchor_lang::FixedVec::<u8, { #bound }>::new();
-                anchor_lang::InstructionData::try_write_data(&__ix, &mut __data)?;
-            },
-            None => quote! {
-                __data.clear();
-                anchor_lang::InstructionData::try_write_data(&__ix, __data)?;
-            },
+        let ix_data_capacity = ix_data_bound.unwrap_or_else(|| quote! { 0 });
+        let invoke = quote! {
+            let __ix = super::instruction::#ix_struct_name {
+                #(#extra_arg_names,)*
+            };
+            let mut __data = anchor_lang::Vec::try_with_capacity(#ix_data_capacity)
+                .map_err(|_| anchor_lang::Error::InvalidInstructionData)?;
+            anchor_lang::InstructionData::try_write_data(&__ix, &mut __data)?;
+            __ctx.invoke(__data.as_slice())?;
         };
         quote! {
             #accounts_program_id_check
@@ -6711,17 +6395,11 @@ fn process_handler(
                 __ctx: anchor_lang::CpiContext<
                     'a,
                     accounts::#accounts_ident<'a>,
-                    __ANCHOR_CPI_CAPACITY,
                 >,
                 #(#extra_arg_names: #extra_arg_types,)*
-                #target_data_arg
                 #target_return_data_arg
             ) #ret_ty {
-                let __ix = super::instruction::#ix_struct_name {
-                    #(#extra_arg_names,)*
-                };
-                #target_serialize
-                __ctx.invoke(__data.as_slice())?;
+                #invoke
                 #target_ret_value
             }
 
@@ -6731,15 +6409,10 @@ fn process_handler(
                 __ctx: anchor_lang::CpiContext<
                     'a,
                     accounts::#accounts_ident<'a>,
-                    __ANCHOR_CPI_CAPACITY,
                 >,
                 #(#extra_arg_names: #extra_arg_types,)*
             ) #ret_ty {
-                let __ix = super::instruction::#ix_struct_name {
-                    #(#extra_arg_names,)*
-                };
-                let __data = anchor_lang::InstructionData::data(&__ix);
-                __ctx.invoke(__data.as_slice())?;
+                #invoke
                 #host_ret_value
             }
         }
@@ -7136,7 +6809,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 
         // Custom 2-arg (r1, r2) entrypoint using SIMD-0321 convention.
         #[cfg(not(feature = "no-entrypoint"))]
-        anchor_lang::pinocchio::default_allocator!();
+        anchor_lang::default_allocator!();
         #[cfg(not(feature = "no-entrypoint"))]
         anchor_lang::pinocchio::default_panic_handler!();
 
@@ -7525,7 +7198,7 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }),
     };
-    let bounded_event_methods = bounded_event_methods(event_data_bound);
+    let bounded_event_methods = event_buffer_methods(event_data_bound);
 
     match mode {
         EventMode::Wincode => TokenStream::from(quote! {
@@ -7546,9 +7219,9 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
             #discriminator_impl
 
             impl anchor_lang::Event for #name {
-                fn try_write_data<const N: usize>(
+                fn try_write_data(
                     &self,
-                    buf: &mut anchor_lang::FixedVec<u8, N>,
+                    buf: &mut anchor_lang::Vec<u8>,
                 ) -> anchor_lang::Result<()> {
                     let start = buf.len();
                     let result = (|| {
@@ -7566,20 +7239,6 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                         buf.truncate(start);
                     }
                     result
-                }
-
-                #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-                fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
-                    let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
-                    let mut buf = anchor_lang::__alloc::vec::Vec::new();
-                    buf.extend_from_slice(disc);
-                    anchor_lang::wincode::config::serialize_into(
-                        &mut buf,
-                        self,
-                        anchor_lang::BORSH_CONFIG,
-                    )
-                    .expect("event serialization failed");
-                    buf
                 }
             }
 
@@ -7729,9 +7388,9 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #discriminator_impl
 
                 impl anchor_lang::Event for #name {
-                    fn try_write_data<const N: usize>(
+                    fn try_write_data(
                         &self,
-                        buf: &mut anchor_lang::FixedVec<u8, N>,
+                        buf: &mut anchor_lang::Vec<u8>,
                     ) -> anchor_lang::Result<()> {
                         const SIZE: usize = ::core::mem::size_of::<#name>();
                         let initial_len = buf.len();
@@ -7755,26 +7414,6 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
                             buf.truncate(initial_len);
                         }
                         result
-                    }
-
-                    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
-                    fn data(&self) -> anchor_lang::__alloc::vec::Vec<u8> {
-                        const SIZE: usize = ::core::mem::size_of::<#name>();
-                        let disc = <Self as anchor_lang::Discriminator>::DISCRIMINATOR;
-                        let mut buf = anchor_lang::__alloc::vec::Vec::with_capacity(
-                            disc.len() + SIZE,
-                        );
-                        buf.extend_from_slice(disc);
-                        let start = buf.len();
-                        buf.resize(start + SIZE, 0);
-                        unsafe {
-                            ::core::ptr::copy_nonoverlapping(
-                                self as *const Self as *const u8,
-                                buf.as_mut_ptr().add(start),
-                                SIZE,
-                            );
-                        }
-                        buf
                     }
                 }
 
@@ -8025,7 +7664,7 @@ pub fn emit_cpi(input: TokenStream) -> TokenStream {
         let __event_authority_seeds: &[&[u8]] =
             &[b"__event_authority", __event_authority_bump.as_ref()];
         let __event_authority_signers: &[&[&[u8]]] = &[__event_authority_seeds];
-        let __event_cpi_context = anchor_lang::CpiContext::<_, 1>::new_with_signer(
+        let __event_cpi_context = anchor_lang::CpiContext::new_with_signer(
             ctx.program_id,
             __AnchorEventCpiAccounts { event_authority: __event_authority },
             __event_authority_signers,
@@ -8061,13 +7700,13 @@ pub fn emit_cpi(input: TokenStream) -> TokenStream {
                 event_authority: anchor_lang::CpiHandle<'a>,
             }
 
-            impl<'a, const N: usize> anchor_lang::ToCpiAccountsWithCapacity<'a, N>
+            impl<'a> anchor_lang::ToCpiAccounts<'a>
                 for __AnchorEventCpiAccounts<'a>
             {
-                fn to_instruction_accounts_with_capacity(
+                fn to_instruction_accounts(
                     &self,
-                ) -> anchor_lang::Result<anchor_lang::FixedVec<anchor_lang::pinocchio::instruction::InstructionAccount<'a>, N>> {
-                    let mut __accounts = anchor_lang::FixedVec::new();
+                ) -> anchor_lang::Result<anchor_lang::Vec<anchor_lang::pinocchio::instruction::InstructionAccount<'a>>> {
+                    let mut __accounts = anchor_lang::Vec::new();
                     __accounts.try_push(
                         anchor_lang::pinocchio::instruction::InstructionAccount::readonly_signer(
                             self.event_authority.address(),
@@ -8076,20 +7715,20 @@ pub fn emit_cpi(input: TokenStream) -> TokenStream {
                     Ok(__accounts)
                 }
 
-                fn to_cpi_handles_with_capacity(
+                fn to_cpi_handles(
                     &self,
-                ) -> anchor_lang::Result<anchor_lang::CpiHandleBuffer<'a, N>> {
-                    let mut __handles = anchor_lang::CpiHandleBuffer::new();
+                ) -> anchor_lang::Result<anchor_lang::Vec<anchor_lang::CpiHandle<'a>>> {
+                    let mut __handles = anchor_lang::Vec::new();
                     __handles
                         .try_push(self.event_authority)
                         .map_err(|_| anchor_lang::Error::InvalidArgument)?;
                     Ok(__handles)
                 }
 
-                fn optional_account_sentinel_flags_with_capacity(
+                fn optional_account_sentinel_flags(
                     &self,
-                ) -> anchor_lang::Result<anchor_lang::FixedVec<bool, N>> {
-                    let mut __flags = anchor_lang::FixedVec::new();
+                ) -> anchor_lang::Result<anchor_lang::Vec<bool>> {
+                    let mut __flags = anchor_lang::Vec::new();
                     __flags
                         .try_push(false)
                         .map_err(|_| anchor_lang::Error::InvalidArgument)?;
@@ -8702,11 +8341,11 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_cpi_wrapper_declares_instruction_data_capacity() {
+    fn dynamic_cpi_wrapper_has_no_capacity_generics() {
         let handler: syn::ItemFn = syn::parse_quote! {
             pub fn send(
                 ctx: &mut Context<MyAccounts>,
-                values: anchor_lang::FixedVec<u64, __ANCHOR_DYNAMIC_CAPACITY>,
+                values: anchor_lang::Vec<u64>,
             ) -> Result<()> {
                 let _ = (ctx, values);
                 Ok(())
@@ -8722,12 +8361,12 @@ mod tests {
             .to_string();
 
         assert!(
-            generated.contains("const __ANCHOR_DYNAMIC_CAPACITY : usize"),
-            "dynamic argument capacity must be declared: {generated}"
+            !generated.contains("CAPACITY : usize"),
+            "dynamic CPI uses runtime capacity: {generated}"
         );
         assert!(
-            generated.contains("const __ANCHOR_DATA_CAPACITY : usize"),
-            "instruction data capacity must be declared independently: {generated}"
+            generated.contains("Vec :: try_with_capacity"),
+            "wrapper must allocate its instruction buffer: {generated}"
         );
     }
 
@@ -9281,6 +8920,21 @@ mod tests {
             "declare_program markers should expose their known address for IDL emission: \
              {generated}"
         );
+    }
+
+    #[test]
+    fn declare_idl_bytes_use_owned_vectors_on_both_targets() {
+        let bytes = json!("bytes");
+        let names = std::collections::BTreeSet::new();
+        let span = proc_macro2::Span::call_site();
+
+        assert!(!declare_idl_type_uses_borrowed_data(&bytes, &names));
+        for borrowed in [false, true] {
+            let tokens =
+                declare_idl_type_to_tokens_for_target(&bytes, span, borrowed, &names, &names)
+                    .unwrap();
+            assert_eq!(tokens.to_string(), "anchor_lang :: Vec < u8 >");
+        }
     }
 
     #[test]

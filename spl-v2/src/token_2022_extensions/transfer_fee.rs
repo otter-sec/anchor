@@ -1,8 +1,7 @@
 use {
     super::common::{pubkey_refs, validate_token_2022_program},
     crate::token_2022::spl_token_2022,
-    alloc::vec::Vec,
-    anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
+    anchor_lang::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts, Vec},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
     solana_pubkey::Pubkey,
@@ -51,7 +50,7 @@ pub struct WithdrawWithheldTokensFromAccounts<'a> {
 }
 
 pub fn transfer_fee_initialize<'a>(
-    ctx: CpiContext<'a, TransferFeeInitialize<'a>, 1>,
+    ctx: CpiContext<'a, TransferFeeInitialize<'a>>,
     transfer_fee_config_authority: Option<&Address>,
     withdraw_withheld_authority: Option<&Address>,
     transfer_fee_basis_points: u16,
@@ -72,8 +71,8 @@ pub fn transfer_fee_initialize<'a>(
     ctx.invoke_ix(ix)
 }
 
-pub fn transfer_fee_set<'a, const N: usize>(
-    ctx: CpiContext<'a, TransferFeeSetTransferFee<'a>, N>,
+pub fn transfer_fee_set<'a>(
+    ctx: CpiContext<'a, TransferFeeSetTransferFee<'a>>,
     transfer_fee_basis_points: u16,
     maximum_fee: u64,
 ) -> Result<(), ProgramError> {
@@ -90,8 +89,8 @@ pub fn transfer_fee_set<'a, const N: usize>(
     ctx.invoke_ix(ix)
 }
 
-pub fn transfer_checked_with_fee<'a, const N: usize>(
-    ctx: CpiContext<'a, TransferCheckedWithFee<'a>, N>,
+pub fn transfer_checked_with_fee<'a>(
+    ctx: CpiContext<'a, TransferCheckedWithFee<'a>>,
     amount: u64,
     decimals: u8,
     fee: u64,
@@ -114,11 +113,8 @@ pub fn transfer_checked_with_fee<'a, const N: usize>(
 
 /// Harvest withheld fees from a caller-selected set of source accounts.
 ///
-/// `N` is intentionally selected by the caller because both `sources` and
-/// `remaining_accounts` are variable-length inputs. It must cover the complete
-/// CPI account set; overflow is reported as `InvalidArgument`.
-pub fn harvest_withheld_tokens_to_mint<'a, const N: usize>(
-    ctx: CpiContext<'a, HarvestWithheldTokensToMint<'a>, N>,
+pub fn harvest_withheld_tokens_to_mint<'a>(
+    ctx: CpiContext<'a, HarvestWithheldTokensToMint<'a>>,
     sources: &[CpiHandleMut<'a>],
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -130,7 +126,8 @@ pub fn harvest_withheld_tokens_to_mint<'a, const N: usize>(
         ctx.accounts.mint.address(),
         &source_refs,
     )?;
-    let mut remaining_accounts = anchor_lang::CpiHandleBuffer::<N>::new();
+    let mut remaining_accounts =
+        Vec::try_with_capacity(sources.len() + ctx.remaining_accounts.len())?;
     for source in sources.iter().copied() {
         remaining_accounts
             .try_push(source.into())
@@ -145,8 +142,8 @@ pub fn harvest_withheld_tokens_to_mint<'a, const N: usize>(
     ctx.invoke_ix(ix)
 }
 
-pub fn withdraw_withheld_tokens_from_mint<'a, const N: usize>(
-    ctx: CpiContext<'a, WithdrawWithheldTokensFromMint<'a>, N>,
+pub fn withdraw_withheld_tokens_from_mint<'a>(
+    ctx: CpiContext<'a, WithdrawWithheldTokensFromMint<'a>>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
@@ -163,11 +160,8 @@ pub fn withdraw_withheld_tokens_from_mint<'a, const N: usize>(
 
 /// Withdraw withheld fees from a caller-selected set of source accounts.
 ///
-/// `N` is intentionally selected by the caller because both `sources` and
-/// `remaining_accounts` are variable-length inputs. It must cover the complete
-/// CPI account set; overflow is reported as `InvalidArgument`.
-pub fn withdraw_withheld_tokens_from_accounts<'a, const N: usize>(
-    ctx: CpiContext<'a, WithdrawWithheldTokensFromAccounts<'a>, N>,
+pub fn withdraw_withheld_tokens_from_accounts<'a>(
+    ctx: CpiContext<'a, WithdrawWithheldTokensFromAccounts<'a>>,
     sources: &[CpiHandleMut<'a>],
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -183,7 +177,8 @@ pub fn withdraw_withheld_tokens_from_accounts<'a, const N: usize>(
             &[],
             &source_refs,
         )?;
-    let mut remaining_accounts = anchor_lang::CpiHandleBuffer::<N>::new();
+    let mut remaining_accounts =
+        Vec::try_with_capacity(sources.len() + ctx.remaining_accounts.len())?;
     for source in sources.iter().copied() {
         remaining_accounts
             .try_push(source.into())

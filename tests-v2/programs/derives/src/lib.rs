@@ -327,7 +327,7 @@ pub struct InitProfile {
 
 #[cfg(all(test, feature = "idl-build"))]
 mod idl_tests {
-    use super::*;
+    use {super::*, anchor_lang::Vec};
 
     #[test]
     fn idl_type_lowering_is_self_contained() {
@@ -347,8 +347,8 @@ mod idl_tests {
             .contains("\"generics\":[{\"kind\":\"const\",\"name\":\"N\",\"type\":\"usize\"}]"));
         assert!(type_def.contains("\"array\":[\"u8\",{\"generic\":\"N\"}]"));
 
-        let mut accounts = alloc::vec::Vec::new();
-        let mut types = alloc::vec::Vec::new();
+        let mut accounts = Vec::new();
+        let mut types = Vec::new();
         <QualifiedUserTypeHolder<4> as IdlAccountType>::__register_idl_deps(
             &mut accounts,
             &mut types,

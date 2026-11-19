@@ -98,8 +98,8 @@ fn unsupported_runtime_seed_omits_pda_metadata() {
 
 #[test]
 fn nested_accounts_register_transitive_idl_deps() {
-    let mut accounts = Vec::new();
-    let mut types = Vec::new();
+    let mut accounts = anchor_lang::Vec::new();
+    let mut types = anchor_lang::Vec::new();
     accounts_test::NestedIdlDepsOuter::__idl_register_deps(&mut accounts, &mut types);
 
     assert!(
@@ -124,8 +124,8 @@ fn wrapped_runtime_arg_seed_omits_pda_metadata() {
 
 #[test]
 fn nested_accounts_without_data_do_not_invent_idl_deps() {
-    let mut accounts = Vec::new();
-    let mut types = Vec::new();
+    let mut accounts = anchor_lang::Vec::new();
+    let mut types = anchor_lang::Vec::new();
     accounts_test::NestedNoDepsOuter::__idl_register_deps(&mut accounts, &mut types);
 
     assert!(accounts.is_empty(), "expected no account deps, got {accounts:?}");
