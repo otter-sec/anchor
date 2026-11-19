@@ -284,6 +284,20 @@ impl<T> Vec<T> {
         // SAFETY: the first len elements are initialized and exclusively borrowed.
         unsafe { slice::from_raw_parts_mut(self.allocation.ptr.as_ptr(), self.len) }
     }
+
+    /// Returns a raw pointer to the start of the vector's buffer.
+    /// Reallocating or dropping the vector invalidates the pointer.
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        self.allocation.ptr.as_ptr()
+    }
+
+    /// Sets the vector's length directly. Use [`Self::truncate`] to drop removed elements.
+    ///
+    /// # Safety
+    /// `len` must be at most [`Self::capacity`], and newly included elements must be initialized.
+    pub unsafe fn set_len(&mut self, len: usize) {
+        self.len = len;
+    }
 }
 
 impl<T: PartialEq> Vec<T> {

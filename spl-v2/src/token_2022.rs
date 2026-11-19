@@ -4,8 +4,8 @@ extern crate alloc;
 
 use {
     alloc::string::String,
-    anchor_lang::{require_eq, CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
-    pinocchio::{address::Address, cpi::ReturnData},
+    anchor_lang::{require_eq, CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts, Vec},
+    pinocchio::address::Address,
     solana_program_error::ProgramError,
 };
 
@@ -84,7 +84,7 @@ pub struct PermanentDelegateInitialize<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
-fn return_data_from(program: &Address) -> Result<ReturnData, ProgramError> {
+fn return_data_from(program: &Address) -> Result<Vec<u8>, ProgramError> {
     let (return_program, data) = anchor_lang::solana_program::program::get_return_data()
         .ok_or(ProgramError::InvalidInstructionData)?;
     require_eq!(
