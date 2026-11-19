@@ -6307,11 +6307,11 @@ fn process_handler(
                     let __return_len = unsafe {
                         anchor_lang::pinocchio::cpi::sol_get_return_data(
                             __return_bytes.as_mut_ptr().cast::<u8>(),
-                            #bound as u64,
+                            __return_bytes.len() as u64,
                             __return_program.as_mut_ptr().cast::<u8>(),
                         )
                     } as usize;
-                    if __return_len == 0 || __return_len > #bound {
+                    if __return_len == 0 || __return_len > __return_bytes.len() {
                         return Err(anchor_lang::Error::InvalidInstructionData);
                     }
                     let __return_program = unsafe { __return_program.assume_init() };
