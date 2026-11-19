@@ -3056,6 +3056,13 @@ fn gen_declared_program(
     let constants = gen_declare_program_constants(idl)?;
     let events = gen_declare_program_events(idl)?;
     let errors = gen_declare_program_errors(idl, name.span())?;
+    let type_defs: std::collections::BTreeMap<_, _> = idl
+        .get("types")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|ty_def| Some((ty_def.get("name")?.as_str()?, ty_def)))
+        .collect();
     let mut account_groups = std::collections::BTreeMap::<String, Vec<DeclareAccountField>>::new();
     let mut account_group_variants =
         std::collections::BTreeMap::<String, Vec<DeclareAccountGroupVariant>>::new();
@@ -3139,6 +3146,22 @@ fn gen_declared_program(
             (quote! { () }, quote! { () })
         };
 
+        // Rust paths hide the size of named IDL types. Size the arguments
+        // from the IDL so `#[program]` can generate the SBF CPI buffer.
+        let args_bound = args
+            .iter()
+            .map(|arg| {
+                declare_idl_serialized_bound(
+                    arg.get("type")?,
+                    &type_defs,
+                    &mut std::collections::BTreeSet::new(),
+                )
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(|bounds| {
+                quote! { #[__anchor_args_bound(0usize #(+ (#bounds))*)] }
+            });
+
         let target_uses_dynamic_capacity = args.iter().any(|arg| {
             arg.get("type")
                 .is_some_and(|ty| declare_idl_type_uses_fixed_vec(ty, &fixed_vec_type_names))
@@ -3154,6 +3177,7 @@ fn gen_declared_program(
         handlers.push(quote! {
             #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
             #[discrim = [#(#discrim_tokens),*]]
+            #args_bound
             pub fn #ix_ident(
                 _ctx: &mut anchor_lang::Context<#accounts_ident>,
                 #(#host_arg_decls),*
@@ -3164,6 +3188,7 @@ fn gen_declared_program(
 
             #[cfg(any(target_os = "solana", target_arch = "bpf"))]
             #[discrim = [#(#discrim_tokens),*]]
+            #args_bound
             pub fn #ix_ident #target_generics(
                 _ctx: &mut anchor_lang::Context<#accounts_ident>,
                 #(#target_arg_decls),*
@@ -6164,6 +6189,23 @@ fn extract_result_return_type(output: &syn::ReturnType) -> syn::Result<Option<Ty
     }
 }
 
+/// Argument bound that `declare_program!` computed from the IDL. Only
+/// interface programs honor it, since only that macro emits it.
+fn declared_args_bound(
+    handler: &syn::ItemFn,
+    config: &ProgramConfig,
+) -> syn::Result<Option<syn::Expr>> {
+    if config.mode != ProgramMode::Interface {
+        return Ok(None);
+    }
+    handler
+        .attrs
+        .iter()
+        .find(|attr| attr.path().is_ident("__anchor_args_bound"))
+        .map(syn::Attribute::parse_args)
+        .transpose()
+}
+
 fn process_handler(
     handler: &syn::ItemFn,
     mod_name: &Ident,
@@ -6418,11 +6460,16 @@ fn process_handler(
     // Fixed and otherwise provably bounded instructions get an exact generated
     // buffer. Dynamic or opaque instructions receive storage from the caller.
     let ix_discriminator_len = disc_literal_bytes.len();
+    let declared_args_bound = match declared_args_bound(handler, config) {
+        Ok(bound) => bound,
+        Err(err) => return HandlerCodegen::error(handler, err),
+    };
     let ix_data_bound = extra_arg_types
         .iter()
         .map(bounded_serialized_len)
         .collect::<Option<Vec<_>>>()
-        .map(|bounds| quote! { #ix_discriminator_len #(+ (#bounds))* });
+        .map(|bounds| quote! { #ix_discriminator_len #(+ (#bounds))* })
+        .or_else(|| declared_args_bound.map(|bound| quote! { #ix_discriminator_len + (#bound) }));
     let instruction_struct = quote! {
         #(#handler_cfg_attrs)*
         #[derive(anchor_lang::AnchorSerialize)]
@@ -6983,14 +7030,17 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         }
     };
 
-    // Strip #[discrim = N] attributes from handler outputs so rustc
-    // doesn't complain about an unknown attribute.
+    // Strip #[discrim = N] and #[__anchor_args_bound(..)] attributes from
+    // handler outputs so rustc doesn't complain about an unknown attribute.
     let mut handler_update_errors = Vec::new();
     let handlers: Vec<_> = handlers
         .iter()
         .map(|func| {
             let mut func = (*func).clone();
             func.attrs.retain(|attr| {
+                if attr.path().is_ident("__anchor_args_bound") {
+                    return false;
+                }
                 if let syn::Meta::NameValue(nv) = &attr.meta {
                     !nv.path.is_ident("discrim")
                 } else {
@@ -9281,6 +9331,107 @@ mod tests {
             "declare_program markers should expose their known address for IDL emission: \
              {generated}"
         );
+    }
+
+    #[test]
+    fn declare_program_bounds_named_args_from_idl() {
+        let idl = serde_json::json!({
+            "address": "Externa1111111111111111111111111111111111111",
+            "metadata": {
+                "name": "fixture",
+                "version": "0.1.0",
+                "spec": "0.1.0"
+            },
+            "instructions": [
+                {
+                    "name": "fixed",
+                    "discriminator": [1],
+                    "accounts": [],
+                    "args": [{
+                        "name": "params",
+                        "type": { "defined": { "name": "Fixed" } }
+                    }]
+                },
+                {
+                    "name": "dynamic",
+                    "discriminator": [2],
+                    "accounts": [],
+                    "args": [{
+                        "name": "params",
+                        "type": { "defined": { "name": "Dynamic" } }
+                    }]
+                }
+            ],
+            "accounts": [],
+            "types": [
+                {
+                    "name": "Fixed",
+                    "type": {
+                        "kind": "struct",
+                        "fields": [{ "name": "delegate", "type": "pubkey" }]
+                    }
+                },
+                {
+                    "name": "Dynamic",
+                    "type": {
+                        "kind": "struct",
+                        "fields": [{ "name": "memo", "type": "bytes" }]
+                    }
+                }
+            ]
+        });
+        let name: syn::Ident = syn::parse_quote!(fixture);
+        let generated = gen_declared_program(&name, &idl, std::path::Path::new("fixture.json"))
+            .expect("fixture IDL should generate");
+        let file: syn::File = syn::parse2(generated).expect("generated tokens parse");
+        let program = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Mod(module) => module.content.as_ref(),
+                _ => None,
+            })
+            .and_then(|(_, items)| {
+                items.iter().find_map(|item| match item {
+                    syn::Item::Mod(module) if module.ident == "__program" => {
+                        module.content.as_ref()
+                    }
+                    _ => None,
+                })
+            })
+            .expect("declared program emits an interface module");
+        let config = ProgramConfig {
+            mode: ProgramMode::Interface,
+            program_id: syn::parse_quote!(ID),
+        };
+
+        let mut seen = 0;
+        for item in &program.1 {
+            let syn::Item::Fn(handler) = item else {
+                continue;
+            };
+            let mod_name: syn::Ident = syn::parse_quote!(__program);
+            let cpi = process_handler(handler, &mod_name, None, &config)
+                .cpi_wrapper
+                .to_string();
+            if handler.sig.ident == "fixed" {
+                assert!(
+                    !cpi.contains("__ANCHOR_DATA_CAPACITY"),
+                    "fixed named args must not take a data buffer: {cpi}"
+                );
+                assert!(
+                    cpi.contains("(0usize + (0usize + (32usize)))"),
+                    "fixed named args must size from the IDL: {cpi}"
+                );
+            } else {
+                assert!(
+                    cpi.contains("__data : & mut anchor_lang :: FixedVec"),
+                    "unbounded named args must still take a data buffer: {cpi}"
+                );
+            }
+            seen += 1;
+        }
+        assert_eq!(seen, 4, "expected host and target stubs per instruction");
     }
 
     #[test]
