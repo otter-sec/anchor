@@ -654,6 +654,19 @@ pub mod __private {
         [a, b][(a < b) as usize]
     }
 
+    // Used by `init` after creating a Borsh account. The new account holds
+    // `space` zero bytes, so a failed deserialization means `space` is too
+    // small for the type. One shared copy keeps per-account code small.
+    #[doc(hidden)]
+    #[inline(never)]
+    pub fn init_account_error(e: crate::error::Error, account_name: &str) -> crate::error::Error {
+        use crate::error::{Error, ErrorCode};
+        if e == ErrorCode::AccountDidNotDeserialize.into() {
+            return Error::from(ErrorCode::ConstraintSpace).with_account_name(account_name);
+        }
+        e.with_account_name(account_name)
+    }
+
     // Very experimental trait.
     #[doc(hidden)]
     pub trait ZeroCopyAccessor<Ty> {

@@ -1196,7 +1196,7 @@ fn generate_constraint_init_group(
 
             // A Borsh account created here holds `space` zero bytes. If it does
             // not deserialize, `space` is too small for the type, so report the
-            // `space` constraint instead of a generic deserialization error.
+            // `space` constraint (see `__private::init_account_error`).
             let from_created_account_info = match &f.ty {
                 Ty::Account(AccountTy { boxed, .. })
                 | Ty::InterfaceAccount(InterfaceAccountTy { boxed, .. }) => {
@@ -1205,10 +1205,7 @@ fn generate_constraint_init_group(
                         match #container_ty::try_from_unchecked(&#field) {
                             Ok(val) => val,
                             Err(e) => {
-                                if e == anchor_lang::error::ErrorCode::AccountDidNotDeserialize.into() {
-                                    return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintSpace).with_account_name(#name_str));
-                                }
-                                return Err(e.with_account_name(#name_str));
+                                return Err(anchor_lang::__private::init_account_error(e, #name_str));
                             }
                         }
                     };
