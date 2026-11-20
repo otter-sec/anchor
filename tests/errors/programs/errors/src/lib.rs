@@ -135,6 +135,10 @@ mod errors {
     pub fn try_into_integer(_ctx: Context<Hello>) -> Result<i64> {
         Ok(u64::MAX.try_into()?)
     }
+
+    pub fn init_space_too_small(_ctx: Context<InitSpaceTooSmall>) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -171,6 +175,16 @@ pub struct RawCustomError<'info> {
 
 #[account]
 pub struct AnyAccount {}
+
+#[derive(Accounts)]
+pub struct InitSpaceTooSmall<'info> {
+    // `HasOneAccount` needs 8 + 32 bytes.
+    #[account(init, payer = payer, space = 8 + 1)]
+    my_account: Account<'info, HasOneAccount>,
+    #[account(mut)]
+    payer: Signer<'info>,
+    system_program: Program<'info, System>,
+}
 
 #[derive(Accounts)]
 pub struct AccountNotInitializedError<'info> {

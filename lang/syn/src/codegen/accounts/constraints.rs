@@ -1194,6 +1194,33 @@ fn generate_constraint_init_group(
                 #system_program_optional_check
             };
 
+            // A Borsh account created here holds `space` zero bytes. If it does
+            // not deserialize, `space` is too small for the type, so report the
+            // `space` constraint instead of a generic deserialization error.
+            let from_created_account_info = match &f.ty {
+                Ty::Account(AccountTy { boxed, .. })
+                | Ty::InterfaceAccount(InterfaceAccountTy { boxed, .. }) => {
+                    let container_ty = f.container_ty();
+                    let stream = quote! {
+                        match #container_ty::try_from_unchecked(&#field) {
+                            Ok(val) => val,
+                            Err(e) => {
+                                if e == anchor_lang::error::ErrorCode::AccountDidNotDeserialize.into() {
+                                    return Err(anchor_lang::error::Error::from(anchor_lang::error::ErrorCode::ConstraintSpace).with_account_name(#name_str));
+                                }
+                                return Err(e.with_account_name(#name_str));
+                            }
+                        }
+                    };
+                    if *boxed {
+                        quote! { Box::new(#stream) }
+                    } else {
+                        stream
+                    }
+                }
+                _ => quote! { #from_account_info_unchecked },
+            };
+
             // CPI to the system program to create the account.
             let create_account_or_fund_allocate_assign =
                 generate_create_account_or_fund_allocate_assign(
@@ -1228,7 +1255,7 @@ fn generate_constraint_init_group(
                         #create_account_or_fund_allocate_assign
 
                         // Convert from account info to account context wrapper type.
-                        #from_account_info_unchecked
+                        #from_created_account_info
                     } else {
                         // Convert from account info to account context wrapper type.
                         #from_account_info
