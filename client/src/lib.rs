@@ -1332,7 +1332,7 @@ mod tests {
         );
         let program = client.program(program_id).unwrap();
         let (event_tx, event_rx) = mpsc::channel();
-        let (mut handle, _unsubscribe_rx) = rt
+        let (handle, _unsubscribe_rx) = rt
             .block_on(program.on_internal(move |ctx, event: MockEventWithValue| {
                 event_tx.send((ctx.signature, event.value)).unwrap();
             }))
@@ -1341,12 +1341,7 @@ mod tests {
         // The good notification still arrives after the two bad ones.
         let (emitted_signature, emitted_value) = event_rx
             .recv_timeout(Duration::from_secs(5))
-            .unwrap_or_else(|e| {
-                panic!(
-                    "event subscription ended without an event ({e}): {:?}",
-                    rt.block_on(&mut handle)
-                )
-            });
+            .expect("expected the valid event after two malformed notifications");
         assert_eq!(emitted_signature, good_signature);
         assert_eq!(emitted_value, 42);
         assert!(
