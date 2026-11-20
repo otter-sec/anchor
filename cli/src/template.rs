@@ -2053,7 +2053,7 @@ fn test_initialize() {{
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[&payer]).unwrap();
 
     let res = svm.send_transaction(tx);
-    assert!(res.is_ok());
+    assert!(res.is_ok(), "send_transaction failed: {{:?}}", res);
 
     let counter_account = svm.get_account(&counter).unwrap();
     let mut data: &[u8] = &counter_account.data;
@@ -2076,7 +2076,7 @@ fn test_initialize() {{
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[&payer]).unwrap();
 
     let res = svm.send_transaction(tx);
-    assert!(res.is_ok());
+    assert!(res.is_ok(), "send_transaction failed: {{:?}}", res);
 
     let counter_account = svm.get_account(&counter).unwrap();
     let mut data: &[u8] = &counter_account.data;
