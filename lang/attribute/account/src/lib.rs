@@ -20,7 +20,7 @@ mod lazy;
 
 /// An attribute for a data structure representing a Solana account.
 ///
-/// `#[account]` generates trait implementations for the following traits:
+/// By default, `#[account]` generates implementations for the following traits:
 ///
 /// - [`AccountSerialize`](./trait.AccountSerialize.html)
 /// - [`AccountDeserialize`](./trait.AccountDeserialize.html)
@@ -30,10 +30,17 @@ mod lazy;
 /// - [`Discriminator`](./trait.Discriminator.html)
 /// - [`Owner`](./trait.Owner.html)
 ///
-/// When implementing account serialization traits the first 8 bytes are
-/// reserved for a unique account discriminator by default, self described by
-/// the first 8 bytes of the SHA256 of the account's Rust ident. This is unless
-/// the discriminator was overridden with the `discriminator` argument (see
+/// With `#[account(zero_copy)]`, the macro implements `ZeroCopy`,
+/// `AccountDeserialize`, `Discriminator`, and `Owner`, and derives `Copy`,
+/// `Clone`, `Pod`, and `Zeroable`. It does not generate `AccountSerialize` or
+/// the Borsh serialization traits. In either mode, `Owner` is not generated
+/// when a custom namespace is specified.
+///
+/// By default, the first 8 bytes of account data are reserved for a unique
+/// account discriminator, computed as the first 8 bytes of the SHA256 hash of
+/// `account:<StructName>`, where `<StructName>` is the account's Rust
+/// identifier. A custom namespace replaces the `account` prefix. The
+/// `discriminator` argument overrides the derived discriminator (see
 /// [Arguments](#arguments)).
 ///
 /// As a result, any calls to `AccountDeserialize`'s `try_deserialize` will
