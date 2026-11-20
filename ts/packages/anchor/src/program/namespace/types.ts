@@ -114,6 +114,14 @@ type InstructionAccountsAddress<A extends IdlInstructionAccountItem> =
     ? InstructionAccountsAddresses<A["accounts"][number]>
     : PublicKey;
 
+/**
+ * Extract resolved account public keys for an instruction method.
+ */
+export type MethodPubkeys<
+  IDL extends Idl = Idl,
+  M extends AllInstructions<IDL>["name"] = AllInstructions<IDL>["name"]
+> = InstructionAccountAddresses<IDL, AllInstructionsMap<IDL>[M]>;
+
 export type MethodsFn<
   IDL extends Idl,
   I extends IDL["instructions"][number],
