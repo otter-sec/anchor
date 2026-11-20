@@ -13,6 +13,8 @@ use {
 ///
 /// Bundles a typed CPI accounts struct with the target program, optional
 /// PDA signer seeds, and optional remaining accounts.
+/// The remaining-handle slice has its own lifetime so caller-owned storage
+/// only needs to remain alive while the context uses it.
 ///
 /// # Example
 ///
@@ -27,17 +29,17 @@ use {
 /// );
 /// callee::cpi::set_data(cpi_ctx, data)?;
 /// ```
-pub struct CpiContext<'a, T, const N: usize>
+pub struct CpiContext<'a, 'remaining, T, const N: usize>
 where
     T: ToCpiAccountsWithCapacity<'a, N>,
 {
     pub accounts: T,
-    pub remaining_accounts: crate::CpiHandleBuffer<'a, N>,
+    pub remaining_accounts: &'remaining [CpiHandle<'a>],
     pub program: &'a Address,
     pub signer_seeds: &'a [&'a [&'a [u8]]],
 }
 
-impl<'a, T, const N: usize> CpiContext<'a, T, N>
+impl<'a, 'remaining, T, const N: usize> CpiContext<'a, 'remaining, T, N>
 where
     T: ToCpiAccountsWithCapacity<'a, N>,
 {
@@ -47,7 +49,7 @@ where
         Self {
             accounts,
             program,
-            remaining_accounts: crate::CpiHandleBuffer::new(),
+            remaining_accounts: &[],
             signer_seeds: &[],
         }
     }
@@ -61,7 +63,7 @@ where
         Self {
             accounts,
             program,
-            remaining_accounts: crate::CpiHandleBuffer::new(),
+            remaining_accounts: &[],
             signer_seeds,
         }
     }
@@ -73,9 +75,16 @@ where
     }
 
     #[must_use]
-    pub fn with_remaining_accounts(mut self, ra: crate::CpiHandleBuffer<'a, N>) -> Self {
-        self.remaining_accounts = ra;
-        self
+    pub fn with_remaining_accounts<'new_remaining>(
+        self,
+        accounts: &'new_remaining [CpiHandle<'a>],
+    ) -> CpiContext<'a, 'new_remaining, T, N> {
+        CpiContext {
+            accounts: self.accounts,
+            remaining_accounts: accounts,
+            program: self.program,
+            signer_seeds: self.signer_seeds,
+        }
     }
 
     /// Invoke the CPI with the given instruction data. Collects accounts
@@ -90,7 +99,7 @@ where
 
         // Append remaining accounts using the handle's writable/signer flags
         // so PDA remaining accounts marked with `as_signer()` emit signer metas.
-        for handle in &self.remaining_accounts {
+        for handle in self.remaining_accounts {
             instruction_accounts
                 .try_push(InstructionAccount::new(
                     handle.address(),
@@ -190,7 +199,7 @@ where
         );
 
         let mut handles = self.accounts.to_cpi_handles_with_capacity()?;
-        for handle in &self.remaining_accounts {
+        for handle in self.remaining_accounts {
             handles
                 .try_push(*handle)
                 .map_err(|_| ProgramError::InvalidArgument)?;

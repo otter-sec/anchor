@@ -6710,6 +6710,7 @@ fn process_handler(
             pub fn #fn_name #target_lt_decl(
                 __ctx: anchor_lang::CpiContext<
                     'a,
+                    '_,
                     accounts::#accounts_ident<'a>,
                     __ANCHOR_CPI_CAPACITY,
                 >,
@@ -6730,6 +6731,7 @@ fn process_handler(
             pub fn #fn_name #host_lt_decl(
                 __ctx: anchor_lang::CpiContext<
                     'a,
+                    '_,
                     accounts::#accounts_ident<'a>,
                     __ANCHOR_CPI_CAPACITY,
                 >,

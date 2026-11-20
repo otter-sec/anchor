@@ -19,7 +19,7 @@ pub struct PausableToggle<'a> {
 }
 
 pub fn pausable_initialize<'a>(
-    ctx: CpiContext<'a, PausableInitialize<'a>, 1>,
+    ctx: CpiContext<'a, '_, PausableInitialize<'a>, 1>,
     authority: &Address,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
@@ -32,7 +32,7 @@ pub fn pausable_initialize<'a>(
 }
 
 pub fn pausable_pause<'a, const N: usize>(
-    ctx: CpiContext<'a, PausableToggle<'a>, N>,
+    ctx: CpiContext<'a, '_, PausableToggle<'a>, N>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let ix = spl_token_2022::extension::pausable::instruction::pause(
@@ -45,7 +45,7 @@ pub fn pausable_pause<'a, const N: usize>(
 }
 
 pub fn pausable_resume<'a, const N: usize>(
-    ctx: CpiContext<'a, PausableToggle<'a>, N>,
+    ctx: CpiContext<'a, '_, PausableToggle<'a>, N>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let ix = spl_token_2022::extension::pausable::instruction::resume(

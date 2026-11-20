@@ -13,7 +13,7 @@ pub struct MemoTransfer<'a> {
 }
 
 pub fn memo_transfer_initialize<'a, const N: usize>(
-    ctx: CpiContext<'a, MemoTransfer<'a>, N>,
+    ctx: CpiContext<'a, '_, MemoTransfer<'a>, N>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
@@ -27,7 +27,7 @@ pub fn memo_transfer_initialize<'a, const N: usize>(
 }
 
 pub fn memo_transfer_disable<'a, const N: usize>(
-    ctx: CpiContext<'a, MemoTransfer<'a>, N>,
+    ctx: CpiContext<'a, '_, MemoTransfer<'a>, N>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;

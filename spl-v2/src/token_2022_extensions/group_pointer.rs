@@ -20,7 +20,7 @@ pub struct GroupPointerUpdate<'a> {
 }
 
 pub fn group_pointer_initialize<'a>(
-    ctx: CpiContext<'a, GroupPointerInitialize<'a>, 1>,
+    ctx: CpiContext<'a, '_, GroupPointerInitialize<'a>, 1>,
     authority: Option<&Address>,
     group_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
@@ -35,7 +35,7 @@ pub fn group_pointer_initialize<'a>(
 }
 
 pub fn group_pointer_update<'a, const N: usize>(
-    ctx: CpiContext<'a, GroupPointerUpdate<'a>, N>,
+    ctx: CpiContext<'a, '_, GroupPointerUpdate<'a>, N>,
     group_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;

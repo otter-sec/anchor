@@ -349,7 +349,7 @@ fn token_cpi_ctx<'a, T, const N: usize>(
     program: &'a Address,
     accounts: T,
     signer_seeds: TokenSignerSeeds<'a>,
-) -> CpiContext<'a, T, N>
+) -> CpiContext<'a, 'a, T, N>
 where
     T: anchor_lang::ToCpiAccountsWithCapacity<'a, N>,
 {
@@ -357,7 +357,7 @@ where
 }
 
 pub fn set_authority<'a, const N: usize>(
-    ctx: CpiContext<'a, accounts::SetAuthority<'a>, N>,
+    ctx: CpiContext<'a, '_, accounts::SetAuthority<'a>, N>,
     authority_type: spl_token::instruction::AuthorityType,
     new_authority: Option<Address>,
 ) -> Result<(), ProgramError> {

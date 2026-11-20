@@ -175,7 +175,7 @@ pub struct SyncNative<'a> {
 }
 
 pub fn initialize_account<'a>(
-    ctx: CpiContext<'a, InitializeAccount<'a>, 4>,
+    ctx: CpiContext<'a, '_, InitializeAccount<'a>, 4>,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::initialize_account(
         ctx.program,
@@ -187,7 +187,7 @@ pub fn initialize_account<'a>(
 }
 
 pub fn initialize_account3<'a>(
-    ctx: CpiContext<'a, InitializeAccount3<'a>, 3>,
+    ctx: CpiContext<'a, '_, InitializeAccount3<'a>, 3>,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::initialize_account3(
         ctx.program,
@@ -199,7 +199,7 @@ pub fn initialize_account3<'a>(
 }
 
 pub fn initialize_mint<'a>(
-    ctx: CpiContext<'a, InitializeMint<'a>, 2>,
+    ctx: CpiContext<'a, '_, InitializeMint<'a>, 2>,
     decimals: u8,
     authority: &Address,
     freeze_authority: Option<&Address>,
@@ -215,7 +215,7 @@ pub fn initialize_mint<'a>(
 }
 
 pub fn initialize_mint2<'a>(
-    ctx: CpiContext<'a, InitializeMint2<'a>, 1>,
+    ctx: CpiContext<'a, '_, InitializeMint2<'a>, 1>,
     decimals: u8,
     authority: &Address,
     freeze_authority: Option<&Address>,
@@ -231,7 +231,7 @@ pub fn initialize_mint2<'a>(
 }
 
 pub fn transfer<'a, const N: usize>(
-    ctx: CpiContext<'a, Transfer<'a>, N>,
+    ctx: CpiContext<'a, '_, Transfer<'a>, N>,
     amount: u64,
 ) -> Result<(), ProgramError> {
     #[allow(deprecated)]
@@ -247,7 +247,7 @@ pub fn transfer<'a, const N: usize>(
 }
 
 pub fn transfer_checked<'a, const N: usize>(
-    ctx: CpiContext<'a, TransferChecked<'a>, N>,
+    ctx: CpiContext<'a, '_, TransferChecked<'a>, N>,
     amount: u64,
     decimals: u8,
 ) -> Result<(), ProgramError> {
@@ -265,7 +265,7 @@ pub fn transfer_checked<'a, const N: usize>(
 }
 
 pub fn mint_to<'a, const N: usize>(
-    ctx: CpiContext<'a, MintTo<'a>, N>,
+    ctx: CpiContext<'a, '_, MintTo<'a>, N>,
     amount: u64,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::mint_to(
@@ -280,7 +280,7 @@ pub fn mint_to<'a, const N: usize>(
 }
 
 pub fn mint_to_checked<'a, const N: usize>(
-    ctx: CpiContext<'a, MintToChecked<'a>, N>,
+    ctx: CpiContext<'a, '_, MintToChecked<'a>, N>,
     amount: u64,
     decimals: u8,
 ) -> Result<(), ProgramError> {
@@ -297,7 +297,7 @@ pub fn mint_to_checked<'a, const N: usize>(
 }
 
 pub fn burn<'a, const N: usize>(
-    ctx: CpiContext<'a, Burn<'a>, N>,
+    ctx: CpiContext<'a, '_, Burn<'a>, N>,
     amount: u64,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::burn(
@@ -312,7 +312,7 @@ pub fn burn<'a, const N: usize>(
 }
 
 pub fn burn_checked<'a, const N: usize>(
-    ctx: CpiContext<'a, BurnChecked<'a>, N>,
+    ctx: CpiContext<'a, '_, BurnChecked<'a>, N>,
     amount: u64,
     decimals: u8,
 ) -> Result<(), ProgramError> {
@@ -329,7 +329,7 @@ pub fn burn_checked<'a, const N: usize>(
 }
 
 pub fn approve<'a, const N: usize>(
-    ctx: CpiContext<'a, Approve<'a>, N>,
+    ctx: CpiContext<'a, '_, Approve<'a>, N>,
     amount: u64,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::approve(
@@ -344,7 +344,7 @@ pub fn approve<'a, const N: usize>(
 }
 
 pub fn approve_checked<'a, const N: usize>(
-    ctx: CpiContext<'a, ApproveChecked<'a>, N>,
+    ctx: CpiContext<'a, '_, ApproveChecked<'a>, N>,
     amount: u64,
     decimals: u8,
 ) -> Result<(), ProgramError> {
@@ -361,7 +361,7 @@ pub fn approve_checked<'a, const N: usize>(
     ctx.invoke_ix(ix)
 }
 
-pub fn revoke<'a, const N: usize>(ctx: CpiContext<'a, Revoke<'a>, N>) -> Result<(), ProgramError> {
+pub fn revoke<'a, const N: usize>(ctx: CpiContext<'a, '_, Revoke<'a>, N>) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::revoke(
         ctx.program,
         ctx.accounts.source.address(),
@@ -372,7 +372,7 @@ pub fn revoke<'a, const N: usize>(ctx: CpiContext<'a, Revoke<'a>, N>) -> Result<
 }
 
 pub fn set_authority<'a, const N: usize>(
-    ctx: CpiContext<'a, SetAuthority<'a>, N>,
+    ctx: CpiContext<'a, '_, SetAuthority<'a>, N>,
     authority_type: spl_token_2022::instruction::AuthorityType,
     new_authority: Option<&Address>,
 ) -> Result<(), ProgramError> {
@@ -388,7 +388,7 @@ pub fn set_authority<'a, const N: usize>(
 }
 
 pub fn close_account<'a, const N: usize>(
-    ctx: CpiContext<'a, CloseAccount<'a>, N>,
+    ctx: CpiContext<'a, '_, CloseAccount<'a>, N>,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::close_account(
         ctx.program,
@@ -401,7 +401,7 @@ pub fn close_account<'a, const N: usize>(
 }
 
 pub fn freeze_account<'a, const N: usize>(
-    ctx: CpiContext<'a, FreezeAccount<'a>, N>,
+    ctx: CpiContext<'a, '_, FreezeAccount<'a>, N>,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::freeze_account(
         ctx.program,
@@ -414,7 +414,7 @@ pub fn freeze_account<'a, const N: usize>(
 }
 
 pub fn thaw_account<'a, const N: usize>(
-    ctx: CpiContext<'a, ThawAccount<'a>, N>,
+    ctx: CpiContext<'a, '_, ThawAccount<'a>, N>,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::thaw_account(
         ctx.program,
@@ -427,7 +427,7 @@ pub fn thaw_account<'a, const N: usize>(
 }
 
 pub fn sync_native<'a>(
-    ctx: CpiContext<'a, SyncNative<'a>, 1>,
+    ctx: CpiContext<'a, '_, SyncNative<'a>, 1>,
 ) -> Result<(), ProgramError> {
     let ix = spl_token_2022::instruction::sync_native(ctx.program, ctx.accounts.account.address())?;
     ctx.invoke_ix(ix)
