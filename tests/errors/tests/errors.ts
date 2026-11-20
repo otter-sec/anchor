@@ -631,4 +631,27 @@ describe("errors", () => {
       "Program log: AnchorError occurred. Error Code: InvalidNumericConversion. Error Number: 4102. Error Message: out of range integral type conversion attempted.",
     ]);
   });
+
+  it("Emits a ConstraintSpace error when init space is too small", async () => {
+    await withLogTest(async () => {
+      const myAccount = anchor.web3.Keypair.generate();
+      try {
+        await program.methods
+          .initSpaceTooSmall()
+          .accounts({ myAccount: myAccount.publicKey })
+          .signers([myAccount])
+          .rpc();
+        assert.fail(
+          "Unexpected success in creating a transaction that should have failed with `ConstraintSpace` error"
+        );
+      } catch (_err) {
+        assert.isTrue(_err instanceof AnchorError);
+        const err: AnchorError = _err;
+        assert.strictEqual(err.error.errorCode.code, "ConstraintSpace");
+        assert.strictEqual(err.error.errorCode.number, 2019);
+      }
+    }, [
+      "Program log: AnchorError caused by account: my_account. Error Code: ConstraintSpace. Error Number: 2019. Error Message: A space constraint was violated.",
+    ]);
+  });
 });
