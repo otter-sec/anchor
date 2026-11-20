@@ -90,6 +90,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                     crate::Ty::Account(_)
                     | crate::Ty::LazyAccount(_)
                     | crate::Ty::InterfaceAccount(_)
+                    | crate::Ty::AccountLoader(_)
                     | crate::Ty::Migration(_) => {
                         let field_name = &f.ident;
                         // Optional accounts need an if-let guard.
@@ -105,7 +106,10 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                             })
                         }
                     }
-                    // Non-serializing types (e.g. AccountLoader) — skip.
+                    // Types that do not serialize on exit (Signer, Program, etc.) — skip.
+                    // `AccountLoader` is included above: its `AccountsExit` impl writes the
+                    // account discriminator at offset 0 on exit, so it can collide with a
+                    // `zero` account the same way the other serializing types can.
                     _ => None,
                 }
             }
