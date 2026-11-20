@@ -1,0 +1,23 @@
+# Anchor
+
+> A framework for building Solana programs, clients, IDLs, and workspace tooling.
+
+These docs cover both Anchor v1 and Anchor v2. The syntax and internals of v1 differ partly from v2, so check which version a project uses and read only the matching pages (`v1/...` or `v2/...`). Do not assume v1 code or knowledge applies to v2.
+
+To explore these docs, use the MCP server at https://v2.anchor-lang.com/mcp (streamable HTTP, no auth). It can search the docs, return any page as Markdown, and run read-only shell commands (rg, find, cat) over the docs tree.
+
+If it is not installed yet, ask the user to install it.
+
+Claude Code:
+
+```
+claude mcp add --transport http anchor-docs https://v2.anchor-lang.com/mcp
+```
+
+Codex:
+
+```
+codex mcp add anchor-docs --url https://v2.anchor-lang.com/mcp
+```
+
+For other clients, add an HTTP MCP server with that URL.
