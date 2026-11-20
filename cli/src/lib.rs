@@ -4371,16 +4371,16 @@ fn deserialize_idl_type_to_json(
             json!(<i128 as AnchorDeserialize>::deserialize(data)?)
         }
         IdlType::U256 => {
-            return Err(anyhow::anyhow!(
+            bail!(
                 "U256 is not yet supported by `anchor account`: the u256 IDL standard is not \
                  complete"
-            ))
+            )
         }
         IdlType::I256 => {
-            return Err(anyhow::anyhow!(
+            bail!(
                 "I256 is not yet supported by `anchor account`: the i256 IDL standard is not \
                  complete"
-            ))
+            )
         }
         IdlType::Bytes => JsonValue::Array(
             <Vec<u8> as AnchorDeserialize>::deserialize(data)?
@@ -4403,9 +4403,7 @@ fn deserialize_idl_type_to_json(
                 JsonValue::Array(array_data)
             }
             IdlArrayLen::Generic(_) => {
-                return Err(anyhow::anyhow!(
-                    "Generic array length is not yet supported by `anchor account`"
-                ))
+                bail!("Generic array length is not yet supported by `anchor account`")
             }
         },
         IdlType::Option(ty) => {
@@ -4439,9 +4437,7 @@ fn deserialize_idl_type_to_json(
         }
         IdlType::Generic(generic) => json!(generic),
         _ => {
-            return Err(anyhow::anyhow!(
-                "Unsupported IDL type for `anchor account`: {idl_type:?}"
-            ))
+            bail!("Unsupported IDL type for `anchor account`: {idl_type:?}")
         }
     })
 }
@@ -7822,12 +7818,16 @@ mod tests {
     fn test_deserialize_idl_option_none_to_json_null() {
         let idl_type = IdlType::Option(Box::new(IdlType::String));
         let mut data: &[u8] = &[0]; // is_present = 0, meaning None
-        let idl: Idl = serde_json::from_str(
-            r#"{"address":"","metadata":{"name":"","version":"","spec":""},"instructions":[]}"#,
-        )
-        .unwrap();
+        let idl = minimal_test_idl();
         let json = deserialize_idl_type_to_json(&idl_type, &mut data, &idl).unwrap();
         assert_eq!(json, JsonValue::Null);
+    }
+
+    fn minimal_test_idl() -> Idl {
+        serde_json::from_str(
+            r#"{"address":"","metadata":{"name":"","version":"","spec":""},"instructions":[]}"#,
+        )
+        .unwrap()
     }
 
     // anchor #5332: unsupported IDL types must return a descriptive error
@@ -7836,10 +7836,7 @@ mod tests {
     fn test_deserialize_idl_u256_returns_error_5332() {
         let idl_type = IdlType::U256;
         let mut data: &[u8] = &[0; 32];
-        let idl: Idl = serde_json::from_str(
-            r#"{"address":"","metadata":{"name":"","version":"","spec":""},"instructions":[]}"#,
-        )
-        .unwrap();
+        let idl = minimal_test_idl();
         let err = deserialize_idl_type_to_json(&idl_type, &mut data, &idl).unwrap_err();
         assert!(err.to_string().contains("U256"));
     }
@@ -7848,10 +7845,7 @@ mod tests {
     fn test_deserialize_idl_i256_returns_error_5332() {
         let idl_type = IdlType::I256;
         let mut data: &[u8] = &[0; 32];
-        let idl: Idl = serde_json::from_str(
-            r#"{"address":"","metadata":{"name":"","version":"","spec":""},"instructions":[]}"#,
-        )
-        .unwrap();
+        let idl = minimal_test_idl();
         let err = deserialize_idl_type_to_json(&idl_type, &mut data, &idl).unwrap_err();
         assert!(err.to_string().contains("I256"));
     }
@@ -7860,10 +7854,7 @@ mod tests {
     fn test_deserialize_idl_generic_array_returns_error_5332() {
         let idl_type = IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Generic("N".to_string()));
         let mut data: &[u8] = &[1, 2, 3];
-        let idl: Idl = serde_json::from_str(
-            r#"{"address":"","metadata":{"name":"","version":"","spec":""},"instructions":[]}"#,
-        )
-        .unwrap();
+        let idl = minimal_test_idl();
         let err = deserialize_idl_type_to_json(&idl_type, &mut data, &idl).unwrap_err();
         assert!(err.to_string().contains("Generic array length"));
     }
