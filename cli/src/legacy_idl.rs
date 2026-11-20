@@ -292,6 +292,29 @@ fn get_idl_account(client: &RpcClient, idl_address: &Pubkey) -> Result<IdlAccoun
     AccountDeserialize::try_deserialize(&mut data).map_err(|e| anyhow!("{:?}", e))
 }
 
+// True when the IDL account already holds at least `offset + chunk_len`
+// bytes, i.e. this chunk landed on-chain even though confirmation was
+// ambiguous. `__idl_write` appends unconditionally, so resending a landed
+// chunk duplicates it and corrupts the zlib stream.
+fn chunk_covers(data_len: usize, offset: usize, chunk_len: usize) -> bool {
+    data_len >= offset.saturating_add(chunk_len)
+}
+
+// Reads the account back and checks the declared length. Any read or parse
+// failure answers false so the caller retries as before; only a positive
+// read skips the resend.
+fn chunk_already_written(
+    client: &RpcClient,
+    idl_address: &Pubkey,
+    offset: usize,
+    chunk_len: usize,
+) -> bool {
+    match get_idl_account(client, idl_address) {
+        Ok(account) => chunk_covers(account.data_len as usize, offset, chunk_len),
+        Err(_) => false,
+    }
+}
+
 fn idl_close(
     cfg_override: &ConfigOverride,
     program_id: Pubkey,
@@ -641,9 +664,10 @@ fn idl_write(
     let mut offset = 0;
     while offset < idl_data.len() {
         println!("Step {offset}/{} ", idl_data.len());
+        let chunk_len = std::cmp::min(MAX_WRITE_SIZE, idl_data.len() - offset);
         let data = {
             let start = offset;
-            let end = std::cmp::min(offset + MAX_WRITE_SIZE, idl_data.len());
+            let end = offset + chunk_len;
             serialize_idl_ix(IdlInstruction::Write {
                 data: idl_data[start..end].to_vec(),
             })?
@@ -673,6 +697,10 @@ fn idl_write(
             match client.send_and_confirm_transaction_with_spinner(&tx) {
                 Ok(_) => break,
                 Err(e) => {
+                    if chunk_already_written(&client, &idl_address, offset, chunk_len) {
+                        println!("Chunk already landed on-chain; skipping resend.");
+                        break;
+                    }
                     if retries == 19 {
                         return Err(anyhow!("Error: {e}. Failed to send transaction."));
                     }
@@ -948,5 +976,19 @@ mod tests {
     fn rejects_truncated_account() {
         assert!(decode_idl_account_data(&[]).is_err());
         assert!(decode_idl_account_data(&IdlAccount::DISCRIMINATOR[..4]).is_err());
+    }
+
+    #[test]
+    fn chunk_covered_when_data_len_reaches_chunk_end() {
+        assert!(chunk_covers(91, 0, 91));
+        assert!(chunk_covers(100, 0, 91));
+        assert!(chunk_covers(691, 600, 91));
+    }
+
+    #[test]
+    fn chunk_not_covered_when_data_len_short() {
+        assert!(!chunk_covers(90, 0, 91));
+        assert!(!chunk_covers(0, 0, 91));
+        assert!(!chunk_covers(600, 600, 91));
     }
 }
