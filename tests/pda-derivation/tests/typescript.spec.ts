@@ -169,4 +169,54 @@ describe("typescript", () => {
   it("Can use arguments with `seeds::program`", async () => {
     await program.methods.seedsProgramArg(anchor.web3.PublicKey.default).rpc();
   });
+
+  describe("Seeds that pass instruction arguments to functions or macros", () => {
+    const args = { name: "anchor" };
+    const value = new BN(42);
+    const findPda = (seed: BN) =>
+      PublicKey.findProgramAddressSync(
+        [seed.toArrayLike(Buffer, "le", 8)],
+        program.programId
+      )[0];
+    const namePda = findPda(new BN(args.name.length));
+    const valuePda = findPda(value);
+    const macroPda = PublicKey.findProgramAddressSync(
+      [Buffer.from(args.name)],
+      program.programId
+    )[0];
+
+    it("Skips resolution", () => {
+      const ix = program.idl.instructions.find(
+        (ix) => ix.name === "seedFnWithArgs"
+      )!;
+      for (const name of ["namePda", "valuePda", "macroPda"]) {
+        const acc = ix.accounts.find((acc) => acc.name === name)!;
+        // @ts-expect-error
+        expect(acc.pda).to.be.undefined;
+      }
+    });
+
+    it("Can be provided manually", async () => {
+      await program.methods
+        .seedFnWithArgs(args, value)
+        .accounts({ namePda, valuePda, macroPda })
+        .rpc();
+    });
+
+    it("Rejects a PDA derived from different seeds", async () => {
+      try {
+        await program.methods
+          .seedFnWithArgs(args, value)
+          .accounts({ namePda, valuePda: findPda(value.addn(1)), macroPda })
+          .rpc();
+        throw new Error("Should throw due to mismatched seeds!");
+      } catch (e: any) {
+        expect(e.error.errorCode.code).to.equal("ConstraintSeeds");
+      }
+    });
+  });
+
+  it("Can resolve constant seeds that contain an account name", async () => {
+    await program.methods.constSeedWithAccountName().rpc();
+  });
 });

@@ -22,7 +22,7 @@ allow-missing-optionals = []
 anchor-debug = []
 event-cpi = []
 hash = []
-idl-build = ["cargo_toml"]
+idl-build = ["cargo_toml", "syn/visit"]
 init-if-needed = []
 
 [dependencies]
