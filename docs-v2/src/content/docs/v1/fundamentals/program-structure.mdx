@@ -91,14 +91,20 @@ The [`#[account]{:rs}`](https://docs.rs/anchor-lang/latest/anchor_lang/attr.acco
 
 <Code code={lib} lang="rust" title="lib.rs" meta="collapse={1-23}" />
 
-Accounts created with this type are owned by the program identified in `declare_id!(){:rs}`. Anchor writes an 8-byte discriminator to the front of the account at initialization and checks it on every read, and serializes and deserializes the account's data through Borsh.
+Accounts created with this type are owned by the program identified in `declare_id!(){:rs}`. Anchor writes the discriminator to the front of the account at initialization and checks it during deserialization. It uses Borsh to serialize and deserialize the account's data.
 
 ### Account discriminator
 
-The discriminator is the first 8 bytes of `SHA256("account:<StructName>"){:rs}`, stored as the leading 8 bytes of every account created with this type ([source](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/account/src/lib.rs#L113-L130)). It serves two purposes.
+The default discriminator is the first 8 bytes of `SHA256("account:<StructName>"){:rs}` ([source](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/account/src/lib.rs#L113-L130)). It serves two purposes.
 
-- On **initialization**, Anchor writes the discriminator as the first 8 bytes of the account's data.
-- On **deserialization**, Anchor compares the stored discriminator against the one expected by the target type. A mismatch fails the instruction before the handler runs, preventing the client from substituting an account of the wrong type.
+- On **initialization**, Anchor writes the discriminator at the start of the account data.
+- On **deserialization**, Anchor compares the stored discriminator against the one expected by the target type. A mismatch fails the instruction before the handler runs.
+
+<Callout variant="danger" title="Generic account types share a discriminator">
+  The default discriminator uses the struct name and omits generic arguments. All instantiations of the same generic `#[account]{:rs}` struct pass the same discriminator check. If deserialization also succeeds, Anchor reads the account as the expected type even if it was written as a different one. Use distinct account structs with distinct discriminators for account types that your program must distinguish.
+
+  See [Generic account types](/docs/v1/security/footguns/#generic-account-types) for details.
+</Callout>
 
 <Callout variant="important" title="Reserving discriminator space">
   Every `init{:rs}` constraint must allocate 8 extra bytes of space for the discriminator in addition to the account's own fields. In the example below, `space = 8 + 8{:rs}` covers 8 bytes for the discriminator plus 8 bytes for the `data: u64{:rs}` field.
