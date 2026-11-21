@@ -27,6 +27,7 @@ pub enum ErrorCode {
     ConstraintRaw,
     ConstraintExecutable,
     ConstraintZero,
+    ConstraintUnique,
     InstructionDidNotDeserialize,
     DeclaredProgramIdMismatch,
     InstructionFallbackNotFound,
@@ -60,6 +61,10 @@ impl From<ErrorCode> for Error {
             ErrorCode::ConstraintRaw => Self::Custom(2003),
             ErrorCode::ConstraintExecutable => Self::Custom(2007),
             ErrorCode::ConstraintZero => Self::Custom(2013),
+            // Reuses v1's `ConstraintDuplicateMutableAccount` number: the
+            // violation is the same — one address in two slots — and v2's
+            // mapping table had not claimed 2040.
+            ErrorCode::ConstraintUnique => Self::Custom(2040),
             ErrorCode::InstructionDidNotDeserialize => Self::InvalidInstructionData,
             ErrorCode::DeclaredProgramIdMismatch => Self::IncorrectProgramId,
             ErrorCode::InstructionFallbackNotFound => Self::InvalidInstructionData,
