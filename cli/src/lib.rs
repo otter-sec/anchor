@@ -62,6 +62,7 @@ use {
 
 mod abs_path;
 mod account;
+mod call;
 mod checks;
 pub mod codama;
 pub mod compat;
@@ -604,6 +605,26 @@ pub enum Command {
         /// Path of IDL to use (defaults to workspace IDL)
         #[clap(long)]
         idl: Option<PathBuf>,
+    },
+    /// Builds an instruction from the IDL, fills its accounts and simulates it.
+    ///
+    /// Example: anchor call counter.increment --account authority=~/.config/solana/id.json
+    Call {
+        #[allow(rustdoc::invalid_html_tags)]
+        /// Instruction to call (format: <program_name>.<instruction>)
+        target: String,
+        /// Instruction arguments as a JSON object, e.g. '{"amount": 5}'
+        #[clap(long)]
+        args: Option<String>,
+        /// Set an account: <name>=<pubkey>, or <name>=<keypair file> to also sign with it
+        #[clap(long = "account")]
+        accounts: Vec<String>,
+        /// Path of IDL to use (defaults to workspace IDL)
+        #[clap(long)]
+        idl: Option<PathBuf>,
+        /// Send the transaction after a successful simulation
+        #[clap(long)]
+        send: bool,
     },
     /// Generates shell completions.
     Completions {
@@ -1737,6 +1758,22 @@ fn process_command(opts: Opts) -> Result<()> {
             address,
             idl,
         } => account(&opts.cfg_override, account_type, address, idl),
+        Command::Call {
+            target,
+            args,
+            accounts,
+            idl,
+            send,
+        } => call::call(
+            &opts.cfg_override,
+            call::CallArgs {
+                target,
+                args,
+                accounts,
+                idl,
+                send,
+            },
+        ),
         Command::Completions { shell } => {
             clap_complete::generate(
                 shell,
