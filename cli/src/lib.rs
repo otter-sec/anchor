@@ -616,6 +616,7 @@ pub enum Command {
         /// Instruction arguments as a JSON object, e.g. '{"amount": 5}'
         #[clap(long)]
         args: Option<String>,
+        #[allow(rustdoc::invalid_html_tags)]
         /// Set an account: <name>=<pubkey>, or <name>=<keypair file> to also sign with it
         #[clap(long = "account")]
         accounts: Vec<String>,
