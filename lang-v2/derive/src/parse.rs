@@ -48,6 +48,7 @@ pub struct NamespacedConstraint {
 #[derive(Clone)]
 pub struct AccountAttrs {
     pub is_mut: bool,
+    pub is_unique: bool,
     pub is_signer: bool,
     pub is_init: bool,
     pub is_init_if_needed: bool,
@@ -106,6 +107,7 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
     let mut realloc_zero_seen = false;
     let mut result = AccountAttrs {
         is_mut: false,
+        is_unique: false,
         is_signer: false,
         is_init: false,
         is_init_if_needed: false,
@@ -368,6 +370,12 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
                             return Err(duplicate_singleton(ident.span(), "close"));
                         }
                         result.close = Some(input.parse()?);
+                    }
+                    "unique" => {
+                        if result.is_unique {
+                            return Err(duplicate_singleton(ident.span(), "unique"));
+                        }
+                        result.is_unique = true;
                     }
                     "constraint" => {
                         // Two accepted spellings, both pushing to the same
@@ -2379,6 +2387,12 @@ pub fn parse_field(
             "mut must be provided when using close",
         ));
     }
+    if attrs.is_unique && !attrs.is_mut {
+        return Err(syn::Error::new(
+            field_name.span(),
+            "mut must be provided when using unique",
+        ));
+    }
     validate_close_destination(&attrs, field_summaries)?;
     let option_inner = extract_option_inner(field_ty);
     let associated_token = parse_associated_token_init(&attrs, field_names)?;
@@ -2994,6 +3008,58 @@ pub fn parse_field(
         });
     }
 
+    // unique
+    //
+    // `#[account(mut, unique)]` opts a field into rejecting any other
+    // account in the same struct that resolves to the same address.
+    // v2 dropped the derive-level duplicate check (#5091), so wrappers
+    // that never take a borrow — `Signer`, `SystemAccount`,
+    // `UncheckedAccount`, `Program<T>` — can alias a `mut` slot with no
+    // error at all. The check is opt-in and costs nothing for fields
+    // without it: each `unique` field compares its address against
+    // every other direct field (at most N-1 `address_eq` calls, no
+    // allocation, no hashing). `Nested<Inner>` siblings are out of
+    // scope: their inner fields have no directly referenceable local
+    // here; the inner struct validates itself. An `Option<T>` sibling
+    // contributes only when it is `Some` — its `None` sentinel is the
+    // program id, and two `None`s must not read as a collision.
+    if attrs.is_unique {
+        for summary in field_summaries {
+            if summary.name == *field_name {
+                continue;
+            }
+            if is_nested_type(&summary.ty) {
+                continue;
+            }
+            let sibling = &summary.name;
+            let other_addr = if field_is_optional(field_summaries, sibling) {
+                quote! {
+                    match (#sibling).as_ref() {
+                        Some(__anchor_account) => {
+                            Some(*__anchor_account.account().address())
+                        }
+                        None => None,
+                    }
+                }
+            } else {
+                quote! { Some(*#sibling.account().address()) }
+            };
+            constraints.push(quote! {
+                {
+                    let __unique_other: Option<anchor_lang::Address> = #other_addr;
+                    if let Some(__other) = __unique_other {
+                        if anchor_lang::address_eq(
+                            #field_name.account().address(),
+                            &__other,
+                        ) {
+                            return Err(anchor_lang::ErrorCode::ConstraintUnique.into());
+                        }
+                    }
+                }
+            });
+        }
+    }
+
     // owner
     if let Some(ref owner_expr) = attrs.owner {
         let err = if let Some(ref e) = attrs.owner_error {
@@ -3503,6 +3569,124 @@ mod tests {
         let parsed_attrs = parse_account_attrs(&attrs).unwrap();
         assert!(!parsed_attrs.is_mut);
         assert_eq!(parsed_attrs.close.unwrap().to_string(), "receiver");
+    }
+
+    #[test]
+    fn unique_parses_and_is_singleton() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(mut, unique)]
+        )];
+        let parsed = parse_account_attrs(&attrs).unwrap();
+        assert!(parsed.is_unique);
+        assert!(parsed.is_mut);
+
+        let dup: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(mut, unique, unique)]
+        )];
+        let err = match parse_account_attrs(&dup) {
+            Ok(_) => panic!("duplicate `unique` must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string().contains("`unique` already provided"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn unique_without_mut_is_rejected() {
+        use syn::parse::Parser;
+
+        let field: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                #[account(unique)]
+                pub data: UncheckedAccount
+            })
+            .unwrap();
+        let sibling: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                pub other: UncheckedAccount
+            })
+            .unwrap();
+        let summaries = vec![
+            FieldSummary {
+                name: syn::parse_quote!(data),
+                ty: syn::parse_quote!(UncheckedAccount),
+                attrs: parse_account_attrs(&field.attrs).unwrap(),
+            },
+            FieldSummary {
+                name: syn::parse_quote!(other),
+                ty: syn::parse_quote!(UncheckedAccount),
+                attrs: parse_account_attrs(&sibling.attrs).unwrap(),
+            },
+        ];
+        let field_attrs = parse_account_attrs(&field.attrs).unwrap();
+        let err = match parse_field(
+            &field,
+            &field_attrs,
+            &["data".into(), "other".into()],
+            &[],
+            quote::quote!(0usize),
+            &[],
+            &summaries,
+        ) {
+            Ok(_) => panic!("`unique` without `mut` must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("mut must be provided when using unique"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn unique_emits_one_constraint_per_sibling() {
+        use syn::parse::Parser;
+
+        let field: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                #[account(mut, unique)]
+                pub data: UncheckedAccount
+            })
+            .unwrap();
+        let sibling: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                pub other: UncheckedAccount
+            })
+            .unwrap();
+        let summaries = vec![
+            FieldSummary {
+                name: syn::parse_quote!(data),
+                ty: syn::parse_quote!(UncheckedAccount),
+                attrs: parse_account_attrs(&field.attrs).unwrap(),
+            },
+            FieldSummary {
+                name: syn::parse_quote!(other),
+                ty: syn::parse_quote!(UncheckedAccount),
+                attrs: parse_account_attrs(&sibling.attrs).unwrap(),
+            },
+        ];
+        let field_attrs = parse_account_attrs(&field.attrs).unwrap();
+        let parsed = parse_field(
+            &field,
+            &field_attrs,
+            &["data".into(), "other".into()],
+            &[],
+            quote::quote!(0usize),
+            &[],
+            &summaries,
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.constraints.len(),
+            1,
+            "one `unique` field with one sibling must emit exactly one constraint"
+        );
+        assert!(
+            parsed.constraints[0].to_string().contains("ConstraintUnique"),
+            "unique constraint must return ConstraintUnique"
+        );
     }
 
     #[test]

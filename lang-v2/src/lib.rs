@@ -358,6 +358,7 @@ pub enum ErrorCode {
     ConstraintRaw,
     ConstraintExecutable,
     ConstraintZero,
+    ConstraintUnique,
     InstructionDidNotDeserialize,
     DeclaredProgramIdMismatch,
     InstructionFallbackNotFound,
@@ -393,6 +394,10 @@ impl From<ErrorCode> for solana_program_error::ProgramError {
             ErrorCode::ConstraintRaw => solana_program_error::ProgramError::Custom(2003),
             ErrorCode::ConstraintExecutable => solana_program_error::ProgramError::Custom(2007),
             ErrorCode::ConstraintZero => solana_program_error::ProgramError::Custom(2013),
+            // Reuses v1's `ConstraintDuplicateMutableAccount` number: the
+            // violation is the same — one address in two slots — and v2's
+            // mapping table had not claimed 2040.
+            ErrorCode::ConstraintUnique => solana_program_error::ProgramError::Custom(2040),
             ErrorCode::InstructionDidNotDeserialize => {
                 solana_program_error::ProgramError::InvalidInstructionData
             }

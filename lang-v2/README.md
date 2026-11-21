@@ -71,6 +71,8 @@ Most v1 programs port with the below.
 
 v1 `#[account(mut, dup)]` let mutable serializing accounts (`Account<T>`, `LazyAccount<T>`, `InterfaceAccount<T>`, `Migration`) share an address. v2 rejects `#[account(dup)]`. `BorshAccount<T>` borrows on load: a mutable alias fails with `AccountBorrowFailed` (v1: `ConstraintDuplicateMutableAccount`), and two read-only fields may still share. Zero-copy `Account<T>` follows the same rule, unlike v1 `AccountLoader<T>`, which allowed mutable duplicates. Unlike v1, a `mut` field and a read-only field of the same account also fail. `Signer`, `SystemAccount`, `UncheckedAccount`, and `Program<T>` still alias.
 
+To opt a field back into duplicate rejection, mark it `#[account(mut, unique)]`: validation fails with `ConstraintUnique` (`Custom(2040)`, the v1 `ConstraintDuplicateMutableAccount` number) if any other direct field in the same struct resolves to the same address. `unique` requires `mut`, costs nothing for fields without it (at most one 32-byte comparison per sibling, no allocation), and does not apply to `Nested<Inner>` siblings — the inner struct validates itself. An `Option<T>` sibling set to `None` is skipped, since its sentinel address is the program id.
+
 To keep that `dup` pattern, declare the second field as `#[account(mut)] UncheckedAccount`. If the addresses match, mutate the first `BorshAccount` only. If they differ, call `BorshAccount::<T>::load_mut` on the second field's `AccountView` and call `exit()` on the result before drop. The derive writes back declared fields only. A manual `load_mut` does not run the v1 field's constraints, so re-check them (`has_one`, `seeds`, `address`, `constraint`).
 
 ### `compat` feature
