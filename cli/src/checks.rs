@@ -38,9 +38,15 @@ fn anchor_crate_names(manifest: &cargo_toml::Manifest) -> Option<(&'static str, 
     }
 }
 
+fn incompatible_version_req(version_req: &str, cli_version: &Version) -> Option<VersionReq> {
+    VersionReq::parse(version_req)
+        .ok()
+        .filter(|req| !req.matches(cli_version))
+}
+
 /// Check whether there is a mismatch between the current CLI version and:
 ///
-/// - `anchor-lang` / `anchor-lang-v2` crate version
+/// - `anchor-lang` / `anchor-lang-v2` crate version requirement
 /// - `@anchor-lang/core` package version
 ///
 /// This function logs warnings in the case of a mismatch.
@@ -61,14 +67,13 @@ pub fn check_anchor_version(cfg: &WithPath<Config>) -> Result<()> {
         let mismatched = manifests
             .iter()
             .filter_map(|m| m.dependencies.get(dep_name))
-            .filter_map(|dep| Version::parse(dep.req()).ok())
-            .find(|ver| ver != &cli_version);
-        if let Some(ver) = mismatched {
+            .find_map(|dep| incompatible_version_req(dep.req(), &cli_version));
+        if let Some(req) = mismatched {
             eprintln!(
-                "WARNING: `{dep_name}` version({ver}) and the current CLI version({cli_version}) \
-                 don't match.\n\n\tThis can lead to unwanted behavior. To use the same CLI \
-                 version, add:\n\n\t[toolchain]\n\tanchor_version = \"{ver}\"\n\n\tto \
-                 Anchor.toml\n"
+                "WARNING: `{dep_name}` version requirement({req}) does not include the current \
+                 CLI version({cli_version}).\n\n\tThis can lead to unwanted behavior. Update the \
+                 dependency requirement in Cargo.toml to include {cli_version}, or use a CLI \
+                 version that satisfies it.\n"
             );
         }
     }
@@ -237,4 +242,28 @@ in `{manifest_path:?}`."#
         });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn anchor_crate_version_requirements_match_cli_version() {
+        let cli_version = Version::parse("0.32.1").unwrap();
+
+        for req in ["0.32.1", "=0.32.1", "^0.32.0", ">=0.32.0, <0.33.0"] {
+            assert!(
+                incompatible_version_req(req, &cli_version).is_none(),
+                "{req} should include {cli_version}"
+            );
+        }
+
+        for req in ["0.31.0", "=0.31.0", "^0.31.0", ">=0.31.0, <0.32.0"] {
+            assert!(
+                incompatible_version_req(req, &cli_version).is_some(),
+                "{req} should exclude {cli_version}"
+            );
+        }
+    }
 }
