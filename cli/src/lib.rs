@@ -1026,6 +1026,7 @@ pub enum IdlCommand {
     Diff {
         /// IDL of the deployed program (e.g. from `anchor idl fetch`)
         old: PathBuf,
+        #[allow(rustdoc::invalid_html_tags)]
         /// IDL of the new build (e.g. target/idl/<program>.json)
         new: PathBuf,
     },
