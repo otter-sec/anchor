@@ -47,7 +47,7 @@ use {
     },
     solana_signer::{EncodableKey, Signer},
     std::{
-        collections::{BTreeMap, HashMap, HashSet},
+        collections::{BTreeMap, BTreeSet, HashMap, HashSet},
         ffi::OsString,
         fs::{self, File},
         io::{self, prelude::*},
@@ -73,6 +73,7 @@ pub mod debugger;
 pub mod fetch;
 #[cfg(not(windows))]
 mod flamegraph;
+mod idl_diff;
 mod keygen;
 mod legacy_idl;
 mod metadata;
@@ -1017,6 +1018,16 @@ pub enum IdlCommand {
         /// Print diagnostic progress messages.
         #[clap(long)]
         verbose: bool,
+    },
+    /// Compare the account layouts of two IDLs before an upgrade.
+    ///
+    /// Reports changes that make the new program reject or misread accounts written by the old
+    /// one, such as reordered or retyped fields. Exits with an error when any are found.
+    Diff {
+        /// IDL of the deployed program (e.g. from `anchor idl fetch`)
+        old: PathBuf,
+        /// IDL of the new build (e.g. target/idl/<program>.json)
+        new: PathBuf,
     },
     /// Convert legacy IDLs (pre Anchor 0.30) to the new IDL spec
     Convert {
@@ -3424,6 +3435,7 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             to_legacy,
         } => idl_convert(path, out, program_id, to_legacy),
         IdlCommand::Type { path, out } => idl_type(path, out),
+        IdlCommand::Diff { old, new } => idl_diff(old, new),
         IdlCommand::Close {
             program_id,
             seed,
@@ -3843,6 +3855,36 @@ fn apply_program_id_override(idl: &[u8], program_id: Pubkey) -> Result<Vec<u8>> 
         }
     }
     serde_json::to_vec(&idl).map_err(Into::into)
+}
+
+fn idl_diff(old_path: PathBuf, new_path: PathBuf) -> Result<()> {
+    let old = convert_idl(&fs::read(&old_path)?)?;
+    let new = convert_idl(&fs::read(&new_path)?)?;
+    let findings = idl_diff::diff(&old, &new);
+    if findings.is_empty() {
+        println!("No account layout changes.");
+        return Ok(());
+    }
+    for f in &findings {
+        if f.message.starts_with(&f.account) {
+            println!("{:<16} {}", f.level.to_string(), f.message);
+        } else {
+            println!("{:<16} {}: {}", f.level.to_string(), f.account, f.message);
+        }
+    }
+    let affected: BTreeSet<&str> = findings
+        .iter()
+        .filter(|f| f.level > idl_diff::Level::Info)
+        .map(|f| f.account.as_str())
+        .collect();
+    if !affected.is_empty() {
+        bail!(
+            "existing accounts of {} type(s) would be rejected or misread: {}",
+            affected.len(),
+            affected.into_iter().collect::<Vec<_>>().join(", ")
+        );
+    }
+    Ok(())
 }
 
 fn idl_convert(
