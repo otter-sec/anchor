@@ -2017,7 +2017,7 @@ use {{
     solana_keypair::Keypair,
     solana_message::{{Message, VersionedMessage}},
     solana_signer::Signer,
-    solana_transaction::versioned::VersionedTransaction,
+    solana_transaction::{{versioned::VersionedTransaction, InstructionError, TransactionError}},
 }};
 
 #[test]
@@ -2083,6 +2083,72 @@ fn test_initialize() {{
     let counter_state = {0}::state::Counter::try_deserialize(&mut data).unwrap();
     assert_eq!(counter_state.count, 1);
     assert_eq!(counter_state.authority, payer.pubkey());
+}}
+
+#[test]
+fn test_increment_rejects_other_authority() {{
+    let program_id = {0}::id();
+    let payer = Keypair::new();
+    let other = Keypair::new();
+    let counter = Pubkey::find_program_address(
+        &[{0}::constants::COUNTER_SEED],
+        &program_id,
+    )
+    .0;
+    let mut svm = LiteSVM::new();
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_TARGET_TMPDIR"),
+        "/../deploy/{0}.so"
+    ));
+    svm.add_program(program_id, bytes).unwrap();
+    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+    svm.airdrop(&other.pubkey(), 1_000_000_000).unwrap();
+
+    let instruction = Instruction::new_with_bytes(
+        program_id,
+        &{0}::instruction::Initialize {{}}.data(),
+        {0}::accounts::Initialize {{
+            payer: payer.pubkey(),
+            counter,
+            system_program: system_program::ID,
+        }}
+        .to_account_metas(None),
+    );
+
+    let blockhash = svm.latest_blockhash();
+    let msg = Message::new_with_blockhash(&[instruction], Some(&payer.pubkey()), &blockhash);
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[&payer]).unwrap();
+
+    let res = svm.send_transaction(tx);
+    assert!(res.is_ok(), "send_transaction failed: {{:?}}", res);
+
+    // `other` is not the counter's authority, so the program must reject it.
+    let instruction = Instruction::new_with_bytes(
+        program_id,
+        &{0}::instruction::Increment {{}}.data(),
+        {0}::accounts::Increment {{
+            counter,
+            authority: other.pubkey(),
+        }}
+        .to_account_metas(None),
+    );
+
+    let blockhash = svm.latest_blockhash();
+    let msg = Message::new_with_blockhash(&[instruction], Some(&other.pubkey()), &blockhash);
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[&other]).unwrap();
+
+    let err = svm
+        .send_transaction(tx)
+        .expect_err("increment by a key other than the authority must fail");
+    assert_eq!(
+        err.err,
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom({0}::error::ErrorCode::Unauthorized.into()),
+        ),
+        "{{:?}}",
+        err
+    );
 }}
 "#,
             name.to_snake_case(),
