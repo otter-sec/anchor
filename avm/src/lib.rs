@@ -951,6 +951,9 @@ fn nightly_enabled() -> bool {
 #[derive(Debug, Deserialize)]
 struct NightlyManifest {
     version: String,
+    /// Commit the nightly was built from. Older manifests may not have it.
+    #[serde(default)]
+    git_sha: Option<String>,
     artifacts: Vec<NightlyArtifact>,
 }
 
@@ -1095,11 +1098,47 @@ fn install_nightly_manifest(manifest: &NightlyManifest, skip_attestation: bool) 
     if needs_download {
         if skip_attestation {
             warn_attestation_skipped();
+        } else {
+            // Reject an inconsistent manifest before downloading anything.
+            nightly_source_commit(manifest)?;
         }
-        install_nightly_artifact(&anchor, &nightly_anchor_binary_path(), skip_attestation)?;
-        install_nightly_artifact(&avm, &nightly_avm_binary_path(), skip_attestation)?;
+        install_nightly_artifact(
+            manifest,
+            &anchor,
+            &nightly_anchor_binary_path(),
+            skip_attestation,
+        )?;
+        install_nightly_artifact(manifest, &avm, &nightly_avm_binary_path(), skip_attestation)?;
     }
     Ok(())
+}
+
+/// Returns the full commit hash of the nightly build, after checking that the
+/// manifest `version` ends with an abbreviation of it.
+fn nightly_source_commit(manifest: &NightlyManifest) -> Result<&str> {
+    let version = &manifest.version;
+    let Some(git_sha) = manifest.git_sha.as_deref() else {
+        bail!("Anchor nightly manifest {version} has no `git_sha`");
+    };
+    if git_sha.len() != 40 || !git_sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+        bail!("Anchor nightly manifest {version} has an invalid `git_sha` `{git_sha}`");
+    }
+    let short_sha = version
+        .rsplit_once('-')
+        .map_or("", |(_, short_sha)| short_sha);
+    if short_sha.len() < 7
+        || !short_sha.bytes().all(|b| b.is_ascii_hexdigit())
+        || !git_sha.starts_with(short_sha)
+    {
+        bail!("Anchor nightly version {version} does not match manifest commit {git_sha}");
+    }
+    Ok(git_sha)
+}
+
+/// Name the nightly workflow attests the archive under, e.g.
+/// `anchor-nightly-20260522-f693b0f-x86_64-unknown-linux-gnu.tar.gz`.
+fn nightly_subject_name(artifact: &NightlyArtifact, version: &str) -> String {
+    format!("{}-{version}-{}.tar.gz", artifact.tool, artifact.target)
 }
 
 fn nightly_artifact(
@@ -1121,6 +1160,7 @@ fn nightly_artifact(
 }
 
 fn install_nightly_artifact(
+    manifest: &NightlyManifest,
     artifact: &NightlyArtifact,
     destination: &Path,
     skip_attestation: bool,
@@ -1139,7 +1179,7 @@ fn install_nightly_artifact(
 
     let result = (|| -> Result<()> {
         let archive_path = staging.join(archive_name);
-        download_nightly_artifact(artifact, &archive_path, skip_attestation)?;
+        download_nightly_artifact(manifest, artifact, &archive_path, skip_attestation)?;
         extract_tar_gz(&archive_path, &staging)?;
         let extracted = extracted_nightly_binary(&staging, &artifact.tool)?;
         install_binary_atomic(&extracted, destination)?;
@@ -1160,6 +1200,7 @@ fn nightly_archive_name(file: &str) -> Result<&Path> {
 }
 
 fn download_nightly_artifact(
+    manifest: &NightlyManifest,
     artifact: &NightlyArtifact,
     dest: &Path,
     skip_attestation: bool,
@@ -1184,7 +1225,11 @@ fn download_nightly_artifact(
     }
     fs::write(dest, bytes.as_ref()).with_context(|| format!("Writing {}", dest.display()))?;
     if !skip_attestation {
-        attestation::verify_nightly(dest).with_context(|| {
+        let expected = attestation::NightlyProvenance {
+            source_commit: nightly_source_commit(manifest)?,
+            subject_name: &nightly_subject_name(artifact, &manifest.version),
+        };
+        attestation::verify_nightly(dest, &expected).with_context(|| {
             format!(
                 "Downloaded nightly artifact `{url}` failed build provenance verification. \
                  Refusing to install it."
@@ -1768,6 +1813,7 @@ mod tests {
     fn test_nightly_artifact_selects_tool_and_target() {
         let manifest = NightlyManifest {
             version: "nightly-20260522-f693b0f".to_string(),
+            git_sha: None,
             artifacts: vec![
                 NightlyArtifact {
                     tool: "anchor".to_string(),
@@ -1798,6 +1844,7 @@ mod tests {
     fn test_nightly_artifact_errors_for_missing_target() {
         let manifest = NightlyManifest {
             version: "nightly-20260522-f693b0f".to_string(),
+            git_sha: None,
             artifacts: vec![],
         };
 
@@ -1824,6 +1871,89 @@ mod tests {
         ] {
             assert!(nightly_archive_name(file).is_err(), "accepted `{file}`");
         }
+    }
+
+    fn nightly_manifest(version: &str, git_sha: Option<&str>) -> NightlyManifest {
+        NightlyManifest {
+            version: version.to_string(),
+            git_sha: git_sha.map(str::to_string),
+            artifacts: vec![],
+        }
+    }
+
+    #[test]
+    fn test_nightly_source_commit_matches_version() {
+        let git_sha = "85c5293e7a01aa43b9cf015986bd7c7188ed4a74";
+        let manifest = nightly_manifest("nightly-20261028-85c5293", Some(git_sha));
+        assert_eq!(nightly_source_commit(&manifest).unwrap(), git_sha);
+    }
+
+    #[test]
+    fn test_nightly_source_commit_rejects_version_of_other_commit() {
+        let manifest = nightly_manifest(
+            "nightly-20261122-0123456",
+            Some("85c5293e7a01aa43b9cf015986bd7c7188ed4a74"),
+        );
+        let err = nightly_source_commit(&manifest).unwrap_err().to_string();
+        assert!(err.contains("nightly-20261122-0123456"), "{err}");
+        assert!(
+            err.contains("85c5293e7a01aa43b9cf015986bd7c7188ed4a74"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn test_nightly_source_commit_rejects_invalid_git_sha() {
+        for git_sha in [
+            "85c5293",
+            "85c5293e7a01aa43b9cf015986bd7c7188ed4a7",
+            "85c5293e7a01aa43b9cf015986bd7c7188ed4a7g",
+            "",
+        ] {
+            let manifest = nightly_manifest("nightly-20261028-85c5293", Some(git_sha));
+            assert!(
+                nightly_source_commit(&manifest).is_err(),
+                "accepted `{git_sha}`"
+            );
+        }
+    }
+
+    #[test]
+    fn test_nightly_source_commit_rejects_version_without_commit() {
+        for version in ["nightly", "nightly-20261028-", "nightly-20261028-85c52"] {
+            let manifest =
+                nightly_manifest(version, Some("85c5293e7a01aa43b9cf015986bd7c7188ed4a74"));
+            assert!(
+                nightly_source_commit(&manifest).is_err(),
+                "accepted `{version}`"
+            );
+        }
+    }
+
+    #[test]
+    fn test_nightly_manifest_without_git_sha() {
+        let manifest: NightlyManifest =
+            serde_json::from_str(r#"{"version": "nightly-20261028-85c5293", "artifacts": []}"#)
+                .unwrap();
+        assert_eq!(manifest.git_sha, None);
+
+        let err = nightly_source_commit(&manifest).unwrap_err().to_string();
+        assert!(err.contains("has no `git_sha`"), "{err}");
+    }
+
+    #[test]
+    fn test_nightly_subject_name() {
+        let artifact = NightlyArtifact {
+            tool: "anchor".to_string(),
+            target: "aarch64-apple-darwin".to_string(),
+            file: "anchor.tar.gz".to_string(),
+            s3_key: "nightly/latest/aarch64-apple-darwin/anchor.tar.gz".to_string(),
+            sha256: "6aa1916e9e4a6aa6852b4d73d53fb5baef486f39f56d1188ba7e6508d7028f24".to_string(),
+        };
+        assert_eq!(
+            nightly_subject_name(&artifact, "nightly-20261028-85c5293"),
+            "anchor-nightly-20261028-85c5293-aarch64-apple-darwin.tar.gz"
+        );
     }
 
     #[test]
