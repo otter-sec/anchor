@@ -151,7 +151,7 @@ impl SlabSchema for Interface<crate::TokenAccount> {
     const MIN_DATA_LEN: usize = core::mem::size_of::<Self>();
 
     #[inline(always)]
-    fn validate(view: &AccountView, data: &[u8]) -> Result<(), ProgramError> {
+    fn validate(view: AccountView, data: &[u8]) -> Result<(), ProgramError> {
         require!(
             view.owned_by(&Token::id()) || view.owned_by(&Token2022Program::id()),
             ProgramError::IllegalOwner
@@ -171,7 +171,7 @@ impl SlabSchema for Interface<crate::Mint> {
     const MIN_DATA_LEN: usize = core::mem::size_of::<Self>();
 
     #[inline(always)]
-    fn validate(view: &AccountView, data: &[u8]) -> Result<(), ProgramError> {
+    fn validate(view: AccountView, data: &[u8]) -> Result<(), ProgramError> {
         require!(
             view.owned_by(&Token::id()) || view.owned_by(&Token2022Program::id()),
             ProgramError::IllegalOwner
@@ -211,19 +211,19 @@ impl anchor_lang::IdlAccountType for Interface<crate::Mint> {}
 /// Init params for `InterfaceAccount<TokenAccount>`. Requires `token_program`
 /// to know which program to create the account through.
 #[derive(Default)]
-pub struct InterfaceTokenAccountInitParams<'a> {
-    pub mint: Option<&'a AccountView>,
-    pub authority: Option<&'a AccountView>,
-    pub token_program: Option<&'a AccountView>,
+pub struct InterfaceTokenAccountInitParams {
+    pub mint: Option<AccountView>,
+    pub authority: Option<AccountView>,
+    pub token_program: Option<AccountView>,
 }
 
 impl SlabInit for Interface<crate::TokenAccount> {
-    type Params<'a> = InterfaceTokenAccountInitParams<'a>;
+    type Params<'a> = InterfaceTokenAccountInitParams;
 
     #[cold]
     fn create_and_initialize<'a>(
-        payer: &AccountView,
-        account: &AccountView,
+        payer: AccountView,
+        account: AccountView,
         _space: usize,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
@@ -246,8 +246,8 @@ impl SlabInit for Interface<crate::TokenAccount> {
         )?;
 
         pinocchio_token_2022::instructions::InitializeAccount3 {
-            account,
-            mint,
+            account: &account,
+            mint: &mint,
             owner: authority.address(),
             token_program: program_id,
         }
@@ -257,7 +257,7 @@ impl SlabInit for Interface<crate::TokenAccount> {
 
 #[inline(always)]
 fn token_account_init_space(
-    mint: &AccountView,
+    mint: AccountView,
     token_program: &Address,
 ) -> Result<usize, ProgramError> {
     if !anchor_lang::address_eq(token_program, &Token2022Program::id()) {
@@ -282,11 +282,11 @@ fn token_account_init_space(
 /// `extensions::*` fields are Token-2022 only. They are initialized after
 /// `create_account` and **before** `InitializeMint2`.
 #[derive(Default)]
-pub struct InterfaceMintInitParams<'a> {
+pub struct InterfaceMintInitParams {
     pub decimals: Option<u8>,
-    pub authority: Option<&'a AccountView>,
-    pub freeze_authority: Option<&'a AccountView>,
-    pub token_program: Option<&'a AccountView>,
+    pub authority: Option<AccountView>,
+    pub freeze_authority: Option<AccountView>,
+    pub token_program: Option<AccountView>,
     pub metadata_pointer_authority: Option<Address>,
     pub metadata_pointer_metadata_address: Option<Address>,
     pub group_pointer_authority: Option<Address>,
@@ -299,7 +299,7 @@ pub struct InterfaceMintInitParams<'a> {
     pub permanent_delegate_delegate: Option<Address>,
 }
 
-impl InterfaceMintInitParams<'_> {
+impl InterfaceMintInitParams {
     fn has_extensions(&self) -> bool {
         self.metadata_pointer_authority.is_some()
             || self.metadata_pointer_metadata_address.is_some()
@@ -346,7 +346,7 @@ impl InterfaceMintInitParams<'_> {
     }
 }
 
-fn mint_extension_space(params: &InterfaceMintInitParams<'_>) -> Result<usize, ProgramError> {
+fn mint_extension_space(params: &InterfaceMintInitParams) -> Result<usize, ProgramError> {
     let (types, n) = params.extension_types();
     if n == 0 {
         return Ok(core::mem::size_of::<crate::Mint>());
@@ -355,12 +355,12 @@ fn mint_extension_space(params: &InterfaceMintInitParams<'_>) -> Result<usize, P
 }
 
 impl SlabInit for Interface<crate::Mint> {
-    type Params<'a> = InterfaceMintInitParams<'a>;
+    type Params<'a> = InterfaceMintInitParams;
 
     #[cold]
     fn create_and_initialize<'a>(
-        payer: &AccountView,
-        account: &AccountView,
+        payer: AccountView,
+        account: AccountView,
         space: usize,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
@@ -396,10 +396,10 @@ impl SlabInit for Interface<crate::Mint> {
         initialize_mint_extensions(account, program_id, params)?;
 
         pinocchio_token_2022::instructions::InitializeMint2 {
-            mint: account,
+            mint: &account,
             decimals,
             mint_authority: authority.address(),
-            freeze_authority: params.freeze_authority.map(|v| v.address()),
+            freeze_authority: params.freeze_authority.as_ref().map(|v| v.address()),
             token_program: program_id,
         }
         .invoke()
@@ -407,13 +407,13 @@ impl SlabInit for Interface<crate::Mint> {
 }
 
 fn initialize_mint_extensions(
-    mint: &AccountView,
+    mint: AccountView,
     token_program: &Address,
-    params: &InterfaceMintInitParams<'_>,
+    params: &InterfaceMintInitParams,
 ) -> Result<(), ProgramError> {
     if params.group_pointer_authority.is_some() || params.group_pointer_group_address.is_some() {
         pinocchio_token_2022::instructions::group_pointer::Initialize {
-            mint,
+            mint: &mint,
             authority: params.group_pointer_authority.as_ref(),
             group_address: params.group_pointer_group_address.as_ref(),
             token_program,
@@ -424,7 +424,7 @@ fn initialize_mint_extensions(
         || params.group_member_pointer_member_address.is_some()
     {
         pinocchio_token_2022::instructions::group_member_pointer::Initialize {
-            mint,
+            mint: &mint,
             authority: params.group_member_pointer_authority.as_ref(),
             member_address: params.group_member_pointer_member_address.as_ref(),
             token_program,
@@ -435,7 +435,7 @@ fn initialize_mint_extensions(
         || params.metadata_pointer_metadata_address.is_some()
     {
         pinocchio_token_2022::instructions::metadata_pointer::Initialize {
-            mint,
+            mint: &mint,
             authority: params.metadata_pointer_authority.as_ref(),
             metadata_address: params.metadata_pointer_metadata_address.as_ref(),
             token_program,
@@ -444,7 +444,7 @@ fn initialize_mint_extensions(
     }
     if let Some(close_authority) = params.close_authority_authority.as_ref() {
         pinocchio_token_2022::instructions::mint_close_authority::InitializeMintCloseAuthority {
-            mint,
+            mint: &mint,
             close_authority: Some(close_authority),
             token_program,
         }
@@ -452,7 +452,7 @@ fn initialize_mint_extensions(
     }
     if params.transfer_hook_authority.is_some() || params.transfer_hook_program_id.is_some() {
         pinocchio_token_2022::instructions::transfer_hook::InitializeTransferHook {
-            mint,
+            mint: &mint,
             authority: params.transfer_hook_authority.as_ref(),
             program_id: params.transfer_hook_program_id.as_ref(),
             token_program,
@@ -461,7 +461,7 @@ fn initialize_mint_extensions(
     }
     if let Some(delegate) = params.permanent_delegate_delegate.as_ref() {
         pinocchio_token_2022::instructions::permanent_delegate::InitializePermanentDelegate {
-            mint,
+            mint: &mint,
             delegate,
             token_program,
         }

@@ -24,8 +24,8 @@ impl SlabSchema for WritingHeader {
 
     // Misbehaving validator: tries to write through an aliased view while the
     // slab's `data` slice is live.
-    fn validate(view: &AccountView, _data: &[u8]) -> Result<(), ProgramError> {
-        let mut alias = *view;
+    fn validate(view: AccountView, _data: &[u8]) -> Result<(), ProgramError> {
+        let mut alias = view;
         let mut data = alias.try_borrow_mut()?;
         data[0] = 0xEE;
         Ok(())

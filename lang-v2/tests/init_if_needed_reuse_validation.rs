@@ -174,18 +174,18 @@ impl AnchorAccount for FakeTokenAccount {
 }
 
 #[derive(Default)]
-struct FakeMintInitParams<'a> {
+struct FakeMintInitParams {
     decimals: Option<u8>,
-    authority: Option<&'a AccountView>,
-    freeze_authority: Option<&'a AccountView>,
+    authority: Option<AccountView>,
+    freeze_authority: Option<AccountView>,
 }
 
 impl AccountInitialize for FakeMintAccount {
-    type Params<'a> = FakeMintInitParams<'a>;
+    type Params<'a> = FakeMintInitParams;
 
     fn create_and_initialize<'a>(
-        _payer: &AccountView,
-        _account: &AccountView,
+        _payer: AccountView,
+        _account: AccountView,
         _space: usize,
         _owner: &Address,
         params: &Self::Params<'a>,
@@ -198,17 +198,17 @@ impl AccountInitialize for FakeMintAccount {
 }
 
 #[derive(Default)]
-struct FakeTokenInitParams<'a> {
-    mint: Option<&'a AccountView>,
-    authority: Option<&'a AccountView>,
+struct FakeTokenInitParams {
+    mint: Option<AccountView>,
+    authority: Option<AccountView>,
 }
 
 impl AccountInitialize for FakeTokenAccount {
-    type Params<'a> = FakeTokenInitParams<'a>;
+    type Params<'a> = FakeTokenInitParams;
 
     fn create_and_initialize<'a>(
-        _payer: &AccountView,
-        _account: &AccountView,
+        _payer: AccountView,
+        _account: AccountView,
         _space: usize,
         _owner: &Address,
         params: &Self::Params<'a>,
