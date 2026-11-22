@@ -212,7 +212,9 @@ export class ProgramError extends Error {
     err: any,
     idlErrors: Map<number, string>
   ): ProgramError | null {
-    const errString: string = err.toString();
+    // `SendTransactionError` appends the logs to its message, and the failing
+    // program's log line repeats the code, so read the RPC message on its own.
+    const errString: string = err.transactionError?.message ?? err.toString();
     // TODO: don't rely on the error string. web3.js should preserve the error
     //       code information instead of giving us an untyped string.
     let unparsedErrorCode: string;
