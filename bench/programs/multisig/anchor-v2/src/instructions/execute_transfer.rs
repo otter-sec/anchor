@@ -33,16 +33,12 @@ impl ExecuteTransfer {
         let threshold = self.config.threshold;
 
         let mut approvals = 0u32;
-        for account in remaining {
-            if !account.is_signer() {
-                continue;
-            }
-            let addr = account.address();
-            for stored in stored_signers {
-                if addr == stored {
-                    approvals = approvals.wrapping_add(1);
-                    break;
-                }
+        for signer in stored_signers {
+            if remaining
+                .iter()
+                .any(|account| account.is_signer() && account.address() == signer)
+            {
+                approvals += 1;
             }
         }
 
