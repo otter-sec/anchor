@@ -1,7 +1,6 @@
 pub use pinocchio::cpi::{set_return_data, MAX_RETURN_DATA};
 use {
-    crate::{address_eq, require, Address, CpiHandle, CpiInstruction},
-    alloc::vec::Vec,
+    crate::{address_eq, require, Address, CpiHandle, CpiInstruction, Vec},
     core::{mem::MaybeUninit, slice::from_raw_parts},
     pinocchio::{
         cpi::{CpiAccount, Seed, Signer},
@@ -37,7 +36,7 @@ where
 
 /// Like [`invoke`], but marks instruction-account indices that are intentional
 /// optional `None` program-id sentinels (parallel to
-/// [`crate::ToCpiAccountsWithCapacity::optional_account_sentinel_flags_with_capacity`]).
+/// [`crate::ToCpiAccounts::optional_account_sentinel_flags`]).
 pub fn invoke_with_optional_sentinels<'a, I>(
     instruction: &I,
     account_handles: &[CpiHandle<'a>],
@@ -331,7 +330,11 @@ fn resolve_instruction_account_bindings<'a>(
 ) -> Result<Vec<Option<usize>>, ProgramError> {
     let cols = account_handles.len() + 1;
     let rows = instruction_accounts.len() + 1;
-    let mut can_match = alloc::vec![false; rows * cols];
+    let count = rows
+        .checked_mul(cols)
+        .ok_or(ProgramError::InvalidArgument)?;
+    let mut can_match = Vec::new();
+    can_match.try_resize(count, false)?;
 
     for handle_index in 0..=account_handles.len() {
         can_match[(rows - 1) * cols + handle_index] = true;
@@ -438,14 +441,15 @@ fn signers<'seeds>(signer_seeds: &'seeds [&'seeds [&'seeds [u8]]]) -> Vec<Signer
         .collect()
 }
 
-fn cpi_accounts<'a>(account_handles: &[CpiHandle<'a>]) -> Vec<MaybeUninit<CpiAccount<'a>>> {
-    let mut accounts = Vec::with_capacity(account_handles.len());
-    // SAFETY: `MaybeUninit<CpiAccount>` does not require initialization.
-    unsafe { accounts.set_len(account_handles.len()) };
-
-    for (handle, slot) in account_handles.iter().zip(accounts.iter_mut()) {
-        CpiAccount::init_from_account_view(handle.account_view(), slot);
-    }
-
-    accounts
+pub(crate) fn cpi_accounts<'a>(
+    account_handles: &[CpiHandle<'a>],
+) -> Vec<MaybeUninit<CpiAccount<'a>>> {
+    account_handles
+        .iter()
+        .map(|handle| {
+            let mut account = MaybeUninit::uninit();
+            CpiAccount::init_from_account_view(handle.account_view(), &mut account);
+            account
+        })
+        .collect()
 }

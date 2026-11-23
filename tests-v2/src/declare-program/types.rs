@@ -57,7 +57,7 @@ fn declared_weird_types_compile_and_serialize() {
         nested: weird_types::NestedGeneric {
             boxed: weird_types::GenericBox { value: 55 },
             fixed: weird_types::FixedBytes { data: [5, 6, 7, 8] },
-            items: vec![9, 10],
+            items: anchor_lang::Vec::from([9, 10]),
         },
         mode: weird_types::WeirdEnum::Named {
             fixed: [11, 12, 13, 14],

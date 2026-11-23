@@ -1,4 +1,4 @@
-use anchor_lang::{prelude::*, FixedVec};
+use anchor_lang::{prelude::*, Vec};
 
 declare_id!("E2BJE8WXAe7fLnW1ekVGg75udBFfWefNUsvPNcaKwLMm");
 
@@ -38,17 +38,10 @@ pub mod event_cpi_test {
     }
 
     #[discrim = 2]
-    pub fn emit_overflow_is_atomic(ctx: &mut Context<EmitOnce>) -> Result<()> {
-        let mut storage = FixedVec::<u8, 8>::new();
-        let result = (|| -> Result<()> {
-            emit_cpi!(EventCpiLarge { payload: [7; 16] }, &mut storage);
-            Ok(())
-        })();
-        require!(
-            matches!(result, Err(Error::InvalidInstructionData)),
-            Error::InvalidInstructionData
-        );
-        require!(storage.is_empty(), Error::InvalidInstructionData);
+    pub fn emit_with_growing_storage(ctx: &mut Context<EmitOnce>) -> Result<()> {
+        let mut storage = Vec::with_capacity(8);
+        emit_cpi!(EventCpiLarge { payload: [7; 16] }, &mut storage);
+        require!(storage.len() == 32, Error::InvalidInstructionData);
         ctx.accounts.counter.value = 2;
         Ok(())
     }

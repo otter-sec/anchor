@@ -96,11 +96,11 @@ fn emit_cpi_from_handler_succeeds() {
 }
 
 #[test]
-fn emit_cpi_overflow_restores_caller_storage_before_returning() {
+fn emit_cpi_grows_caller_storage() {
     let (mut svm, payer) = setup();
     let counter = initialize(&mut svm, &payer);
     let event_authority = event_authority_pda();
-    let data = event_cpi_test::instruction::EmitOverflowIsAtomic {}.data();
+    let data = event_cpi_test::instruction::EmitWithGrowingStorage {}.data();
 
     send_instruction(
         &mut svm,
@@ -114,7 +114,7 @@ fn emit_cpi_overflow_restores_caller_storage_before_returning() {
         &payer,
         &[],
     )
-    .expect("overflow should be handled before self-CPI");
+    .expect("caller storage should grow before self-CPI");
 
     assert_eq!(counter_value(&svm, counter), 2);
 }

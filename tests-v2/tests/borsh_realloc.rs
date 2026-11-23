@@ -1,5 +1,5 @@
 use {
-    anchor_lang::{solana_program::instruction::AccountMeta, FixedVec, InstructionData},
+    anchor_lang::{solana_program::instruction::AccountMeta, InstructionData, Vec as AnchorVec},
     anchor_v2_testing::litesvm::LiteSVM,
     solana_pubkey::Pubkey,
     solana_signer::Signer,
@@ -13,15 +13,15 @@ fn dynamic_instruction_writes_into_caller_storage_fallibly() {
     };
     let owned = instruction.data();
 
-    let mut exact = FixedVec::<u8, 15>::new();
+    let mut exact = AnchorVec::with_capacity(15);
     instruction
         .try_write_data(&mut exact)
         .expect("dynamic instruction fits caller-selected storage");
     assert_eq!(exact.as_slice(), owned.as_slice());
 
-    let mut short = FixedVec::<u8, 14>::new();
-    assert!(instruction.try_write_data(&mut short).is_err());
-    assert!(short.is_empty(), "failed writes must roll back");
+    let mut short = AnchorVec::with_capacity(14);
+    instruction.try_write_data(&mut short).unwrap();
+    assert_eq!(short.as_slice(), owned.as_slice());
 }
 
 fn program_id() -> Pubkey {

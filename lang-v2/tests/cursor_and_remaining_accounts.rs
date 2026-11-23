@@ -244,29 +244,13 @@ fn remaining_cpi_handles_preserve_transaction_flags() {
     let mut ctx: Context<'_, DummyHeader> =
         Context::new(&program_id, DummyHeader, (), &mut cursor, 2);
 
-    let handles = ctx.remaining_cpi_handles_preserving_flags::<2>().unwrap();
+    let handles = ctx.remaining_cpi_handles_preserving_flags().unwrap();
 
     assert_eq!(handles.len(), 2);
     assert!(handles[0].is_writable());
     assert!(!handles[0].is_signer());
     assert!(!handles[1].is_writable());
     assert!(handles[1].is_signer());
-}
-
-#[test]
-fn remaining_cpi_handles_reject_insufficient_capacity() {
-    let mut sbf = SbfInputBuffer::build(&[non_dup(0), non_dup(1)]);
-    let mut lookup = fresh_lookup();
-    let mut cursor =
-        unsafe { AccountCursor::new(sbf.as_mut_ptr(), lookup.as_mut_ptr() as *mut AccountView) };
-    let program_id = Address::new_from_array([0x42; 32]);
-    let mut ctx: Context<'_, DummyHeader> =
-        Context::new(&program_id, DummyHeader, (), &mut cursor, 2);
-
-    assert!(matches!(
-        ctx.remaining_cpi_handles_preserving_flags::<1>(),
-        Err(ProgramError::InvalidArgument),
-    ));
 }
 
 #[test]
@@ -280,7 +264,7 @@ fn remaining_cpi_handles_keep_runtime_borrow_checks() {
         Context::new(&program_id, DummyHeader, (), &mut cursor, 1);
     let account = &ctx.remaining_accounts()[0];
     let _borrow = account.try_borrow().unwrap();
-    let handles = ctx.remaining_cpi_handles_preserving_flags::<1>().unwrap();
+    let handles = ctx.remaining_cpi_handles_preserving_flags().unwrap();
     let instruction = Instruction {
         program_id,
         accounts: vec![AccountMeta::new(*account.address(), false)],

@@ -1,7 +1,7 @@
 use {
     anchor_lang::{
         accounts::Account, bytemuck, programs::System, solana_program::instruction::Instruction,
-        Id, InstructionData, Space, ToAccountMetas,
+        Id, Space,
     },
     anchor_v2_testing::{
         litesvm::{
@@ -51,16 +51,11 @@ fn read_oracle(svm: &LiteSVM, oracle_pubkey: &Keypair) -> Oracle {
 }
 
 fn init_oracle(svm: &mut LiteSVM, payer: &Keypair, oracle: &Keypair) {
-    let ix = Instruction::new_with_bytes(
-        prop_amm_v2::id(),
-        &instruction::Initialize {}.data(),
-        prop_amm_v2::accounts::Initialize {
-            payer: payer.pubkey(),
-            oracle: oracle.pubkey(),
-            system_program: System::id(),
-        }
-        .to_account_metas(None),
-    );
+    let ix = instruction::Initialize {}.to_instruction(prop_amm_v2::accounts::Initialize {
+        payer: payer.pubkey(),
+        oracle: oracle.pubkey(),
+        system_program: System::id(),
+    });
     send(svm, ix, &[payer, oracle]).expect("initialize");
 }
 
@@ -80,18 +75,13 @@ fn test_rotate_authority() {
     init_oracle(&mut svm, &payer, &oracle);
 
     let new_auth = Keypair::new();
-    let ix = Instruction::new_with_bytes(
-        prop_amm_v2::id(),
-        &instruction::RotateAuthority {
-            new_authority: new_auth.pubkey().to_bytes(),
-        }
-        .data(),
-        prop_amm_v2::accounts::RotateAuthority {
-            oracle: oracle.pubkey(),
-            authority: payer.pubkey(),
-        }
-        .to_account_metas(None),
-    );
+    let ix = instruction::RotateAuthority {
+        new_authority: new_auth.pubkey().to_bytes(),
+    }
+    .to_instruction(prop_amm_v2::accounts::RotateAuthority {
+        oracle: oracle.pubkey(),
+        authority: payer.pubkey(),
+    });
     send(&mut svm, ix, &[&payer]).expect("rotate");
 
     let state = read_oracle(&svm, &oracle);
@@ -106,15 +96,11 @@ fn test_update_authorized() {
     let auth = update_authority();
     assert_eq!(auth.pubkey().to_bytes(), UPDATE_AUTHORITY.to_bytes());
 
-    let ix = Instruction::new_with_bytes(
-        prop_amm_v2::id(),
-        &instruction::Update { new_price: 1234 }.data(),
-        prop_amm_v2::accounts::Update {
+    let ix =
+        instruction::Update { new_price: 1234 }.to_instruction(prop_amm_v2::accounts::Update {
             oracle: oracle.pubkey(),
             authority: auth.pubkey(),
-        }
-        .to_account_metas(None),
-    );
+        });
     let res = send(&mut svm, ix, &[&auth]).expect("update");
     println!("update CUs: {}", res.compute_units_consumed);
 
@@ -128,15 +114,11 @@ fn test_update_rejects_wrong_signer() {
     let (mut svm, payer, oracle) = setup();
     init_oracle(&mut svm, &payer, &oracle);
 
-    let ix = Instruction::new_with_bytes(
-        prop_amm_v2::id(),
-        &instruction::Update { new_price: 9999 }.data(),
-        prop_amm_v2::accounts::Update {
+    let ix =
+        instruction::Update { new_price: 9999 }.to_instruction(prop_amm_v2::accounts::Update {
             oracle: oracle.pubkey(),
             authority: payer.pubkey(),
-        }
-        .to_account_metas(None),
-    );
+        });
     let res = send(&mut svm, ix, &[&payer]);
     assert!(res.is_err(), "wrong signer must be rejected");
     assert_eq!(read_oracle(&svm, &oracle).price, 0);
@@ -151,21 +133,16 @@ fn test_update_rejects_when_not_signer() {
     let another_payer = Keypair::new();
     svm.airdrop(&another_payer.pubkey(), 1_000_000_000).unwrap();
 
-    let mut metas = prop_amm_v2::accounts::Update {
-        oracle: oracle.pubkey(),
-        authority: payer.pubkey(),
-    }
-    .to_account_metas(None);
+    let mut ix =
+        instruction::Update { new_price: 5555 }.to_instruction(prop_amm_v2::accounts::Update {
+            oracle: oracle.pubkey(),
+            authority: payer.pubkey(),
+        });
     // Drop the signer flag so the runtime serializes is_signer = 0 even
     // though the tx is signed by a different keypair — this is what the
     // asm path's is_signer check catches.
-    metas[1].is_signer = false;
+    ix.accounts[1].is_signer = false;
 
-    let ix = Instruction::new_with_bytes(
-        prop_amm_v2::id(),
-        &instruction::Update { new_price: 5555 }.data(),
-        metas,
-    );
     let res = send(&mut svm, ix, &[&another_payer]);
     assert!(res.is_err(), "non-signer authority must be rejected");
     assert_eq!(read_oracle(&svm, &oracle).price, 0);
