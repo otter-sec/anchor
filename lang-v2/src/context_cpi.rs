@@ -71,9 +71,11 @@ where
         self
     }
 
+    /// Replace the remaining accounts with a vector, an array, or a slice of handles.
+    /// Passing borrowed accounts copies their handles into an owned vector.
     #[must_use]
-    pub fn with_remaining_accounts(mut self, accounts: Vec<CpiHandle<'a>>) -> Self {
-        self.remaining_accounts = accounts;
+    pub fn with_remaining_accounts(mut self, accounts: impl Into<Vec<CpiHandle<'a>>>) -> Self {
+        self.remaining_accounts = accounts.into();
         self
     }
 

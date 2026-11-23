@@ -412,6 +412,44 @@ impl<T, const N: usize> From<[T; N]> for Vec<T> {
     }
 }
 
+impl<T: Clone> From<&[T]> for Vec<T> {
+    fn from(values: &[T]) -> Self {
+        let mut result = Self::with_capacity(values.len());
+        result.extend_from_slice(values);
+        result
+    }
+}
+
+impl<T: Clone> From<&mut [T]> for Vec<T> {
+    fn from(values: &mut [T]) -> Self {
+        Self::from(&*values)
+    }
+}
+
+impl<T: Clone, const N: usize> From<&[T; N]> for Vec<T> {
+    fn from(values: &[T; N]) -> Self {
+        Self::from(values.as_slice())
+    }
+}
+
+impl<T: Clone, const N: usize> From<&mut [T; N]> for Vec<T> {
+    fn from(values: &mut [T; N]) -> Self {
+        Self::from(values.as_slice())
+    }
+}
+
+impl<T: Clone> From<&Vec<T>> for Vec<T> {
+    fn from(values: &Vec<T>) -> Self {
+        Self::from(values.as_slice())
+    }
+}
+
+impl From<&str> for Vec<u8> {
+    fn from(value: &str) -> Self {
+        Self::from(value.as_bytes())
+    }
+}
+
 #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
 impl<T> From<Vec<T>> for std::vec::Vec<T> {
     fn from(value: Vec<T>) -> Self {
