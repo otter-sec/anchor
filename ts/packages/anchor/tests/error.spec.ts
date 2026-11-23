@@ -360,6 +360,15 @@ describe("ProgramError", () => {
     expect(programError.msg).toBe("Example error");
   });
 
+  it("decodes unique account constraint errors", () => {
+    const programError = ProgramError.parse(
+      new Error("custom program error: 0x7fb"),
+      new Map<number, string>()
+    )!;
+    expect(programError.code).toBe(2043);
+    expect(programError.msg).toBe("A unique account constraint was violated");
+  });
+
   it("returns null for unrecognised errors", () => {
     expect(ProgramError.parse(new Error("some error"), idlErrors)).toBeNull();
   });

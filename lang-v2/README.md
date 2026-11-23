@@ -66,12 +66,15 @@ Most v1 programs port with the below.
 | `Pubkey` | `Address` (drop-in replacement — same 32-byte type) |
 | `Account<T>` | `BorshAccount<T>` |
 | `#[account(mut, dup)]` | `#[account(dup)]` is a compile error — see [Duplicate accounts](#duplicate-accounts) |
+| v1 default duplicate-mutable check | `#[account(unique)]` opts back in — see [Duplicate accounts](#duplicate-accounts) |
 
 ### Duplicate accounts
 
 v1 `#[account(mut, dup)]` let mutable serializing accounts (`Account<T>`, `LazyAccount<T>`, `InterfaceAccount<T>`, `Migration`) share an address. v2 rejects `#[account(dup)]`. `BorshAccount<T>` borrows on load: a mutable alias fails with `AccountBorrowFailed` (v1: `ConstraintDuplicateMutableAccount`), and two read-only fields may still share. Zero-copy `Account<T>` follows the same rule, unlike v1 `AccountLoader<T>`, which allowed mutable duplicates. Unlike v1, a `mut` field and a read-only field of the same account also fail. `Signer`, `SystemAccount`, `UncheckedAccount`, and `Program<T>` still alias.
 
 To keep that `dup` pattern, declare the second field as `#[account(mut)] UncheckedAccount`. If the addresses match, mutate the first `BorshAccount` only. If they differ, call `BorshAccount::<T>::load_mut` on the second field's `AccountView` and call `exit()` on the result before drop. The derive writes back declared fields only. A manual `load_mut` does not run the v1 field's constraints, so re-check them (`has_one`, `seeds`, `address`, `constraint`).
+
+`#[account(unique)]` restores an opt-in per-field duplicate check: if the field's address appears in any other declared slot, including nested ones, validation fails with `ErrorCode::ConstraintUnique` (custom 2043). Programs not using `unique` pay nothing; optional `None` slots (program-id sentinel) are skipped.
 
 ### `compat` feature
 
@@ -221,7 +224,7 @@ impl AnchorAccount for DynamicAccount<Post> {
 
 #### Borrows in custom `AnchorAccount` implementations
 
-v2 has no derive-level duplicate check (see [Duplicate accounts](#duplicate-accounts)). Aliasing is caught only by the borrow each wrapper takes on the account when it loads, so a custom implementation that reads or writes account data must take it:
+v2 has no default derive-level duplicate check (see [Duplicate accounts](#duplicate-accounts)); opt-in `#[account(unique)]` restores one per field. Aliasing is otherwise caught only by the borrow each wrapper takes on the account when it loads, so a custom implementation that reads or writes account data must take it:
 
 - `load` must hold a shared borrow (`try_borrow`) until the wrapper drops, even if it deserializes the data into an owned value and no longer reads the account.
 - `load_mut` must hold an exclusive borrow (`try_borrow_mut`). The default `load_mut` only checks `is_writable` and calls `load`, so override it for any wrapper that mutates data.

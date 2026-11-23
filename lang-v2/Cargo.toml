@@ -187,3 +187,7 @@ required-features = ["testing"]
 [[test]]
 name = "init_if_needed_reuse_validation"
 required-features = ["testing"]
+
+[[test]]
+name = "unique_constraint"
+required-features = ["testing"]

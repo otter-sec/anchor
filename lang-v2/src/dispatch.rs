@@ -21,6 +21,15 @@ use {
 pub trait TryAccounts: Bumps + Sized {
     const HEADER_SIZE: usize;
 
+    /// Returns whether flattened slot `index` is an optional account.
+    ///
+    /// Manual implementations with optional slots should override this when
+    /// nested inside a derived accounts struct.
+    #[doc(hidden)]
+    fn is_optional_account_slot(_index: usize) -> bool {
+        false
+    }
+
     /// Parsed instruction args carried alongside validated accounts.
     /// Accounts structs without `#[instruction(...)]` use `()`.
     type IxArgs<'ix>;

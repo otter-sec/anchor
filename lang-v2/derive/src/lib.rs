@@ -1231,6 +1231,33 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         return err.to_compile_error();
     }
 
+    let optional_slot_checks: Vec<_> = named_fields
+        .named
+        .iter()
+        .zip(&offset_exprs)
+        .filter_map(|(field, offset)| {
+            if let Some(inner_ty) = parse::extract_nested_inner_type(&field.ty) {
+                Some(quote::quote! {
+                    if __index >= #offset
+                        && __index < #offset + <#inner_ty as anchor_lang::TryAccounts>::HEADER_SIZE
+                    {
+                        return <#inner_ty as anchor_lang::TryAccounts>::is_optional_account_slot(
+                            __index - #offset,
+                        );
+                    }
+                })
+            } else if parse::extract_option_inner(&field.ty).is_some() {
+                Some(quote::quote! {
+                    if __index == #offset {
+                        return true;
+                    }
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
     for field in &field_summaries {
         let Some(close_target) = field.attrs.close.as_ref() else {
             continue;
@@ -2122,6 +2149,13 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
 
         impl anchor_lang::TryAccounts for #name {
             const HEADER_SIZE: usize = #header_size_expr;
+
+            #[doc(hidden)]
+            #[inline(always)]
+            fn is_optional_account_slot(__index: usize) -> bool {
+                #(#optional_slot_checks)*
+                false
+            }
 
             #ix_args_assoc
 

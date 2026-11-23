@@ -408,6 +408,7 @@ export const LangErrorCode = {
     errors.ANCHOR_ERROR__CONSTRAINT_MINT_TRANSFER_HOOK_EXTENSION_PROGRAM_ID,
   ConstraintDuplicateMutableAccount:
     errors.ANCHOR_ERROR__CONSTRAINT_DUPLICATE_MUTABLE_ACCOUNT,
+  ConstraintUnique: errors.ANCHOR_ERROR__CONSTRAINT_UNIQUE,
 
   // Require.
   RequireViolated: errors.ANCHOR_ERROR__REQUIRE_VIOLATED,
@@ -601,6 +602,7 @@ export const LangErrorMessage = new Map<number, string>([
     LangErrorCode.ConstraintDuplicateMutableAccount,
     "A duplicate mutable account constraint was violated",
   ],
+  [LangErrorCode.ConstraintUnique, "A unique account constraint was violated"],
 
   // Require.
   [LangErrorCode.RequireViolated, "A require expression was violated"],

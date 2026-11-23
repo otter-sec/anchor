@@ -358,6 +358,7 @@ pub enum ErrorCode {
     ConstraintRaw,
     ConstraintExecutable,
     ConstraintZero,
+    ConstraintUnique,
     InstructionDidNotDeserialize,
     DeclaredProgramIdMismatch,
     InstructionFallbackNotFound,
@@ -393,6 +394,7 @@ impl From<ErrorCode> for solana_program_error::ProgramError {
             ErrorCode::ConstraintRaw => solana_program_error::ProgramError::Custom(2003),
             ErrorCode::ConstraintExecutable => solana_program_error::ProgramError::Custom(2007),
             ErrorCode::ConstraintZero => solana_program_error::ProgramError::Custom(2013),
+            ErrorCode::ConstraintUnique => solana_program_error::ProgramError::Custom(2043),
             ErrorCode::InstructionDidNotDeserialize => {
                 solana_program_error::ProgramError::InvalidInstructionData
             }

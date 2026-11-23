@@ -53,6 +53,7 @@ pub struct AccountAttrs {
     pub is_init_if_needed: bool,
     pub is_zeroed: bool,
     pub is_executable: bool,
+    pub unique: bool,
     pub init_span: Option<proc_macro2::Span>,
     pub init_if_needed_span: Option<proc_macro2::Span>,
     /// None = no bump attr, Some(None) = `bump` without value, Some(Some(expr)) = `bump = expr`
@@ -111,6 +112,7 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
         is_init_if_needed: false,
         is_zeroed: false,
         is_executable: false,
+        unique: false,
         init_span: None,
         init_if_needed_span: None,
         bump: None,
@@ -223,6 +225,12 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
                              it, and data accounts reject conflicting borrows of an alias \
                              at load time",
                         ));
+                    }
+                    "unique" => {
+                        if result.unique {
+                            return Err(duplicate_singleton(ident.span(), "unique"));
+                        }
+                        result.unique = true;
                     }
                     "update" => {
                         // `update(ns::key = val, ns2::key2 = val2, ...)` —
@@ -2775,6 +2783,47 @@ pub fn parse_field(
     // the default (UncheckedAccount, SystemAccount, Program, Sysvar) get
     // it via the trait default.
 
+    // `unique` is structural: field address must not appear in another
+    // declared slot, including slots inside `Nested<Inner>`. Skip the
+    // program-id sentinel only for known optional slots; real accounts can
+    // also have the program ID as their address.
+    if attrs.unique {
+        constraints.push(quote! {
+            {
+                let __unique_target = __views[#offset_expr];
+                let __unique_target_is_none =
+                    <Self as anchor_lang::TryAccounts>::is_optional_account_slot(#offset_expr)
+                        && anchor_lang::address_eq(
+                            __unique_target.address(),
+                            __program_id,
+                        );
+                if !__unique_target_is_none {
+                    for __unique_slot in 0..<Self as anchor_lang::TryAccounts>::HEADER_SIZE {
+                        if __unique_slot == #offset_expr {
+                            continue;
+                        }
+                        let __unique_other = __views[__unique_slot];
+                        let __unique_other_is_none =
+                            <Self as anchor_lang::TryAccounts>::is_optional_account_slot(
+                                __unique_slot,
+                            ) && anchor_lang::address_eq(
+                                __unique_other.address(),
+                                __program_id,
+                            );
+                        if !__unique_other_is_none
+                            && anchor_lang::address_eq(
+                                __unique_other.address(),
+                                __unique_target.address(),
+                            )
+                        {
+                            return Err(anchor_lang::ErrorCode::ConstraintUnique.into());
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     // signer check
     if attrs.is_signer {
         constraints.push(quote! {
@@ -3437,6 +3486,30 @@ mod tests {
         assert!(parsed_attrs.seeds.is_some());
         assert!(parsed_attrs.bump.is_some());
         assert!(parsed_attrs.is_signer);
+    }
+
+    #[test]
+    fn unique_attr_is_accepted() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(unique)]
+        )];
+        let parsed_attrs = parse_account_attrs(&attrs).unwrap();
+        assert!(parsed_attrs.unique);
+    }
+
+    #[test]
+    fn duplicate_unique_attr_is_rejected() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(unique, unique)]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("duplicate `unique` attr must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string().contains("`unique` already provided"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
