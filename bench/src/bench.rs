@@ -348,14 +348,12 @@ pub fn build_programs(bench_dir: &Path, suites: &[ProgramSuite]) -> Result<()> {
     for suite in suites {
         let manifest_path = format!("{}/Cargo.toml", suite.manifest_dir);
         let deploy_dir = bench_dir.join("../target/deploy");
-        // `--tools-version v1.52` is required: older platform-tools ship
-        // with Cargo 1.84 which can't parse edition2024 manifests that
-        // some transitive crates (e.g. indexmap 2.14+) now use.
+        // Match CI's SBF tools: anchor-lang-idl requires Rust 1.95.
         let status = Command::new("cargo")
             .args([
                 "build-sbf",
                 "--tools-version",
-                "v1.52",
+                "v1.58",
                 "--manifest-path",
                 &manifest_path,
                 "--sbf-out-dir",
