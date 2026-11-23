@@ -11,9 +11,40 @@ use {
 
 /// Get the return data from an invoked program.
 ///
-/// The payload stays in Pinocchio's allocator-neutral return-data buffer.
-pub fn get_return_data() -> Option<(crate::Address, pinocchio::cpi::ReturnData)> {
-    pinocchio::cpi::get_return_data().map(|data| (*data.program_id(), data))
+/// The returned address identifies the program that most recently set the
+/// data. Callers should check it against the expected program ID.
+pub fn get_return_data() -> Option<(Address, Vec<u8>)> {
+    #[cfg(any(target_os = "solana", target_arch = "bpf"))]
+    {
+        // We *could* call `sol_get_return_data` with 0 length to get the real required
+        // size instead of overallocating. However, we'd pay the base syscall cost
+        // to save on heap memory which Anchor uses sparingly.
+        let mut data = Vec::<u8>::with_capacity(MAX_RETURN_DATA);
+        let mut program_id = MaybeUninit::<Address>::uninit();
+        // SAFETY: Both pointers are valid writable storage for the syscall's outputs.
+        let size = unsafe {
+            pinocchio::cpi::sol_get_return_data(
+                data.as_mut_ptr(),
+                MAX_RETURN_DATA as u64,
+                program_id.as_mut_ptr().cast(),
+            )
+        };
+        if size == 0 {
+            return None;
+        }
+
+        // SAFETY: A nonzero result initializes the program ID and the payload
+        // prefix, up to the capacity passed to the syscall.
+        // As Pinocchio's bump allocator does not reclaim memory, there is no need
+        // to shrink the allocation to fit here.
+        unsafe {
+            data.set_len(size.min(MAX_RETURN_DATA as u64) as usize);
+            Some((program_id.assume_init(), data))
+        }
+    }
+
+    #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
+    core::hint::black_box(None)
 }
 
 /// Invoke a cross-program instruction using Anchor v2 CPI handles.
