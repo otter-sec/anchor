@@ -40,6 +40,7 @@ const-rent = []
 testing = ["const-rent", "compat"]
 
 [dependencies]
+anchor-lang-error.workspace = true
 anchor-derive-accounts = { workspace = true }
 # "copy" makes AccountView Copy — saves 2 CU per account (avoids memcpy on access).
 # "account-resize" lets AccountView::resize enforce MAX_PERMITTED_DATA_INCREASE.

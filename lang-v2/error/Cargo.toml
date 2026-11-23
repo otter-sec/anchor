@@ -1,0 +1,11 @@
+[package]
+name = "anchor-lang-error"
+version.workspace = true
+rust-version = "1.95.0"
+edition = "2021"
+repository.workspace = true
+license = "Apache-2.0"
+description = "Error definitions for anchor-lang"
+
+[dependencies]
+solana-program-error.workspace = true

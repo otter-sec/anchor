@@ -49,7 +49,9 @@ pub use solana_msg;
 pub use solana_program_log::log as __log_str;
 pub use {
     account_meta::{AccountMeta, ToAccountMetas},
+    anchor_lang_error as error,
     cpi::realloc_account,
+    error::{Error, ErrorCode, Result},
 };
 
 // Ungated re-export so generated macro code (`#[event]`, `debug!`, etc.)
@@ -331,84 +333,6 @@ pub mod __private {
             CpiHandle::readonly_with_flags(view, false, true)
         } else {
             CpiHandle::readonly(view)
-        }
-    }
-}
-
-/// Result type.
-pub type Result<T> = core::result::Result<T, solana_program_error::ProgramError>;
-
-/// Error type — just ProgramError for no_std.
-pub type Error = solana_program_error::ProgramError;
-
-/// Error codes matching Anchor v1's ErrorCode variants.
-/// Used by constraint codegen.
-pub enum ErrorCode {
-    AccountNotEnoughKeys,
-    ConstraintMut,
-    ConstraintSigner,
-    ConstraintSeeds,
-    ConstraintHasOne,
-    ConstraintAddress,
-    ConstraintAccountIsNone,
-    ConstraintClose,
-    ConstraintOwner,
-    ConstraintSpace,
-    ConstraintRentExempt,
-    ConstraintRaw,
-    ConstraintExecutable,
-    ConstraintZero,
-    InstructionDidNotDeserialize,
-    DeclaredProgramIdMismatch,
-    InstructionFallbackNotFound,
-    RequireViolated,
-    RequireEqViolated,
-    RequireNeqViolated,
-    RequireKeysEqViolated,
-    RequireKeysNeqViolated,
-    RequireGtViolated,
-    RequireGteViolated,
-}
-
-impl From<ErrorCode> for solana_program_error::ProgramError {
-    #[cold]
-    fn from(e: ErrorCode) -> Self {
-        match e {
-            ErrorCode::AccountNotEnoughKeys => {
-                solana_program_error::ProgramError::NotEnoughAccountKeys
-            }
-            // Custom codes are aligned with Anchor v1's numbering
-            ErrorCode::ConstraintMut => solana_program_error::ProgramError::Custom(2000),
-            ErrorCode::ConstraintSigner => {
-                solana_program_error::ProgramError::MissingRequiredSignature
-            }
-            ErrorCode::ConstraintSeeds => solana_program_error::ProgramError::InvalidSeeds,
-            ErrorCode::ConstraintHasOne => solana_program_error::ProgramError::Custom(2001),
-            ErrorCode::ConstraintAddress => solana_program_error::ProgramError::Custom(2012),
-            ErrorCode::ConstraintAccountIsNone => solana_program_error::ProgramError::Custom(2020),
-            ErrorCode::ConstraintClose => solana_program_error::ProgramError::Custom(2011),
-            ErrorCode::ConstraintOwner => solana_program_error::ProgramError::IllegalOwner,
-            ErrorCode::ConstraintSpace => solana_program_error::ProgramError::Custom(2019),
-            ErrorCode::ConstraintRentExempt => solana_program_error::ProgramError::Custom(2005),
-            ErrorCode::ConstraintRaw => solana_program_error::ProgramError::Custom(2003),
-            ErrorCode::ConstraintExecutable => solana_program_error::ProgramError::Custom(2007),
-            ErrorCode::ConstraintZero => solana_program_error::ProgramError::Custom(2013),
-            ErrorCode::InstructionDidNotDeserialize => {
-                solana_program_error::ProgramError::InvalidInstructionData
-            }
-            ErrorCode::DeclaredProgramIdMismatch => {
-                solana_program_error::ProgramError::IncorrectProgramId
-            }
-            ErrorCode::InstructionFallbackNotFound => {
-                solana_program_error::ProgramError::InvalidInstructionData
-            }
-            ErrorCode::RequireViolated => solana_program_error::ProgramError::Custom(2500),
-            ErrorCode::RequireEqViolated => solana_program_error::ProgramError::Custom(2501),
-            ErrorCode::RequireKeysEqViolated => solana_program_error::ProgramError::Custom(2502),
-            ErrorCode::RequireNeqViolated => solana_program_error::ProgramError::Custom(2503),
-            ErrorCode::RequireKeysNeqViolated => solana_program_error::ProgramError::Custom(2504),
-            ErrorCode::RequireGtViolated => solana_program_error::ProgramError::Custom(2505),
-            ErrorCode::RequireGteViolated => solana_program_error::ProgramError::Custom(2506),
         }
     }
 }

@@ -7,6 +7,7 @@
 //! runtime strings duplicate that at non-trivial CU cost.
 
 use {
+    anchor_lang_error::ERROR_CODE_OFFSET,
     proc_macro::TokenStream,
     proc_macro2::TokenStream as TokenStream2,
     quote::{quote, ToTokens},
@@ -15,13 +16,10 @@ use {
     },
 };
 
-/// Default first error code. Matches v1's `ERROR_CODE_OFFSET`.
-const DEFAULT_OFFSET: u32 = 6000;
-
 pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
     let offset = match parse_offset(args.into()) {
         Ok(Some(offset)) => offset,
-        Ok(None) => DEFAULT_OFFSET,
+        Ok(None) => ERROR_CODE_OFFSET,
         Err(err) => return err.to_compile_error().into(),
     };
     let mut item = parse_macro_input!(input as ItemEnum);
@@ -453,7 +451,7 @@ mod tests {
             }
         };
         assert_eq!(
-            assigned_error_codes(&item, DEFAULT_OFFSET).unwrap(),
+            assigned_error_codes(&item, ERROR_CODE_OFFSET).unwrap(),
             vec![
                 ("MyErrorCode".into(), 6000),
                 ("WithMsg".into(), 6042),
