@@ -3,11 +3,38 @@ import * as BufferLayout from "buffer-layout";
 import { Layout } from "buffer-layout";
 import { PublicKey } from "@solana/web3.js";
 
+function formatProperty(property?: string): string {
+  return property ? ` for "${property}"` : "";
+}
+
+// The fixed-width reads below go through `BufferLayout.blob`, which slices
+// with `Buffer.subarray` and so clamps at the end of the buffer instead of
+// failing. Check the bytes are there first. Copied from the guard in
+// `@anchor-lang/borsh`, which this package does not depend on, so the two
+// report a short buffer the same way.
+function assertReadableBytes(
+  b: Buffer,
+  offset: number,
+  size: number,
+  kind: string,
+  property?: string
+) {
+  const remaining = Math.max(0, b.length - offset);
+  if (offset < 0 || size < 0 || remaining < size) {
+    throw new RangeError(
+      `Invalid ${kind}${formatProperty(
+        property
+      )}: need ${size} bytes, only ${remaining} remaining bytes`
+    );
+  }
+}
+
 function uint64(property?: string): Layout<u64 | null> {
   return new WrappedLayout(
     BufferLayout.blob(8),
     (b: Buffer) => u64.fromBuffer(b),
     (n: u64) => n.toBuffer(),
+    "integer",
     property
   );
 }
@@ -17,6 +44,7 @@ function publicKey(property?: string): Layout<PublicKey> {
     BufferLayout.blob(32),
     (b: Buffer) => new PublicKey(b),
     (key: PublicKey) => key.toBuffer(),
+    "pubkey",
     property
   );
 }
@@ -29,25 +57,63 @@ class WrappedLayout<T, U> extends Layout<U> {
   layout: Layout<T>;
   decoder: (data: T) => U;
   encoder: (src: U) => T;
+  kind: string;
 
   constructor(
     layout: Layout<T>,
     decoder: (data: T) => U,
     encoder: (src: U) => T,
+    kind: string,
     property?: string
   ) {
     super(layout.span, property);
     this.layout = layout;
     this.decoder = decoder;
     this.encoder = encoder;
+    this.kind = kind;
   }
 
-  decode(b: Buffer, offset?: number): U {
+  decode(b: Buffer, offset = 0): U {
+    assertReadableBytes(b, offset, this.layout.span, this.kind, this.property);
     return this.decoder(this.layout.decode(b, offset));
   }
 
   encode(src: U, b: Buffer, offset?: number): number {
     return this.layout.encode(this.encoder(src), b, offset);
+  }
+
+  getSpan(b: Buffer, offset?: number): number {
+    return this.layout.getSpan(b, offset);
+  }
+}
+
+// `BufferLayout.union` reads its discriminator with `u8`, which does check the
+// bounds but reports a short buffer as Node's own `ERR_OUT_OF_RANGE`, naming
+// neither the field nor the shortfall. Guard it like the reads above.
+class GuardedLayout<T> extends Layout<T> {
+  layout: Layout<T>;
+  size: number;
+  kind: string;
+
+  constructor(
+    layout: Layout<T>,
+    size: number,
+    kind: string,
+    property?: string
+  ) {
+    super(layout.span, property);
+    this.layout = layout;
+    this.size = size;
+    this.kind = kind;
+  }
+
+  decode(b: Buffer, offset = 0): T {
+    assertReadableBytes(b, offset, this.size, this.kind, this.property);
+    return this.layout.decode(b, offset);
+  }
+
+  encode(src: T, b: Buffer, offset?: number): number {
+    return this.layout.encode(src, b, offset);
   }
 
   getSpan(b: Buffer, offset?: number): number {
@@ -74,8 +140,24 @@ class COptionLayout<T> extends Layout<T | null> {
   }
 
   decode(b: Buffer, offset = 0): T | null {
+    assertReadableBytes(
+      b,
+      offset,
+      this.discriminator.span,
+      "coption",
+      this.property
+    );
     const discriminator = this.discriminator.decode(b, offset);
     if (discriminator === 0) {
+      // A `None` still occupies the value bytes on chain, so a buffer that
+      // stops short of them is truncated even though nothing reads them.
+      assertReadableBytes(
+        b,
+        offset + this.discriminator.span,
+        this.layout.span,
+        "coption",
+        this.property
+      );
       return null;
     } else if (discriminator === 1) {
       return this.layout.decode(b, offset + 4);
@@ -124,21 +206,24 @@ class u64 extends BN {
   }
 }
 
+// The base layout is 165 bytes. The guards above are per field rather than a
+// check on the whole buffer, so a Token-2022 account that carries extension
+// bytes after the base layout still decodes.
 const TOKEN_ACCOUNT_LAYOUT = BufferLayout.struct([
   publicKey("mint"),
   publicKey("owner"),
   uint64("amount"),
-  coption(publicKey(), "delegate"),
+  coption(publicKey("delegate"), "delegate"),
   ((p: string) => {
     const U = BufferLayout.union(BufferLayout.u8("discriminator"), null, p);
     U.addVariant(0, BufferLayout.struct([]), "uninitialized");
     U.addVariant(1, BufferLayout.struct([]), "initialized");
     U.addVariant(2, BufferLayout.struct([]), "frozen");
-    return U;
+    return new GuardedLayout(U, BufferLayout.u8().span, "enum", p);
   })("state"),
-  coption(uint64(), "isNative"),
+  coption(uint64("isNative"), "isNative"),
   uint64("delegatedAmount"),
-  coption(publicKey(), "closeAuthority"),
+  coption(publicKey("closeAuthority"), "closeAuthority"),
 ]);
 
 export function decodeTokenAccount(b: Buffer) {
