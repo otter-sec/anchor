@@ -14,6 +14,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang-v2: Gate a handler's account re-exports by its `#[cfg]`, so a gated handler with a gated accounts struct compiles with the feature off ([#5253](https://github.com/otter-sec/anchor/pull/5253)).
+
 ### Breaking
 
 ## [2.0.0-rc.4] - 2026-11-14
