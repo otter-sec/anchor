@@ -4599,7 +4599,7 @@ fn test(
                 ),
             }
 
-            run_test_suite(
+            if let Some(code) = run_test_suite(
                 cfg,
                 cfg.path(),
                 is_localnet,
@@ -4613,7 +4613,16 @@ fn test(
                 validator_plan.stream_program_logs,
                 &extra_args,
                 &cfg.surfpool_config,
-            )?;
+            )? {
+                // `process::exit` runs no destructors: drop the gdb
+                // driver here, in the function that owns it, so its
+                // accept thread is joined and any pending traces are
+                // flushed to disk instead of being lost on a failing
+                // test run.
+                #[cfg(not(windows))]
+                drop(_gdb_guard);
+                std::process::exit(code);
+            }
         }
         if let Some(test_config) = &cfg.test_config {
             for test_suite in test_config.iter() {
@@ -4630,7 +4639,7 @@ fn test(
                     is_first_suite = false;
                 }
 
-                run_test_suite(
+                if let Some(code) = run_test_suite(
                     cfg,
                     test_suite.0,
                     is_localnet,
@@ -4644,7 +4653,16 @@ fn test(
                     validator_plan.stream_program_logs,
                     &extra_args,
                     &cfg.surfpool_config,
-                )?;
+                )? {
+                    // `process::exit` runs no destructors: drop the gdb
+                    // driver here, in the function that owns it, so its
+                    // accept thread is joined and any pending traces are
+                    // flushed to disk instead of being lost on a failing
+                    // test run.
+                    #[cfg(not(windows))]
+                    drop(_gdb_guard);
+                    std::process::exit(code);
+                }
             }
         }
         cfg.run_hooks(HookType::PostTest)?;
@@ -5044,6 +5062,13 @@ fn render_profile(cfg: &WithPath<Config>, profile_dir: &Path) -> Result<()> {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Runs one test suite.
+///
+/// Returns `Ok(Some(code))` when the test run failed, so the caller can exit
+/// with that code after flushing the gdb traces, and `Ok(None)` when the
+/// suite passed. The exit is left to the caller because `process::exit` runs
+/// no destructors: exiting here would drop the gdb driver's pending traces
+/// instead of flushing them.
 fn run_test_suite(
     cfg: &WithPath<Config>,
     test_suite_path: impl AsRef<Path>,
@@ -5058,7 +5083,7 @@ fn run_test_suite(
     stream_program_logs: bool,
     extra_args: &[String],
     surfpool_config: &Option<SurfpoolConfig>,
-) -> Result<()> {
+) -> Result<Option<i32>> {
     println!("\nRunning test suite: {:#?}\n", test_suite_path.as_ref());
     let mut validator_handle = None;
     if is_localnet && !skip_local_validator {
@@ -5160,10 +5185,10 @@ fn run_test_suite(
             }
             if let Ok(exit) = &test_result {
                 if let Some(code) = test_failure_exit_code(&exit.status) {
-                    std::process::exit(code);
+                    return Ok(Some(code));
                 }
             }
-            return Ok(());
+            return Ok(None);
         } else {
             println!("Local validator still running. Press Ctrl + C quit.");
         }
@@ -5188,7 +5213,7 @@ fn run_test_suite(
     match test_result {
         Ok(exit) => {
             if let Some(code) = test_failure_exit_code(&exit.status) {
-                std::process::exit(code);
+                return Ok(Some(code));
             }
         }
         Err(err) => {
@@ -5197,7 +5222,7 @@ fn run_test_suite(
         }
     }
 
-    Ok(())
+    Ok(None)
 }
 
 // Returns the solana-test-validator flags. When `skip_deploy` is false, this
