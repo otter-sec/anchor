@@ -145,6 +145,25 @@ fn close_zeros_the_48_byte_header() {
 }
 
 #[test]
+fn borsh_access_after_close_reports_closed_account() {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    let mut buf = AccountBuffer::<256>::new();
+    setup_vault_buf(&mut buf);
+    let dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
+
+    let mut vault = BorshAccount::<Vault>::load_mut(unsafe { buf.view() }).unwrap();
+    vault.close(unsafe { dest_buf.view() }).unwrap();
+
+    let read = catch_unwind(AssertUnwindSafe(|| vault.balance));
+    let write = catch_unwind(AssertUnwindSafe(|| vault.balance = 0));
+    let expected = Some(&"account borrow released (closed)");
+    assert_eq!(read.unwrap_err().downcast_ref::<&str>(), expected);
+    assert_eq!(write.unwrap_err().downcast_ref::<&str>(), expected);
+}
+
+#[test]
 fn close_rejects_non_writable_destination() {
     let mut buf = AccountBuffer::<256>::new();
     setup_vault_buf(&mut buf);

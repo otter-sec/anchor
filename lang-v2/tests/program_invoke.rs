@@ -750,7 +750,6 @@ fn cpi_context_invoke_accepts_mutable_borsh_handle() {
             .unwrap();
     }
 
-    acct.reacquire_borrow_mut().unwrap();
     acct.value = 11;
     assert_eq!(acct.value, 11);
 }
@@ -775,7 +774,6 @@ fn invoke_ix_accepts_mutable_borsh_handle() {
         CpiContext::new(&program, accounts).invoke_ix(ix).unwrap();
     }
 
-    acct.reacquire_borrow_mut().unwrap();
     acct.value = 11;
     assert_eq!(acct.value, 11);
 }
