@@ -458,6 +458,10 @@ where
     type Target = T;
     fn deref(&self) -> &T {
         if self.borrow.get().is_none() {
+            assert!(
+                !super::slab::is_closed(&self.view),
+                "account borrow released (closed)"
+            );
             self.reacquire_borrow_internal()
                 .expect("failed to reacquire account borrow");
         }
@@ -477,6 +481,10 @@ where
             panic!("use #[account(mut)] for mutable access");
         }
         if self.borrow.get().is_none() {
+            assert!(
+                !super::slab::is_closed(&self.view),
+                "account borrow released (closed)"
+            );
             self.reacquire_borrow_internal()
                 .expect("failed to reacquire account borrow");
         }
