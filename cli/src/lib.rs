@@ -5062,6 +5062,13 @@ fn render_profile(cfg: &WithPath<Config>, profile_dir: &Path) -> Result<()> {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Runs one test suite.
+///
+/// Returns `Ok(Some(code))` when the test run failed, so the caller can exit
+/// with that code after flushing the gdb traces, and `Ok(None)` when the
+/// suite passed. The exit is left to the caller because `process::exit` runs
+/// no destructors: exiting here would drop the gdb driver's pending traces
+/// instead of flushing them.
 fn run_test_suite(
     cfg: &WithPath<Config>,
     test_suite_path: impl AsRef<Path>,
