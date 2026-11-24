@@ -101,6 +101,9 @@ use {proc_macro::TokenStream, quote::ToTokens, syn::parse_macro_input};
 ///                 <pre><code>
 /// #[account(mut)]
 /// pub account1: Account&lt;'info, Counter&gt;,
+/// // This account can be the same as account1
+/// #[account(mut, dup)]
+/// pub account2: Account&lt;'info, Counter&gt;,
 ///                 </code></pre>
 ///             </td>
 ///         </tr>
