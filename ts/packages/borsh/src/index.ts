@@ -45,6 +45,11 @@ class BNLayout extends LayoutCls<BN> {
   }
 
   decode(b: Buffer, offset = 0) {
+    // `blob` reads through `Buffer.subarray`, which clamps at the end of the
+    // buffer instead of failing. A fixed-width integer carries no length
+    // prefix to check, so a truncated read would decode to a smaller number
+    // rather than being rejected.
+    assertReadableBytes(b, offset, this.span, "integer", this.property);
     const num = new BN(this.blob.decode(b, offset), 10, "le");
     if (this.signed) {
       return num.fromTwos(this.span * 8).clone();
@@ -118,10 +123,18 @@ class WrappedLayout<T, U> extends LayoutCls<U> {
   }
 }
 
+const PUBKEY_SPAN = 32;
+
 export function publicKey(property?: string): Layout<PublicKey> {
   return new WrappedLayout(
-    blob(32),
-    (b: Buffer) => new PublicKey(b),
+    blob(PUBKEY_SPAN),
+    // A clamped read yields fewer bytes than the span, and `PublicKey`
+    // accepts those as a shorter big-endian number, which is a different
+    // valid-looking address. Reject the truncation instead.
+    (b: Buffer) => {
+      assertReadableBytes(b, 0, PUBKEY_SPAN, "pubkey", property);
+      return new PublicKey(b);
+    },
     (key: PublicKey) => key.toBuffer(),
     property
   );
