@@ -73,7 +73,7 @@ impl SlabSchema for Mint {
     const MIN_DATA_LEN: usize = core::mem::size_of::<Self>();
 
     #[inline(always)]
-    fn validate(view: &AccountView, data: &[u8]) -> Result<(), ProgramError> {
+    fn validate(view: AccountView, data: &[u8]) -> Result<(), ProgramError> {
         require!(view.owned_by(&Token::id()), ProgramError::IllegalOwner);
         require_eq!(
             data.len(),
@@ -87,19 +87,19 @@ impl SlabSchema for Mint {
 
 /// Init params for `#[account(init, mint::decimals = 6, mint::authority = ..., ...)]`.
 #[derive(Default)]
-pub struct MintInitParams<'a> {
+pub struct MintInitParams {
     pub decimals: Option<u8>,
-    pub authority: Option<&'a AccountView>,
-    pub freeze_authority: Option<&'a AccountView>,
+    pub authority: Option<AccountView>,
+    pub freeze_authority: Option<AccountView>,
 }
 
 impl SlabInit for Mint {
-    type Params<'a> = MintInitParams<'a>;
+    type Params<'a> = MintInitParams;
 
     #[cold]
     fn create_and_initialize<'a>(
-        payer: &AccountView,
-        account: &AccountView,
+        payer: AccountView,
+        account: AccountView,
         _space: usize,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
@@ -117,10 +117,10 @@ impl SlabInit for Mint {
         )?;
 
         pinocchio_token::instructions::InitializeMint2 {
-            mint: account,
+            mint: &account,
             decimals,
             mint_authority: authority.address(),
-            freeze_authority: params.freeze_authority.map(|v| v.address()),
+            freeze_authority: params.freeze_authority.as_ref().map(|v| v.address()),
         }
         .invoke()
     }

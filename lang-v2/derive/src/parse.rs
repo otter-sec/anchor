@@ -2048,7 +2048,7 @@ fn emit_init_body(
                         if field_is_optional(field_summaries, &field_ident) {
                             quote! {
                                 __p.#key = Some(match (#value).as_ref() {
-                                    Some(__anchor_account) => __anchor_account.account(),
+                                    Some(__anchor_account) => *__anchor_account.account(),
                                     None => {
                                         return Err(
                                             anchor_lang::ErrorCode::ConstraintAccountIsNone
@@ -2059,12 +2059,12 @@ fn emit_init_body(
                             }
                         } else {
                             quote! {
-                                __p.#key = Some(#value.account());
+                                __p.#key = Some(*#value.account());
                             }
                         }
                     } else {
                         quote! {
-                            __p.#key = Some(#value.account());
+                            __p.#key = Some(*#value.account());
                         }
                     }
                 }
@@ -2156,7 +2156,7 @@ fn emit_init_body(
     };
 
     Ok(quote! {
-        let __payer = #payer.account();
+        let __payer = *#payer.account();
         #payer_signer_seeds
         #seeds_arg
         #owner_check
@@ -2168,7 +2168,7 @@ fn emit_init_body(
             __p
         };
         <#field_ty as anchor_lang::AccountInitialize>::create_and_initialize(
-            __payer, &__target, #space, &__owner, &__init_params, __seeds, __payer_signer_seeds,
+            __payer, __target, #space, &__owner, &__init_params, __seeds, __payer_signer_seeds,
         )?
     })
 }
