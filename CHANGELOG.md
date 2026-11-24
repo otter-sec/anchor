@@ -21,7 +21,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
-- avm: Check that a nightly archive's build provenance names the commit and file listed in the nightly manifest, so the manifest cannot install an older nightly build or a different tool or target ([#PR_NUMBER](https://github.com/otter-sec/anchor/pull/PR_NUMBER)).
+- avm: Check that a nightly archive's build provenance names the commit and file listed in the nightly manifest, so the manifest cannot install an older nightly build or a different tool or target ([#5362](https://github.com/otter-sec/anchor/pull/5362)).
 - ts: Honor non-empty Buffer filters in `SystemAccountsCoder.memcmp()` for nonce accounts ([#5165](https://github.com/otter-sec/anchor/pull/5165)).
 - ts: Bump `toml` to `^5.0.1` to address security advisories in `toml` <= 5.0.0 ([#5237](https://github.com/otter-sec/anchor/pull/5237)).
 - cli: Accept an explicit program id or workspace program when parsing `program extend` ([#5220](https://github.com/otter-sec/anchor/pull/5220)).
