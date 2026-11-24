@@ -5,7 +5,7 @@ use {
     anchor_lang_idl::types::{
         Idl, IdlArrayLen, IdlDefinedFields, IdlField, IdlType, IdlTypeDef, IdlTypeDefTy,
     },
-    std::fmt,
+    std::{collections::HashSet, fmt},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -99,6 +99,7 @@ pub fn diff(old: &Idl, new: &Idl) -> Vec<Finding> {
             old,
             new,
             findings: vec![],
+            visiting: HashSet::from([(acc.name.clone(), new_acc.name.clone())]),
         };
         cx.compare_def(&old_def.ty, &new_def.ty, &acc.name, true);
         for (level, message) in cx.findings {
@@ -116,6 +117,9 @@ struct Cx<'a> {
     old: &'a Idl,
     new: &'a Idl,
     findings: Vec<(Level, String)>,
+    /// Pairs of defined types being compared, to stop on recursive types
+    /// such as `Vec<Self>` or `Option<Box<Self>>`.
+    visiting: HashSet<(String, String)>,
 }
 
 impl Cx<'_> {
@@ -319,7 +323,17 @@ impl Cx<'_> {
                     return false;
                 }
                 match (find(self.old, na), find(self.new, nb)) {
-                    (Some(da), Some(db)) => self.compare_def(&da.ty, &db.ty, path, false),
+                    (Some(da), Some(db)) => {
+                        // Already compared further up: its changes are
+                        // reported there.
+                        let pair = (na.clone(), nb.clone());
+                        if !self.visiting.insert(pair.clone()) {
+                            return true;
+                        }
+                        let same = self.compare_def(&da.ty, &db.ty, path, false);
+                        self.visiting.remove(&pair);
+                        same
+                    }
                     _ => {
                         if na != nb {
                             self.add(Level::Break, format!("{path}: type `{na}` -> `{nb}`"));
@@ -491,5 +505,23 @@ mod tests {
         assert!(diff(&old, &appended).is_empty());
         let inserted = with_mode(json!([{"name": "Paused"}, {"name": "Open"}, {"name": "Closed"}]));
         assert!(levels(&old, &inserted).contains(&Level::Break));
+    }
+
+    #[test]
+    fn self_referential_types_terminate() {
+        // `children: Vec<Node>` and `next: Option<Box<Node>>` refer back to
+        // `Node`; the comparison must stop instead of recursing forever.
+        let node = |value: &str| {
+            idl(
+                "Node",
+                1,
+                json!([{"name": "value", "type": value},
+                       {"name": "children", "type": {"vec": {"defined": {"name": "Node"}}}},
+                       {"name": "next", "type": {"option": {"defined": {"name": "Node"}}}}]),
+                json!(null),
+            )
+        };
+        assert!(diff(&node("u64"), &node("u64")).is_empty());
+        assert_eq!(levels(&node("u64"), &node("u32")), vec![Level::Break]);
     }
 }
