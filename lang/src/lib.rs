@@ -232,11 +232,17 @@ pub trait AccountsExit<'info>: ToAccountMetas + ToAccountInfos<'info> {
     }
 }
 
-/// Returns the pubkeys of mutable accounts that serialize on exit.
-/// Used by the duplicate mutable account validation to check across
-/// composite (nested) account struct boundaries.
+/// Reports keys for duplicate mutable account validation across composite
+/// (nested) account struct boundaries.
 pub trait DuplicateMutableAccountKeys {
+    /// Returns the pubkeys of mutable accounts that serialize on exit.
     fn duplicate_mutable_account_keys(&self) -> Vec<Pubkey>;
+
+    /// Returns the pubkeys of mutable `AccountLoader` fields.
+    #[doc(hidden)]
+    fn duplicate_mutable_account_loader_keys(&self) -> Vec<Pubkey> {
+        Vec::new()
+    }
 }
 
 /// The close procedure to initiate garbage collection of an account, allowing
@@ -641,7 +647,7 @@ pub mod __private {
     pub use {
         crate::{
             bpf_writer::BpfWriter,
-            common::{exit_unowned, find_duplicate_key, is_closed},
+            common::{exit_unowned, find_duplicate_key, find_duplicate_loader_key, is_closed},
         },
         anchor_attribute_account::ZeroCopyAccessor,
         base64, bytemuck,

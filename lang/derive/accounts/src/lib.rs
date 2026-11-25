@@ -92,11 +92,11 @@ use {proc_macro::TokenStream, quote::ToTokens, syn::parse_macro_input};
 ///             </td>
 ///             <td>
 ///                 Allows the same mutable account to be passed multiple times within the same instruction context.<br>
-///                 By default, Anchor will prevents duplicate mutable accounts to avoid potential security issues and unintended behavior.<br>
 ///                 The <code>dup</code> constraint explicitly allows this for cases where it's intentional and safe.<br>
-///                 This constraint only applies to mutable account (`mut`) types that serialize on exit. Other types like <br>
-///                `UncheckedAccount`, `Signer`, `SystemAccount`, `AccountLoader`, `Program`, `Interface` and Readonly accounts <br>
-///                 naturally allow duplicates as they don't serialize data on exit.<br>
+///                 Anchor rejects an alias between mutable fields when one serializes on exit
+///                 (<code>Account</code>, <code>LazyAccount</code>, <code>InterfaceAccount</code>, or <code>Migration</code>)
+///                 and the other either serializes on exit or is an <code>AccountLoader</code>.<br>
+///                 Two <code>AccountLoader</code> fields can share an account without <code>dup</code>.<br>
 ///                 Example:
 ///                 <pre><code>
 /// #[account(mut)]
