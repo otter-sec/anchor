@@ -1,0 +1,41 @@
+---
+title: 1.2.1
+description: Anchor release notes for 1.2.1.
+---
+
+`1.2.1` introduces opt-in Solana v4 dependencies. This includes newer SPL interfaces and fixes [#5138](https://github.com/otter-sec/anchor/issues/5138) when `solana-v4` is enabled: initializing a token account for a Token-2022 mint with the PermissionedBurn extension no longer fails with `InvalidAccountData` because of the older pinned interface.
+
+See the full [CHANGELOG](https://github.com/otter-sec/anchor/blob/v1.2.1/CHANGELOG.md#121---2026-10-05).
+
+## How to upgrade
+
+### Using AVM (recommended)
+
+```console
+$ <blue>avm</blue> install 1.2.1
+$ <blue>avm</blue> use 1.2.1
+```
+
+### Without AVM
+
+```console
+$ <blue>cargo</blue> install <dim>--git</dim> https://github.com/otter-sec/anchor <dim>--tag</dim> v1.2.1 anchor-cli <dim>--locked</dim>
+```
+
+Then update Anchor crate(s) and TS package(s) to `1.2.1`.
+
+## Solana v4 dependencies
+
+To use Solana v4 dependencies, set `default-features = false` and add `solana-v4` to the features of each Anchor dependency that selects a Solana version, including `anchor-lang`, `anchor-spl`, and `anchor-client` when used. Solana v3 remains the default; the `solana-v3` and `solana-v4` features are mutually exclusive.
+
+For example, in your program's `Cargo.toml`:
+
+```toml
+[dependencies]
+anchor-lang = { version = "1.2.1", default-features = false, features = ["solana-v4"] }
+anchor-spl = { version = "1.2.1", default-features = false, features = ["solana-v4", "associated_token", "mint", "token", "token_2022", "token_2022_extensions"] }
+```
+
+Disabling default features also disables the default SPL modules. The example explicitly restores them; keep the features your program needs, along with any other Anchor features you already use, such as `init-if-needed` or `event-cpi`. Ensure other dependencies do not re-enable `solana-v3` through Cargo feature unification.
+
+With `solana-v4`, `anchor-spl` uses `spl-token-2022-interface` v3, which recognizes PermissionedBurn. The default `solana-v3` feature continues to use interface v2 and does not fix the issue for that extension.

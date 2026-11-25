@@ -48,7 +48,7 @@ mod anchor_lang {
 /// - = 5000 deprecated error code
 ///
 /// The starting point for user-defined errors is defined
-/// by the [ERROR_CODE_OFFSET](crate::error::ERROR_CODE_OFFSET).
+/// by the [`ERROR_CODE_OFFSET`].
 #[error_code(offset = 0)]
 pub enum ErrorCode {
     // Instructions

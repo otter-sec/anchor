@@ -16,9 +16,31 @@ The programs and their tests are located in [/tests/bench](https://github.com/ot
 
 Solana version: 4.2.0
 
+| Program | Binary Size | -   |
+| ------- | ----------- | --- |
+| bench   | 800,288     | -   |
+
+---
+
+## [1.2.2]
+
+Solana version: 3.1.10
+
 | Program | Binary Size | -                       |
 | ------- | ----------- | ----------------------- |
 | bench   | 800,288     | 🟢 **-90,856 (10.20%)** |
+
+---
+
+## [1.2.1]
+
+Solana version: 3.1.10
+
+| Program | Binary Size | -   |
+| ------- | ----------- | --- |
+| bench   | 891,144     | -   |
+
+### Notable changes
 
 ---
 
@@ -31,6 +53,8 @@ Solana version: 3.1.10
 | bench   | 891,144     | 🟢 **-40,904 (4.39%)** |
 
 ### Notable changes
+
+- Remeasured with platform-tools v1.57, SBPFv3, and Surfpool 1.5.0 to match 1.2.1. Comparisons with earlier releases include toolchain changes.
 
 ---
 

@@ -115,7 +115,7 @@ pub struct InstructionAccounts<'info> {
 
 ## `AccountInfo<'info>{:rs}`
 
-[`AccountInfo<'info>{:rs}`](https://docs.rs/solana-program/latest/solana_program/account_info/struct.AccountInfo.html) is the raw Solana account type and performs no checks. Prefer `UncheckedAccount{:rs}` instead, which makes the lack of validation explicit and requires a `/// CHECK:{:rs}` comment:
+[`AccountInfo<'info>{:rs}`](https://docs.rs/solana-account-info/latest/solana_account_info/struct.AccountInfo.html) is the raw Solana account type and performs no checks. Prefer `UncheckedAccount{:rs}` instead, which makes the lack of validation explicit and requires a `/// CHECK:{:rs}` comment:
 
 ```rust showLineNumbers=false {4}
 #[derive(Accounts)]

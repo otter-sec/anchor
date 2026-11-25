@@ -10,7 +10,7 @@ pub mod zero_cpi {
     use super::*;
     pub fn check_cpi(ctx: Context<CheckCpi>, data: u64) -> Result<()> {
         let cpi_accounts = UpdateBar {
-            authority: ctx.accounts.authority.clone(),
+            authority: ctx.accounts.authority.to_account_info(),
             bar: ctx.accounts.bar.to_account_info(),
             foo: ctx.accounts.foo.to_account_info(),
         };
@@ -28,7 +28,7 @@ pub struct CheckCpi<'info> {
     )]
     bar: AccountLoader<'info, Bar>,
     #[account(signer)]
-    authority: AccountInfo<'info>,
+    authority: UncheckedAccount<'info>,
     foo: AccountLoader<'info, Foo>,
     zero_copy_program: Program<'info, ZeroCopy>,
 }

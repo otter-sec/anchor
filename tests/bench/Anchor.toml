@@ -1,5 +1,5 @@
 [toolchain]
-anchor_version = "1.2.0"
+anchor_version = "1.2.2"
 solana_version = "3.1.10"
 
 [provider]

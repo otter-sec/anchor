@@ -2,7 +2,7 @@ extern crate proc_macro;
 
 use {
     anchor_syn::{codegen::program::common::gen_discriminator, Overrides},
-    quote::{quote, quote_spanned, ToTokens},
+    quote::{quote, quote_spanned},
     syn::{
         parenthesized,
         parse::{Parse, ParseStream},
@@ -20,7 +20,7 @@ mod lazy;
 
 /// An attribute for a data structure representing a Solana account.
 ///
-/// `#[account]` generates trait implementations for the following traits:
+/// By default, `#[account]` generates implementations for the following traits:
 ///
 /// - [`AccountSerialize`](./trait.AccountSerialize.html)
 /// - [`AccountDeserialize`](./trait.AccountDeserialize.html)
@@ -30,10 +30,17 @@ mod lazy;
 /// - [`Discriminator`](./trait.Discriminator.html)
 /// - [`Owner`](./trait.Owner.html)
 ///
-/// When implementing account serialization traits the first 8 bytes are
-/// reserved for a unique account discriminator by default, self described by
-/// the first 8 bytes of the SHA256 of the account's Rust ident. This is unless
-/// the discriminator was overridden with the `discriminator` argument (see
+/// With `#[account(zero_copy)]`, the macro implements `ZeroCopy`,
+/// `AccountDeserialize`, `Discriminator`, and `Owner`, and derives `Copy`,
+/// `Clone`, `Pod`, and `Zeroable`. It does not generate `AccountSerialize` or
+/// the Borsh serialization traits. In either mode, `Owner` is not generated
+/// when a custom namespace is specified.
+///
+/// By default, the first 8 bytes of account data are reserved for a unique
+/// account discriminator, computed as the first 8 bytes of the SHA256 hash of
+/// `account:<StructName>`, where `<StructName>` is the account's Rust
+/// identifier. A custom namespace replaces the `account` prefix. The
+/// `discriminator` argument overrides the derived discriminator (see
 /// [Arguments](#arguments)).
 ///
 /// As a result, any calls to `AccountDeserialize`'s `try_deserialize` will
@@ -343,9 +350,7 @@ impl Parse for AccountArg {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         // Namespace
         if let Ok(ns) = input.parse::<LitStr>() {
-            return Ok(Self::Namespace(
-                ns.to_token_stream().to_string().replace('\"', ""),
-            ));
+            return Ok(Self::Namespace(ns.value()));
         }
 
         // Zero copy
@@ -544,14 +549,15 @@ pub fn zero_copy(
         if !attr.path().is_ident("derive") {
             continue;
         }
-        if let syn::Meta::List(list) = &attr.meta {
-            let tokens_str = list.tokens.to_string();
-            if tokens_str.contains("bytemuck :: Pod") {
+        if let Err(err) = attr.parse_nested_meta(|meta| {
+            if ends_with_bytemuck_derive(&meta.path, "Pod") {
                 has_pod_attr = true;
-            }
-            if tokens_str.contains("bytemuck :: Zeroable") {
+            } else if ends_with_bytemuck_derive(&meta.path, "Zeroable") {
                 has_zeroable_attr = true;
             }
+            Ok(())
+        }) {
+            return err.into_compile_error().into();
         }
     }
 
@@ -580,15 +586,16 @@ pub fn zero_copy(
 
     #[cfg(feature = "idl-build")]
     {
-        let derive_unsafe = if is_unsafe {
-            // Not a real proc-macro but exists in order to pass the serialization info
+        // Not real proc-macros but exist in order to pass the serialization info,
+        // whichever path the user's own bytemuck derives were written with
+        let derive_serialization = if is_unsafe {
             quote! { #[derive(bytemuck::Unsafe)] }
         } else {
-            quote! {}
+            quote! { #[derive(bytemuck::Pod)] }
         };
 
         let zc_struct = syn::parse_quote! {
-            #derive_unsafe
+            #derive_serialization
             #ret
         };
         let idl_build_impl = anchor_syn::idl::impl_idl_build_struct(&zc_struct);
@@ -600,6 +607,16 @@ pub fn zero_copy(
 
     #[allow(unreachable_code)]
     proc_macro::TokenStream::from(ret)
+}
+
+// Any path ending in `bytemuck::<leaf>`, so re-exports like `crate::bytemuck::Pod` count.
+fn ends_with_bytemuck_derive(path: &syn::Path, leaf: &str) -> bool {
+    let mut segments = path.segments.iter().rev();
+
+    matches!(
+        (segments.next(), segments.next()),
+        (Some(last), Some(parent)) if last.ident == leaf && parent.ident == "bytemuck"
+    )
 }
 
 /// Convenience macro to define a static public key.
@@ -629,4 +646,31 @@ pub fn declare_id(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     #[allow(unreachable_code)]
     proc_macro::TokenStream::from(ret)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn namespace_of(input: &str) -> syn::Result<Option<String>> {
+        Ok(syn::parse_str::<AccountArgs>(input)?.namespace)
+    }
+
+    #[test]
+    fn namespace_literals_use_the_string_value() {
+        let cases = [
+            (r#""abc""#, "abc"),
+            (r#"r"abc""#, "abc"),
+            (r##"r#"abc"#"##, "abc"),
+            (r#""a\"b""#, "a\"b"),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(
+                namespace_of(input).unwrap().as_deref(),
+                Some(expected),
+                "namespace from {input}"
+            );
+        }
+    }
 }

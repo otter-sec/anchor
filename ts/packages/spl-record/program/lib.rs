@@ -28,32 +28,32 @@ pub mod spl_record {
 #[derive(Accounts)]
 pub struct Initialize<'info> {
     #[account(mut)]
-    record_account: AccountInfo<'info>,
-    authority: AccountInfo<'info>,
+    record_account: UncheckedAccount<'info>,
+    authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct Write<'info> {
     #[account(mut)]
-    record_account: AccountInfo<'info>,
+    record_account: UncheckedAccount<'info>,
     signer: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct SetAuthority<'info> {
     #[account(mut)]
-    record_account: AccountInfo<'info>,
+    record_account: UncheckedAccount<'info>,
     signer: Signer<'info>,
-    new_authority: AccountInfo<'info>,
+    new_authority: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct CloseAccount<'info> {
     #[account(mut)]
-    record_account: AccountInfo<'info>,
+    record_account: UncheckedAccount<'info>,
     signer: Signer<'info>,
     #[account(mut)]
-    receiver: AccountInfo<'info>,
+    receiver: UncheckedAccount<'info>,
 }
 
 #[account]

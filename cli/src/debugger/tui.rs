@@ -1011,7 +1011,7 @@ fn window_from_lines(lines: &[String], target_line: u32, height: u32) -> Vec<(u3
 ///
 /// Returns `None` when nothing hits. The caller surfaces that as a
 /// "source not available" notice in the TUI source pane.
-fn resolve_src_path(
+pub(super) fn resolve_src_path(
     file: &std::path::Path,
     roots: &[std::path::PathBuf],
     rewrites: &[(std::path::PathBuf, std::path::PathBuf)],

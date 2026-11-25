@@ -738,4 +738,43 @@ mod tests {
         assert_eq!(stems[1].stem.file_name().unwrap(), "0002__tx1");
         assert_eq!(stems[2].stem.file_name().unwrap(), "0001__tx2");
     }
+
+    #[test]
+    fn dropping_gdb_driver_flushes_pending_captures_and_removes_socket() {
+        let dir = tempdir().unwrap();
+        let profile_dir = dir.path().join("profile");
+        let driver = start_gdb_driver(&profile_dir).unwrap();
+        assert!(driver.sock_path().exists());
+
+        // A capture that arrived but has not been flushed yet: nothing is
+        // on disk until the driver is dropped, which is exactly what the
+        // `anchor test` exit path used to skip via `process::exit`.
+        driver.captures.lock().unwrap().push(PendingCapture {
+            test_name: "failing_test".to_string(),
+            capture: CapturedInvocation {
+                regs: vec![0u8; REG_BYTES],
+                insns: vec![1, 2, 3],
+                cu: vec![4, 5],
+                children: Vec::new(),
+            },
+        });
+        let trace_dir = profile_dir.join("failing_test");
+        assert!(!trace_dir.join("0001__tx1.gdb.regs").exists());
+
+        drop(driver);
+
+        assert!(!profile_dir.join("gdb.sock").exists());
+        assert_eq!(
+            std::fs::read(trace_dir.join("0001__tx1.gdb.regs")).unwrap(),
+            vec![0u8; REG_BYTES]
+        );
+        assert_eq!(
+            std::fs::read(trace_dir.join("0001__tx1.gdb.insns")).unwrap(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(
+            std::fs::read(trace_dir.join("0001__tx1.gdb.cu")).unwrap(),
+            vec![4, 5]
+        );
+    }
 }

@@ -20,7 +20,9 @@ use {
 };
 
 const ANCHOR_MSRV: &str = "1.89.0";
-const ANCHOR_V2_TEMPLATE_VERSION: &str = "2.0.0";
+const ANCHOR_V2_TEMPLATE_VERSION: &str = "2.0.0-rc.2";
+// Host-side v2 tests depend on Agave and LiteSVM from anchor-next, which require newer Rust.
+const ANCHOR_V2_HOST_RUST_VERSION: &str = "1.97.1";
 
 /// Anchor template version to generate.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Parser, ValueEnum, AbsolutePath)]
@@ -53,7 +55,10 @@ pub fn create_program(
     let lib_rs_path = program_path.join("src").join("lib.rs");
     let mut common_files = vec![
         ("Cargo.toml".into(), workspace_manifest()),
-        ("rust-toolchain.toml".into(), rust_toolchain_toml()),
+        (
+            "rust-toolchain.toml".into(),
+            rust_toolchain_toml(anchor_version),
+        ),
         (
             program_path.join("Cargo.toml"),
             cargo_toml(name, test_template, anchor_version),
@@ -94,10 +99,14 @@ pub fn create_program(
 }
 
 /// Helper to create a rust-toolchain.toml at the workspace root
-fn rust_toolchain_toml() -> String {
+fn rust_toolchain_toml(anchor_version: AnchorVersion) -> String {
+    let channel = match anchor_version {
+        AnchorVersion::V1 => ANCHOR_MSRV,
+        AnchorVersion::V2 => ANCHOR_V2_HOST_RUST_VERSION,
+    };
     format!(
         r#"[toolchain]
-channel = "{ANCHOR_MSRV}"
+channel = "{channel}"
 components = ["rustfmt","clippy"]
 profile = "minimal"
 "#
@@ -233,7 +242,7 @@ fn create_program_template_single_v2(name: &str, program_path: &Path, target_pat
     vec![(
         program_path.join("src").join("lib.rs"),
         format!(
-            r#"use anchor_lang_v2::prelude::*;
+            r#"use anchor_lang::prelude::*;
 
 declare_id!("{}");
 
@@ -468,7 +477,7 @@ pub mod error;
 pub mod instructions;
 pub mod state;
 
-use anchor_lang_v2::prelude::*;
+use anchor_lang::prelude::*;
 
 pub use instructions::*;
 
@@ -489,7 +498,7 @@ pub mod {} {{
         ),
         (
             src_path.join("constants.rs"),
-            r#"use anchor_lang_v2::prelude::*;
+            r#"use anchor_lang::prelude::*;
 
 #[constant]
 pub const SEED: &str = "anchor";
@@ -498,7 +507,7 @@ pub const SEED: &str = "anchor";
         ),
         (
             src_path.join("error.rs"),
-            r#"use anchor_lang_v2::prelude::*;
+            r#"use anchor_lang::prelude::*;
 
 #[error_code]
 pub enum ErrorCode {
@@ -518,7 +527,7 @@ pub use initialize::*;
         ),
         (
             src_path.join("instructions").join("initialize.rs"),
-            r#"use anchor_lang_v2::prelude::*;
+            r#"use anchor_lang::prelude::*;
 
 use crate::state::Counter;
 
@@ -542,7 +551,7 @@ pub fn handler(ctx: &mut Context<Initialize>) -> Result<()> {
         ),
         (
             src_path.join("state.rs"),
-            r#"use anchor_lang_v2::prelude::*;
+            r#"use anchor_lang::prelude::*;
 
 #[account]
 pub struct Counter {
@@ -712,8 +721,8 @@ idl-build = []
 {2}
 
 [dependencies]
-# Once anchor-lang-v2 is published to crates.io, swap to: anchor-lang-v2 = "{3}"
-anchor-lang-v2 = {{ git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }}
+# Once Anchor v2 is published to crates.io, swap to: anchor-lang = "{3}"
+anchor-lang = {{ git = "https://github.com/otter-sec/anchor.git", branch = "anchor-next" }}
 solana-program-log = {{ version = "1.1", features = ["macro"] }}
 wincode = {{ version = "0.5", features = ["derive"] }}
 {4}
@@ -1920,7 +1929,7 @@ fn create_program_template_mollusk_test_v2(name: &str, tests_path: &Path) -> Fil
             r#"#![cfg(feature = "test-sbf")]
 
 use {{
-    anchor_lang_v2::{{
+    anchor_lang::{{
         accounts::Account, solana_program::instruction::Instruction, InstructionData, Space,
         ToAccountMetas,
     }},
@@ -2087,7 +2096,7 @@ fn create_program_template_litesvm_test_v2(name: &str, tests_path: &Path) -> Fil
         format!(
             r#"
 use {{
-    anchor_lang_v2::{{
+    anchor_lang::{{
         accounts::Account, bytemuck, programs::System,
         solana_program::instruction::Instruction, Id, InstructionData, Space, ToAccountMetas,
     }},
@@ -2200,17 +2209,24 @@ mod tests {
         assert!(test.contains("[Buffer.from(\"counter\")]"));
         assert!(test.contains(".accountsPartial({ counter })"));
         assert!(!test.contains("counter: counter.publicKey"));
+
+        let toolchain = rust_toolchain_toml(AnchorVersion::V1);
+        assert!(toolchain.contains("channel = \"1.89.0\""));
     }
 
     #[test]
     fn v2_templates_use_anchor_next_counter_shape() {
         let manifest = cargo_toml("counter", Some(&TestTemplate::Litesvm), AnchorVersion::V2);
-        assert!(manifest.contains("anchor-lang-v2 = { git = "));
+        assert!(manifest.contains("anchor-lang = { git = "));
+        assert!(!manifest.contains("anchor-lang-v2"));
         assert!(manifest.contains("profile = [\"anchor-v2-testing/profile\"]"));
         assert!(manifest.contains("anchor-v2-testing = { git = "));
 
         let test = typescript_test("counter", AnchorVersion::V2);
         assert!(test.contains("const counter = anchor.web3.Keypair.generate();"));
         assert!(test.contains("counter: counter.publicKey"));
+
+        let toolchain = rust_toolchain_toml(AnchorVersion::V2);
+        assert!(toolchain.contains("channel = \"1.97.1\""));
     }
 }

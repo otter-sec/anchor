@@ -134,6 +134,45 @@ describe("IDL", () => {
       assert(account.pubkey.equals(pubkey));
     });
 
+    it("Can use `NonZero*` integers", async () => {
+      const fields = {
+        nonZeroU8: 9,
+        nonZeroI64: new BN(-4),
+        optionNonZeroU32: 11,
+      };
+
+      // The IDL describes `NonZero*` as the inner integer, so the client
+      // sends plain numbers and gets the plain integer back.
+      const ret = await program.methods
+        .nonZeroTypes(5, new BN(-7), fields)
+        .view();
+      assert.strictEqual(ret, 5);
+
+      // The program must still enforce the non-zero invariant on-chain.
+      const expectRejected = async (
+        u8: number,
+        i64: BN,
+        fieldsArg: typeof fields
+      ) => {
+        try {
+          await program.methods.nonZeroTypes(u8, i64, fieldsArg).rpc();
+        } catch (e) {
+          assert.instanceOf(e, anchor.AnchorError);
+          assert.strictEqual(
+            (e as anchor.AnchorError).error.errorCode.code,
+            "InstructionDidNotDeserialize"
+          );
+          return;
+        }
+        assert.fail("Zero value was accepted");
+      };
+
+      await expectRejected(0, new BN(-7), fields);
+      await expectRejected(5, new BN(0), fields);
+      await expectRejected(5, new BN(-7), { ...fields, nonZeroU8: 0 });
+      await expectRejected(5, new BN(-7), { ...fields, optionNonZeroU32: 0 });
+    });
+
     it("Can use unsized types", async () => {
       const kp = anchor.web3.Keypair.generate();
 

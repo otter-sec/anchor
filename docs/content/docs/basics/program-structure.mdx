@@ -366,9 +366,8 @@ The key functionalities of the `#[account]` macro include:
   When creating an account, the program owner of the account is automatically
   set to the program specified in `declare_id`.
 - [Set Discriminator](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/account/src/lib.rs#L113-L130):
-  A unique 8 byte discriminator, specific to the account type, is added as the
-  first 8 bytes of account data during its initialization. This helps in
-  differentiating account types and is used for account validation.
+  Anchor writes the discriminator at the start of the account data during
+  initialization and checks it when deserializing the account.
 - [Data Serialization and Deserialization](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/account/src/lib.rs#L226-L272):
   Account data is automatically serialized and deserialized as the account type.
 
@@ -408,14 +407,20 @@ pub struct NewAccount {
 
 ### Account Discriminator
 
-An account discriminator in an Anchor program refers to an 8 byte identifier
-unique to each account type. You can find the implementation of the account
-discriminator
-[here](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/account/src/lib.rs#L113-L130).
+The [default account discriminator](https://github.com/otter-sec/anchor/blob/62865c636aecc6974fc9cfebfc6cf08ca4f0bb72/lang/attribute/account/src/lib.rs#L113-L130)
+is the first 8 bytes of the SHA256 hash of `account:<AccountName>`. Anchor
+stores it at the start of the account data when the account is created.
 
-The discriminator is the first 8 bytes of the SHA256 hash of the string
-`account:<AccountName>`. This discriminator is stored as the first 8 bytes of
-account data when an account is created.
+<Callout type="error" title="Generic account types share a discriminator">
+  The default discriminator uses the struct name and omits generic arguments.
+  All instantiations of the same generic `#[account]` struct pass the same
+  discriminator check. If deserialization also succeeds, Anchor reads the
+  account as the expected type even if it was written as a different one. Use
+  distinct account structs with distinct discriminators for account types
+  that your program must distinguish.
+
+  See [Generic Account Types](/docs/footguns#generic-account-types) for details.
+</Callout>
 
 When creating an account in an Anchor program, 8 bytes must be allocated for the
 discriminator.

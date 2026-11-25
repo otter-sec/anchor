@@ -13,7 +13,6 @@ publish() {
   # We still build the package even if we don't publish it, as yarn workspace will
   # use the local version of each package, and if it's unbuilt then any subsequent
   # build will error out due to missing files.
-  yarn --frozen-lockfile
   local dirname
   dirname="$(basename "$dir")"
   if [[ "$dirname" == spl-* ]]; then
@@ -54,6 +53,8 @@ publish() {
 }
 
 base="ts/packages"
+
+(cd ts && yarn --frozen-lockfile)
 
 publish "$base/borsh"
 publish "$base/anchor-errors"

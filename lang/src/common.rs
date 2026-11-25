@@ -12,6 +12,12 @@ pub(crate) fn close<'info>(
     info: &AccountInfo<'info>,
     sol_destination: &AccountInfo<'info>,
 ) -> Result<()> {
+    // The `close` constraint rejects this. A manual `.close()` call does not
+    // pass through that constraint, and closing into the same account burns its lamports.
+    if info.key == sol_destination.key {
+        return Err(Error::from(ErrorCode::ConstraintClose));
+    }
+
     // Transfer lamports from the account to the sol_destination.
     sol_destination.add_lamports(info.lamports())?;
     **info.lamports.borrow_mut() = 0;
@@ -117,5 +123,52 @@ mod tests {
         refs[5] = Some(&k[4]);
         refs[7] = Some(&k[2]);
         assert_eq!(find_duplicate_key(&refs), Some((5, &k[4])));
+    }
+
+    #[test]
+    fn close_rejects_the_same_account() {
+        let key = Pubkey::new_from_array([1; 32]);
+        let owner = Pubkey::new_from_array([2; 32]);
+        let mut src_lamports = 10;
+        let mut dst_lamports = 3;
+        let mut src_data = [];
+        let mut dst_data = [];
+        let src = AccountInfo::new(
+            &key,
+            false,
+            true,
+            &mut src_lamports,
+            &mut src_data,
+            &owner,
+            false,
+        );
+        let dst = AccountInfo::new(
+            &key,
+            false,
+            true,
+            &mut dst_lamports,
+            &mut dst_data,
+            &owner,
+            false,
+        );
+
+        let err = close(&src, &dst).unwrap_err();
+        match err {
+            Error::AnchorError(e) => {
+                assert_eq!(e.error_code_number, ErrorCode::ConstraintClose as u32);
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+        assert_eq!(src.lamports(), 10);
+        assert_eq!(dst.lamports(), 3);
+
+        let err = close(&src, &src).unwrap_err();
+        match err {
+            Error::AnchorError(e) => {
+                assert_eq!(e.error_code_number, ErrorCode::ConstraintClose as u32);
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+        assert_eq!(src.lamports(), 10);
     }
 }

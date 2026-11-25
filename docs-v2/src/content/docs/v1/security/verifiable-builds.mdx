@@ -15,6 +15,12 @@ Produce a verifiable build:
 $ <blue>anchor</blue> build <dim>--verifiable</dim>
 ```
 
+The binary is written to `target/verifiable`. Deploy it instead of the regular build in `target/deploy`:
+
+```console
+$ <blue>anchor</blue> program deploy <dim>--verifiable</dim>
+```
+
 ## Verifying
 
 Verify a build against a program deployed on mainnet:

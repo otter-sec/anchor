@@ -774,7 +774,7 @@ macro_rules! require {
 
 /// Ensures two NON-PUBKEY values are equal.
 ///
-/// Use [require_keys_eq](crate::prelude::require_keys_eq)
+/// Use [require_keys_eq]
 /// to compare two pubkeys.
 ///
 /// Can be used with or without a custom error code.
@@ -804,7 +804,7 @@ macro_rules! require_eq {
 
 /// Ensures two NON-PUBKEY values are not equal.
 ///
-/// Use [require_keys_neq](crate::prelude::require_keys_neq)
+/// Use [require_keys_neq]
 /// to compare two pubkeys.
 ///
 /// Can be used with or without a custom error code.
@@ -834,7 +834,7 @@ macro_rules! require_neq {
 
 /// Ensures two pubkeys values are equal.
 ///
-/// Use [require_eq](crate::prelude::require_eq)
+/// Use [require_eq]
 /// to compare two non-pubkey values.
 ///
 /// Can be used with or without a custom error code.
@@ -864,7 +864,7 @@ macro_rules! require_keys_eq {
 
 /// Ensures two pubkeys are not equal.
 ///
-/// Use [require_neq](crate::prelude::require_neq)
+/// Use [require_neq]
 /// to compare two non-pubkey values.
 ///
 /// Can be used with or without a custom error code.
@@ -897,7 +897,7 @@ macro_rules! require_keys_neq {
 /// Ensures the first NON-PUBKEY value is greater than the second
 /// NON-PUBKEY value.
 ///
-/// To include an equality check, use [require_gte](crate::require_gte).
+/// To include an equality check, use [require_gte].
 ///
 /// Can be used with or without a custom error code.
 ///

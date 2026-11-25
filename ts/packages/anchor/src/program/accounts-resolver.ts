@@ -82,7 +82,8 @@ export class AccountsResolver<IDL extends Idl> {
     this.resolveEventCpi(this._idlIx.accounts);
     this.resolveConst(this._idlIx.accounts);
 
-    // Auto populate pdas and relations until we stop finding new accounts
+    // Auto populate pdas and relations until none are left unresolved and
+    // the custom resolver stops reporting progress
     let depth = 0;
     while (
       (await this.resolvePdasAndRelations(this._idlIx.accounts)) +
@@ -114,10 +115,15 @@ export class AccountsResolver<IDL extends Idl> {
         const unresolvedPaths = this.getUnresolvedAccounts(resolvableAccs);
         const unresolvedAccs = this.formatAccountPaths(unresolvedPaths);
 
-        const parts = [
-          `Reached maximum depth for account resolution.`,
-          `Unresolved accounts: ${unresolvedAccs}`,
-        ];
+        const parts = [`Reached maximum depth for account resolution.`];
+        if (!unresolvedPaths.length && this._customResolver) {
+          parts.push(
+            "The custom account resolver returned a non-zero `resolved`",
+            "count on every pass."
+          );
+        } else {
+          parts.push(`Unresolved accounts: ${unresolvedAccs}`);
+        }
         const relevantErrors = unresolvedPaths
           .map((path) => ({
             path: this.pathKey(path),
@@ -387,36 +393,38 @@ export class AccountsResolver<IDL extends Idl> {
     }
   }
 
+  // Returns the number of PDA and relation accounts that are still unresolved
+  // after this pass.
   private async resolvePdasAndRelations(
     accounts: IdlInstructionAccountItem[],
     path: string[] = []
   ): Promise<number> {
-    let found = 0;
+    let unresolved = 0;
     for (const accountOrAccounts of accounts) {
       const name = accountOrAccounts.name;
       if (isCompositeAccounts(accountOrAccounts)) {
-        found += await this.resolvePdasAndRelations(
+        unresolved += await this.resolvePdasAndRelations(
           accountOrAccounts.accounts,
           [...path, name]
         );
       } else {
         const account = accountOrAccounts;
         if ((account.pda || account.relations) && !this.get([...path, name])) {
-          found++;
-
           // Accounts might not get resolved successfully if a seed depends on
           // another seed to be resolved *and* the accounts for resolution are
           // out of order. In this case, skip the accounts that throw in order
           // to resolve those accounts later.
-          if (await this.resolvePda(account, path, name)) {
-            continue;
+          if (!(await this.resolvePda(account, path, name))) {
+            await this.resolveRelation(account, path, name);
           }
-          await this.resolveRelation(account, path, name);
+          if (!this.get([...path, name])) {
+            unresolved++;
+          }
         }
       }
     }
 
-    return found;
+    return unresolved;
   }
 
   private async resolvePda(

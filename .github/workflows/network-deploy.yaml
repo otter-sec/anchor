@@ -12,12 +12,6 @@ env:
   SOLANA_VERSION: 4.1.0-rc.1
   CARGO_PROFILE: debug
   ANCHOR_BINARY_NAME: anchor-binary-network-deploy
-  CARGO_CACHE_PATH: |
-    ~/.cargo/bin/
-    ~/.cargo/registry/index/
-    ~/.cargo/registry/cache/
-    ~/.cargo/git/db/
-    ./target/
 
 jobs:
   setup-anchor-cli:
@@ -30,13 +24,18 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/setup/
-
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        name: Cache Cargo registry + index
-        id: cache-anchor
+      - uses: ./.github/actions/setup-solana/
+      - uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4 # v2
+        name: Warm SBF platform tools
         with:
-          path: ${{ env.CARGO_CACHE_PATH }}
-          key: cargo-${{ runner.os }}-${{ env.CARGO_PROFILE }}-anchor-${{ hashFiles('**/Cargo.lock') }}
+          retry_wait_seconds: 60
+          timeout_minutes: 5
+          max_attempts: 5
+          retry_on: error
+          shell: bash
+          command: cargo build-sbf --install-only
+
+      - uses: ./.github/actions/setup-cargo-cache/
 
       - run: cargo install --path cli anchor-cli --locked --force --debug
 
@@ -70,6 +69,8 @@ jobs:
 
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-solana/
+        with:
+          cache-save: false
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -78,15 +79,7 @@ jobs:
 
       - run: chmod +x ~/.cargo/bin/anchor
 
-      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
-        name: Cache Cargo registry + index
-        id: cache-cargo-build
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: cargo-${{ runner.os }}-network-deploy-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+      - uses: ./.github/actions/setup-cargo-cache/
 
       - name: Create minimal Anchor program
         env:

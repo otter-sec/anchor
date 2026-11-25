@@ -45,7 +45,7 @@
 //!
 //! More examples can be found in [here].
 //!
-//! [here]: https://github.com/otter-sec/anchor/tree/v1.2.0/client/example/src
+//! [here]: https://github.com/otter-sec/anchor/tree/v1.2.2/client/example/src
 //!
 //! # Features
 //!
@@ -54,7 +54,7 @@
 //! The client is blocking by default. To enable asynchronous client, add `async` feature:
 //!
 //! ```toml
-//! anchor-client = { version = "1.2.0", features = ["async"] }
+//! anchor-client = { version = "1.2.2", features = ["async"] }
 //! ````
 //!
 //! ## `mock`
@@ -226,7 +226,7 @@ impl<C: Clone + Deref<Target = impl Signer>> Client<C> {
 }
 
 /// Auxiliary data structure to align the types of the Solana CLI utils with Anchor client.
-/// Client<C> implementation requires <C: Clone + Deref<Target = impl Signer>> which does not comply with Box<dyn Signer>
+/// `Client<C>` implementation requires `<C: Clone + Deref<Target = impl Signer>>` which does not comply with `Box<dyn Signer>`
 /// that's used when loaded Signer from keypair file. This struct is used to wrap the usage.
 pub struct DynSigner(pub Arc<dyn Signer>);
 
@@ -401,17 +401,31 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
                     continue;
                 }
 
-                let signature: Signature = logs.value.signature.parse().map_err(|e| {
-                    ClientError::LogParseError(format!(
-                        "Invalid signature '{}': {e}",
-                        logs.value.signature
-                    ))
-                })?;
+                let signature: Signature = match logs.value.signature.parse() {
+                    Ok(signature) => signature,
+                    Err(e) => {
+                        // A single malformed notification must not kill the
+                        // subscription; skip it and keep listening.
+                        eprintln!(
+                            "Skipping event notification with invalid signature '{}': {e}",
+                            logs.value.signature
+                        );
+                        continue;
+                    }
+                };
                 let ctx = EventContext {
                     signature,
                     slot: logs.context.slot,
                 };
-                let events = parse_logs(&logs.value.logs, &program_id_str)?;
+                let events = match parse_logs(&logs.value.logs, &program_id_str) {
+                    Ok(events) => events,
+                    Err(e) => {
+                        // Same as above: one bad log line ends the stream
+                        // otherwise, so skip the notification instead.
+                        eprintln!("Skipping event notification with unparsable logs: {e}");
+                        continue;
+                    }
+                };
                 for e in events {
                     f(&ctx, e);
                 }
@@ -717,7 +731,7 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     /// Build the request into a transaction.
     ///
     /// Note: This will build a transaction with the legacy transaction format. If you'd like to use
-    /// a different transaction format, use [`transaction_versioned`].
+    /// a different transaction format, use [`Self::transaction_versioned`].
     pub fn transaction(&self) -> Transaction {
         let instructions = &self.instructions();
         Transaction::new_with_payer(instructions, Some(&self.payer.pubkey()))
@@ -1021,6 +1035,12 @@ mod tests {
     #[event]
     pub struct MockEvent {}
 
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[event]
+    pub struct MockEventWithValue {
+        pub value: u64,
+    }
+
     use super::*;
     #[test]
     fn new_execution() {
@@ -1228,6 +1248,106 @@ mod tests {
                 )
             });
         assert_eq!(emitted_signature, successful_signature);
+        assert!(event_rx.recv_timeout(Duration::from_millis(100)).is_err());
+    }
+
+    /// Regression test: a notification with an invalid signature or
+    /// unparsable logs must not kill the subscription.
+    /// The two bad notifications below are followed by a good one, which
+    /// must still be delivered.
+    #[test]
+    fn unparsable_notifications_do_not_kill_subscription() {
+        use {
+            anchor_lang::__private::base64,
+            base64::{engine::general_purpose::STANDARD, Engine},
+            std::{sync::mpsc, time::Duration},
+        };
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (addr_tx, addr_rx) = mpsc::channel();
+        let program_id = Pubkey::new_unique();
+        let program_id_str = program_id.to_string();
+
+        // A "Program data:" payload with the right discriminator but a body
+        // too short to deserialize, so `parse_logs` fails on it.
+        let mut bad_data = MockEventWithValue::DISCRIMINATOR.to_vec();
+        bad_data.extend_from_slice(&[1, 2]);
+        let bad_event_log = format!("Program data: {}", STANDARD.encode(bad_data));
+        let good_event_log = format!(
+            "Program data: {}",
+            STANDARD.encode(MockEventWithValue { value: 42 }.data())
+        );
+        let good_signature = Signature::from([3u8; 64]);
+
+        rt.spawn(async move {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            addr_tx.send(listener.local_addr().unwrap()).unwrap();
+
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            ws.next().await.unwrap().unwrap();
+            ws.send(Message::Text(
+                r#"{"jsonrpc":"2.0","result":0,"id":1}"#.into(),
+            ))
+            .await
+            .unwrap();
+
+            // A notification whose signature is not valid base58.
+            let bad_signature_notification = format!(
+                r#"{{"jsonrpc":"2.0","method":"logsNotification","params":{{"result":{{"context":{{"slot":1}},"value":{{"signature":"not-a-signature","err":null,"logs":["Program {program_id_str} invoke [1]","Program {program_id_str} success"]}}}},"subscription":0}}}}"#
+            );
+            ws.send(Message::Text(bad_signature_notification.into()))
+                .await
+                .unwrap();
+
+            // A notification with a valid signature but logs that fail to parse.
+            let bad_logs_notification = format!(
+                r#"{{"jsonrpc":"2.0","method":"logsNotification","params":{{"result":{{"context":{{"slot":2}},"value":{{"signature":"{bad_signature}","err":null,"logs":["Program {program_id_str} invoke [1]","{bad_event_log}","Program {program_id_str} success"]}}}},"subscription":0}}}}"#,
+                bad_signature = Signature::from([2u8; 64]),
+            );
+            ws.send(Message::Text(bad_logs_notification.into()))
+                .await
+                .unwrap();
+
+            // A well-formed notification after the two bad ones.
+            let good_notification = format!(
+                r#"{{"jsonrpc":"2.0","method":"logsNotification","params":{{"result":{{"context":{{"slot":3}},"value":{{"signature":"{good_signature}","err":null,"logs":["Program {program_id_str} invoke [1]","{good_event_log}","Program {program_id_str} success"]}}}},"subscription":0}}}}"#
+            );
+            ws.send(Message::Text(good_notification.into()))
+                .await
+                .unwrap();
+
+            // Keep the websocket alive until the client or test runtime closes it.
+            ws.next().await;
+        });
+
+        let addr = addr_rx.recv().unwrap();
+        let ws_url = format!("ws://{addr}");
+        let client = super::Client::new(
+            super::Cluster::Custom(ws_url.clone(), ws_url),
+            std::sync::Arc::new(solana_keypair::Keypair::new()),
+        );
+        let program = client.program(program_id).unwrap();
+        let (event_tx, event_rx) = mpsc::channel();
+        let (handle, _unsubscribe_rx) = rt
+            .block_on(program.on_internal(move |ctx, event: MockEventWithValue| {
+                event_tx.send((ctx.signature, event.value)).unwrap();
+            }))
+            .unwrap();
+
+        // The good notification still arrives after the two bad ones.
+        let (emitted_signature, emitted_value) = event_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("expected the valid event after two malformed notifications");
+        assert_eq!(emitted_signature, good_signature);
+        assert_eq!(emitted_value, 42);
+        assert!(
+            !handle.is_finished(),
+            "subscription task ended after a bad notification"
+        );
         assert!(event_rx.recv_timeout(Duration::from_millis(100)).is_err());
     }
 

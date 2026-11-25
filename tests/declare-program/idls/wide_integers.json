@@ -1,0 +1,46 @@
+{
+  "address": "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
+  "metadata": {
+    "name": "wide_integers",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Regression coverage for declare_program! u256 and i256 types"
+  },
+  "instructions": [
+    {
+      "name": "store_wide",
+      "discriminator": [1, 2, 3, 4, 5, 6, 7, 8],
+      "accounts": [],
+      "args": [
+        {
+          "name": "wide",
+          "type": {
+            "defined": {
+              "name": "Wide"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [],
+  "events": [],
+  "types": [
+    {
+      "name": "Wide",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "unsigned",
+            "type": "u256"
+          },
+          {
+            "name": "signed",
+            "type": "i256"
+          }
+        ]
+      }
+    }
+  ]
+}

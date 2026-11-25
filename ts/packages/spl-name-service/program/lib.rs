@@ -36,28 +36,28 @@ pub struct Create<'info> {
     #[account(mut)]
     payer: Signer<'info>,
     #[account(mut)]
-    name_account: AccountInfo<'info>,
-    name_owner: AccountInfo<'info>,
+    name_account: UncheckedAccount<'info>,
+    name_owner: UncheckedAccount<'info>,
     // optional_name_class: Signer<'info>,
-    // optional_Pubkey: AccountInfo<'info>,
-    // optional_name_parent: AccountInfo<'info>,
-    // optional_Pubkey: AccountInfo<'info>,
+    // optional_Pubkey: UncheckedAccount<'info>,
+    // optional_name_parent: UncheckedAccount<'info>,
+    // optional_Pubkey: UncheckedAccount<'info>,
     // optional_key: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct Update<'info> {
     #[account(mut)]
-    name_account: AccountInfo<'info>,
+    name_account: UncheckedAccount<'info>,
     name_update_signer: Signer<'info>,
     // #[account(mut)]
-    // optional_name_parent: AccountInfo<'info>,
+    // optional_name_parent: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct Transfer<'info> {
     #[account(mut)]
-    name_account: AccountInfo<'info>,
+    name_account: UncheckedAccount<'info>,
     name_owner: Signer<'info>,
     // optional_key: Signer<'info>,
 }
@@ -65,10 +65,10 @@ pub struct Transfer<'info> {
 #[derive(Accounts)]
 pub struct Delete<'info> {
     #[account(mut)]
-    name_account: AccountInfo<'info>,
+    name_account: UncheckedAccount<'info>,
     name_owner: Signer<'info>,
     #[account(mut)]
-    refund_target: AccountInfo<'info>,
+    refund_target: UncheckedAccount<'info>,
 }
 
 #[account]

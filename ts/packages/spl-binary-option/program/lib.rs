@@ -32,7 +32,7 @@ pub mod spl_binary_option {
 pub struct InitializeBinaryOption<'info> {
     #[account(mut)]
     pool_account: Signer<'info>,
-    escrow_mint: AccountInfo<'info>,
+    escrow_mint: UncheckedAccount<'info>,
     #[account(mut)]
     escrow_account: Signer<'info>,
     #[account(mut)]
@@ -49,58 +49,58 @@ pub struct InitializeBinaryOption<'info> {
 #[derive(Accounts)]
 pub struct Trade<'info> {
     #[account(mut)]
-    pool_account: AccountInfo<'info>,
+    pool_account: UncheckedAccount<'info>,
     #[account(mut)]
-    escrow_account: AccountInfo<'info>,
+    escrow_account: UncheckedAccount<'info>,
     #[account(mut)]
-    long_token_mint: AccountInfo<'info>,
+    long_token_mint: UncheckedAccount<'info>,
     #[account(mut)]
-    short_token_mint: AccountInfo<'info>,
+    short_token_mint: UncheckedAccount<'info>,
     buyer: Signer<'info>,
     seller: Signer<'info>,
     #[account(mut)]
-    buyer_account: AccountInfo<'info>,
+    buyer_account: UncheckedAccount<'info>,
     #[account(mut)]
-    seller_account: AccountInfo<'info>,
+    seller_account: UncheckedAccount<'info>,
     #[account(mut)]
-    buyer_long_token_account: AccountInfo<'info>,
+    buyer_long_token_account: UncheckedAccount<'info>,
     #[account(mut)]
-    buyer_short_token_account: AccountInfo<'info>,
+    buyer_short_token_account: UncheckedAccount<'info>,
     #[account(mut)]
-    seller_long_token_account: AccountInfo<'info>,
+    seller_long_token_account: UncheckedAccount<'info>,
     #[account(mut)]
-    seller_short_token_account: AccountInfo<'info>,
-    escrow_authority: AccountInfo<'info>,
+    seller_short_token_account: UncheckedAccount<'info>,
+    escrow_authority: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct Settle<'info> {
     #[account(mut)]
-    pool_account: AccountInfo<'info>,
-    winning_mint: AccountInfo<'info>,
+    pool_account: UncheckedAccount<'info>,
+    winning_mint: UncheckedAccount<'info>,
     pool_authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct Collect<'info> {
     #[account(mut)]
-    pool_account: AccountInfo<'info>,
-    collector_account: AccountInfo<'info>,
+    pool_account: UncheckedAccount<'info>,
+    collector_account: UncheckedAccount<'info>,
     #[account(mut)]
-    collector_long_token_account: AccountInfo<'info>,
+    collector_long_token_account: UncheckedAccount<'info>,
     #[account(mut)]
-    collector_short_token_account: AccountInfo<'info>,
+    collector_short_token_account: UncheckedAccount<'info>,
     #[account(mut)]
-    collector_collateral_account: AccountInfo<'info>,
+    collector_collateral_account: UncheckedAccount<'info>,
     #[account(mut)]
-    long_token_mint_account: AccountInfo<'info>,
+    long_token_mint_account: UncheckedAccount<'info>,
     #[account(mut)]
-    short_token_mint_account: AccountInfo<'info>,
+    short_token_mint_account: UncheckedAccount<'info>,
     #[account(mut)]
-    escrow_account: AccountInfo<'info>,
+    escrow_account: UncheckedAccount<'info>,
     #[account(mut)]
-    escrow_authority_account: AccountInfo<'info>,
+    escrow_authority_account: UncheckedAccount<'info>,
     token_program: Program<'info, Token>,
 }
 

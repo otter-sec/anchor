@@ -86,6 +86,7 @@ permissioned
 programatically
 programdata
 precomputation
+Prefund
 projectserum
 pubkeys
 publickey
@@ -104,6 +105,7 @@ runbooks
 Sealevel
 serde
 sbpf
+scrollback
 shmem
 sighash
 sigverify

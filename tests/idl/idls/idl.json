@@ -425,6 +425,39 @@
       ]
     },
     {
+      "name": "non_zero_types",
+      "discriminator": [
+        220,
+        196,
+        25,
+        162,
+        126,
+        7,
+        249,
+        239
+      ],
+      "accounts": [],
+      "args": [
+        {
+          "name": "non_zero_u8",
+          "type": "u8"
+        },
+        {
+          "name": "non_zero_i64",
+          "type": "i64"
+        },
+        {
+          "name": "fields",
+          "type": {
+            "defined": {
+              "name": "NonZeroFields"
+            }
+          }
+        }
+      ],
+      "returns": "u8"
+    },
+    {
       "name": "primitive_types",
       "discriminator": [
         14,
@@ -1374,6 +1407,28 @@
           {
             "name": "some_field",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NonZeroFields",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "non_zero_u8",
+            "type": "u8"
+          },
+          {
+            "name": "non_zero_i64",
+            "type": "i64"
+          },
+          {
+            "name": "option_non_zero_u32",
+            "type": {
+              "option": "u32"
+            }
           }
         ]
       }

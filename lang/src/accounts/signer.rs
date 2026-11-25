@@ -34,7 +34,13 @@ use {
 /// }
 /// ```
 ///
-/// When creating an account with `init`, the `payer` needs to sign the transaction.
+/// When creating an account with `init`, the `payer` needs to sign the
+/// transaction if lamports will be transferred from it. If the new account is
+/// already fully funded, lamports will not be taken and signing is
+/// neither required nor checked.
+///
+/// If an account's signature is required, use `Signer` or the `signer` constraint
+/// to explicitly validate this.
 #[derive(Debug, Clone)]
 pub struct Signer<'info> {
     info: &'info AccountInfo<'info>,

@@ -38,7 +38,7 @@ matches, and deserialization reads the first eight bytes of the value, leaving t
 bytes unchecked. The reverse requires enough account data for a `u128`; a minimally sized
 `State<u64>` account is too short.
 
-<Callout type="warn" title="Generic arguments do not distinguish accounts">
+<Callout type="error" title="Generic arguments do not distinguish accounts">
   If the serialized data for one instantiation can be deserialized as another, an account can
   pass the discriminator check and be interpreted as the wrong type. Do not rely on generic
   arguments to prevent this type confusion. Use distinct account structs with distinct

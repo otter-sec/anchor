@@ -327,7 +327,7 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
     let idl = get_idl_module_path();
     let args = accounts.instruction_args().unwrap_or_default();
     match seed {
-        syn::Expr::MethodCall(_) => {
+        syn::Expr::MethodCall(call) => {
             let seed_path = SeedPath::new(seed)?;
 
             if args.contains_key(&seed_path.name) {
@@ -361,12 +361,22 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
                         }
                     )
                 })
-            } else if seed_path.name.contains('"') {
-                let seed = seed_path.name.trim_start_matches("b\"").trim_matches('"');
+            } else if let Some(value) = get_literal_seed_value(seed) {
                 Ok(quote! {
                     #idl::IdlSeed::Const(
                         #idl::IdlSeedConst {
-                            value: #seed.into(),
+                            value: vec![#(#value),*],
+                        }
+                    )
+                })
+            } else if call.method == "as_ref" && call.args.is_empty() {
+                // On e.g. a `&str` const, `.as_ref()` alone is ambiguous
+                // (E0282), so pick `AsRef<[u8]>` like the seeds slice does
+                let receiver = &call.receiver;
+                Ok(quote! {
+                    #idl::IdlSeed::Const(
+                        #idl::IdlSeedConst {
+                            value: AsRef::<[u8]>::as_ref(&#receiver).into(),
                         }
                     )
                 })
@@ -431,6 +441,33 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
             expr,
             format!("Unexpected seed: {seed:?}"),
         )),
+    }
+}
+
+/// Get the bytes of a string or byte string literal seed followed by
+/// `.as_ref()` or `.as_bytes()`, e.g. `b"seed".as_ref()`.
+///
+/// The bytes come from the parsed literal rather than its source text, so
+/// literals containing `.` or escapes like `\"` are handled correctly.
+fn get_literal_seed_value(seed: &syn::Expr) -> Option<Vec<u8>> {
+    let mut expr = seed;
+    while let syn::Expr::MethodCall(call) = expr {
+        if !call.args.is_empty() || !(call.method == "as_ref" || call.method == "as_bytes") {
+            return None;
+        }
+        expr = &call.receiver;
+    }
+
+    match expr {
+        syn::Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::ByteStr(lit),
+            ..
+        }) => Some(lit.value()),
+        syn::Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Str(lit),
+            ..
+        }) => Some(lit.value().into_bytes()),
+        _ => None,
     }
 }
 
@@ -523,4 +560,110 @@ fn get_relations(acc: &Field, accounts: &AccountsStruct) -> TokenStream {
         .flatten()
         .collect::<Vec<_>>();
     quote! { vec![#(#relations.into()),*] }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, syn::parse_quote};
+
+    /// Get the `value` expression that `parse_seed` generates for a const seed.
+    fn const_seed_expr(seed: &syn::Expr) -> syn::Expr {
+        let accounts: AccountsStruct = parse_quote! {
+            pub struct Seeds<'info> {
+                pub payer: Signer<'info>,
+            }
+        };
+        let call: syn::ExprCall = syn::parse2(parse_seed(seed, &accounts).unwrap()).unwrap();
+        let Some(syn::Expr::Struct(seed_const)) = call.args.first() else {
+            unreachable!("Expected a const seed, got: {}", call.to_token_stream());
+        };
+        seed_const
+            .fields
+            .iter()
+            .find(|field| matches!(&field.member, syn::Member::Named(name) if name == "value"))
+            .unwrap()
+            .expr
+            .clone()
+    }
+
+    /// Get the const seed value that `parse_seed` generates for `seed`, for
+    /// both the `vec![..]` and the `"..".into()` forms.
+    fn const_seed_value(seed: &syn::Expr) -> String {
+        let value = const_seed_expr(seed);
+        let bytes = match &value {
+            syn::Expr::Macro(mac) => mac
+                .mac
+                .parse_body_with(
+                    syn::punctuated::Punctuated::<syn::LitInt, syn::Token![,]>::parse_terminated,
+                )
+                .unwrap()
+                .iter()
+                .map(|lit| lit.base10_parse::<u8>().unwrap())
+                .collect(),
+            syn::Expr::MethodCall(call) => match &*call.receiver {
+                syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(lit),
+                    ..
+                }) => lit.value().into_bytes(),
+                syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::ByteStr(lit),
+                    ..
+                }) => lit.value(),
+                _ => unreachable!("Unexpected seed value: {}", value.to_token_stream()),
+            },
+            _ => unreachable!("Unexpected seed value: {}", value.to_token_stream()),
+        };
+        String::from_utf8(bytes).unwrap()
+    }
+
+    fn assert_const_seeds(cases: &[(syn::Expr, &str)]) {
+        let actual = cases
+            .iter()
+            .map(|(seed, _)| const_seed_value(seed))
+            .collect::<Vec<_>>();
+        let expected = cases.iter().map(|(_, value)| *value).collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn literal_seeds_with_method_calls_keep_dots_and_escapes() {
+        assert_const_seeds(&[
+            (parse_quote!(b"v1.0".as_ref()), "v1.0"),
+            (parse_quote!("pool.config".as_bytes()), "pool.config"),
+            (parse_quote!(b"a\"b".as_ref()), "a\"b"),
+        ]);
+    }
+
+    #[test]
+    fn simple_literal_seeds_keep_their_bytes() {
+        assert_const_seeds(&[
+            (parse_quote!(b"v1.0"), "v1.0"),
+            (parse_quote!(b"plain".as_ref()), "plain"),
+            (parse_quote!("abc".as_ref()), "abc"),
+        ]);
+    }
+
+    #[test]
+    fn const_seeds_with_as_ref_use_the_slice_impl() {
+        let cases: [(syn::Expr, syn::Expr); 3] = [
+            (
+                parse_quote!(MY_SEED_STR.as_ref()),
+                parse_quote!(AsRef::<[u8]>::as_ref(&MY_SEED_STR).into()),
+            ),
+            (
+                parse_quote!(crate::MY_SEED_STR.as_ref()),
+                parse_quote!(AsRef::<[u8]>::as_ref(&crate::MY_SEED_STR).into()),
+            ),
+            (
+                parse_quote!(MY_SEED_U8.to_le_bytes().as_ref()),
+                parse_quote!(AsRef::<[u8]>::as_ref(&MY_SEED_U8.to_le_bytes()).into()),
+            ),
+        ];
+        for (seed, expected) in cases {
+            assert_eq!(
+                const_seed_expr(&seed).to_token_stream().to_string(),
+                expected.to_token_stream().to_string(),
+            );
+        }
+    }
 }

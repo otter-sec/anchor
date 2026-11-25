@@ -1,0 +1,29 @@
+name: "Setup Cargo cache"
+description: "Restore shared Cargo downloads; a separate master build populates them"
+inputs:
+  save:
+    description: "Populate the cache from the root lockfile"
+    default: "false"
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      id: cargo
+      with:
+        path: |
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+        key: cargo-home-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+        restore-keys: cargo-home-${{ runner.os }}-
+    - if: inputs.save == 'true' && steps.cargo.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo fetch --locked
+    - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      if: inputs.save == 'true' && steps.cargo.outputs.cache-hit != 'true'
+      with:
+        path: |
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+        key: ${{ steps.cargo.outputs.cache-primary-key }}

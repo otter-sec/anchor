@@ -112,7 +112,7 @@ pub struct Transfer<'info> {
     from: Signer<'info>,
     #[account(mut)]
     /// CHECK:
-    to: AccountInfo<'info>,
+    to: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -121,7 +121,7 @@ pub struct CreateAccountWithSeed<'info> {
     from: Signer<'info>,
     #[account(mut)]
     /// CHECK:
-    to: AccountInfo<'info>,
+    to: UncheckedAccount<'info>,
     base: Signer<'info>,
 }
 
@@ -129,9 +129,9 @@ pub struct CreateAccountWithSeed<'info> {
 pub struct AdvanceNonceAccount<'info> {
     #[account(mut)]
     /// CHECK:
-    nonce: AccountInfo<'info>,
+    nonce: UncheckedAccount<'info>,
     /// CHECK:
-    recent_blockhashes: AccountInfo<'info>,
+    recent_blockhashes: UncheckedAccount<'info>,
     authorized: Signer<'info>,
 }
 
@@ -139,12 +139,12 @@ pub struct AdvanceNonceAccount<'info> {
 pub struct WithdrawNonceAccount<'info> {
     #[account(mut)]
     /// CHECK:
-    nonce: AccountInfo<'info>,
+    nonce: UncheckedAccount<'info>,
     #[account(mut)]
     /// CHECK:
-    to: AccountInfo<'info>,
+    to: UncheckedAccount<'info>,
     /// CHECK:
-    recent_blockhashes: AccountInfo<'info>,
+    recent_blockhashes: UncheckedAccount<'info>,
     rent: Sysvar<'info, Rent>,
     authorized: Signer<'info>,
 }
@@ -154,7 +154,7 @@ pub struct InitializeNonceAccount<'info> {
     #[account(mut)]
     nonce: Signer<'info>,
     /// CHECK:
-    recent_blockhashes: AccountInfo<'info>,
+    recent_blockhashes: UncheckedAccount<'info>,
     rent: Sysvar<'info, Rent>,
 }
 
@@ -162,7 +162,7 @@ pub struct InitializeNonceAccount<'info> {
 pub struct AuthorizeNonceAccount<'info> {
     #[account(mut)]
     /// CHECK:
-    nonce: AccountInfo<'info>,
+    nonce: UncheckedAccount<'info>,
     authorized: Signer<'info>,
 }
 
@@ -176,7 +176,7 @@ pub struct Allocate<'info> {
 pub struct AllocateWithSeed<'info> {
     #[account(mut)]
     /// CHECK:
-    account: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
     base: Signer<'info>,
 }
 
@@ -184,7 +184,7 @@ pub struct AllocateWithSeed<'info> {
 pub struct AssignWithSeed<'info> {
     #[account(mut)]
     /// CHECK:
-    account: AccountInfo<'info>,
+    account: UncheckedAccount<'info>,
     base: Signer<'info>,
 }
 
@@ -192,11 +192,11 @@ pub struct AssignWithSeed<'info> {
 pub struct TransferWithSeed<'info> {
     #[account(mut)]
     /// CHECK:
-    from: AccountInfo<'info>,
+    from: UncheckedAccount<'info>,
     base: Signer<'info>,
     #[account(mut)]
     /// CHECK:
-    to: AccountInfo<'info>,
+    to: UncheckedAccount<'info>,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]

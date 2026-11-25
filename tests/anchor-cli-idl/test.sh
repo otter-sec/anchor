@@ -151,4 +151,4 @@ anchor program deploy --program-name idl_commands_one \
   --upgrade-authority "$CUSTOM_AUTHORITY" \
   --security-metadata --no-idl --use-rpc --final
 fetch_security_metadata "1.0.0"
-solana program show "$PROGRAM_ONE" --url http://localhost:8899 | grep -q 'Authority: none'
+solana program show "$PROGRAM_ONE" --url http://localhost:8899 | grep 'Authority: none' > /dev/null
