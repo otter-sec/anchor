@@ -8973,29 +8973,26 @@ mod tests {
         );
     }
 
-    /// Restores the process working directory on drop, so a test that
-    /// temporarily chdirs can never leave a changed cwd behind for the
-    /// next test running in the same process.
-    struct RestoreCwd(PathBuf);
-
-    impl Drop for RestoreCwd {
-        fn drop(&mut self) {
-            let _ = std::env::set_current_dir(&self.0);
-        }
-    }
-
-    /// Serializes the tests that change the process working directory:
-    /// two of them running at once would each see the other's directory.
-    static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
+    /// The two workspace-config cases share one test because they both
+    /// chdir the process: run back to back in a single function, they
+    /// can never see each other's directory.
     #[test]
-    fn broken_workspace_config_is_an_error_not_a_mainnet_fallback() {
-        let _cwd_lock = CWD_LOCK.lock().unwrap();
-        let dir = tempdir().unwrap();
-        fs::write(dir.path().join("Anchor.toml"), "[provider]\ncluster = ").unwrap();
+    fn workspace_config_error_and_fallback() {
+        // Restores the process working directory on drop, so the chdirs
+        // below can never leave a changed cwd behind for the next test.
+        struct RestoreCwd(PathBuf);
+
+        impl Drop for RestoreCwd {
+            fn drop(&mut self) {
+                let _ = std::env::set_current_dir(&self.0);
+            }
+        }
 
         let _guard = RestoreCwd(std::env::current_dir().unwrap());
-        std::env::set_current_dir(dir.path()).unwrap();
+
+        let broken = tempdir().unwrap();
+        fs::write(broken.path().join("Anchor.toml"), "[provider]\ncluster = ").unwrap();
+        std::env::set_current_dir(broken.path()).unwrap();
 
         let result = get_cluster_and_wallet(&ConfigOverride::default());
 
@@ -9008,15 +9005,9 @@ mod tests {
             err.contains("Anchor.toml"),
             "the error must say which file is broken: {err}"
         );
-    }
 
-    #[test]
-    fn no_workspace_config_still_falls_back_to_defaults() {
-        let _cwd_lock = CWD_LOCK.lock().unwrap();
-        let dir = tempdir().unwrap();
-
-        let _guard = RestoreCwd(std::env::current_dir().unwrap());
-        std::env::set_current_dir(dir.path()).unwrap();
+        let empty = tempdir().unwrap();
+        std::env::set_current_dir(empty.path()).unwrap();
 
         let (cluster, wallet) = get_cluster_and_wallet(&ConfigOverride::default())
             .expect("no Anchor.toml should still fall back");
