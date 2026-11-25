@@ -1134,8 +1134,11 @@ fn format_sol(lamports: u64) -> String {
 
 /// Get cluster URL and wallet path from Anchor config, CLI overrides, or Solana CLI config
 fn get_cluster_and_wallet(cfg_override: &ConfigOverride) -> Result<(String, String)> {
-    // Try to get from Anchor workspace config first
-    if let Ok(Some(cfg)) = Config::discover(cfg_override) {
+    // Try to get from Anchor workspace config first. A workspace config
+    // that exists but fails to load is an error, not a fallback: silently
+    // using the Solana CLI config (or mainnet) would point later commands
+    // at a cluster the user never asked for.
+    if let Some(cfg) = Config::discover(cfg_override)? {
         return Ok((
             cfg.provider.cluster.url().to_string(),
             cfg.provider.wallet.to_string(),
@@ -8968,5 +8971,48 @@ mod tests {
                 "--features=other-feature".to_string(),
             ]
         );
+    }
+
+    /// The two workspace-config cases share one test because they both
+    /// chdir the process: run back to back in a single function, they
+    /// can never see each other's directory.
+    #[test]
+    fn workspace_config_error_and_fallback() {
+        // Restores the process working directory on drop, so the chdirs
+        // below can never leave a changed cwd behind for the next test.
+        struct RestoreCwd(PathBuf);
+
+        impl Drop for RestoreCwd {
+            fn drop(&mut self) {
+                let _ = std::env::set_current_dir(&self.0);
+            }
+        }
+
+        let _guard = RestoreCwd(std::env::current_dir().unwrap());
+
+        let broken = tempdir().unwrap();
+        fs::write(broken.path().join("Anchor.toml"), "[provider]\ncluster = ").unwrap();
+        std::env::set_current_dir(broken.path()).unwrap();
+
+        let result = get_cluster_and_wallet(&ConfigOverride::default());
+
+        assert!(
+            result.is_err(),
+            "a broken Anchor.toml must error, not silently fall back: {result:?}"
+        );
+        let err = format!("{:?}", result.unwrap_err());
+        assert!(
+            err.contains("Anchor.toml"),
+            "the error must say which file is broken: {err}"
+        );
+
+        let empty = tempdir().unwrap();
+        std::env::set_current_dir(empty.path()).unwrap();
+
+        let (cluster, wallet) = get_cluster_and_wallet(&ConfigOverride::default())
+            .expect("no Anchor.toml should still fall back");
+
+        assert!(!cluster.is_empty());
+        assert!(!wallet.is_empty());
     }
 }

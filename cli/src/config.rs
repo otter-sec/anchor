@@ -731,7 +731,8 @@ impl Config {
         let de = toml::Deserializer::new(&cfg);
         let cfg: _Config = serde_ignored::deserialize(de, |path| {
             unused.insert(path.to_string());
-        })?;
+        })
+        .with_context(|| format!("Error parsing configuration file: {path:?}"))?;
 
         // File path -> unused field paths
         static CACHE: LazyLock<Mutex<HashMap<PathBuf, BTreeSet<String>>>> =
