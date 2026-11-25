@@ -1,4 +1,10 @@
-import { ProgramErrorStack, AnchorError } from "../src/error";
+import { SendTransactionError } from "@solana/web3.js";
+import {
+  ProgramErrorStack,
+  AnchorError,
+  ProgramError,
+  translateError,
+} from "../src/error";
 
 describe("ProgramErrorStack", () => {
   test("basic", () => {
@@ -326,5 +332,61 @@ describe("AnchorError", () => {
     expect(anchorError.errorLogs).toEqual([
       "Program log: AnchorError occurred. Error Code: OracleMismatchError. Error Number: 6021. Error Message: An unexpected oracle account was provided for the transaction..",
     ]);
+  });
+});
+
+describe("ProgramError", () => {
+  const programId = "ERRM6YCMsccM22TEaPuu35KVU4iCY3GLCz4qMsKLYReE";
+  const logs = [
+    `Program ${programId} invoke [1]`,
+    `Program ${programId} consumed 3797 of 200000 compute units`,
+    `Program ${programId} failed: custom program error: 0x1770`,
+  ];
+  const idlErrors = new Map([[6000, "My custom error"]]);
+
+  it.each(["simulate", "send"] as const)(
+    "parses a SendTransactionError from %s that includes logs",
+    (action) => {
+      const err = new SendTransactionError({
+        action,
+        signature: action === "send" ? "sig" : "",
+        transactionMessage:
+          "Transaction simulation failed: Error processing Instruction 0: custom program error: 0x1770",
+        logs,
+      });
+
+      const programError = translateError(err, idlErrors);
+
+      expect(programError).toBeInstanceOf(ProgramError);
+      expect(programError.code).toEqual(6000);
+      expect(programError.msg).toEqual("My custom error");
+      expect(programError.program.toString()).toEqual(programId);
+    }
+  );
+
+  it("parses a confirmation failure that includes logs", () => {
+    const err = new SendTransactionError({
+      action: "send",
+      signature: "sig",
+      transactionMessage:
+        'Transaction sig failed ({"err":{"InstructionError":[0,{"Custom":6000}]}})',
+      logs,
+    });
+
+    const programError = ProgramError.parse(err, idlErrors);
+
+    expect(programError?.code).toEqual(6000);
+  });
+
+  it("returns null for an error without a custom code", () => {
+    const err = new SendTransactionError({
+      action: "simulate",
+      signature: "",
+      transactionMessage:
+        "Transaction simulation failed: Error processing Instruction 0: invalid account data for instruction",
+      logs: [`Program ${programId} invoke [1]`],
+    });
+
+    expect(ProgramError.parse(err, idlErrors)).toBeNull();
   });
 });
