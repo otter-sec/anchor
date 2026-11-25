@@ -4370,8 +4370,18 @@ fn deserialize_idl_type_to_json(
         IdlType::I128 => {
             json!(<i128 as AnchorDeserialize>::deserialize(data)?)
         }
-        IdlType::U256 => todo!("Upon completion of u256 IDL standard"),
-        IdlType::I256 => todo!("Upon completion of i256 IDL standard"),
+        IdlType::U256 => {
+            bail!(
+                "U256 is not yet supported by `anchor account`: the u256 IDL standard is not \
+                 complete"
+            )
+        }
+        IdlType::I256 => {
+            bail!(
+                "I256 is not yet supported by `anchor account`: the i256 IDL standard is not \
+                 complete"
+            )
+        }
         IdlType::Bytes => JsonValue::Array(
             <Vec<u8> as AnchorDeserialize>::deserialize(data)?
                 .iter()
@@ -4392,8 +4402,9 @@ fn deserialize_idl_type_to_json(
 
                 JsonValue::Array(array_data)
             }
-            // TODO:
-            IdlArrayLen::Generic(_) => unimplemented!("Generic array length is not yet supported"),
+            IdlArrayLen::Generic(_) => {
+                bail!("Generic array length is not yet supported by `anchor account`")
+            }
         },
         IdlType::Option(ty) => {
             let is_present = <u8 as AnchorDeserialize>::deserialize(data)?;
@@ -4425,7 +4436,9 @@ fn deserialize_idl_type_to_json(
             deserialize_idl_defined_type_to_json(parent_idl, name, data)?
         }
         IdlType::Generic(generic) => json!(generic),
-        _ => unimplemented!("{idl_type:?}"),
+        _ => {
+            bail!("Unsupported IDL type for `anchor account`: {idl_type:?}")
+        }
     })
 }
 
@@ -7830,12 +7843,45 @@ mod tests {
     fn test_deserialize_idl_option_none_to_json_null() {
         let idl_type = IdlType::Option(Box::new(IdlType::String));
         let mut data: &[u8] = &[0]; // is_present = 0, meaning None
-        let idl: Idl = serde_json::from_str(
-            r#"{"address":"","metadata":{"name":"","version":"","spec":""},"instructions":[]}"#,
-        )
-        .unwrap();
+        let idl = minimal_test_idl();
         let json = deserialize_idl_type_to_json(&idl_type, &mut data, &idl).unwrap();
         assert_eq!(json, JsonValue::Null);
+    }
+
+    fn minimal_test_idl() -> Idl {
+        serde_json::from_str(
+            r#"{"address":"","metadata":{"name":"","version":"","spec":""},"instructions":[]}"#,
+        )
+        .unwrap()
+    }
+
+    // anchor #5332: unsupported IDL types must return a descriptive error
+    // instead of panicking, so `anchor account` exits cleanly.
+    #[test]
+    fn test_deserialize_idl_u256_returns_error_5332() {
+        let idl_type = IdlType::U256;
+        let mut data: &[u8] = &[0; 32];
+        let idl = minimal_test_idl();
+        let err = deserialize_idl_type_to_json(&idl_type, &mut data, &idl).unwrap_err();
+        assert!(err.to_string().contains("U256"));
+    }
+
+    #[test]
+    fn test_deserialize_idl_i256_returns_error_5332() {
+        let idl_type = IdlType::I256;
+        let mut data: &[u8] = &[0; 32];
+        let idl = minimal_test_idl();
+        let err = deserialize_idl_type_to_json(&idl_type, &mut data, &idl).unwrap_err();
+        assert!(err.to_string().contains("I256"));
+    }
+
+    #[test]
+    fn test_deserialize_idl_generic_array_returns_error_5332() {
+        let idl_type = IdlType::Array(Box::new(IdlType::U8), IdlArrayLen::Generic("N".to_string()));
+        let mut data: &[u8] = &[1, 2, 3];
+        let idl = minimal_test_idl();
+        let err = deserialize_idl_type_to_json(&idl_type, &mut data, &idl).unwrap_err();
+        assert!(err.to_string().contains("Generic array length"));
     }
 
     #[test]
