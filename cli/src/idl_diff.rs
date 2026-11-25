@@ -99,7 +99,9 @@ pub fn diff(old: &Idl, new: &Idl) -> Vec<Finding> {
             old,
             new,
             findings: vec![],
-            visiting: HashSet::from([(acc.name.clone(), new_acc.name.clone())]),
+            // Not seeded with the account: a nested copy of it (`Vec<Self>`)
+            // must be compared as a nested value, where appended fields break.
+            visiting: HashSet::new(),
         };
         cx.compare_def(&old_def.ty, &new_def.ty, &acc.name, true);
         for (level, message) in cx.findings {
@@ -509,7 +511,7 @@ mod tests {
 
     #[test]
     fn self_referential_types_terminate() {
-        // `children: Vec<Node>` and `next: Option<Box<Node>>` refer back to
+        // `children: Vec<Node>` and `next: Option<Node>` refer back to
         // `Node`; the comparison must stop instead of recursing forever.
         let node = |value: &str| {
             idl(
@@ -523,5 +525,19 @@ mod tests {
         };
         assert!(diff(&node("u64"), &node("u64")).is_empty());
         assert_eq!(levels(&node("u64"), &node("u32")), vec![Level::Break]);
+    }
+
+    #[test]
+    fn self_referential_account_end_changes_break_nested_values() {
+        // Adding or removing a last field is safe for the account itself, but
+        // every `Node` stored in `children` changes size too.
+        let node = |fields: serde_json::Value| idl("Node", 1, fields, json!(null));
+        let value = json!({"name": "value", "type": "u64"});
+        let children = json!({"name": "children", "type": {"vec": {"defined": {"name": "Node"}}}});
+        let extra = json!({"name": "extra", "type": "u8"});
+        let short = node(json!([value, children]));
+        let long = node(json!([value, children, extra]));
+        assert!(levels(&short, &long).contains(&Level::Break));
+        assert!(levels(&long, &short).contains(&Level::Break));
     }
 }
