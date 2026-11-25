@@ -80,4 +80,23 @@ describe("MethodPubkeys", () => {
     > = true;
     expect(matches).toBe(true);
   });
+
+  test("defaults to a union of all method account maps", () => {
+    const matches: Equal<
+      anchor.MethodPubkeys<TestIdl>,
+      | anchor.MethodPubkeys<TestIdl, "myMethod">
+      | anchor.MethodPubkeys<TestIdl, "otherMethod">
+      | anchor.MethodPubkeys<TestIdl, "noAccounts">
+    > = true;
+    expect(matches).toBe(true);
+  });
+
+  test("returns a union of the selected method account maps", () => {
+    const matches: Equal<
+      anchor.MethodPubkeys<TestIdl, "myMethod" | "otherMethod">,
+      | anchor.MethodPubkeys<TestIdl, "myMethod">
+      | anchor.MethodPubkeys<TestIdl, "otherMethod">
+    > = true;
+    expect(matches).toBe(true);
+  });
 });
