@@ -1568,7 +1568,7 @@ impl TestTemplate {
                     .map_err(|e| anyhow::format_err!("{}", e))?;
                 if !exit.status.success() {
                     eprintln!("'cargo new --lib tests' failed");
-                    std::process::exit(exit.status.code().unwrap_or(1));
+                    return Err(crate::ExitCode(exit.status.code().unwrap_or(1)).into());
                 }
 
                 let mut files = Vec::new();

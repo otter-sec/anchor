@@ -1249,12 +1249,34 @@ pub fn prepend_compute_unit_ix(
     }
 }
 
+/// A command's request to exit the process with a specific code.
+///
+/// Commands used to call `process::exit` directly, which skips both
+/// destructors and the toolchain restore in `entry`. Returning this error
+/// instead lets `entry` restore the toolchain first and then exit with
+/// the requested code.
+#[derive(Debug)]
+pub(crate) struct ExitCode(pub i32);
+
+impl std::fmt::Display for ExitCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "exiting with code {}", self.0)
+    }
+}
+
+impl std::error::Error for ExitCode {}
+
 pub fn entry(opts: Opts) -> Result<()> {
     let opts = opts.absolute();
 
     let restore_cbs = override_toolchain(&opts.cfg_override)?;
     let result = process_command(opts);
     restore_toolchain(restore_cbs)?;
+    if let Err(err) = &result {
+        if let Some(exit) = err.downcast_ref::<ExitCode>() {
+            std::process::exit(exit.0);
+        }
+    }
 
     result
 }
@@ -1447,12 +1469,25 @@ fn override_toolchain(cfg_override: &ConfigOverride) -> Result<RestoreToolchainC
                     }
                 }
 
-                let exit_code = std::process::Command::new(binary_path)
+                let mut child = match std::process::Command::new(binary_path)
                     .args(std::env::args_os().skip(1))
-                    .spawn()?
-                    .wait()?
-                    .code()
-                    .unwrap_or(1);
+                    .spawn()
+                {
+                    Ok(child) => child,
+                    Err(err) => {
+                        // The Solana switch above is already live, so restore
+                        // it before giving up on the re-exec.
+                        restore_toolchain(restore_cbs)?;
+                        return Err(anyhow!("Failed to run anchor {anchor_version}: {err}"));
+                    }
+                };
+                let exit_code = match child.wait() {
+                    Ok(status) => status.code().unwrap_or(1),
+                    Err(err) => {
+                        restore_toolchain(restore_cbs)?;
+                        return Err(anyhow!("Failed to wait for anchor {anchor_version}: {err}"));
+                    }
+                };
                 restore_toolchain(restore_cbs)?;
                 std::process::exit(exit_code);
             }
@@ -2297,19 +2332,20 @@ fn expand_program(
         .args(cargo_args);
 
     let handle_err = |err| anyhow!("Failed to run `cargo expand`: {err}");
-    let exit_on_err = |exit_status: ExitStatus| {
+    let exit_on_err = |exit_status: ExitStatus| -> Result<()> {
         if !exit_status.success() {
             eprintln!("'anchor expand' failed. Perhaps you have not installed 'cargo-expand'? https://github.com/dtolnay/cargo-expand#installation");
-            std::process::exit(exit_status.code().unwrap_or(1));
+            return Err(ExitCode(exit_status.code().unwrap_or(1)).into());
         }
+        Ok(())
     };
 
     if stdout {
         let status = cmd.status().map_err(handle_err)?;
-        exit_on_err(status);
+        exit_on_err(status)?;
     } else {
         let output = cmd.stderr(Stdio::inherit()).output().map_err(handle_err)?;
-        exit_on_err(output.status);
+        exit_on_err(output.status)?;
 
         let program_expansions_path = expansions_path.join(package_name);
         fs::create_dir_all(&program_expansions_path)?;
@@ -2472,7 +2508,7 @@ pub fn build(
         codama::auto_generate_for_workspace(&cfg.clients, cfg_parent, &built_idl_paths)?;
     }
 
-    set_workspace_dir_or_exit();
+    set_workspace_dir_or_exit()?;
 
     Ok(())
 }
@@ -3039,7 +3075,7 @@ fn docker_cleanup(container_name: &str, target_dir: &Path) -> Result<()> {
         .map_err(|e| anyhow::format_err!("{}", e))?;
     if !exit.status.success() {
         println!("Unable to remove the docker container");
-        std::process::exit(exit.status.code().unwrap_or(1));
+        return Err(ExitCode(exit.status.code().unwrap_or(1)).into());
     }
     Ok(())
 }
@@ -3077,7 +3113,7 @@ fn _build_cwd(
         .output()
         .map_err(|e| anyhow::format_err!("{}", e))?;
     if !exit.status.success() {
-        std::process::exit(exit.status.code().unwrap_or(1));
+        return Err(ExitCode(exit.status.code().unwrap_or(1)).into());
     }
 
     // Generate IDL
@@ -4617,14 +4653,14 @@ fn test(
                 &extra_args,
                 &cfg.surfpool_config,
             )? {
-                // `process::exit` runs no destructors: drop the gdb
-                // driver here, in the function that owns it, so its
-                // accept thread is joined and any pending traces are
-                // flushed to disk instead of being lost on a failing
-                // test run.
+                // Drop the gdb driver here, in the function that owns
+                // it, so its accept thread is joined and any pending
+                // traces are flushed to disk instead of being lost on a
+                // failing test run. The code goes back up as an error so
+                // `entry` can restore the toolchain before exiting.
                 #[cfg(not(windows))]
                 drop(_gdb_guard);
-                std::process::exit(code);
+                return Err(ExitCode(code).into());
             }
         }
         if let Some(test_config) = &cfg.test_config {
@@ -4657,14 +4693,14 @@ fn test(
                     &extra_args,
                     &cfg.surfpool_config,
                 )? {
-                    // `process::exit` runs no destructors: drop the gdb
-                    // driver here, in the function that owns it, so its
-                    // accept thread is joined and any pending traces are
-                    // flushed to disk instead of being lost on a failing
-                    // test run.
+                    // Drop the gdb driver here, in the function that owns
+                    // it, so its accept thread is joined and any pending
+                    // traces are flushed to disk instead of being lost on a
+                    // failing test run. The code goes back up as an error so
+                    // `entry` can restore the toolchain before exiting.
                     #[cfg(not(windows))]
                     drop(_gdb_guard);
-                    std::process::exit(code);
+                    return Err(ExitCode(code).into());
                 }
             }
         }
@@ -6254,7 +6290,7 @@ fn start_surfpool_validator(
              Anchor.toml."
         );
         validator_handle.kill()?;
-        std::process::exit(1);
+        return Err(ExitCode(1).into());
     }
 
     loop {
@@ -6367,7 +6403,7 @@ fn start_solana_test_validator(
              Consider increasing [test.startup_wait] in Anchor.toml."
         );
         validator_handle.kill()?;
-        std::process::exit(1);
+        return Err(ExitCode(1).into());
     }
     Ok(validator_handle)
 }
@@ -6449,7 +6485,7 @@ fn test_validator_file_paths(test_validator: &Option<TestValidator>) -> Result<(
         // Prevent absolute paths to avoid someone using / or similar, as the
         // directory gets removed
         eprintln!("Ledger directory {ledger_path:?} must be relative");
-        std::process::exit(1);
+        return Err(ExitCode(1).into());
     }
     if ledger_path.exists() {
         fs::remove_dir_all(&ledger_path).with_context(|| {
@@ -6702,7 +6738,7 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
 
         if !exit.status.success() {
             eprintln!("Deploy failed.");
-            std::process::exit(exit.status.code().unwrap());
+            return Err(ExitCode(exit.status.code().unwrap_or(1)).into());
         }
 
         println!("Deploy complete.");
@@ -6710,12 +6746,12 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
     })?
 }
 
-fn set_workspace_dir_or_exit() {
+fn set_workspace_dir_or_exit() -> Result<()> {
     // First try to find Anchor workspace
     let d = match Config::discover(&ConfigOverride::default()) {
         Err(err) => {
             println!("Workspace configuration error: {err}");
-            std::process::exit(1);
+            return Err(ExitCode(1).into());
         }
         Ok(d) => d,
     };
@@ -6727,7 +6763,7 @@ fn set_workspace_dir_or_exit() {
                 Ok(dir) => dir,
                 Err(_) => {
                     println!("Unable to determine current directory");
-                    std::process::exit(1);
+                    return Err(ExitCode(1).into());
                 }
             };
 
@@ -6737,7 +6773,7 @@ fn set_workspace_dir_or_exit() {
                     "Not in a Solana workspace. This command requires either Anchor.toml or a \
                      Cargo workspace with Solana programs."
                 );
-                std::process::exit(1);
+                return Err(ExitCode(1).into());
             }
 
             // Check if this is a workspace and has Solana programs
@@ -6751,7 +6787,7 @@ fn set_workspace_dir_or_exit() {
                         "Not in a Solana workspace. This command requires either Anchor.toml or a \
                          Cargo workspace with Solana programs."
                     );
-                    std::process::exit(1);
+                    return Err(ExitCode(1).into());
                 }
             }
         }
@@ -6767,12 +6803,13 @@ fn set_workspace_dir_or_exit() {
                             "Not in a Solana workspace. This command requires either Anchor.toml \
                              or a Cargo workspace with Solana programs."
                         );
-                        std::process::exit(1);
+                        return Err(ExitCode(1).into());
                     }
                 }
             };
         }
     }
+    Ok(())
 }
 
 fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -> Result<()> {
@@ -7042,7 +7079,7 @@ fn run(cfg_override: &ConfigOverride, script: String, script_args: Vec<String>) 
             .output()
             .unwrap();
         if !exit.status.success() {
-            std::process::exit(exit.status.code().unwrap_or(1));
+            return Err(ExitCode(exit.status.code().unwrap_or(1)).into());
         }
         Ok(())
     })?
@@ -7366,7 +7403,7 @@ pub(crate) fn with_workspace<R>(
     cfg_override: &ConfigOverride,
     f: impl FnOnce(&mut WithPath<Config>) -> R,
 ) -> Result<R> {
-    set_workspace_dir_or_exit();
+    set_workspace_dir_or_exit()?;
 
     let mut cfg = Config::discover(cfg_override)
         .map_err(|e| anyhow!("Workspace configuration error: {}", e))?
@@ -7374,7 +7411,7 @@ pub(crate) fn with_workspace<R>(
 
     let r = f(&mut cfg);
 
-    set_workspace_dir_or_exit();
+    set_workspace_dir_or_exit()?;
 
     Ok(r)
 }
@@ -7827,6 +7864,27 @@ mod tests {
     #[test]
     fn test_redact_url_falls_back_on_unparseable_input() {
         assert_eq!(redact_url("not-a-url"), "not-a-url");
+    }
+
+    #[test]
+    fn test_exit_code_round_trips_through_anyhow() {
+        // entry() relies on downcasting the error back to ExitCode, so pin
+        // that contract here.
+        let err = anyhow::Error::from(ExitCode(3));
+        assert_eq!(err.downcast_ref::<ExitCode>().unwrap().0, 3);
+    }
+
+    #[test]
+    fn test_validator_file_paths_rejects_absolute_ledger_with_exit_code() {
+        let validator = TestValidator {
+            validator: Some(Validator {
+                ledger: "/tmp/absolute-ledger".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let err = test_validator_file_paths(&Some(validator)).unwrap_err();
+        assert_eq!(err.downcast_ref::<ExitCode>().unwrap().0, 1);
     }
 
     #[test]
