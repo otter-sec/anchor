@@ -419,8 +419,8 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
             quote!(anchor_lang::__private::find_duplicate_key(&#keys)),
         )
     });
-    // An exit write can overwrite a loader's in-place write. Two loaders share the
-    // live buffer, so only compare loader keys against accounts that serialize.
+    // Loaders access the live buffer while serializing accounts write their changes
+    // on exit. Mixing the two can give stale reads or overwrite in-place writes.
     let check_loaders = (has_composites || !loaders.is_empty()).then(|| {
         let collect_loaders = collect_duplicate_mutable_keys(
             &loaders,

@@ -44,10 +44,12 @@ Description: By default, Anchor prevents duplicate mutable accounts to avoid
 potential security issues and unintended behavior. The `dup` constraint
 explicitly allows this for cases where it's intentional and safe.
 
-The check applies to aliases between mutable fields when one field serializes
-on exit (`Account`, `LazyAccount`, `InterfaceAccount`, or `Migration`) and the
-other field either serializes on exit or is an `AccountLoader`. Two
+The check applies when a mutable field that serializes on exit (`Account`,
+`LazyAccount`, `InterfaceAccount`, or `Migration`) shares a key with another
+mutable field that serializes on exit or with any `AccountLoader` field. Two
 `AccountLoader` fields can share an account without `dup`.
+For a loader declared without `mut`, use `#[account(dup)]` to opt in to an alias
+with a mutable field that serializes on exit.
 
 ```rust title="attribute"
 #[account(mut, dup)]

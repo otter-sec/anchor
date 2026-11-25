@@ -238,7 +238,7 @@ pub trait DuplicateMutableAccountKeys {
     /// Returns the pubkeys of mutable accounts that serialize on exit.
     fn duplicate_mutable_account_keys(&self) -> Vec<Pubkey>;
 
-    /// Returns the pubkeys of mutable `AccountLoader` fields.
+    /// Returns the pubkeys of `AccountLoader` fields without `dup`.
     #[doc(hidden)]
     fn duplicate_mutable_account_loader_keys(&self) -> Vec<Pubkey> {
         Vec::new()

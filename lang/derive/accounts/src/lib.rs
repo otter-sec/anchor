@@ -93,9 +93,9 @@ use {proc_macro::TokenStream, quote::ToTokens, syn::parse_macro_input};
 ///             <td>
 ///                 Allows the same mutable account to be passed multiple times within the same instruction context.<br>
 ///                 The <code>dup</code> constraint explicitly allows this for cases where it's intentional and safe.<br>
-///                 Anchor rejects an alias between mutable fields when one serializes on exit
+///                 Anchor rejects an alias when a mutable field serializes on exit
 ///                 (<code>Account</code>, <code>LazyAccount</code>, <code>InterfaceAccount</code>, or <code>Migration</code>)
-///                 and the other either serializes on exit or is an <code>AccountLoader</code>.<br>
+///                 and shares a key with another mutable field that serializes on exit or any <code>AccountLoader</code> field.<br>
 ///                 Two <code>AccountLoader</code> fields can share an account without <code>dup</code>.<br>
 ///                 Example:
 ///                 <pre><code>

@@ -14,16 +14,18 @@ pub(super) enum KeyKind {
 
 impl KeyKind {
     pub(super) fn includes(self, field: &Field) -> bool {
-        field.constraints.is_mutable()
-            && !field.constraints.is_dup()
+        !field.constraints.is_dup()
             && match self {
-                Self::Serializing => matches!(
-                    field.ty,
-                    Ty::Account(_)
-                        | Ty::LazyAccount(_)
-                        | Ty::InterfaceAccount(_)
-                        | Ty::Migration(_)
-                ),
+                Self::Serializing => {
+                    field.constraints.is_mutable()
+                        && matches!(
+                            field.ty,
+                            Ty::Account(_)
+                                | Ty::LazyAccount(_)
+                                | Ty::InterfaceAccount(_)
+                                | Ty::Migration(_)
+                        )
+                }
                 Self::Loader => matches!(field.ty, Ty::AccountLoader(_)),
             }
     }
@@ -42,7 +44,7 @@ impl KeyKind {
 /// to detect duplicate mutable accounts across composite (nested) account struct boundaries.
 ///
 /// Each `#[derive(Accounts)]` struct reports the keys of its mutable accounts that
-/// serialize on exit and its mutable `AccountLoader` fields separately.
+/// serialize on exit and its `AccountLoader` fields separately.
 ///
 /// ## Example
 ///
@@ -108,15 +110,14 @@ fn generate_method(accs: &AccountsStruct, kind: KeyKind) -> proc_macro2::TokenSt
     let method = kind.reporting_method();
     let key_pushes = accs.fields.iter().filter_map(|af: &AccountField| match af {
         // Composite fields — delegate to inner struct's trait impl.
-        // The inner struct applies its own mut/dup filters.
+        // The inner struct applies its own field filters.
         AccountField::CompositeField(s) => {
             let field_name = &s.ident;
             Some(quote! {
                 keys.extend(self.#field_name.#method());
             })
         }
-        // Direct fields that are mut and not dup. `init` accounts are reported too: a freshly
-        // created account cannot collide with an already-initialized one, but it can collide
+        // `init` accounts are reported too: a freshly created account can collide
         // with a `zero` account in an enclosing struct, since `init` leaves the account
         // program-owned and zero-filled and `zero` accepts exactly that. This impl is only
         // invoked from an enclosing struct that has composite fields, so flat structs never

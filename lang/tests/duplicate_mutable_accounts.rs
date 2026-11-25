@@ -20,8 +20,21 @@ struct Direct<'info> {
 }
 
 #[derive(Accounts)]
-struct Loader<'info> {
+struct ReadonlyLoader<'info> {
     #[account(mut)]
+    account: Account<'info, Counter>,
+    loader: AccountLoader<'info, Counter>,
+}
+
+#[derive(Accounts)]
+struct ReadonlyAccount<'info> {
+    account: Account<'info, Counter>,
+    #[account(mut)]
+    loader: AccountLoader<'info, Counter>,
+}
+
+#[derive(Accounts)]
+struct Loader<'info> {
     loader: Option<AccountLoader<'info, Counter>>,
 }
 
@@ -62,7 +75,7 @@ struct MixedNested<'info> {
 struct AllowDuplicate<'info> {
     #[account(mut)]
     account: Account<'info, Counter>,
-    #[account(mut, dup)]
+    #[account(dup)]
     loader: AccountLoader<'info, Counter>,
 }
 
@@ -109,13 +122,19 @@ fn rejects_loader_aliases_with_serializing_accounts() {
     let expected = ErrorCode::ConstraintDuplicateMutableAccount.into();
 
     assert_eq!(validate::<Direct>(&duplicate).unwrap_err(), expected);
+    assert_eq!(
+        validate::<ReadonlyLoader>(&duplicate).unwrap_err(),
+        expected
+    );
     assert_eq!(validate::<Nested>(&duplicate).unwrap_err(), expected);
     assert_eq!(
         validate::<MixedNested>(&mixed_duplicate).unwrap_err(),
         expected
     );
     validate::<Direct>(&distinct).unwrap();
+    validate::<ReadonlyLoader>(&distinct).unwrap();
     validate::<Nested>(&distinct).unwrap();
+    validate::<ReadonlyAccount>(&duplicate).unwrap();
     validate::<AllowDuplicate>(&duplicate).unwrap();
     validate::<TwoLoaders>(&duplicate).unwrap();
     validate::<NestedLoaders>(&duplicate).unwrap();
