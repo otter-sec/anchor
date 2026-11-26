@@ -135,6 +135,7 @@ pub fn expand(item: TokenStream) -> TokenStream {
         }),
     );
     let idl_type_def = syn::LitStr::new(&Value::Object(idl_type_def).to_string(), pod_name.span());
+    let pod_name_str = pod_name.to_string();
 
     // Per-variant associated constants keep the original variant name
     // (PascalCase), so swapping a field type from `Enum` to `PodEnum` is a
@@ -248,6 +249,7 @@ pub fn expand(item: TokenStream) -> TokenStream {
             not(any(target_os = "solana", target_arch = "bpf"))
         ))]
         impl anchor_lang::IdlAccountType for #pod_name {
+            const __IDL_NAME: Option<&'static str> = Some(#pod_name_str);
             const __IDL_TYPE_DEF: Option<&'static str> = Some(#idl_type_def);
 
             fn __register_idl_deps(
