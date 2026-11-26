@@ -7037,53 +7037,14 @@ fn keys_list(cfg_override: &ConfigOverride) -> Result<()> {
     })?
 }
 
-/// Updates one program address in Anchor.toml, leaving every other byte
-/// of the file untouched.
-///
-/// `keys sync` used to rewrite the whole file from the in-memory config
-/// (`fs::write(cfg.path(), cfg.to_string())`). That persisted temporary
-/// `--provider.cluster` / `--provider.wallet` overrides into the file and
-/// dropped all comments and formatting, because the in-memory config
-/// carries the overrides and `Display` re-emits the file with defaults
-/// filled in. Reading the file back from disk and touching only the one
-/// address keeps both the overrides and the formatting out of the write
-/// path.
-fn sync_program_address_in_toml(
-    path: &Path,
+/// Sets the address of one program entry inside a `[programs.<cluster>]`
+/// table, preserving the entry's form and its surrounding formatting.
+fn set_program_address_in_entry(
+    entry: &mut toml_edit::Item,
     cluster: &Cluster,
     program_name: &str,
     address: &str,
 ) -> Result<()> {
-    let toml_content = fs::read_to_string(path).context("Failed to read Anchor.toml")?;
-    let mut toml_doc: toml_edit::Document = toml_content
-        .parse()
-        .context("Failed to parse Anchor.toml")?;
-
-    let programs = toml_doc
-        .get_mut("programs")
-        .and_then(|item| item.as_table_like_mut())
-        .ok_or_else(|| anyhow!("Anchor.toml has no [programs] section"))?;
-    // The section key is matched by parsed `Cluster`, not by string: the
-    // config parser accepts any spelling (`Devnet`, `DEVNET`, `d`, ...),
-    // while `cluster.to_string()` only produces the canonical lowercase
-    // form, so looking the key up by string would miss those spellings.
-    let cluster_key = programs
-        .iter()
-        .map(|(key, _)| key)
-        .find(|key| {
-            key.parse::<Cluster>()
-                .is_ok_and(|parsed| &parsed == cluster)
-        })
-        .map(str::to_owned)
-        .ok_or_else(|| anyhow!("Anchor.toml has no [programs.{cluster}] section"))?;
-    let cluster_table = programs
-        .get_mut(&cluster_key)
-        .and_then(|item| item.as_table_like_mut())
-        .ok_or_else(|| anyhow!("Anchor.toml has no [programs.{cluster}] section"))?;
-    let entry = cluster_table.get_mut(program_name).ok_or_else(|| {
-        anyhow!("Anchor.toml has no [programs.{cluster}] entry for `{program_name}`")
-    })?;
-
     // A program entry is either a bare string (`myprog = "<address>"`) or a
     // table (`myprog = { address = "...", ... }` / `[programs.<cluster>.<name>]`).
     match entry {
@@ -7135,6 +7096,72 @@ fn sync_program_address_in_toml(
                  a table"
             ));
         }
+    }
+    Ok(())
+}
+
+/// Updates one program address in Anchor.toml, leaving every other byte
+/// of the file untouched.
+///
+/// `keys sync` used to rewrite the whole file from the in-memory config
+/// (`fs::write(cfg.path(), cfg.to_string())`). That persisted temporary
+/// `--provider.cluster` / `--provider.wallet` overrides into the file and
+/// dropped all comments and formatting, because the in-memory config
+/// carries the overrides and `Display` re-emits the file with defaults
+/// filled in. Reading the file back from disk and touching only the one
+/// address keeps both the overrides and the formatting out of the write
+/// path.
+fn sync_program_address_in_toml(
+    path: &Path,
+    cluster: &Cluster,
+    program_name: &str,
+    address: &str,
+) -> Result<()> {
+    let toml_content = fs::read_to_string(path).context("Failed to read Anchor.toml")?;
+    let mut toml_doc: toml_edit::Document = toml_content
+        .parse()
+        .context("Failed to parse Anchor.toml")?;
+
+    let programs = toml_doc
+        .get_mut("programs")
+        .and_then(|item| item.as_table_like_mut())
+        .ok_or_else(|| anyhow!("Anchor.toml has no [programs] section"))?;
+    // The section key is matched by parsed `Cluster`, not by string: the
+    // config parser accepts any spelling (`Devnet`, `DEVNET`, `d`, ...),
+    // while `cluster.to_string()` only produces the canonical lowercase
+    // form, so looking the key up by string would miss those spellings.
+    // Every spelling that parses to the cluster is updated, in a single
+    // pass: the loader collects the sections into a map keyed by `Cluster`,
+    // so when a file mixes spellings (e.g. `[programs.Devnet]` and
+    // `[programs.devnet]`) only one of them is loader-visible. Updating
+    // just the first match would leave the loader-visible address stale
+    // and the sync would never converge.
+    let mut found_section = false;
+    let mut updated = false;
+    for (key, item) in programs.iter_mut() {
+        if !key
+            .parse::<Cluster>()
+            .is_ok_and(|parsed| &parsed == cluster)
+        {
+            continue;
+        }
+        let Some(cluster_table) = item.as_table_like_mut() else {
+            continue;
+        };
+        found_section = true;
+        let Some(entry) = cluster_table.get_mut(program_name) else {
+            continue;
+        };
+        set_program_address_in_entry(entry, cluster, program_name, address)?;
+        updated = true;
+    }
+    if !found_section {
+        return Err(anyhow!("Anchor.toml has no [programs.{cluster}] section"));
+    }
+    if !updated {
+        return Err(anyhow!(
+            "Anchor.toml has no [programs.{cluster}] entry for `{program_name}`"
+        ));
     }
 
     fs::write(path, toml_doc.to_string()).context("Failed to write Anchor.toml")?;
@@ -9042,6 +9069,53 @@ mod tests {
             fs::read_to_string(&path).unwrap(),
             "[programs.d]\nmyprog = \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\"\n"
         );
+    }
+
+    #[test]
+    fn test_keys_sync_updates_all_case_variant_cluster_sections() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("Anchor.toml");
+        // Both spellings parse to `Cluster::Devnet`, but the config loader
+        // keeps only one of them (the last one wins when the sections are
+        // collected into a map keyed by `Cluster`), so updating just the
+        // first match leaves the loader-visible address stale and the sync
+        // never converges.
+        let before = concat!(
+            "[programs.Devnet]\n",
+            "myprog = \"Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLn\"\n",
+            "\n",
+            "[programs.devnet]\n",
+            "myprog = \"11111111111111111111111111111111\"\n",
+        );
+        let expected = concat!(
+            "[programs.Devnet]\n",
+            "myprog = \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\"\n",
+            "\n",
+            "[programs.devnet]\n",
+            "myprog = \"8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm\"\n",
+        );
+        fs::write(&path, before).unwrap();
+
+        sync_program_address_in_toml(
+            &path,
+            &Cluster::Devnet,
+            "myprog",
+            "8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm",
+        )
+        .unwrap();
+
+        // Both sections carry the new address and keep their original spelling.
+        assert_eq!(fs::read_to_string(&path).unwrap(), expected);
+
+        // A second sync is a no-op: the file is already converged.
+        sync_program_address_in_toml(
+            &path,
+            &Cluster::Devnet,
+            "myprog",
+            "8ZtapskxyFE2ajpwCM4mgZFZ1amcsecSNgVA4mYPNwZm",
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), expected);
     }
 
     #[test]
