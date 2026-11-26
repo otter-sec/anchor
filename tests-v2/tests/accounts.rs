@@ -83,6 +83,10 @@ fn ledger_space(capacity: usize) -> usize {
 }
 
 fn setup() -> (LiteSVM, Keypair) {
+    setup_with_svm(LiteSVM::new())
+}
+
+fn setup_with_svm(mut svm: LiteSVM) -> (LiteSVM, Keypair) {
     let test_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let deploy_dir = test_dir.join("target/deploy");
     build_program(
@@ -90,7 +94,6 @@ fn setup() -> (LiteSVM, Keypair) {
         deploy_dir.to_str().unwrap(),
     );
 
-    let mut svm = LiteSVM::new();
     svm.add_program_from_file(program_id(), deploy_dir.join("accounts_test.so"))
         .expect("load accounts_test program");
     let payer = keypair_for("accounts-payer");
@@ -495,17 +498,37 @@ fn lamports_helpers_reject_underflow_and_preserve_balances() {
 }
 
 #[test]
-fn foreign_borsh_account_mutation_is_rejected_on_exit() {
-    let (mut svm, payer) = setup();
+fn writable_foreign_borsh_account_only_rejects_changed_data() {
+    // The LiteSVM mainnet snapshot predates activation of SIMD-0460.
+    let mut features = LiteSVM::mainnet_feature_set();
+    features.activate(
+        &"7VgiehxNxu53KdxgLspGQY8myE6f7UokaWa4jsGcaSz"
+            .parse()
+            .unwrap(),
+        0,
+    );
+    let (mut svm, payer) =
+        setup_with_svm(LiteSVM::new().with_feature_set(features).with_builtins());
     let foreign_counter = Pubkey::new_unique();
     set_foreign_borsh_counter(&mut svm, foreign_counter, 42);
 
-    let metas = vec![AccountMeta::new(foreign_counter, false)];
-    let result = send_instruction(&mut svm, program_id(), vec![32], metas, &payer, &[]);
-    assert!(
-        result.is_err(),
-        "serializing a mutable foreign-owned BorshAccount<T> should be rejected by the runtime"
-    );
+    for prepare_cpi in [false, true] {
+        for value in [42, 999] {
+            let mut data = data_with_u64s(32, &[value]);
+            data.push(u8::from(prepare_cpi));
+            let metas = vec![AccountMeta::new(foreign_counter, false)];
+            let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+            if value == 42 {
+                result.expect("a writable foreign account may be committed without changing data");
+            } else {
+                let err = result.expect_err("the runtime must reject foreign account writes");
+                assert!(
+                    err.to_string().contains("ExternalAccountDataModified"),
+                    "{err}"
+                );
+            }
+        }
+    }
 
     let account = svm
         .get_account(&foreign_counter)

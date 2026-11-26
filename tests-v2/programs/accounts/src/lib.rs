@@ -631,14 +631,16 @@ pub mod accounts_test {
         Ok(())
     }
 
-    /// Mutates a foreign-owned `BorshAccount<T>` in memory. The generated exit
-    /// path serializes mutable borrows; the runtime rejects the resulting
-    /// foreign account data write.
     #[discrim = 32]
-    pub fn mutate_foreign_borsh_counter(
-        ctx: &mut Context<MutateForeignBorshCounter>,
+    pub fn set_foreign_borsh_counter(
+        ctx: &mut Context<SetForeignBorshCounter>,
+        value: u64,
+        prepare_cpi: bool,
     ) -> Result<()> {
-        ctx.accounts.counter.value = 999;
+        ctx.accounts.counter.value = value;
+        if prepare_cpi {
+            let _handle = ctx.accounts.counter.try_cpi_handle_mut()?;
+        }
         Ok(())
     }
 
@@ -906,7 +908,7 @@ pub struct CloseBorshCounter {
 }
 
 #[derive(Accounts)]
-pub struct MutateForeignBorshCounter {
+pub struct SetForeignBorshCounter {
     #[account(mut)]
     pub counter: BorshAccount<ForeignBorshCounter>,
 }
