@@ -371,20 +371,73 @@ mod legacy {
         hasher.finalize()[..8].into()
     }
 
+    /// Move each `relations` entry to the account it names, within one
+    /// account list.
+    ///
+    /// Legacy IDLs record a `has_one` on the account that declares it
+    /// (`vault` lists `authority`); the current spec records it on the
+    /// named account (`authority` lists `vault`, the accounts that declare
+    /// it). The per-account conversion copies the entries onto the same
+    /// account, so flip them here, at the instruction level where both
+    /// sides are visible. A relation naming an account outside this list
+    /// is left where it is rather than dropped.
+    fn invert_relations(items: &mut [t::IdlInstructionAccountItem]) {
+        // Relations only ever refer to accounts at the same level, so
+        // handle composite groups on their own first.
+        for item in items.iter_mut() {
+            if let t::IdlInstructionAccountItem::Composite(group) = item {
+                invert_relations(&mut group.accounts);
+            }
+        }
+        let mut moves: Vec<(String, String)> = Vec::new();
+        for item in items.iter_mut() {
+            if let t::IdlInstructionAccountItem::Single(acc) = item {
+                for target in std::mem::take(&mut acc.relations) {
+                    moves.push((acc.name.clone(), target));
+                }
+            }
+        }
+        for (declarer, target) in moves {
+            let placed = items.iter_mut().find_map(|item| match item {
+                t::IdlInstructionAccountItem::Single(acc) if acc.name == target => Some(acc),
+                _ => None,
+            });
+            match placed {
+                Some(acc) if !acc.relations.contains(&declarer) => {
+                    acc.relations.push(declarer);
+                }
+                Some(_) => {} // Already listed; nothing to do.
+                None => {
+                    // No account with that name at this level; put the
+                    // entry back on the declarer instead of losing it.
+                    if let Some(t::IdlInstructionAccountItem::Single(acc)) =
+                        items.iter_mut().find(|item| {
+                            matches!(item, t::IdlInstructionAccountItem::Single(acc) if acc.name == declarer)
+                        })
+                    {
+                        acc.relations.push(target);
+                    }
+                }
+            }
+        }
+    }
+
     impl TryFrom<IdlInstruction> for t::IdlInstruction {
         type Error = anyhow::Error;
 
         fn try_from(value: IdlInstruction) -> Result<Self> {
             let name = value.name.to_snake_case();
+            let mut accounts: Vec<t::IdlInstructionAccountItem> = value
+                .accounts
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<_>>()?;
+            invert_relations(&mut accounts);
             Ok(Self {
                 discriminator: get_disc("global", &name),
                 name,
                 docs: value.docs.unwrap_or_default(),
-                accounts: value
-                    .accounts
-                    .into_iter()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_>>()?,
+                accounts,
                 args: value.args.into_iter().map(Into::into).collect(),
                 returns: value.returns.map(|r| r.into()),
             })
@@ -817,17 +870,61 @@ mod legacy {
         }
     }
 
+    /// Inverse of [`invert_relations`]: the current spec lists, on the
+    /// named account, the accounts that declare it; legacy IDLs list the
+    /// relation on the declarer. Move each entry back to the account it
+    /// names, within one account list.
+    fn invert_relations_legacy(items: &mut [IdlAccountItem]) {
+        for item in items.iter_mut() {
+            if let IdlAccountItem::IdlAccounts(group) = item {
+                invert_relations_legacy(&mut group.accounts);
+            }
+        }
+        let mut moves: Vec<(String, String)> = Vec::new();
+        for item in items.iter_mut() {
+            if let IdlAccountItem::IdlAccount(acc) = item {
+                for declarer in std::mem::take(&mut acc.relations) {
+                    moves.push((acc.name.clone(), declarer));
+                }
+            }
+        }
+        for (named, declarer) in moves {
+            let placed = items.iter_mut().find_map(|item| match item {
+                IdlAccountItem::IdlAccount(acc) if acc.name == declarer => Some(acc),
+                _ => None,
+            });
+            match placed {
+                Some(acc) if !acc.relations.contains(&named) => {
+                    acc.relations.push(named);
+                }
+                Some(_) => {} // Already listed; nothing to do.
+                None => {
+                    // No account with that name at this level; put the
+                    // entry back on the named account instead of losing it.
+                    if let Some(IdlAccountItem::IdlAccount(acc)) = items.iter_mut().find(
+                        |item| matches!(item, IdlAccountItem::IdlAccount(acc) if acc.name == named),
+                    ) {
+                        acc.relations.push(declarer);
+                    }
+                }
+            }
+        }
+    }
+
     impl TryFrom<t::IdlInstruction> for IdlInstruction {
         type Error = anyhow::Error;
 
         fn try_from(ix: t::IdlInstruction) -> Result<Self> {
+            let mut accounts: Vec<IdlAccountItem> =
+                ix.accounts.into_iter().map(Into::into).collect();
+            invert_relations_legacy(&mut accounts);
             Ok(Self {
                 // The legacy spec uses lowerCamelCase identifiers; the forward
                 // converter normalized them to snake_case, so we restore the
                 // original convention here.
                 name: ix.name.to_lower_camel_case(),
                 docs: (!ix.docs.is_empty()).then_some(ix.docs),
-                accounts: ix.accounts.into_iter().map(Into::into).collect(),
+                accounts,
                 args: ix
                     .args
                     .into_iter()
@@ -1250,6 +1347,144 @@ mod tests {
             convert_idl_to_legacy(&current).expect("Converting current -> legacy failed");
         let actual: serde_json::Value = serde_json::from_slice(&legacy_bytes).unwrap();
 
+        assert_eq!(actual, expected);
+    }
+
+    /// A legacy string `const` seed must convert to the bytes of the
+    /// string itself, not the bytes of its JSON form (quotes included).
+    /// Regression test for #5255.
+    #[test]
+    fn legacy_string_const_seed_has_no_quotes() {
+        let legacy = r#"{
+            "version": "0.1.0",
+            "name": "demo",
+            "instructions": [
+                {
+                    "name": "init",
+                    "accounts": [
+                        {
+                            "name": "vault",
+                            "isMut": true,
+                            "isSigner": false,
+                            "pda": { "seeds": [{ "kind": "const", "type": "string", "value": "vault" }] }
+                        }
+                    ],
+                    "args": []
+                }
+            ],
+            "metadata": { "address": "11111111111111111111111111111111" }
+        }"#;
+        let current = convert_idl(legacy.as_bytes()).expect("Converting legacy -> current failed");
+        let ix = &current.instructions[0];
+        let acc = match &ix.accounts[0] {
+            crate::types::IdlInstructionAccountItem::Single(acc) => acc,
+            _ => panic!("expected a single account"),
+        };
+        let seeds = &acc.pda.as_ref().expect("expected a PDA").seeds;
+        let value = match &seeds[0] {
+            crate::types::IdlSeed::Const(seed) => &seed.value,
+            _ => panic!("expected a const seed"),
+        };
+        assert_eq!(value, b"vault");
+    }
+
+    /// Legacy `relations` name the account the declarer has_one on; the
+    /// current spec lists them on the named account instead. Converting
+    /// must move each relation to the account it names, and converting
+    /// back must restore the original IDL. Regression test for #5256.
+    #[test]
+    fn legacy_relations_move_to_named_account() {
+        let legacy = r#"{
+            "version": "0.1.0",
+            "name": "demo",
+            "instructions": [
+                {
+                    "name": "withdraw",
+                    "accounts": [
+                        { "name": "vault", "isMut": true, "isSigner": false, "relations": ["authority"] },
+                        { "name": "authority", "isMut": false, "isSigner": true }
+                    ],
+                    "args": []
+                }
+            ],
+            "metadata": { "address": "11111111111111111111111111111111" }
+        }"#;
+        let current = convert_idl(legacy.as_bytes()).expect("Converting legacy -> current failed");
+        let accounts = &current.instructions[0].accounts;
+        let relations = |name: &str| -> Vec<String> {
+            accounts
+                .iter()
+                .find_map(|item| match item {
+                    crate::types::IdlInstructionAccountItem::Single(acc) if acc.name == name => {
+                        Some(acc.relations.clone())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_default()
+        };
+        assert!(
+            relations("vault").is_empty(),
+            "vault must not keep its relations, got {:?}",
+            relations("vault")
+        );
+        assert_eq!(relations("authority"), vec!["vault".to_string()]);
+
+        // And back again: the round-trip must restore the original IDL.
+        let legacy_bytes =
+            convert_idl_to_legacy(&current).expect("Converting current -> legacy failed");
+        let actual: serde_json::Value = serde_json::from_slice(&legacy_bytes).unwrap();
+        let expected: serde_json::Value = serde_json::from_str(legacy).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    /// Relations inside a composite account group flip within that group,
+    /// not at the instruction level. Same bug as #5256, nested.
+    #[test]
+    fn legacy_relations_move_within_composite_group() {
+        let legacy = r#"{
+            "version": "0.1.0",
+            "name": "demo",
+            "instructions": [
+                {
+                    "name": "withdraw",
+                    "accounts": [
+                        {
+                            "name": "ctx",
+                            "accounts": [
+                                { "name": "vault", "isMut": true, "isSigner": false, "relations": ["authority"] },
+                                { "name": "authority", "isMut": false, "isSigner": true }
+                            ]
+                        }
+                    ],
+                    "args": []
+                }
+            ],
+            "metadata": { "address": "11111111111111111111111111111111" }
+        }"#;
+        let current = convert_idl(legacy.as_bytes()).expect("Converting legacy -> current failed");
+        let group = match &current.instructions[0].accounts[0] {
+            crate::types::IdlInstructionAccountItem::Composite(group) => group,
+            _ => panic!("expected a composite group"),
+        };
+        let relations = |name: &str| -> Vec<String> {
+            group
+                .accounts
+                .iter()
+                .find_map(|item| match item {
+                    crate::types::IdlInstructionAccountItem::Single(acc) if acc.name == name => {
+                        Some(acc.relations.clone())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_default()
+        };
+        assert!(relations("vault").is_empty());
+        assert_eq!(relations("authority"), vec!["vault".to_string()]);
+
+        let legacy_bytes =
+            convert_idl_to_legacy(&current).expect("Converting current -> legacy failed");
+        let actual: serde_json::Value = serde_json::from_slice(&legacy_bytes).unwrap();
+        let expected: serde_json::Value = serde_json::from_str(legacy).unwrap();
         assert_eq!(actual, expected);
     }
 }

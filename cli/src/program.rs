@@ -1821,6 +1821,10 @@ fn program_set_upgrade_authority(
     make_final: bool,
     current_upgrade_authority: Option<String>,
 ) -> Result<()> {
+    if make_final && (new_upgrade_authority.is_some() || new_upgrade_authority_signer.is_some()) {
+        bail!("--final cannot be combined with a new upgrade authority");
+    }
+
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
     let payer = get_payer_keypair(cfg_override, &config)?;
 
@@ -2876,6 +2880,45 @@ mod tests {
             expected_program_id,
             program_keypair.pubkey()
         )));
+    }
+
+    #[test]
+    fn set_upgrade_authority_final_rejects_new_authority() {
+        let err = program_set_upgrade_authority(
+            &ConfigOverride {
+                cluster: None,
+                wallet: None,
+                commitment: None,
+            },
+            Pubkey::new_unique(),
+            Some(Pubkey::new_unique()),
+            None,
+            false,
+            true,
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("--final cannot be combined with a new upgrade authority"));
+
+        let err = program_set_upgrade_authority(
+            &ConfigOverride {
+                cluster: None,
+                wallet: None,
+                commitment: None,
+            },
+            Pubkey::new_unique(),
+            None,
+            Some("signer.json".to_string()),
+            false,
+            true,
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("--final cannot be combined with a new upgrade authority"));
     }
 
     #[test]

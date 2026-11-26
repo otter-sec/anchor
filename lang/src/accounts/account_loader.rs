@@ -201,8 +201,19 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
         Ok(())
     }
 
+    /// Re-checks that the account is still owned by `T::owner()`, so an
+    /// account reassigned during a CPI is refused instead of read as `T`.
+    fn check_owner(&self) -> Result<()> {
+        if self.acc_info.owner != &T::owner() {
+            return Err(Error::from(ErrorCode::AccountOwnedByWrongProgram)
+                .with_pubkeys((*self.acc_info.owner, T::owner())));
+        }
+        Ok(())
+    }
+
     /// Returns a Ref to the account data structure for reading.
     pub fn load(&self) -> Result<Ref<'_, T>> {
+        self.check_owner()?;
         let data = self.acc_info.try_borrow_data()?;
         let disc = T::DISCRIMINATOR;
         if data.len() < disc.len() {
@@ -230,6 +241,7 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
             return Err(ErrorCode::AccountNotMutable.into());
         }
 
+        self.check_owner()?;
         let data = self.acc_info.try_borrow_mut_data()?;
         let disc = T::DISCRIMINATOR;
         if data.len() < disc.len() {

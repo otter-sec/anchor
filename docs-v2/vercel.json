@@ -2,7 +2,10 @@
   "installCommand": "bun install --frozen-lockfile",
   "buildCommand": "bun run build",
   "outputDirectory": "dist",
-  "rewrites": [{ "source": "/mcp", "destination": "/api/mcp" }],
+  "rewrites": [
+    { "source": "/mcp", "destination": "/api/mcp" },
+    { "source": "/llms.txt", "destination": "/docs/llms.txt" }
+  ],
   "redirects": [
     {
       "source": "/",

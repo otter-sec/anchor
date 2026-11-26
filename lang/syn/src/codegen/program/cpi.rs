@@ -95,6 +95,7 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
     let accounts = generate_accounts(program);
 
     quote! {
+        #[allow(rust_analyzer::inactive_code)]
         #[cfg(feature = "cpi")]
         pub mod cpi {
             use super::*;

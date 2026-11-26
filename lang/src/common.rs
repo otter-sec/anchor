@@ -64,6 +64,18 @@ pub fn find_duplicate_key<'a>(keys: &[Option<&'a Pubkey>]) -> Option<(usize, &'a
     })
 }
 
+/// Finds the first loader key shared by an account that serializes on exit.
+#[doc(hidden)]
+pub fn find_duplicate_loader_key<'a>(
+    serializing_keys: &[Option<&Pubkey>],
+    loader_keys: &[Option<&'a Pubkey>],
+) -> Option<(usize, &'a Pubkey)> {
+    loader_keys.iter().enumerate().find_map(|(i, key)| {
+        let key = (*key)?;
+        serializing_keys.contains(&Some(key)).then_some((i, key))
+    })
+}
+
 /// `Write` sink that checks written bytes against an existing buffer
 /// instead of storing them.
 pub struct CompareWriter<'a> {

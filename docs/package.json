@@ -12,6 +12,8 @@
   "dependencies": {
     "@inkeep/cxkit-react": "^0.5.32",
     "@next/third-parties": "^15.1.4",
+    "@solana/addresses": "^8.4.0",
+    "@solana/keys": "^8.4.0",
     "@svgr/webpack": "^8.1.0",
     "fumadocs-core": "14.7.7",
     "fumadocs-mdx": "11.6.0",

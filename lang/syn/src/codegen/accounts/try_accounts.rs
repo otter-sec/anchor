@@ -1,13 +1,15 @@
 use {
     crate::{
         codegen::{
-            accounts::{constraints, generics, ParsedGenerics},
+            accounts::{
+                constraints, duplicate_mutable_account_keys::KeyKind, generics, ParsedGenerics,
+            },
             private_ident,
         },
-        AccountField, AccountsStruct, Ty,
+        AccountField, AccountsStruct, Field, Ty,
     },
     quote::{quote, quote_spanned},
-    syn::spanned::Spanned,
+    syn::{spanned::Spanned, Ident},
 };
 
 // Generates the `Accounts` trait implementation.
@@ -35,6 +37,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                     let name = &s.ident;
                     let ty = &s.raw_field.ty;
                     quote! {
+                        #[allow(rust_analyzer::inactive_code)]
                         #[cfg(feature = "anchor-debug")]
                         ::anchor_lang::solana_program::log::sol_log(stringify!(#name));
                         let #name: #ty = anchor_lang::Accounts::try_accounts(#program_id, #accounts, #ix_data, &mut #bumps.#name, #reallocs)?;
@@ -90,6 +93,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                             quote! {}
                         };
                         quote! {
+                            #[allow(rust_analyzer::inactive_code)]
                             #[cfg(feature = "anchor-debug")]
                             ::anchor_lang::solana_program::log::sol_log(stringify!(#typed_name));
                             let #typed_name = anchor_lang::Accounts::try_accounts(#program_id, #accounts, #ix_data, #bumps, #reallocs)
@@ -353,11 +357,6 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
         .collect();
     let has_composites = !composite_fields.is_empty();
 
-    // Collect all mutable account fields without `dup` constraint that serialize on exit.
-    // Only types that serialize on exit are included, as duplicate mutable accounts
-    // are problematic due to double serialization (the second write overwrites the first).
-    // Types like UncheckedAccount, Signer, SystemAccount, AccountLoader, etc. don't serialize on exit
-    //
     // Pure-`init` accounts participate only when the struct has composite fields. A fresh
     // `init` account cannot collide with an already-initialized account, but it can collide
     // with a `zero` account: `init` runs first and leaves the account program-owned and
@@ -365,85 +364,124 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
     // already rejected by the `zero` constraint's own uniqueness scan, so flat structs skip
     // the per-key comparison cost here; across composite boundaries only this check can see
     // the collision.
-    let candidates: Vec<_> = accs
-        .fields
-        .iter()
-        .filter_map(|af| match af {
-            AccountField::Field(f)
-                if f.constraints.is_mutable()
-                    && !f.constraints.is_dup()
-                    && (has_composites || !f.constraints.is_pure_init()) =>
-            {
-                match &f.ty {
-                    // Only include types that serialize on exit
-                    crate::Ty::Account(_)
-                    | crate::Ty::LazyAccount(_)
-                    | crate::Ty::InterfaceAccount(_)
-                    | crate::Ty::Migration(_) => Some(f),
-                    _ => None,
+    let candidates = |kind: KeyKind| -> Vec<&Field> {
+        accs.fields
+            .iter()
+            .filter_map(|af| match af {
+                AccountField::Field(f)
+                    if kind.includes(f) && (has_composites || !f.constraints.is_pure_init()) =>
+                {
+                    Some(f)
                 }
-            }
-            _ => None,
-        })
-        .collect();
+                _ => None,
+            })
+            .collect()
+    };
+    let serializing = candidates(KeyKind::Serializing);
+    let loaders = candidates(KeyKind::Loader);
+    let serializing_sources = serializing.len() + composite_fields.len();
 
     // A duplicate needs two keys, so skip the check entirely unless at least two sources
     // (direct candidates and composite fields) can contribute one. A lone composite is
     // also a single source: duplicates within it are rejected by its own `try_accounts`,
     // which runs before this check.
-    if candidates.len() + composite_fields.len() < 2 {
+    if serializing_sources == 0 || serializing_sources + loaders.len() < 2 {
         return quote! {};
     }
 
     let keys = private_ident("__keys");
+    let loader_keys = private_ident("__loader_keys");
     let names = private_ident("__names");
     let index = private_ident("__index");
     let key = private_ident("__key");
 
-    // Borrow each key from its `AccountInfo` rather than copying it, so the array
-    // stays small on the stack. Absent optional accounts become `None`.
-    let direct_keys: Vec<proc_macro2::TokenStream> = candidates
-        .iter()
-        .map(|f| {
-            let name = &f.ident;
-            let account_ref = constraints::generate_account_ref(f);
-            if f.is_optional {
-                quote! { #name.as_ref().map(|#name| #account_ref.key) }
-            } else {
-                quote! { Some(#account_ref.key) }
-            }
-        })
-        .collect();
-    let direct_names = candidates.iter().map(|f| &f.ident);
-
-    // Composite keys go after the direct keys, in field order. The reported account is
-    // the first key in this order that repeats an earlier one.
-    let composite_keys: Vec<_> = (0..composite_fields.len())
-        .map(|i| private_ident(&format!("__composite_keys_{i}")))
-        .collect();
-    let collect_keys = if composite_fields.is_empty() {
-        quote! { let #keys = [#(#direct_keys),*]; }
-    } else {
+    let check = |fields: &[&Field], find: proc_macro2::TokenStream| {
+        let direct_names = fields.iter().map(|f| &f.ident);
         quote! {
-            #(let #composite_keys = #composite_fields.duplicate_mutable_account_keys();)*
-            let #keys: Vec<Option<&anchor_lang::solana_program::pubkey::Pubkey>> =
-                [#(#direct_keys),*]
-                    .into_iter()
-                    #(.chain(#composite_keys.iter().map(Some)))*
-                    .collect();
-        }
-    };
-
-    quote! {
-        {
-            #collect_keys
-            if let Some((#index, #key)) = anchor_lang::__private::find_duplicate_key(&#keys) {
+            if let Some((#index, #key)) = #find {
                 // Composite keys have no field name here, so name them by key.
                 let #names: &[&str] = &[#(stringify!(#direct_names)),*];
                 return Err(anchor_lang::error::Error::from(
                     anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount
                 ).with_account_name(#names.get(#index).map_or_else(|| #key.to_string(), |n| n.to_string())));
             }
+        }
+    };
+    let collect_serializing = collect_duplicate_mutable_keys(
+        &serializing,
+        &composite_fields,
+        KeyKind::Serializing,
+        &keys,
+    );
+    let check_serializing = (serializing_sources >= 2).then(|| {
+        check(
+            &serializing,
+            quote!(anchor_lang::__private::find_duplicate_key(&#keys)),
+        )
+    });
+    // Loaders access the live buffer while serializing accounts write their changes
+    // on exit. Mixing the two can give stale reads or overwrite in-place writes.
+    let check_loaders = (has_composites || !loaders.is_empty()).then(|| {
+        let collect_loaders = collect_duplicate_mutable_keys(
+            &loaders,
+            &composite_fields,
+            KeyKind::Loader,
+            &loader_keys,
+        );
+        let check = check(
+            &loaders,
+            quote!(anchor_lang::__private::find_duplicate_loader_key(&#keys, &#loader_keys)),
+        );
+        quote! {
+            if !#keys.is_empty() {
+                #collect_loaders
+                #check
+            }
+        }
+    });
+
+    quote! {
+        {
+            #collect_serializing
+            #check_serializing
+            #check_loaders
+        }
+    }
+}
+
+fn collect_duplicate_mutable_keys(
+    fields: &[&Field],
+    composite_fields: &[&Ident],
+    kind: KeyKind,
+    keys: &Ident,
+) -> proc_macro2::TokenStream {
+    // Borrow each key from its `AccountInfo` rather than copying it, so the array
+    // stays small on the stack. Absent optional accounts become `None`.
+    let direct_keys = fields.iter().map(|f| {
+        let name = &f.ident;
+        let account_ref = constraints::generate_account_ref(f);
+        if f.is_optional {
+            quote! { #name.as_ref().map(|#name| #account_ref.key) }
+        } else {
+            quote! { Some(#account_ref.key) }
+        }
+    });
+
+    // Keep direct keys first so diagnostics can map their indices to field names.
+    let composite_keys: Vec<_> = (0..composite_fields.len())
+        .map(|i| private_ident(&format!("__composite_keys_{i}")))
+        .collect();
+    if composite_fields.is_empty() {
+        quote! { let #keys = [#(#direct_keys),*]; }
+    } else {
+        let reporting_method = kind.reporting_method();
+        quote! {
+            #(let #composite_keys = #composite_fields.#reporting_method();)*
+            let #keys: Vec<Option<&anchor_lang::solana_program::pubkey::Pubkey>> =
+                [#(#direct_keys),*]
+                    .into_iter()
+                    #(.chain(#composite_keys.iter().map(Some)))*
+                    .collect();
         }
     }
 }
