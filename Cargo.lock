@@ -371,6 +371,7 @@ dependencies = [
  "tiny-bip39",
  "tokio",
  "toml 0.7.8",
+ "toml_edit 0.19.15",
  "two-face",
  "url",
  "walkdir",
