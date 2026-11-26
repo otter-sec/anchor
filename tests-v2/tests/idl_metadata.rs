@@ -70,6 +70,22 @@ fn explicit_bump_omits_pda_metadata() {
 }
 
 #[test]
+fn canonical_explicit_bump_keeps_pda_metadata() {
+    let items = parse_accounts(&seeds::CheckLiteralCanonicalBump::__idl_accounts());
+    let account = single_account(&items, 1);
+    let pda = account
+        .pda
+        .as_ref()
+        .expect("canonical explicit bump should keep pda seeds");
+
+    assert_eq!(pda.seeds.len(), 1);
+    match &pda.seeds[0] {
+        IdlSeed::Const(seed) => assert_eq!(seed.value, b"data"),
+        other => panic!("expected const seed metadata, got {other:?}"),
+    }
+}
+
+#[test]
 fn mixed_supported_seeds_preserve_const_and_account_metadata() {
     let items = parse_accounts(&seeds::CheckMixed::__idl_accounts());
     let account = single_account(&items, 1);
