@@ -155,7 +155,9 @@ where
         let zero_len = serialized_len
             .saturating_sub(new_serialized_len)
             .min(payload.len());
-        unsafe { sol_memset(&mut payload[..zero_len], 0, zero_len) };
+        if zero_len != 0 {
+            unsafe { sol_memset(&mut payload[..zero_len], 0, zero_len) };
+        }
         Ok(new_serialized_len)
     }
 
