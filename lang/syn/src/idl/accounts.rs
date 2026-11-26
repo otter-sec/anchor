@@ -3,7 +3,8 @@ use {
     crate::{AccountField, AccountsStruct, ConstraintSeedsGroup, Field, InitKind, Ty},
     proc_macro2::TokenStream,
     quote::{quote, ToTokens},
-    syn::Result,
+    std::collections::HashMap,
+    syn::{visit::Visit, Result},
 };
 
 /// Generate the IDL build impl for the Accounts struct.
@@ -323,6 +324,10 @@ fn get_pda(acc: &Field, accounts: &AccountsStruct) -> TokenStream {
 /// - Constant
 /// - Instruction argument
 /// - Account key or field
+///
+/// Other seeds, e.g. ones that pass an argument or account to a function or that
+/// contain a macro, leave the account's PDA out of the IDL, so clients need to
+/// pass the account explicitly.
 fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream> {
     let idl = get_idl_module_path();
     let args = accounts.instruction_args().unwrap_or_default();
@@ -369,6 +374,13 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
                         }
                     )
                 })
+            } else if references_locals(seed, &args, accounts) {
+                // Arguments and accounts are not in scope where constant
+                // seeds are evaluated, so skip resolving this PDA instead
+                Err(syn::Error::new_spanned(
+                    seed,
+                    format!("Seed expression not supported: {seed:#?}"),
+                ))
             } else if call.method == "as_ref" && call.args.is_empty() {
                 // On e.g. a `&str` const, `.as_ref()` alone is ambiguous
                 // (E0282), so pick `AsRef<[u8]>` like the seeds slice does
@@ -442,6 +454,43 @@ fn parse_seed(seed: &syn::Expr, accounts: &AccountsStruct) -> Result<TokenStream
             format!("Unexpected seed: {seed:?}"),
         )),
     }
+}
+
+/// Whether the seed uses an instruction argument or an account, e.g. `args` in
+/// `hash(&args.name).to_bytes()`. Such seeds can't be evaluated as constants.
+///
+/// Macros always count: their expansion can't be inspected, and it can use an
+/// argument or account without it being passed in.
+fn references_locals(
+    seed: &syn::Expr,
+    args: &HashMap<String, String>,
+    accounts: &AccountsStruct,
+) -> bool {
+    struct LocalFinder {
+        names: Vec<String>,
+        found: bool,
+    }
+
+    impl<'ast> Visit<'ast> for LocalFinder {
+        fn visit_expr_path(&mut self, expr_path: &'ast syn::ExprPath) {
+            // Locals are bare identifiers, so e.g. `system_program::ID` doesn't
+            // use the `system_program` account
+            if let Some(ident) = expr_path.path.get_ident() {
+                self.found |= self.names.iter().any(|name| ident == name);
+            }
+        }
+
+        fn visit_macro(&mut self, _: &'ast syn::Macro) {
+            self.found = true;
+        }
+    }
+
+    let mut finder = LocalFinder {
+        names: args.keys().cloned().chain(accounts.field_names()).collect(),
+        found: false,
+    };
+    finder.visit_expr(seed);
+    finder.found
 }
 
 /// Get the bytes of a string or byte string literal seed followed by
@@ -664,6 +713,56 @@ mod tests {
                 const_seed_expr(&seed).to_token_stream().to_string(),
                 expected.to_token_stream().to_string(),
             );
+        }
+    }
+
+    /// Call `references_locals` for an accounts struct with the arguments `args`
+    /// and `value` and the accounts `payer` and `system_program`.
+    fn seed_references_locals(seed: &syn::Expr) -> bool {
+        let accounts: AccountsStruct = parse_quote! {
+            #[instruction(args: SeedArgs, value: u64)]
+            pub struct Seeds<'info> {
+                pub payer: Signer<'info>,
+                pub system_program: Program<'info, System>,
+            }
+        };
+        let args = accounts.instruction_args().unwrap_or_default();
+        references_locals(seed, &args, &accounts)
+    }
+
+    #[test]
+    fn seeds_that_use_args_or_accounts_reference_locals() {
+        let seeds: [syn::Expr; 3] = [
+            parse_quote!(hash(&args.name).to_bytes()),
+            parse_quote!(value_seed(value).as_slice()),
+            parse_quote!(derive_seed(&payer.key()).as_ref()),
+        ];
+        for seed in seeds {
+            assert!(seed_references_locals(&seed), "{}", seed.to_token_stream());
+        }
+    }
+
+    #[test]
+    fn seeds_with_macros_count_as_referencing_locals() {
+        let seeds: [syn::Expr; 3] = [
+            parse_quote!(helper!(args).as_ref()),
+            parse_quote!(helper!().as_ref()),
+            parse_quote!(concat!("pre", "fix").as_bytes()),
+        ];
+        for seed in seeds {
+            assert!(seed_references_locals(&seed), "{}", seed.to_token_stream());
+        }
+    }
+
+    #[test]
+    fn seeds_that_only_share_a_name_with_locals_dont_reference_them() {
+        let seeds: [syn::Expr; 3] = [
+            parse_quote!(system_program::ID.as_ref()),
+            parse_quote!(CONFIG.value.to_le_bytes()),
+            parse_quote!(SEEDS.payer().as_ref()),
+        ];
+        for seed in seeds {
+            assert!(!seed_references_locals(&seed), "{}", seed.to_token_stream());
         }
     }
 }

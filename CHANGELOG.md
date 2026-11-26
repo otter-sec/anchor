@@ -44,6 +44,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - ts: Cap the decompressed size of on-chain IDLs in `decodeIdlAccount` and `Program.fetchIdl`, and reject IDLs that aren't UTF-8 encoded ([#5226](https://github.com/otter-sec/anchor/pull/5226)).
 - cli: Cap decompressed IDL size at 16 MiB in `anchor legacy-idl fetch`, and return an error instead of panicking when the account's declared IDL length exceeds its data ([#5261](https://github.com/otter-sec/anchor/pull/5261)).
 - cli: Prevent --final from transferring the upgrade authority to a new pubkey ([#5296](https://github.com/otter-sec/anchor/pull/5296)).
+- idl: Skip PDA resolution for seeds that use instruction arguments or accounts in function calls, or that contain macros, instead of failing to build the IDL ([#5258](https://github.com/otter-sec/anchor/pull/5258)).
 
 ### Breaking
 
