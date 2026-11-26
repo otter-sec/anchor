@@ -24,3 +24,12 @@ fn test_pubkey() {
     let want = Pubkey::from_str("A7yUYJNEVYRLE4QWsnc9rE9JRsm7DfqEmLscQVwkffAk");
     assert_eq!(want.unwrap(), pk::PUBKEY);
 }
+
+#[test]
+fn test_unsupported_sysvars_stay_exported_from_prelude() {
+    fn accepts_slot_hashes(_: Option<anchor_lang::prelude::SlotHashes>) {}
+    fn accepts_instructions(_: Option<anchor_lang::prelude::Instructions>) {}
+
+    accepts_slot_hashes(None);
+    accepts_instructions(None);
+}
