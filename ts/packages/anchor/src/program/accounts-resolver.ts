@@ -306,7 +306,14 @@ export class AccountsResolver<IDL extends Idl> {
         programId: this._programId,
         idlIx: this._idlIx,
       });
-      this._accounts = accounts;
+      // The methods builder reads the object it passed in, so copy a
+      // returned object into it instead of replacing the reference.
+      if (accounts !== this._accounts) {
+        for (const key of Object.keys(this._accounts)) {
+          delete this._accounts[key];
+        }
+        Object.assign(this._accounts, accounts);
+      }
       return resolved;
     }
 

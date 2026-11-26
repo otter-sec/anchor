@@ -1,4 +1,4 @@
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { Idl, Program } from "../src";
 
 // Jest 27 does not expose Node's structuredClone in its test environment.
@@ -41,4 +41,65 @@ describe("Program.at", () => {
       );
     }
   );
+});
+
+describe("custom account resolver", () => {
+  const idl: Idl = {
+    address: "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
+    metadata: { name: "vault", version: "0.1.0", spec: "0.1.0" },
+    instructions: [
+      {
+        name: "deposit",
+        discriminator: [0, 0, 0, 0, 0, 0, 0, 0],
+        accounts: [{ name: "user" }, { name: "vault", writable: true }],
+        args: [],
+      },
+    ],
+  };
+  const provider = { connection: new Connection("http://localhost:8899") };
+  const user = Keypair.generate().publicKey;
+  const vault = Keypair.generate().publicKey;
+
+  it.each([
+    [
+      "returns a new object",
+      async ({ accounts }) => ({
+        accounts: { ...accounts, vault },
+        resolved: 0,
+      }),
+    ],
+    [
+      "mutates the given object",
+      async ({ accounts }) => {
+        accounts.vault = vault;
+        return { accounts, resolved: 0 };
+      },
+    ],
+  ])("uses the accounts when the resolver %s", async (_, resolver) => {
+    const program = new Program(idl, provider, undefined, () => resolver);
+    const builder = program.methods.deposit().accounts({ user });
+
+    const pubkeys = await builder.pubkeys();
+    const ix = await builder.instruction();
+
+    expect((pubkeys as any).vault.toBase58()).toBe(vault.toBase58());
+    expect(ix.keys.map((meta) => meta.pubkey.toBase58())).toEqual([
+      user.toBase58(),
+      vault.toBase58(),
+    ]);
+  });
+
+  it("drops an account the resolver leaves out of a new object", async () => {
+    const program = new Program(idl, provider, undefined, () => async () => ({
+      accounts: { user },
+      resolved: 0,
+    }));
+
+    const pubkeys = await program.methods
+      .deposit()
+      .accountsPartial({ user, vault })
+      .pubkeys();
+
+    expect(Object.keys(pubkeys)).toEqual(["user"]);
+  });
 });
