@@ -678,6 +678,8 @@ pub mod __private {
     }
 
     #[cfg(feature = "lazy-account")]
+    pub use crate::accounts::lazy_account::LazyFields;
+    #[cfg(feature = "lazy-account")]
     pub use crate::lazy::Lazy;
     #[cfg(feature = "lazy-account")]
     pub use anchor_derive_serde::Lazy;

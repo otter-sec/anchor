@@ -186,7 +186,29 @@ where
     pub __account: Rc<RefCell<MaybeUninit<T>>>,
     /// **INTERNAL FIELD DO NOT USE!**
     #[doc(hidden)]
-    pub __fields: Rc<RefCell<Option<Vec<bool>>>>,
+    pub __fields: Rc<RefCell<Option<LazyFields<T>>>>,
+}
+
+/// Tracks which fields of a [`LazyAccount`] have been initialized and how to drop them.
+///
+/// **INTERNAL TYPE DO NOT USE!**
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct LazyFields<T> {
+    /// Initialization state of each field.
+    pub initialized: Vec<bool>,
+    /// Drops the initialized fields of the account.
+    pub drop_fn: fn(&mut MaybeUninit<T>, &[bool]),
+}
+
+impl<T> LazyFields<T> {
+    /// Creates a new field state with the given initialization state and drop function.
+    pub fn new(initialized: Vec<bool>, drop_fn: fn(&mut MaybeUninit<T>, &[bool])) -> Self {
+        Self {
+            initialized,
+            drop_fn,
+        }
+    }
 }
 
 impl<T> fmt::Debug for LazyAccount<'_, T>
@@ -242,6 +264,8 @@ where
 
     /// Unload the deserialized account value by resetting the cache.
     ///
+    /// Initialized fields are dropped before the cache is reset.
+    ///
     /// This is useful when observing side-effects of CPIs, and will re-check the account
     /// owner and discriminator.
     ///
@@ -266,10 +290,21 @@ where
     pub fn unload(&self) -> Result<&Self> {
         // Re-run load-time checks (owner, discriminator)
         drop(Self::try_from(self.__info)?);
-        // TODO: Should we drop the initialized fields manually?
-        *self.__account.borrow_mut() = MaybeUninit::uninit();
-        *self.__fields.borrow_mut() = None;
+        self.__cleanup_fields();
         Ok(self)
+    }
+
+    /// Drops the initialized fields and resets the cache.
+    ///
+    /// Idempotent: calling it when nothing is initialized does nothing.
+    fn __cleanup_fields(&self) {
+        // Take the field state out before touching the account to avoid double drops.
+        if let Some(fields) = self.__fields.borrow_mut().take() {
+            if fields.initialized.iter().any(|initialized| *initialized) {
+                (fields.drop_fn)(&mut self.__account.borrow_mut(), &fields.initialized);
+            }
+        }
+        *self.__account.borrow_mut() = MaybeUninit::uninit();
     }
 }
 

@@ -116,7 +116,7 @@ pub fn gen_lazy(strct: &syn::ItemStruct) -> syn::Result<TokenStream> {
                     self.#initialize_fields();
 
                     // Return early if initialized
-                    if self.__fields.borrow().as_ref().unwrap()[#i] {
+                    if self.__fields.borrow().as_ref().unwrap().initialized[#i] {
                         return Ok(f());
                     }
 
@@ -134,7 +134,7 @@ pub fn gen_lazy(strct: &syn::ItemStruct) -> syn::Result<TokenStream> {
                      };
 
                     // Set initialized
-                    self.__fields.borrow_mut().as_mut().unwrap()[#i] = true;
+                    self.__fields.borrow_mut().as_mut().unwrap().initialized[#i] = true;
 
                     Ok(f())
                 }
@@ -166,6 +166,25 @@ pub fn gen_lazy(strct: &syn::ItemStruct) -> syn::Result<TokenStream> {
         .map(|field| format_ident!("load_{field}"));
     let total_fields = strct.fields.len();
 
+    let drop_fields = strct
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| {
+            let field_ident = to_field_ident(field, i);
+            quote! {
+                if initialized[#i] {
+                    // SAFETY: Only initialized fields are dropped.
+                    unsafe {
+                        ::core::ptr::drop_in_place(
+                            ::core::ptr::addr_of_mut!((*account.as_mut_ptr()).#field_ident)
+                        );
+                    }
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
     Ok(quote! {
         pub trait #lazy_ident {
             /// Load a reference to the entire account.
@@ -189,6 +208,12 @@ pub fn gen_lazy(strct: &syn::ItemStruct) -> syn::Result<TokenStream> {
 
             #[doc(hidden)]
             fn #initialize_fields(&self);
+
+            #[doc(hidden)]
+            fn __drop_initialized(
+                account: &mut ::core::mem::MaybeUninit<#ident>,
+                initialized: &[bool],
+            );
 
             /// Run the exit routine of the account, similar to [`AccountsExit`] but implemented
             /// as a regular method because we can't implement external traits for external structs.
@@ -222,7 +247,7 @@ pub fn gen_lazy(strct: &syn::ItemStruct) -> syn::Result<TokenStream> {
                 let all_uninit = {
                     // Return early if all fields are initialized
                     let fields = self.__fields.borrow();
-                    let fields = fields.as_ref().unwrap();
+                    let fields = &fields.as_ref().unwrap().initialized;
                     if !fields.contains(&false) {
                         return Ok(f());
                     }
@@ -239,8 +264,7 @@ pub fn gen_lazy(strct: &syn::ItemStruct) -> syn::Result<TokenStream> {
 
                     // Set fields to initialized
                     let mut fields = self.__fields.borrow_mut();
-                    let fields = fields.as_mut().unwrap();
-                    for field in fields {
+                    for field in &mut fields.as_mut().unwrap().initialized {
                         *field = true;
                     }
                 } else {
@@ -262,7 +286,27 @@ pub fn gen_lazy(strct: &syn::ItemStruct) -> syn::Result<TokenStream> {
             #[inline(always)]
             fn #initialize_fields(&self) {
                 if self.__fields.borrow().is_none() {
-                    *self.__fields.borrow_mut() = Some(vec![false; #total_fields]);
+                    *self.__fields.borrow_mut() =
+                        Some(anchor_lang::__private::LazyFields::new(
+                            vec![false; #total_fields],
+                            <Self as #lazy_ident>::__drop_initialized,
+                        ));
+                }
+            }
+
+            #[inline(never)]
+            fn __drop_initialized(
+                account: &mut ::core::mem::MaybeUninit<#ident>,
+                initialized: &[bool],
+            ) {
+                if initialized.iter().all(|initialized| *initialized) {
+                    // SAFETY: All fields are initialized, so the whole account value is
+                    // initialized.
+                    unsafe { ::core::ptr::drop_in_place(account.as_mut_ptr()) };
+                } else {
+                    // Drop only initialized fields. Uninitialized fields must not be
+                    // accessed as references.
+                    #(#drop_fields)*
                 }
             }
 
