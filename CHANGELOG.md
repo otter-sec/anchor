@@ -44,7 +44,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - ts: Cap the decompressed size of on-chain IDLs in `decodeIdlAccount` and `Program.fetchIdl`, and reject IDLs that aren't UTF-8 encoded ([#5226](https://github.com/otter-sec/anchor/pull/5226)).
 - cli: Cap decompressed IDL size at 16 MiB in `anchor legacy-idl fetch`, and return an error instead of panicking when the account's declared IDL length exceeds its data ([#5261](https://github.com/otter-sec/anchor/pull/5261)).
 - cli: Prevent --final from transferring the upgrade authority to a new pubkey ([#5296](https://github.com/otter-sec/anchor/pull/5296)).
-- cli: Key the `Anchor.toml` entry written by `anchor new` by the snake_case lib name, as `anchor init` does, so `anchor keys sync` and the duplicate-program check match the program ([#5363](https://github.com/otter-sec/anchor/issues/5363)).
+- cli: Key the `Anchor.toml` entry written by `anchor new` by the snake_case lib name, as `anchor init` does, so `anchor keys sync` and the duplicate-program check match the program ([#5366](https://github.com/otter-sec/anchor/issues/5366)).
 
 ### Breaking
 
