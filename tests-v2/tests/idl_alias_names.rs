@@ -99,6 +99,19 @@ fn declared_aliases_use_the_registered_types() {
         },
     };
 }
+
+#[test]
+fn renamed_declared_types_use_the_registered_name() {
+    use aliases::types::BumpArgs as Renamed;
+
+    #[derive(IdlType)]
+    struct Local {
+        renamed: Renamed,
+    }
+
+    let type_def = <Local as IdlAccountType>::__idl_type_def().unwrap();
+    assert!(type_def.contains("{\"defined\":{\"name\":\"BumpArgs\"}}"), "{type_def}");
+}
 "#;
 
 fn write_crate(dir: &Path, name: &str, anchor_lang: &Path, features: &str, source: &str) {
@@ -255,7 +268,7 @@ fn aliases_reference_the_registered_type() {
         &consumer_dir,
         "idl-alias-names-consumer",
         &anchor_lang,
-        "",
+        r#"idl-build = ["anchor-lang/idl-build"]"#,
         CONSUMER,
     );
     fs::create_dir_all(consumer_dir.join("idls")).unwrap();
@@ -264,7 +277,11 @@ fn aliases_reference_the_registered_type() {
         serde_json::to_string(&program).unwrap(),
     )
     .unwrap();
-    let output = cargo_test(&consumer_dir, &case_dir.join("target"), &[]);
+    let output = cargo_test(
+        &consumer_dir,
+        &case_dir.join("target"),
+        &["--features", "idl-build"],
+    );
     assert_success(&consumer_dir, &output);
 }
 

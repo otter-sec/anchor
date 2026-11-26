@@ -125,6 +125,13 @@ pub struct PodWrapperOnly {
     pub mode: PodMode,
 }
 
+pub type ModeAlias = PodMode;
+
+#[derive(IdlType)]
+pub struct PodWrapperAlias {
+    pub mode: ModeAlias,
+}
+
 #[account]
 #[repr(C)]
 pub struct PodVecOnly {
@@ -381,6 +388,17 @@ mod idl_tests {
             .expect("PodWrapperOnly should emit its IDL type");
         assert!(wrapper_account.contains("\"defined\":{\"name\":\"PodMode\"}"));
         assert!(types.iter().any(|entry| entry.contains("\"name\":\"PodMode\"")));
+    }
+
+    #[test]
+    fn pod_wrapper_aliases_reference_the_registered_type() {
+        let type_def = <PodWrapperAlias as IdlAccountType>::__idl_type_def()
+            .expect("PodWrapperAlias should emit an IDL type");
+        assert!(
+            type_def.contains("\"defined\":{\"name\":\"PodMode\"}"),
+            "{type_def}"
+        );
+        assert!(!type_def.contains("ModeAlias"), "{type_def}");
     }
 
     #[test]
