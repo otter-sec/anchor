@@ -14,6 +14,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 - cli: Add `anchor security fetch` to read on-chain `security.json` ([#5124](https://github.com/otter-sec/anchor/pull/5124)).
 - cli: Warn on mainnet deploy without `--security-metadata`, and reject a `security.json` that still matches the `anchor init` template ([#5124](https://github.com/otter-sec/anchor/pull/5124)).
+- ts: Add `MethodPubkeys` convenience type to simplify account resolution ([#5154](https://github.com/otter-sec/anchor/pull/5154)).
 - client: Add support for v1 transactions ([#5076](https://github.com/otter-sec/anchor/pull/5076)).
 - lang: Allow `None` in `mint::authority` and `mint::freeze_authority` constraints ([#5007](https://github.com/otter-sec/anchor/pull/5007)).
 - lang: Implement `Space` for `NonZero*` integers so `#[derive(InitSpace)]` supports them ([#5132](https://github.com/otter-sec/anchor/pull/5132)).
