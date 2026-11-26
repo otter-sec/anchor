@@ -3,9 +3,13 @@
 
 use {
     anchor_lang_idl::types::{
-        Idl, IdlArrayLen, IdlDefinedFields, IdlField, IdlType, IdlTypeDef, IdlTypeDefTy,
+        Idl, IdlArrayLen, IdlDefinedFields, IdlEnumVariant, IdlField, IdlGenericArg,
+        IdlSerialization, IdlType, IdlTypeDef, IdlTypeDefGeneric, IdlTypeDefTy,
     },
-    std::{collections::HashSet, fmt},
+    std::{
+        collections::{HashMap, HashSet},
+        fmt,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -83,16 +87,18 @@ pub fn diff(old: &Idl, new: &Idl) -> Vec<Finding> {
             );
             continue;
         }
-        let (Some(old_def), Some(new_def)) = (find(old, &acc.name), find(new, &new_acc.name))
-        else {
-            continue;
+        let (old_def, new_def) = match (find(old, &acc.name), find(new, &new_acc.name)) {
+            (Some(a), Some(b)) => (a, b),
+            (a, _) => {
+                push(
+                    Level::Break,
+                    undefined(&acc.name, &new_acc.name, a.is_none()),
+                );
+                continue;
+            }
         };
-        if old_def.serialization != new_def.serialization || old_def.repr != new_def.repr {
-            push(
-                Level::Break,
-                "serialization or repr changed: existing bytes are read with a different encoding"
-                    .into(),
-            );
+        if let Some(message) = encoding_change(old_def, new_def) {
+            push(Level::Break, message);
             continue;
         }
         let mut cx = Cx {
@@ -102,6 +108,7 @@ pub fn diff(old: &Idl, new: &Idl) -> Vec<Finding> {
             // Not seeded with the account: a nested copy of it (`Vec<Self>`)
             // must be compared as a nested value, where appended fields break.
             visiting: HashSet::new(),
+            depth: 0,
         };
         cx.compare_def(&old_def.ty, &new_def.ty, &acc.name, true);
         for (level, message) in cx.findings {
@@ -111,8 +118,126 @@ pub fn diff(old: &Idl, new: &Idl) -> Vec<Finding> {
     out
 }
 
+const WRONG_OFFSET: &str = "this field and the ones after it are read at the wrong offset, so \
+                            existing accounts decode into wrong values";
+
 fn find<'a>(idl: &'a Idl, name: &str) -> Option<&'a IdlTypeDef> {
     idl.types.iter().find(|t| t.name == name)
+}
+
+/// A type the IDL references but does not define (for example from a crate built without
+/// `idl-build`) cannot be checked; saying nothing would read as "unchanged".
+fn undefined(old_name: &str, new_name: &str, missing_in_old: bool) -> String {
+    let (name, side) = if missing_in_old {
+        (old_name, "old")
+    } else {
+        (new_name, "new")
+    };
+    format!("not checked: type `{name}` is not defined in the {side} IDL, so its layout is unknown")
+}
+
+/// Serialization always matters. `repr` only changes the bytes of zero-copy types: Borsh
+/// ignores it.
+fn encoding_change(a: &IdlTypeDef, b: &IdlTypeDef) -> Option<String> {
+    if a.serialization != b.serialization {
+        return Some(
+            "serialization changed: existing bytes are read with a different encoding".into(),
+        );
+    }
+    if a.serialization != IdlSerialization::Borsh && a.repr != b.repr {
+        return Some("repr changed: field offsets of existing zero-copy bytes change".into());
+    }
+    None
+}
+
+/// The definition of a generic type with its parameters replaced by the arguments it is used
+/// with, so `Wrapper<Inner>` is compared through `Inner`'s layout.
+fn instantiate(def: &IdlTypeDef, args: &[IdlGenericArg]) -> Option<IdlTypeDefTy> {
+    if def.generics.len() != args.len() {
+        return None;
+    }
+    let env: HashMap<&str, &IdlGenericArg> = def
+        .generics
+        .iter()
+        .map(|g| match g {
+            IdlTypeDefGeneric::Type { name } | IdlTypeDefGeneric::Const { name, .. } => {
+                name.as_str()
+            }
+        })
+        .zip(args)
+        .collect();
+    let fields = |f: &Option<IdlDefinedFields>| {
+        f.as_ref().map(|f| match f {
+            IdlDefinedFields::Named(fs) => IdlDefinedFields::Named(
+                fs.iter()
+                    .map(|f| IdlField {
+                        ty: subst(&f.ty, &env),
+                        ..f.clone()
+                    })
+                    .collect(),
+            ),
+            IdlDefinedFields::Tuple(ts) => {
+                IdlDefinedFields::Tuple(ts.iter().map(|t| subst(t, &env)).collect())
+            }
+        })
+    };
+    Some(match &def.ty {
+        IdlTypeDefTy::Struct { fields: f } => IdlTypeDefTy::Struct { fields: fields(f) },
+        IdlTypeDefTy::Enum { variants } => IdlTypeDefTy::Enum {
+            variants: variants
+                .iter()
+                .map(|v| IdlEnumVariant {
+                    name: v.name.clone(),
+                    fields: fields(&v.fields),
+                })
+                .collect(),
+        },
+        IdlTypeDefTy::Type { alias } => IdlTypeDefTy::Type {
+            alias: subst(alias, &env),
+        },
+    })
+}
+
+fn subst(t: &IdlType, env: &HashMap<&str, &IdlGenericArg>) -> IdlType {
+    match t {
+        IdlType::Generic(g) => match env.get(g.as_str()) {
+            Some(IdlGenericArg::Type { ty }) => ty.clone(),
+            _ => t.clone(),
+        },
+        IdlType::Option(x) => IdlType::Option(Box::new(subst(x, env))),
+        IdlType::Vec(x) => IdlType::Vec(Box::new(subst(x, env))),
+        IdlType::Array(x, l) => {
+            let l = match l {
+                IdlArrayLen::Generic(g) => match env.get(g.as_str()) {
+                    Some(IdlGenericArg::Const { value }) => value
+                        .parse()
+                        .map(IdlArrayLen::Value)
+                        .unwrap_or_else(|_| l.clone()),
+                    _ => l.clone(),
+                },
+                _ => l.clone(),
+            };
+            IdlType::Array(Box::new(subst(x, env)), l)
+        }
+        IdlType::Defined { name, generics } => IdlType::Defined {
+            name: name.clone(),
+            generics: generics
+                .iter()
+                .map(|g| match g {
+                    // The IDL generator emits a const parameter passed on as `Inner<N>` as a
+                    // type argument when its name is one letter.
+                    IdlGenericArg::Type {
+                        ty: IdlType::Generic(n),
+                    } if matches!(env.get(n.as_str()), Some(IdlGenericArg::Const { .. })) => {
+                        (*env[n.as_str()]).clone()
+                    }
+                    IdlGenericArg::Type { ty } => IdlGenericArg::Type { ty: subst(ty, env) },
+                    other => other.clone(),
+                })
+                .collect(),
+        },
+        _ => t.clone(),
+    }
 }
 
 struct Cx<'a> {
@@ -122,7 +247,12 @@ struct Cx<'a> {
     /// Pairs of defined types being compared, to stop on recursive types
     /// such as `Vec<Self>` or `Option<Box<Self>>`.
     visiting: HashSet<(String, String)>,
+    /// Nesting depth of defined types, to stop on recursion whose generic arguments grow at
+    /// each level (`Node<T> { next: Vec<Node<Option<T>>> }`), which `visiting` cannot catch.
+    depth: usize,
 }
+
+const MAX_DEPTH: usize = 64;
 
 impl Cx<'_> {
     fn add(&mut self, level: Level, message: String) {
@@ -160,6 +290,30 @@ impl Cx<'_> {
                         format!("{path}: variants removed: {}", gone.join(", ")),
                     );
                     return false;
+                }
+                let largest = |vs: &[IdlEnumVariant], idl: &Idl| {
+                    vs.iter()
+                        .map(|v| variant_size(v, idl))
+                        .collect::<Option<Vec<_>>>()
+                        .and_then(|s| s.into_iter().max())
+                };
+                if let (Some(old_max), Some(new_max)) =
+                    (largest(va, self.old), largest(vb, self.new))
+                {
+                    if new_max > old_max {
+                        let added: Vec<_> =
+                            vb[va.len()..].iter().map(|v| v.name.as_str()).collect();
+                        self.add(
+                            Level::Migration,
+                            format!(
+                                "{path}: variants added: {}; the largest variant is now {new_max} \
+                                 bytes (was {old_max}), so accounts sized for the old largest \
+                                 fail with AccountDidNotSerialize (3004) when storing one until \
+                                 they are reallocated",
+                                added.join(", ")
+                            ),
+                        );
+                    }
                 }
                 true
             }
@@ -213,24 +367,46 @@ impl Cx<'_> {
                         name(tb)
                     )
                 } else {
+                    // The breaking one, not an earlier rename or migration note.
                     inner
                         .into_iter()
+                        .find(|(l, _)| *l == Level::Break)
                         .map(|(_, m)| m)
-                        .next()
                         .unwrap_or_else(|| format!("{p}: changed"))
                 };
-                let message = if detail.contains("change meaning") {
+                // A nested field already explains the consequence; add it only once.
+                let message = if detail.contains("change meaning") || detail.contains(WRONG_OFFSET)
+                {
                     detail
                 } else {
-                    format!(
-                        "{detail}; this field and the ones after it are read at the wrong offset, \
-                         so existing accounts decode into wrong values"
-                    )
+                    format!("{detail}; {WRONG_OFFSET}")
                 };
                 self.add(Level::Break, message);
                 return false;
             }
             if na != nb {
+                // Same type at this position, but if either name exists at another position
+                // the field moved (swap, insert or removal mid-struct), so stored bytes now
+                // belong to a different field.
+                let moved: Vec<_> = fa
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(j, (n, _))| {
+                        let k = fb.iter().position(|(m, _)| m == n)?;
+                        (j != k).then(|| format!("`{n}` (position {j} -> {k})"))
+                    })
+                    .collect();
+                if !moved.is_empty() {
+                    self.add(
+                        Level::Break,
+                        format!(
+                            "{path}: fields moved: {}; existing accounts keep the old order, so \
+                             these fields decode into wrong values",
+                            moved.join(", ")
+                        ),
+                    );
+                    return false;
+                }
                 self.add(
                     Level::Info,
                     format!(
@@ -282,8 +458,10 @@ impl Cx<'_> {
                 format!(
                     "{path}: fields appended: {} ({size}). Accounts created by the old program \
                      are too short and fail with AccountDidNotDeserialize (3003) until each is \
-                     reallocated (`realloc` or `Migration<From, To>`), unless they were created \
-                     with spare space",
+                     reallocated (`realloc` or `Migration<From, To>`). Accounts created with \
+                     spare space decode instead, and the new fields read whatever bytes are there \
+                     (zeros, or leftovers if an earlier variable-length field shrank), so set \
+                     them explicitly",
                     names.join(", ")
                 ),
             );
@@ -320,30 +498,53 @@ impl Cx<'_> {
                     generics: gb,
                 },
             ) => {
-                if ga != gb {
-                    self.add(Level::Break, format!("{path}: generic arguments changed"));
+                let (da, db) = match (find(self.old, na), find(self.new, nb)) {
+                    (Some(da), Some(db)) => (da, db),
+                    (da, _) => {
+                        self.add(
+                            Level::Break,
+                            format!("{path}: {}", undefined(na, nb, da.is_none())),
+                        );
+                        return false;
+                    }
+                };
+                if let Some(message) = encoding_change(da, db) {
+                    self.add(Level::Break, format!("{path}: {message}"));
                     return false;
                 }
-                match (find(self.old, na), find(self.new, nb)) {
-                    (Some(da), Some(db)) => {
-                        // Already compared further up: its changes are
-                        // reported there.
-                        let pair = (na.clone(), nb.clone());
-                        if !self.visiting.insert(pair.clone()) {
-                            return true;
-                        }
-                        let same = self.compare_def(&da.ty, &db.ty, path, false);
-                        self.visiting.remove(&pair);
-                        same
+                let (ta, tb) = match (instantiate(da, ga), instantiate(db, gb)) {
+                    (Some(ta), Some(tb)) => (ta, tb),
+                    (ta, _) => {
+                        let n = if ta.is_none() { na } else { nb };
+                        self.add(
+                            Level::Break,
+                            format!(
+                                "{path}: not checked: generic arguments of `{n}` do not match its \
+                                 parameters"
+                            ),
+                        );
+                        return false;
                     }
-                    _ => {
-                        if na != nb {
-                            self.add(Level::Break, format!("{path}: type `{na}` -> `{nb}`"));
-                            return false;
-                        }
-                        true
-                    }
+                };
+                // Already compared further up: its changes are reported there.
+                let pair = (format!("{na}{ga:?}"), format!("{nb}{gb:?}"));
+                if !self.visiting.insert(pair.clone()) {
+                    return true;
                 }
+                if self.depth == MAX_DEPTH {
+                    self.add(
+                        Level::Break,
+                        format!(
+                            "{path}: not checked: types nest more than {MAX_DEPTH} levels deep"
+                        ),
+                    );
+                    return false;
+                }
+                self.depth += 1;
+                let same = self.compare_def(&ta, &tb, path, false);
+                self.depth -= 1;
+                self.visiting.remove(&pair);
+                same
             }
             _ if a == b => true,
             _ => {
@@ -375,6 +576,22 @@ fn name(t: &IdlType) -> String {
             .and_then(|v| v.as_str().map(str::to_owned))
             .unwrap_or_else(|| format!("{other:?}")),
     }
+}
+
+/// Borsh size of an enum variant: the 1-byte index plus its fields.
+fn variant_size(v: &IdlEnumVariant, idl: &Idl) -> Option<usize> {
+    let fields = match &v.fields {
+        None => 0,
+        Some(IdlDefinedFields::Named(fs)) => fs
+            .iter()
+            .map(|f| fixed_size(&f.ty, idl))
+            .sum::<Option<usize>>()?,
+        Some(IdlDefinedFields::Tuple(ts)) => ts
+            .iter()
+            .map(|t| fixed_size(t, idl))
+            .sum::<Option<usize>>()?,
+    };
+    Some(1 + fields)
 }
 
 /// Borsh size of a value of this type, or None when it varies.
@@ -474,6 +691,225 @@ mod tests {
             {"name": "count", "type": "u32"}, {"name": "authority", "type": "pubkey"}
         ]));
         assert!(levels(&base(), &narrowed).contains(&Level::Break));
+    }
+
+    /// An IDL with one account `name` and the given type definitions (the account's included).
+    fn with_types(name: &str, types: serde_json::Value) -> Idl {
+        serde_json::from_value(json!({
+            "address": "11111111111111111111111111111111",
+            "metadata": {"name": "p", "version": "0.1.0", "spec": "0.1.0"},
+            "instructions": [],
+            "accounts": [{"name": name, "discriminator": [1, 0, 0, 0, 0, 0, 0, 0]}],
+            "types": types
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn generic_arguments_are_compared_by_layout() {
+        let vault = |inner_name: &str, inner_ty: &str| {
+            with_types(
+                "Vault",
+                json!([
+                    {"name": "Vault", "type": {"kind": "struct", "fields": [
+                        {"name": "w", "type": {"defined": {"name": "Wrapper", "generics": [
+                            {"kind": "type", "type": {"defined": {"name": inner_name}}}
+                        ]}}},
+                        {"name": "n", "type": "u64"}
+                    ]}},
+                    {"name": "Wrapper", "generics": [{"kind": "type", "name": "T"}],
+                     "type": {"kind": "struct", "fields": [{"name": "value", "type": {"generic": "T"}}]}},
+                    {"name": inner_name, "type": {"kind": "struct", "fields": [{"name": "a", "type": inner_ty}]}}
+                ]),
+            )
+        };
+        // The argument's layout changed: everything after it shifts.
+        let f = diff(&vault("Inner", "u64"), &vault("Inner", "u32"));
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].level, Level::Break);
+        // Explained once, not once per nesting level.
+        assert_eq!(
+            f[0].message.matches(WRONG_OFFSET).count(),
+            1,
+            "{}",
+            f[0].message
+        );
+        // The argument was renamed but has the same layout: same bytes.
+        assert!(diff(&vault("Inner", "u64"), &vault("Inner2", "u64")).is_empty());
+    }
+
+    #[test]
+    fn const_generic_passed_on_is_compared() {
+        // `Outer<const N: usize> { inner: Inner<N> }`, `Inner<const M: usize> { data: [u8; M] }`.
+        // The generator emits the one-letter `N` in `Inner<N>` as a type argument.
+        let acc = |n: &str| {
+            with_types(
+                "Acc",
+                json!([
+                    {"name": "Acc", "type": {"kind": "struct", "fields": [
+                        {"name": "o", "type": {"defined": {"name": "Outer", "generics": [{"kind": "const", "value": n}]}}}
+                    ]}},
+                    {"name": "Outer", "generics": [{"kind": "const", "name": "N", "type": "usize"}],
+                     "type": {"kind": "struct", "fields": [
+                        {"name": "inner", "type": {"defined": {"name": "Inner", "generics": [{"kind": "type", "type": {"generic": "N"}}]}}}
+                    ]}},
+                    {"name": "Inner", "generics": [{"kind": "const", "name": "M", "type": "usize"}],
+                     "type": {"kind": "struct", "fields": [{"name": "data", "type": {"array": ["u8", {"generic": "M"}]}}]}}
+                ]),
+            )
+        };
+        let f = diff(&acc("32"), &acc("64"));
+        assert_eq!(f.len(), 1);
+        assert!(
+            f[0].message.contains("array length changed from 32 to 64"),
+            "{}",
+            f[0].message
+        );
+        assert!(diff(&acc("32"), &acc("32")).is_empty());
+    }
+
+    #[test]
+    fn growing_generic_recursion_terminates() {
+        // `Node<T> { v: T, next: Vec<Node<Option<T>>> }`: the arguments differ at every level.
+        let node = with_types(
+            "Acc",
+            json!([
+                {"name": "Acc", "type": {"kind": "struct", "fields": [
+                    {"name": "n", "type": {"defined": {"name": "Node", "generics": [{"kind": "type", "type": "u8"}]}}}
+                ]}},
+                {"name": "Node", "generics": [{"kind": "type", "name": "T"}],
+                 "type": {"kind": "struct", "fields": [
+                    {"name": "v", "type": {"generic": "T"}},
+                    {"name": "next", "type": {"vec": {"defined": {"name": "Node", "generics": [
+                        {"kind": "type", "type": {"option": {"generic": "T"}}}
+                    ]}}}}
+                ]}}
+            ]),
+        );
+        let f = diff(&node, &node);
+        assert_eq!(f.len(), 1);
+        assert!(f[0].message.contains("not checked: types nest more than"));
+    }
+
+    #[test]
+    fn nested_break_reports_its_cause() {
+        let counter = |cfg: serde_json::Value| {
+            idl(
+                "Counter",
+                1,
+                json!([{"name": "cfg", "type": {"defined": {"name": "Cfg"}}}, {"name": "n", "type": "u64"}]),
+                json!([{"name": "Cfg", "type": {"kind": "struct", "fields": cfg}}]),
+            )
+        };
+        let old = counter(json!([{"name": "a", "type": "u64"}, {"name": "b", "type": "u32"}]));
+        let new = counter(json!([{"name": "a2", "type": "u64"}, {"name": "b", "type": "u64"}]));
+        let f = diff(&old, &new);
+        assert_eq!(f.len(), 1);
+        assert!(
+            f[0].message.contains("type changed from u32 to u64"),
+            "{}",
+            f[0].message
+        );
+    }
+
+    #[test]
+    fn undefined_types_are_reported() {
+        let cfg = json!({"name": "Config", "type": {"kind": "struct", "fields": [{"name": "a", "type": "u64"}]}});
+        let counter = json!({"name": "Counter", "type": {"kind": "struct", "fields": [
+            {"name": "cfg", "type": {"defined": {"name": "Config"}}}
+        ]}});
+        let defined = with_types("Counter", json!([counter, cfg]));
+        let undefined = with_types("Counter", json!([counter]));
+        let f = diff(&defined, &undefined);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].level, Level::Break);
+        assert!(f[0]
+            .message
+            .contains("`Config` is not defined in the new IDL"));
+        // The account's own definition missing is reported too, not skipped.
+        let f = diff(&defined, &with_types("Counter", json!([cfg])));
+        assert!(f[0]
+            .message
+            .contains("`Counter` is not defined in the new IDL"));
+    }
+
+    #[test]
+    fn repr_matters_only_for_zero_copy() {
+        let pool = |ser: &str, repr: serde_json::Value| {
+            with_types(
+                "Pool",
+                json!([
+                    {"name": "Pool", "serialization": ser, "repr": {"kind": "c"},
+                     "type": {"kind": "struct", "fields": [{"name": "cfg", "type": {"defined": {"name": "Cfg"}}}]}},
+                    {"name": "Cfg", "serialization": ser, "repr": repr,
+                     "type": {"kind": "struct", "fields": [{"name": "a", "type": "u8"}, {"name": "b", "type": "u64"}]}}
+                ]),
+            )
+        };
+        let c = json!({"kind": "c"});
+        let packed = json!({"kind": "c", "packed": true});
+        // A nested zero-copy type became packed: its field offsets move.
+        let f = diff(
+            &pool("bytemuck", c.clone()),
+            &pool("bytemuck", packed.clone()),
+        );
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].level, Level::Break);
+        assert!(f[0].message.contains("Pool.cfg: repr changed"));
+        // Borsh ignores repr.
+        assert!(diff(&pool("borsh", c), &pool("borsh", packed)).is_empty());
+    }
+
+    #[test]
+    fn larger_enum_variant_needs_migration() {
+        let with_mode = |variants: serde_json::Value| {
+            idl(
+                "Counter",
+                1,
+                json!([{"name": "mode", "type": {"defined": {"name": "Mode"}}}]),
+                json!([{"name": "Mode", "type": {"kind": "enum", "variants": variants}}]),
+            )
+        };
+        let old = with_mode(json!([{"name": "A"}, {"name": "B", "fields": ["u8"]}]));
+        let bigger = with_mode(json!([
+            {"name": "A"}, {"name": "B", "fields": ["u8"]}, {"name": "C", "fields": [{"array": ["u8", 64]}]}
+        ]));
+        let f = diff(&old, &bigger);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].level, Level::Migration);
+        assert!(f[0].message.contains("now 65 bytes (was 2)"));
+        // A new variant no larger than the old largest fits in existing accounts.
+        let same = with_mode(json!([
+            {"name": "A"}, {"name": "B", "fields": ["u8"]}, {"name": "C", "fields": ["bool"]}
+        ]));
+        assert!(diff(&old, &same).is_empty());
+    }
+
+    #[test]
+    fn same_type_moves_break() {
+        let two = |a: &str, b: &str| {
+            counter(json!([{"name": a, "type": "u64"}, {"name": b, "type": "u64"}]))
+        };
+        // Swap of two fields with the same type.
+        let f = diff(&two("a", "b"), &two("b", "a"));
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].level, Level::Break);
+        assert!(f[0].message.contains("`a` (position 0 -> 1)"));
+        assert!(f[0].message.contains("`b` (position 1 -> 0)"));
+
+        // Insert in the middle: not an append, so realloc does not fix it.
+        let inserted = counter(json!([
+            {"name": "a", "type": "u64"}, {"name": "b", "type": "u64"},
+            {"name": "c", "type": "u64"}
+        ]));
+        let f = diff(&two("a", "c"), &inserted);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].level, Level::Break);
+        assert!(f[0].message.contains("`c` (position 1 -> 2)"));
+        assert!(!f[0].message.contains("realloc"));
+
+        // Removal in the middle: not a removal at the end.
+        assert_eq!(levels(&inserted, &two("a", "c")), vec![Level::Break]);
     }
 
     #[test]
