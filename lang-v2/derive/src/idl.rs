@@ -31,6 +31,9 @@ enum Placeholder {
     Len(Expr),
     /// A const generic value whose runtime expression must be rendered as JSON.
     ConstGeneric { expr: Expr, quoted: bool },
+    /// A type written without generic arguments. It is replaced by the type it
+    /// stands for, or by its registered name.
+    Defined { ty: TokenStream2, written: String },
     /// A defined type name, resolved through `IdlAccountType`.
     Name {
         ty: TokenStream2,
@@ -261,6 +264,12 @@ impl<'a> TypeLowerer<'a> {
             }
         }
 
+        if self.resolve_names && generics.is_empty() {
+            return self.placeholder(Placeholder::Defined {
+                ty: elide_lifetimes(quote!(#ty)),
+                written: segment.ident.to_string(),
+            });
+        }
         let name = if self.resolve_names {
             self.placeholder(Placeholder::Name {
                 ty: elide_lifetimes(quote!(#ty)),
@@ -334,6 +343,9 @@ impl<'a> TypeLowerer<'a> {
                         }
                     }
                 }
+                Placeholder::Defined { ty, written } => quote! {
+                    __s.push_str(&anchor_lang::idl_build::__idl_defined_type::<#ty>(#written));
+                },
                 Placeholder::Name {
                     ty,
                     written,
@@ -1875,7 +1887,7 @@ mod tests {
         // Return types are resolved too
         let ty: Type = syn::parse_quote!(models::Aliased);
         let generated = registered_type_to_idl(&ty).to_string();
-        assert!(generated.contains("__idl_defined_name :: < models :: Aliased >"));
+        assert!(generated.contains("__idl_defined_type :: < models :: Aliased > (\"Aliased\")"));
 
         // Constants keep the written name, since their type isn't required
         // to implement `IdlAccountType`
