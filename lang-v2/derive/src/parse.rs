@@ -1669,12 +1669,12 @@ pub fn bump_cache_ident(field_name: &Ident) -> Ident {
     )
 }
 
-/// Expansion-time note. `bump = <expr>` stays valid this is not a deprecation.
+/// Expansion-time note. `bump = <expr>` stays valid. This is not a deprecation.
 fn explicit_bump_idl_note(bump_expr: &Expr) -> TokenStream2 {
     let rendered = stringify_address_expr(bump_expr);
     eprintln!(
-        "info: `bump = {rendered}` omits PDA seeds from the IDL, \
-         write `bump(canonical) = {rendered}` when that value is the canonical bump"
+        "info: `bump = {rendered}` omits PDA seeds from the IDL. \
+         Write `bump(canonical) = {rendered}` when that value is the canonical bump."
     );
     TokenStream2::new()
 }
