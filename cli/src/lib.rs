@@ -2098,6 +2098,20 @@ fn install_node_modules(cmd: &str) -> Result<std::process::Output> {
     }
 }
 
+/// `Anchor.toml` entries are keyed by the lib name, as in `init`. Fails if the
+/// program is already listed, unless `force` is set.
+fn new_program_key(
+    programs: &BTreeMap<String, ProgramDeployment>,
+    name: &str,
+    force: bool,
+) -> Result<String> {
+    let key = name.to_snake_case();
+    if programs.contains_key(&key) && !force {
+        return Err(anyhow!("Program already exists"));
+    }
+    Ok(key)
+}
+
 // Creates a new program crate in the `programs/<name>` directory.
 fn new(
     cfg_override: &ConfigOverride,
@@ -2116,11 +2130,8 @@ fn new(
 
                 let cluster = cfg.provider.cluster.clone();
                 let programs = cfg.programs.entry(cluster).or_default();
-                if programs.contains_key(&name) {
-                    if !force {
-                        return Err(anyhow!("Program already exists"));
-                    }
-
+                let program_key = new_program_key(programs, &name, force)?;
+                if programs.contains_key(&program_key) {
                     // Delete all files within the program folder
                     fs::remove_dir_all(std::env::current_dir()?.join("programs").join(&name))?;
                 }
@@ -2128,7 +2139,7 @@ fn new(
                 template::create_program(&name, template, None, anchor_version)?;
 
                 programs.insert(
-                    name.clone(),
+                    program_key,
                     ProgramDeployment {
                         address: template::get_or_create_program_id(&name, target_dir()?),
                         path: None,
@@ -7839,6 +7850,56 @@ mod tests {
         .unwrap();
         let json = deserialize_idl_type_to_json(&idl_type, &mut data, &idl).unwrap();
         assert_eq!(json, JsonValue::Null);
+    }
+
+    fn test_program_deployment() -> ProgramDeployment {
+        ProgramDeployment {
+            address: Pubkey::new_unique(),
+            path: None,
+            idl: None,
+        }
+    }
+
+    #[test]
+    fn test_new_program_key_is_snake_case_lib_name() {
+        let programs = BTreeMap::new();
+        assert_eq!(
+            new_program_key(&programs, "MyProgram", false).unwrap(),
+            "my_program"
+        );
+        assert_eq!(
+            new_program_key(&programs, "my-program", false).unwrap(),
+            "my_program"
+        );
+    }
+
+    #[test]
+    fn test_new_program_key_rejects_existing_program_under_lib_name() {
+        // `init` keys the entry by the lib name, so a differently cased `name`
+        // must still be detected as a duplicate.
+        let programs = BTreeMap::from([("my_program".to_string(), test_program_deployment())]);
+        for name in ["my_program", "MyProgram", "my-program"] {
+            let err = new_program_key(&programs, name, false).unwrap_err();
+            assert_eq!(err.to_string(), "Program already exists");
+        }
+    }
+
+    #[test]
+    fn test_new_program_key_allows_existing_program_with_force() {
+        let programs = BTreeMap::from([("my_program".to_string(), test_program_deployment())]);
+        assert_eq!(
+            new_program_key(&programs, "MyProgram", true).unwrap(),
+            "my_program"
+        );
+    }
+
+    #[test]
+    fn test_new_program_key_allows_unrelated_program() {
+        let programs = BTreeMap::from([("other".to_string(), test_program_deployment())]);
+        assert_eq!(
+            new_program_key(&programs, "MyProgram", false).unwrap(),
+            "my_program"
+        );
     }
 
     #[test]
