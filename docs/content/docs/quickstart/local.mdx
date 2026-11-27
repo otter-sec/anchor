@@ -70,7 +70,7 @@ organization and maintainability. The program files are organized as follows:
 
 - `/programs/my-project/src/lib.rs` - Main entry point with module declarations
 - `/programs/my-project/src/instructions/` - Instruction handlers
-- `/programs/my-project/src/state/` - Account structures and state
+- `/programs/my-project/src/state.rs` - Account structures and state
 - `/programs/my-project/src/constants.rs` - Program constants
 - `/programs/my-project/src/error.rs` - Custom error definitions
 
@@ -104,7 +104,11 @@ pub mod my_project {
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
-        initialize::handler(ctx)
+        crate::instructions::initialize::handle_initialize(ctx)
+    }
+
+    pub fn increment(ctx: Context<Increment>) -> Result<()> {
+        crate::instructions::increment::handle_increment(ctx)
     }
 }
 ```
@@ -114,11 +118,35 @@ pub mod my_project {
 ```rust filename="instructions/initialize.rs"
 use anchor_lang::prelude::*;
 
-#[derive(Accounts)]
-pub struct Initialize {}
+use crate::{constants::*, state::Counter};
 
-pub fn handler(ctx: Context<Initialize>) -> Result<()> {
-    msg!("Greetings from: {:?}", ctx.program_id);
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + Counter::INIT_SPACE,
+        seeds = [COUNTER_SEED],
+        bump
+    )]
+    pub counter: Account<'info, Counter>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn handle_initialize(ctx: Context<Initialize>) -> Result<()> {
+    ctx.accounts.counter.count = 0;
+    ctx.accounts.counter.authority = ctx.accounts.payer.key();
+
+    let cpi_accounts = anchor_lang::system_program::Transfer {
+        from: ctx.accounts.payer.to_account_info(),
+        to: ctx.accounts.counter.to_account_info(),
+    };
+    let cpi_ctx = CpiContext::new(anchor_lang::system_program::ID, cpi_accounts);
+    anchor_lang::system_program::transfer(cpi_ctx, HELLO_WORLD_LAMPORTS)?;
+
+    msg!("Hello, world! Counter initialized");
     Ok(())
 }
 ```
@@ -135,82 +163,107 @@ and maintainability.
 </Accordion>
 </Accordions>
 
-The default Typescript test file is located at `/tests/my-project.ts`.
+The default test file is a Rust test that runs the program in
+[LiteSVM](/docs/testing/litesvm), an in-process Solana VM. It is located at
+`/programs/my-project/tests/test_initialize.rs`.
 
 <Accordions>
 <Accordion title="Default Test File">
 
-This file demonstrates how to invoke the default program's `initialize`
-instruction in Typescript.
-
-```ts filename="my-project.ts"
-import * as anchor from "@anchor-lang/core";
-import { Program } from "@anchor-lang/core";
-import { MyProject } from "../target/types/my_project";
-
-describe("my-project", () => {
-  // Configure the client to use the local cluster.
-  anchor.setProvider(anchor.AnchorProvider.env());
-
-  const program = anchor.workspace.myProject as Program<MyProject>;
-
-  it("Is initialized!", async () => {
-    // Add your test here.
-    const tx = await program.methods.initialize().rpc();
-    console.log("Your transaction signature", tx);
-  });
-});
-```
-
-</Accordion>
-</Accordions>
-
-If you prefer Rust for testing, initialize your project with the
-`--test-template rust` ([Anchor Rust client](/docs/clients/rust)) or
-`--test-template mollusk` ([Mollusk test library](/docs/testing/mollusk)) flag.
-
-```shell
-anchor init --test-template rust my-program
-```
-
-The Rust test file will be at `/tests/src/test_initialize.rs`.
-
-<Accordions>
-<Accordion title="Rust Test File">
+This file loads the compiled program into LiteSVM, then sends the `initialize`
+and `increment` instructions and checks the counter account.
 
 ```rust filename="test_initialize.rs"
-use std::str::FromStr;
-
-use anchor_client::{
-    solana_sdk::{
-        commitment_config::CommitmentConfig, pubkey::Pubkey, signature::read_keypair_file,
+use {
+    anchor_lang::{
+        prelude::Pubkey,
+        solana_program::{instruction::Instruction, system_program},
+        AccountDeserialize, InstructionData, ToAccountMetas,
     },
-    Client, Cluster,
+    litesvm::LiteSVM,
+    solana_keypair::Keypair,
+    solana_message::{Message, VersionedMessage},
+    solana_signer::Signer,
+    solana_transaction::versioned::VersionedTransaction,
 };
 
 #[test]
 fn test_initialize() {
-    let program_id = "3ynNB373Q3VAzKp7m4x238po36hjAGFXFJB4ybN2iTyg";
-    let anchor_wallet = std::env::var("ANCHOR_WALLET").unwrap();
-    let payer = read_keypair_file(&anchor_wallet).unwrap();
+    let program_id = my_project::id();
+    let payer = Keypair::new();
+    let counter = Pubkey::find_program_address(
+        &[my_project::constants::COUNTER_SEED],
+        &program_id,
+    )
+    .0;
+    let mut svm = LiteSVM::new();
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_TARGET_TMPDIR"),
+        "/../deploy/my_project.so"
+    ));
+    svm.add_program(program_id, bytes).unwrap();
+    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
 
-    let client = Client::new_with_options(Cluster::Localnet, &payer, CommitmentConfig::confirmed());
-    let program_id = Pubkey::from_str(program_id).unwrap();
-    let program = client.program(program_id).unwrap();
+    let instruction = Instruction::new_with_bytes(
+        program_id,
+        &my_project::instruction::Initialize {}.data(),
+        my_project::accounts::Initialize {
+            payer: payer.pubkey(),
+            counter,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
 
-    let tx = program
-        .request()
-        .accounts(my_program::accounts::Initialize {})
-        .args(my_program::instruction::Initialize {})
-        .send()
-        .expect("");
+    let blockhash = svm.latest_blockhash();
+    let msg = Message::new_with_blockhash(&[instruction], Some(&payer.pubkey()), &blockhash);
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[&payer]).unwrap();
 
-    println!("Your transaction signature {}", tx);
+    let res = svm.send_transaction(tx);
+    assert!(res.is_ok(), "send_transaction failed: {:?}", res);
+
+    let counter_account = svm.get_account(&counter).unwrap();
+    let mut data: &[u8] = &counter_account.data;
+    let counter_state = my_project::state::Counter::try_deserialize(&mut data).unwrap();
+    assert_eq!(counter_state.count, 0);
+    assert_eq!(counter_state.authority, payer.pubkey());
+
+    let instruction = Instruction::new_with_bytes(
+        program_id,
+        &my_project::instruction::Increment {}.data(),
+        my_project::accounts::Increment {
+            counter,
+            authority: payer.pubkey(),
+        }
+        .to_account_metas(None),
+    );
+
+    let blockhash = svm.latest_blockhash();
+    let msg = Message::new_with_blockhash(&[instruction], Some(&payer.pubkey()), &blockhash);
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[&payer]).unwrap();
+
+    let res = svm.send_transaction(tx);
+    assert!(res.is_ok(), "send_transaction failed: {:?}", res);
+
+    let counter_account = svm.get_account(&counter).unwrap();
+    let mut data: &[u8] = &counter_account.data;
+    let counter_state = my_project::state::Counter::try_deserialize(&mut data).unwrap();
+    assert_eq!(counter_state.count, 1);
+    assert_eq!(counter_state.authority, payer.pubkey());
 }
 ```
 
 </Accordion>
 </Accordions>
+
+To test with TypeScript instead, initialize your project with
+`--test-template mocha` or `--test-template jest`. Other Rust options are
+`--test-template rust` ([Anchor Rust client](/docs/clients/rust)) and
+`--test-template mollusk` ([Mollusk test library](/docs/testing/mollusk)).
+
+```shell
+anchor init --test-template mocha my-program
+```
 
 </Step>
 <Step>
@@ -238,16 +291,22 @@ To test the program, run `anchor test`.
 anchor test
 ```
 
-By default, the `Anchor.toml` config file specifies the `localnet` cluster. When
-developing on `localnet`, `anchor test` will automatically:
+With the default LiteSVM template, `anchor test` builds the program and runs
+`cargo test`. The test loads `target/deploy/my_project.so` into LiteSVM, so no
+validator is started and nothing is deployed: the generated `Anchor.toml` sets
+`skip_local_validator = true` and `test = "cargo test"`.
+
+With a TypeScript template (`--test-template mocha` or `jest`), the `Anchor.toml`
+config file specifies the `localnet` cluster, and `anchor test` will
+automatically:
 
 1. Start a local Solana validator
 2. Build and deploy your program to the local cluster
 3. Run the tests in the `tests` folder
 4. Stop the local Solana validator
 
-Alternatively, you can manually start a local Solana validator and run tests
-against it. This is useful if you want to keep the validator running while you
+With those templates, you can also manually start a local Solana validator and
+run tests against it. This is useful if you want to keep the validator running while you
 iterate on your program. It allows you to inspect accounts and transaction logs
 on the [Solana Explorer](https://explorer.solana.com/?cluster=custom) while
 developing locally.
@@ -314,12 +373,12 @@ cluster = "Devnet"
 wallet = "~/.config/solana/id.json"
 ```
 
-Now when you run `anchor deploy`, your program will be deployed to the devnet
+Now when you run `anchor program deploy`, your program will be deployed to the devnet
 cluster. The `anchor test` command will also use the cluster specified in the
 `Anchor.toml` file.
 
 ```shell
-anchor deploy
+anchor program deploy
 ```
 
 To deploy to mainnet, simply update the `Anchor.toml` file to specify the
@@ -346,10 +405,10 @@ To update a program, simply make changes to your program's code and run the
 anchor build
 ```
 
-Then run the `anchor deploy` command to redeploy the updated program.
+Then run the `anchor program deploy` command to redeploy the updated program.
 
 ```shell
-anchor deploy
+anchor program deploy
 ```
 
 </Step>
@@ -385,20 +444,21 @@ Below is an overview of default file structure in an Anchor workspace:
     <File name="program-logs" />
   </Folder>
   <Folder name="app" />
-  <Folder name="migrations" />
   <Folder name="programs" defaultOpen={true}>
     <Folder name="[project-name]" defaultOpen={true}>
       <Folder name="src" defaultOpen={true}>
         <File name="lib.rs" />
         <File name="constants.rs" />
         <File name="error.rs" />
+        <File name="instructions.rs" />
         <Folder name="instructions" defaultOpen={true}>
-          <File name="mod.rs" />
+          <File name="increment.rs" />
           <File name="initialize.rs" />
         </Folder>
-        <Folder name="state">
-          <File name="mod.rs" />
-        </Folder>
+        <File name="state.rs" />
+      </Folder>
+      <Folder name="tests" defaultOpen={true}>
+        <File name="test_initialize.rs" />
       </Folder>
       <File name="Cargo.toml" />
     </Folder>
@@ -414,12 +474,10 @@ Below is an overview of default file structure in an Anchor workspace:
       <File name="[project-name].ts" />
     </Folder>
   </Folder>
-  <Folder name="tests" defaultOpen={true}>
-    <File name="[project-name].ts" />
-  </Folder>
   <File name="Anchor.toml" />
   <File name="Cargo.toml" />
-  <File name="package.json" />
+  <File name="rust-toolchain.toml" />
+  <File name="security.json" />
 </Files>
 
 {/* cspell:enable */}
@@ -433,7 +491,7 @@ By default, programs are organized with a modular structure:
 
 - `lib.rs` - Main entry point that declares and exports modules
 - `instructions/` - Directory containing instruction handler functions
-- `state/` - Directory for account structures and state definitions
+- `state.rs` - Account structures and state definitions
 - `constants.rs` - Program-wide constants
 - `error.rs` - Custom error codes
 
@@ -442,8 +500,10 @@ especially as your program grows in complexity.
 
 ### Tests Folder
 
-The `/tests` directory contains test files for your project. A default test file
-is created for you when you create your project.
+With the default LiteSVM template, the test file is in the program's own
+`tests` folder (`/programs/[project-name]/tests`). The TypeScript templates
+(`--test-template mocha` or `jest`) create a top-level `/tests` folder, a
+`/migrations` folder and a `package.json` instead.
 
 ### Target Folder
 
