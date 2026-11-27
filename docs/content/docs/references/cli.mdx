@@ -145,10 +145,15 @@ Cluster Endpoints:
 ## Deploy
 
 ```shell
-anchor deploy
+anchor program deploy
 ```
 
-Deploys all programs in the workspace to the configured cluster.
+Deploys all programs in the workspace to the configured cluster. Pass
+`-p <program-name>` to deploy one workspace program, or the path to a `.so`
+file.
+
+`anchor deploy` is deprecated since 0.32.0 and hidden from `anchor --help`;
+use `anchor program deploy` instead.
 
 On mainnet, a deploy without `--security-metadata` prints a warning and
 continues. A deploy counts as mainnet when the configured cluster is
@@ -157,8 +162,10 @@ mainnet, or when the RPC host contains `mainnet`. `anchor program deploy
 contains default values.
 
 <Callout title="Tip">
-  This is different from the `solana program deploy` command, because every time
-  it's run it will generate a _new_ program address.
+  Each program is deployed to the address of
+  `target/deploy/<program-name>-keypair.json`. If a program already exists at
+  that address, `anchor program deploy` upgrades it, so the configured wallet
+  must be its upgrade authority.
 </Callout>
 
 ## Expand
@@ -292,21 +299,6 @@ Use `--close-buffer` to automatically close the buffer account after writing:
 ```shell
 anchor idl write-buffer <program-id> -b <buffer> --close-buffer
 ```
-
-## Codama
-
-```shell
-anchor codama convert <target/idl/program.json> --out <codama-idl.json>
-anchor codama generate -l rust,js -p clients <target/idl/program.json>
-```
-
-`anchor codama convert` converts an Anchor IDL into a Codama IDL. `anchor
-codama generate` converts the IDL and invokes the Codama renderer packages for
-the requested languages. The supported language values are `js`, `js-umi`,
-`rust`, and `go`.
-
-Codama client generation can also run automatically after `anchor build` when
-`[clients] auto = true` is set in `Anchor.toml`.
 
 ## Codama
 
@@ -504,10 +496,15 @@ collected under `target/coverage/traces`.
 ## Upgrade
 
 ```shell
-anchor upgrade <target/deploy/program.so> --program-id <program-id>
+anchor program upgrade <program-id> --program-filepath <target/deploy/program.so>
 ```
 
 Uses Solana's upgradeable BPF loader to upgrade the on chain program code.
+Without `--program-filepath`, the program is found in the workspace (use
+`-p <program-name>` to pick one).
+
+`anchor upgrade` is deprecated since 0.32.0 and hidden from `anchor --help`;
+use `anchor program upgrade` instead.
 
 ## Verify
 

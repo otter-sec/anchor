@@ -145,20 +145,22 @@ $ <blue>anchor</blue> debugger [<dim><test-name></dim>] [<dim>--skip-run</dim>] 
 
 Runs tests with profiling enabled and opens an instruction-level TUI over the captured SBF traces. `<dim>--skip-run</dim>` reuses existing traces, and `<dim>--gdb</dim>` captures through the sbpf gdb-stub trace path (which is much slower).
 
-## `<blue>anchor</blue> deploy`
+## `<blue>anchor</blue> program deploy`
 
 ```console
-$ <blue>anchor</blue> deploy
+$ <blue>anchor</blue> program deploy
 ```
 
-Deploys all programs in the workspace to the configured cluster.
+Deploys all programs in the workspace to the configured cluster. Pass `<dim>-p</dim> <dim><program-name></dim>` to deploy one workspace program, or the path to a `.so` file.
+
+`$ <blue>anchor</blue> deploy` is deprecated since 0.32.0 and hidden from `$ <blue>anchor</blue> --help`; use `$ <blue>anchor</blue> program deploy` instead.
 
 On mainnet, a deploy without `<dim>--security-metadata</dim>` prints a warning and continues. A deploy counts as mainnet when the configured cluster is mainnet, or when the RPC host contains `mainnet`. `$ <blue>anchor</blue> program deploy <dim>--security-metadata</dim>` uploads `security.json{:file}` and stops if that file still contains default values.
 
-<Callout variant="tip" title="Different from solana program deploy">
-  Each invocation of `$ <blue>anchor</blue> deploy` generates a *new* program address. To upgrade an
-  existing program, use `$ <blue>anchor</blue> upgrade` or `$ <blue>solana</blue> program deploy`
-  with the existing program ID.
+<Callout variant="tip" title="Program address">
+  Each program is deployed to the address of `target/deploy/<program-name>-keypair.json{:file}`. If a program
+  already exists at that address, `$ <blue>anchor</blue> program deploy` upgrades it, so the configured
+  wallet must be its upgrade authority.
 </Callout>
 
 ## `<blue>anchor</blue> expand`
@@ -406,13 +408,15 @@ Program logs are streamed to `.anchor/program-logs/<address>.<program-name>.log{
 
 Pass `<dim>--profile</dim>` with Rust/LiteSVM-style tests that enable the generated `profile{:toml}` feature to collect SBF register traces and render flamegraph SVGs under `target/anchor-v2-profile/{:dir}`. Those traces also feed `$ <blue>anchor</blue> debugger` and `$ <blue>anchor</blue> coverage`.
 
-## `<blue>anchor</blue> upgrade`
+## `<blue>anchor</blue> program upgrade`
 
 ```console
-$ <blue>anchor</blue> upgrade <dim><target/deploy/program.so></dim> <dim>--program-id</dim> <dim><program-id></dim>
+$ <blue>anchor</blue> program upgrade <dim><program-id></dim> <dim>--program-filepath</dim> <dim><target/deploy/program.so></dim>
 ```
 
-Uses Solana's upgradeable BPF loader to upgrade the on-chain program code. The configured wallet must be the upgrade authority.
+Uses Solana's upgradeable BPF loader to upgrade the on-chain program code. The configured wallet must be the upgrade authority. Without `<dim>--program-filepath</dim>`, the program is found in the workspace (use `<dim>-p</dim> <dim><program-name></dim>` to pick one).
+
+`$ <blue>anchor</blue> upgrade` is deprecated since 0.32.0 and hidden from `$ <blue>anchor</blue> --help`; use `$ <blue>anchor</blue> program upgrade` instead.
 
 ## `<blue>anchor</blue> verify`
 
