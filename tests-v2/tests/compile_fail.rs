@@ -2876,6 +2876,61 @@ pub struct InlineTupleField {
 }
 
 #[test]
+fn idl_build_rejects_tuple_and_unit_alias_fields() {
+    let source = r#"
+use anchor_lang::prelude::*;
+
+pub type Pair = (u8, u16);
+pub type Unit = ();
+
+#[derive(AnchorSerialize, AnchorDeserialize, IdlType)]
+pub struct AliasedTupleFields {
+    pub pair: Pair,
+    pub nested: Option<Pair>,
+    pub unit: Unit,
+}
+"#;
+
+    CompileCase::new("tuple_alias_fields_without_idl", source)
+        .check_tests()
+        .expect_pass();
+    CompileCase::new("idl_build_tuple_alias_fields", source)
+        .features(&["idl-build"])
+        .check_tests()
+        .expect_fail(&[
+            "`(u8, u16)` has no IDL type information",
+            "`()` has no IDL type information",
+        ]);
+}
+
+#[test]
+fn idl_build_rejects_tuple_and_unit_alias_constants() {
+    let source = r#"
+use anchor_lang::prelude::*;
+
+pub type Pair = (u8, u16);
+pub type Unit = ();
+
+#[constant]
+pub const PAIR: Pair = (1, 2);
+
+#[constant]
+pub const UNIT: Unit = ();
+"#;
+
+    CompileCase::new("tuple_alias_constants_without_idl", source)
+        .check_tests()
+        .expect_pass();
+    CompileCase::new("idl_build_tuple_alias_constants", source)
+        .features(&["idl-build"])
+        .check_tests()
+        .expect_fail(&[
+            "`(u8, u16)` has no IDL type information",
+            "`()` has no IDL type information",
+        ]);
+}
+
+#[test]
 fn boxed_accounts_are_not_supported() {
     CompileCase::new(
         "boxed_accounts_are_not_supported",

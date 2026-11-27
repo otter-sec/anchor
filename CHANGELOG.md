@@ -14,6 +14,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang-v2: Reject tuple and unit type aliases in IDL fields, instruction types, and constants to prevent unresolved type references ([#5372](https://github.com/otter-sec/anchor/pull/5372)).
+
 ### Breaking
 
 ## [2.0.0-rc.4] - 2026-11-14

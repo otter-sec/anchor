@@ -7841,6 +7841,8 @@ pub fn access_control(args: TokenStream, input: TokenStream) -> TokenStream {
 /// Marker attribute for `pub const` items that should appear in the generated
 /// IDL. Does nothing at runtime. When the `idl-build` feature is enabled, a
 /// companion test function emits the constant's metadata for `anchor idl build`.
+/// Custom types referenced by the constant need `IdlAccountType` metadata,
+/// for example from `#[derive(IdlType)]`.
 ///
 /// # Example
 ///
