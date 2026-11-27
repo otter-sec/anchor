@@ -253,10 +253,7 @@ fn declare_program_rejects_executable_const_generic_values() {
     declare_program_compile_fail_case(
         "declare_program_executable_const_generic",
         idl,
-        &[
-            "expected an IDL const generic integer literal; executable Rust expressions are not \
-             allowed",
-        ],
+        &["expected an IDL const generic literal; executable Rust expressions are not allowed"],
     );
 }
 

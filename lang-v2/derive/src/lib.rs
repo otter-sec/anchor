@@ -5485,7 +5485,8 @@ fn parse_declare_program_generic_arg(
     }
     match &parsed {
         Expr::Lit(ExprLit {
-            lit: Lit::Int(_), ..
+            lit: Lit::Int(_) | Lit::Bool(_) | Lit::Char(_),
+            ..
         }) => Ok(quote! { #parsed }),
         Expr::Unary(ExprUnary {
             op: UnOp::Neg(_),
@@ -5501,7 +5502,7 @@ fn parse_declare_program_generic_arg(
         {
             Ok(quote! { #parsed })
         }
-        _ => Err(invalid_idl_literal(span, "const generic integer literal")),
+        _ => Err(invalid_idl_literal(span, "const generic literal")),
     }
 }
 
