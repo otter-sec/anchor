@@ -18,7 +18,7 @@ pub mod memo {
     /// Attach `text` to the transaction, signed by the remaining accounts.
     #[discrim = 0]
     pub fn sign_memo(ctx: &mut Context<SignMemo>, text: String) -> Result<()> {
-        build_memo(&ctx.remaining_accounts(), &text)?;
+        build_memo(&ctx.remaining_accounts(), &[], &text)?;
         Ok(())
     }
 
@@ -30,7 +30,21 @@ pub mod memo {
         if remaining.len() != count as usize {
             return Err(ProgramError::InvalidArgument);
         }
-        build_memo(&remaining, &text)?;
+        build_memo(&remaining, &[], &text)?;
+        Ok(())
+    }
+
+    /// Attach `text` to the transaction, signed by a PDA of this program.
+    ///
+    /// The PDA arrives as a remaining account but is not a transaction signer,
+    /// so this only succeeds if `build_memo` forwards `signer_seeds` into the
+    /// CPI.
+    #[discrim = 2]
+    pub fn sign_memo_with_pda(ctx: &mut Context<SignMemo>, text: String) -> Result<()> {
+        const SEED: &[u8] = b"memo-pda";
+        let (_, bump) = find_program_address(&[SEED], &crate::ID);
+        let seeds: &[&[u8]] = &[SEED, &[bump]];
+        build_memo(&ctx.remaining_accounts(), &[seeds], &text)?;
         Ok(())
     }
 }

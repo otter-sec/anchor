@@ -93,6 +93,33 @@ fn sign_memo_with_signer(
     Ok(observed(&meta))
 }
 
+/// The PDA the fixture derives and signs with through `build_memo`'s seeds.
+fn memo_pda() -> Pubkey {
+    let (pda, _) = Pubkey::find_program_address(&[b"memo-pda"], &program_id());
+    pda
+}
+
+/// Sign the memo with a PDA of the fixture program. The PDA is passed as a
+/// remaining account but is not a transaction signer, so the CPI can only mark
+/// it a signer through the forwarded `signer_seeds`.
+fn sign_memo_with_pda(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    text: &str,
+) -> anyhow::Result<(u32, String)> {
+    // discriminator 2, then the memo payload as a borsh `String`.
+    let mut data = vec![2u8];
+    data.extend_from_slice(&(text.len() as u32).to_le_bytes());
+    data.extend_from_slice(text.as_bytes());
+
+    let metas = vec![
+        AccountMeta::new_readonly(memo_program_id(), false),
+        AccountMeta::new_readonly(memo_pda(), false),
+    ];
+    let meta = send_instruction(svm, program_id(), data, metas, payer, &[])?;
+    Ok(observed(&meta))
+}
+
 #[test]
 fn memo_without_signers_succeeds() {
     let (mut svm, payer) = setup();
@@ -131,6 +158,21 @@ fn memo_with_a_signer_succeeds() {
         "the one remaining account must be forwarded as a memo signer"
     );
     assert_eq!(memo, "signed by the authority");
+}
+
+/// v1 forwarded `CpiContext::signer_seeds` to `invoke_signed`, so a program PDA
+/// could sign a memo. This PDA is not a transaction signer, so the test only
+/// passes when `build_memo` forwards the seeds into the CPI.
+#[test]
+fn memo_signed_by_a_program_pda_succeeds() {
+    let (mut svm, payer) = setup();
+    let (signers, memo) = sign_memo_with_pda(&mut svm, &payer, "signed by a pda")
+        .expect("a program PDA must be able to sign the memo");
+    assert_eq!(
+        signers, 1,
+        "the PDA must arrive as a memo signer without being a transaction signer"
+    );
+    assert_eq!(memo, "signed by a pda");
 }
 
 #[test]
