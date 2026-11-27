@@ -362,18 +362,12 @@ impl<'a> TypeLowerer<'a> {
     }
 }
 
+/// Convert a Rust type to IDL JSON, resolving defined names through `IdlAccountType`.
 pub fn registered_type_to_idl(ty: &Type) -> TokenStream2 {
     let mut lowerer = TypeLowerer {
         resolve_names: true,
         ..TypeLowerer::default()
     };
-    let value = lowerer.lower(ty);
-    lowerer.finish(value)
-}
-
-/// Convert a Rust type to a generated expression containing its IDL JSON.
-pub fn rust_type_to_idl(ty: &Type) -> TokenStream2 {
-    let mut lowerer = TypeLowerer::default();
     let value = lowerer.lower(ty);
     lowerer.finish(value)
 }
@@ -1872,18 +1866,10 @@ mod tests {
         assert!(generated.contains("\"Aliased\" , 2usize"));
         assert!(!generated.contains(PLACEHOLDER_KEY));
 
-        // Return types are resolved too
+        // Standalone type references are resolved too.
         let ty: Type = syn::parse_quote!(models::Aliased);
         let generated = registered_type_to_idl(&ty).to_string();
         assert!(generated.contains("__idl_defined_name :: < models :: Aliased >"));
-
-        // Constants keep the written name, since their type isn't required
-        // to implement `IdlAccountType`
-        let expected = r#"{"defined":{"name":"Aliased"}}"#;
-        assert_eq!(
-            rust_type_to_idl(&ty).to_string(),
-            quote!(#expected).to_string()
-        );
     }
 
     #[test]

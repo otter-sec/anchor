@@ -43,7 +43,10 @@ anchor-lang = {{ path = "{}" }}
         r#"
 use anchor_lang::prelude::*;
 
+#[derive(IdlType)]
 struct Weird;
+
+type WeirdAlias = Weird;
 
 impl core::fmt::Debug for Weird {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -52,7 +55,7 @@ impl core::fmt::Debug for Weird {
 }
 
 #[constant]
-pub const WEIRD: Weird = Weird;
+pub const WEIRD: WeirdAlias = Weird;
 "#,
     )
     .unwrap();
@@ -98,5 +101,9 @@ pub const WEIRD: Weird = Weird;
     assert!(
         fragment.contains(r#""value":"a\nb""#),
         "expected JSON-escaped newline in the value field, got:\n{fragment}"
+    );
+    assert!(
+        fragment.contains(r#""type":{"defined":{"name":"Weird"}}"#),
+        "expected the registered type name, got:\n{fragment}"
     );
 }
