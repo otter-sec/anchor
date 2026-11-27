@@ -157,10 +157,10 @@ Deploys all programs in the workspace to the configured cluster. Pass `<dim>-p</
 
 On mainnet, a deploy without `<dim>--security-metadata</dim>` prints a warning and continues. A deploy counts as mainnet when the configured cluster is mainnet, or when the RPC host contains `mainnet`. `$ <blue>anchor</blue> program deploy <dim>--security-metadata</dim>` uploads `security.json{:file}` and stops if that file still contains default values.
 
-<Callout variant="tip" title="Different from solana program deploy">
-  Each invocation of `$ <blue>anchor</blue> program deploy` generates a *new* program address. To upgrade an
-  existing program, use `$ <blue>anchor</blue> program upgrade` or `$ <blue>solana</blue> program deploy`
-  with the existing program ID.
+<Callout variant="tip" title="Program address">
+  Each program is deployed to the address of `target/deploy/<program-name>-keypair.json{:file}`. If a program
+  already exists at that address, `$ <blue>anchor</blue> program deploy` upgrades it, so the configured
+  wallet must be its upgrade authority.
 </Callout>
 
 ## `<blue>anchor</blue> expand`

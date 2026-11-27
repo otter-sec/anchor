@@ -162,8 +162,10 @@ mainnet, or when the RPC host contains `mainnet`. `anchor program deploy
 contains default values.
 
 <Callout title="Tip">
-  This is different from the `solana program deploy` command, because every time
-  it's run it will generate a _new_ program address.
+  Each program is deployed to the address of
+  `target/deploy/<program-name>-keypair.json`. If a program already exists at
+  that address, `anchor program deploy` upgrades it, so the configured wallet
+  must be its upgrade authority.
 </Callout>
 
 ## Expand
