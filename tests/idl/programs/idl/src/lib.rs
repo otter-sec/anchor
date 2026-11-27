@@ -86,6 +86,18 @@ pub mod idl {
         Ok(non_zero_u8)
     }
 
+    pub fn cow_types(
+        _ctx: Context<Empty>,
+        bytes: std::borrow::Cow<'static, [u8]>,
+        fields: CowFields<'static>,
+    ) -> Result<Vec<u8>> {
+        let mut ret = bytes.into_owned();
+        ret.extend_from_slice(&fields.bytes);
+        ret.extend_from_slice(fields.string.as_bytes());
+        ret.extend_from_slice(fields.option_bytes.as_deref().unwrap_or_default());
+        Ok(ret)
+    }
+
     pub fn strct(
         ctx: Context<Struct>,
         unit: UnitStruct,
@@ -275,6 +287,13 @@ pub struct NonZeroFields {
     pub non_zero_u8: core::num::NonZeroU8,
     pub non_zero_i64: std::num::NonZero<i64>,
     pub option_non_zero_u32: Option<core::num::NonZeroU32>,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct CowFields<'a> {
+    pub bytes: std::borrow::Cow<'a, [u8]>,
+    pub string: std::borrow::Cow<'a, str>,
+    pub option_bytes: Option<std::borrow::Cow<'a, [u8]>>,
 }
 
 #[derive(Accounts)]

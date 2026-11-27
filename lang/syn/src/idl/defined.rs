@@ -687,6 +687,21 @@ pub fn gen_idl_type(
             let arg = get_first_type_arg(segment)?;
             gen_idl_type(arg, generic_params)
         }
+        syn::Type::Path(path)
+            if path_is_builtin(
+                path,
+                "Cow",
+                &[&["std", "borrow", "Cow"], &["alloc", "borrow", "Cow"]],
+            ) =>
+        {
+            let segment = get_last_segment(path)?;
+            let arg = get_first_type_arg(segment)?;
+            if matches!(arg, syn::Type::Slice(slice) if matches!(&*slice.elem, syn::Type::Path(path) if the_only_segment_is(path, "u8")))
+            {
+                return Ok((quote! { #idl::IdlType::Bytes }, vec![]));
+            }
+            gen_idl_type(arg, generic_params)
+        }
         // Borsh serializes `NonZero*` exactly like the inner integer, so the IDL
         // describes them as that integer. The non-zero invariant is not recorded.
         syn::Type::Path(path)
@@ -944,6 +959,7 @@ pub fn gen_idl_type(
                                 defined.extend(def);
                                 quote! { #idl::IdlGenericArg::Type { ty: #ty } }
                             }
+                            syn::GenericArgument::Lifetime(_) => continue,
                             _ => {
                                 return Err(syn::Error::new(
                                     arg.span(),

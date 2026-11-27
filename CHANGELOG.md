@@ -18,6 +18,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Allow `None` in `mint::authority` and `mint::freeze_authority` constraints ([#5007](https://github.com/otter-sec/anchor/pull/5007)).
 - lang: Implement `Space` for `NonZero*` integers so `#[derive(InitSpace)]` supports them ([#5132](https://github.com/otter-sec/anchor/pull/5132)).
 - idl: Support `NonZero*` integer types in IDL generation ([#5130](https://github.com/otter-sec/anchor/pull/5130)).
+- idl: Support `Cow` in IDL generation, with `Cow<[u8]>` as `bytes`, and allow types with lifetime parameters to be referenced.
 
 ### Fixes
 

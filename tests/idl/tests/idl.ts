@@ -173,6 +173,36 @@ describe("IDL", () => {
       await expectRejected(5, new BN(-7), { ...fields, optionNonZeroU32: 0 });
     });
 
+    it("Can use `Cow` types", async () => {
+      const bytes = Buffer.from([1, 2]);
+      const fields = {
+        bytes: Buffer.from([3, 4]),
+        string: "anchor",
+        optionBytes: Buffer.from([5]),
+      };
+
+      const ret = await program.methods.cowTypes(bytes, fields).view();
+      assert(
+        ret.equals(
+          Buffer.concat([
+            bytes,
+            fields.bytes,
+            Buffer.from(fields.string),
+            fields.optionBytes,
+          ])
+        )
+      );
+
+      const retWithoutOption = await program.methods
+        .cowTypes(bytes, { ...fields, optionBytes: null })
+        .view();
+      assert(
+        retWithoutOption.equals(
+          Buffer.concat([bytes, fields.bytes, Buffer.from(fields.string)])
+        )
+      );
+    });
+
     it("Can use unsized types", async () => {
       const kp = anchor.web3.Keypair.generate();
 

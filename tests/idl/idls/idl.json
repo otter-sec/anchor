@@ -95,6 +95,35 @@
       ]
     },
     {
+      "name": "cow_types",
+      "discriminator": [
+        61,
+        228,
+        96,
+        174,
+        222,
+        7,
+        63,
+        41
+      ],
+      "accounts": [],
+      "args": [
+        {
+          "name": "bytes",
+          "type": "bytes"
+        },
+        {
+          "name": "fields",
+          "type": {
+            "defined": {
+              "name": "CowFields"
+            }
+          }
+        }
+      ],
+      "returns": "bytes"
+    },
+    {
       "name": "empty",
       "discriminator": [
         214,
@@ -1172,6 +1201,28 @@
               "defined": {
                 "name": "Feature"
               }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "CowFields",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bytes",
+            "type": "bytes"
+          },
+          {
+            "name": "string",
+            "type": "string"
+          },
+          {
+            "name": "option_bytes",
+            "type": {
+              "option": "bytes"
             }
           }
         ]
