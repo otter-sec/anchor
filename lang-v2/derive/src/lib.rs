@@ -3887,6 +3887,7 @@ fn gen_declare_program_types_for_target(
                 let idl_impl = (!borrowed).then(|| {
                     gen_declare_program_idl_account_type_impl(
                         &ident,
+                        name,
                         &generics,
                         idl_account_entry.as_ref(),
                         &idl_type_def,
@@ -4039,6 +4040,7 @@ fn gen_declare_program_types_for_target(
                 let idl_impl = (!borrowed).then(|| {
                     gen_declare_program_idl_account_type_impl(
                         &ident,
+                        name,
                         &generics,
                         idl_account_entry.as_ref(),
                         &idl_type_def,
@@ -4901,6 +4903,7 @@ fn gen_declare_program_type_generics(
 
 fn gen_declare_program_idl_account_type_impl(
     ident: &Ident,
+    name: &str,
     generics: &DeclareTypeGenerics,
     account_entry: Option<&syn::LitStr>,
     type_def: &syn::LitStr,
@@ -4913,11 +4916,21 @@ fn gen_declare_program_idl_account_type_impl(
     let impl_generics = &generics.impl_generics;
     let ty_generics = &generics.ty_generics;
     let where_clause = &generics.idl_where_clause;
+    let generic_count = generics.ty_params.len();
+    // A generic type must be referenced as written, so only name it when the
+    // Rust name matches the IDL name
+    let idl_name = if generic_count == 0 || ident == name {
+        quote! { Some(#name) }
+    } else {
+        quote! { None }
+    };
     quote! {
         #[doc(hidden)]
         impl #impl_generics anchor_lang::IdlAccountType for #ident #ty_generics #where_clause {
             const __IDL_ACCOUNT_ENTRY: Option<&'static str> = #account_entry;
             const __IDL_TYPE_DEF: Option<&'static str> = Some(#type_def);
+            const __IDL_NAME: Option<&'static str> = #idl_name;
+            const __IDL_GENERICS: usize = #generic_count;
 
             fn __register_idl_deps(
                 accounts: &mut anchor_lang::IdlEntries,

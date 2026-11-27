@@ -3,7 +3,9 @@
 //! every reference, then declares the program from that IDL.
 
 use {
-    anchor_lang_idl_spec::{IdlDefinedFields, IdlGenericArg, IdlType, IdlTypeDef, IdlTypeDefTy},
+    anchor_lang_idl_spec::{
+        IdlArrayLen, IdlDefinedFields, IdlGenericArg, IdlType, IdlTypeDef, IdlTypeDefTy,
+    },
     std::{
         fs,
         path::{Path, PathBuf},
@@ -34,6 +36,8 @@ const PROGRAM: &str = r#"
 use models::BumpArgs as Renamed;
 
 pub type Aliased = models::BumpArgs;
+pub type Amount = u64;
+pub type Names = Vec<String>;
 
 #[derive(Clone, IdlType, AnchorSerialize, AnchorDeserialize)]
 pub struct Holder {
@@ -43,13 +47,27 @@ pub struct Holder {
     pub wrapped: models::Wrapper<Renamed>,
 }
 
+#[derive(Clone, IdlType, AnchorSerialize, AnchorDeserialize)]
+pub struct Builtins {
+    pub amount: Amount,
+    pub names: Names,
+    pub maybe: Option<Amount>,
+    pub pair: [Amount; 2],
+}
+
 #[program]
 pub mod aliases {
     use super::*;
 
     #[discrim = 0]
-    pub fn run(_ctx: &mut Context<Run>, args: Aliased, holder: Holder) -> Result<Renamed> {
-        let _ = holder;
+    pub fn run(
+        _ctx: &mut Context<Run>,
+        args: Aliased,
+        holder: Holder,
+        builtins: Builtins,
+        amount: Amount,
+    ) -> Result<Renamed> {
+        let _ = (holder, builtins, amount);
         Ok(args)
     }
 }
@@ -88,7 +106,14 @@ declare_program!(aliases);
 
 #[test]
 fn declared_aliases_use_the_registered_types() {
-    use aliases::types::{BumpArgs, Holder, Wrapper};
+    use aliases::types::{Builtins, BumpArgs, Holder, Wrapper};
+
+    fn builtins(value: Builtins) {
+        let _: u64 = value.amount;
+        let _: Option<u64> = value.maybe;
+        let _: [u64; 2] = value.pair;
+    }
+    let _ = builtins;
 
     let _ = Holder {
         aliased: BumpArgs { amount: 1 },
@@ -98,6 +123,19 @@ fn declared_aliases_use_the_registered_types() {
             value: BumpArgs { amount: 4 },
         },
     };
+}
+
+#[test]
+fn renamed_declared_types_use_the_registered_name() {
+    use aliases::types::BumpArgs as Renamed;
+
+    #[derive(IdlType)]
+    struct Local {
+        renamed: Renamed,
+    }
+
+    let type_def = <Local as IdlAccountType>::__idl_type_def().unwrap();
+    assert!(type_def.contains("{\"defined\":{\"name\":\"BumpArgs\"}}"), "{type_def}");
 }
 "#;
 
@@ -218,7 +256,12 @@ fn aliases_reference_the_registered_type() {
         .collect();
     assert_eq!(
         args,
-        [defined("BumpArgs", vec![]), defined("Holder", vec![])]
+        [
+            defined("BumpArgs", vec![]),
+            defined("Holder", vec![]),
+            defined("Builtins", vec![]),
+            IdlType::U64,
+        ]
     );
     let returns: IdlType = serde_json::from_value(instruction["returns"].clone()).unwrap();
     assert_eq!(returns, defined("BumpArgs", vec![]));
@@ -226,7 +269,7 @@ fn aliases_reference_the_registered_type() {
     let types: Vec<IdlTypeDef> = serde_json::from_value(program["types"].clone()).unwrap();
     let mut names: Vec<&str> = types.iter().map(|ty| ty.name.as_str()).collect();
     names.sort_unstable();
-    assert_eq!(names, ["BumpArgs", "Holder", "Wrapper"]);
+    assert_eq!(names, ["Builtins", "BumpArgs", "Holder", "Wrapper"]);
 
     let holder = types.iter().find(|ty| ty.name == "Holder").unwrap();
     let IdlTypeDefTy::Struct {
@@ -246,6 +289,25 @@ fn aliases_reference_the_registered_type() {
         ]
     );
 
+    // An alias of a primitive or collection becomes the aliased type
+    let builtins = types.iter().find(|ty| ty.name == "Builtins").unwrap();
+    let IdlTypeDefTy::Struct {
+        fields: Some(IdlDefinedFields::Named(fields)),
+    } = &builtins.ty
+    else {
+        panic!("expected named-field struct, got {:?}", builtins.ty);
+    };
+    let fields: Vec<&IdlType> = fields.iter().map(|field| &field.ty).collect();
+    assert_eq!(
+        fields,
+        [
+            &IdlType::U64,
+            &IdlType::Vec(Box::new(IdlType::String)),
+            &IdlType::Option(Box::new(IdlType::U64)),
+            &IdlType::Array(Box::new(IdlType::U64), IdlArrayLen::Value(2)),
+        ]
+    );
+
     // The IDL must declare a program whose types are the registered ones
     program["address"] = idl_block(&stdout, "address").trim().into();
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -255,7 +317,7 @@ fn aliases_reference_the_registered_type() {
         &consumer_dir,
         "idl-alias-names-consumer",
         &anchor_lang,
-        "",
+        r#"idl-build = ["anchor-lang/idl-build"]"#,
         CONSUMER,
     );
     fs::create_dir_all(consumer_dir.join("idls")).unwrap();
@@ -264,7 +326,11 @@ fn aliases_reference_the_registered_type() {
         serde_json::to_string(&program).unwrap(),
     )
     .unwrap();
-    let output = cargo_test(&consumer_dir, &case_dir.join("target"), &[]);
+    let output = cargo_test(
+        &consumer_dir,
+        &case_dir.join("target"),
+        &["--features", "idl-build"],
+    );
     assert_success(&consumer_dir, &output);
 }
 

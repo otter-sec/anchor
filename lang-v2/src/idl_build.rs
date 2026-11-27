@@ -59,6 +59,12 @@ pub trait IdlAccountType {
     const __IDL_NAME: Option<&'static str> = None;
     const __IDL_GENERICS: usize = 0;
 
+    /// How the IDL writes this type in place, e.g. `"u64"`. `None` for types
+    /// listed by name in `types[]`.
+    fn __idl_inline_type() -> Option<alloc::string::String> {
+        None
+    }
+
     /// Dynamic accessor for the `accounts[]` entry. Defaults to the trait
     /// const, but derive-generated impls can override it when the final IDL
     /// string depends on cfg-pruned items.
@@ -90,12 +96,40 @@ pub trait IdlAccountType {
     }
 }
 
+/// How the IDL refers to `T`, e.g. `"u64"` or its registered name. `None` if
+/// `T` has neither.
+fn idl_type_ref<T: IdlAccountType + ?Sized>() -> Option<alloc::string::String> {
+    T::__idl_inline_type().or_else(|| match T::__IDL_NAME {
+        Some(name) if T::__IDL_GENERICS == 0 => {
+            Some(alloc::format!("{{\"defined\":{{\"name\":\"{name}\"}}}}"))
+        }
+        _ => None,
+    })
+}
+
+/// How the IDL refers to `T` when it's written without generic arguments,
+/// e.g. `Amount` in `type Amount = u64`.
+#[doc(hidden)]
+pub fn __idl_defined_type<T: IdlAccountType + ?Sized>(
+    written: &'static str,
+) -> alloc::string::String {
+    T::__idl_inline_type().unwrap_or_else(|| {
+        let name = __idl_defined_name::<T>(written, 0);
+        alloc::format!("{{\"defined\":{{\"name\":\"{name}\"}}}}")
+    })
+}
+
 /// Name to use when a field or instruction argument references `T`.
 #[doc(hidden)]
 pub fn __idl_defined_name<T: IdlAccountType + ?Sized>(
     written: &'static str,
     generics: usize,
 ) -> &'static str {
+    assert!(
+        T::__idl_inline_type().is_none(),
+        "IDL type `{written}` refers to a built-in type through a generic alias. Use that type \
+         directly",
+    );
     let Some(name) = T::__IDL_NAME else {
         return written;
     };
@@ -175,31 +209,35 @@ pub fn strip_account_entry_identity(entry: &str) -> alloc::string::String {
 // into the registry.
 
 macro_rules! impl_idl_account_type_noop {
-    ($($t:ty),* $(,)?) => {
+    ($(($t:ty, $idl:literal)),* $(,)?) => {
         $(
             #[doc(hidden)]
-            impl IdlAccountType for $t {}
+            impl IdlAccountType for $t {
+                fn __idl_inline_type() -> Option<alloc::string::String> {
+                    Some(concat!("\"", $idl, "\"").into())
+                }
+            }
         )*
     };
 }
 
 impl_idl_account_type_noop!(
-    bool,
-    u8,
-    u16,
-    u32,
-    u64,
-    u128,
-    i8,
-    i16,
-    i32,
-    i64,
-    i128,
-    f32,
-    f64,
-    alloc::string::String,
-    str,
-    pinocchio::address::Address,
+    (bool, "bool"),
+    (u8, "u8"),
+    (u16, "u16"),
+    (u32, "u32"),
+    (u64, "u64"),
+    (u128, "u128"),
+    (i8, "i8"),
+    (i16, "i16"),
+    (i32, "i32"),
+    (i64, "i64"),
+    (i128, "i128"),
+    (f32, "f32"),
+    (f64, "f64"),
+    (alloc::string::String, "string"),
+    (str, "string"),
+    (pinocchio::address::Address, "pubkey"),
 );
 
 // Pod scalar wrappers are referenced by name (`{"defined":{"name":"PodU64"}}`),
@@ -247,6 +285,10 @@ impl_idl_account_type_pod_alias!(
 
 #[doc(hidden)]
 impl<T: IdlAccountType> IdlAccountType for alloc::vec::Vec<T> {
+    fn __idl_inline_type() -> Option<alloc::string::String> {
+        idl_type_ref::<T>().map(|ty| alloc::format!("{{\"vec\":{ty}}}"))
+    }
+
     fn __register_idl_deps(
         accounts: &mut crate::Vec<&'static str>,
         types: &mut crate::Vec<&'static str>,
@@ -257,6 +299,10 @@ impl<T: IdlAccountType> IdlAccountType for alloc::vec::Vec<T> {
 
 #[doc(hidden)]
 impl<T: IdlAccountType> IdlAccountType for crate::Vec<T> {
+    fn __idl_inline_type() -> Option<alloc::string::String> {
+        idl_type_ref::<T>().map(|ty| alloc::format!("{{\"vec\":{ty}}}"))
+    }
+
     fn __register_idl_deps(
         accounts: &mut crate::Vec<&'static str>,
         types: &mut crate::Vec<&'static str>,
@@ -324,6 +370,13 @@ impl_idl_account_type_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 // which wincode supports as a zero-copy ix arg.
 #[doc(hidden)]
 impl<T: IdlAccountType> IdlAccountType for [T] {
+    fn __idl_inline_type() -> Option<alloc::string::String> {
+        idl_type_ref::<T>().map(|ty| match ty.as_str() {
+            "\"u8\"" => "\"bytes\"".into(),
+            _ => alloc::format!("{{\"vec\":{ty}}}"),
+        })
+    }
+
     fn __register_idl_deps(
         accounts: &mut crate::Vec<&'static str>,
         types: &mut crate::Vec<&'static str>,
@@ -336,6 +389,13 @@ impl<T: IdlAccountType> IdlAccountType for [T] {
 // type def into the IDL's `types[]`.
 #[doc(hidden)]
 impl<T: IdlAccountType + ?Sized> IdlAccountType for &T {
+    const __IDL_NAME: Option<&'static str> = T::__IDL_NAME;
+    const __IDL_GENERICS: usize = T::__IDL_GENERICS;
+
+    fn __idl_inline_type() -> Option<alloc::string::String> {
+        T::__idl_inline_type()
+    }
+
     fn __register_idl_deps(
         accounts: &mut crate::Vec<&'static str>,
         types: &mut crate::Vec<&'static str>,
@@ -346,6 +406,10 @@ impl<T: IdlAccountType + ?Sized> IdlAccountType for &T {
 
 #[doc(hidden)]
 impl<T: IdlAccountType> IdlAccountType for Option<T> {
+    fn __idl_inline_type() -> Option<alloc::string::String> {
+        idl_type_ref::<T>().map(|ty| alloc::format!("{{\"option\":{ty}}}"))
+    }
+
     fn __register_idl_deps(
         accounts: &mut crate::Vec<&'static str>,
         types: &mut crate::Vec<&'static str>,
@@ -356,6 +420,10 @@ impl<T: IdlAccountType> IdlAccountType for Option<T> {
 
 #[doc(hidden)]
 impl<T: IdlAccountType, const N: usize> IdlAccountType for [T; N] {
+    fn __idl_inline_type() -> Option<alloc::string::String> {
+        idl_type_ref::<T>().map(|ty| alloc::format!("{{\"array\":[{ty},{N}]}}"))
+    }
+
     fn __register_idl_deps(
         accounts: &mut crate::Vec<&'static str>,
         types: &mut crate::Vec<&'static str>,
