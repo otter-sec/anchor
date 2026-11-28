@@ -517,7 +517,9 @@ class InstructionFormatter {
       return `Vec<${this.formatIdlType(idlType.vec)}>`;
     }
     if ("array" in idlType) {
-      return `Array<${idlType.array[0]}; ${idlType.array[1]}>`;
+      return `Array<${this.formatIdlType(idlType.array[0])}; ${
+        idlType.array[1]
+      }>`;
     }
     if ("defined" in idlType) {
       const name = idlType.defined.name;
