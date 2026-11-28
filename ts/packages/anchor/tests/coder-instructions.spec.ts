@@ -812,4 +812,65 @@ describe("coder.instructions", () => {
     // bounded number of attempts, far fewer than an unbounded loop.
     assert.ok(attempts > 0 && attempts <= 20, `attempts ${attempts}`);
   });
+
+  test("Formats the element type of nested arrays", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: {
+        name: "test",
+        version: "0.0.0",
+        spec: "0.1.0",
+      },
+      instructions: [
+        {
+          name: "initialize",
+          discriminator: [0, 1, 2, 3, 4, 5, 6, 7],
+          accounts: [],
+          args: [
+            { name: "bytes", type: { array: ["u8", 2] } },
+            {
+              name: "points",
+              type: { array: [{ defined: { name: "Point" } }, 2] },
+            },
+            { name: "maybe", type: { array: [{ option: "u8" }, 2] } },
+            { name: "grid", type: { array: [{ array: ["u8", 2] }, 2] } },
+          ],
+        },
+      ],
+      types: [
+        {
+          name: "Point",
+          type: {
+            kind: "struct",
+            fields: [{ name: "x", type: "u8" }],
+          },
+        },
+      ],
+    };
+    const coder = new BorshCoder(idl);
+
+    const data = {
+      bytes: [1, 2],
+      points: [{ x: 1 }, { x: 2 }],
+      maybe: [null, 3],
+      grid: [
+        [1, 2],
+        [3, 4],
+      ],
+    };
+    const formatted = coder.instruction.format(
+      { name: "initialize", data },
+      []
+    );
+
+    assert.deepStrictEqual(
+      formatted?.args.map((arg) => arg.type),
+      [
+        "Array<u8; 2>",
+        "Array<Point; 2>",
+        "Array<Option<u8>; 2>",
+        "Array<Array<u8; 2>; 2>",
+      ]
+    );
+  });
 });
